@@ -1,0 +1,119 @@
+# Restrict Loki ingress to legitimate sources only.
+#
+# Loki has auth_enabled: false — any pod that can reach port 3100 can read,
+# write, or delete all cluster logs. This policy whitelists the known consumers.
+#
+# Allowed ingress to Loki (port 3100):
+#   - Promtail (loki namespace, log shipping)
+#   - Grafana (monitoring namespace, log queries)
+#   - Alloy (monitoring namespace, OTel log forwarding)
+#   - Gatus (gatus namespace, health checks)
+#   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
+#
+# Allowed egress from Loki:
+#   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
+#   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
+#   - Loki memberlist (intra-namespace gossip on port 7946)
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: loki-ingress
+  namespace: loki
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  ingress:
+    # Promtail → Loki (log push)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: promtail
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Grafana → Loki (log queries)
+    - fromEndpoints:
+        - matchLabels:
+            app: grafana
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Alloy → Loki (OTel log forwarding)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Gatus → Loki (health checks)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: gatus
+            k8s:io.kubernetes.pod.namespace: gatus
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Authentik proxy outpost → Loki (SSO-protected external access)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+  egress:
+    # Loki → kube-apiserver (sc-rules sidecar watches secrets)
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+
+    # Loki → kube-dns (DNS resolution)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # Loki → SeaweedFS S3 (S3 chunk/index storage)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: s3
+            app.kubernetes.io/name: seaweedfs
+            k8s:io.kubernetes.pod.namespace: seaweedfs
+      toPorts:
+        - ports:
+            - port: "8333"
+              protocol: TCP
+
+    # Loki ↔ Loki memberlist gossip (intra-namespace, port 7946)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "7946"
+              protocol: TCP

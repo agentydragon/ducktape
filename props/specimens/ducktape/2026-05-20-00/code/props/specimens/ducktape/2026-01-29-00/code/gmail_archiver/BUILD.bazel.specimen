@@ -1,0 +1,178 @@
+# gazelle:python_library_naming_convention $package_name$_lib
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Gazelle will create per-file py_library targets
+# Subdirectories (cli/, planners/) will get their own BUILD files
+
+py_binary(
+    name = "gmail_archiver",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dirs",
+        ":event_classifier",
+        ":gmail_api_models",
+        ":inbox",
+        ":models",
+        ":plan",
+        ":plan_display",
+        "//fmt_util",
+        "//gmail_archiver/cli:common",
+        "//gmail_archiver/cli:filters",
+        "//gmail_archiver/cli:labels",
+        "//gmail_archiver/planners:aliexpress",
+        "//gmail_archiver/planners:anthem_eob",
+        "//gmail_archiver/planners:anthem_reimbursement",
+        "//gmail_archiver/planners:anthropic",
+        "//gmail_archiver/planners:dbsa",
+        "//gmail_archiver/planners:doordash",
+        "//gmail_archiver/planners:one_medical",
+        "//gmail_archiver/planners:spruce",
+        "//gmail_archiver/planners:square",
+        "//gmail_archiver/planners:usps",
+        "@pypi//google_api_python_client",
+        "@pypi//rich",
+        "@pypi//typer_slim",
+    ],
+    # deps will be filled by Gazelle
+)
+
+py_library(
+    name = "date_patterns",
+    srcs = ["date_patterns.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "dirs",
+    srcs = ["dirs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//platformdirs"],
+)
+
+py_library(
+    name = "event_classifier",
+    srcs = ["event_classifier.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":dirs",
+        ":models",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "filter_planner",
+    srcs = ["filter_planner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":gmail_yaml_filters_models",
+        ":inbox",
+        ":plan",
+    ],
+)
+
+py_library(
+    name = "filter_sync",
+    srcs = ["filter_sync.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":filter_planner",
+        ":gmail_api_models",
+        ":gmail_yaml_filters_models",
+    ],
+)
+
+py_library(
+    name = "gmail_api_models",
+    srcs = ["gmail_api_models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":models",
+        "//fmt_util",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
+    name = "gmail_yaml_filters_models",
+    srcs = ["gmail_yaml_filters_models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "html_utils",
+    srcs = ["html_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//beautifulsoup4"],
+)
+
+py_library(
+    name = "inbox",
+    srcs = ["inbox.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":gmail_client",
+        ":models",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":html_utils",
+    ],
+)
+
+py_library(
+    name = "plan",
+    srcs = ["plan.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":inbox",
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "plan_display",
+    srcs = ["plan_display.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gmail_api_models",
+        ":inbox",
+        ":plan",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_gmail_link",
+    srcs = ["test_gmail_link.py"],
+    deps = [
+        ":plan_display",
+        "@pypi//pytest_bazel",
+    ],
+)

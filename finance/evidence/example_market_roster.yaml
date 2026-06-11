@@ -1,0 +1,22 @@
+# Example mirror roster (schema: finance.evidence.markets.MarketRoster).
+#
+# The deployed scraper reads roster files like this from a ConfigMap mount
+# (`--roster /etc/.../roster.yaml`) and unions them with the markets referenced by
+# calibration catalogs (`--catalog`). `deep: true` (Manifold only) also captures the
+# full bet + comment history; snapshot-only entries just track `market.json`.
+#
+# The three markets below were verified end-to-end in loom/plans/market_harvest.md
+# and double as the loader test fixtures' provenance.
+markets:
+  # January 2024: Will Bitcoin hit $50,000? — resolved NO; harvest-verified binary
+  - platform: manifold
+    market_id: a3k1RgxAVYiAU1qeA5Su
+    deep: true
+  # top-liquidity resolved-binary sample from the harvest survey
+  - platform: manifold
+    market_id: 3xXvCL8aKO0n4ms5KEZq
+    deep: true
+  # 2024 presidential election — MULTIPLE_CHOICE shape exercised by the loaders
+  - platform: manifold
+    market_id: ikSUiiNS8MwAI75RwEJf
+    deep: true

@@ -3,12 +3,13 @@
   import type { LLMRequestInfo } from "../lib/api/client";
   import LLMRequestSection from "./LLMRequestSection.svelte";
   import LLMResponseSection from "./LLMResponseSection.svelte";
+  import RawJsonSection from "./RawJsonSection.svelte";
 
   interface Props {
     requests: LLMRequestInfo[];
     initialExpanded?: number[];
   }
-  let { requests, initialExpanded = [] }: Props = $props();
+  const { requests, initialExpanded = [] }: Props = $props();
 </script>
 
 {#if requests.length === 0}
@@ -37,8 +38,14 @@
         </summary>
 
         <div class="border-t dark:border-gray-700 divide-y dark:divide-gray-700">
-          <LLMRequestSection requestBody={req.request_body as Record<string, unknown>} />
-          {#if req.response_body}
+          {#if req.api_shape === "chat_completions"}
+            <RawJsonSection title="Chat Request JSON" value={req.request_body} />
+          {:else}
+            <LLMRequestSection requestBody={req.request_body as Record<string, unknown>} />
+          {/if}
+          {#if req.response_body && req.api_shape === "chat_completions"}
+            <RawJsonSection title="Chat Response JSON" value={req.response_body} />
+          {:else if req.response_body}
             <LLMResponseSection responseBody={req.response_body as Record<string, unknown>} />
           {/if}
           {#if req.response_error_body}

@@ -6,7 +6,7 @@
  * Real-time updates are received via SSE from /api/events.
  */
 import { getAccessToken } from "./auth.ts";
-import type { Action, ActionKey, ActionStatus, OAuthProviderStatus } from "./types.ts";
+import type { Action, ActionKey, ActionStatus, BackendStatus, DeploymentInfo, OAuthProviderStatus } from "./types.ts";
 
 type Callback<T> = (data: T) => void;
 
@@ -30,6 +30,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export class AirlockApiClient {
   private listChangedCallbacks = new Set<Callback<void>>();
   private actionCallbacks = new Map<string, Set<Callback<unknown>>>();
+  private backendsChangedCallbacks = new Set<Callback<void>>();
   private eventSource: EventSource | null = null;
 
   static async connect(): Promise<AirlockApiClient> {
@@ -88,6 +89,8 @@ export class AirlockApiClient {
           for (const cb of cbs) (cb as Callback<Action>)(action);
         });
       }
+    } else if (event.type === "backends_changed") {
+      for (const cb of this.backendsChangedCallbacks) cb(undefined as unknown as void);
     }
   }
 
@@ -95,6 +98,12 @@ export class AirlockApiClient {
   onListChanged(cb: Callback<void>): () => void {
     this.listChangedCallbacks.add(cb);
     return () => this.listChangedCallbacks.delete(cb);
+  }
+
+  /** Subscribe to backend status changes. */
+  onBackendsChanged(cb: Callback<void>): () => void {
+    this.backendsChangedCallbacks.add(cb);
+    return () => this.backendsChangedCallbacks.delete(cb);
   }
 
   /** Subscribe to updates for a specific action. Fires the callback with the initial state immediately. */
@@ -148,6 +157,14 @@ export class AirlockApiClient {
 
   async listOAuthProviders(): Promise<OAuthProviderStatus[]> {
     return apiFetch<OAuthProviderStatus[]>("/api/oauth/providers");
+  }
+
+  async listBackends(): Promise<BackendStatus[]> {
+    return apiFetch<BackendStatus[]>("/api/backends");
+  }
+
+  async getDeploymentInfo(): Promise<DeploymentInfo> {
+    return apiFetch<DeploymentInfo>("/api/info");
   }
 }
 

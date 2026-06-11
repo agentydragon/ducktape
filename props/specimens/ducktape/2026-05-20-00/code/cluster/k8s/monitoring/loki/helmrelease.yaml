@@ -1,0 +1,120 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: loki
+spec:
+  interval: 30m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: loki
+      version: "6.x"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 12h
+  values:
+    deploymentMode: SingleBinary
+
+    loki:
+      auth_enabled: false
+
+      commonConfig:
+        replication_factor: 1
+
+      storage:
+        type: s3
+        s3:
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          region: us-east-1
+          s3ForcePathStyle: true
+          insecure: true
+        bucketNames:
+          chunks: loki
+          ruler: loki
+          admin: loki
+
+      schemaConfig:
+        configs:
+          - from: "2026-04-06"
+            store: tsdb
+            object_store: s3
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+
+      limits_config:
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+        ingestion_rate_mb: 10
+        ingestion_burst_size_mb: 20
+        per_stream_rate_limit: 5MB
+        per_stream_rate_limit_burst: 10MB
+
+      compactor:
+        retention_enabled: true
+        retention_delete_delay: 2h
+        compaction_interval: 10m
+        delete_request_store: s3
+
+    singleBinary:
+      replicas: 1
+      # Goldilocks disabled: we manage our own VPA (vpa.yaml) so we can set
+      # explicit min/max bounds alongside Auto mode. Two VPAs on the same
+      # workload conflict, so goldilocks must be opted out.
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      persistence:
+        storageClass: local-path-hetzner
+        size: 10Gi
+      extraEnvFrom:
+        - secretRef:
+            name: loki-s3-credentials
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    # Disable unused deployment targets
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+    backend:
+      replicas: 0
+
+    gateway:
+      enabled: false
+
+    # Disable bundled monitoring (we have kube-prometheus-stack)
+    monitoring:
+      serviceMonitor:
+        enabled: true
+      dashboards:
+        enabled: false
+      rules:
+        enabled: false
+      selfMonitoring:
+        enabled: false
+        grafanaAgent:
+          installOperator: false
+
+    # Disable test pod
+    test:
+      enabled: false
+
+    # Disable chunk cache (single binary, not needed)
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false

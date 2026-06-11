@@ -6,7 +6,7 @@
 #   Start: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
 #   Model: qwen3-coder-awq (262K context, 8.5 GiB/GPU, FP8 KV cache)
 #
-# Critical vLLM fixes (see qwen3-coder-vram-analysis.md):
+# Critical vLLM fixes (see cluster/docs/inference/qwen3_coder_vram_analysis.md):
 #   - --max-num-seqs 32 (default 256 causes OOM during warmup)
 #   - --kv-cache-dtype fp8 (doubles context capacity)
 #   - Don't use --quantization awq (model auto-detects compressed-tensors)
@@ -30,20 +30,90 @@
 #   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
 #   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
 #
-# See model-download-list.md for download status and benchmarks.
+# See cluster/docs/inference/model_download_history.md for download status and benchmarks.
 {
   config,
   pkgs,
   lib,
-  siderolabs-docs,
-  skills-tar,
+  sharedSkillsArgs,
   ...
 }:
 let
+  mkSkills = import ../skills.nix sharedSkillsArgs;
+  inherit (config.ducktape.opencode) ruggedLocalLlm;
+  ruggedProvider = lib.optionalAttrs ruggedLocalLlm.enable {
+    # === Rugged: Gemma 4 on local Intel iGPU via upstream Ollama/Vulkan ===
+    # Enabled only by nix/home/hosts/rugged.nix. If this moves behind an
+    # authenticated service route, move the option into shared home config.
+    rugged = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Rugged local Ollama";
+      options = {
+        inherit (ruggedLocalLlm) baseURL;
+      };
+      models = {
+        "gemma4:e2b-it-qat" = {
+          name = "Gemma 4 E2B QAT (rugged iGPU)";
+          reasoning = false;
+          # Ollama's Gemma 4 template advertises tools, but OpenCode tool use
+          # has not been validated on this small local model yet.
+          tool_call = false;
+          limit = {
+            context = 131072;
+            output = 8192;
+          };
+        };
+      };
+    };
+
+    # === Rugged: Gemma 4 on local Intel iGPU via Google LiteRT-LM ===
+    # Start this separately:
+    #   litert-lm serve --host 127.0.0.1 --port 9379 --enable-speculative-decoding=true
+    #
+    # The current Gemma 4 E2B LiteRT artifact rewrites its magic-number target
+    # to 32000 tokens, so advertise that as the usable full context here rather
+    # than Ollama's larger GGUF/QAT context.
+    rugged-litert = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Rugged local LiteRT-LM";
+      options = {
+        baseURL = ruggedLocalLlm.litertBaseURL;
+      };
+      models = {
+        "gemma4-e2b-it,gpu,32000" = {
+          name = "Gemma 4 E2B LiteRT-LM MTP 32k (rugged iGPU)";
+          reasoning = false;
+          # LiteRT-LM's OpenAI handler accepts the tools envelope, but tool use
+          # and output limiting are not reliable enough for OpenCode yet.
+          tool_call = false;
+          limit = {
+            context = 32000;
+            output = 8192;
+          };
+        };
+      };
+    };
+  };
   # OpenCode configuration as JSON
   # Docs: https://opencode.ai/docs/providers/
   opencodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
+    mcp = {
+      # TODO: Auth not yet working - MCP servers require OAuth but auth flow not triggered
+      # Plan: Add oauth config with client credentials or verify .well-known/opencode endpoint
+      "cluster-kubectl-sandbox-diagnostics" = {
+        type = "remote";
+        url = "https://kubectl-sandbox-mcp.allegedly.works/mcp";
+      };
+      "grocy-sf" = {
+        type = "remote";
+        url = "https://grocy-mcp-sf.allegedly.works/mcp";
+      };
+      "grocy-vallejo" = {
+        type = "remote";
+        url = "https://grocy-mcp-vallejo.allegedly.works/mcp";
+      };
+    };
     provider = {
       # === vLLM: Tensor parallelism for better throughput ===
       # Start server: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
@@ -53,12 +123,12 @@ let
         options = {
           baseURL = "http://0.0.0.0:8000/v1";
         };
-        models = {
+        "models" = {
           # Qwen3-Coder 30B AWQ 4-bit with tensor parallelism across 2x 5090
           # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
           # FP8 KV cache: ~23 GB available per GPU = 262K context
           # ⚠️ AWQ model does NOT support thinking mode (per model card)
-          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
           "qwen3-coder-awq" = {
             name = "Qwen3-Coder 30B AWQ (vLLM)";
             reasoning = false; # AWQ model removes thinking support
@@ -195,7 +265,7 @@ let
 
           # Qwen3-Coder 30B with 131k context - recommended for large codebases
           # Q4_K_M (19GB) + FP16 KV cache supports ~218k context on 2x5090
-          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
           # Create variant:
           #   cd ~/code/ducktape/experimental/local-llm
           #   ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long
@@ -354,24 +424,35 @@ let
           };
         };
       };
-    };
+    }
+    // ruggedProvider;
   };
 in
 {
-  # Write opencode.json to ~/.config/opencode/
-  xdg.configFile."opencode/opencode.json" = {
-    text = builtins.toJSON opencodeConfig;
+  options.ducktape.opencode.ruggedLocalLlm = {
+    enable = lib.mkEnableOption "rugged-only OpenCode provider for the local Ollama/Gemma 4 service";
+
+    baseURL = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:11436/v1";
+      description = "OpenAI-compatible base URL for rugged's upstream Ollama service.";
+    };
+
+    litertBaseURL = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:9379/v1";
+      description = "OpenAI-compatible base URL for rugged's LiteRT-LM service.";
+    };
+
   };
 
-  # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
-  home.file =
-    (import ../skills/skills.nix {
-      inherit
-        lib
-        pkgs
-        siderolabs-docs
-        skills-tar
-        ;
-    })
-      ".config/opencode";
+  config = {
+    # Write opencode.json to ~/.config/opencode/
+    xdg.configFile."opencode/opencode.json" = {
+      text = builtins.toJSON opencodeConfig;
+    };
+
+    # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
+    home.file = mkSkills { prefix = ".config/opencode"; };
+  };
 }

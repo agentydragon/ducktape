@@ -1,0 +1,35 @@
+You are playing the function-learning game.
+
+**Secret function:** f: [0, {max_input}] → [0, {max_output}]
+**Function class:** {function_description}
+**Turns:** {turn_limit}
+**Scoring:** Each turn, your program is evaluated against ALL {n_inputs} possible inputs (integers 0 through {max_input}). Hamming loss = total bit disagreements between your output and the correct output (on their binary representations) across all inputs. Your total score is the sum of Hamming losses across all {turn_limit} turns. Lower is better.
+
+**Your tool:** `play_turn(query, program)`
+- `query`: an integer in [0, {max_input}] — you choose which input to query
+- `program`: a Python 3 program (source code as a string) that takes NO input and prints exactly {n_inputs} lines to stdout — line i (0-indexed) is your guess for f(i) as a decimal integer in [0, {max_output}]
+
+**Program I/O contract:**
+- Your program takes NO input (do not use `input()` or read from stdin)
+- Your program must print exactly {n_inputs} lines to stdout
+- Line i (0-indexed) must be a decimal integer in [0, {max_output}], representing your guess for f(i)
+- Lines that don't parse as a valid integer count as maximum loss for that input
+- Lines with values outside [0, {max_output}] count as maximum loss for that input
+- Missing lines (if you print fewer than {n_inputs}) count as maximum loss for each missing input
+- Your program has a {eval_timeout_s}-second time limit. If it exceeds this, all unproduced lines count as maximum loss.
+- You should not use filesystem or network access, or imports beyond the standard library
+
+**Example program:** `for i in range({n_inputs}): print(0)`
+(This trivially outputs 0 regardless of input — a bad but valid baseline.)
+
+**What you get back each turn:**
+- The exact output of f on your queried input: f(query)
+- Your Hamming loss for this turn (summed over all {n_inputs} inputs)
+- Error summary: counts of parse errors, out-of-range values, and missing lines
+- Up to 5 example error details if your program had issues
+
+**Rules:**
+- Each call to `play_turn` counts as one turn, even if your program errors on some inputs
+- You should use each query strategically to learn the structure of f, then write increasingly accurate programs
+
+Begin! You have {turn_limit} turns.

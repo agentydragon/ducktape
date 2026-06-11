@@ -52,41 +52,41 @@ The snapshot date ensures reproducible builds long-term. To update packages:
 
 > **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.py`.
 
-### Tool Availability
+### Tool Availability (Firecracker era, verified 2026-06-10)
 
-- **docker 29.2.1 + BuildKit**: Available and working (default runtime)
-- **podman 4.9.3 + buildah 1.33.7**: Available but superseded by Docker
-- **fuse-overlayfs**: Installed but broken (gVisor lacks `FUSE_CAP_READDIRPLUS`)
+Sessions run on Firecracker microVMs with a real kernel (see the platform
+note in `../AGENTS.md`); the gVisor-era constraints that used to dominate
+this section are gone.
 
-Docker is simpler in gVisor: no crun-gvisor-wrapper, no setgroups annotation, no
-freezer mock, no keyring injection needed. Docker data-root is on tmpfs at
-`/mnt/bazel-tmpfs/docker` (configured by session hooks).
+- **docker 29.3.1 + BuildKit**: the container runtime. No daemon.json is
+  baked into the image and nothing starts dockerd for you — launch it with a
+  **default config** (`nohup dockerd &`); see `../docs/docker_evaluation_results.md`.
+  Full bridge networking works (user-defined networks, `internal: true`
+  enforcement, `host-gateway`).
+- **podman / buildah / fuse-overlayfs**: no longer in the container (the
+  gVisor-era evaluation that compared them is archived at
+  `../docs/archive/2026_02_docker_gvisor_evaluation.md`).
 
-**Proxy requirement**: The gVisor sandbox has no direct internet access. All
-outbound traffic goes through the egress proxy in `$https_proxy`. Docker build
-containers do not inherit env vars from the build host, so the proxy must be
-passed explicitly as `--build-arg https_proxy=... --build-arg http_proxy=...`.
-`build_and_diff` handles this automatically. Docker excludes predefined proxy
-ARG names from the cache key, so session-specific JWT proxy URLs don't break
-layer caching.
+**Egress**: no `http_proxy`/`https_proxy` env vars exist; outbound traffic is
+transparently intercepted by a TLS-inspecting proxy (see "Networking" in
+`../README.md`). Containers and build steps doing HTTPS need the inspection
+CA (host bundle: `/etc/ssl/certs/ca-certificates.crt`) — symptom otherwise is
+`certificate verify failed: self-signed certificate in certificate chain`.
+`build_and_diff` still forwards proxy env as `--build-arg`s when set, which
+is a no-op in current sessions.
 
-**SHELL wrapper + proxy pitfall**: The Dockerfile uses a logging SHELL wrapper
-(`eval "$0"`) to capture build output. This wrapper corrupts proxy URLs
-containing JWT tokens (special chars `=`, `+`, `/`, `@`), causing `apt-get
-update` to fail with "Temporary failure resolving". **Fix**: Switch to plain
-`SHELL ["/bin/bash", "-euo", "pipefail", "-c"]` for any layer that writes APT
-proxy config or runs `apt-get update`, then restore the logging wrapper
-afterward. See the `/update_container_re` skill appendix for details.
+**SHELL wrapper + proxy pitfall** (historical, gVisor/JWT-proxy era): the
+Dockerfile's logging SHELL wrapper (`eval "$0"`) corrupts proxy URLs
+containing JWT tokens (`=`, `+`, `/`, `@`), breaking `apt-get update`. Only
+relevant if explicit proxy env vars ever return; the fix was a plain
+`SHELL ["/bin/bash", "-euo", "pipefail", "-c"]` around the affected layers.
+See the `/update_container_re` skill appendix.
 
-**Layer limit**: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
-entries (empirical gVisor limit; NOT a string-length issue — lowerdir uses relative
-paths like `51/fs`). Ubuntu 24.04 base = 4 layers; Dockerfile may have at most ~31
-layer-creating instructions (SHELL, RUN, COPY, WORKDIR each count; ENV/LABEL/CMD
-are metadata-only and do NOT count). Key technique: put ALL ENV variables in a
-single ENV instruction (saves ~9 layer slots vs scattered ENVs). The Dockerfile
-currently uses 27 BuildKit steps (well within the limit). If a build fails with
-`mount source: overlay... invalid argument`, consolidate COPY/RUN/ENV to reduce
-step count. See PLAN.md for details.
+**Layer limit**: the gVisor-era ~35-lowerdir overlay limit no longer applies —
+a 60-`RUN` image builds and runs fine on the real kernel (verified
+2026-06-10). Docker's own ~125-layer cap is the relevant bound; the
+ENV-consolidation tricks in old Dockerfile comments are harmless but no
+longer load-bearing.
 
 ### Container Update Procedure
 

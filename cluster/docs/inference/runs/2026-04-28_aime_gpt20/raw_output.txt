@@ -1,0 +1,73 @@
+
+=== effort=low ===
+$ /home/agentydragon/.cache/uv/environments-v2/run-aime-eb787bf6c7091bef/bin/inspect eval inspect_evals/aime2024 --model openai/gpt-oss:20b --limit 10 --reasoning-effort low --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-28_aime_gpt20/logs/low
+Loading dataset Maxwell-Jia/AIME_2024 from Hugging Face...
+Saving the dataset (0/1 shards):   0%|          | 0/30 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4748.27 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4605.92 examples/s]
+╭──────────────────────────────────────────────────────────────────────────────╮
+│aime2024 (10 samples): openai/gpt-oss:20b                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+reasoning_effort: low, dataset: Maxwell-Jia/AIME_2024
+
+total time:                  0:10:36
+openai/gpt-oss:20b           84,372 tokens [I: 2,508, O: 81,864]
+
+aime_scorer
+accuracy     0.500
+stderr       0.167
+
+Log: logs/low/2026-04-29T19-14-21-00-00_aime2024_VxzzWHzLHtsh3fCks7WC3n.eval
+
+=== effort=medium ===
+$ /home/agentydragon/.cache/uv/environments-v2/run-aime-eb787bf6c7091bef/bin/inspect eval inspect_evals/aime2024 --model openai/gpt-oss:20b --limit 10 --reasoning-effort medium --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-28_aime_gpt20/logs/medium
+Loading dataset Maxwell-Jia/AIME_2024 from Hugging Face...
+Saving the dataset (0/1 shards):   0%|          | 0/30 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4316.46 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4165.29 examples/s]
+╭──────────────────────────────────────────────────────────────────────────────╮
+│aime2024 (10 samples): openai/gpt-oss:20b                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+reasoning_effort: medium, dataset: Maxwell-Jia/AIME_2024
+
+total time:                  0:09:22
+openai/gpt-oss:20b           95,534 tokens [I: 2,508, O: 93,026]
+
+aime_scorer
+accuracy     0.300
+stderr       0.153
+
+Log: logs/medium/2026-04-29T19-25-11-00-00_aime2024_B67u4eFwrvAg95DGUQTAqX.eval
+
+=== effort=high ===
+$ /home/agentydragon/.cache/uv/environments-v2/run-aime-eb787bf6c7091bef/bin/inspect eval inspect_evals/aime2024 --model openai/gpt-oss:20b --limit 10 --reasoning-effort high --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-28_aime_gpt20/logs/high
+Loading dataset Maxwell-Jia/AIME_2024 from Hugging Face...
+Saving the dataset (0/1 shards):   0%|          | 0/30 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4168.32 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 30/30 [00:00<00:00, 4063.99 examples/s]
+╭──────────────────────────────────────────────────────────────────────────────╮
+│aime2024 (10 samples): openai/gpt-oss:20b                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+reasoning_effort: high, dataset: Maxwell-Jia/AIME_2024
+
+total time:                 0:15:27
+openai/gpt-oss:20b          144,376 tokens [I: 2,508, O: 141,868]
+
+aime_scorer
+accuracy     0.700
+stderr       0.153
+
+Log: logs/high/2026-04-29T19-34-48-00-00_aime2024_fnD9JZVRyqF9mZyuJVPAfE.eval
+
+=== ALL DONE ===
+{
+  "config": {
+    "model": "gpt-oss:20b",
+    "limit": 10,
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "base_url": "https://ollama.allegedly.works/v1"
+  },
+  "exit_codes": {
+    "low": 0,
+    "medium": 0,
+    "high": 0
+  }
+}

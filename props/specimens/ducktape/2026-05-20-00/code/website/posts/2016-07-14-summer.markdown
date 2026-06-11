@@ -1,0 +1,146 @@
+---
+title: Summer
+---
+
+So, what have I been doing since last time?
+
+# Effective altruism in Czech Republic
+
+I decided I want more effective altruism in general, and also in Czech Republic
+in particular.
+Me, [Jirka Nádvorník][jirka], Radim Lacina and [Dan Hnyk][dan] started working
+on organizing a conference on effective altruism in Prague, probably some time
+in fall. The work is fulfilling and interesting: I've never done anything
+similar and I think I'll learn a lot from this.
+Our current idea is a weekend with 1 day of events aimed at educating the
+broader public about EA and related crucial issues, then 1 day of an
+"unconference" mostly aimed at community building.
+
+Unfortunately, progress has been pretty slow so far.
+
+Our main priority is securing a venue, then fixing a date.
+We quickly agreed on a sweet venue in Prague we'd really like to have (Paralelní
+polis), but unfortunately communication with them has been sluggish.
+I think we didn't dedicate enough attention to this - we should have
+contacted potential venues sooner and more broadly. We'll fix that.
+
+We'd like to talk with the organizers of [EA Global][eag] to see if we could
+make our conference an official [EAGx][eagx] event, but communication has been
+slow. We're (so far unsuccessfully) trying to reach anyone from LEAN (Local
+Effective Altruism Network), which is the org behind
+[Effective Altruism Hub][ea-hub].
+It seems they tried to start a small Czech online EA community, but it didn't
+take off and it seems inactive now, so we'd like to see what could we do about
+that.
+
+We'd like to use the conference to bootstrap the Czech EA community:
+have EAs know each other and talk to each other, regular meetups, materials in
+Czech, talking to Czech influencers and media.
+We are working on establishing a small non-profit.
+We currently just have a bare-bones site at [efektivni-altruismus.cz][eacz].
+
+# Psych
+
+I talked with my psychologist a few days after publishing [Recent icky personal stuff][rips].
+The session was basically just my huge mind-dump, maybe just a bit more verbose
+than that public post. There was relatively little back-and-forth - I mostly
+gave a long, prepared spiel and got just a few questions. I was a bit surprised
+by what in particular interested my psychologist: my ideas about polyamory and
+my experiences with recreational drugs. Discussing both made me a bit anxious.
+It's probably nothing to analyze, just something to expect when dumping
+personal stuff on strangers.
+
+The next step is a personality test, which I'm taking a few days from now.
+It should take about 4 hours. I was wondering what's taking so long to test,
+and there's an interesting reason the test is so long: it's _supposed_ to be
+tedious, because when you're tired, your answers are less biased (e.g., you put
+up less effort to look like a nice person).
+
+I was mostly well the last month. I felt sad a few days and cried a few times,
+because of my own anxieties, because I worry about everything, because
+sometimes I feel I have no idea what I'm doing. Mostly around personal
+relationships. Working on it.
+
+# Actual work
+
+I apologized to my thesis advisor for not doing any work yet, explained I have
+been depressed, and promised to send him a draft text for my thesis assignment
+the next day. I still didn't do that, and it was some weeks ago.
+That was all I did about finishing my degree.
+I sometimes feel a bit bad about not making any progress. Last year, I had
+hoped I would be finished by now.
+
+I didn't get the H-1B visa, so I'm not moving to Mountain View this year.
+I'll probably have the option of working in some office in Europe.
+I'm currently optimistic about the prospect.
+If I want to finish my master's, employment would probably have to wait
+until February 2017.
+
+Many questions I need to answer, many things I want to do, many tradeoffs I'd
+rather not have to decide.
+
+# Rome
+
+I was in Rome for a week. I'm not usually one to highly value museums and
+historical buildings, but I really enjoyed Rome's antiquities. People in Rome
+have been building the city since ~900 BC to the modern day.
+Everywhere you dig, you'll eventually find something Etruscan or Roman or at
+least medieval. After you make it through all the Renaissance built on top of
+that.
+The remains are aesthetically nice, but what I enjoyed more was a feeling of
+frisson I got from the inscriptions.
+
+Take a look at this one. (Quoted from the [Colloseum website][colloseum].)
+
+<figure>
+<img src="/static/2016-07-14-colloseum-inscription.jpg" style="width: 300px;">
+</figure>
+
+<blockquote>
+Decius Marius Venantius Basilius v(ir) c(larissimus) et inl(ustris)
+praef(ectus) urb(i) patricius consul ordinarius arenam et podium quae
+abominandi terrae motus ruina prostravit sum(p)tu proprio restituit.
+</blockquote>
+
+<blockquote>
+Decius Marius Venantius Basilius, very famous and well known prefect of the
+city, patrician, regular consul, repaired the arena and the podium which
+a dreaded movement of the earth had cast into ruin, at his own expense.
+</blockquote>
+
+What gives me frisson is this thought:
+
+Once upon a time, there lived a man called Decius Marius Venantius Basilius.
+He was an actual human being, like you and me.
+There were probably people he hated, and people he loved.
+He had friends, he had hobbies, sometimes he felt good and sometimes he felt
+bad.
+And, 1500 years later, <i>we know he was there</i>.
+There was a horrible earthquake. And <i>Decius Marius Venantius Basilius
+went and had it repaired at his own expense</i>.
+
+History is not finished. We're writing it every day with our actions.
+
+# Various
+
+I'm slacking off a bit with running and jiu-jitsu. Win: I'll be running my
+first 10k in September. Fail: I mostly stopped going to jiu-jitsu the last
+2-or-so weeks. I'll try to pick up the slack.
+
+I'm visiting Vienna next weekend to see their local rationality meetups, talk
+to a few people who might be interested in our EA conference, and to generally
+hang out.
+
+In September, I'm going with a group of friends (mostly from high school) for a
+trip around Ukraine, mostly to see the Chernobyl exclusion zone. They're putting
+a new sarcophagus on the NPP this year, so this is my last opportunity to see
+it the way I remember it from STALKER :)
+
+[rips]: /posts/2016-06-18-recent-icky-personal-stuff.html
+[jirka]: http://nadvornik.org
+[dan]: http://danielhnyk.cz/
+[eag]: http://eaglobal.org/
+[eagx]: http://eaglobal.org/eagx
+[ea-hub]: https://eahub.org/groups
+[eacz]: http://efektivni-altruismus.cz/
+[colloseum]: http://www.the-colosseum.net/history/inscriptiones_en.htm

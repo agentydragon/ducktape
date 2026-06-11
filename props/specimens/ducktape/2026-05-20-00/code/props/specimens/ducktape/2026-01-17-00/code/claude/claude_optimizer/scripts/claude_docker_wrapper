@@ -1,0 +1,44 @@
+#!/bin/sh
+# Docker exec wrapper for containerized Claude CLI
+# This script is called by the Claude SDK instead of the real claude binary
+
+# Use -i (not -it) because:
+# 1. Claude SDK uses pipes (stdin=PIPE, stdout=PIPE) for JSON communication, not TTY
+# 2. The -t flag allocates a pseudo-TTY which triggers Ink's raw mode in Claude CLI
+# 3. Raw mode fails when stdin comes from a pipe
+# 4. Claude CLI should run in SDK mode with JSON streams, not interactive terminal mode
+
+# Required environment variables (set by TaskClaude):
+# - CLAUDE_CONTAINER_ID: Container ID to exec into
+# - DOCKER_BINARY: Path to docker binary
+# Optional environment variables:
+# - CLAUDE_STRACE: If set, enable strace debugging inside container
+# - CLAUDE_WRAPPER_PASS_ENV: Comma-separated env var names to pass through to docker exec
+
+if [ -z "$CLAUDE_CONTAINER_ID" ]; then
+	echo "ERROR: CLAUDE_CONTAINER_ID environment variable not set" >&2
+	exit 1
+fi
+
+if [ -z "$DOCKER_BINARY" ]; then
+	echo "ERROR: DOCKER_BINARY environment variable not set" >&2
+	exit 1
+fi
+
+PASS_ENV_ARGS=""
+if [ -n "$CLAUDE_WRAPPER_PASS_ENV" ]; then
+	for name in $(echo "$CLAUDE_WRAPPER_PASS_ENV" | tr ',' ' '); do
+		eval val="\${$name}"
+		if [ -n "$val" ]; then
+			PASS_ENV_ARGS="$PASS_ENV_ARGS -e $name=$val"
+		else
+			PASS_ENV_ARGS="$PASS_ENV_ARGS -e $name="
+		fi
+	done
+fi
+
+exec "$DOCKER_BINARY" exec -i -w /workspace \
+	-e HOME="/home/node" \
+	-e CLAUDE_STRACE="$CLAUDE_STRACE" \
+	$PASS_ENV_ARGS \
+	"$CLAUDE_CONTAINER_ID" claude "$@"

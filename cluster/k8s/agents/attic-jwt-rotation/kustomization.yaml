@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccount.yaml
+  - cronjob.yaml
+
+configMapGenerator:
+  - name: attic-jwt-rotation-script
+    namespace: nix-cache
+    files:
+      - rotate.sh
+  - name: attic-rotators-config
+    namespace: nix-cache
+    files:
+      - rotators.json

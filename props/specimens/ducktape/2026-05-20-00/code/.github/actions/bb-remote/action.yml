@@ -1,0 +1,135 @@
+# Wrapper around `bb remote` that ensures --config=rbe is always passed.
+#
+# We use `bb remote` directly instead of `bbr` (devinfra/bbr.py) in CI to
+# avoid a chicken-and-egg: bbr reads the RBE image pin from
+# devinfra/image_pins.json, but CI workflows may need to build/push the RBE
+# image itself. This action centralizes the --config=rbe flag so individual
+# workflows don't forget it (without RBE, actions run in linux-sandbox on the
+# runner VM which lacks tools like cpio).
+#
+# Two modes, mutually exclusive:
+# - `args`:   `bb remote <args> --config=rbe --config=ci ...`
+#             (e.g. args="build //..."). Triggers `bb`'s post-run
+#             `downloadOutputs` path for `build` and local `run` commands,
+#             which currently fails with "Exhausted all peers" — see
+#             devinfra/debug/bb_remote_peers_exhausted.md.
+# - `script`: `bb remote --script="<script>"`. Runs an arbitrary shell
+#             script on the runner VM. Prefer this for combined Bazel
+#             invocations and any workload that doesn't need build outputs
+#             materialized on the GHA runner. The script can reference
+#             $RBE_IMAGE (forwarded automatically) to inline
+#             `--remote_default_exec_properties=container-image=docker://$RBE_IMAGE`.
+name: bb remote
+description: Run a Bazel command via bb remote with RBE enabled
+
+inputs:
+  args:
+    description: "Bazel subcommand and arguments (e.g. 'build //...' or 'run //target'). Mutually exclusive with `script`."
+    required: false
+    default: ""
+  script:
+    description: >
+      Shell script to run on the BB runner instead of a single Bazel command.
+      Mutually exclusive with `args`. $RBE_IMAGE is forwarded to the runner
+      so the script can build remote-default-exec-properties dynamically.
+    required: false
+    default: ""
+  env_overrides:
+    description: >
+      Newline-separated KEY=VALUE pairs forwarded to the runner via
+      x-buildbuddy-platform.env-overrides. Only still used by
+      .github/workflows/props-images.yml, which pushes to the private
+      props registry from inside the BB runner VM. The GHCR push path
+      (.github/workflows/push-images.yml) downloads OCI layouts to the
+      runner and calls `crane push` directly, so it doesn't need this.
+    required: false
+    default: ""
+  rbe_image:
+    description: >
+      Override RBE executor container image (e.g. ghcr.io/.../rbe-worker:sha).
+      When set, passes --remote_default_exec_properties=container-image to
+      override the pinned image from image_pins.json.
+    required: false
+    default: ""
+  disk_bytes:
+    description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
+    required: false
+    default: "50000000000"
+  compute_units:
+    description: "Runner vCPU count (EstimatedComputeUnits)"
+    required: false
+    default: "4"
+
+runs:
+  using: composite
+  steps:
+    - name: bb remote
+      shell: bash
+      env:
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_SCRIPT: ${{ inputs.script }}
+        INPUT_ENV_OVERRIDES: ${{ inputs.env_overrides }}
+        INPUT_RBE_IMAGE: ${{ inputs.rbe_image }}
+        INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
+        INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
+      run: |
+        set -euo pipefail
+
+        if [[ -n "$INPUT_ARGS" && -n "$INPUT_SCRIPT" ]]; then
+          echo "::error::bb-remote: 'args' and 'script' are mutually exclusive"; exit 1
+        fi
+        if [[ -z "$INPUT_ARGS" && -z "$INPUT_SCRIPT" ]]; then
+          echo "::error::bb-remote: one of 'args' or 'script' must be set"; exit 1
+        fi
+
+        ENV_ARGS=()
+        while IFS= read -r line; do
+          [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
+        done <<< "$INPUT_ENV_OVERRIDES"
+
+        # Resolve the runner + RBE executor image.
+        # --container_image is a `bb remote` flag (runner VM): must come before the Bazel subcommand.
+        # --remote_default_exec_properties is a Bazel command flag (RBE executor): must come after the subcommand.
+        #
+        # When no override is given, read the pinned image from image_pins.json so that
+        # repo-rule resolution (pip wheel builds) runs on the custom image with system libs
+        # (pkg-config, libcairo2-dev, etc.). Without this, bb remote uses BuildBuddy's
+        # default image which lacks these dependencies.
+        RBE_IMAGE="$INPUT_RBE_IMAGE"
+        if [[ -z "$RBE_IMAGE" ]]; then
+          pin_image=$(jq -r '.rbe_worker.image' devinfra/image_pins.json)
+          pin_digest=$(jq -r '.rbe_worker.digest' devinfra/image_pins.json)
+          RBE_IMAGE="${pin_image}@${pin_digest}"
+        fi
+        BB_IMAGE_ARGS=(--container_image="docker://${RBE_IMAGE}")
+
+        RUNNER_EXEC_PROPS=(
+          --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
+          --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
+          --runner_exec_properties=workload-isolation-type=firecracker
+          --runner_exec_properties=init-dockerd=true
+          --runner_exec_properties=recycle-runner=true
+          --runner_exec_properties=remote-snapshot-save-policy=always
+          --runner_exec_properties=snapshot-read-policy=newest
+        )
+
+        if [[ -n "$INPUT_SCRIPT" ]]; then
+          # Forward RBE_IMAGE so the script can interpolate it into Bazel flags.
+          ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_IMAGE=${RBE_IMAGE}")
+          bb remote \
+            "${RUNNER_EXEC_PROPS[@]}" \
+            "${ENV_ARGS[@]}" \
+            "${BB_IMAGE_ARGS[@]}" \
+            --script="$INPUT_SCRIPT"
+        else
+          BAZEL_IMAGE_ARGS=(--remote_default_exec_properties="container-image=docker://${RBE_IMAGE}")
+          # shellcheck disable=SC2086 # word-splitting on $INPUT_ARGS is intended
+          bb remote \
+            "${RUNNER_EXEC_PROPS[@]}" \
+            "${ENV_ARGS[@]}" \
+            "${BB_IMAGE_ARGS[@]}" \
+            $INPUT_ARGS \
+            --config=rbe \
+            --config=ci \
+            "${BAZEL_IMAGE_ARGS[@]}"
+        fi

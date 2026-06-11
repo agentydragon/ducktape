@@ -10,11 +10,18 @@ manifest:
     7bce59c0a152c0e01f70__mypyc: tomli
     81d243bd2c585b0f4821__mypyc: charset_normalizer
     Crypto: pycryptodome
+    FreeCADTemplates: freecad_stubs
     IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
     absl: absl_py
+    agent_framework: agent_framework_core
+    agent_framework_anthropic: agent_framework_anthropic
+    agent_framework_claude: agent_framework_claude
+    agent_framework_openai: agent_framework_openai
     agents: openai_agents
+    aioboto3: aioboto3
+    aiobotocore: aiobotocore
     aiodocker: aiodocker
     aiofile: aiofile
     aiofiles: aiofiles
@@ -22,6 +29,8 @@ manifest:
     aiohttp: aiohttp
     aiohttp_client_cache: aiohttp_client_cache
     aiohttp_socks: aiohttp_socks
+    aioitertools: aioitertools
+    aioquic: aioquic
     aiosignal: aiosignal
     aiosqlite: aiosqlite
     alembic: alembic
@@ -31,6 +40,8 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     appdirs: appdirs
+    apscheduler: apscheduler
+    arch: arch
     argon2: argon2_cffi
     arrow: arrow
     asgi_lifespan: asgi_lifespan
@@ -38,12 +49,10 @@ manifest:
     asttokens: asttokens
     asyncpg: asyncpg
     asyncvnc: asyncvnc
+    atomicwrites: atomicwrites
     attr: attrs
     attrs: attrs
     authlib: authlib
-    autogen_agentchat: autogen_agentchat
-    autogen_core: autogen_core
-    autogen_ext: autogen_ext
     aw_client: aw_client
     aw_core: aw_core
     aw_datastore: aw_core
@@ -51,8 +60,13 @@ manifest:
     aw_transform: aw_core
     backoff: backoff
     bcrypt: bcrypt
+    beancount: beancount
     beartype: beartype
     bleach: bleach
+    blinker: blinker
+    boto3: boto3
+    botocore: botocore
+    brotli: brotli
     bs4: beautifulsoup4
     build: build
     cachetools: cachetools
@@ -66,8 +80,10 @@ manifest:
     charset_normalizer: charset_normalizer
     chromadb: chromadb
     chromadb_rust_bindings: chromadb
+    claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
+    cloudpickle: cloudpickle
     colorama: colorama
     comm: comm
     compact_json: compact_json
@@ -101,6 +117,8 @@ manifest:
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
+    ezdxf: ezdxf
+    farama_notifications: Farama_Notifications
     fastapi: fastapi
     fastapi_csrf_protect: fastapi_csrf_protect
     fastapi_sessions: fastapi_sessions
@@ -110,6 +128,7 @@ manifest:
     fastmcp: fastmcp
     fastuuid: fastuuid
     filelock: filelock
+    flask: flask
     flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
@@ -120,6 +139,8 @@ manifest:
     genai_prices: genai_prices
     gepa: gepa
     github: pygithub
+    glide: valkey_glide
+    glide_shared: valkey_glide
     google.api.annotations_pb2: googleapis_common_protos
     google.api.auth_pb2: googleapis_common_protos
     google.api.backend_pb2: googleapis_common_protos
@@ -198,6 +219,7 @@ manifest:
     greenlet: greenlet
     griffe: griffelib
     grpc: grpcio
+    gymnasium: gymnasium
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
@@ -216,9 +238,11 @@ manifest:
     hyperframe: hyperframe
     identify: identify
     idna: idna
+    ijson: ijson
     importlib_metadata: importlib_metadata
     importlib_resources: importlib_resources
     iniconfig: iniconfig
+    inspect_ai: inspect_ai
     instructor: instructor
     inventree: inventree
     invoke: invoke
@@ -232,13 +256,18 @@ manifest:
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
     jaraco.functools: jaraco_functools
+    jax: jax
+    jaxlib: jaxlib
     jedi: jedi
     jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
+    jmespath: jmespath
     json5: json5
     json_repair: json_repair
+    jsonlines: jsonlines
     jsonpatch: jsonpatch
+    jsonpath_ng: jsonpath_ng
     jsonpointer: jsonpointer
     jsonref: jsonref
     jsonschema: jsonschema
@@ -260,6 +289,7 @@ manifest:
     jupyter_ydoc: jupyter_ydoc
     jupyterlab_pygments: jupyterlab_pygments
     jwt: pyjwt
+    kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
     keyring: keyring
     keysymdef: keysymdef
@@ -296,11 +326,13 @@ manifest:
     langgraph_sdk: langgraph_sdk
     langsmith: langsmith
     lark: lark
+    ldap3: ldap3
     librt.base64: librt
     librt.internal: librt
     librt.strings: librt
     librt.time: librt
     librt.vecs: librt
+    linkify_it: linkify_it_py
     litellm: litellm
     logfire_api: logfire_api
     lxml: lxml
@@ -314,18 +346,25 @@ manifest:
     matplotlib_inline: matplotlib_inline
     mautrix: mautrix
     mcp: mcp
+    mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
     mirakuru: mirakuru
     mistune: mistune
+    mitmproxy: mitmproxy
+    mitmproxy_linux: mitmproxy_linux
+    mitmproxy_rs: mitmproxy_rs
     mizani: mizani
+    ml_dtypes: ml_dtypes
     mmh3: mmh3
     more_itertools: more_itertools
     mpl_toolkits.axes_grid1: matplotlib
     mpl_toolkits.axisartist: matplotlib
     mpl_toolkits.mplot3d: matplotlib
     mpmath: mpmath
+    msgpack: msgpack
     multidict: multidict
     multipart: python_multipart
+    multipledispatch: multipledispatch
     mypy: mypy
     mypy_extensions: mypy_extensions
     mypyc: mypy
@@ -334,10 +373,13 @@ manifest:
     nbconvert: nbconvert
     nbformat: nbformat
     nest_asyncio: nest_asyncio
+    nest_asyncio2: nest_asyncio2
     networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
+    nulltype: nulltype
     numpy: numpy
+    numpyro: numpyro
     oauthlib: oauthlib
     onnxruntime: onnxruntime
     openai: openai
@@ -367,6 +409,7 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
+    opt_einsum: opt_einsum
     orjson: orjson
     ormsgpack: ormsgpack
     overrides: overrides
@@ -377,6 +420,7 @@ manifest:
     parso: parso
     passlib: passlib
     pathable: pathable
+    pathlib_abc: pathlib_abc
     pathspec: pathspec
     patsy: patsy
     pdfminer: pdfminer_six
@@ -385,11 +429,13 @@ manifest:
     persistqueue: persist_queue
     pexpect: pexpect
     pint: pint
+    plaid: plaid_python
     platformdirs: platformdirs
     playhouse: peewee
     playwright: playwright
     plotnine: plotnine
     pluggy: pluggy
+    polars: polars
     port_for: port_for
     portalocker: portalocker
     posthog: posthog
@@ -405,6 +451,7 @@ manifest:
     psycopg2: psycopg2_binary
     psycopg_binary: psycopg_binary
     ptyprocess: ptyprocess
+    publicsuffix2: publicsuffix2
     punq: punq
     pure_eval: pure_eval
     pwdlib: pwdlib
@@ -425,13 +472,15 @@ manifest:
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
+    pylsqpack: pylsqpack
     pyparsing: pyparsing
+    pypdf: pypdf
     pypdfium2: pypdfium2
     pypdfium2_raw: pypdfium2
     pyperclip: pyperclip
     pypika: pypika
     pyproject_hooks: pyproject_hooks
-    pyrage: pyrage
+    pyroute2: pyroute2
     pytest: pytest
     pytest_asyncio: pytest_asyncio
     pytest_base_url: pytest_base_url
@@ -448,6 +497,8 @@ manifest:
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
     pytz: pytz
+    qrcode: qrcode
+    qtpy: QtPy
     reaktiv: reaktiv
     referencing: referencing
     regex: regex
@@ -463,16 +514,23 @@ manifest:
     rich_rst: rich_rst
     rpds: rpds_py
     rsa: rsa
+    ruamel.yaml: ruamel_yaml
     ruff: ruff
+    s3fs: s3fs
+    s3transfer: s3transfer
     scipy: scipy
     secretstorage: secretstorage
+    semver: semver
     send2trash: send2trash
+    service_identity: service_identity
     setuptools: setuptools
     shellingham: shellingham
+    shortuuid: shortuuid
     simplejson: simplejson
     six: six
     slugify: python_slugify
     sniffio: sniffio
+    sortedcontainers: sortedcontainers
     soupsieve: soupsieve
     splitwise: splitwise
     sqlalchemy: sqlalchemy
@@ -484,10 +542,11 @@ manifest:
     strict_rfc3339: strict_rfc3339
     structlog: structlog
     supervisor: supervisor
+    svg: svg_py
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -541,6 +600,7 @@ manifest:
     testcontainers.weaviate: testcontainers
     tests: splitwise
     text_unidecode: text_unidecode
+    textual: textual
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
     timeslot: timeslot
@@ -557,13 +617,17 @@ manifest:
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzdata: tzdata
+    tzlocal: tzlocal
+    uc_micro: uc_micro_py
     uncalled_for: uncalled_for
     unidiff: unidiff
     unpaddedbase64: unpaddedbase64
+    upath: universal_pathlib
     uri_template: uri_template
     uritemplate: uritemplate
     url_normalize: url_normalize
     urllib3: urllib3
+    urwid: urwid
     uuid_utils: uuid_utils
     uv: uv
     uvicorn: uvicorn
@@ -577,15 +641,17 @@ manifest:
     webencodings: webencodings
     websocket: websocket_client
     websockets: websockets
+    werkzeug: werkzeug
     wrapt: wrapt
+    wsproto: wsproto
     xdist: pytest_xdist
     xxhash: xxhash
     yaml: pyyaml
-    yamllint: yamllint
     yarl: yarl
+    zipfile_zstd: zipfile_zstd
     zipp: zipp
     zmq: pyzmq
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7352058e4031172ca819b5788b7a31fa18dd7509539bbbc02709c24b5b6a3f33
+integrity: ac3939c106bacca4bbb962ff3b327225cb158fe4cf0fb35f5fe92cd3886c2d7e

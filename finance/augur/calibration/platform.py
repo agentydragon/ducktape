@@ -1,0 +1,64 @@
+"""Platform-agnostic types for prediction-market price reads.
+
+The calibration core (``calibration.py``) consumes only the :class:`Market`
+dataclass and the :class:`PriceClient` protocol — it never touches a
+platform-specific payload directly. The platform identity enum lives in
+``finance.evidence.markets`` (shared with the mirror roster and the scraper).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Protocol
+
+from finance.augur.calibration.quote import Quote, implied_probability
+
+
+class Direction(StrEnum):
+    """Which side of a threshold resolves a market YES.
+
+    `ABOVE` is `value >= threshold`; `BELOW` is `value < threshold`. The two are exact
+    complements, so a YES/NO threshold and a half-open `[low, high)` bucket family tile the
+    line without gaps or overlap. Lives here (the neutral platform-types module) so both the
+    catalog schema and the resolvers can reference it without a dependency cycle.
+    """
+
+    ABOVE = "above"
+    BELOW = "below"
+
+
+@dataclass(frozen=True)
+class Market:
+    """Platform-agnostic snapshot of a prediction market's current state.
+
+    `volume` is the platform's all-time traded-volume figure in its native unit, identified by
+    `volume_unit` (e.g. ``"USD"`` for Polymarket, ``"M$"`` for Manifold mana, ``"contracts"``
+    for Kalshi - each Kalshi binary contract resolves to $0-$1 so contract count is a
+    bounded-above proxy for dollar volume but isn't directly comparable). `None` when the
+    platform's response carried no volume figure.
+    """
+
+    id: str
+    url: str
+    # The live quote (order book or AMM pool price). `implied_probability(quote, volume=...)` turns
+    # it into a single YES probability; markets expose trades/quotes, not a probability directly.
+    quote: Quote
+    volume: float | None = None
+    volume_unit: str | None = None
+    # The market's current title/question and verbatim resolution rules, fetched LIVE alongside the
+    # price so they can't drift from the platform. `None` when the response carried none. The
+    # catalog no longer stores these per market — they are populated from this live snapshot.
+    title: str | None = None
+    rules: str | None = None
+
+    def require_implied_probability(self) -> float:
+        probability = implied_probability(self.quote, volume=self.volume)
+        if probability is None:
+            raise ValueError(f"Market {self.id!r} carried no informative quote")
+        return probability
+
+
+class PriceClient(Protocol):
+    async def get_market(self, market_id: str) -> Market: ...
+    async def aclose(self) -> None: ...

@@ -1,0 +1,79 @@
+# SeaweedFS cluster — trial deployment on OVH Kimsufi workers.
+#
+# Replication "001" (1 copy on different node, same rack) — survives a single
+# node loss across our 2-node, single-rack topology.
+#
+# Volume server PVCs use local-path-ovh (zone=hil-ovh allowedTopologies),
+# bound to /var/mnt/seaweedfs-data on /dev/sdb via Talos UserVolumeConfig.
+#
+# S3 runs as a standalone deployment (spec.s3, not filer.s3) for cleaner
+# separation. Filer is enabled because S3 still needs a filer behind it
+# for metadata; leveldb2 metadata is in-pod (single-instance, no HA) —
+# trial only.
+#
+# All four components (master/volume/filer/s3) are pinned to kimsufi
+# workers via nodeSelector. Operator default would let pods land anywhere;
+# we want them strictly on the HDD-equipped OVH boxes.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweedfs
+  namespace: seaweedfs
+spec:
+  image: chrislusf/seaweedfs:3.93
+  volumeServerDiskCount: 1
+
+  master:
+    replicas: 1 # raft singleton — bump to 3 after the trial proves stable
+    volumeSizeLimitMB: 30000
+    defaultReplication: "001"
+    metricsPort: 9321
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+
+  volume:
+    replicas: 2 # one per kimsufi node
+    requests:
+      storage: 1800Gi # leaves headroom on the 2 TB /dev/sdb
+    storageClassName: local-path-ovh
+    dataCenter: "hil"
+    rack: "hil-ovh-h109b04"
+    metricsPort: 9325
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    # Hard anti-affinity so the two volume servers always sit on different
+    # kimsufi nodes — that's what makes replication=001 actually no-SPOF.
+    # The StatefulSet would otherwise co-locate both volumes on whichever
+    # node the scheduler picks first (verified live).
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: volume
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+
+  filer:
+    replicas: 1 # leveldb2 metadata is per-pod; can't HA without a shared backend
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+    metricsPort: 9326
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+
+  s3:
+    replicas: 2 # stateless S3 gateway — safe to scale across both kimsufi nodes
+    configSecret:
+      name: seaweedfs-s3-config
+      key: seaweedfs_s3_config.json
+    metricsPort: 9327
+    # weed s3 defaults -ip.bind to localhost — kubelet's readiness probe from
+    # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes
+    # (and the Service ClusterIP) reach the API.
+    extraArgs:
+      - "-ip.bind=0.0.0.0"
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh

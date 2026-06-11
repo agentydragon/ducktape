@@ -1,0 +1,56 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tofu-controller
+  namespace: flux-system
+spec:
+  interval: 15m
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+  chart:
+    spec:
+      chart: tofu-controller
+      version: "0.16.1"
+      sourceRef:
+        kind: HelmRepository
+        name: tofu-controller
+        namespace: flux-system
+  values:
+    # Enable runner pods to access cluster resources
+    runner:
+      grpc:
+        maxMessageSize: 50 # MB, default 4 — defense against repo growth
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: "" # Not needed for on-prem
+
+    # Security context for Terraform runner pods
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+
+    # Resource limits for runner pods
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # Enable logging for debugging
+    logLevel: info
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: tofu-controller
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://flux-iac.github.io/tofu-controller

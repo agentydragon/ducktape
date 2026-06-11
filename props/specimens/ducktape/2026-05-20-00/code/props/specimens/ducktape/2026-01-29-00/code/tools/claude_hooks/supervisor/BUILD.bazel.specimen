@@ -1,0 +1,44 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//net_util:net",
+        "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:settings",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//supervisor",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//net_util:net",
+        "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:settings",
+    ],
+)
+
+py_test(
+    name = "test_supervisor",
+    srcs = ["test_supervisor.py"],
+    imports = ["../../.."],
+    tags = ["integration"],
+    deps = [
+        ":setup",
+        "//tools/claude_hooks:conftest",
+        "//tools/claude_hooks:settings",
+        "//tools/claude_hooks/testing:fixtures",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

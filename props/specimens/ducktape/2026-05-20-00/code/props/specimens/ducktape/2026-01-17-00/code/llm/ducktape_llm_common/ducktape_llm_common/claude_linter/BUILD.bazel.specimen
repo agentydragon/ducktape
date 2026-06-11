@@ -1,0 +1,50 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "claude_linter",
+    srcs = [
+        "__init__.py",
+        "cli.py",
+        "config.py",
+        "models.py",
+        "precommit_runner.py",
+        "registry.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//llm/ducktape_llm_common:core",
+        "@pypi//click",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+        "@pypi//ruff",
+    ],
+)
+
+py_binary(
+    name = "claude-linter",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [
+        ":claude_linter",
+        "@pypi//click",
+    ],
+)
+
+py_test(
+    name = "test_claude_linter",
+    srcs = [
+        "conftest.py",
+        "test_claude_linter.py",
+        "test_claude_post_hook.py",
+        "test_claude_pre_hook.py",
+        "test_hooks.py",
+    ],
+    main = "test_claude_linter.py",
+    deps = [
+        ":claude_linter",
+        "@pypi//pytest",
+    ],
+)

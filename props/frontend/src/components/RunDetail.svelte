@@ -8,8 +8,9 @@
   import {
     fetchRun,
     fetchSnapshotDetail,
-    fetchSnapshotFile,
+    fetchSnapshotFiles,
     fetchLLMRequests,
+    fetchRunLogs,
     type AgentRunDetail,
     type CriticTypeConfig,
     type GraderTypeConfig,
@@ -38,7 +39,7 @@
     initialFileContents?: Map<string, FileContentResponse>;
     initialLLMRequests?: LLMRequestInfo[];
   }
-  let { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
+  const { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
   // State
   let run: AgentRunDetail | null = $state(initialRun ?? null);
@@ -55,8 +56,12 @@
   let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 
+  // Container logs state (lazily fetched from Loki via GET /api/runs/{id}/logs)
+  let containerLogs: string | null = $state(null);
+  let loadingLogs = $state(false);
+
   // Tab state for logs/LLM view
-  type LogTab = "stdout" | "stderr" | "llm";
+  type LogTab = "logs" | "llm";
   let activeLogTab: LogTab = $state("llm");
 
   // --- Helpers ---
@@ -113,18 +118,19 @@
     return { tp_count, fp_count, total_credit };
   }
 
-  // Load run data. snapshotLoaded=true skips re-fetching snapshot+files during polling.
-  async function loadData(snapshotLoaded = false) {
+  function loadSnapshotDataInBackground(criticRun: AgentRunDetail) {
+    const reportedIssues = getReportedIssues(criticRun);
+    if (getAgentType(criticRun) === "critic" && reportedIssues.length > 0 && !snapshotDetail && !loadingSnapshot) {
+      void loadSnapshotData(criticRun);
+    }
+  }
+
+  // Load run data. Snapshot/file hydration intentionally runs in the background
+  // so it cannot block run metadata, logs, or LLM request display.
+  async function loadData() {
     try {
       run = await fetchRun(runId);
-
-      // Load snapshot data for critic runs with reported issues (only on initial load)
-      if (!snapshotLoaded) {
-        const reportedIssues = getReportedIssues(run);
-        if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
-          await loadSnapshotData(run);
-        }
-      }
+      loadSnapshotDataInBackground(run);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load run";
       toast.error(message);
@@ -133,8 +139,6 @@
     }
   }
 
-  let llmRequestsFetched = false;
-
   // Load LLM requests
   async function loadLLMRequests() {
     if (loadingLLMRequests) return;
@@ -142,12 +146,26 @@
     try {
       const response = await fetchLLMRequests(runId);
       llmRequests = response.requests;
-      llmRequestsFetched = true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load LLM requests";
       toast.error(message);
     } finally {
       loadingLLMRequests = false;
+    }
+  }
+
+  // Load container logs (from Loki)
+  async function loadLogs() {
+    if (loadingLogs) return;
+    loadingLogs = true;
+    try {
+      const response = await fetchRunLogs(runId);
+      containerLogs = response.logs;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load logs";
+      toast.error(message);
+    } finally {
+      loadingLogs = false;
     }
   }
 
@@ -192,18 +210,19 @@
         }
       }
 
-      // Fetch file contents
       const newContents = new SvelteMap<string, FileContentResponse>();
-      await Promise.all(
-        Array.from(allFilePaths).map(async (path) => {
-          try {
-            const content = await fetchSnapshotFile(snapshotSlug, path);
-            newContents.set(path, content);
-          } catch (e) {
-            console.error(`Failed to fetch file ${path}:`, e);
-          }
-        })
-      );
+      if (allFilePaths.size === 0) {
+        fileContents = newContents;
+        return;
+      }
+
+      const response = await fetchSnapshotFiles(snapshotSlug, Array.from(allFilePaths));
+      for (const content of response.files) {
+        newContents.set(content.path, content);
+      }
+      for (const missingPath of response.missing) {
+        console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
+      }
       fileContents = newContents;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load snapshot data";
@@ -217,12 +236,9 @@
     // Skip fetching when initial data is provided (visual tests)
     if (initialRun) return;
 
-    loadData().then(() => {
-      // Load LLM requests after run data is loaded (LLM tab is default)
-      if (run) {
-        loadLLMRequests();
-      }
-    });
+    void loadData();
+    // LLM requests do not depend on ground-truth or file-content loading.
+    void loadLLMRequests();
   });
 </script>
 
@@ -411,7 +427,7 @@
 
     <!-- Critique file viewer (for critic runs with reported issues) -->
     {@const reportedIssues = getReportedIssues(run)}
-    {#if getAgentType(run) === "critic" && reportedIssues.length > 0 && snapshotDetail}
+    {#if getAgentType(run) === "critic" && reportedIssues.length > 0 && (snapshotDetail || loadingSnapshot)}
       {@const edges = getAggregatedEdges(run)}
       <div class="border-b border-gray-200 dark:border-gray-700">
         <div class="px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700">
@@ -424,7 +440,7 @@
           <div class="p-4">
             <p class="text-gray-500 dark:text-gray-400 text-sm">Loading snapshot data...</p>
           </div>
-        {:else}
+        {:else if snapshotDetail}
           <div class="p-4 space-y-6">
             {#each Array.from(fileContents.entries()) as [filePath, fileContent] (filePath)}
               <FileViewer
@@ -461,40 +477,28 @@
             LLM Requests ({run.llm_call_count})
           </button>
           <button
-            class="px-3 py-1 text-sm rounded {activeLogTab === 'stdout'
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'logs'
               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
-            onclick={() => (activeLogTab = "stdout")}
+            onclick={() => {
+              activeLogTab = "logs";
+              loadLogs();
+            }}
           >
-            stdout
-          </button>
-          <button
-            class="px-3 py-1 text-sm rounded {activeLogTab === 'stderr'
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
-            onclick={() => (activeLogTab = "stderr")}
-          >
-            stderr
+            Logs
           </button>
         </div>
       </div>
 
-      {#if activeLogTab === "stdout"}
+      {#if activeLogTab === "logs"}
         <div class="p-4">
-          {#if run.container_stdout}
+          {#if loadingLogs}
+            <p class="text-gray-500 dark:text-gray-400">Loading logs...</p>
+          {:else if containerLogs}
             <pre
-              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stdout}</pre>
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{containerLogs}</pre>
           {:else}
-            <p class="text-gray-500 dark:text-gray-400 italic">No stdout captured</p>
-          {/if}
-        </div>
-      {:else if activeLogTab === "stderr"}
-        <div class="p-4">
-          {#if run.container_stderr}
-            <pre
-              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stderr}</pre>
-          {:else}
-            <p class="text-gray-500 dark:text-gray-400 italic">No stderr captured</p>
+            <p class="text-gray-500 dark:text-gray-400 italic">No logs</p>
           {/if}
         </div>
       {:else if activeLogTab === "llm"}

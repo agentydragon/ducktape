@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # =============================================================================
 # Library targets (per-file)
@@ -8,28 +7,24 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "progress_bar",
     srcs = ["progress_bar.py"],
-    imports = [".."],
     deps = ["@pypi//rich"],
 )
 
 py_library(
     name = "parser",
     srcs = ["parser.py"],
-    imports = [".."],
     deps = ["@pypi//unidiff"],
 )
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
     deps = [":progress_bar"],
 )
 
 py_library(
     name = "tree",
     srcs = ["tree.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":parser",
@@ -39,7 +34,6 @@ py_library(
 py_library(
     name = "diff_tree",
     srcs = ["diff_tree.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":progress_bar",
@@ -52,7 +46,6 @@ py_library(
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -66,7 +59,6 @@ py_library(
 
 py_binary(
     name = "difftree",
-    imports = [".."],
     main_module = "difftree.cli",
     deps = [":cli"],
 )
@@ -79,7 +71,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":diff_tree",
@@ -98,7 +89,6 @@ py_library(
 py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
-    imports = [".."],
     deps = [
         ":cli",
         ":conftest",
@@ -111,7 +101,6 @@ py_test(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":conftest",
@@ -123,7 +112,6 @@ py_test(
 py_test(
     name = "test_diff_tree",
     srcs = ["test_diff_tree.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":conftest",
@@ -139,7 +127,6 @@ py_test(
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":conftest",
@@ -152,7 +139,6 @@ py_test(
 py_test(
     name = "test_parser",
     srcs = ["test_parser.py"],
-    imports = [".."],
     deps = [
         ":conftest",
         ":parser",
@@ -163,7 +149,6 @@ py_test(
 py_test(
     name = "test_progress_bar",
     srcs = ["test_progress_bar.py"],
-    imports = [".."],
     deps = [
         ":conftest",
         ":progress_bar",
@@ -176,7 +161,7 @@ py_test(
     name = "test_snapshots",
     srcs = ["test_snapshots.py"],
     data = ["__snapshots__/test_snapshots.ambr"],
-    imports = [".."],
+    uses_syrupy = True,
     deps = [
         ":config",
         ":conftest",
@@ -190,7 +175,6 @@ py_test(
 py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
-    imports = [".."],
     deps = [
         ":config",
         ":conftest",

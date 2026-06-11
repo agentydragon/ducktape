@@ -1,0 +1,74 @@
+"""Orchestration package - host-side agent container management.
+
+This package contains HOST-only code that orchestrates agent containers:
+- AgentRegistry: unified entry point for running agents
+- loop_agent_env: container spawning and lifecycle
+- grader_supervisor: grader daemon lifecycle management
+- agent_credentials: PostgreSQL role creation for agents
+"""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "agent_credentials",
+    srcs = ["agent_credentials.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "loop_agent_env",
+    srcs = ["loop_agent_env.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_credentials",
+        "//props/core:display",
+        "//props/core:docker_env",
+        "//props/core:oci_utils",
+        "//props/db:config",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "agent_registry",
+    srcs = ["agent_registry.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":loop_agent_env",
+        "//props/core:agent_types",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core:oci_utils",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/critic_dev:shared",
+        "//props/critic_dev/improve:main",
+        "//props/db:config",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//aiodocker",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "grader_supervisor",
+    srcs = ["grader_supervisor.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_registry",
+        "//props/core:ids",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/grader:notifications",
+        "@pypi//asyncpg",
+    ],
+)

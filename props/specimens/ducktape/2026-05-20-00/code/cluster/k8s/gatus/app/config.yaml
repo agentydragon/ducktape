@@ -1,0 +1,243 @@
+# TODO: Consider consolidating the many per-app PostgreSQL instances
+# in the cluster into a shared instance, and using postgres backend.
+security:
+  oidc:
+    issuer-url: https://auth.allegedly.works/application/o/gatus/
+    redirect-url: https://status.allegedly.works/authorization-code/callback
+    client-id: gatus
+    client-secret: ${GATUS_CLIENT_SECRET}
+    scopes: [openid]
+
+storage:
+  type: sqlite
+  path: /data/gatus.db
+
+endpoints:
+  # ── core ─────────────────────────────────────────────────────────────
+
+  - name: Website
+    group: core
+    url: https://www.allegedly.works
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Gitea
+    group: core
+    url: https://git.allegedly.works/api/v1/version
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Harbor Registry
+    group: core
+    url: https://registry.allegedly.works/v2/
+    interval: 60s
+    conditions:
+      - "[STATUS] == 401" # 401 = registry up and enforcing auth
+
+  - name: Grafana
+    group: core
+    url: https://grafana.allegedly.works/api/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ── sso ──────────────────────────────────────────────────────────────
+
+  - name: Authentik login page
+    group: sso
+    url: https://auth.allegedly.works
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Authentik liveness
+    group: sso
+    url: http://authentik-server.authentik.svc.cluster.local:80/-/health/live/
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Matrix SSO
+    group: sso
+    url: https://matrix.allegedly.works/_matrix/client/v3/login
+    interval: 120s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].flows[0].type == m.login.sso"
+
+  - name: Harbor OIDC redirect
+    group: sso
+    url: https://registry.allegedly.works/c/oidc/login
+    interval: 120s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY] == pat(*authentik*)"
+
+  # ── ai ───────────────────────────────────────────────────────────────
+
+  - name: Ollama
+    group: ai
+    url: http://ollama.ollama.svc.cluster.local:11434/api/tags
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: LiteLLM
+    group: ai
+    url: http://litellm.ollama.svc.cluster.local:4000/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: LiteLLM inference
+    group: ai
+    url: http://litellm.ollama.svc.cluster.local:4000/v1/chat/completions
+    method: POST
+    headers:
+      Content-Type: application/json
+      Authorization: "Bearer ${LITELLM_API_KEY}"
+    body: |
+      {
+        "model": "gpt-oss-20b-128k",
+        "messages": [{"role": "user", "content": "Respond with exactly the number that equals 5 times 7"}],
+        "max_tokens": 1000
+      }
+    interval: 30m
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].choices[0].message.content == pat(*35*)"
+
+  - name: Langfuse
+    group: ai
+    url: http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ── comms ─────────────────────────────────────────────────────────────
+
+  - name: Matrix/Synapse
+    group: comms
+    url: http://matrix-synapse.matrix.svc.cluster.local:8008/_matrix/client/versions
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Element
+    group: comms
+    url: https://chat.allegedly.works
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ── cluster ───────────────────────────────────────────────────────────
+
+  - name: Loki
+    group: cluster
+    url: http://loki.loki.svc.cluster.local:3100/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Loki labels API
+    group: cluster
+    url: http://loki.loki.svc.cluster.local:3100/loki/api/v1/labels
+    interval: 120s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Mimir
+    group: cluster
+    url: http://mimir-gateway.monitoring.svc.cluster.local/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Hubble UI
+    group: cluster
+    url: http://hubble-ui.kube-system.svc.cluster.local:80
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Headlamp
+    group: cluster
+    url: http://headlamp.headlamp.svc.cluster.local:80
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ── services ──────────────────────────────────────────────────────────
+
+  - name: InventTree
+    group: services
+    url: https://inventree.allegedly.works/api/
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].server == InvenTree"
+
+  - name: Nix Cache
+    group: services
+    url: https://cache.allegedly.works/nix-cache-info
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Proxmox proxy
+    group: services
+    url: http://proxmox-proxy.proxmox-proxy.svc.cluster.local:8080
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Atuin
+    group: services
+    url: http://atuin-server.atuin.svc.cluster.local:8888
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Grocy SF
+    group: services
+    url: http://grocy.grocy-sf.svc.cluster.local:80/login
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Grocy Vallejo
+    group: services
+    url: http://grocy.grocy-vallejo.svc.cluster.local:80/login
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: FileBrowser
+    group: services
+    url: http://scanner-filebrowser.scanner.svc.cluster.local:8080/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: OpenClaw
+    group: services
+    url: http://openclaw.openclaw-gateway.svc.cluster.local:18789
+    interval: 60s
+    conditions:
+      - "[STATUS] == any(200, 302)"
+
+  - name: kubectl-sandbox-mcp
+    group: services
+    url: http://kubectl-sandbox-mcp.kubectl-sandbox-mcp.svc.cluster.local:8080/healthz
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: kubectl-passthrough-mcp
+    group: services
+    url: http://kubectl-passthrough-mcp.kubectl-passthrough-mcp.svc.cluster.local:8080/healthz
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"

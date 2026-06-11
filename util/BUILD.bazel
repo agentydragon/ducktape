@@ -1,26 +1,27 @@
 """Shared utility libraries."""
 
-load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "bech32",
-    srcs = ["bech32.py"],
-    imports = [".."],
+    name = "otel",
+    srcs = ["otel.py"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
 )
 
 py_library(
     name = "fs",
     srcs = ["fs.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "net",
     srcs = ["net.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//tenacity"],
 )
@@ -28,7 +29,6 @@ py_library(
 py_library(
     name = "docker",
     srcs = ["docker.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//aiodocker",
@@ -39,21 +39,18 @@ py_library(
 py_library(
     name = "env",
     srcs = ["env.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "typer",
     srcs = ["typer.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "logging",
     srcs = ["logging.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//structlog",
@@ -64,14 +61,12 @@ py_library(
 py_library(
     name = "fmt",
     srcs = ["fmt.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "oci",
     srcs = ["oci.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":crane",
@@ -84,17 +79,26 @@ py_library(
     name = "crane",
     srcs = ["crane.py"],
     data = ["@crane"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_test(
+    name = "test_crane",
+    srcs = ["test_crane.py"],
+    deps = [
+        ":crane",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
     name = "json_schema",
     srcs = ["json_schema.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
@@ -102,7 +106,6 @@ py_library(
     name = "playwright",
     testonly = True,
     srcs = ["playwright.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//playwright",
@@ -116,13 +119,22 @@ py_package(
         "util",
         "util.bazel",
     ],
+    # `util.bazel.runfiles` is intentionally not shipped: it calls into
+    # `rules_python.runfiles`, which fails when imported from a path that
+    # isn't under a Bazel-built binary's runfiles tree. Shipping it in a
+    # Nix-installed wheel just shadows the Bazel-runfiles version with a
+    # broken copy — `Rlocation()` calls `CurrentRepository(frame=...)` on
+    # the caller, sees the /nix/store path, and raises "does not lie under
+    # the runfiles root". `util.bazel.{subprocess,workspace}` work fine
+    # outside Bazel and are needed by Nix-shipped wheels (claude-hooks,
+    # ducktape-git-hooks).
     deps = [
         ":env",
         ":fmt",
         ":fs",
         ":net",
+        ":otel",
         ":typer",
-        "//util/bazel:runfiles",
         "//util/bazel:subprocess",
         "//util/bazel:workspace",
     ],
@@ -132,8 +144,12 @@ py_wheel(
     name = "wheel",
     distribution = "ducktape_util",
     python_requires = ">=3.13",
-    requires = ["tenacity"],
+    requires = [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "tenacity",
+    ],
     version = "0.1.0",
-    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
+    visibility = ["//devinfra/claude/claude_hook/container_e2e:__pkg__"],
     deps = [":util_pkg"],
 )

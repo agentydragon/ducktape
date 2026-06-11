@@ -1,0 +1,8 @@
+# Nix configuration - Bazel targets for linting
+
+# All nix files in this package for use by root alejandra_test
+filegroup(
+    name = "nix_files",
+    srcs = glob(["**/*.nix"]),
+    visibility = ["//visibility:public"],
+)

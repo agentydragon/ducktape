@@ -1,0 +1,186 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+
+# Link npm packages for this workspace member
+npm_link_all_packages(name = "node_modules")
+
+# Export config files
+exports_files([
+    ".prettierrc",
+    "tsconfig.json",
+])
+
+# Source files for the frontend
+_SRCS = glob([
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.css",
+    "src/**/*.html",
+]) + [
+    "index.html",
+    "svelte.config.js",
+    "tsconfig.json",
+]
+
+# Development server with watch mode
+# Run: bazel run //props/frontend:dev
+js_binary(
+    name = "dev",
+    chdir = package_name(),
+    data = _SRCS + [
+        "dev.mjs",
+        ":node_modules",
+        "//props/backend:backend_cli",
+    ],
+    entry_point = "dev.mjs",
+    # Backend binary path is relative to runfiles root (props/backend/props_backend_cli)
+    # From chdir=props/frontend, go up twice to reach runfiles root
+    no_copy_to_bin = ["//props/backend:backend_cli"],
+)
+
+# OpenAPI TypeScript generator binary
+js_binary(
+    name = "generate_schema_bin",
+    data = [
+        "generate-schema.mjs",
+        ":node_modules",
+    ],
+    entry_point = "generate-schema.mjs",
+)
+
+# Copy schema from backend (copy_to_bin doesn't work cross-package for generated files)
+genrule(
+    name = "openapi_schema_local",
+    srcs = ["//props/backend:openapi_schema"],
+    outs = ["openapi.json"],
+    cmd = "cp $< $@",
+)
+
+# Generate OpenAPI TypeScript types from backend schema
+js_run_binary(
+    name = "generate_schema",
+    srcs = [":openapi_schema_local"],
+    outs = ["src/lib/api/schema.d.ts"],
+    args = [
+        "openapi.json",
+        "src/lib/api/schema.d.ts",
+    ],
+    chdir = package_name(),
+    tool = ":generate_schema_bin",
+)
+
+# esbuild binary for production bundle
+js_binary(
+    name = "build_bundle",
+    data = _SRCS + [
+        "esbuild.config.mjs",
+        ":generate_schema",
+        ":node_modules",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+# Production bundle
+# Run: bazel build //props/frontend:bundle
+js_run_binary(
+    name = "bundle",
+    srcs = _SRCS + [
+        "esbuild.config.mjs",
+        ":generate_schema",
+    ],
+    outs = ["dist/main.js"],
+    args = ["dist"],
+    chdir = package_name(),
+    tool = ":build_bundle",
+)
+
+# Svelte-check (type checking)
+# Run: bazel test //props/frontend:svelte_check_test
+svelte_check_bin.svelte_check_test(
+    name = "svelte_check_test",
+    args = [
+        "--tsconfig",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "svelte.config.js",
+        "tsconfig.json",
+        ":generate_schema",
+        ":node_modules",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+    ]),
+    tags = ["lint"],
+)
+
+# Test harness source files
+_HARNESS_SRCS = glob([
+    "tests/harness/**/*.ts",
+    "tests/harness/**/*.html",
+    "src/components/**/*.svelte",
+    "src/lib/**/*.ts",
+    "src/lib/**/*.svelte",
+    "src/**/*.css",
+])
+
+# esbuild binary for test harness
+js_binary(
+    name = "build_harness",
+    data = _HARNESS_SRCS + [
+        "tests/harness/esbuild.config.mjs",
+        ":node_modules",
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+# Test harness bundle (JS + CSS from Tailwind)
+js_run_binary(
+    name = "harness_bundle",
+    srcs = _HARNESS_SRCS + ["tests/harness/esbuild.config.mjs"],
+    outs = [
+        "tests/harness/dist/harness.css",
+        "tests/harness/dist/harness.js",
+    ],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_harness",
+)
+
+# Filegroup for just the JS file (used by visual_test env var)
+filegroup(
+    name = "harness_js",
+    srcs = ["tests/harness/dist/harness.js"],
+)
+
+# Visual regression test with Puppeteer
+# Run: bazel test //props/frontend:visual_test
+js_test(
+    name = "visual_test",
+    timeout = "long",
+    data = [
+        "tests/harness/index.html",
+        "tests/harness/test-fonts.css",
+        "tests/fonts/Inter.woff2",
+        ":harness_bundle",
+        ":harness_js",
+        ":node_modules/pixelmatch",
+        ":node_modules/pngjs",
+        ":node_modules/puppeteer",
+        # Hermetic Chromium from rules_playwright
+        "@playwright_browsers//:chromium-headless-shell",
+    ] + glob(["tests/visual-regression.spec.ts-snapshots/**/*"]),
+    entry_point = "tests/visual-regression.spec.js",
+    env = {
+        # Reference the JS file via filegroup (harness_bundle outputs both .js and .css)
+        "HARNESS_PATH": "$(rootpath :harness_js)",
+        # Point Puppeteer to the Bazel-managed Chromium
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    tags = [
+        "no-sandbox",
+        "visual",
+    ],
+)

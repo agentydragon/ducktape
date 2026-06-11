@@ -1,0 +1,13 @@
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+
+# pytest cache
+.pytest_cache/
+
+# macOS
+.DS_Store

@@ -1,0 +1,19 @@
+rationale: |
+  Assign-then-check patterns that should use walrus operator (:=).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/handlers/status_handler.py:
+        - [54, 56]
+    note: "`cached = ahead_behind_data.get(branch)` then `if cached:`"
+    critic_scopes_expected_to_recall:
+      - [wt/server/handlers/status_handler.py]
+  - occurrence_id: occ-1
+    files:
+      wt/client/view_formatter.py:
+        - [197, 198]
+        - [209, 212]
+    note: "`pr_status` and `pr_changes` assigned then checked with `if`"
+    critic_scopes_expected_to_recall:
+      - [wt/client/view_formatter.py]

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Webhook Inbox</title>
+    <meta name="robots" content="noindex, nofollow" />
+  </head>
+  <body>
+    {% if events_count %}
+    <h2>{{ events_count }} events seen {{ interval_str }}</h2>
+    {% else %}
+    <h2>No events in {{ interval_str }}</h2>
+    {% endif %}
+
+    <p>
+      {% if older_link %}<a href="{{ older_link }}">← Older</a> | {% endif %}
+      <a href="{{ latest_link }}">Latest →</a>
+    </p>
+
+    {% if error %}
+    <p><strong>⚠ Error:</strong> {{ error }}</p>
+    {% endif %} {% if decrypt_link %}
+    <p><strong>Encrypted output.</strong></p>
+
+    Data is encrypted with a Fernet key (32 base64-encoded bytes) which you should have:
+    <pre>
+KEY: str = ...
+assert len(KEY) == 44
+    </pre>
+
+    <p>
+      To retrieve plain JSON, you can re-request the page with the key added:
+      <kbd>{{ decrypt_link }}</kbd>
+    </p>
+
+    Or with ciphertext in <kbd>CIPHERTEXT</kbd>, you can decrypt it with Python:
+    <pre>
+{{ decrypt_code | e }}
+    </pre>
+
+    The events are encoded in this ciphertext:
+    <pre>
+CIPHERTEXT = {{ ciphertext_body }}
+assert len(CIPHERTEXT) == {{ ciphertext_len }}
+    </pre>
+    {% else %}
+    <pre>{{ plaintext }}</pre>
+    {% endif %}
+  </body>
+</html>

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seaweedfs-csi-system
+  labels:
+    # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

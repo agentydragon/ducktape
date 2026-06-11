@@ -1,0 +1,10 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "session_logs",
+    srcs = [
+        "SKILL.md",
+        "analyze-session.sh",
+        "find-current-session.sh",
+    ],
+)

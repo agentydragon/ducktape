@@ -86,8 +86,8 @@ slower, making tmpfs essential. On Firecracker ext4, tmpfs is unnecessary.
 
 As of 2026-03-30, the environment runs on **Firecracker microVMs with a real
 Linux kernel**, not gVisor. The root filesystem is ext4 on a virtio block
-device, not 9p. The session start hook detects the platform at runtime
-(`hook_daemon/session_start/platform_detect.py`) and adapts:
+device, not 9p. The Rust session start hook detects the platform at runtime
+inside `devinfra/claude/claude_hook/main.rs` and adapts:
 
 - **Firecracker**: skips tmpfs mounts, uses overlay Docker storage driver
   natively, sizes JVM heap to 8Gi for full-monorepo Skyframe analysis.

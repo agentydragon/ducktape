@@ -1,0 +1,178 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_e2e_copy_dirty_state",
+    srcs = ["test_e2e_copy_dirty_state.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:git_helpers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_github_pr_display_real",
+    srcs = ["test_e2e_github_pr_display_real.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/shared:fixtures",
+        "//wt/shared:github_models",
+        "//wt/testing:utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_github_pr_display_variants",
+    srcs = ["test_e2e_github_pr_display_variants.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/shared:fixtures",
+        "//wt/shared:github_models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_manual_delete_then_create",
+    srcs = ["test_e2e_manual_delete_then_create.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_path_watcher_integration",
+    srcs = ["test_e2e_path_watcher_integration.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:data",
+        "//wt/testing:git_helpers",
+        "//wt/testing:utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_post_creation_python_script",
+    srcs = ["test_e2e_post_creation_python_script.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_post_creation_script",
+    srcs = ["test_e2e_post_creation_script.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_post_creation_script_failure_streaming",
+    srcs = ["test_e2e_post_creation_script_failure_streaming.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_real_integration",
+    srcs = ["test_e2e_real_integration.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:git_helpers",
+        "//wt/testing:utils",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_real_workflow",
+    srcs = ["test_e2e_real_workflow.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:git_helpers",
+        "//wt/testing:utils",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_status_dynamic_index",
+    srcs = ["test_e2e_status_dynamic_index.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:git_helpers",
+        "//wt/testing:utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_status_output",
+    srcs = ["test_e2e_status_output.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:asserts",
+        "//wt/testing:utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_worktree_branches",
+    srcs = ["test_e2e_worktree_branches.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/testing:git_helpers",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

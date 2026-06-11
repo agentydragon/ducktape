@@ -2,148 +2,187 @@
 # Setup script for Claude Code web sessions.
 #
 # Installs:
-#   1. Nix (official single-user installer with permissive config)
-#   2. web-session — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
-#   3. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
+#   1. Nix (Determinate Systems installer, designed for non-interactive/CI use)
+#   2. devtools — Rust claude-hook, statusline, bbapi, gh, skills; from flake via attic binary cache
+#   3. git remote + bbr config for BuildBuddy remote execution
+#   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
+#
+# Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
+# only available to Claude Code and its subprocesses — not to this setup script.
+# This script is run directly by environment-manager as a bash init script
+# (process.ExecuteScript → temp file "init-script-*.sh"), inheriting only the
+# container env. `claude --init-only` (which fires Setup+SessionStart hooks) runs
+# separately afterward. Neither step receives user UI vars.
+# Decryption happens exclusively in the claude-hook daemon via startup_env_script.
 #
 # IMPORTANT: This script always exits 0 so the session starts even if setup
-# fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
+# fails. Failures are logged to /tmp/web-setup.log.
+#
+# Set DUCKTAPE_WEB_SETUP_UPLOAD_LOG=1 to upload the log to ix.io on completion
+# (useful for debugging sessions where you can't read the log directly).
 #
 # Usage (Claude Code web UI setup command):
 #   bash ducktape/devinfra/claude/web_setup.sh
+#
+# Historical --impl=<python|rust> arguments are accepted for compatibility, but
+# active sessions always install the Rust claude-hook implementation.
+#
+# CLEANUP(2026-04-19): this script runs TWICE per session — once as the
+# init script (no user-UI env vars, always installs python default) and
+# once via the Setup hook (web_setup_hook.sh, has UI env vars). Once the Setup hook
+# is confirmed to fire reliably across all session modes (new / resume
+# / resume-cached / setup-only — see devinfra/claude/README.md) and is
+# sufficient on its own, make the init-script path a no-op (or drop it
+# from the Claude Code web UI "Setup Command" field) and let the Setup
+# hook own devtools install. Remove this tombstone after ≥1 week of
+# live sessions with no "Setup hook missed firing" fallbacks needed.
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-# Always exit 0 — upload log on failure so we can debug from inside the session.
-on_exit() {
-  local rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo ""
-    echo "=== SETUP FAILED (exit $rc) ==="
-    echo "Log saved to: $LOG_FILE"
-    # Upload full log to ix.io for debugging (UI truncates output).
-    local url
-    if url=$(curl -fsSL -F 'f:1=@'"$LOG_FILE" ix.io 2>/dev/null); then
-      echo "Full log: $url"
-    else
-      echo "(ix.io upload failed)"
-    fi
-  fi
-  exit 0
-}
-trap on_exit EXIT
-
 set -euo pipefail
 
+log() {
+  printf '[%s] %s\n' "$(date -Iseconds)" "$*"
+}
+
+warn() {
+  log "WARNING: $*" >&2
+}
+
+# Hook implementation is Rust-only. Keep parsing the old selector so stale web
+# UI env vars or setup args do not break session startup.
+HOOK_IMPL="rust"
+for arg in "$@"; do
+  case "$arg" in --impl=*) warn "Ignoring deprecated $arg; claude-hook is Rust-only" ;; esac
+done
+if [ -n "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" ] && [ "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" != "rust" ]; then
+  warn "Ignoring deprecated DUCKTAPE_CLAUDE_HOOK_IMPL=$DUCKTAPE_CLAUDE_HOOK_IMPL; claude-hook is Rust-only"
+fi
+DEVTOOLS_OUTPUT="devtools"
+
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
+log "web_setup.sh commit: $SETUP_COMMIT"
 
-# --- Step 1: Install Nix ---
-# Write nix.conf BEFORE the installer runs. The installer internally runs
-# `nix-env -i` which reads this config. Without it:
-#   - build-users-group defaults to 'nixbld' (group doesn't exist in container)
-#   - the install fails immediately
-# We allow local builds here because `nix-env -i` builds a trivial
-# user-environment.drv (just profile symlinks). Step 2 locks this down.
-echo "Pre-configuring Nix for installation..."
-mkdir -p ~/.config/nix
-cat >~/.config/nix/nix.conf <<'EOF'
-build-users-group =
-sandbox = false
-EOF
-
-echo "[$(date -Iseconds)] Installing Nix..."
-# Pinned to nix-2.28.3 (version-specific URL, not mutable nixos.org/nix/install).
-# Anthropic's egress proxy caches responses; using a pinned version-specific URL
-# avoids serving a stale tarball whose hash no longer matches the installer's expectation.
-# Installer script hash verified before execution.
-NIX_VERSION="2.28.3"
-NIX_INSTALLER_URL="https://releases.nixos.org/nix/nix-${NIX_VERSION}/install"
-NIX_INSTALLER_SHA256="46b8d7165dceb471f4346366b3a93f1009407b99729b843b8664918f4cc800a0"
-# Ensure $USER is set — the installer's nix.sh (sourced below) is a no-op
-# when $USER is empty, which means PATH never gets ~/.nix-profile/bin.
-# The container runs as root but may not have $USER in the environment.
-_saved_user="${USER:-}"
-export USER="${USER:-$(id -u -n)}"
-curl -fsSL "$NIX_INSTALLER_URL" -o /tmp/nix-install.sh
-echo "${NIX_INSTALLER_SHA256}  /tmp/nix-install.sh" | sha256sum -c
-# Pre-download the tarball and save it for post-mortem inspection.
-# The installer re-downloads it internally, but saves to a temp dir that gets cleaned up.
-# This copy persists in /tmp for the session so we can inspect what the proxy served.
-NIX_TARBALL="nix-${NIX_VERSION}-x86_64-linux.tar.xz"
-NIX_TARBALL_URL="https://releases.nixos.org/nix/nix-${NIX_VERSION}/${NIX_TARBALL}"
-NIX_TARBALL_SAVE="/tmp/${NIX_TARBALL}"
-echo "Pre-downloading Nix tarball for inspection: ${NIX_TARBALL_URL}"
-curl -fsSL "$NIX_TARBALL_URL" -o "$NIX_TARBALL_SAVE"
-echo "Nix tarball saved to: ${NIX_TARBALL_SAVE}"
-echo "Nix tarball SHA256: $(sha256sum "$NIX_TARBALL_SAVE")"
-sh /tmp/nix-install.sh --no-daemon
+# --- Step 1: Install Nix (Determinate Systems installer) ---
+# Uses the Determinate Systems installer instead of the official one because:
+#   - Designed for CI/non-interactive environments (no TTY assumptions)
+#   - Single static binary — no shell script wrapping nix-env -i
+#   - Avoids the "reading a line: Input/output error" bug where the official
+#     installer's nix-env tries to read from a TTY that doesn't exist
+#   - --init none skips systemd/launchd (not available in containers)
+# Pinned binary from GitHub releases, SHA256-verified.
+log "Installing Nix (Determinate installer)..."
+bash "${FLAKE#path:}/devinfra/install_nix_determinate.sh"
 # shellcheck disable=SC1091
-. ~/.nix-profile/etc/profile.d/nix.sh
-# Restore $USER to its original state so we don't leak a side-effect.
-if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
-unset _saved_user
-echo "[$(date -Iseconds)] Nix installation complete."
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+log "Nix installation complete."
 
-# --- Step 2: Configure Nix for gVisor ---
-# sandbox=false: gVisor already provides isolation; Nix's own sandbox needs
-#   kernel features (namespaces, cgroups) that gVisor doesn't fully support.
-# max-jobs=auto: local builds work fine on gVisor with sandbox=false.
-#   Needed for symlinkJoin/buildEnv derivations that won't be in the cache.
-echo "Configuring Nix for gVisor..."
-# CLEANUP(2026-03-27): cache.allegedly.works is currently down (503). Falling back to
-#   cache.nixos.org only. Restore the original substituters line once the cache is back:
-#     substituters = https://cache.allegedly.works/main https://cache.nixos.org
-#     trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-cat >~/.config/nix/nix.conf <<'EOF'
-build-users-group =
-experimental-features = nix-command flakes
-sandbox = false
-max-jobs = auto
-system-features =
-substituters = https://cache.nixos.org
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-EOF
+# --- Step 2: Install web session tools ---
+# Debug: dump environment keys for proxy/cert diagnostics (no values — avoids logging JWTs).
+log "--- environment keys ---"
+env | cut -d= -f1 | sort
+log "---"
 
-# --- Step 3: Install web session tools ---
-# Debug: dump environment for proxy/cert diagnostics.
-echo "--- environment ---"
-env | sed 's/^\(DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN=\).*/\1<redacted>/' | sort
-echo "---"
+log "Connectivity check (cache.nixos.org)..."
+curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info || warn "cache.nixos.org check failed — continuing anyway"
 
-echo "Connectivity check (cache.nixos.org)..."
-curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info
-
-echo "--- nix.conf ---"
-cat ~/.config/nix/nix.conf
-echo "--- nix show-config ---"
+log "--- nix.conf ---"
+cat /etc/nix/nix.conf
+log "--- nix show-config ---"
 nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
-echo "---"
+log "---"
 
-echo "[$(date -Iseconds)] Installing web session tools..."
-echo "  FLAKE=${FLAKE}"
-echo "  pwd=$(pwd)"
-echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
-echo "  ls pwd:"
+log "Installing web session tools..."
+log "  FLAKE=${FLAKE}"
+log "  pwd=$(pwd)"
+log "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
+log "  ls pwd:"
 ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
-nix profile install --max-jobs auto "${FLAKE}#web-session"
-echo "[$(date -Iseconds)] Web session tools installed."
+#
+# CRITICAL: `nix profile install` is a no-op when the attribute path is already
+# in the profile — it matches by attrpath, not by evaluated store hash. On
+# persistent Firecracker rootfs `web_setup.sh` re-runs on every session
+# (environment-manager's `Initialize` fires `init_script` unconditionally —
+# verified in <devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
+# Initialize(), Step 3 at line ~361 is not gated on session mode). Without an
+# explicit remove, the installed devtools derivation freezes at whatever pin
+# was current on container first-boot, even though `nix/artifact-pins.json` in
+# the working tree has moved forward. The downstream symptom is agent sessions
+# running a stale devtools profile against fresh profile YAML / hook behavior,
+# which crashes SessionStart as soon as the schema churns. Remove
+# first so `install` re-evaluates `.#devtools` against the current flake.
+#
+# See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
+nix profile remove devtools 2>/dev/null || true
+nix profile remove devtools-rust 2>/dev/null || true
+# TODO: `attic login` against cache.allegedly.works/{main,gaffer} before this
+# install so devtools (and any gaffer-built closures pulled transitively) hit
+# the private cache instead of building from source. The reader JWT is in
+# secrets/claude-web-attic.yaml, auto-rotated by the in-cluster
+# attic-jwt-rotation CronJob; web_env.sh decrypts SOPS files at hook-daemon
+# startup but isn't running yet at this point in init_script. Sketch:
+#   if [ -f /tmp/_secret_attic_token ]; then
+#     attic login allegedly https://cache.allegedly.works \
+#       "$(cat /tmp/_secret_attic_token)"
+#   fi
+# Plumbing needed: have web_env.sh write the decrypted token to a known
+# path (mode 0600, owned by user) before init_script runs, OR fold the
+# sops decrypt into web_setup.sh directly using SOPS_AGE_KEY. Today the
+# install path falls back to building from source if main isn't reachable
+# anonymously — slow but works.
+nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
+log "Dev tools installed (impl=$HOOK_IMPL)."
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
-# Claude Code is launched directly (not via login shell), so ~/.nix-profile/bin
+# Claude Code is launched directly (not via login shell), so the Nix profile bin
 # is not in PATH when hooks run. /usr/local/bin is always in PATH.
-for bin in ~/.nix-profile/bin/*; do
+NIX_PROFILE="/nix/var/nix/profiles/default"
+for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
+
+PROJECT_DIR="${FLAKE#path:}"
+
+# --- Step 3: Add github-no-proxy remote for bbr ---
+# Claude Code web sessions use a local git proxy as 'origin'
+# (http://127.0.0.1:<port>/git/...). When 'bb remote' sends a RunRequest to
+# the BuildBuddy cloud runner, it embeds the selected remote's URL in
+# RepoState.repo.url. The runner then fetches from that URL. The local proxy
+# URL is unreachable from the cloud runner, so bbr fails.
+#
+# Fix: add a 'github-no-proxy' remote that points directly at GitHub.
+#
+# bb source: https://github.com/buildbuddy-io/buildbuddy (cli/remotebazel/)
+#
+# bb auto-selects a single remote without prompting. With 2+ remotes, in TTY
+# mode it shows a selection TUI; in non-TTY mode (pre-commit hooks, CI) it
+# reads buildbuddy.remote-bazel-remote-name and uses the named remote directly.
+# Value must be a remote NAME (not a URL) — bb resolves the URL from git config.
+GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
+if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
+  log "git remote 'github-no-proxy' already exists, skipping."
+else
+  git -C "$PROJECT_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
+  log "Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
+fi
+git -C "$PROJECT_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
+log "Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
-echo "Deploying skills to ~/.claude/skills/..."
+log "Deploying skills to ~/.claude/skills/..."
 mkdir -p ~/.claude/skills
-for skill in ~/.nix-profile/share/claude-hooks/skills/*/; do
+for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
   ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
 done
 
-echo "[$(date -Iseconds)] Setup complete. Log: ${LOG_FILE}"
+log "Setup complete. Log: ${LOG_FILE}"
+
+if [ "${DUCKTAPE_WEB_SETUP_UPLOAD_LOG:-0}" = "1" ]; then
+  UPLOAD_URL=$(curl -s -F "f:1=@${LOG_FILE}" ix.io 2>/dev/null || echo "upload failed")
+  log "Log uploaded: ${UPLOAD_URL}"
+fi

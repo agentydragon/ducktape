@@ -1,0 +1,17 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  creationTimestamp: "2026-05-16T04:35:25Z"
+  name: talos-kimsufi-worker-1
+  namespace: kube-node-lease
+  ownerReferences:
+    - apiVersion: v1
+      kind: Node
+      name: talos-kimsufi-worker-1
+      uid: b0b3be2b-bf8e-4ecd-9635-258e885c4316
+  resourceVersion: "83160429"
+  uid: 35e8ac4c-d54e-4c12-85c9-9f5cdacb90dc
+spec:
+  holderIdentity: talos-kimsufi-worker-1
+  leaseDurationSeconds: 40
+  renewTime: "2026-05-31T11:41:51.669976Z"

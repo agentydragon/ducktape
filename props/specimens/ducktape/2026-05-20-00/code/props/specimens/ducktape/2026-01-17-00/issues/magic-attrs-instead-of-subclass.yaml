@@ -1,0 +1,48 @@
+rationale: |
+  When distinguishing between variants of a type (e.g., "flat-model tools" vs regular tools),
+  avoid using magic underscore-prefixed attributes on objects + getattr/hasattr probing.
+  Instead, create a proper subclass with typed attributes and use isinstance checks.
+
+  Anti-pattern:
+  - Attach `_mcp_flat_input_model`, `_mcp_flat_output_model` to wrapper functions
+  - Probe with `getattr(fn, "_mcp_flat_input_model", None)` to detect flat tools
+  - Copy magic attrs between objects via `_transfer_metadata()` helpers
+
+  Solution:
+  - Create `FlatTool(Tool)` subclass with typed `input_model: type[BaseModel]` attribute
+  - Use `isinstance(tool, FlatTool)` then `tool.input_model`
+  - No wrapper functions needed - store original `fn` directly
+
+  Benefits:
+  - Type-safe: mypy can check attribute access
+  - Explicit: isinstance makes the branching logic clear
+  - Simpler: no metadata copying between wrappers
+  - Discoverable: IDE can navigate to FlatTool definition
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/bootstrap/bootstrap.py:
+        - [67, 68]
+      mcp_infra/tool_schemas.py:
+        - [82, 82]
+      mcp_infra/stubs/typed_stubs.py:
+        - [153, 157]
+      mcp_infra/enhanced/flat_mixin.py:
+        - [42, 43]
+        - [69, 69]
+        - [156, 157]
+    note: |
+      flat_model decorator attached _mcp_flat_* magic attributes to wrapper functions.
+      Consumer sites used getattr probing to detect flat-model tools.
+      Fix: Created FlatTool subclass of Tool with typed input_model attribute.
+      Consumers now use isinstance(tool, FlatTool) and tool.input_model.
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/enhanced/flat_mixin.py
+      - - mcp_infra/bootstrap/bootstrap.py
+      - - mcp_infra/tool_schemas.py
+      - - mcp_infra/stubs/typed_stubs.py
+    match_file_restriction:
+      - mcp_infra/enhanced/flat_mixin.py

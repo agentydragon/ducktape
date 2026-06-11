@@ -1,0 +1,26 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_e2e",
+    srcs = [
+        "test_e2e_copy_dirty_state.py",
+        "test_e2e_github_pr_display_real.py",
+        "test_e2e_github_pr_display_variants.py",
+        "test_e2e_manual_delete_then_create.py",
+        "test_e2e_path_watcher_integration.py",
+        "test_e2e_post_creation_python_script.py",
+        "test_e2e_post_creation_script.py",
+        "test_e2e_post_creation_script_failure_streaming.py",
+        "test_e2e_real_integration.py",
+        "test_e2e_real_workflow.py",
+        "test_e2e_status_dynamic_index.py",
+        "test_e2e_status_output.py",
+        "test_e2e_worktree_branches.py",
+    ],
+    main = "test_e2e_copy_dirty_state.py",
+    deps = [
+        "//wt/testing",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)

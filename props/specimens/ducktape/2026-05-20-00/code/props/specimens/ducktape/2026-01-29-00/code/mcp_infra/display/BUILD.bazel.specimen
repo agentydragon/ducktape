@@ -1,0 +1,90 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "event_renderer",
+    srcs = ["event_renderer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":json_utils",
+        ":result_utils",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:naming",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "json_utils",
+    srcs = ["json_utils.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "result_utils",
+    srcs = ["result_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_core:tool_provider"],
+)
+
+py_library(
+    name = "rich_display",
+    srcs = ["rich_display.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":json_utils",
+        ":result_utils",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:tool_schemas",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "@pypi//compact_json",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_compact_display",
+    srcs = ["test_compact_display.py"],
+    data = ["__snapshots__/test_compact_display.ambr"],
+    deps = [
+        ":rich_display",
+        "//agent_core:events",
+        "//agent_core:tool_provider",
+        "//mcp_infra:conftest",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_max_height",
+    srcs = ["test_max_height.py"],
+    data = ["__snapshots__/test_max_height.ambr"],
+    deps = [
+        ":rich_display",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+        "@pypi//syrupy",
+    ],
+)

@@ -1,0 +1,23 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary")
+load("//skills:defs.bzl", "skill_package")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "audit",
+    srcs = ["audit.py"],
+    main = "audit.py",
+    deps = [
+        "//cluster/validation:flux",
+        "//cluster/validation:k8s",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+skill_package(
+    name = "flux_reconcile_audit",
+    srcs = ["SKILL.md"],
+)

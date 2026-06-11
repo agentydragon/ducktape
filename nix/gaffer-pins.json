@@ -1,0 +1,9 @@
+{
+  "pins": {
+    "drivefs": {
+      "store_path": "/nix/store/vmzlikr5yidvji0pg0h3w5n0b36a5ywa-google-drive-file-stream-cl856809456",
+      "version": "cl856809456",
+      "rev": "98474534eb0c7042f97a6f1a79e66fa92e455502"
+    }
+  }
+}

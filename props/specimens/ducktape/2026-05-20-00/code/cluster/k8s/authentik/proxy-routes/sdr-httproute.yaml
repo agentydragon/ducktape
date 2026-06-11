@@ -1,0 +1,18 @@
+# HTTPRoute for OpenWebRX+ SDR via shared Authentik proxy outpost.
+# Traffic flows: Gateway -> outpost (auth) -> openwebrx backend.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sdr
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "sdr.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80

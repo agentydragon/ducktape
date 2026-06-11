@@ -1,0 +1,135 @@
+"""Orchestration package - host-side agent container management.
+
+This package contains HOST-only code that orchestrates agent containers:
+- AgentRegistry: unified entry point for running agents
+- grader_supervisor: grader container lifecycle management
+- agent_credentials: PostgreSQL role creation for agents
+"""
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "docker_executor",
+    srcs = ["docker_executor.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":executor",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "agent_credentials",
+    srcs = ["agent_credentials.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "docker_env",
+    srcs = ["docker_env.py"],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "agent_registry",
+    srcs = ["agent_registry.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_credentials",
+        ":executor",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:oci_utils",
+        "//props/core/models:examples",
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "k8s_executor",
+    srcs = ["k8s_executor.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":executor",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "executor_factory",
+    srcs = ["executor_factory.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":docker_env",
+        ":docker_executor",
+        ":executor",
+        ":k8s_executor",
+        "//props:config",
+        "//props/core:oci_utils",
+        "//props/db:config",
+        "//util:oci",
+        "@pypi//aiodocker",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "grader_supervisor",
+    srcs = ["grader_supervisor.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_registry",
+        ":executor",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:oci_utils",
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:notifications",
+        "@pypi//asyncpg",
+    ],
+)
+
+py_test(
+    name = "test_k8s_executor",
+    srcs = [
+        "conftest.py",
+        "test_k8s_executor.py",
+    ],
+    deps = [
+        ":executor",
+        ":k8s_executor",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grader_supervisor",
+    srcs = [
+        "conftest.py",
+        "test_grader_supervisor.py",
+    ],
+    deps = [
+        ":grader_supervisor",
+        "//props/core:ids",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

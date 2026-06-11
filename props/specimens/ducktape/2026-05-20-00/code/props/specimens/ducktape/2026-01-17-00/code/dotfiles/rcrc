@@ -1,0 +1,9 @@
+DOTFILES_DIRS="$HOME/code/ducktape/dotfiles"
+TAGS=""
+EXCLUDES="README.md docs"
+# Symlink these as directories instead of individual files
+SYMLINK_DIRS="
+    claude/agents
+    claude/commands
+    config/OrcaSlicer
+"

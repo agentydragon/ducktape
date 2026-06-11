@@ -1,0 +1,175 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  creationTimestamp: "2026-04-11T08:12:45Z"
+  generation: 4
+  labels:
+    kustomize.toolkit.fluxcd.io/name: gateway
+    kustomize.toolkit.fluxcd.io/namespace: flux-system
+  name: cluster-gateway
+  namespace: gateway-system
+  resourceVersion: "82488220"
+  uid: af4dbffe-d2e9-46ee-a0ad-2c03a08b267b
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: "*.allegedly.works"
+      name: https-wildcard
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: wildcard-allegedly-works-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: allegedly.works
+      name: https-apex
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: apex-allegedly-works-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: api.allegedly.works
+      name: kube-api-passthrough
+      port: 443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+    - allowedRoutes:
+        namespaces:
+          from: All
+      name: http
+      port: 80
+      protocol: HTTP
+status:
+  conditions:
+    - lastTransitionTime: "2026-05-30T02:02:32Z"
+      message: Gateway successfully scheduled
+      observedGeneration: 4
+      reason: Accepted
+      status: "True"
+      type: Accepted
+    - lastTransitionTime: "2026-05-30T02:02:34Z"
+      message: Gateway waiting for address
+      observedGeneration: 4
+      reason: AddressNotAssigned
+      status: "False"
+      type: Programmed
+  listeners:
+    - attachedRoutes: 46
+      conditions:
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Resolved Refs
+          observedGeneration: 4
+          reason: ResolvedRefs
+          status: "True"
+          type: ResolvedRefs
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Listener Accepted
+          observedGeneration: 4
+          reason: Accepted
+          status: "True"
+          type: Accepted
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Address not ready yet
+          observedGeneration: 4
+          reason: Pending
+          status: "False"
+          type: Programmed
+      name: https-wildcard
+      supportedKinds:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
+        - group: gateway.networking.k8s.io
+          kind: GRPCRoute
+    - attachedRoutes: 2
+      conditions:
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Resolved Refs
+          observedGeneration: 4
+          reason: ResolvedRefs
+          status: "True"
+          type: ResolvedRefs
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Listener Accepted
+          observedGeneration: 4
+          reason: Accepted
+          status: "True"
+          type: Accepted
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Address not ready yet
+          observedGeneration: 4
+          reason: Pending
+          status: "False"
+          type: Programmed
+      name: https-apex
+      supportedKinds:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
+        - group: gateway.networking.k8s.io
+          kind: GRPCRoute
+    - attachedRoutes: 47
+      conditions:
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Resolved Refs
+          observedGeneration: 4
+          reason: ResolvedRefs
+          status: "True"
+          type: ResolvedRefs
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Listener Accepted
+          observedGeneration: 4
+          reason: Accepted
+          status: "True"
+          type: Accepted
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Address not ready yet
+          observedGeneration: 4
+          reason: Pending
+          status: "False"
+          type: Programmed
+      name: http
+      supportedKinds:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
+        - group: gateway.networking.k8s.io
+          kind: GRPCRoute
+    - attachedRoutes: 1
+      conditions:
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Resolved Refs
+          observedGeneration: 4
+          reason: ResolvedRefs
+          status: "True"
+          type: ResolvedRefs
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Listener Accepted
+          observedGeneration: 4
+          reason: Accepted
+          status: "True"
+          type: Accepted
+        - lastTransitionTime: "2026-05-31T01:53:35Z"
+          message: Address not ready yet
+          observedGeneration: 4
+          reason: Pending
+          status: "False"
+          type: Programmed
+      name: kube-api-passthrough
+      supportedKinds:
+        - group: gateway.networking.k8s.io
+          kind: TLSRoute

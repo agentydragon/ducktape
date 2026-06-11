@@ -7,8 +7,6 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
-  strategy:
-    type: Recreate # CRITICAL: RWO volume deadlock prevention
   selector:
     matchLabels:
       app.kubernetes.io/name: attic
@@ -17,10 +15,9 @@ spec:
       labels:
         app.kubernetes.io/name: attic
     spec:
+      # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      securityContext:
-        fsGroup: 1000
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: attic
           # TODO: Pin to a versioned tag once attic publishes semver releases.
@@ -47,6 +44,19 @@ spec:
                 secretKeyRef:
                   name: attic-jwt-token
                   key: jwt-token
+            # S3 backend creds from the reflected SeaweedFS s3-identity (attic is now a
+            # normal tenant; replaces the hand-rolled attic-s3-credentials secret). The
+            # identity Secret in seaweedfs ns is reflected into nix-cache by Reflector.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-attic
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-attic
+                  key: secretKey
           args:
             - "-f"
             - "/config/server.toml"
@@ -60,13 +70,8 @@ spec:
             - name: config
               mountPath: /config
               readOnly: true
-            - name: cache
-              mountPath: /cache
             - name: tmp
               mountPath: /tmp
-            - name: signing-key
-              mountPath: /var/lib/secrets
-              readOnly: true
           livenessProbe:
             httpGet:
               path: /
@@ -85,11 +90,5 @@ spec:
         - name: config
           configMap:
             name: attic-config
-        - name: cache
-          persistentVolumeClaim:
-            claimName: attic-cache
         - name: tmp
           emptyDir: {}
-        - name: signing-key
-          secret:
-            secretName: nix-cache-signing-key

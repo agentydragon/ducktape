@@ -6,7 +6,7 @@
     label: string;
     jsonData: Record<string, unknown>;
   }
-  let { label, jsonData }: Props = $props();
+  const { label, jsonData }: Props = $props();
 </script>
 
 <details class="group">

@@ -1,0 +1,6 @@
+%%tana%%
+- Node with multiple supertags: (test reference x2-AdByI7b-a)
+  - Foobar #tag-a, #tag-b, #tag-c, #tag-d
+    - testing
+  - Reference (full-block) to node with multiple supertags:
+    - [[Foobar^x_DxhU6IlETf]]

@@ -1,17 +1,18 @@
 # Repository TODOs
 
+## LSP in Claude Code
+
+- [ ] Configure Python LSP (pyright) similarly to rust-analyzer — investigate whether pyright supports repo-local config files that Claude Code's LSP client would pick up, or if the marketplace plugin's default behavior already works with this Bazel repo. See <devinfra/rust/LSP_NOTES.md> for the approach used with rust-analyzer.
+
 ## Linting
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
 - [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.md accordingly
-- [ ] Add ESLint to pre-commit for local JS/TS linting (currently only runs in CI via Bazel)
-- [ ] Consider adding mypy to pre-commit for local type checking (currently only runs in CI via Bazel)
 
 ## System Configuration
 
 - [ ] Add to small laptop installation: nmap, other hacking tools
 - [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
-- [ ] Consider adding apt-file (heavy dependency)
 - [ ] Combine ActivityWatch + HALinuxCompanion to report: session events (login/logout, lock/unlock, suspend/resume), battery charge level, and other device telemetry
 
 ## Neovim
@@ -25,21 +26,22 @@
 
 ## Build System
 
-- [ ] [#787](https://github.com/agentydragon/ducktape/issues/787): Fork PRs (from `agentydragon-agent`) don't receive `BUILDBUDDY_API_KEY`, so `bazel-check`/`bazel-test` are skipped on fork PRs. Fix by converting `BUILDBUDDY_API_KEY` to a repo variable (available to forks) or adding `agentydragon-agent` as a collaborator. Once fixed: remove `fork_skip: true` from `bazel-check`/`bazel-test` in `devinfra/ci/workflows.yaml`, regenerate `ci.yml`, and remove the Known Limitations note from `skills/buildbuddy_api/SKILL.md`.
+- [ ] File upstream BB issue + revert `--script` workaround in `bazel-ci.yml` once fixed. See <devinfra/debug/bb_remote_peers_exhausted.md> (post-run `downloadOutputs` fails with "Exhausted all peers"). Also audit `push-images.yml` which also uses `bb remote build … --remote_download_regex=…`.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
-- [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs
-- [ ] Upgrade protobuf once UPB uninitialized variable warnings are fixed upstream. Currently on `protobuf 34.0.bcr.1` (latest in BCR as of March 2026). GCC emits `-Wmaybe-uninitialized` warnings from `external/protobuf+/upb/wire/decode.c` (lines 281, 732, 1089: `upb_StringView sv` used uninitialized). These are false positives from GCC's static analysis failing to prove the variable is always set before use. Upstream issues: [#17052](https://github.com/protocolbuffers/protobuf/issues/17052), [PR #18805](https://github.com/protocolbuffers/protobuf/pull/18805). Also `src/google/protobuf/compiler/rust/message.cc` triggers `-Wdeprecated-declarations` for `FieldOptions::weak()`. Monitor protobuf releases >34.0 for fixes.
+- [ ] Remove `--per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations` from `.bazelrc` once protobuf cleans up its internal deprecated API usage (`FieldOptions::weak()`, `RepeatedPtrField(Arena*)`). These are in `external/protobuf+/src/google/protobuf/` and `compiler/cpp/`. Currently `protobuf 33.1`.
+- [ ] Pre-commit lint for `.github/workflows/push-images.yml` matrix completeness: fail if any in-cluster `oci_image` target lacks a matrix row, and warn on rows whose `image` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: a `py_test` that loads `push-images.yml`, parses the `image:` fields, runs `bazel query 'kind("oci_image_rule", //...)'`, and diffs the two sets.
+- [ ] Investigate the `Nix Attic push` GitHub Actions job — failing on every recent `devel` commit (15+ in a row as of 2026-05-26). GitHub releases still publish the binary asset (some other job uploads it) so consumers can repin, but the Attic cache is no longer being populated, so every Nix build of debundle is slower than it needs to be. Fix the workflow step or remove it if vestigial.
+- [ ] Set up CI pushes of private `gaffer-private` packages to a private Nix cache, make cache reads actually private, and only then re-wire `drivectl` installation through the flake/Home Manager path.
+- [ ] Decide the fate of `secrets/shared/gaffer-private-fetch-pat.yaml` after the private-cache path exists: keep it for another workflow, rotate it, or delete it.
+- [ ] Bundle `hetzner-vnc-screenshot` and `vm-interact` with their respective skills instead of shipping via the `ducktape` umbrella wheel. Today their entry points live in `//:wheel`'s `console_scripts` and ship under `//:ducktape_pkg` (see <BUILD.bazel>); ideally each `skills/<name>/BUILD.bazel` defines its own `py_wheel` + artifact-pin, and the umbrella drops the entry. Lets the skills install standalone (without the full umbrella's transitive deps — fastmcp 3, openai, ducktape-util, etc.) and matches how aiquota / ducktape-git-hooks are packaged. Watch out for the same py_package-vendoring conflict that motivated the umbrella for `git-commit-ai`/`gmail-archiver`: these two skills have light, non-shared deps (hcloud/asyncvnc/pillow/typer for hetzner; platformdirs/PIL/typer for proxmox), so vendoring isn't an issue here.
 
 ## Terraform
 
 - [ ] Unify manual `tofu` runs with Bazel-managed providers. Currently manual `tofu plan/apply` resolves providers independently from the `tf.download(mirror={...})` pins in `MODULE.bazel`. Create a wrapper (script or `bazel run` target) that sets `TF_CLI_CONFIG_FILE` pointing at the Bazel-fetched filesystem mirror (`<output_base>/external/@tf_toolchains/mirror/`), so manual runs use the exact same provider versions as `bazel test`.
+- [ ] Merge `ollama-bearer-token` and `litellm-api-key` into a single TF root/CR — both are simple `random_password` + `k8s secret` patterns for the ollama stack, already in the same `ollama-secrets` kustomization. Reduces CR count and state overhead.
 
-## Dependency Tracking (Renovate)
-
-Renovate is configured (`renovate.json`) with `config:recommended` and dashboard-only mode (`prCreation: "approval"`).
-
-### Coverage gaps
+## Renovate Coverage gaps
 
 Already covered by built-in managers (verified on dashboard):
 

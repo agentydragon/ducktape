@@ -1,39 +1,14 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
-
-# Source of truth for CI workflow definitions
-exports_files(["workflows.yaml"])
-
-# Generated workflow files consumed by test_generate_ci
-filegroup(
-    name = "generated_workflows",
-    srcs = [
-        "//.github/workflows:ci.yml",
-    ],
-)
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
 py_library(
     name = "github_actions",
     srcs = ["github_actions.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util:env",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "models",
-    srcs = ["models.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util/bazel:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -42,7 +17,6 @@ py_library(
 py_library(
     name = "diff_utils",
     srcs = ["diff_utils.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":github_actions",
@@ -56,7 +30,6 @@ py_library(
 py_library(
     name = "check_release",
     srcs = ["check_release.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":diff_utils",
@@ -69,153 +42,121 @@ py_library(
 )
 
 py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":diff_utils",
-        ":github_actions",
-        ":models",
-        "//util:fmt",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-    ],
-)
-
-py_library(
-    name = "generate_ci",
-    srcs = ["generate_ci.py"],
-    data = [":workflows.yaml"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":github_actions",
-        ":models",
-        "//devinfra:prettier",
-        "//util/bazel:workspace",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "artifacts",
     srcs = ["artifacts.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
+        "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//requests",
-    ],
-)
-
-py_library(
-    name = "bb_release",
-    srcs = ["bb_release.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":artifacts",
-        "//util/bazel:workspace",
-        "@pypi//more_itertools",
-        "@pypi//pygithub",
     ],
 )
 
 py_library(
     name = "sync_pins",
     srcs = ["sync_pins.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        "@pypi//more_itertools",
         "@pypi//pygithub",
     ],
 )
 
 py_library(
-    name = "generate_buildbuddy",
-    srcs = ["generate_buildbuddy.py"],
-    imports = ["../.."],
+    name = "release_metadata",
+    srcs = ["release_metadata.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "//devinfra:prettier",
-        "//util/bazel:workspace",
-        "@pypi//pyyaml",
-    ],
+)
+
+py_library(
+    name = "bb_runner_probe",
+    srcs = ["bb_runner_probe.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "collect_bazel_ci_profiles",
+    srcs = ["collect_bazel_ci_profiles.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "emit_bb_remote_linkage",
+    srcs = ["emit_bb_remote_linkage.py"],
+    visibility = ["//:__subpackages__"],
 )
 
 # === Binaries ===
 
 py_binary(
-    name = "bb_release_bin",
-    imports = ["../.."],
-    main_module = "devinfra.ci.bb_release",
-    deps = [":bb_release"],
-)
-
-py_binary(
     name = "sync_pins_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.sync_pins",
     deps = [":sync_pins"],
 )
 
 py_binary(
     name = "check_release_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.check_release",
     deps = [":check_release"],
 )
 
 py_binary(
-    name = "ci_decide_bin",
-    imports = ["../.."],
-    main_module = "devinfra.ci.ci_decide",
-    deps = [":ci_decide"],
+    name = "release_metadata_bin",
+    main_module = "devinfra.ci.release_metadata",
+    deps = [":release_metadata"],
 )
 
 py_binary(
-    name = "generate_ci_bin",
-    imports = ["../.."],
-    main_module = "devinfra.ci.generate_ci",
-    deps = [":generate_ci"],
+    name = "bb_runner_probe_bin",
+    main_module = "devinfra.ci.bb_runner_probe",
+    deps = [":bb_runner_probe"],
 )
 
 py_binary(
-    name = "generate_buildbuddy_bin",
-    imports = ["../.."],
-    main_module = "devinfra.ci.generate_buildbuddy",
-    deps = [":generate_buildbuddy"],
+    name = "collect_bazel_ci_profiles_bin",
+    main_module = "devinfra.ci.collect_bazel_ci_profiles",
+    deps = [":collect_bazel_ci_profiles"],
 )
 
-# === Tests ===
+py_binary(
+    name = "emit_bb_remote_linkage_bin",
+    main_module = "devinfra.ci.emit_bb_remote_linkage",
+    deps = [":emit_bb_remote_linkage"],
+)
 
 py_test(
-    name = "test_generate_buildbuddy",
-    srcs = ["test_generate_buildbuddy.py"],
-    data = ["//:buildbuddy.yaml"],
-    imports = ["../.."],
+    name = "test_release_metadata",
+    srcs = ["test_release_metadata.py"],
     deps = [
-        ":generate_buildbuddy",
-        "//util/bazel:runfiles",
+        ":release_metadata",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
-    name = "test_generate_ci",
-    srcs = ["test_generate_ci.py"],
-    data = [
-        ":generated_workflows",
-        ":workflows.yaml",
-    ],
-    imports = ["../.."],
+    name = "test_bb_runner_probe",
+    srcs = ["test_bb_runner_probe.py"],
     deps = [
-        ":generate_ci",
+        ":bb_runner_probe",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_collect_bazel_ci_profiles",
+    srcs = ["test_collect_bazel_ci_profiles.py"],
+    deps = [
+        ":collect_bazel_ci_profiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_emit_bb_remote_linkage",
+    srcs = ["test_emit_bb_remote_linkage.py"],
+    deps = [
+        ":emit_bb_remote_linkage",
+        "@pypi//pytest_bazel",
     ],
 )

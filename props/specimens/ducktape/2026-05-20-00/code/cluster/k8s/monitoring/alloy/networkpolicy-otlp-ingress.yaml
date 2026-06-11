@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alloy-otlp-ingress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow OTLP/HTTP from OpenClaw gateway pod.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openclaw-gateway
+      ports:
+        - port: 4318
+          protocol: TCP
+    # Allow OTLP/HTTP from Authentik embedded outpost (proxies external clients).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
+      ports:
+        - port: 4318
+          protocol: TCP

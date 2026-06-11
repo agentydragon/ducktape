@@ -1,0 +1,44 @@
+diff -ruN ape-v1.0.1/MODULE.bazel ape-v1.0.1-patched/MODULE.bazel
+--- ape-v1.0.1/MODULE.bazel	2025-02-12 16:53:31.000000000 +0000
++++ ape-v1.0.1-patched/MODULE.bazel	2026-01-02 07:37:01.333880630 +0000
+@@ -101,6 +101,16 @@
+         "@ape.pe": "windows",
+     },
+ )
++# Native ELF assimilate selector for Linux (avoids APE/binfmt_misc requirement)
++select(
++    name = "assimilate_native",
++    map = {
++        "@assimilate-aarch64.elf": "arm64-linux",
++        "@assimilate-x86_64.elf": "amd64-linux",
++        "@assimilate-x86_64.macho": "amd64-darwin",
++    },
++)
++
+
+ resolved = use_repo_rule("@toolchain_utils//toolchain/resolved:defs.bzl", "toolchain_resolved")
+
+diff -ruN ape-v1.0.1/ape/assimilate/rule.bzl ape-v1.0.1-patched/ape/assimilate/rule.bzl
+--- ape-v1.0.1/ape/assimilate/rule.bzl	2025-02-12 16:53:31.000000000 +0000
++++ ape-v1.0.1-patched/ape/assimilate/rule.bzl	2026-01-02 07:37:12.569036344 +0000
+@@ -17,7 +17,7 @@
+         allow_single_file = True,
+         executable = True,
+         cfg = "exec",
+-        default = "@assimilate//:binary",
++        default = "@assimilate_native//:binary",
+     ),
+     "_macos": attr.label(
+         providers = [platform_common.ConstraintValueInfo],
+diff -ruN ape-v1.0.1/ape/entrypoint/repository.bzl ape-v1.0.1-patched/ape/entrypoint/repository.bzl
+--- ape-v1.0.1/ape/entrypoint/repository.bzl	2025-02-12 16:53:31.000000000 +0000
++++ ape-v1.0.1-patched/ape/entrypoint/repository.bzl	2026-01-02 07:37:12.569036344 +0000
+@@ -20,7 +20,7 @@
+         allow_single_file = True,
+         executable = True,
+         cfg = "exec",
+-        default = "@assimilate//:binary",
++        default = "@assimilate_native//:binary",
+     ),
+     "binary": attr.label(
+         doc = "The αcτµαlly pδrταblε εxεcµταblε binary.",

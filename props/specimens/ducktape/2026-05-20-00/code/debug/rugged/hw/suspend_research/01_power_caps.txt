@@ -1,0 +1,8 @@
+=== /sys/power/mem_sleep ===
+[s2idle]
+=== /sys/power/state ===
+freeze mem disk
+=== /sys/power/disk ===
+[platform] shutdown reboot suspend test_resume
+=== /sys/power/pm_test ===
+[none] core processors platform devices freezer

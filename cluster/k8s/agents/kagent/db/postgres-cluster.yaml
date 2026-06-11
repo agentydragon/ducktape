@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: kagent-db
+  namespace: kagent
+spec:
+  instances: 1
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: local-path
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: kagent
+      owner: kagent
+      # CNPG auto-generates credentials in secret kagent-db-app

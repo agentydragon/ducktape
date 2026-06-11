@@ -4,7 +4,7 @@ metadata:
   name: homeassistant-proxy
   namespace: homeassistant-proxy
   labels:
-    app: homeassistant-proxy
+    app.kubernetes.io/name: homeassistant-proxy
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
@@ -13,20 +13,19 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: homeassistant-proxy
+      app.kubernetes.io/name: homeassistant-proxy
   template:
     metadata:
       labels:
-        app: homeassistant-proxy
+        app.kubernetes.io/name: homeassistant-proxy
     spec:
-      serviceAccountName: homeassistant-proxy
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 1000
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: homeassistant-proxy
-          image: ghcr.io/agentydragon/homeassistant-proxy:devel-20260401040549-df942a4 # {"$imagepolicy": "flux-system:homeassistant-proxy"}
+          image: ghcr.io/agentydragon/homeassistant-proxy:devel-20260610075153-2c51610 # {"$imagepolicy": "flux-system:homeassistant-proxy"}
           ports:
             - name: http
               containerPort: 8080

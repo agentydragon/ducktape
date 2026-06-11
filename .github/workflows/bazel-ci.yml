@@ -1,0 +1,84 @@
+# Bazel test + build via bb remote (runs on BuildBuddy RBE).
+name: Bazel CI
+
+on:
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+concurrency:
+  group: bazel-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
+jobs:
+  bazel-ci:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      # bb remote's base resolution falls back to `git rev-parse <default-branch>`
+      # which needs a local ref. actions/checkout only creates remote tracking refs
+      # (origin/devel), not local branches, so create one for PR builds.
+      - name: Create local ref for default branch
+        if: github.event_name == 'pull_request'
+        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
+
+      # Combined test + build in one bb-remote `--script` invocation:
+      # - Saves one Firecracker VM allocation per CI run.
+      # - Avoids `bb remote build`'s post-run `downloadOutputs` path, which
+      #   currently fails with "Exhausted all peers" — see
+      #   devinfra/debug/bb_remote_peers_exhausted.md.
+      # `&&` matches the previous step ordering: build runs only if test passed.
+      - name: Test + Build + lint
+        id: bb-remote
+        uses: ./.github/actions/bb-remote
+        with:
+          rbe_image: ${{ inputs.rbe_image }}
+          linkage_roles: test,build
+          script: |
+            set -euo pipefail
+            RBE_FLAGS="--config=rbe --config=ci --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
+            export CI_VM_PROBE_DIR="/home/buildbuddy/workspace/.ducktape-ci-vm-probe"
+            probe_bb_runner() {
+              python3 devinfra/ci/bb_runner_probe.py snapshot "$1" || true
+            }
+            finalize_bb_runner_probe() {
+              python3 devinfra/ci/bb_runner_probe.py finalize --upload || true
+            }
+            trap finalize_bb_runner_probe EXIT
+            probe_bb_runner before-test
+            bazel test --keep_going $RBE_FLAGS //... && \
+              probe_bb_runner after-test && \
+              bazel build --keep_going $RBE_FLAGS //... && \
+              probe_bb_runner after-build
+
+      - name: Upload BuildBuddy linkage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-ci-linkage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.bb-remote.outputs.linkage_json_path }}
+          if-no-files-found: warn

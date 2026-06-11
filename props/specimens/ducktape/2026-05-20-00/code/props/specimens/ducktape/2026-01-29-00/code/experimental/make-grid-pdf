@@ -1,0 +1,79 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["reportlab"]
+# ///
+
+import sys
+
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import cm, mm
+from reportlab.pdfgen import canvas
+
+# Letter size with margins for printability
+width, height = letter  # 8.5 x 11 inches
+margin = 0.5 * 72  # 0.5 inch margin in points
+
+output_path = sys.argv[1] if len(sys.argv) > 1 else "grid.pdf"
+
+# Create PDF
+c = canvas.Canvas(output_path, pagesize=letter)
+
+# Grid area
+grid_left = margin
+grid_bottom = margin
+grid_width = width - 2 * margin
+grid_height = height - 2 * margin
+
+# Draw mm lines (light gray)
+c.setStrokeColorRGB(0.8, 0.8, 0.8)
+c.setLineWidth(0.25)
+
+x = grid_left
+while x <= grid_left + grid_width:
+    c.line(x, grid_bottom, x, grid_bottom + grid_height)
+    x += mm
+
+y = grid_bottom
+while y <= grid_bottom + grid_height:
+    c.line(grid_left, y, grid_left + grid_width, y)
+    y += mm
+
+# Draw cm lines (darker)
+c.setStrokeColorRGB(0.4, 0.4, 0.4)
+c.setLineWidth(0.5)
+
+x = grid_left
+while x <= grid_left + grid_width:
+    c.line(x, grid_bottom, x, grid_bottom + grid_height)
+    x += cm
+
+y = grid_bottom
+while y <= grid_bottom + grid_height:
+    c.line(grid_left, y, grid_left + grid_width, y)
+    y += cm
+
+# Add coordinate markers (cm numbers)
+c.setFillColorRGB(0.5, 0.5, 0.5)
+c.setFont("Helvetica", 6)
+
+# X-axis markers (along bottom)
+x = grid_left
+cm_count = 0
+while x <= grid_left + grid_width:
+    if cm_count > 0:
+        c.drawCentredString(x, grid_bottom - 8, str(cm_count))
+    x += cm
+    cm_count += 1
+
+# Y-axis markers (along left)
+y = grid_bottom
+cm_count = 0
+while y <= grid_bottom + grid_height:
+    if cm_count > 0:
+        c.drawRightString(grid_left - 3, y - 2, str(cm_count))
+    y += cm
+    cm_count += 1
+
+c.save()
+print(f"Created {output_path}")

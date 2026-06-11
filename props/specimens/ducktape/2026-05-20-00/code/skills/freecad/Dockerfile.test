@@ -1,0 +1,25 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget xvfb fontconfig && \
+    rm -rf /var/lib/apt/lists/*
+ENV LANG="C.UTF-8"
+ENV LC_ALL="C.UTF-8"
+RUN wget -q "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage" \
+    -O /opt/FreeCAD.AppImage && \
+    chmod +x /opt/FreeCAD.AppImage && \
+    cd /opt && /opt/FreeCAD.AppImage --appimage-extract && \
+    rm /opt/FreeCAD.AppImage
+ENV PREFIX="/opt/squashfs-root/usr"
+ENV PYTHONHOME="/opt/squashfs-root/usr"
+ENV PATH_TO_FREECAD_LIBDIR="/opt/squashfs-root/usr/lib"
+ENV FONTCONFIG_FILE="/etc/fonts/fonts.conf"
+ENV FONTCONFIG_PATH="/etc/fonts"
+ENV QT_QPA_PLATFORM="xcb"
+ENV SSL_CERT_FILE="/opt/squashfs-root/usr/ssl/cacert.pem"
+ENV PATH="/opt/squashfs-root/usr/bin:$PATH"
+
+# Register FreeCAD's bundled osifont with system fontconfig for deterministic TechDraw exports.
+# Without this, TechDraw uses whichever system font Qt resolves first, which varies
+# across workers and produces non-deterministic PDF exports.
+RUN ln -sf /opt/squashfs-root/usr/Mod/TechDraw/Resources/fonts /usr/local/share/fonts/techdraw && \
+    fc-cache -f

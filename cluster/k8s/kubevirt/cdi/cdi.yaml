@@ -1,0 +1,35 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: CDI
+metadata:
+  name: cdi
+  annotations:
+    description: Containerized Data Importer for KubeVirt VM disk image imports.
+spec:
+  config:
+    featureGates:
+      - HonorWaitForFirstConsumer
+      - WebhookPvcRendering
+    scratchSpaceStorageClass: local-path-ovh
+    podResourceRequirements:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 750m
+        memory: 2Gi
+  imagePullPolicy: IfNotPresent
+  infra:
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+  workload:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/region
+                  operator: In
+                  values:
+                    - hil
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist

@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  selector:
+    matchLabels:
+      # Helm release name; robust regardless of the chart's app name label.
+      app.kubernetes.io/instance: forgejo
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      # Metrics are unauthenticated (gitea.config.metrics.TOKEN is empty).
+      # TODO: Set a metrics token and add bearerTokenSecret here via a
+      # SOPS-managed secret (follow the LiteLLM token pattern).

@@ -1,0 +1,14 @@
+rationale: |
+  `mcp_types.py` defines four Docker-specific types (`ContainerImageInfo`,
+  `NetworkMode`, `ContainerImageHistoryEntry`, `ContainerInfo`) alongside
+  unrelated MCP and generic types. The Docker types are only consumed by
+  Docker code (`exec/docker/server.py`, `exec/docker/launcher.py`,
+  `agent_server/matrix_bot.py`). Move them to `mcp_infra/exec/docker/`.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/mcp_types.py:
+        - [27, 65]

@@ -1,0 +1,40 @@
+version: 1
+metadata:
+  name: SSO - Hubble
+  labels:
+    blueprints.goauthentik.io/description: "Hubble UI proxy provider, application, and outpost"
+
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: hubble-provider
+    state: present
+    identifiers:
+      name: hubble
+    attrs:
+      external_host: "https://hubble.allegedly.works"
+      internal_host: "http://hubble-ui.kube-system.svc.cluster.local:80"
+      mode: proxy
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      access_token_validity: "hours=1"
+
+  - model: authentik_core.application
+    id: hubble-app
+    state: present
+    identifiers:
+      slug: hubble
+    attrs:
+      name: Hubble UI
+      provider: !KeyOf hubble-provider
+      meta_description: "Cilium Hubble Network Observability"
+      meta_launch_url: "https://hubble.allegedly.works"
+      meta_icon: "https://cdn.simpleicons.org/cilium"
+      open_in_new_tab: true
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf hubble-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+      order: 0

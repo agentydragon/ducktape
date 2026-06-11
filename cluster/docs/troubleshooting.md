@@ -9,12 +9,12 @@
 
 **Fix**: Set `machine.network.hostname` explicitly in Terraform config patches.
 
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>.
+See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
 
 ### Stale podCIDR After Node Hostname Change
 
 **Symptoms**: Pods can't reach ClusterIP services; Longhorn `ManagerPodDown`; cascade to
-Vault/ESO. Pods have IPs outside node's `spec.podCIDR`.
+ESO secret sync. Pods have IPs outside node's `spec.podCIDR`.
 
 **Fix**: Delete pods with old-CIDR IPs -- DaemonSets recreate with correct IPs.
 
@@ -24,17 +24,7 @@ kubectl get pods -A --field-selector spec.nodeName=<node> \
   -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,IP:.status.podIP'
 ```
 
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md> (Root Cause 3).
-
-### Hetzner VPS Accidental Replacement via tofu apply
-
-**Symptoms**: Different server IDs/IPs, API unreachable, etcd quorum lost.
-`tofu plan` shows `must be replaced` due to `image` change.
-
-**Fix**: `lifecycle { ignore_changes = [user_data, image] }` on `hcloud_server`.
-Never `tofu apply -auto-approve` with `-target` without reviewing full plan.
-
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>.
+See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> (Root Cause 3).
 
 ### Zombie Kubelet (Containerd Crash Recovery)
 
@@ -46,7 +36,7 @@ assignment on workers (fixed in commit 2bf6ae9 -- `dhcp: false` in worker machin
 
 **Fix**: Reboot the node (`talosctl -n <node-ip> reboot`).
 
-See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
+See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
 
 ### Worker Dual-IP Assignment (DHCP + Static IP)
 
@@ -57,7 +47,7 @@ See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
 
 **Diagnosis**: `talosctl -n <ip> get addresses | grep "eth0.*10\."`
 
-See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
+See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
 
 ### XFS Quotacheck Stuck After Unclean Shutdown (Boot Hangs)
 
@@ -80,7 +70,7 @@ ssh root@atlas "qm reset <vmid>"
 
 **Prevention**: Never use `qm stop` for Talos VMs — always `qm shutdown` (ACPI).
 
-See <lessons_learned/2026-03-24-xfs-quotacheck-stuck-boot.md>.
+See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md>.
 
 ## Cilium Issues
 
@@ -114,13 +104,17 @@ for r in json.load(sys.stdin)['items']:
 
 ### MTU Case Sensitivity (Cross-Node Packet Loss)
 
-**Symptoms**: 10-30% TCP failures between VPS and Proxmox; webhook timeouts; bootstrap
+**Symptoms**: 10-30% TCP failures between OVH and Proxmox; webhook timeouts; bootstrap
 stalls; `ReasmFails` in `/proc/net/snmp`.
 
-**Cause**: Cilium Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
-ignored, leaving pod MTU at 1500. VXLAN+Nebula needs 1412 (1500 - 50 - 38).
+**Cause**: Cilium's Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
+ignored, leaving pod MTU at 1500 and causing cross-node fragmentation/loss over the
+VXLAN-in-Nebula stack.
 
-**Fix**: Use `MTU: 1412` (uppercase) in `cilium-values.yaml`, then destroy and re-bootstrap.
+**Fix**: Set `MTU: 1420` (uppercase) in `cilium-values.yaml`. Note `MTU` is the
+**underlay** value, not the pod MTU — see <network.md> for the full
+model (and the gotcha that `MTU: 1370` wrongly yields a 1320 pod MTU) and the live
+apply procedure.
 
 **Diagnosis**:
 
@@ -130,7 +124,7 @@ kubectl exec -n kube-system ds/cilium -- ip link show cilium_vxlan
 helm get values cilium -n kube-system
 ```
 
-See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
+See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 ## tofu-controller Issues
 
@@ -153,103 +147,86 @@ kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
 
 If that fails, suspend all Terraform resources first, restart, then resume.
 
-See <lessons_learned/2025-11-19-tofu-controller-tls-cache-desync.md>.
+See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
 
-### Stale State Locks After Restart
+### Stale State Locks (historical — kubernetes backend only)
 
-**Symptoms**: `error acquiring the state lock`; lock holder references dead pod;
-runner pods cycle every 15s.
-
-**Cause**: `rollout restart` kills controller while runners hold locks. Orphaned runners
-can't release locks due to TLS cache desync.
-
-**Fix**:
-
-```bash
-kubectl delete leases -n flux-system -l tfstate=true
-kubectl annotate terraform -n flux-system --all \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-```
-
-**Prevention**: Never `rollout restart` tofu-controller without first suspending all
-Terraform resources and deleting runner pods.
-
-See <lessons_learned/2026-03-18-tofu-controller-stale-state-locks.md>.
+All `Terraform` CRs now use the PG backend, whose session-based advisory locks
+auto-release on runner-pod death. The kubernetes-backend stale-lock failure
+mode described in <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>
+is no longer reachable. Kept as a pointer in case we ever re-add a CR on the
+kubernetes backend.
 
 ## Secrets & Auth Issues
 
-### ESO Password Generator Desync (SSO Auth Failures)
+### Resource ID Desync After Wiping a Backing Datastore
 
-**Symptoms**: SSO fails with "invalid client credentials". Vault has password A,
-K8s secret has password B (independently generated).
+Generalization of the Authentik-DB-wipe failure mode (see
+<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>): any
+tofu-controller `Terraform` CR that manages resources inside another stateful
+system (Authentik DB, Forgejo DB, etc.) will go into
+`Unable to read user/object … not found with id N` if that backing system is
+wiped without also clearing the corresponding tofu state. The tfstate still
+references the old numeric IDs.
 
-**Cause**: ESO Password generators are stateless -- they generate fresh passwords on
-each sync instead of reading from Vault. Must use Vault data sources instead.
+Recent instances:
 
-**Fix**: Replace ESO Password generator with Vault data source in ExternalSecret.
-Pattern: Terraform generates -> Vault -> ESO reads.
+- `sso-providers` after Authentik DB wipes (the original instance).
+- `forgejo-props` after the 2026-06-02 Forgejo recovery
+  (<lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>): the
+  forgejo-db CNPG cluster was rebuilt, so `forgejo_user.props` lost its id=2.
 
-See <lessons_learned/2025-11-28-eso-password-generator-desync.md> for full analysis,
-diagnosis commands, and correct pattern.
+Recovery (PG-backend CRs — current default):
 
-### Authentik API Token 403 (Vault Version Desync)
+1. `flux suspend kustomization -n flux-system <name>` on the affected CR's
+   Kustomization (e.g. `forgejo-props`, `sso-providers`).
+2. From a pod with PG access (`kubectl exec` into any tofu-state-db client,
+   or `kubectl port-forward` to it), `DROP SCHEMA <cr_name> CASCADE;` on the
+   `tofu-state` database. Each CR has its own schema named after the CR.
+   This wipes the tfstate; the next reconcile re-creates resources from
+   scratch.
+3. Clean up any orphan objects in the backing system (e.g. delete the
+   half-created Authentik provider, or any leftover Forgejo user/repo).
+4. `flux resume kustomization -n flux-system <name>` and watch a fresh
+   plan-and-apply.
 
-**Symptoms**: All Authentik-targeting Terraform resources return 403.
+For the long-decommissioned `kubernetes` backend, the equivalent step was
+`kubectl delete secret tfstate-default-<name> -n flux-system`. We don't run
+that backend anymore — see <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>
+for the original write-up.
 
-**Cause**: Runner crash -> state lost -> new `random_password` overwrites Vault.
-Authentik DB has original token, Vault has new one.
-
-**Fix**: Roll Vault back to version 1:
-
-```bash
-ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
-  -o jsonpath='{.data.vault-root}' | base64 -d)
-kubectl exec -n vault instance-0 -c vault -- sh -c \
-  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_CACERT=/vault/tls/ca.crt \
-   VAULT_TOKEN=$ROOT_TOKEN vault kv rollback -version=1 kv/sso/client-secrets"
-kubectl annotate externalsecret authentik-api-token -n flux-system \
-  force-sync=$(date +%s) --overwrite
-```
-
-**Prevention**: `cas = 0` on write-once `vault_kv_secret_v2` resources.
-
-See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>.
-
-### Authentik Teardown: TF State Desync (Mostly Historical)
-
-Most SSO config migrated to native blueprints. Only `sso-secrets` and `vault-oidc-auth`
-remain as Terraform. The cascading desync described in
-<lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> should no longer occur.
-
-If it does: suspend Authentik-targeting Terraform resources, delete stale `tfstate-default-*`
-secrets, clean up Authentik API objects, unsuspend. See the lessons_learned doc for the
-full procedure.
+The pre-2026-04-19 Vault-based variants of this failure (ESO password-generator desync,
+Vault version overwrites) are documented in <lessons_learned/> but no longer reachable —
+Vault is decommissioned. Kept for context only.
 
 ### SOPS Decryption Failure
 
-**Symptoms**: Kustomization shows `sops decryption error`; secrets not created.
+`sops decryption error` on a Kustomization means the cluster age key in
+`flux-system/sops-age-cluster-secrets` doesn't match the key that encrypted the
+`*.sops.yaml` files. See <secrets.md> § "SOPS Decryption Failure in Flux" for the
+verify / `sops updatekeys` / redeploy fix (validated by `pre-commit run --all-files`).
 
-**Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
-match the key used to encrypt the `*.sops.yaml` files.
+## PVC File Ownership After Restore
 
-**Fix**:
+`kubectl cp` into a PVC creates files owned by root (uid 0). Most app containers
+run as non-root (typically uid 1000). SQLite WAL mode needs write access to the DB
+file _and_ the ability to create `-wal` and `-shm` siblings alongside it. If the app
+container can't write to the restored files, it fails with `sqlite3.OperationalError:
+attempt to write a readonly database` despite the healthz endpoint passing (it may
+not touch the DB on startup).
 
-```bash
-# Verify the key exists
-kubectl get secret sops-age-cluster-secrets -n flux-system
-
-# Re-encrypt all cluster SOPS files with current keys
-for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done
-
-# Redeploy the age key from tofu state
-cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets
-```
-
-**Validation** (runs as part of unified pre-commit):
+**Fix**: After `kubectl cp`, run a root pod on the same PVC and:
 
 ```bash
-bazel run //devinfra/precommit
+chown <app-uid>:0 /data/*.db
+chmod 644 /data/*.db
+chmod 777 /data        # SQLite needs to create -wal/-shm files in the directory
 ```
+
+**Prevention**: Use a restore pod with `runAsUser` matching the app's uid so files
+are created with correct ownership from the start. If `kubectl cp` still creates as
+root, pipe through `tar` inside the container with `su` or use an init container that
+chowns before the app starts.
 
 ## Health Checks
 
@@ -258,8 +235,8 @@ bazel run //devinfra/precommit
 ```bash
 talosctl -n <node-ip> logs ext-nebula          # Talos nodes
 systemctl status nebula                         # NixOS workers
-ping 10.42.0.1                                  # vps0 lighthouse
-ping 10.42.0.2                                  # vps1 lighthouse
+ping 10.42.0.15                                 # talos-kimsufi-cp-0 lighthouse
+ping 10.42.0.13                                 # talos-kimsufi-worker-0 lighthouse
 ```
 
 Port: UDP 4242. If down: check firewall, verify certs (`nebula-cert print -path /etc/nebula/host.crt`).
@@ -279,31 +256,59 @@ To verify the CSI token: `tofu state show 'proxmox_virtual_environment_user_toke
 ### DNS & cert-manager
 
 ```bash
-kubectl exec -n dns-system deployment/powerdns -- pdnsutil list-zone allegedly.works
-dig @ns1.allegedly.works allegedly.works NS
+# Check Route 53 records
+dig allegedly.works A +short
+dig api.allegedly.works A +short
+dig allegedly.works NS
 ```
 
 **cert-manager DNS-01 failures**:
 
-1. "propagation check failed: no such host" -- DNS cache, wait for TTL expiry
-2. "webhook call failed" -- check pdns-webhook pod and PowerDNS API reachability
-3. Challenge TXT not created -- check PowerDNS + webhook logs, verify `powerdns-api-key` secret
+1. "propagation check failed: no such host" — DNS cache, wait for TTL expiry
+2. "unable to assume role" / "AccessDenied" — check `aws-route53-credentials` secret in `cert-manager` namespace
+3. Challenge TXT not created — check cert-manager logs, verify IAM permissions on Route 53 zone
 
 **Force retry**: `kubectl delete challenge,order,certificaterequest -n <namespace> --all`
 
-### Loki (Log Retrieval)
+### Loki (Log Retrieval) — use this for logs of pods that no longer exist
 
-Loki collects logs from all pods via Promtail. Useful for postmortems when pod logs have
-been lost (completed Jobs, crashed/evicted pods).
+**Reach for Loki first whenever the pod whose logs you want is gone.** `kubectl logs`
+only works for live pods; the moment a pod is deleted, evicted, or its Job is reaped
+(short `ttlSecondsAfterFinished`, `backoffLimit`/`activeDeadlineSeconds` failures,
+rolled-out ReplicaSets, OOM-killed/CrashLoopBackOff pods that got replaced), its logs
+are only in Loki. Alloy ships every pod's stdout/stderr to Loki, retained far longer
+than the pods themselves — so for any postmortem of a failed Job, a crashed exporter, a
+previous Deployment revision, etc., query Loki instead of giving up on "pod not found".
+
+Loki runs in SimpleScalable mode — there is **no `deploy/loki`**. Query the read path
+(`svc/loki-read:3100`) over the HTTP API. Port-forward + `curl` from your workstation:
 
 ```bash
-START=$(date -d '1 hour ago' +%s)000000000
-END=$(date +%s)000000000
-kubectl exec -n loki deploy/loki -- wget -qO- \
-  "http://localhost:3100/loki/api/v1/query_range?query=%7Bnamespace%3D%22NAMESPACE%22%2Ccontainer%3D%22CONTAINER%22%7D&limit=50&direction=backward&start=$START&end=$END"
+kubectl -n loki port-forward svc/loki-read 3100:3100 &
+END=$(date +%s); START=$((END-10800))   # last 3h
+curl -sG http://localhost:3100/loki/api/v1/query_range \
+  --data-urlencode 'query={namespace="augur", pod=~"budget-exporter.+"}' \
+  --data-urlencode "start=${START}000000000" --data-urlencode "end=${END}000000000" \
+  --data-urlencode 'limit=300' --data-urlencode 'direction=forward'
 ```
 
-Grafana also has Loki as a datasource for interactive log exploration.
+Stream labels available: `namespace`, `pod`, `container`, `app`, `component`, `job`,
+`node_name`, `filename`. List them with `/loki/api/v1/labels` and a label's values with
+`/loki/api/v1/label/<name>/values`.
+
+Gotchas:
+
+- **Select pods by the `pod` label, not a line filter.** The pod name is a stream label,
+  not part of the log text, so `{namespace="x"} |= "mypod"` returns nothing. Use
+  `{namespace="x", pod=~"mypod.+"}`. `|=` / `|~` filter the message body only.
+- **No logs in Loki ⇒ the container never started.** A pod that died in
+  `ContainerCreating` (slow/failed image pull) or was killed before its entrypoint ran
+  emits zero lines — an empty Loki result for it points at the scheduling/pull/mount
+  phase, not the app. (This is exactly how the `budget-exporter` `DeadlineExceeded`
+  failures presented: no streams, because the cold ~334 MB image pull dominated.)
+- Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
+
+Grafana also has Loki as a datasource for interactive log exploration (Explore view).
 
 ### Nix Cache
 

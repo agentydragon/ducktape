@@ -1,0 +1,8 @@
+#!/bin/bash
+
+gst-launch-0.10 -e v4l2src ! \
+	ffmpegcolorspace ! \
+	tee name="splitter" ! queue ! \
+	xvimagesink sync=false splitter. ! \
+	queue ! \
+	theoraenc bitrate=1024 ! oggmux ! filesink location=webcam.ogg

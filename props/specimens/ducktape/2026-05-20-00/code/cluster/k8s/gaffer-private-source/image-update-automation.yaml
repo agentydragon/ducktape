@@ -1,0 +1,33 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: gaffer-images
+  namespace: flux-system
+  annotations:
+    description: "Sibling of `all-images` for the gaffer-private GitRepository. Watches ImagePolicies whose marker comments target gaffer-private's manifests and commits image-tag bumps back to gaffer-private/main."
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: gaffer-private
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: flux-image-automation
+        email: flux@allegedly.works
+      messageTemplate: |-
+        chore: update images [skip ci]
+
+        {{ range $resource, $changes := .Changed.Objects -}}
+        {{ range $_, $change := $changes -}}
+        {{ $change.OldValue }} -> {{ $change.NewValue }}
+        {{ end -}}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    strategy: Setters
+    path: ./k8s

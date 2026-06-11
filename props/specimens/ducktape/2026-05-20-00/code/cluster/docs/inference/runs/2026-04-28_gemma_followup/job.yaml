@@ -1,0 +1,59 @@
+# Gemma-only follow-up to 2026-04-28_initial.
+# Bench fix: parser also recognizes `delta.reasoning` / `delta.thinking`
+# (gemma uses these instead of gpt-oss's `delta.reasoning_content`), and
+# REASONING_EFFORT="off" sends `think: false` to actually suppress reasoning.
+#
+# Apply with: ./run.sh
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-bench-gemma-followup
+  namespace: claude-sandbox
+  labels:
+    purpose: inference-benchmark
+    run: 2026-04-28_gemma_followup
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        purpose: inference-benchmark
+        run: 2026-04-28_gemma_followup
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bench
+          image: python:3.13-slim
+          command: ["python", "/bench/bench.py"]
+          env:
+            - name: OLLAMA_URL
+              value: http://ollama.ollama:11434/v1
+            - name: MODELS
+              value: gemma4:31b-it-q8_0
+            - name: INPUT_LENS
+              value: "1024,8192"
+            - name: OUTPUT_LEN
+              value: "256"
+            - name: N_TRIALS
+              value: "5"
+            - name: REASONING_EFFORT
+              value: "off"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: bench
+              mountPath: /bench
+      volumes:
+        - name: bench
+          configMap:
+            name: ollama-bench-gemma-followup
+            items:
+              - key: bench.py
+                path: bench.py

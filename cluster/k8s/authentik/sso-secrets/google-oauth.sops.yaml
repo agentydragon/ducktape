@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: authentik-google-oauth
+  namespace: authentik
+stringData:
+  GOOGLE_OAUTH_CLIENT_SECRET: ENC[AES256_GCM,data:0HEIRIm1PSMkBTH75Z7lP8sMquCBfBLKhAv1iM/ryG6C+s0=,iv:3C5svB/7RQ5xMwUre67vPmtenpL0RDc0zEesERccwnc=,tag:JYjr2aNR1OmvQ78tZvbToA==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5TTN2LzJyM1Q4MmhWcDFW
+        OEp6bzNwZDBQdVp5RWl2TVRMcFBXaGp6YVdBCmRaUXRVRHV4ZjlLdzVsa0ZIcUdz
+        anByY1dEMlRUNmE4N0FrMXlrOFZ3UmsKLS0tICtJOU5DeGNnMHZTYXU0T0dUWlVt
+        SDdXNkhTN3ZvUmJuVmlJT1RsK0d1SEUK0MbfO3PNLQRJxyxtz6Bl6IKtutZlPtyB
+        6I1yAa9MQU3BTrzJWBbyHW0yD8qwzo4lYuM2F88TtQLKvJ/LVr/v3g==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIOEl5Q0JnclNiZmkxS2Zh
+        WXVsTkZlbnNNUTRsQkZkbXRrRzJGZXBoS2g4CjlWTHgwWFRNdjA0TldwckdsOGg1
+        UGtYL29YM1o3ckg2T0hMMkdmcFNpY1EKLS0tIG1uZEtUbUNzU3VVeWlrWlM5NlBw
+        QUNtc3czT0tJNXp0WGFKWU9XZEpTMjAK51NSmiXovhHfOhUcHabFKeele3JYdmMg
+        ydKcCbfUktlvapcq4KoWf3jnAbRjGZWWDzWm6HaGjkfQzzUfdzzfqw==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-21T22:10:54Z"
+  mac: ENC[AES256_GCM,data:n2zVJYG5TEJoiOuW3H6JS7cIXAdVW53Sg9aK12M+9UJlwapUxLhdUmxbibALL0sCIrspp/YYfR42TN4rjhC4fvTg/0r3PWzqTNjO5s80yUrIxQIuKDL0jvT7a12J9dOu8/jcJALAJVjNeXvTl3UG6B1cumNwN4GiHgr/bBQsIB0=,iv:1VpDBW3Gg+QtBAQLRM0u8IX6zFZ430f47Eys1aNe7EA=,tag:gHavfoI+MJeLXRRvVIOVDg==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

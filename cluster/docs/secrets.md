@@ -3,38 +3,27 @@
 ## TL;DR
 
 - **Bootstrap secrets**: SOPS-encrypted in git (`*.sops.yaml`), decrypted by Flux
-- **Runtime secrets**: Vault → External Secrets Operator → K8s Secrets
 - **Encryption keys**: Age keypairs in `.sops.yaml` (admin + cluster keys)
-- **Full dependency graph**: <bootstrap-dependencies.md>
+- **Full dependency graph**: <bootstrap_dependencies.md>
 
 ## Architecture
 
-### Two-Layer Model
+Secrets are age-encrypted YAML files committed to git (`*.sops.yaml`). Flux
+decrypts them using the cluster age key (`sops-age-cluster-secrets` in `flux-system`).
 
-**Layer 1 — SOPS Secrets** (git → Flux → cluster)
-
-Secrets are age-encrypted YAML files committed to git. Flux decrypts them
-using the cluster age key (`sops-age-cluster-secrets` in `flux-system`).
-
-Files in `cluster/k8s/**/*.sops.yaml` (26 files) contain app credentials,
-API keys, and infrastructure tokens. Files in `secrets/*.yaml` contain
-infrastructure secrets (Nebula CA, Flux deploy key, cluster age keypair).
-
-**Layer 2 — Vault + ESO** (runtime secrets)
-
-External Secrets Operator reads from Vault KV and creates K8s Secrets.
-Used for: SSO client secrets, database passwords, application credentials.
-Terraform generates passwords → stores in Vault → ESO syncs to K8s.
+Files in `cluster/k8s/**/*.sops.yaml` contain app credentials, API keys, and
+infrastructure tokens. Files in `secrets/*.yaml` contain infrastructure secrets
+(Nebula CA, Flux deploy key, cluster age keypair).
 
 ## Age Keys
 
 Defined in `.sops.yaml` creation rules:
 
-| Key                              | Purpose                                       | Storage                                                                                 |
-| -------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Admin age key (`age1u858...`)    | Decrypt all secrets locally                   | Derived from `~/.ssh/id_ed25519` via ssh-to-age                                         |
-| Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
-| Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                              |
+| Key                              | Purpose                                       | Storage                                                                                        |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Admin age key (`age1u858...`)    | Decrypt all secrets locally                   | Derived from `~/.ssh/id_ed25519` via ssh-to-age                                                |
+| Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/shared/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
+| Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                                     |
 
 ## Adding New SOPS Secrets
 
@@ -55,10 +44,10 @@ file based on its path. Commit and push — Flux deploys automatically.
 ## Rotating the Cluster Age Key
 
 1. Generate: `age-keygen -o /dev/stdout`
-2. Update `secrets/cluster-secrets-age.yaml` with new keypair
+2. Update `secrets/shared/cluster-secrets-age.yaml` with new keypair
 3. Update `.sops.yaml` with new public key
 4. Re-encrypt all cluster secrets: `for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done`
-5. `tofu apply` to deploy new k8s secret
+5. Redeploy the k8s secret: `cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets`
 6. Commit + push
 
 ## Common Failure Modes
@@ -70,8 +59,16 @@ file based on its path. Commit and push — Flux deploys automatically.
 **Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
 match the key used to encrypt the file.
 
-**Fix**: Verify the key matches `.sops.yaml`, re-encrypt if needed with
-`sops updatekeys`, redeploy the k8s secret via `tofu apply`.
+**Fix**:
+
+```bash
+# Verify the key exists in-cluster
+kubectl get secret sops-age-cluster-secrets -n flux-system
+# Re-encrypt all cluster SOPS files with the current keys
+for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done
+# Redeploy the age key from tofu state
+cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets
+```
 
 ### OpenTofu State Lost
 
@@ -79,14 +76,148 @@ match the key used to encrypt the file.
 
 **Prevention**:
 
-- PG backend with backup CronJob (`pg_dump` every 6 hours)
-- Age keypair also stored in `secrets/cluster-secrets-age.yaml` (SOPS-encrypted
+- PG backend in the `tofu-state-db` CNPG cluster (automated offsite backup is a pending TODO — see <plan.md>)
+- Age keypair also stored in `secrets/shared/cluster-secrets-age.yaml` (SOPS-encrypted
   with admin key) — survives tofu state loss
+
+## Proxmox CSI Token
+
+The Proxmox CSI driver authenticates to the Proxmox API using an API token
+for the `kubernetes-csi@pve` user. The token is stored in a SOPS-encrypted
+secret at `k8s/proxmox-csi/secrets/proxmox-csi.sops.yaml`.
+
+### Provisioning (after bootstrap or token rotation)
+
+1. **Verify the token exists** on Proxmox:
+
+   ```bash
+   ssh root@atlas.nebula.allegedly.works \
+     "pveum user token list kubernetes-csi@pve --output-format json"
+   ```
+
+   The token `csi` should exist. If not, tofu creates it via `persistent-auth.tf`.
+
+2. **Get the token secret** from Proxmox:
+
+   ```bash
+   ssh root@atlas.nebula.allegedly.works \
+     "grep kubernetes-csi /etc/pve/priv/token.cfg"
+   # Output: kubernetes-csi@pve!csi <token-secret-uuid>
+   ```
+
+3. **Update the SOPS secret**:
+
+   ```bash
+   cd /path/to/ducktape  # must be repo root for .sops.yaml rules
+   sops cluster/k8s/proxmox-csi/secrets/proxmox-csi.sops.yaml
+   ```
+
+   Set the values in `stringData.config.yaml`:
+
+   ```yaml
+   clusters:
+     - url: https://10.2.0.2:8006/api2/json
+       insecure: true
+       token_id: kubernetes-csi@pve!csi
+       token_secret: <token-secret-uuid>
+       region: proxmox
+   ```
+
+4. **Commit and push** — Flux deploys the secret, CSI driver picks it up.
+
+### Verifying
+
+```bash
+kubectl get secret proxmox-csi-plugin -n csi-proxmox
+kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox
+```
+
+## Nebula Certs for Non-Talos Nodes
+
+Talos nodes get nebula certs generated by tofu and embedded in machine config
+(see `persistent-auth.tf` `local.talos_nebula_nodes`). Non-Talos nodes (wyrm2,
+rugged, iguana, atlas, activitywatch, mobile clients such as pixel6) have certs
+in `secrets/nebula/` — plaintext `.crt` files + SOPS binary `.sops.key` files.
+
+```text
+secrets/nebula/
+  ca.crt              # plaintext PEM — CA public cert (shared)
+  ca.sops.key         # SOPS binary — CA private key (admin only)
+  wyrm2.crt           # plaintext PEM — host public cert
+  wyrm2.sops.key      # SOPS binary — host private key (admin + host)
+  ...
+```
+
+Certs are inspectable without decryption: `nebula-cert print -path secrets/nebula/wyrm2.crt`
+
+### Generating a new cert
+
+```bash
+# Decrypt CA key (requires admin age key)
+TMPCA=$(mktemp -d)
+sops -d secrets/nebula/ca.sops.key > "$TMPCA/ca.key"
+
+# Sign — FQDN must be {host}.nebula.allegedly.works, IP from the cert being rotated
+# (or pick a free 10.42.0.x/16 for new nodes)
+nebula-cert sign \
+  -ca-crt secrets/nebula/ca.crt \
+  -ca-key "$TMPCA/ca.key" \
+  -name "HOST.nebula.allegedly.works" \
+  -ip "IP/16" \
+  -out-crt secrets/nebula/HOST.crt \
+  -out-key "$TMPCA/host.key"
+
+# Encrypt the private key as SOPS binary
+cp "$TMPCA/host.key" secrets/nebula/HOST.sops.key
+sops -e -i secrets/nebula/HOST.sops.key
+
+# Clean up
+rm -rf "$TMPCA"
+```
+
+### Deploying
+
+- **NixOS workers** (wyrm2, rugged, iguana): `nixos-rebuild switch` — certs
+  deployed via `environment.etc`, key via sops-nix binary format
+  (`nix/nixos/modules/k8s-worker-sops.nix`)
+- **atlas**: `ansible-playbook atlas.yaml --tags nebula` — certs copied from
+  plaintext files, key decrypted from SOPS binary
+- **k8s pods** (activitywatch): Flux deploys from `*.sops.yaml` in `k8s/`
+- **Mobile Nebula clients**: render a plaintext import file locally, transfer it
+  to the device, import it with Mobile Nebula's "From file" flow, then delete the
+  plaintext copy from transit/storage locations.
+
+### Mobile Nebula import config
+
+Mobile Nebula imports a normal Nebula YAML file with inline `pki.ca`,
+`pki.cert`, and `pki.key`. The app stores the private key in the phone's app
+keystore after import. Generate the plaintext file locally from the repo's SOPS
+key and shared lighthouse topology:
+
+```bash
+bb run //cluster/scripts:render_mobile_nebula_config -- \
+  pixel6 \
+  --output /tmp/pixel6.mobile-nebula.yaml
+```
+
+The generated config reads lighthouse IPs and public endpoints from
+`nebula-mesh.json`, so VPS endpoint changes do not need hand-edits in the phone
+config. By default it also installs Nebula lighthouse DNS resolvers so names such
+as `activitywatch.nebula.allegedly.works` resolve on the phone. On Android,
+Mobile Nebula applies those DNS resolvers to the active VPN network rather than
+true per-domain split DNS; if that causes public DNS trouble while the VPN is
+enabled, regenerate with `--no-dns` and use direct `10.42.x.y` addresses.
+
+### After cert rotation
+
+1. Commit the new `.crt` and `.sops.key` files
+2. Deploy (nixos-rebuild, ansible, or push for Flux)
+3. Restart nebula: `sudo systemctl restart nebula`
 
 ## Validation
 
 Pre-commit validates SOPS files can be decrypted:
 
 ```bash
-bazel run //devinfra/precommit
+pre-commit run --all-files
 ```

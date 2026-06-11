@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "gitproxy",
+    srcs = [
+        "handler.go",
+        "manager.go",
+        "server.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/gitproxy",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+)

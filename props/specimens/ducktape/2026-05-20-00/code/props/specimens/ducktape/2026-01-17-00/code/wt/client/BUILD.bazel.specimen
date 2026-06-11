@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "client",
+    srcs = [
+        "__init__.py",
+        "cd_utils.py",
+        "handlers.py",
+        "shell_utils.py",
+        "view_formatter.py",
+        "wt_client.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/shared",
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//tabulate",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_cli_click_integration.py"],
+    main = "test_cli_click_integration.py",
+    deps = [
+        "//wt/testing",
+        "@pypi//click",
+    ],
+)

@@ -1,0 +1,200 @@
+html body {
+  background-color: #002b36;
+  color: #839496;
+}
+html header {
+  background-color: #073642;
+  border-bottom-color: #dc322f;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+html header a.logo {
+  color: #93a1a1;
+}
+html header a {
+  color: #dc322f;
+}
+html footer {
+  border-top-color: #dc322f;
+  border-bottom-color: #dc322f;
+  background-color: #073642;
+}
+html code {
+  background-color: #073642;
+}
+html a {
+  color: #dc322f;
+}
+html a:visited {
+  color: #cb4b16;
+}
+html #articles article {
+  border-top: 1px solid #073642;
+}
+html pre {
+  border-top-color: #dc322f;
+  border-bottom-color: #dc322f;
+}
+html h1,
+html h2,
+html h3,
+html h4,
+html h5,
+html h6 {
+  color: #93a1a1;
+}
+
+@media (prefers-color-scheme: dark) {
+  html body {
+    background-color: #fdf6e3;
+    color: #657b83;
+  }
+  html header {
+    background-color: #eee8d5;
+    border-bottom-color: #dc322f;
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+  html header a.logo {
+    color: #586e75;
+  }
+  html header a {
+    color: #dc322f;
+  }
+  html footer {
+    border-top-color: #dc322f;
+    border-bottom-color: #dc322f;
+    background-color: #eee8d5;
+  }
+  html code {
+    background-color: #eee8d5;
+  }
+  html a {
+    color: #dc322f;
+  }
+  html a:visited {
+    color: #cb4b16;
+  }
+  html #articles article {
+    border-top: 1px solid #eee8d5;
+  }
+  html pre {
+    border-top-color: #dc322f;
+    border-bottom-color: #dc322f;
+  }
+  html h1,
+  html h2,
+  html h3,
+  html h4,
+  html h5,
+  html h6 {
+    color: #586e75;
+  }
+}
+html * {
+  color-profile: sRGB;
+  rendering-intent: auto;
+}
+
+body {
+  font-family: "PT Serif", serif;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 800px;
+  hyphens: auto;
+}
+
+header {
+  padding: 0.5em;
+  text-align: center;
+  font-size: 1.2em;
+  font-family: "PT Mono", monospace;
+  border-bottom: 0.2em solid;
+}
+
+header a.logo {
+  text-decoration: none;
+}
+
+footer {
+  border-top: 0.2em solid;
+  border-bottom: 0.1em solid;
+  font-family: "PT Mono", monospace;
+  text-align: center;
+  padding: 1em;
+}
+
+div#content {
+  padding: 2em 1.2em;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "PT Mono", monospace;
+}
+
+figure {
+  text-align: center;
+}
+
+figure div {
+  display: block;
+  font-style: italic;
+}
+
+p {
+  text-align: justify;
+}
+
+pre {
+  border-top: 1px solid;
+  border-bottom: 1px solid;
+}
+
+pre code {
+  display: block;
+  padding: 0.5em;
+}
+
+blockquote {
+  font-style: italic;
+}
+
+figure pre code {
+  text-align: left;
+}
+
+hr.clearfix {
+  clear: both;
+  visibility: hidden;
+  height: 0;
+}
+
+img.avatar {
+  margin-left: 1em;
+  margin-bottom: 1em;
+}
+
+a[href] {
+  font-weight: bold;
+}
+
+#articles article:first-child {
+  margin-top: 0em;
+  padding-top: 0em;
+  border-top: 0;
+}
+
+#articles article {
+  margin-top: 10em;
+  padding-top: 10em;
+  line-height: 1.6;
+}

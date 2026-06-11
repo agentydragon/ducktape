@@ -1,0 +1,270 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "example_openai_catalog",
+    srcs = ["example_openai_catalog.yaml"],
+)
+
+py_library(
+    name = "platform",
+    srcs = ["platform.py"],
+    deps = [":quote"],
+)
+
+py_library(
+    name = "resolvers",
+    srcs = ["resolvers.py"],
+    deps = [
+        ":platform",
+        "//finance/augur:dates",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        ":platform",
+        "//finance/evidence:markets",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "default_clients",
+    srcs = ["default_clients.py"],
+    deps = [
+        ":evidence_clients",
+        ":platform",
+        "//finance/evidence:checkout",
+        "//finance/evidence:markets",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":evidence_clients",
+        ":platform",
+        ":quote",
+        "//finance/evidence:markets",
+    ],
+)
+
+py_library(
+    name = "calibration",
+    srcs = ["calibration.py"],
+    deps = [
+        ":catalog",
+        ":evidence_clients",
+        ":platform",
+        ":quote",
+        ":resolvers",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/evidence:markets",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//statsmodels",
+    ],
+)
+
+py_library(
+    name = "macro_anchors",
+    srcs = ["macro_anchors.py"],
+    deps = [
+        ":catalog",
+        "//finance/augur/fit:evidence_data",
+        "//finance/evidence:loading",
+    ],
+)
+
+py_library(
+    name = "ipo_prior",
+    srcs = ["ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":evidence_clients",
+        ":platform",
+        ":resolvers",
+        "//finance/augur/model:private_equity_risk",
+        "//finance/evidence:checkout",
+        "//finance/evidence:markets",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "derive_ipo_prior",
+    main_module = "finance.augur.calibration.ipo_prior",
+    deps = [":ipo_prior"],
+)
+
+py_binary(
+    name = "calibration_report",
+    srcs = ["calibration_report.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":default_clients",
+        ":macro_anchors",
+        "//finance/augur/api:config",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "@pypi//tabulate",
+    ],
+)
+
+py_test(
+    name = "test_quote",
+    srcs = ["test_quote.py"],
+    deps = [
+        ":conftest",
+        ":quote",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_resolvers",
+    srcs = ["test_resolvers.py"],
+    deps = [
+        ":conftest",
+        ":platform",
+        ":resolvers",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog",
+    srcs = ["test_catalog.py"],
+    data = ["example_openai_catalog.yaml"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_calibration",
+    srcs = ["test_calibration.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":conftest",
+        ":platform",
+        ":quote",
+        ":testing",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/model:testing",
+        "//finance/evidence:markets",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//finance/augur/fit:synthetic_evidence"],
+)
+
+py_test(
+    name = "test_macro_anchors",
+    srcs = ["test_macro_anchors.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":macro_anchors",
+        ":platform",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/fit:evidence_data",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ipo_prior",
+    srcs = ["test_ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":ipo_prior",
+        ":platform",
+        ":testing",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:private_equity_risk",
+        "//finance/evidence:markets",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "evidence_clients",
+    srcs = ["evidence_clients.py"],
+    deps = [
+        ":platform",
+        ":quote",
+        "//finance/evidence:kalshi",
+        "//finance/evidence:manifold",
+        "//finance/evidence:markets",
+        "//finance/evidence:polymarket",
+    ],
+)
+
+py_library(
+    name = "quote",
+    srcs = ["quote.py"],
+)
+
+py_test(
+    name = "test_evidence_clients",
+    srcs = ["test_evidence_clients.py"],
+    deps = [
+        ":conftest",
+        ":evidence_clients",
+        ":quote",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

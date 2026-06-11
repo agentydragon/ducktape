@@ -20,9 +20,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from opentelemetry import trace
+
 from util.bazel import runfiles
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 _CRANE_RLOCATION = "crane/crane"
 
@@ -38,6 +41,22 @@ class BazelImage:
 
     repo_name: str
     image_rlocation: str
+
+
+def _format_crane_error(args: tuple[str, ...], returncode: int | None, stderr: str, stdout: str) -> str:
+    """Build a multiline message describing a failed crane subprocess.
+
+    Used by both the sync and async wrappers so failures look the same
+    regardless of which path raised. crane writes its error messages to
+    stderr; stdout is included for the rare case where it carries useful
+    context (e.g. a partial push trace).
+    """
+    parts = [f"crane {' '.join(args)} failed (exit {returncode})"]
+    if stderr.strip():
+        parts.append(f"stderr:\n{stderr.rstrip()}")
+    if stdout.strip():
+        parts.append(f"stdout:\n{stdout.rstrip()}")
+    return "\n".join(parts)
 
 
 class Crane:
@@ -66,7 +85,17 @@ class Crane:
             self._env = {**os.environ, "DOCKER_CONFIG": self._config_dir.name}
 
     def _run(self, *args: str) -> str:
-        result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True, env=self._env)
+        try:
+            result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True, env=self._env)
+        except subprocess.CalledProcessError as e:
+            # Surface stderr/stdout in the exception message. By default
+            # `CalledProcessError.__str__` only prints `cmd` and `returncode`,
+            # which makes errors from `check=True, capture_output=True` show up
+            # as the useless `Command '[...]' returned non-zero exit status N.`
+            # in tracebacks. Without the captured streams we can't tell whether
+            # crane hit a 401 from GHCR, a network blip during a blob upload,
+            # or anything else.
+            raise RuntimeError(_format_crane_error(args, e.returncode, e.stderr or "", e.stdout or "")) from e
         return result.stdout.strip()
 
     async def _arun(self, *args: str) -> str:
@@ -75,11 +104,26 @@ class Crane:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"crane {args[0]} failed: {stderr.decode()}")
+            raise RuntimeError(_format_crane_error(args, proc.returncode, stderr.decode(), stdout.decode()))
         return stdout.decode().strip()
 
     def digest(self, image_ref: str) -> str:
         return self._run("digest", image_ref)
+
+    def digest_or_none(self, image_ref: str) -> str | None:
+        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet.
+
+        For content-dedup before a push: an unpublished tag (`MANIFEST_UNKNOWN`)
+        or repo (`NAME_UNKNOWN`) means "nothing there, push it". Any other crane
+        failure (auth, transport, 5xx) re-raises — a real error must not be
+        mistaken for "absent" and silently turned into a churny re-push.
+        """
+        try:
+            return self._run("digest", image_ref)
+        except RuntimeError as e:
+            if "MANIFEST_UNKNOWN" in str(e) or "NAME_UNKNOWN" in str(e):
+                return None
+            raise
 
     def ls(self, repo: str) -> list[str]:
         return self._run("ls", repo).splitlines()
@@ -137,22 +181,29 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
     docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
 
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tar:
-        # Add manifest.json
-        manifest_data = json.dumps(docker_manifest).encode()
-        info = tarfile.TarInfo(name="manifest.json")
-        info.size = len(manifest_data)
-        tar.addfile(info, io.BytesIO(manifest_data))
-        # Add config blob
-        tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
-        # Add layer blobs
-        for layer_rel in layer_rels:
-            tar.add(oci_layout / layer_rel, arcname=layer_rel)
+    # dereference=True: Bazel runfiles are symlinks into the execroot. Without
+    # dereferencing, tar records them as symlink entries with absolute target
+    # paths. Docker extracts the tarball and tries to follow those symlinks,
+    # which fail when the daemon runs outside Bazel's sandbox.
+    with tracer.start_as_current_span("oci_build_tarball") as span:
+        with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
+            # Add manifest.json
+            manifest_data = json.dumps(docker_manifest).encode()
+            info = tarfile.TarInfo(name="manifest.json")
+            info.size = len(manifest_data)
+            tar.addfile(info, io.BytesIO(manifest_data))
+            # Add config blob
+            tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
+            # Add layer blobs
+            for layer_rel in layer_rels:
+                tar.add(oci_layout / layer_rel, arcname=layer_rel)
+        span.set_attribute("tarball_bytes", buf.tell())
 
     docker = shutil.which("docker") or shutil.which("podman")
     if not docker:
         raise RuntimeError("Neither docker nor podman CLI found")
     buf.seek(0)
-    result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
+    with tracer.start_as_current_span("docker_load"):
+        result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"docker load failed: {result.stderr.decode()}")

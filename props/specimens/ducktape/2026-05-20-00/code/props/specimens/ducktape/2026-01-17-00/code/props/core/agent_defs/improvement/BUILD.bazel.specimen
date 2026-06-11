@@ -1,0 +1,44 @@
+"""Improvement agent OCI image built with Bazel.
+
+Build targets:
+    bazel run //props/core/agent_defs/improvement:load  -- Load into local Docker
+    bazel run //props/core/agent_defs/improvement:push  -- Push to local registry (localhost:5050)
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+pkg_tar(
+    name = "agent_md_tar",
+    srcs = ["agent.md"],
+    package_dir = "/",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/init"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        "//props/core/cli:app_tar",
+        "//props/core/agent_defs:critic_dev_init_tar",
+        ":agent_md_tar",
+    ],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["improvement-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/improvement",
+)

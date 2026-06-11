@@ -1,0 +1,30 @@
+rationale: |
+  `MautrixClient.resolve_room_alias(RoomAlias(room))` returns a typed
+  `mautrix.types.RoomAliasInfo` object. The alias fallback path nevertheless
+  checks `hasattr(resolved, "room_id")` before reading `resolved.room_id`.
+
+  That dynamic attribute probe weakens the SDK type contract and makes this path
+  look like it accepts arbitrary response shapes. The code should use the typed
+  result directly:
+
+  ```
+  resolved = await c.resolve_room_alias(RoomAlias(room))
+  if resolved.room_id is None:
+      raise RuntimeError(f"Matrix alias {room} returned no room_id")
+  canonical_room_id = RoomID(resolved.room_id)
+  ```
+
+  Do not replace this with an `isinstance` check: that would be effectively dead
+  code unless the SDK annotation is wrong. The fix is to trust the typed
+  `RoomAliasInfo` result and use `resolved.room_id` directly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/matrix/server.py:
+        - - 165
+          - 171
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/matrix/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/matrix/server.py

@@ -1,0 +1,55 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_integration_cli_daemon",
+    srcs = ["test_integration_cli_daemon.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt/shared:git_utils",
+        "//wt/testing:asserts",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration_cli_output_format",
+    srcs = ["test_integration_cli_output_format.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        "//wt:cli",
+        "//wt/shared:protocol",
+        "//wt/testing:asserts",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration_shell",
+    srcs = ["test_integration_shell.py"],
+    data = [
+        "//third_party/gitstatusd",
+        "//wt:wt-cli",
+    ],
+    deps = [
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

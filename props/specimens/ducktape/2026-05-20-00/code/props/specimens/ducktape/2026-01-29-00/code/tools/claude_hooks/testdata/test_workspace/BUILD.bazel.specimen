@@ -1,0 +1,18 @@
+"""Simple test targets for e2e testing."""
+
+genrule(
+    name = "hello",
+    outs = ["hello.txt"],
+    cmd = "echo hello > $@",
+)
+
+# Export workspace files for e2e tests (globs don't cross package boundaries)
+filegroup(
+    name = "workspace_files",
+    srcs = [
+        ".bazelversion",
+        "BUILD.bazel",
+        "MODULE.bazel",
+    ],
+    visibility = ["//tools/claude_hooks:__pkg__"],
+)

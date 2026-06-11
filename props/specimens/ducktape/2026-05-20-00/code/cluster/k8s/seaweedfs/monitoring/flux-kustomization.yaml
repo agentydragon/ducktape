@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: seaweedfs-monitoring
+  namespace: flux-system
+spec:
+  suspend: false
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/monitoring
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: seaweedfs-cluster
+      namespace: flux-system
+    - name: monitoring-stack
+      namespace: flux-system

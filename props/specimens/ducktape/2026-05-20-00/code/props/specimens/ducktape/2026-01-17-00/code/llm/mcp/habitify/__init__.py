@@ -1,0 +1,1 @@
+"""Habitify MCP Server package."""

@@ -9,43 +9,72 @@ import sveltePlugin from "eslint-plugin-svelte";
 import svelteParser from "svelte-eslint-parser";
 import importPlugin from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
+import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
-// All project source directories (add new TS/Svelte projects here)
-const projectGlobs = [
-  "props/frontend/src/**",
-  "x/agent_server/web/src/**",
-  "x/rspcache/admin_ui/src/**",
-  "airlock/frontend/**",
-];
+// ── Shared building blocks (factored so the per-glob configs below stay DRY) ──
+const browserGlobals = { ...globals.browser };
+const tsPlugins = { "@typescript-eslint": tseslint, import: importPlugin };
+const reactSettings = { react: { version: "18.3" } };
+// Allow intentionally-unused identifiers/args when prefixed with `_`.
+const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 
+// Project source dirs, bucketed by framework so each config block targets the
+// right files — and a new project is declared exactly once, in the right list.
+//
+// x/rspcache/admin_ui is intentionally NOT listed: its BUILD.bazel has no
+// js_library targets (the Vite build is a WIP stub), so the lint aspect never
+// runs on it. Listing it here would be dead config implying coverage that does
+// not exist — re-add once it's Bazelized (per-file js_library + tsc_test).
+const reactProjects = ["augur/frontend/**"];
+const svelteProjects = ["props/frontend/src/**", "x/agent_server/web/src/**", "airlock/frontend/**"];
+const projectGlobs = [...reactProjects, ...svelteProjects];
+
+// All projects' .ts/.tsx get the shared TS rules. .svelte (+ .svelte.ts) come
+// only from the Svelte projects; the React projects' .ts/.tsx additionally get
+// eslint-plugin-react + react-hooks (the Svelte projects' .ts are plain modules,
+// so React rules — notably react-hooks/rules-of-hooks — stay off them).
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
-const svelteFiles = projectGlobs.map((g) => `${g}/*.svelte`);
-const svelteTsFiles = projectGlobs.map((g) => `${g}/*.svelte.ts`);
+const svelteFiles = svelteProjects.map((g) => `${g}/*.svelte`);
+const svelteTsFiles = svelteProjects.map((g) => `${g}/*.svelte.ts`);
+const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 
-// Import ordering (TS equivalent of ruff's isort)
+// Import ordering (the TS equivalent of ruff's isort) is intentionally OFF.
+// import/order crashes under Bazel: ranking an import calls getContextPackagePath,
+// which walks up from the source file for a package.json (pkgUp) — but the
+// bazel-out execution tree has none above it, so path.dirname(null) throws. Not
+// fixable via resolver config or the whole-program test path. A Prettier
+// import-sort plugin could order .ts/.tsx/.js but not .svelte (it doesn't touch
+// prettier-plugin-svelte's parser) and needs Nix+Bazel+pnpm wiring, so import
+// ordering is parked. See debug/eslint_import_order_bazel.md for the full investigation.
 const importRules = {
   "import/first": "error",
-  "import/order": [
-    "error",
-    {
-      groups: ["builtin", "external", "internal", ["parent", "sibling"], "index", "type"],
-      "newlines-between": "always",
-      alphabetize: { order: "asc", caseInsensitive: true },
-    },
-  ],
+  "import/order": "off",
   "import/newline-after-import": "error",
   "import/no-duplicates": "error",
 };
 
+// typescript-eslint's recommended rule set (ban-ts-comment, no-explicit-any,
+// no-empty-object-type, no-unsafe-function-type, prefer-as-const, …), pulled
+// from the already-present plugin's eslintrc `recommended` config. Its `.rules`
+// also turns off the core rules it supersedes (no-array-constructor,
+// no-unused-vars, no-unused-expressions). We layer it under coreRules so our
+// explicit overrides (no-unused-vars with the `^_` pattern, etc.) win; `no-undef`
+// is already disabled below for the type-name positives TypeScript itself catches.
+const tsRecommendedRules = tseslint.configs.recommended.rules;
+
 // Shared quality + TS rules applied everywhere
 const coreRules = {
+  ...tsRecommendedRules,
   "prefer-const": "error",
   eqeqeq: ["error", "always", { null: "ignore" }],
-  "no-console": ["warn", { allow: ["warn", "error"] }],
   "@typescript-eslint/consistent-type-imports": "error",
-  "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-  "no-unused-vars": "off",
+  // recommended sets a plain `error`; override to keep our leading-underscore escape hatch.
+  // (recommended already disables the base `no-unused-vars`, so no need to repeat that here.)
+  "@typescript-eslint/no-unused-vars": ["error", unusedVarsOptions],
+  // TypeScript already resolves identifiers/types; eslint's no-undef misfires on type-only
+  // names (e.g. `RequestInit`) and ambient globals, so defer to the compiler.
+  "no-undef": "off",
   ...importRules,
 };
 
@@ -71,12 +100,9 @@ export default [
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: "latest", sourceType: "module" },
-      globals: { ...globals.browser },
+      globals: browserGlobals,
     },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      import: importPlugin,
-    },
+    plugins: tsPlugins,
     rules: coreRules,
   },
 
@@ -91,29 +117,49 @@ export default [
     languageOptions: {
       parser: svelteParser,
       parserOptions: { parser: tsparser, ecmaVersion: "latest", sourceType: "module" },
-      globals: { ...globals.browser },
+      globals: browserGlobals,
     },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      import: importPlugin,
-    },
+    plugins: tsPlugins,
     rules: {
       ...coreRules,
-      // import/order crashes under Bazel's sandboxed execution (null file path
-      // in getFilePackagePath). Affects both eslint-plugin-import and import-x.
-      "import/order": "off",
-      "svelte/no-unused-svelte-ignore": "warn",
+      "svelte/no-unused-svelte-ignore": "error",
     },
   },
 
-  // ── Per-project overrides ──────────────────────────────────────────────
-
-  // RSPCache admin UI: React/JSX
+  // ── React projects (eslint-plugin-react recommended + react-hooks) ──────
   {
-    files: ["x/rspcache/admin_ui/src/**/*.{ts,tsx}"],
+    files: reactFiles,
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    plugins: { react, "react-hooks": reactHooks },
+    settings: reactSettings,
+    rules: {
+      ...react.configs.recommended.rules,
+      "react/react-in-jsx-scope": "off", // automatic JSX runtime, no React import needed
+      "react/prop-types": "off", // TypeScript handles prop types
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+    },
+  },
+
+  // ── study_casino frontend: browser React JS/JSX (no TypeScript) ──────────
+  // Not in projectGlobs (deliberately untyped JS), so it only matches js.recommended.
+  // Give it browser globals (fetch/window/document/WebSocket/...) and JSX parsing so
+  // no-undef doesn't misfire on browser builtins; the two react/jsx-uses-* rules stop
+  // no-unused-vars from flagging `React` and components that are only referenced in JSX.
+  {
+    files: ["x/study_casino/frontend/**/*.{js,jsx}"],
+    languageOptions: {
+      parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
+      globals: browserGlobals,
+    },
     plugins: { react },
-    settings: { react: { version: "18.3" } },
-    rules: { "react/react-in-jsx-scope": "off" },
+    settings: reactSettings,
+    rules: {
+      "react/jsx-uses-react": "error",
+      "react/jsx-uses-vars": "error",
+      // Match the repo's policy elsewhere (coreRules): unused vars are build-blocking
+      // errors, with a leading-underscore escape hatch.
+      "no-unused-vars": ["error", unusedVarsOptions],
+    },
   },
 ];

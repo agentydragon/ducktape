@@ -1,0 +1,18 @@
+"""MCP Runtime server - runtime management tools."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Named mcp_runtime to avoid conflict with //agent_server/runtime
+py_library(
+    name = "mcp_runtime",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

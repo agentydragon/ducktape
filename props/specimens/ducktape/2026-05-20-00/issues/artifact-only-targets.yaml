@@ -1,0 +1,502 @@
+rationale:
+  "These are false positives for the original artifact-only heuristic. Manual review found that they are not dead
+  targets: most feed OCI images that are built, loaded, pushed, or otherwise documented as artifacts; some are testonly helpers
+  already marked testonly; and the rest are transitive dependencies whose actual actionable root is already represented in
+  unconsumed-bazel-targets. A critic should not report these labels merely because a binary/test root query did not count
+  artifact and release roots."
+should_flag: false
+occurrences:
+  - occurrence_id: occ-000
+    files:
+      airlock/auth_proxy/BUILD.bazel:
+        - - 33
+          - 33
+    note:
+      "//airlock/auth_proxy:layers (filegroup); direct non-generated consumers: //airlock/auth_proxy:image. False positive:
+      //airlock/auth_proxy:image is in .github/workflows/push-images.yml and is deployed as ghcr.io/agentydragon/auth-proxy.
+      Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - airlock/auth_proxy/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - airlock/auth_proxy/BUILD.bazel
+  - occurrence_id: occ-001
+    files:
+      airlock/openclaw/BUILD.bazel:
+        - - 30
+          - 30
+    note:
+      "//airlock/openclaw:airlock-connection (js_library); direct non-generated consumers: //airlock/openclaw:index. False
+      positive for dead-code reporting: the OpenClaw plugin sources are packaged by //airlock/openclaw:plugin_tar and .github/workflows/openclaw-image.yml.
+      If the js_library graph matters, the actionable root is the unconsumed //airlock/openclaw:index target, not this dependency."
+    match_file_restriction:
+      - airlock/openclaw/BUILD.bazel
+    relevant_files:
+      - .github/workflows/openclaw-image.yml
+      - airlock/openclaw/BUILD.bazel
+  - occurrence_id: occ-002
+    files:
+      airlock/openclaw/BUILD.bazel:
+        - - 21
+          - 21
+    note:
+      "//airlock/openclaw:reconnecting-mcp-client (js_library); direct non-generated consumers: //airlock/openclaw:airlock-connection,
+      //airlock/openclaw:index. False positive for dead-code reporting: the OpenClaw plugin sources are packaged by //airlock/openclaw:plugin_tar
+      and .github/workflows/openclaw-image.yml. If the js_library graph matters, the actionable root is the unconsumed //airlock/openclaw:index
+      target, not this dependency."
+    match_file_restriction:
+      - airlock/openclaw/BUILD.bazel
+    relevant_files:
+      - .github/workflows/openclaw-image.yml
+      - airlock/openclaw/BUILD.bazel
+  - occurrence_id: occ-003
+    files:
+      airlock/openclaw/BUILD.bazel:
+        - - 9
+          - 9
+    note:
+      "//airlock/openclaw:types (js_library); direct non-generated consumers: //airlock/openclaw:airlock-connection, //airlock/openclaw:index.
+      False positive for dead-code reporting: the OpenClaw plugin sources are packaged by //airlock/openclaw:plugin_tar and
+      .github/workflows/openclaw-image.yml. If the js_library graph matters, the actionable root is the unconsumed //airlock/openclaw:index
+      target, not this dependency."
+    match_file_restriction:
+      - airlock/openclaw/BUILD.bazel
+    relevant_files:
+      - .github/workflows/openclaw-image.yml
+      - airlock/openclaw/BUILD.bazel
+  - occurrence_id: occ-004
+    files:
+      airlock/openclaw/BUILD.bazel:
+        - - 15
+          - 15
+    note:
+      "//airlock/openclaw:util (js_library); direct non-generated consumers: //airlock/openclaw:airlock-connection, //airlock/openclaw:index,
+      //airlock/openclaw:reconnecting-mcp-client. False positive for dead-code reporting: the OpenClaw plugin sources are packaged
+      by //airlock/openclaw:plugin_tar and .github/workflows/openclaw-image.yml. If the js_library graph matters, the actionable
+      root is the unconsumed //airlock/openclaw:index target, not this dependency."
+    match_file_restriction:
+      - airlock/openclaw/BUILD.bazel
+    relevant_files:
+      - .github/workflows/openclaw-image.yml
+      - airlock/openclaw/BUILD.bazel
+  - occurrence_id: occ-005
+    files:
+      airlock/BUILD.bazel:
+        - - 142
+          - 142
+    note:
+      "//airlock:layers (filegroup); direct non-generated consumers: //airlock:image. False positive: //airlock:image is
+      in .github/workflows/push-images.yml and is deployed as ghcr.io/agentydragon/airlock. Targets that feed released OCI images
+      are not dead."
+    match_file_restriction:
+      - airlock/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - airlock/BUILD.bazel
+  - occurrence_id: occ-006
+    files:
+      cluster/k8s/inventree/token-provisioner/BUILD.bazel:
+        - - 23
+          - 23
+    note:
+      "//cluster/k8s/inventree/token-provisioner:layers (filegroup); direct non-generated consumers: //cluster/k8s/inventree/token-provisioner:image.
+      False positive: //cluster/k8s/inventree/token-provisioner:image is in .github/workflows/push-images.yml and backs the
+      InvenTree token-provisioner Job/CronJob. Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - cluster/k8s/inventree/token-provisioner/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - cluster/k8s/inventree/token-provisioner/BUILD.bazel
+  - occurrence_id: occ-007
+    files:
+      devinfra/claude/testing/BUILD.bazel:
+        - - 12
+          - 12
+    note:
+      "//devinfra/claude/testing:shell_helpers (py_library); direct non-generated consumers: //devinfra/claude/hook_daemon/testing:session_start_helpers;
+      already testonly=true. False positive: this target is already testonly=True and only feeds testonly hook-daemon session-start
+      helpers."
+    match_file_restriction:
+      - devinfra/claude/testing/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/hook_daemon/testing/BUILD.bazel
+      - devinfra/claude/testing/BUILD.bazel
+  - occurrence_id: occ-008
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/dogmetrics/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/dogmetrics:dogmetrics (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/tunnel:tunnel. False positive for standalone
+      dead-code reporting: Transitive dependency of //devinfra/claude/web_env/re/environment_manager/src/internal/tunnel:tunnel,
+      which is already represented as an unconsumed root; do not report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/dogmetrics/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/dogmetrics/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel
+  - occurrence_id: occ-009
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/install_scripts/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/install_scripts:install_scripts (go_library);
+      direct non-generated consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic.
+      False positive for standalone dead-code reporting: Transitive dependency of //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic,
+      which is already represented as an unconsumed root; do not report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/install_scripts/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/install_scripts/BUILD.bazel
+  - occurrence_id: occ-010
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/envtype/shared/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/shared:shared (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic, //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc.
+      False positive for standalone dead-code reporting: Transitive dependency of the unconsumed anthropic/byoc environment-type
+      roots; do not report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/shared/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/shared/BUILD.bazel
+  - occurrence_id: occ-011
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/gitproxy/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/gitproxy:gitproxy (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/sources:sources. False positive for standalone
+      dead-code reporting: Transitive dependency of //devinfra/claude/web_env/re/environment_manager/src/internal/sources:sources,
+      which rides on unconsumed environment-type roots; do not report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/gitproxy/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/gitproxy/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/sources/BUILD.bazel
+  - occurrence_id: occ-012
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/podmonitor/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/podmonitor:podmonitor (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc. False positive for standalone
+      dead-code reporting: Transitive dependency of //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc,
+      which is already represented as an unconsumed root; do not report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/podmonitor/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/podmonitor/BUILD.bazel
+  - occurrence_id: occ-013
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/process/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/process:process (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic, //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc.
+      False positive for standalone dead-code reporting: Transitive dependency of unconsumed environment-type roots; do not
+      report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/process/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/process/BUILD.bazel
+  - occurrence_id: occ-014
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/sources/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/sources:sources (go_library); direct non-generated
+      consumers: //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic, //devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc.
+      False positive for standalone dead-code reporting: Transitive dependency of unconsumed environment-type roots; do not
+      report this dependency separately as dead."
+    match_file_restriction:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/sources/BUILD.bazel
+    relevant_files:
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel
+      - devinfra/claude/web_env/re/environment_manager/src/internal/sources/BUILD.bazel
+  - occurrence_id: occ-015
+    files:
+      devinfra/firecracker/manager/BUILD.bazel:
+        - - 100
+          - 100
+    note:
+      "//devinfra/firecracker/manager:layers (filegroup); direct non-generated consumers: //devinfra/firecracker/manager:image.
+      False positive: //devinfra/firecracker/manager:image is in .github/workflows/push-images.yml and backs the firecracker-manager
+      deployment. Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - devinfra/firecracker/manager/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - devinfra/firecracker/manager/BUILD.bazel
+  - occurrence_id: occ-016
+    files:
+      devinfra/firecracker/manager/BUILD.bazel:
+        - - 44
+          - 44
+    note:
+      "//devinfra/firecracker/manager:protocol (py_library); direct non-generated consumers: //devinfra/firecracker/manager:process_api_client.
+      False positive for standalone dead-code reporting: Dependency of //devinfra/firecracker/manager:process_api_client, which
+      is already represented as an unconsumed root; do not report the protocol library separately."
+    match_file_restriction:
+      - devinfra/firecracker/manager/BUILD.bazel
+    relevant_files:
+      - devinfra/firecracker/manager/BUILD.bazel
+  - occurrence_id: occ-017
+    files:
+      devinfra/firecracker/vm_pod/BUILD.bazel:
+        - - 67
+          - 67
+    note:
+      "//devinfra/firecracker/vm_pod:layers (filegroup); direct non-generated consumers: //devinfra/firecracker/vm_pod:image.
+      False positive: //devinfra/firecracker/vm_pod:image is in .github/workflows/push-images.yml as the Firecracker VM pod
+      image. Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - devinfra/firecracker/vm_pod/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - devinfra/firecracker/vm_pod/BUILD.bazel
+  - occurrence_id: occ-018
+    files:
+      ember/BUILD.bazel:
+        - - 86
+          - 86
+    note:
+      "//ember:layers (filegroup); direct non-generated consumers: //ember:image. False positive: Consumed by //ember:image
+      and //ember:load. That is a buildable OCI artifact, not dead library code; separately audit publication if the Ember image
+      should be pushed automatically."
+    match_file_restriction:
+      - ember/BUILD.bazel
+    relevant_files:
+      - ember/BUILD.bazel
+  - occurrence_id: occ-019
+    files:
+      homeassistant/proxy/BUILD.bazel:
+        - - 62
+          - 62
+    note:
+      "//homeassistant/proxy:layers (filegroup); direct non-generated consumers: //homeassistant/proxy:image. False positive:
+      //homeassistant/proxy:image is in .github/workflows/push-images.yml and is deployed as ghcr.io/agentydragon/homeassistant-proxy.
+      Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - homeassistant/proxy/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - homeassistant/proxy/BUILD.bazel
+  - occurrence_id: occ-020
+    files:
+      llm/html/llm_html/BUILD.bazel:
+        - - 52
+          - 52
+    note:
+      "//llm/html/llm_html:layers (filegroup); direct non-generated consumers: //llm/html:image. False positive: Consumed
+      by //llm/html:image and //llm/html:load. That is a buildable OCI artifact, not dead library code; separately audit publication
+      if this image should still ship."
+    match_file_restriction:
+      - llm/html/llm_html/BUILD.bazel
+    relevant_files:
+      - llm/html/BUILD.bazel
+      - llm/html/llm_html/BUILD.bazel
+  - occurrence_id: occ-021
+    files:
+      llm/BUILD.bazel:
+        - - 23
+          - 23
+    note:
+      "//llm:claude_hooks (py_library); direct non-generated consumers: //llm:core. False positive for standalone dead-code
+      reporting: Dependency of //llm:core, which is already represented as an unconsumed root; do not report this library separately."
+    match_file_restriction:
+      - llm/BUILD.bazel
+    relevant_files:
+      - llm/BUILD.bazel
+  - occurrence_id: occ-022
+    files:
+      mcp_infra/exec/BUILD.bazel:
+        - - 75
+          - 75
+    note:
+      "//mcp_infra/exec:direct_layers (filegroup); direct non-generated consumers: //mcp_infra/exec:direct_image. False
+      positive: //mcp_infra/exec:direct_image is in .github/workflows/push-images.yml and is the exec-backend image. Targets
+      that feed released OCI images are not dead."
+    match_file_restriction:
+      - mcp_infra/exec/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - mcp_infra/exec/BUILD.bazel
+  - occurrence_id: occ-023
+    files:
+      props/backend/BUILD.bazel:
+        - - 199
+          - 199
+    note:
+      "//props/backend:layers (filegroup); direct non-generated consumers: //props/backend:image. False positive: //props/backend:image
+      is in .github/workflows/push-images.yml and is the props backend image. Targets that feed released OCI images are not
+      dead."
+    match_file_restriction:
+      - props/backend/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - props/backend/BUILD.bazel
+  - occurrence_id: occ-024
+    files:
+      tana/token_broker/BUILD.bazel:
+        - - 49
+          - 49
+    note:
+      "//tana/token_broker:layers (filegroup); direct non-generated consumers: //tana/token_broker:image. False positive:
+      //tana/token_broker:image is in .github/workflows/push-images.yml. Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - tana/token_broker/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - tana/token_broker/BUILD.bazel
+  - occurrence_id: occ-025
+    files:
+      x/auragon_study_casino/BUILD.bazel:
+        - - 248
+          - 248
+    note:
+      "//x/auragon_study_casino:server_layers (filegroup); direct non-generated consumers: //x/auragon_study_casino:image.
+      False positive: //x/auragon_study_casino:image is in .github/workflows/push-images.yml and is the study-casino image.
+      Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - x/auragon_study_casino/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/auragon_study_casino/BUILD.bazel
+  - occurrence_id: occ-026
+    files:
+      x/authentik_mcp_poc/BUILD.bazel:
+        - - 116
+          - 116
+    note:
+      "//x/authentik_mcp_poc:backend_layers (filegroup); direct non-generated consumers: //x/authentik_mcp_poc:backend_image.
+      False positive: //x/authentik_mcp_poc:backend_image is in .github/workflows/push-images.yml. Targets that feed released
+      OCI images are not dead."
+    match_file_restriction:
+      - x/authentik_mcp_poc/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/authentik_mcp_poc/BUILD.bazel
+  - occurrence_id: occ-027
+    files:
+      x/authentik_mcp_poc/BUILD.bazel:
+        - - 86
+          - 86
+    note:
+      "//x/authentik_mcp_poc:server_layers (filegroup); direct non-generated consumers: //x/authentik_mcp_poc:server_image.
+      False positive: //x/authentik_mcp_poc:server_image is in .github/workflows/push-images.yml. Targets that feed released
+      OCI images are not dead."
+    match_file_restriction:
+      - x/authentik_mcp_poc/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/authentik_mcp_poc/BUILD.bazel
+  - occurrence_id: occ-028
+    files:
+      x/cpap_sync/BUILD.bazel:
+        - - 41
+          - 41
+    note:
+      "//x/cpap_sync:layers (filegroup); direct non-generated consumers: //x/cpap_sync:image. False positive: //x/cpap_sync:image
+      is in .github/workflows/push-images.yml and is the cpap-sync image. Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - x/cpap_sync/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/cpap_sync/BUILD.bazel
+  - occurrence_id: occ-029
+    files:
+      x/gatelet/server/BUILD.bazel:
+        - - 20
+          - 20
+    note:
+      "//x/gatelet/server:layers (filegroup); direct non-generated consumers: //x/gatelet:image. False positive: Consumed
+      by //x/gatelet:image and //x/gatelet:load. The Gatelet README documents building/loading this OCI image, so the layer
+      target is not dead."
+    match_file_restriction:
+      - x/gatelet/server/BUILD.bazel
+    relevant_files:
+      - x/gatelet/BUILD.bazel
+      - x/gatelet/server/BUILD.bazel
+  - occurrence_id: occ-030
+    files:
+      x/gitea/pr_gate/BUILD.bazel:
+        - - 3
+          - 3
+    note:
+      "//x/gitea/pr_gate:policy_common (py_library); direct non-generated consumers: //x/gitea/pr_gate:policy_server_fastapi.
+      False positive for standalone dead-code reporting: Dependency of //x/gitea/pr_gate:policy_server_fastapi, which is already
+      represented as an unconsumed root; do not report this common library separately."
+    match_file_restriction:
+      - x/gitea/pr_gate/BUILD.bazel
+    relevant_files:
+      - x/gitea/pr_gate/BUILD.bazel
+  - occurrence_id: occ-031
+    files:
+      x/grocy_mcp/BUILD.bazel:
+        - - 282
+          - 282
+    note:
+      "//x/grocy_mcp:server_layers (filegroup); direct non-generated consumers: //x/grocy_mcp:server_image. False positive:
+      //x/grocy_mcp:server_image is in .github/workflows/push-images.yml and is the grocy-mcp image. Targets that feed released
+      OCI images are not dead."
+    match_file_restriction:
+      - x/grocy_mcp/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/grocy_mcp/BUILD.bazel
+  - occurrence_id: occ-032
+    files:
+      x/mcp_oauth_facade/BUILD.bazel:
+        - - 18
+          - 18
+    note:
+      "//x/mcp_oauth_facade:server_layers (filegroup); direct non-generated consumers: //x/mcp_oauth_facade:image. False
+      positive: //x/mcp_oauth_facade:image is in .github/workflows/push-images.yml and is deployed as the shared MCP OAuth facade.
+      Targets that feed released OCI images are not dead."
+    match_file_restriction:
+      - x/mcp_oauth_facade/BUILD.bazel
+    relevant_files:
+      - .github/workflows/push-images.yml
+      - x/mcp_oauth_facade/BUILD.bazel
+  - occurrence_id: occ-033
+    files:
+      x/rspcache/BUILD.bazel:
+        - - 23
+          - 23
+    note:
+      "//x/rspcache:layers (filegroup); direct non-generated consumers: //x/rspcache:image. False positive: Consumed by
+      //x/rspcache:image and //x/rspcache:load. That is a buildable OCI artifact, not dead library code; separately audit whether
+      the old rspcache deployment path is still intended."
+    match_file_restriction:
+      - x/rspcache/BUILD.bazel
+    relevant_files:
+      - x/rspcache/BUILD.bazel
+  - occurrence_id: occ-034
+    files:
+      x/webhook_inbox/BUILD.bazel:
+        - - 62
+          - 62
+    note:
+      "//x/webhook_inbox:layers (filegroup); direct non-generated consumers: //x/webhook_inbox:image. False positive: Consumed
+      by //x/webhook_inbox:image and //x/webhook_inbox:load. That is a buildable OCI artifact, not dead library code; separately
+      audit publication/deployment if needed."
+    match_file_restriction:
+      - x/webhook_inbox/BUILD.bazel
+    relevant_files:
+      - x/webhook_inbox/BUILD.bazel

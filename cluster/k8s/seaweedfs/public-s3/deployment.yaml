@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-s3
+  namespace: seaweedfs
+  labels:
+    app.kubernetes.io/name: public-s3
+    app.kubernetes.io/component: s3
+    app.kubernetes.io/part-of: seaweedfs
+  annotations:
+    reloader.stakater.com/auto: "true"
+    description: >-
+      Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a
+      curated multi-identity config (drivefs-artifacts writer/reader, vm-images
+      ci-writer/cdi-reader, read-only claude-reader) — deliberately NOT the
+      operator-managed all-tenant seaweedfs-s3 config, which contains admin and
+      every write key and must never be reachable from outside the cluster.
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-s3
+      app.kubernetes.io/component: s3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-s3
+        app.kubernetes.io/component: s3
+        app.kubernetes.io/part-of: seaweedfs
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: s3
+          image: chrislusf/seaweedfs:4.29
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - >-
+              weed -logtostderr=true s3
+              -port=8333
+              -filer=seaweedfs-filer:8888
+              -config=/etc/sw/seaweedfs_s3_config.json
+              -metricsPort=9327
+              -ip.bind=0.0.0.0
+          ports:
+            - name: s3-http
+              containerPort: 8333
+              protocol: TCP
+            - name: s3-metrics
+              containerPort: 9327
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8333
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 15
+            successThreshold: 1
+            failureThreshold: 100
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: s3-config
+              mountPath: /etc/sw
+              readOnly: true
+      volumes:
+        - name: s3-config
+          secret:
+            secretName: public-s3-config

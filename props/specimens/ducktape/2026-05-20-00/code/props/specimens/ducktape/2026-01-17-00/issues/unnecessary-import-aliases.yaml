@@ -1,0 +1,58 @@
+rationale: |
+  Import aliases should only be used when they add real value: disambiguating colliding names,
+  following community conventions (numpy as np), or shortening frequently-used long names.
+
+  Aliases without collision risk or clear benefit add noise and obscure the actual imported name.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      props/backend/cli.py:
+        - [13, 13]
+    note: "app as fastapi_app - no collision, just use 'app'"
+    critic_scopes_expected_to_recall:
+      - - props/backend/cli.py
+    match_file_restriction:
+      - props/backend/cli.py
+
+  - occurrence_id: occ-1
+    files:
+      experimental/ember_evals/runner.py:
+        - [26, 26]
+    note: "SCENARIO_SUITE as REGRESSION_SUITE - no collision"
+    critic_scopes_expected_to_recall:
+      - - experimental/ember_evals/runner.py
+    match_file_restriction:
+      - experimental/ember_evals/runner.py
+
+  - occurrence_id: occ-2
+    files:
+      gatelet/server/endpoints/test_activitywatch.py:
+        - [3, 3]
+    note: "activitywatch_sample as sample - unnecessary shortening"
+    critic_scopes_expected_to_recall:
+      - - gatelet/server/endpoints/test_activitywatch.py
+    match_file_restriction:
+      - gatelet/server/endpoints/test_activitywatch.py
+
+  - occurrence_id: occ-3
+    files:
+      experimental/ember_evals/runner.py:
+        - [5, 5]
+    note: "datetime as _dt - unconventional underscore prefix, no value"
+    critic_scopes_expected_to_recall:
+      - - experimental/ember_evals/runner.py
+    match_file_restriction:
+      - experimental/ember_evals/runner.py
+
+  - occurrence_id: occ-4
+    files:
+      agent_server/server/app.py:
+        - [12, 12]
+    note: "FastAPI as SubApp - same class imported twice with different names"
+    critic_scopes_expected_to_recall:
+      - - agent_server/server/app.py
+    match_file_restriction:
+      - agent_server/server/app.py

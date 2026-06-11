@@ -1,10 +1,10 @@
 #!/bin/bash
-# Configure BuildBuddy remote cache for Bazel if BUILDBUDDY_API_KEY is set.
+# Configure BuildBuddy Bazel credentials if BUILDBUDDY_API_KEY is set.
 #
 # Writes config to ~/.config/bazel/buildbuddy.bazelrc which is loaded via
 # try-import in ~/.bazelrc (set up by nix home-manager or this script in CI).
 #
-# Used by Claude Code SessionStart hook and GitHub Actions (via setup-buildbuddy action)
+# Used by Codex Cloud and GitHub Actions setup flows.
 
 set -euo pipefail
 
@@ -17,12 +17,9 @@ BUILDBUDDY_BAZELRC="$HOME/.config/bazel/buildbuddy.bazelrc"
 mkdir -p "$(dirname "$BUILDBUDDY_BAZELRC")"
 
 cat >"$BUILDBUDDY_BAZELRC" <<EOF
-# BuildBuddy authentication (auto-generated)
-# Static configuration is in .bazelrc under build:rbe
+# BuildBuddy authentication plus RBE-safe shell normalization (auto-generated)
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
-
-# Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)
-build --config=rbe
+build --shell_executable=/bin/bash
 EOF
 
 # Override RBE container image if RBE_IMAGE is set (used by CI when
@@ -37,8 +34,8 @@ fi
 USER_BAZELRC="$HOME/.bazelrc"
 if [[ ! -f "$USER_BAZELRC" ]] || ! grep -q "try-import.*buildbuddy.bazelrc" "$USER_BAZELRC" 2>/dev/null; then
   echo "" >>"$USER_BAZELRC"
-  echo "# BuildBuddy remote cache (auto-added by setup_buildbuddy.sh)" >>"$USER_BAZELRC"
+  echo "# BuildBuddy credentials (auto-added by setup_buildbuddy.sh)" >>"$USER_BAZELRC"
   echo "try-import $BUILDBUDDY_BAZELRC" >>"$USER_BAZELRC"
 fi
 
-echo "BuildBuddy remote cache configured at $BUILDBUDDY_BAZELRC"
+echo "BuildBuddy Bazel credentials configured at $BUILDBUDDY_BAZELRC"

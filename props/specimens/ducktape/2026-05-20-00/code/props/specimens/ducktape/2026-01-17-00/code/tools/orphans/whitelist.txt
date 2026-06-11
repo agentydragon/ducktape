@@ -1,0 +1,203 @@
+# Files expected to not be in any Bazel target.
+# Uses gitignore-style patterns (pathspec library).
+
+# Build system files
+BUILD.bazel
+MODULE.bazel
+WORKSPACE.bazel
+*.bzl
+.bazelignore
+.bazelrc
+.bazelversion
+
+# Config files
+*.toml
+*.yaml
+*.yml
+*.json
+*.lock
+*.ini
+*.cfg
+.editorconfig
+.gitattributes
+.gitignore
+.pre-commit-config.yaml
+.envrc
+.dockerignore
+.npmrc
+.prettierignore
+.markdownlint*
+.puppeteerrc*
+
+# Git placeholder files
+.gitkeep
+
+# Documentation
+*.md
+LICENSE*
+
+# Docker files
+Dockerfile
+
+# Web assets
+*.html
+*.css
+
+# Python version files
+.python-version
+
+# Terraform files (managed separately)
+*.tf
+
+# Shell scripts (many are standalone utilities)
+*.sh
+
+# Certificates and keys
+*.pem
+*.crt
+*.key
+
+# Nginx configs
+*.conf
+
+# Non-Bazelized directories
+found/**
+ansible/**
+nix/**
+dotfiles/**
+cluster/**
+k8s-old/**
+# finance/worthy uses Go, not Bazelized for Go yet
+finance/worthy/**
+finance/reconcile/**
+
+# Experimental/investigation directories
+experimental/**
+investigations/**
+
+# Website (Hakyll, not Bazelized)
+website/**
+
+# Static assets
+*.png
+*.jpg
+*.gif
+*.mp4
+*.pdf
+*.dot
+
+# Haskell
+*.hs
+
+# GitHub workflows
+.github/**
+
+# Markdown posts
+*.markdown
+
+# JavaScript (various places)
+*.js
+*.ts
+*.tsx
+
+# Template files
+*.tpl
+*.j2
+*.j2.md
+
+# Text files (notes, todos, etc.)
+*.txt
+
+# SQL files
+*.sql
+
+# gnuplot files
+*.gnuplot
+
+# Nix files
+*.nix
+flake.lock
+
+# Helm charts
+*.helmignore
+
+# === Legacy/Archived Directories ===
+nonrcm-dotfiles/**
+terraform/**
+tana/**
+trilium/**
+sysrw/**
+
+# === Intentionally Outside Bazel (external ecosystems) ===
+homeassistant/**
+inventree_utils/**
+
+# === Partially Bazelized - specific orphan files ===
+# ember/ - OCI image migrated, but core Python not yet in BUILD
+ember/__init__.py
+ember/__main__.py
+ember/app.py
+ember/config.py
+ember/handlers.py
+ember/integrations/__init__.py
+ember/integrations/gitea.py
+ember/matrix_client.py
+ember/mcp_tools.py
+ember/resources/examples/matrix-client/quickstart.py
+ember/runtime/__init__.py
+ember/runtime/python_session.py
+ember/secrets.py
+ember/system_prompt.py
+ember/test_*.py
+
+# llm/ - mostly bazelized, these specific files are examples/scripts
+llm/ducktape_llm_common/examples/complex_predicate.py
+llm/ducktape_llm_common/scripts/notification_test_manual.py
+llm/mcp/habitify/api_reference/collect_references.py
+llm/mcp/habitify/examples/install_to_claude.py
+
+# Local registry patches
+tools/local_registry/**
+
+# Data files
+*.cereal
+*.edn
+*.info
+*.gcode
+*.example
+*.mako
+*.ambr
+*.tanapaste
+MANIFEST
+
+# Git hooks and server-side hooks
+hooks/pre-commit
+*/hooks/pre-commit
+**/hooks/pre-receive*
+**/hooks/pre-commit
+
+# Wrapper scripts without extension
+**/scripts/*_wrapper
+
+# Deployment scripts without extension
+ember/scripts/ember-deploy
+
+# TODO/notes files
+*-TODO
+**/TODO
+TODO
+**/todo-*
+**/pytest-todo
+
+# === Not-yet-Bazelized packages ===
+# gatelet/ - server/ is bazelized, root files are orphans
+gatelet/aw_summary.py
+gatelet/tasks.py
+gatelet/Makefile
+
+openai_utils/**
+sandboxed_jupyter/**
+
+# Root conftest.py (pytest autodiscovery)
+conftest.py
+*/conftest.py

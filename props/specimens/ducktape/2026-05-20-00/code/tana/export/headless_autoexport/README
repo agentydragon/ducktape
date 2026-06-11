@@ -1,0 +1,11 @@
+pip install playwright
+playwright install chromium
+
+playwright codegen \
+  --channel=chrome \
+  --user-data-dir=~/.config/tana \
+  https://app.tana.inc
+
+notes: https://chatgpt.com/c/68316839-446c-8011-9148-be2fd0b74a98
+
+^- probably not stored in cookies, looks like local storage

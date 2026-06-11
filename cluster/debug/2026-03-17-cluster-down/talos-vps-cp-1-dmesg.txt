@@ -1,0 +1,1680 @@
+5.78.43.147: kern:  notice: [2026-03-17T11:16:41.146614121Z]: Linux version 6.18.8-talos (root@buildkitsandbox) (gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.45.1) #1 SMP Thu Feb  5 18:06:13 UTC 2026
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: Command line: BOOT_IMAGE=/A/vmlinuz talos.platform=hcloud console=tty1 console=ttyS0 net.ifnames=0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-provided physical RAM map:
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x0000000000100000-0x000000007ffdbfff] usable
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x000000007ffdc000-0x000000007fffffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x00000000b0000000-0x00000000bfffffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x00000000fed1c000-0x00000000fed1ffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x0000000100000000-0x0000000273ffffff] usable
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: NX (Execute Disable) protection: active
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: APIC: Static calls initialized
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: SMBIOS 3.0.0 present.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: DMI: Hetzner vServer/Standard PC (Q35 + ICH9, 2009), BIOS 20171111 11/11/2017
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: DMI: Memory slots populated: 1/1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: Hypervisor detected: KVM
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: last_pfn = 0x7ffdc max_arch_pfn = 0x400000000
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: kvm-clock: Using msrs 4b564d01 and 4b564d00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146614121Z]: kvm-clock: using sched offset of 792478475978782 cycles
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146617121Z]: clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.146620121Z]: tsc: Detected 2445.404 MHz processor
+5.78.43.147: kern:   debug: [2026-03-17T11:16:41.147680121Z]: e820: update [mem 0x00000000-0x00000fff] usable ==> reserved
+5.78.43.147: kern:   debug: [2026-03-17T11:16:41.147682121Z]: e820: remove [mem 0x000a0000-0x000fffff] usable
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.147688121Z]: last_pfn = 0x274000 max_arch_pfn = 0x400000000
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.147737121Z]: MTRR map: 4 entries (3 fixed + 1 variable; max 19), built from 8 variable MTRRs
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.147740121Z]: x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.147810121Z]: last_pfn = 0x7ffdc max_arch_pfn = 0x400000000
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150090121Z]: found SMP MP-table at [mem 0x000f5470-0x000f547f]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150108121Z]: Kernel/User page tables isolation: force enabled on command line.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150110121Z]: Using GB pages for direct mapping
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150405121Z]: RAMDISK: [mem 0x2ea63000-0x33528fff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150409121Z]: ACPI: Early table checksum verification disabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150412121Z]: ACPI: RSDP 0x00000000000F5250 000014 (v00 BOCHS )
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150416121Z]: ACPI: RSDT 0x000000007FFE2749 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150422121Z]: ACPI: FACP 0x000000007FFE2529 0000F4 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150428121Z]: ACPI: DSDT 0x000000007FFE0040 0024E9 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150431121Z]: ACPI: FACS 0x000000007FFE0000 000040
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150433121Z]: ACPI: APIC 0x000000007FFE261D 000090 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150436121Z]: ACPI: HPET 0x000000007FFE26AD 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150439121Z]: ACPI: MCFG 0x000000007FFE26E5 00003C (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150442121Z]: ACPI: WAET 0x000000007FFE2721 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150445121Z]: ACPI: Reserving FACP table memory at [mem 0x7ffe2529-0x7ffe261c]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150446121Z]: ACPI: Reserving DSDT table memory at [mem 0x7ffe0040-0x7ffe2528]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150447121Z]: ACPI: Reserving FACS table memory at [mem 0x7ffe0000-0x7ffe003f]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150448121Z]: ACPI: Reserving APIC table memory at [mem 0x7ffe261d-0x7ffe26ac]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150449121Z]: ACPI: Reserving HPET table memory at [mem 0x7ffe26ad-0x7ffe26e4]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150450121Z]: ACPI: Reserving MCFG table memory at [mem 0x7ffe26e5-0x7ffe2720]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.150451121Z]: ACPI: Reserving WAET table memory at [mem 0x7ffe2721-0x7ffe2748]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151153121Z]: No NUMA configuration found
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151155121Z]: Faking a node at [mem 0x0000000000000000-0x0000000273ffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151171121Z]: NODE_DATA(0) allocated [mem 0x273fd3540-0x273ffdfff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151426121Z]: Zone ranges:
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151427121Z]:   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151429121Z]:   DMA32    [mem 0x0000000001000000-0x00000000ffffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151430121Z]:   Normal   [mem 0x0000000100000000-0x0000000273ffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151432121Z]:   Device   empty
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151432121Z]: Movable zone start for each node
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151436121Z]: Early memory node ranges
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151436121Z]:   node   0: [mem 0x0000000000001000-0x000000000009efff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151438121Z]:   node   0: [mem 0x0000000000100000-0x000000007ffdbfff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151439121Z]:   node   0: [mem 0x0000000100000000-0x0000000273ffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151440121Z]: Initmem setup node 0 [mem 0x0000000000001000-0x0000000273ffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151451121Z]: On node 0, zone DMA: 1 pages in unavailable ranges
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.151510121Z]: On node 0, zone DMA: 97 pages in unavailable ranges
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.160898121Z]: On node 0, zone Normal: 36 pages in unavailable ranges
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.160964121Z]: On node 0, zone Normal: 16384 pages in unavailable ranges
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163420121Z]: ACPI: PM-Timer IO Port: 0x608
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163437121Z]: ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163478121Z]: IOAPIC[0]: apic_id 0, version 17, address 0xfec00000, GSI 0-23
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163481121Z]: ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163483121Z]: ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163484121Z]: ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163485121Z]: ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163486121Z]: ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163489121Z]: ACPI: Using ACPI (MADT) for SMP configuration information
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163490121Z]: ACPI: HPET id: 0x8086a201 base: 0xfed00000
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163499121Z]: CPU topo: Max. logical packages:   1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163500121Z]: CPU topo: Max. logical dies:       1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163501121Z]: CPU topo: Max. dies per package:   1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163505121Z]: CPU topo: Max. threads per core:   1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163506121Z]: CPU topo: Num. cores per package:     4
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163506121Z]: CPU topo: Num. threads per package:   4
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163507121Z]: CPU topo: Allowing 4 present CPUs plus 0 hotplug CPUs
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163525121Z]: kvm-guest: APIC: eoi() replaced with kvm_guest_apic_eoi_write()
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163546121Z]: [mem 0xc0000000-0xfed1bfff] available for PCI devices
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163547121Z]: Booting paravirtualized kernel on KVM
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.163549121Z]: clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.173191121Z]: setup_percpu: NR_CPUS:8192 nr_cpumask_bits:4 nr_cpu_ids:4 nr_node_ids:1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.173377121Z]: percpu: Embedded 82 pages/cpu s212992 r8192 d114688 u524288
+5.78.43.147: kern:   debug: [2026-03-17T11:16:41.173385121Z]: pcpu-alloc: s212992 r8192 d114688 u524288 alloc=1*2097152
+5.78.43.147: kern:   debug: [2026-03-17T11:16:41.173389121Z]: pcpu-alloc: [0] 0 1 2 3
+5.78.43.147: kern:  notice: [2026-03-17T11:16:41.173423121Z]: Kernel command line: BOOT_IMAGE=/A/vmlinuz talos.platform=hcloud console=tty1 console=ttyS0 net.ifnames=0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1
+5.78.43.147: kern:  notice: [2026-03-17T11:16:41.173697121Z]: Unknown kernel command line parameters "selinux=1", will be passed to user space.
+5.78.43.147: kern:  notice: [2026-03-17T11:16:41.173719121Z]: random: crng init done
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.173720121Z]: printk: log buffer data + meta data: 262144 + 917504 = 1179648 bytes
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.174293121Z]: Dentry cache hash table entries: 1048576 (order: 11, 8388608 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.174570121Z]: Inode-cache hash table entries: 524288 (order: 10, 4194304 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.174623121Z]: software IO TLB: area num 4.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.182116121Z]: Fallback order for Node 0: 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.182122121Z]: Built 1 zonelists, mobility grouping on.  Total pages: 2047866
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.182124121Z]: Policy zone: Normal
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.182292121Z]: mem auto-init: stack:all(zero), heap alloc:on, heap free:off
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.198027121Z]: SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.199071121Z]: allocated 16515072 bytes of page_ext
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.199121121Z]: Kernel/User page tables isolation: enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216750121Z]: ftrace: allocating 78733 entries in 308 pages
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216753121Z]: ftrace: allocated 308 pages with 4 groups
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216879121Z]: rcu: Hierarchical RCU implementation.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216880121Z]: rcu: 	RCU restricting CPUs from NR_CPUS=8192 to nr_cpu_ids=4.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216882121Z]: 	Rude variant of Tasks RCU enabled.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216882121Z]: 	Tracing variant of Tasks RCU enabled.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216884121Z]: rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216884121Z]: rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216893121Z]: RCU Tasks Rude: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.216895121Z]: RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.226306121Z]: NR_IRQS: 524544, nr_irqs: 456, preallocated irqs: 16
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.226529121Z]: rcu: srcu_init: Setting srcu_struct sizes based on contention.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.226631121Z]: kfence: initialized - using 2097152 bytes for 255 objects at 0x(____ptrval____)-0x(____ptrval____)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.241270121Z]: Console: colour VGA+ 80x25
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.241274121Z]: printk: legacy console [tty1] enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.293766121Z]: printk: legacy console [ttyS0] enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.513185121Z]: ACPI: Core revision 20250807
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.514857121Z]: clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604467 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.518297121Z]: APIC: Switch to symmetric I/O mode setup
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.520487121Z]: x2apic enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.521907121Z]: APIC: Switched APIC routing to: physical x2apic
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.525112121Z]: ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.527231121Z]: clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x233fc319723, max_idle_ns: 440795258057 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.530703121Z]: Calibrating delay loop (skipped) preset value.. 4890.80 BogoMIPS (lpj=9781616)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.533655121Z]: x86/cpu: User Mode Instruction Prevention (UMIP) activated
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.535222121Z]: Last level iTLB entries: 4KB 512, 2MB 255, 4MB 127
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.537224121Z]: Last level dTLB entries: 4KB 512, 2MB 255, 4MB 127, 1GB 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.539122121Z]: mitigations: Enabled attack vectors: user_kernel, user_user, guest_host, guest_guest, SMT mitigations: auto
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.543417121Z]: Speculative Store Bypass: Mitigation: Speculative Store Bypass disabled via prctl
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.546703121Z]: Spectre V2 : Mitigation: Retpolines
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.548343121Z]: RETBleed: Mitigation: untrained return thunk
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.550703121Z]: Speculative Return Stack Overflow: Mitigation: SMT disabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.552958121Z]: Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.555298121Z]: Spectre V2 : Spectre v2 / SpectreRSB: Filling RSB on context switch and VMEXIT
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.558702121Z]: Spectre V2 : Enabling Speculation Barrier for firmware calls
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.561039121Z]: active return thunk: retbleed_return_thunk
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.562705121Z]: Spectre V2 : mitigation: Enabling conditional Indirect Branch Prediction Barrier
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.565649121Z]: x86/fpu: Supporting XSAVE feature 0x001: 'x87 floating point registers'
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.567288121Z]: x86/fpu: Supporting XSAVE feature 0x002: 'SSE registers'
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.571135121Z]: x86/fpu: Supporting XSAVE feature 0x004: 'AVX registers'
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.573306121Z]: x86/fpu: xstate_offset[2]:  576, xstate_sizes[2]:  256
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.575128121Z]: x86/fpu: Enabled xstate features 0x7, context size is 832 bytes, using 'compacted' format.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.615830121Z]: Freeing SMP alternatives memory: 76K
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.617510121Z]: pid_max: default: 32768 minimum: 301
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.619133121Z]: LSM: initializing lsm=lockdown,capability,yama,selinux,bpf,landlock
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.622738121Z]: Yama: becoming mindful.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.624060121Z]: SELinux:  Initializing.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.627061121Z]: LSM support for eBPF active
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.628510121Z]: landlock: Up and running.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.629966121Z]: Mount-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.631262121Z]: Mountpoint-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.744033121Z]: smpboot: CPU0: AMD EPYC-Rome Processor (family: 0x17, model: 0x31, stepping: 0x0)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.746699121Z]: Performance Events: Fam17h+ core perfctr, AMD PMU driver.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.747152121Z]: ... version:                   0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.748762121Z]: ... bit width:                 48
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.751075121Z]: ... generic counters:          6
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.752629121Z]: ... generic bitmap:            000000000000003f
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.755123121Z]: ... fixed-purpose counters:    0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.756676121Z]: ... fixed-purpose bitmap:      0000000000000000
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.758702121Z]: ... value mask:                0000ffffffffffff
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.760749121Z]: ... max period:                00007fffffffffff
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.762702121Z]: ... global_ctrl mask:          000000000000003f
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.764798121Z]: signal: max sigframe size: 1776
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.766413121Z]: rcu: Hierarchical SRCU implementation.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.767080121Z]: rcu: 	Max phase no-delay instances is 1000.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.769090121Z]: Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.776338121Z]: smp: Bringing up secondary CPUs ...
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.778131121Z]: smpboot: x86: Booting SMP configuration:
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.779125121Z]: .... node  #0, CPUs:      #1 #2 #3
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.786771121Z]: smp: Brought up 1 node, 4 CPUs
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.791082121Z]: smpboot: Total of 4 processors activated (19563.23 BogoMIPS)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.793851121Z]: Memory: 7805024K/8191464K available (29469K kernel code, 6158K rwdata, 17280K rodata, 6192K init, 3964K bss, 362472K reserved, 0K cma-reserved)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.798930121Z]: devtmpfs: initialized
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.800039121Z]: x86/mm: Memory block size: 128MB
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.803329121Z]: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.806718121Z]: posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.809375121Z]: futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.811370121Z]: pinctrl core: initialized pinctrl subsystem
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.814896121Z]: PM: RTC time: 11:16:42, date: 2026-03-17
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.817288121Z]: NET: Registered PF_NETLINK/PF_ROUTE protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.819368121Z]: DMA: preallocated 1024 KiB GFP_KERNEL pool for atomic allocations
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.821885121Z]: DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.823349121Z]: DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.827300121Z]: audit: initializing netlink subsys (disabled)
+5.78.43.147: kern:  notice: [2026-03-17T11:16:41.829230121Z]: audit: type=2000 audit(1773746202.082:1): state=initialized audit_enabled=0 res=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.829230121Z]: thermal_sys: Registered thermal governor 'step_wise'
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.831318121Z]: thermal_sys: Registered thermal governor 'user_space'
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.835158121Z]: cpuidle: using governor menu
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.840301121Z]: acpiphp: ACPI Hot Plug PCI Controller Driver version: 0.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.842786121Z]: dca service started, version 1.12.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.844600121Z]: PCI: ECAM [mem 0xb0000000-0xbfffffff] (base 0xb0000000) for domain 0000 [bus 00-ff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.847340121Z]: PCI: Using configuration type 1 for base access
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.849457121Z]: kprobes: kprobe jump-optimization is enabled. All kprobes are optimized if possible.
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.851329121Z]: HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.853721121Z]: HugeTLB: 16380 KiB vmemmap can be freed for a 1.00 GiB page
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.859269121Z]: HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.859269121Z]: HugeTLB: 28 KiB vmemmap can be freed for a 2.00 MiB page
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.864271121Z]: ACPI: Added _OSI(Module Device)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.867177121Z]: ACPI: Added _OSI(Processor Device)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.869207121Z]: ACPI: Added _OSI(Processor Aggregator Device)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.872077121Z]: ACPI: 1 ACPI AML tables successfully acquired and loaded
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.878922121Z]: ACPI: Interpreter enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.880605121Z]: ACPI: PM: (supports S0 S5)
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.880605121Z]: ACPI: Using IOAPIC for interrupt routing
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.881500121Z]: PCI: Using host bridge windows from ACPI; if necessary, use "pci=nocrs" and report a bug
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.887474121Z]: PCI: Using E820 reservations for host bridge windows
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.891333121Z]: ACPI: Enabled 2 GPEs in block 00 to 3F
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.893481121Z]: ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.899246121Z]: acpi PNP0A08:00: _OSC: OS supports [ExtendedConfig ASPM ClockPM Segments MSI EDR HPX-Type3]
+ SUBSYSTEM=acpi
+ DEVICE=+acpi:PNP0A08:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.899366121Z]: acpi PNP0A08:00: _OSC: platform does not support [PCIeHotplug LTR DPC]
+ SUBSYSTEM=acpi
+ DEVICE=+acpi:PNP0A08:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.902054121Z]: acpi PNP0A08:00: _OSC: OS now controls [PME AER PCIeCapability]
+ SUBSYSTEM=acpi
+ DEVICE=+acpi:PNP0A08:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.907521121Z]: PCI host bridge to bus 0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.907521121Z]: pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.909017121Z]: pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.911146121Z]: pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.913744121Z]: pci_bus 0000:00: root bus resource [mem 0x80000000-0xafffffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.919272121Z]: pci_bus 0000:00: root bus resource [mem 0xc0000000-0xfebfffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.919272121Z]: pci_bus 0000:00: root bus resource [mem 0xc000000000-0xc7ffffffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.921979121Z]: pci_bus 0000:00: root bus resource [bus 00-ff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.923207121Z]: pci 0000:00:00.0: [8086:29c0] type 00 class 0x060000 conventional PCI endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.927932121Z]: pci 0000:00:01.0: [1af4:1050] type 00 class 0x030000 conventional PCI endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.934738121Z]: pci 0000:00:01.0: BAR 0 [mem 0xfd000000-0xfd7fffff pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.936993121Z]: pci 0000:00:01.0: BAR 2 [mem 0xc120000000-0xc120003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.939262121Z]: pci 0000:00:01.0: BAR 4 [mem 0xfea10000-0xfea10fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.941338121Z]: pci 0000:00:01.0: ROM [mem 0xfea00000-0xfea0ffff pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.947230121Z]: pci 0000:00:01.0: Video device with shadowed ROM at [mem 0x000c0000-0x000dffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.948030121Z]: pci 0000:00:02.0: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.954721121Z]: pci 0000:00:02.0: BAR 0 [mem 0xfea11000-0xfea11fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.956831121Z]: pci 0000:00:02.0: PCI bridge to [bus 01]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.958768121Z]: pci 0000:00:02.0:   bridge window [mem 0xfe800000-0xfe9fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.962750121Z]: pci 0000:00:02.0:   bridge window [mem 0xc100000000-0xc11fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.967763121Z]: pci 0000:00:02.1: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.972448121Z]: pci 0000:00:02.1: BAR 0 [mem 0xfea12000-0xfea12fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.975177121Z]: pci 0000:00:02.1: PCI bridge to [bus 02]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.977008121Z]: pci 0000:00:02.1:   bridge window [mem 0xfe600000-0xfe7fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.979760121Z]: pci 0000:00:02.1:   bridge window [mem 0xc0e0000000-0xc0ffffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.984358121Z]: pci 0000:00:02.2: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.989059121Z]: pci 0000:00:02.2: BAR 0 [mem 0xfea13000-0xfea13fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.991171121Z]: pci 0000:00:02.2: PCI bridge to [bus 03]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.993020121Z]: pci 0000:00:02.2:   bridge window [mem 0xfe400000-0xfe5fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:41.999863121Z]: pci 0000:00:02.2:   bridge window [mem 0xc0c0000000-0xc0dfffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.000927121Z]: pci 0000:00:02.3: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.005010121Z]: pci 0000:00:02.3: BAR 0 [mem 0xfea14000-0xfea14fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.007178121Z]: pci 0000:00:02.3: PCI bridge to [bus 04]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.009040121Z]: pci 0000:00:02.3:   bridge window [mem 0xfe200000-0xfe3fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.012072121Z]: pci 0000:00:02.3:   bridge window [mem 0xc0a0000000-0xc0bfffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.018247121Z]: pci 0000:00:02.4: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.022720121Z]: pci 0000:00:02.4: BAR 0 [mem 0xfea15000-0xfea15fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.024831121Z]: pci 0000:00:02.4: PCI bridge to [bus 05]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.026788121Z]: pci 0000:00:02.4:   bridge window [mem 0xfe000000-0xfe1fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.029751121Z]: pci 0000:00:02.4:   bridge window [mem 0xc080000000-0xc09fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.036924121Z]: pci 0000:00:02.5: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.040407121Z]: pci 0000:00:02.5: BAR 0 [mem 0xfea16000-0xfea16fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.042526121Z]: pci 0000:00:02.5: PCI bridge to [bus 06]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.047174121Z]: pci 0000:00:02.5:   bridge window [mem 0xfde00000-0xfdffffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.047668121Z]: pci 0000:00:02.5:   bridge window [mem 0xc060000000-0xc07fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.052983121Z]: pci 0000:00:02.6: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.056964121Z]: pci 0000:00:02.6: BAR 0 [mem 0xfea17000-0xfea17fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.059172121Z]: pci 0000:00:02.6: PCI bridge to [bus 07]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.061007121Z]: pci 0000:00:02.6:   bridge window [mem 0xfdc00000-0xfddfffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.063730121Z]: pci 0000:00:02.6:   bridge window [mem 0xc040000000-0xc05fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.068322121Z]: pci 0000:00:02.7: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.076954121Z]: pci 0000:00:02.7: BAR 0 [mem 0xfea18000-0xfea18fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.079180121Z]: pci 0000:00:02.7: PCI bridge to [bus 08]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.081030121Z]: pci 0000:00:02.7:   bridge window [mem 0xfda00000-0xfdbfffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.083743121Z]: pci 0000:00:02.7:   bridge window [mem 0xc020000000-0xc03fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.088907121Z]: pci 0000:00:03.0: [1b36:000c] type 01 class 0x060400 PCIe Root Port
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.095933121Z]: pci 0000:00:03.0: BAR 0 [mem 0xfea19000-0xfea19fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.095933121Z]: pci 0000:00:03.0: PCI bridge to [bus 09]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.097056121Z]: pci 0000:00:03.0:   bridge window [mem 0xfd800000-0xfd9fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.099803121Z]: pci 0000:00:03.0:   bridge window [mem 0xc000000000-0xc01fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.105202121Z]: pci 0000:00:1f.0: [8086:2918] type 00 class 0x060100 conventional PCI endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.112047121Z]: pci 0000:00:1f.0: quirk: [io  0x0600-0x067f] claimed by ICH6 ACPI/GPIO/TCO
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.112047121Z]: pci 0000:00:1f.2: [8086:2922] type 00 class 0x010601 conventional PCI endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.116135121Z]: pci 0000:00:1f.2: BAR 4 [io  0xc040-0xc05f]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.117996121Z]: pci 0000:00:1f.2: BAR 5 [mem 0xfea1a000-0xfea1afff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.123827121Z]: pci 0000:00:1f.3: [8086:2930] type 00 class 0x0c0500 conventional PCI endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.125523121Z]: pci 0000:00:1f.3: BAR 4 [io  0x0700-0x073f]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.135383121Z]: pci 0000:01:00.0: [1af4:1041] type 00 class 0x020000 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:01:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.139496121Z]: pci 0000:01:00.0: BAR 1 [mem 0xfe880000-0xfe880fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:01:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.141625121Z]: pci 0000:01:00.0: BAR 4 [mem 0xc100000000-0xc100003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:01:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.147262121Z]: pci 0000:01:00.0: ROM [mem 0xfe800000-0xfe87ffff pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:01:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.148435121Z]: pci 0000:00:02.0: PCI bridge to [bus 01]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.151254121Z]: pci 0000:02:00.0: [1b36:000d] type 00 class 0x0c0330 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.154950121Z]: pci 0000:02:00.0: BAR 0 [mem 0xfe600000-0xfe603fff 64bit]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.159756121Z]: pci 0000:00:02.1: PCI bridge to [bus 02]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.162950121Z]: pci 0000:03:00.0: [1af4:1043] type 00 class 0x078000 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:03:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.166758121Z]: pci 0000:03:00.0: BAR 1 [mem 0xfe400000-0xfe400fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:03:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.168871121Z]: pci 0000:03:00.0: BAR 4 [mem 0xc0c0000000-0xc0c0003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:03:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.173372121Z]: pci 0000:00:02.2: PCI bridge to [bus 03]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.177543121Z]: pci 0000:04:00.0: [1af4:1045] type 00 class 0x00ff00 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:04:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.184447121Z]: pci 0000:04:00.0: BAR 4 [mem 0xc0a0000000-0xc0a0003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:04:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.189303121Z]: pci 0000:00:02.3: PCI bridge to [bus 04]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.192623121Z]: pci 0000:05:00.0: [1af4:1044] type 00 class 0x00ff00 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:05:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.196630121Z]: pci 0000:05:00.0: BAR 1 [mem 0xfe000000-0xfe000fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:05:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.196630121Z]: pci 0000:05:00.0: BAR 4 [mem 0xc080000000-0xc080003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:05:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.201511121Z]: pci 0000:00:02.4: PCI bridge to [bus 05]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.204802121Z]: pci 0000:06:00.0: [1af4:1048] type 00 class 0x010000 PCIe Endpoint
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:06:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.209025121Z]: pci 0000:06:00.0: BAR 1 [mem 0xfde00000-0xfde00fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:06:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.211198121Z]: pci 0000:06:00.0: BAR 4 [mem 0xc060000000-0xc060003fff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:06:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.216415121Z]: pci 0000:00:02.5: PCI bridge to [bus 06]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.219727121Z]: acpiphp: Slot [0] registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.221320121Z]: pci 0000:00:02.6: PCI bridge to [bus 07]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.224130121Z]: acpiphp: Slot [0-2] registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.225678121Z]: pci 0000:00:02.7: PCI bridge to [bus 08]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.228045121Z]: acpiphp: Slot [0-3] registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.229574121Z]: pci 0000:00:03.0: PCI bridge to [bus 09]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.241464121Z]: ACPI: PCI: Interrupt link LNKA configured for IRQ 10
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.247244121Z]: ACPI: PCI: Interrupt link LNKB configured for IRQ 10
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.249442121Z]: ACPI: PCI: Interrupt link LNKC configured for IRQ 11
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.251236121Z]: ACPI: PCI: Interrupt link LNKD configured for IRQ 11
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.251236121Z]: ACPI: PCI: Interrupt link LNKE configured for IRQ 10
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.253004121Z]: ACPI: PCI: Interrupt link LNKF configured for IRQ 10
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.255237121Z]: ACPI: PCI: Interrupt link LNKG configured for IRQ 11
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.257445121Z]: ACPI: PCI: Interrupt link LNKH configured for IRQ 11
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.259202121Z]: ACPI: PCI: Interrupt link GSIA configured for IRQ 16
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.261300121Z]: ACPI: PCI: Interrupt link GSIB configured for IRQ 17
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.263124121Z]: ACPI: PCI: Interrupt link GSIC configured for IRQ 18
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.265206121Z]: ACPI: PCI: Interrupt link GSID configured for IRQ 19
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.271127121Z]: ACPI: PCI: Interrupt link GSIE configured for IRQ 20
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.273218121Z]: ACPI: PCI: Interrupt link GSIF configured for IRQ 21
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.275133121Z]: ACPI: PCI: Interrupt link GSIG configured for IRQ 22
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.277235121Z]: ACPI: PCI: Interrupt link GSIH configured for IRQ 23
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.279624121Z]: iommu: Default domain type: Translated
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.279624121Z]: iommu: DMA domain TLB invalidation policy: lazy mode
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.282791121Z]: SCSI subsystem initialized
+5.78.43.147: kern:   debug: [2026-03-17T11:16:42.284204121Z]: libata version 3.00 loaded.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.284204121Z]: ACPI: bus type USB registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.284247121Z]: usbcore: registered new interface driver usbfs
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.286199121Z]: usbcore: registered new interface driver hub
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.291106121Z]: usbcore: registered new device driver usb
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.292914121Z]: pps_core: LinuxPPS API ver. 1 registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.292914121Z]: pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.295330121Z]: PTP clock support registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.298738121Z]: EDAC MC: Ver: 3.0.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.302953121Z]: NET: Registered PF_ATMPVC protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.304761121Z]: NET: Registered PF_ATMSVC protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.304761121Z]: NetLabel: Initializing
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.304761121Z]: NetLabel:  domain hash size = 128
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.306118121Z]: NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.311171121Z]: NetLabel:  unlabeled traffic allowed by default
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.313171121Z]: PCI: Using ACPI for IRQ routing
+5.78.43.147: kern:   debug: [2026-03-17T11:16:42.436391121Z]: PCI: pci_cache_line_size set to 64 bytes
+5.78.43.147: kern:   debug: [2026-03-17T11:16:42.437063121Z]: e820: reserve RAM buffer [mem 0x0009fc00-0x0009ffff]
+5.78.43.147: kern:   debug: [2026-03-17T11:16:42.437082121Z]: e820: reserve RAM buffer [mem 0x7ffdc000-0x7fffffff]
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.438769121Z]: pci 0000:00:01.0: vgaarb: setting as boot VGA device
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.440909121Z]: pci 0000:00:01.0: vgaarb: bridge control possible
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.442699121Z]: pci 0000:00:01.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.446709121Z]: vgaarb: loaded
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.447952121Z]: hpet0: at MMIO 0xfed00000, IRQs 2, 8, 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.447956121Z]: hpet0: 3 comparators, 64-bit 100.000000 MHz counter
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.456874121Z]: clocksource: Switched to clocksource kvm-clock
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.456874121Z]: VFS: Disk quotas dquot_6.6.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.458293121Z]: VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.460951121Z]: pnp: PnP ACPI init
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.462290121Z]: system 00:04: [mem 0xb0000000-0xbfffffff window] has been reserved
+ SUBSYSTEM=pnp
+ DEVICE=+pnp:00:04
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.465265121Z]: pnp: PnP ACPI: found 5 devices
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.476534121Z]: clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.479657121Z]: NET: Registered PF_INET protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.481476121Z]: IP idents hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.499034121Z]: tcp_listen_portaddr_hash hash table entries: 4096 (order: 4, 65536 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.502927121Z]: Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.506452121Z]: TCP established hash table entries: 65536 (order: 7, 524288 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.510202121Z]: TCP bind hash table entries: 65536 (order: 9, 2097152 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.513679121Z]: TCP: Hash tables configured (established 65536 bind 65536)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.516780121Z]: UDP hash table entries: 4096 (order: 6, 262144 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.519831121Z]: UDP-Lite hash table entries: 4096 (order: 6, 262144 bytes, linear)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.523148121Z]: NET: Registered PF_UNIX/PF_LOCAL protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.526206121Z]: RPC: Registered named UNIX socket transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.528873121Z]: RPC: Registered udp transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.531077121Z]: RPC: Registered tcp transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.533188121Z]: RPC: Registered tcp-with-tls transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.535668121Z]: RPC: Registered tcp NFSv4.1 backchannel transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.538450121Z]: NET: Registered PF_XDP protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.540654121Z]: pci 0000:00:02.6: bridge window [io  0x1000-0x0fff] to [bus 07] add_size 1000
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.544227121Z]: pci 0000:00:02.7: bridge window [io  0x1000-0x0fff] to [bus 08] add_size 1000
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.547831121Z]: pci 0000:00:03.0: bridge window [io  0x1000-0x0fff] to [bus 09] add_size 1000
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.551440121Z]: pci 0000:00:02.6: bridge window [io  0x1000-0x1fff]: assigned
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.554260121Z]: pci 0000:00:02.7: bridge window [io  0x2000-0x2fff]: assigned
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.556619121Z]: pci 0000:00:03.0: bridge window [io  0x3000-0x3fff]: assigned
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.558992121Z]: pci 0000:00:02.0: PCI bridge to [bus 01]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.563117121Z]: pci 0000:00:02.0:   bridge window [mem 0xfe800000-0xfe9fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.566648121Z]: pci 0000:00:02.0:   bridge window [mem 0xc100000000-0xc11fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.572093121Z]: pci 0000:00:02.1: PCI bridge to [bus 02]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.576476121Z]: pci 0000:00:02.1:   bridge window [mem 0xfe600000-0xfe7fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.581141121Z]: pci 0000:00:02.1:   bridge window [mem 0xc0e0000000-0xc0ffffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.587000121Z]: pci 0000:00:02.2: PCI bridge to [bus 03]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.590667121Z]: pci 0000:00:02.2:   bridge window [mem 0xfe400000-0xfe5fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.594950121Z]: pci 0000:00:02.2:   bridge window [mem 0xc0c0000000-0xc0dfffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.599827121Z]: pci 0000:00:02.3: PCI bridge to [bus 04]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.603186121Z]: pci 0000:00:02.3:   bridge window [mem 0xfe200000-0xfe3fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.607264121Z]: pci 0000:00:02.3:   bridge window [mem 0xc0a0000000-0xc0bfffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.612272121Z]: pci 0000:00:02.4: PCI bridge to [bus 05]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.615767121Z]: pci 0000:00:02.4:   bridge window [mem 0xfe000000-0xfe1fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.620696121Z]: pci 0000:00:02.4:   bridge window [mem 0xc080000000-0xc09fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.626184121Z]: pci 0000:00:02.5: PCI bridge to [bus 06]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.629061121Z]: pci 0000:00:02.5:   bridge window [mem 0xfde00000-0xfdffffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.632119121Z]: pci 0000:00:02.5:   bridge window [mem 0xc060000000-0xc07fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.636770121Z]: pci 0000:00:02.6: PCI bridge to [bus 07]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.638604121Z]: pci 0000:00:02.6:   bridge window [io  0x1000-0x1fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.641483121Z]: pci 0000:00:02.6:   bridge window [mem 0xfdc00000-0xfddfffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.644251121Z]: pci 0000:00:02.6:   bridge window [mem 0xc040000000-0xc05fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.648430121Z]: pci 0000:00:02.7: PCI bridge to [bus 08]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.650223121Z]: pci 0000:00:02.7:   bridge window [io  0x2000-0x2fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.653007121Z]: pci 0000:00:02.7:   bridge window [mem 0xfda00000-0xfdbfffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.655779121Z]: pci 0000:00:02.7:   bridge window [mem 0xc020000000-0xc03fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.659959121Z]: pci 0000:00:03.0: PCI bridge to [bus 09]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.661752121Z]: pci 0000:00:03.0:   bridge window [io  0x3000-0x3fff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.664539121Z]: pci 0000:00:03.0:   bridge window [mem 0xfd800000-0xfd9fffff]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.667747121Z]: pci 0000:00:03.0:   bridge window [mem 0xc000000000-0xc01fffffff 64bit pref]
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.671391121Z]: pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.673527121Z]: pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.675676121Z]: pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.678013121Z]: pci_bus 0000:00: resource 7 [mem 0x80000000-0xafffffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.680390121Z]: pci_bus 0000:00: resource 8 [mem 0xc0000000-0xfebfffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.682722121Z]: pci_bus 0000:00: resource 9 [mem 0xc000000000-0xc7ffffffff window]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.685256121Z]: pci_bus 0000:01: resource 1 [mem 0xfe800000-0xfe9fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:01
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.687444121Z]: pci_bus 0000:01: resource 2 [mem 0xc100000000-0xc11fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:01
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.690079121Z]: pci_bus 0000:02: resource 1 [mem 0xfe600000-0xfe7fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:02
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.692245121Z]: pci_bus 0000:02: resource 2 [mem 0xc0e0000000-0xc0ffffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:02
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.694909121Z]: pci_bus 0000:03: resource 1 [mem 0xfe400000-0xfe5fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:03
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.697055121Z]: pci_bus 0000:03: resource 2 [mem 0xc0c0000000-0xc0dfffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:03
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.699703121Z]: pci_bus 0000:04: resource 1 [mem 0xfe200000-0xfe3fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:04
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.701859121Z]: pci_bus 0000:04: resource 2 [mem 0xc0a0000000-0xc0bfffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:04
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.710675121Z]: pci_bus 0000:05: resource 1 [mem 0xfe000000-0xfe1fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:05
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.712858121Z]: pci_bus 0000:05: resource 2 [mem 0xc080000000-0xc09fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:05
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.715552121Z]: pci_bus 0000:06: resource 1 [mem 0xfde00000-0xfdffffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:06
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.718318121Z]: pci_bus 0000:06: resource 2 [mem 0xc060000000-0xc07fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:06
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.720983121Z]: pci_bus 0000:07: resource 0 [io  0x1000-0x1fff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:07
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.722953121Z]: pci_bus 0000:07: resource 1 [mem 0xfdc00000-0xfddfffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:07
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.725100121Z]: pci_bus 0000:07: resource 2 [mem 0xc040000000-0xc05fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:07
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.727751121Z]: pci_bus 0000:08: resource 0 [io  0x2000-0x2fff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:08
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.729704121Z]: pci_bus 0000:08: resource 1 [mem 0xfda00000-0xfdbfffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:08
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.731885121Z]: pci_bus 0000:08: resource 2 [mem 0xc020000000-0xc03fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:08
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.734516121Z]: pci_bus 0000:09: resource 0 [io  0x3000-0x3fff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:09
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.736488121Z]: pci_bus 0000:09: resource 1 [mem 0xfd800000-0xfd9fffff]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:09
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.738663121Z]: pci_bus 0000:09: resource 2 [mem 0xc000000000-0xc01fffffff 64bit pref]
+ SUBSYSTEM=pci_bus
+ DEVICE=+pci_bus:0000:09
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.741858121Z]: ACPI: \_SB_.GSIG: Enabled at IRQ 22
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.745416121Z]: PCI: CLS 0 bytes, default 64
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.747423121Z]: PCI-DMA: Using software bounce buffering for IO (SWIOTLB)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.747484121Z]: Unpacking initramfs...
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.749684121Z]: software IO TLB: mapped [mem 0x000000007bfdc000-0x000000007ffdc000] (64MB)
+5.78.43.147: kern:     err: [2026-03-17T11:16:42.759336121Z]: kvm_intel: VMX not supported by CPU 0
+5.78.43.147: kern:     err: [2026-03-17T11:16:42.761502121Z]: kvm_amd: SVM not supported by CPU 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.763629121Z]: clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x233fc319723, max_idle_ns: 440795258057 ns
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.769681121Z]: Initialise system trusted keyrings
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.771749121Z]: Key type blacklist registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.773785121Z]: workingset: timestamp_bits=36 max_order=21 bucket_order=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.776866121Z]: squashfs: version 4.0 (2009/01/31) Phillip Lougher
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.779721121Z]: NFS: Registering the id_resolver key type
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.781980121Z]: Key type id_resolver registered
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.783934121Z]: Key type id_legacy registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.785845121Z]: nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.788174121Z]: nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.791369121Z]: Key type cifs.spnego registered
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.792907121Z]: Key type cifs.idmap registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.794548121Z]: fuse: init (API version 7.45)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.796225121Z]: SGI XFS with ACLs, security attributes, scrub, repair, quota, no debug enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.799516121Z]: ceph: loaded (mds proto 32)
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.801401121Z]: integrity: Platform Keyring initialized
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.803304121Z]: cryptd: max_cpu_qlen set to 1000
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.807831121Z]: Freeing initrd memory: 76568K
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.813609121Z]: NET: Registered PF_ALG protocol family
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.815381121Z]: Key type asymmetric registered
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.816921121Z]: Asymmetric key parser 'x509' registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.818697121Z]: Block layer SCSI generic (bsg) driver version 0.4 loaded (major 247)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.821653121Z]: io scheduler mq-deadline registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.823334121Z]: io scheduler kyber registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.824823121Z]: io scheduler bfq registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.829048121Z]: pcieport 0000:00:02.0: PME: Signaling with IRQ 24
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.831523121Z]: pcieport 0000:00:02.0: AER: enabled with IRQ 24
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.835304121Z]: pcieport 0000:00:02.1: PME: Signaling with IRQ 25
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.837877121Z]: pcieport 0000:00:02.1: AER: enabled with IRQ 25
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.1
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.842237121Z]: pcieport 0000:00:02.2: PME: Signaling with IRQ 26
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.844640121Z]: pcieport 0000:00:02.2: AER: enabled with IRQ 26
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.848987121Z]: pcieport 0000:00:02.3: PME: Signaling with IRQ 27
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.851966121Z]: pcieport 0000:00:02.3: AER: enabled with IRQ 27
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.856443121Z]: pcieport 0000:00:02.4: PME: Signaling with IRQ 28
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.858815121Z]: pcieport 0000:00:02.4: AER: enabled with IRQ 28
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.4
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.863974121Z]: pcieport 0000:00:02.5: PME: Signaling with IRQ 29
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.866350121Z]: pcieport 0000:00:02.5: AER: enabled with IRQ 29
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.5
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.871645121Z]: pcieport 0000:00:02.6: PME: Signaling with IRQ 30
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.874077121Z]: pcieport 0000:00:02.6: AER: enabled with IRQ 30
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.880902121Z]: pcieport 0000:00:02.7: PME: Signaling with IRQ 31
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.883500121Z]: pcieport 0000:00:02.7: AER: enabled with IRQ 31
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:02.7
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.887339121Z]: ACPI: \_SB_.GSIH: Enabled at IRQ 23
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.892604121Z]: pcieport 0000:00:03.0: PME: Signaling with IRQ 32
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.895582121Z]: pcieport 0000:00:03.0: AER: enabled with IRQ 32
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:03.0
+5.78.43.147: kern: warning: [2026-03-17T11:16:42.899693121Z]: hyperv_fb: Deprecated: use Hyper-V DRM driver instead
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.902664121Z]: hv_vmbus: registering driver hyperv_fb
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.904893121Z]: IPMI message handler: version 39.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.906938121Z]: ipmi device interface
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.908650121Z]: ipmi_si: IPMI System Interface driver
+5.78.43.147: kern: warning: [2026-03-17T11:16:42.910885121Z]: ipmi_si: Unable to find any System Interface(s)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.913341121Z]: IPMI poweroff: Copyright (C) 2004 MontaVista Software - IPMI Powerdown via sys_reboot
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.916957121Z]: input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.919904121Z]: ACPI: button: Power Button [PWRF]
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.922235121Z]: ioatdma: Intel(R) QuickData Technology Driver 5.00
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.924502121Z]: Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.927299121Z]: 00:00: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.930906121Z]: Non-volatile memory driver v1.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.933053121Z]: Linux agpgart interface v0.103
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.934685121Z]: ACPI: bus type drm_connector registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.938510121Z]: loop: module loaded
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.939901121Z]: rbd: loaded (major 252)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.941301121Z]: Guest personality initialized and is inactive
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.943298121Z]: VMCI host device registered (name=vmci, major=10, minor=258)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.945602121Z]: Initialized host personality
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.947114121Z]: Loading iSCSI transport class v2.0-870.
+5.78.43.147: kern:  notice: [2026-03-17T11:16:42.949212121Z]: iscsi: registered transport (tcp)
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.951134121Z]: hv_vmbus: registering driver hv_storvsc
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.953987121Z]: wireguard: WireGuard 1.0.0 loaded. See www.wireguard.com for information.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.957805121Z]: wireguard: Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.962147121Z]: tun: Universal TUN/TAP device driver, 1.6
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.964609121Z]: hv_vmbus: registering driver hv_netvsc
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.967590121Z]: xhci_hcd 0000:02:00.0: xHCI Host Controller
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.969912121Z]: xhci_hcd 0000:02:00.0: new USB bus registered, assigned bus number 1
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.973770121Z]: xhci_hcd 0000:02:00.0: hcc params 0x00087001 hci version 0x100 quirks 0x0000000000000010
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.978485121Z]: xhci_hcd 0000:02:00.0: xHCI Host Controller
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.980385121Z]: xhci_hcd 0000:02:00.0: new USB bus registered, assigned bus number 2
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.983561121Z]: xhci_hcd 0000:02:00.0: Host supports USB 3.0 SuperSpeed
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:02:00.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.986601121Z]: hub 1-0:1.0: USB hub found
+ SUBSYSTEM=usb
+ DEVICE=+usb:1-0:1.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.988428121Z]: hub 1-0:1.0: 4 ports detected
+ SUBSYSTEM=usb
+ DEVICE=+usb:1-0:1.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.990669121Z]: usb usb2: We don't know the algorithms for LPM for this host, disabling LPM.
+ SUBSYSTEM=usb
+ DEVICE=+usb:usb2
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.994430121Z]: hub 2-0:1.0: USB hub found
+ SUBSYSTEM=usb
+ DEVICE=+usb:2-0:1.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.996302121Z]: hub 2-0:1.0: 4 ports detected
+ SUBSYSTEM=usb
+ DEVICE=+usb:2-0:1.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:42.998531121Z]: usbcore: registered new interface driver cdc_acm
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.000910121Z]: cdc_acm: USB Abstract Control Model driver for USB modems and ISDN adapters
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.004397121Z]: usbcore: registered new interface driver uas
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.006718121Z]: usbcore: registered new interface driver usb-storage
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.009414121Z]: usbcore: registered new interface driver usbserial_generic
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.012241121Z]: usbserial: USB Serial support registered for generic
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.014946121Z]: i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.019693121Z]: serio: i8042 KBD port at 0x60,0x64 irq 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.021869121Z]: serio: i8042 AUX port at 0x60,0x64 irq 12
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.024126121Z]: hv_vmbus: registering driver hyperv_keyboard
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.026831121Z]: mousedev: PS/2 mouse device common for all mice
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.029490121Z]: rtc_cmos 00:03: RTC can wake from S4
+ SUBSYSTEM=pnp
+ DEVICE=+pnp:00:03
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.032844121Z]: rtc_cmos 00:03: registered as rtc0
+ SUBSYSTEM=pnp
+ DEVICE=+pnp:00:03
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.035047121Z]: rtc_cmos 00:03: alarms up to one day, y3k, 242 bytes nvram, hpet irqs
+ SUBSYSTEM=pnp
+ DEVICE=+pnp:00:03
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.039803121Z]: input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.040150121Z]: device-mapper: ioctl: 4.50.0-ioctl (2025-04-28) initialised: dm-devel@lists.linux.dev
+5.78.43.147: kern: warning: [2026-03-17T11:16:43.048250121Z]: amd_pstate: the _CPC object is not present in SBIOS or ACPI disabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.051490121Z]: sdhci: Secure Digital Host Controller Interface driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.054152121Z]: sdhci: Copyright(c) Pierre Ossman
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.056510121Z]: No iBFT detected.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.058663121Z]: hid: raw HID events driver (C) Jiri Kosina
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.062149121Z]: usbcore: registered new interface driver usbhid
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.065674121Z]: usbhid: USB HID core driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.068488121Z]: hv_utils: Registering HyperV Utility Driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.070902121Z]: hv_vmbus: registering driver hv_utils
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.073071121Z]: hv_vmbus: registering driver hv_balloon
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.075404121Z]: NET: Registered PF_LLC protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.077652121Z]: GACT probability NOT on
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.079398121Z]: Mirror/redirect action on
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.081244121Z]: Simple TC action Loaded
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.083016121Z]: netem: version 1.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.084265121Z]: u32 classifier
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.085420121Z]:     input device check on
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.086863121Z]:     Actions configured
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.088776121Z]: xt_time: kernel timezone is -0000
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.090409121Z]: IPVS: Registered protocols (TCP, UDP)
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.092178121Z]: IPVS: Connection hash table configured (size=4096, memory=32Kbytes)
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.094968121Z]: IPVS: ipvs loaded.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.096163121Z]: IPVS: [rr] scheduler registered.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.097727121Z]: IPVS: [wrr] scheduler registered.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.099332121Z]: IPVS: [lc] scheduler registered.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.100873121Z]: IPVS: [sh] scheduler registered.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.102423121Z]: IPVS: [mh] scheduler registered.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.104065121Z]: ipip: IPv4 and MPLS over IPv4 tunneling driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.106116121Z]: gre: GRE over IPv4 demultiplexer driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.107882121Z]: Initializing XFRM netlink socket
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.109467121Z]: NET: Registered PF_INET6 protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.111642121Z]: Segment Routing with IPv6
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.113032121Z]: In-situ OAM (IOAM) with IPv6
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.114531121Z]: mip6: Mobile IPv6
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.115764121Z]: sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.118028121Z]: NET: Registered PF_PACKET protocol family
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.126020121Z]: Bridge firewalling registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.127678121Z]: NET: Registered PF_X25 protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.129421121Z]: X25: Linux Version 0.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.130799121Z]: RPC: Registered rdma transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.132515121Z]: RPC: Registered rdma backchannel transport module.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.134654121Z]: l2tp_core: L2TP core driver, V2.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.136263121Z]: NET: Registered PF_PHONET protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.138090121Z]: 8021q: 802.1Q VLAN Support v1.8
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.139689121Z]: sctp: Hash tables configured (bind 256/256)
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.141706121Z]: NET: Registered PF_RDS protocol family
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.143464121Z]: Key type dns_resolver registered
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.145028121Z]: Key type ceph registered
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.146505121Z]: libceph: loaded (mon/osd proto 15/24)
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.148219121Z]: openvswitch: Open vSwitch switching datapath
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.150253121Z]: NET: Registered PF_VSOCK protocol family
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.152082121Z]: mpls_gso: MPLS GSO support
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.154058121Z]: IPI shorthand broadcast: enabled
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.158251121Z]: sched_clock: Marking stable (1716477674, 292163913)->(2015783953, -7142366)
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.161267121Z]: registered taskstats version 1
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.163069121Z]: Loading compiled-in X.509 certificates
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.165551121Z]: Loaded X.509 cert 'Sidero Labs, Inc.: Build time throw-away kernel key: 57ffb2feb3b4d571f74b47b173f0abba86f67e22'
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.172388121Z]: Demotion targets for Node 0: null
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.174336121Z]: PM:   Magic number: 2:145:277
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.175871121Z]: tty tty14: hash matches
+ SUBSYSTEM=tty
+ DEVICE=c4:14
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.177226121Z]: netconsole: network logging started
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.183656121Z]: clk: Disabling unused clocks
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.187425121Z]: Freeing unused decrypted memory: 2028K
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.189522121Z]: Freeing unused kernel image (initmem) memory: 6192K
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.191204121Z]: Write protecting the kernel read-only data: 49152k
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.193191121Z]: Freeing unused kernel image (text/rodata gap) memory: 1248K
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.195202121Z]: Freeing unused kernel image (rodata/data gap) memory: 1152K
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.198539121Z]: x86/mm: Checked W+X mappings: passed, no W+X pages found.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.200246121Z]: x86/mm: Checking user space page tables
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.201839121Z]: x86/mm: Checked W+X mappings: passed, no W+X pages found.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.203569121Z]: Run /init as init process
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204652121Z]:   with arguments:
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204654121Z]:     /init
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204654121Z]:   with environment:
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204655121Z]:     HOME=/
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204656121Z]:     TERM=linux
+5.78.43.147: kern:   debug: [2026-03-17T11:16:43.204657121Z]:     selinux=1
+5.78.43.147: user: warning: [2026-03-17T11:16:43.208193121Z]: [talos] [initramfs] TPM device is not available
+5.78.43.147: user: warning: [2026-03-17T11:16:43.210172121Z]: [talos] [initramfs] TPM device is not available, skipping PCR extension
+5.78.43.147: user: warning: [2026-03-17T11:16:43.212917121Z]: [talos] [initramfs] booting Talos v1.12.3
+5.78.43.147: user: warning: [2026-03-17T11:16:43.214911121Z]: [talos] [initramfs] CPU: AMD EPYC-Rome Processor, 4 core(s), 1 thread(s) per core
+5.78.43.147: user: warning: [2026-03-17T11:16:43.218001121Z]: [talos] [initramfs] x86_64 microarchitecture level: 3
+5.78.43.147: user: warning: [2026-03-17T11:16:43.220136121Z]: [talos] [initramfs] mounting the rootfs
+5.78.43.147: user: warning: [2026-03-17T11:16:43.222112121Z]: [talos] [initramfs] enabling system extension schematic 6ebbfe35c8225645c05d4d19eaad385bd1ec795954932d0ada671388272fec19
+5.78.43.147: user: warning: [2026-03-17T11:16:43.225907121Z]: [talos] [initramfs] enabling system extension iscsi-tools v0.2.0
+5.78.43.147: user: warning: [2026-03-17T11:16:43.228260121Z]: [talos] [initramfs] enabling system extension qemu-guest-agent 10.2.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.231005121Z]: loop0: detected capacity change from 0 to 8
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.250821121Z]: usb 1-1: new high-speed USB device number 2 using xhci_hcd
+ SUBSYSTEM=usb
+ DEVICE=+usb:1-1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.255043121Z]: loop1: detected capacity change from 0 to 936
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.275075121Z]: loop2: detected capacity change from 0 to 1352
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.294933121Z]: loop3: detected capacity change from 0 to 146408
+5.78.43.147: user: warning: [2026-03-17T11:16:43.315893121Z]: [talos] [initramfs] entering the rootfs
+5.78.43.147: user: warning: [2026-03-17T11:16:43.317786121Z]: [talos] [initramfs] moving mounts to the new rootfs
+5.78.43.147: user: warning: [2026-03-17T11:16:43.319990121Z]: [talos] [initramfs] changing working directory into /root
+5.78.43.147: user: warning: [2026-03-17T11:16:43.322400121Z]: [talos] [initramfs] moving /root to /
+5.78.43.147: user: warning: [2026-03-17T11:16:43.324244121Z]: [talos] [initramfs] changing root directory
+5.78.43.147: user: warning: [2026-03-17T11:16:43.326324121Z]: [talos] [initramfs] cleaning up initramfs
+5.78.43.147: user: warning: [2026-03-17T11:16:43.328430121Z]: [talos] [initramfs] selinux: loading policy
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.330625121Z]: SELinux:  Permission policy_load in class system not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.333461121Z]: SELinux:  Permission x509_certificate_load in class system not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.336565121Z]: SELinux:  Permission watch_mountns in class file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.339366121Z]: SELinux:  Permission watch_mountns in class dir not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.341596121Z]: SELinux:  Permission watch_mountns in class lnk_file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.343961121Z]: SELinux:  Permission watch_mountns in class chr_file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.346268121Z]: SELinux:  Permission watch_mountns in class blk_file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.348550121Z]: SELinux:  Permission watch_mountns in class sock_file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.350825121Z]: SELinux:  Permission watch_mountns in class fifo_file not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.353118121Z]: SELinux:  Permission nlmsg in class netlink_route_socket not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.355606121Z]: SELinux:  Permission nlmsg in class netlink_tcpdiag_socket not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.358074121Z]: SELinux:  Permission nlmsg in class netlink_xfrm_socket not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.360534121Z]: SELinux:  Permission nlmsg in class netlink_audit_socket not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.362984121Z]: SELinux:  Permission watch_mountns in class anon_inode not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.365194121Z]: SELinux:  Permission allowed in class io_uring not defined in policy.
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.367475121Z]: SELinux: the above unknown classes and permissions will be denied
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.370800121Z]: SELinux:  policy capability network_peer_controls=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.373004121Z]: SELinux:  policy capability open_perms=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.374765121Z]: SELinux:  policy capability extended_socket_class=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.376802121Z]: SELinux:  policy capability always_check_network=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.378762121Z]: SELinux:  policy capability cgroup_seclabel=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.380631121Z]: SELinux:  policy capability nnp_nosuid_transition=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.382607121Z]: SELinux:  policy capability genfs_seclabel_symlinks=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.384687121Z]: SELinux:  policy capability ioctl_skip_cloexec=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.386599121Z]: SELinux:  policy capability userspace_initial_context=1
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.389009121Z]: SELinux:  policy capability netlink_xperm=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.390412121Z]: input: QEMU QEMU USB Tablet as /devices/pci0000:00/0000:00:02.1/0000:02:00.0/usb1/1-1/1-1:1.0/0003:0627:0001.0001/input/input4
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.390508121Z]: SELinux:  policy capability netif_wildcard=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.393319121Z]: hid-generic 0003:0627:0001.0001: input,hidraw0: USB HID v0.01 Mouse [QEMU QEMU USB Tablet] on usb-0000:02:00.0-1/input0
+ SUBSYSTEM=hid
+ DEVICE=+hid:0003:0627:0001.0001
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.394362121Z]: SELinux:  policy capability genfs_seclabel_wildcard=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.401540121Z]: SELinux:  policy capability functionfs_seclabel=0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.438915121Z]: audit: type=1403 audit(1773746203.694:2): auid=4294967295 ses=4294967295 lsm=selinux res=1
+5.78.43.147: user: warning: [2026-03-17T11:16:43.438951121Z]: [talos] [initramfs] selinux: policy loaded
+5.78.43.147: user: warning: [2026-03-17T11:16:43.445798121Z]: [talos] [initramfs] TPM device is not available, skipping PCR extension
+5.78.43.147: user: warning: [2026-03-17T11:16:43.450696121Z]: [talos] [initramfs] executing /sbin/init
+5.78.43.147: kern:    info: [2026-03-17T11:16:43.481918121Z]: input: ImExPS/2 Generic Explorer Mouse as /devices/platform/i8042/serio1/input/input3
+5.78.43.147: user: warning: [2026-03-17T11:16:43.662643121Z]: [talos] machined logger initialized
+5.78.43.147: user: warning: [2026-03-17T11:16:43.665326121Z]: [talos] platform information {"component": "early-startup", "mode": "cloud"}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.668697121Z]: [talos] FIPS mode {"component": "early-startup", "enabled": false, "strict": false}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.687019121Z]: [talos] initializing cgroups {"component": "early-startup", "root": "/"}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.694354121Z]: [talos] early startup done {"component": "early-startup", "duration": "29.060513ms"}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.699141121Z]: [talos] initialize sequence: 9 phase(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:43.700975121Z]: [talos] phase systemRequirements (1/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:43.703759121Z]: [talos] task enforceKSPPRequirements (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.716201121Z]: [talos] TPM device is not available, skipping PCR extension
+5.78.43.147: user: warning: [2026-03-17T11:16:43.718446121Z]: [talos] TPM is ready for disk encryption operations (if available) {"component": "controller-runtime", "controller": "hardware.PCRStatusController"}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.724059121Z]: audit: type=1400 audit(1773746203.978:3): avc:  denied  { execute } for  pid=1267 comm="kworker/u16:5" name="modprobe" dev="loop3" ino=165 scontext=system_u:system_r:initramfs_t:s0 tcontext=system_u:object_r:modprobe_exec_t:s0 tclass=file permissive=1
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.731195121Z]: audit: type=1400 audit(1773746203.982:4): avc:  denied  { use } for  pid=1267 comm="modprobe" path="/usr/lib/libcrypto.so.3" dev="loop3" ino=254 scontext=system_u:system_r:udev_t:s0 tcontext=system_u:system_r:initramfs_t:s0 tclass=fd permissive=1
+5.78.43.147: user: warning: [2026-03-17T11:16:43.734134121Z]: [talos] setting resolvers {"component": "controller-runtime", "controller": "network.ResolverSpecController", "resolvers": ["1.1.1.1", "8.8.8.8"], "searchDomains": []}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.741769121Z]: [talos] setting resolvers {"component": "controller-runtime", "controller": "network.ResolverSpecController", "resolvers": ["1.1.1.1", "8.8.8.8"], "searchDomains": []}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.746805121Z]: [talos] service[ext-iscsid](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.748581121Z]: [talos] service[ext-iscsid](Waiting): Waiting for service "containerd" to be "up", service "cri" to be "up", network, file "/etc/iscsi/initiatorname.iscsi" to exist
+5.78.43.147: user: warning: [2026-03-17T11:16:43.753109121Z]: [talos] setting time servers {"component": "controller-runtime", "controller": "network.TimeServerSpecController", "addresses": ["time.cloudflare.com"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.757080121Z]: [talos] setting time servers {"component": "controller-runtime", "controller": "network.TimeServerSpecController", "addresses": ["time.cloudflare.com"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.761042121Z]: [talos] task enforceKSPPRequirements (1/1): done, 54.084927ms
+5.78.43.147: user: warning: [2026-03-17T11:16:43.762881121Z]: [talos] assigned address {"component": "controller-runtime", "controller": "network.AddressSpecController", "address": "127.0.0.1/8", "link": "lo"}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.767037121Z]: [talos] retrying error: failed to download config from "http://169.254.169.254/hetzner/v1/metadata/hostname": Get "http://169.254.169.254/hetzner/v1/metadata/hostname": dial tcp 169.254.169.254:80: connect: network is unreachable
+5.78.43.147: user: warning: [2026-03-17T11:16:43.772985121Z]: [talos] service[ext-qemu-guest-agent](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.774934121Z]: [talos] service[ext-qemu-guest-agent](Waiting): Waiting for service "containerd" to be "up", file "/system/run/machined/machine.sock" to exist, file "/dev/virtio-ports/org.qemu.guest_agent.0" to exist
+5.78.43.147: user: warning: [2026-03-17T11:16:43.779615121Z]: [talos] pre-created iptables-nft table 'mangle'/'KUBE-IPTABLES-HINT' {"component": "controller-runtime", "controller": "network.NfTablesChainController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.783381121Z]: [talos] phase systemRequirements (1/9): done, 61.89779ms
+5.78.43.147: user: warning: [2026-03-17T11:16:43.785133121Z]: [talos] phase earlyServices (2/9): 5 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:43.786681121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": []}
+5.78.43.147: user: warning: [2026-03-17T11:16:43.789950121Z]: [talos] task startContainerd (5/5): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.791566121Z]: [talos] service[containerd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.793326121Z]: [talos] task startUdevd (1/5): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.800900121Z]: [talos] task startMachined (2/5): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.802380121Z]: [talos] task startAuditd (3/5): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.803825121Z]: [talos] task startSyslogd (4/5): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:43.805273121Z]: [talos] service[containerd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:43.807089121Z]: [talos] service[syslogd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.808772121Z]: [talos] service[syslogd](Waiting): Waiting for service "machined" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:16:43.811008121Z]: [talos] service[containerd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:43.812861121Z]: [talos] task startSyslogd (4/5): done, 22.05259ms
+5.78.43.147: user: warning: [2026-03-17T11:16:43.814441121Z]: [talos] service[machined](Starting): Starting service
+5.78.43.147: kern:  notice: [2026-03-17T11:16:43.816114121Z]: audit: type=1400 audit(1773746204.070:5): avc:  denied  { execute } for  pid=1270 comm="cap-launcher" name="containerd" dev="loop3" ino=91 scontext=system_u:system_r:initramfs_t:s0 tcontext=system_u:object_r:containerd_exec_t:s0 tclass=file permissive=1
+5.78.43.147: user: warning: [2026-03-17T11:16:43.817972121Z]: [talos] service[machined](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:43.824240121Z]: [talos] service[machined](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:43.826521121Z]: [talos] service[auditd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.828292121Z]: [talos] service[auditd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:43.829985121Z]: [talos] service[machined](Running): Service started as goroutine
+5.78.43.147: user: warning: [2026-03-17T11:16:43.831876121Z]: [talos] service[containerd](Running): Process Process(["/bin/containerd" "--address" "/system/run/containerd/containerd.sock" "--state" "/system/run/containerd" "--root" "/system/var/lib/containerd"]) started with PID 1270
+5.78.43.147: user: warning: [2026-03-17T11:16:43.836977121Z]: [talos] task startAuditd (3/5): done, 41.595874ms
+5.78.43.147: user: warning: [2026-03-17T11:16:43.838580121Z]: [talos] service[auditd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:43.840443121Z]: [talos] task startUdevd (1/5): creating directory tree "/system/overlays/usr-lib-udev-diff"
+5.78.43.147: user: warning: [2026-03-17T11:16:43.842954121Z]: [talos] service[auditd](Running): Service started as goroutine
+5.78.43.147: user: warning: [2026-03-17T11:16:43.844856121Z]: [talos] task startUdevd (1/5): creating directory tree "/system/overlays/usr-lib-udev-workdir"
+5.78.43.147: user: warning: [2026-03-17T11:16:43.848174121Z]: [talos] task startUdevd (1/5): mounting "" to "/usr/lib/udev"
+5.78.43.147: user: warning: [2026-03-17T11:16:43.850138121Z]: [talos] service[udevd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:43.851790121Z]: [talos] service[udevd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:43.868337121Z]: [talos] service[udevd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:43.886973121Z]: [talos] service[udevd](Running): Process Process(["/sbin/systemd-udevd" "--resolve-names=never"]) started with PID 1280
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.087912121Z]: ACPI: \_SB_.GSIA: Enabled at IRQ 16
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.089574121Z]: i801_smbus 0000:00:1f.3: SMBus using PCI interrupt
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.3
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.091398121Z]: i2c i2c-0: Memory type 0x07 not supported yet, not instantiating SPD
+ SUBSYSTEM=i2c
+ DEVICE=+i2c:i2c-0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.091866121Z]: lpc_ich 0000:00:1f.0: I/O space for GPIO uninitialized
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.099124121Z]: ACPI: \_SB_.GSIF: Enabled at IRQ 21
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.103345121Z]: [drm] pci: virtio-vga detected at 0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.104903121Z]: virtio-pci 0000:00:01.0: vgaarb: deactivate vga console
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.111516121Z]: Console: switching to colour dummy device 80x25
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.113897121Z]: ahci 0000:00:1f.2: AHCI vers 0001.0000, 32 command slots, 1.5 Gbps, SATA mode
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.113902121Z]: ahci 0000:00:1f.2: 6/6 ports implemented (port mask 0x3f)
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.113904121Z]: ahci 0000:00:1f.2: flags: 64bit ncq only
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:1f.2
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.119129121Z]: [drm] features: -virgl +edid -resource_blob -host_visible
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.119131121Z]: [drm] features: -context_init
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.122506121Z]: [drm] number of scanouts: 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.123363121Z]: [drm] number of cap sets: 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.127485121Z]: scsi host0: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.129515121Z]: scsi host1: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.131013121Z]: scsi host2: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host2
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.135472121Z]: scsi host3: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host3
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.136526121Z]: scsi host4: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host4
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.137482121Z]: scsi host5: ahci
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host5
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.143110121Z]: ata1: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a100 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.144772121Z]: ata2: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a180 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.146395121Z]: ata3: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a200 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.148039121Z]: ata4: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a280 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.149660121Z]: ata5: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a300 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.151297121Z]: ata6: SATA max UDMA/133 abar m4096@0xfea1a000 port 0xfea1a380 irq 38 lpm-pol 1
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.161711121Z]: [drm] Initialized virtio_gpu 0.1.0 for 0000:00:01.0 on minor 0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.164359121Z]: fbcon: virtio_gpudrmfb (fb0) is primary device
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.165864121Z]: Console: switching to colour frame buffer device 160x50
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.169954121Z]: virtio-pci 0000:00:01.0: [drm] fb0: virtio_gpudrmfb frame buffer device
+ SUBSYSTEM=pci
+ DEVICE=+pci:0000:00:01.0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.228203121Z]: virtio_scsi virtio5: 4/0/0 default/read/poll queues
+ SUBSYSTEM=virtio
+ DEVICE=+virtio:virtio5
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.233116121Z]: scsi host6: Virtio SCSI HBA
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host6
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.235271121Z]: scsi 6:0:0:0: Direct-Access     QEMU     QEMU HARDDISK    2.5+ PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern: warning: [2026-03-17T11:16:44.238004121Z]: sd 6:0:0:0: Power-on or device reset occurred
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.239211121Z]: sd 6:0:0:0: Attached scsi generic sg0 type 0
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.239533121Z]: sd 6:0:0:0: [sda] 320004096 512-byte logical blocks: (164 GB/153 GiB)
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.242645121Z]: sd 6:0:0:0: [sda] Write Protect is off
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:   debug: [2026-03-17T11:16:44.244281121Z]: sd 6:0:0:0: [sda] Mode Sense: 63 00 00 08
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.244549121Z]: sd 6:0:0:0: [sda] Write cache: enabled, read cache: enabled, doesn't support DPO or FUA
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.463040121Z]: ata4: SATA link down (SStatus 0 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.466766121Z]: ata3: SATA link down (SStatus 0 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.470483121Z]: ata1: SATA link up 1.5 Gbps (SStatus 113 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.474063121Z]: ata2: SATA link down (SStatus 0 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.477536121Z]: ata5: SATA link down (SStatus 0 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.481206121Z]: ata6: SATA link down (SStatus 0 SControl 300)
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.483784121Z]: ata1.00: ATAPI: QEMU DVD-ROM, 2.5+, max UDMA/100
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.486624121Z]: ata1.00: applying bridge limits
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.489158121Z]: ata1.00: configured for UDMA/100
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.492488121Z]: scsi 0:0:0:0: CD-ROM            QEMU     QEMU DVD-ROM     2.5+ PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:0:0:0:0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.579249121Z]:  sda: sda1 sda2 sda3 sda4 sda5
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.580846121Z]: sd 6:0:0:0: [sda] Attached SCSI disk
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:6:0:0:0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.595521121Z]: sr 0:0:0:0: [sr0] scsi3-mmc drive: 4x/4x cd/rw xa/form2 tray
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:0:0:0:0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.598450121Z]: cdrom: Uniform CD-ROM driver Revision: 3.20
+5.78.43.147: kern:   debug: [2026-03-17T11:16:44.655252121Z]: sr 0:0:0:0: Attached scsi CD-ROM sr0
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:0:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:16:44.655626121Z]: sr 0:0:0:0: Attached scsi generic sg1 type 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:0:0:0:0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.663168121Z]: iTCO_vendor_support: vendor-support=0
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.667694121Z]: iTCO_wdt iTCO_wdt.1.auto: Found a ICH9 TCO device (Version=2, TCOBASE=0x0660)
+ SUBSYSTEM=platform
+ DEVICE=+platform:iTCO_wdt.1.auto
+5.78.43.147: kern:    info: [2026-03-17T11:16:44.670565121Z]: iTCO_wdt iTCO_wdt.1.auto: initialized. heartbeat=30 sec (nowayout=0)
+ SUBSYSTEM=platform
+ DEVICE=+platform:iTCO_wdt.1.auto
+5.78.43.147: user: warning: [2026-03-17T11:16:44.752812121Z]: [talos] service[ext-iscsid](Waiting): Waiting for service "containerd" to be "up", service "cri" to be registered, network
+5.78.43.147: user: warning: [2026-03-17T11:16:44.818568121Z]: [talos] service[containerd](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:44.822483121Z]: [talos] task startContainerd (5/5): done, 1.035735482s
+5.78.43.147: user: warning: [2026-03-17T11:16:44.827599121Z]: [talos] service[machined](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:44.831535121Z]: [talos] service[syslogd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:44.835811121Z]: [talos] task startMachined (2/5): done, 1.04496968s
+5.78.43.147: user: warning: [2026-03-17T11:16:44.839775121Z]: [talos] service[syslogd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:44.843762121Z]: [talos] service[auditd](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:44.847678121Z]: [talos] service[syslogd](Running): Service started as goroutine
+5.78.43.147: user: warning: [2026-03-17T11:16:44.951373121Z]: [talos] volume status {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "META", "phase": "waiting -> ready", "location": "/dev/sda4", "parentLocation": "/dev/sda"}
+5.78.43.147: user: warning: [2026-03-17T11:16:45.063678121Z]: [talos] volume status {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "STATE", "phase": "waiting -> ready", "location": "/dev/sda1", "parentLocation": "/dev/sda"}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:45.123329121Z]: XFS (sda1): Mounting V5 Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:45.753447121Z]: [talos] service[ext-iscsid](Waiting): Waiting for service "cri" to be registered, network
+5.78.43.147: user: warning: [2026-03-17T11:16:45.780487121Z]: [talos] service[ext-qemu-guest-agent](Waiting): Waiting for file "/dev/virtio-ports/org.qemu.guest_agent.0" to exist
+5.78.43.147: user: warning: [2026-03-17T11:16:45.844681121Z]: [talos] service[syslogd](Running): Health check successful
+5.78.43.147: kern:    info: [2026-03-17T11:16:45.959253121Z]: XFS (sda1): Ending clean mount
+5.78.43.147: user: warning: [2026-03-17T11:16:46.155735121Z]: [talos] volume mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs", "read_only": false, "detached": true}
+5.78.43.147: user: warning: [2026-03-17T11:16:46.187524121Z]: [talos] encryption salt established {"component": "controller-runtime", "controller": "secrets.EncryptionSaltController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:46.190903121Z]: [talos] node identity established {"component": "controller-runtime", "controller": "cluster.NodeIdentityController", "node_id": "eQinlrdWvCuUCcEj68Xo0ogKdRIXKKkEemJeVqIyO2sA"}
+5.78.43.147: user: warning: [2026-03-17T11:16:46.197934121Z]: [talos] setting hostname {"component": "controller-runtime", "controller": "network.HostnameSpecController", "hostname": "talos-vps-cp-1", "domainname": ""}
+5.78.43.147: user: warning: [2026-03-17T11:16:46.205989121Z]: [talos] setting hostname {"component": "controller-runtime", "controller": "network.HostnameSpecController", "hostname": "talos-vps-cp-1", "domainname": ""}
+5.78.43.147: user: warning: [2026-03-17T11:16:46.210317121Z]: [talos] assigned address {"component": "controller-runtime", "controller": "network.AddressSpecController", "address": "2a01:4ff:1f0:c3e5::1/64", "link": "eth0"}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:46.236400121Z]: XFS (sda1): Unmounting Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:46.439233121Z]: [talos] volume unmount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs"}
+5.78.43.147: user: warning: [2026-03-17T11:16:50.125920121Z]: [talos] controller failed {"component": "controller-runtime", "controller": "network.RouteSpecController", "error": "1 error occurred:\n\t* error adding route: netlink receive: network is down, message {Family:10 DstLength:0 SrcLength:0 Tos:0 Table:0 Protocol:4 Scope:0 Type:1 Flags:0 Attributes:{Dst:<nil> Src:<nil> Gateway:fe80::1 OutIface:8 Priority:1024 Table:254 Mark:0 Pref:<nil> Expires:<nil> Metrics:<nil> Multipath:[]}}\n\n"}
+5.78.43.147: user: warning: [2026-03-17T11:16:51.607205121Z]: [talos] service[udevd](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:51.609477121Z]: [talos] task startUdevd (1/5): done, 7.822735019s
+5.78.43.147: kern:    info: [2026-03-17T11:16:51.610741121Z]: 8021q: adding VLAN 0 to HW filter on device eth0
+5.78.43.147: user: warning: [2026-03-17T11:16:51.611127121Z]: [talos] phase earlyServices (2/9): done, 7.826003249s
+5.78.43.147: user: warning: [2026-03-17T11:16:51.617511121Z]: [talos] phase usb (3/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:51.620031121Z]: [talos] task waitForUSB (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:51.622544121Z]: [talos] task waitForUSB (1/1): waiting 1 second(s) for USB storage
+5.78.43.147: user: warning: [2026-03-17T11:16:51.671185121Z]: [talos] setting resolvers {"component": "controller-runtime", "controller": "network.ResolverSpecController", "resolvers": ["185.12.64.1", "185.12.64.2"], "searchDomains": []}
+5.78.43.147: user: warning: [2026-03-17T11:16:51.676432121Z]: [talos] assigned address {"component": "controller-runtime", "controller": "network.AddressSpecController", "address": "5.78.43.147/32", "link": "eth0"}
+5.78.43.147: user: warning: [2026-03-17T11:16:51.783748121Z]: [talos] service[ext-qemu-guest-agent](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:51.786879121Z]: [talos] service[ext-qemu-guest-agent](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:51.966703121Z]: [talos] service[ext-qemu-guest-agent](Running): Started task ext-qemu-guest-agent (PID 2350) for container ext-qemu-guest-agent
+5.78.43.147: user: warning: [2026-03-17T11:16:52.035437121Z]: [talos] created route {"component": "controller-runtime", "controller": "network.RouteSpecController", "destination": "default", "gateway": "fe80::1", "table": "main", "link": "eth0", "priority": 1024, "family": "inet6"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.045542121Z]: [talos] created route {"component": "controller-runtime", "controller": "network.RouteSpecController", "destination": "172.31.1.1/32", "gateway": "", "table": "main", "link": "eth0", "priority": 1024, "family": "inet4"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.056600121Z]: [talos] created route {"component": "controller-runtime", "controller": "network.RouteSpecController", "destination": "default", "gateway": "172.31.1.1", "table": "main", "link": "eth0", "priority": 1024, "family": "inet4"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.626186121Z]: [talos] task waitForUSB (1/1): done, 1.006152208s
+5.78.43.147: user: warning: [2026-03-17T11:16:52.628287121Z]: [talos] phase usb (3/9): done, 1.010765871s
+5.78.43.147: user: warning: [2026-03-17T11:16:52.631218121Z]: [talos] phase meta (4/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.633586121Z]: [talos] adjusting time (slew) by 298.089404ms via 162.159.200.1, state TIME_OK, status STA_PLL | STA_NANO {"component": "controller-runtime", "controller": "time.SyncController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.639873121Z]: [talos] task reloadMeta (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:52.742612121Z]: [talos] META: loading from /dev/sda4
+5.78.43.147: user: warning: [2026-03-17T11:16:52.748324121Z]: [talos] META: loaded 1 keys
+5.78.43.147: user: warning: [2026-03-17T11:16:52.751888121Z]: [talos] task reloadMeta (1/1): done, 118.429287ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.756409121Z]: [talos] phase meta (4/9): done, 125.541584ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.760933121Z]: [talos] service[ext-iscsid](Waiting): Waiting for service "cri" to be registered
+5.78.43.147: user: warning: [2026-03-17T11:16:52.767419121Z]: [talos] phase dashboard (6/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.771484121Z]: [talos] task startDashboard (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:52.775810121Z]: [talos] service[dashboard](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:52.780234121Z]: [talos] service[dashboard](Waiting): Waiting for service "machined" to be "up", file "/system/run/machined/machine.sock" to exist
+5.78.43.147: user: warning: [2026-03-17T11:16:52.787548121Z]: [talos] task startDashboard (1/1): done, 9.18958ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.791500121Z]: [talos] service[dashboard](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:52.796105121Z]: [talos] phase dashboard (6/9): done, 31.636075ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.800521121Z]: [talos] phase config (9/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.804202121Z]: [talos] task loadConfig (1/1): starting
+5.78.43.147: kern:  notice: [2026-03-17T11:16:52.806221121Z]: XFS (sda1): Mounting V5 Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:52.814307121Z]: [talos] service[dashboard](Preparing): Creating service runner
+5.78.43.147: kern:    info: [2026-03-17T11:16:52.825013121Z]: XFS (sda1): Ending clean mount
+5.78.43.147: user: warning: [2026-03-17T11:16:52.828230121Z]: [talos] service[dashboard](Running): Process Process(["/sbin/dashboard"]) started with PID 2375
+5.78.43.147: user: warning: [2026-03-17T11:16:52.832662121Z]: [talos] volume mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs", "read_only": true, "detached": true}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.846789121Z]: [talos] machine config loaded successfully {"component": "controller-runtime", "controller": "config.AcquireController", "sources": ["state"]}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:52.850409121Z]: XFS (sda1): Unmounting Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:52.852965121Z]: [talos] kubeprism KubePrism is enabled {"component": "controller-runtime", "controller": "k8s.KubePrismController", "endpoint": "127.0.0.1:7445"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.865849121Z]: [talos] assigned address {"component": "controller-runtime", "controller": "network.AddressSpecController", "address": "169.254.116.108/32", "link": "lo"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.874850121Z]: [talos] task loadConfig (1/1): done, 65.823804ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.878527121Z]: [talos] phase config (9/9): done, 80.918303ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.881007121Z]: [talos] volume unmount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.886763121Z]: [talos] initialize sequence: done: 9.187062607s
+5.78.43.147: user: warning: [2026-03-17T11:16:52.888037121Z]: [talos] install sequence: 0 phase(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.889096121Z]: [talos] install sequence: done: 1.095223ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.890210121Z]: [talos] service[apid](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:52.891394121Z]: [talos] service[apid](Waiting): Waiting for service "containerd" to be "up", api certificates
+5.78.43.147: user: warning: [2026-03-17T11:16:52.893277121Z]: [talos] updated dns server nameservers {"component": "dns-resolve-cache", "addrs": ["185.12.64.1:53", "185.12.64.2:53"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.895760121Z]: [talos] boot sequence: 9 phase(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.896680121Z]: [talos] phase memorySizeCheck (1/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.898173121Z]: [talos] task memorySizeCheck (1/1): starting
+5.78.43.147: kern:  notice: [2026-03-17T11:16:52.898343121Z]: XFS (sda1): Mounting V5 Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:52.899264121Z]: [talos] service[apid](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:52.902960121Z]: [talos] service[apid](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:52.904654121Z]: [talos] task memorySizeCheck (1/1): memory size is OK
+5.78.43.147: user: warning: [2026-03-17T11:16:52.907078121Z]: [talos] task memorySizeCheck (1/1): memory size is 7730 MiB
+5.78.43.147: user: warning: [2026-03-17T11:16:52.909393121Z]: [talos] task memorySizeCheck (1/1): done, 11.634229ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.911662121Z]: [talos] phase memorySizeCheck (1/9): done, 15.537596ms
+5.78.43.147: user: warning: [2026-03-17T11:16:52.913952121Z]: [talos] phase diskSizeCheck (2/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:52.916410121Z]: [talos] task diskSizeCheck (1/1): starting
+5.78.43.147: kern:    info: [2026-03-17T11:16:52.917713121Z]: XFS (sda1): Ending clean mount
+5.78.43.147: user: warning: [2026-03-17T11:16:52.920944121Z]: [talos] volume mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs", "read_only": false, "detached": true}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.926857121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:52.930763121Z]: XFS (sda1): Unmounting Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:52.935412121Z]: [talos] volume unmount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.943703121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.949938121Z]: [talos] created new link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "kind": "wireguard"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.953766121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 0}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.963582121Z]: [talos] assigned address {"component": "controller-runtime", "controller": "network.AddressSpecController", "address": "fd9a:9e63:252c:8202:9000:7ff:fe56:3c/64", "link": "kubespan"}
+5.78.43.147: user: warning: [2026-03-17T11:16:52.967421121Z]: [talos] controller failed {"component": "controller-runtime", "controller": "network.RouteSpecController", "error": "2 errors occurred:\n\t* error adding route: netlink receive: network is down, message {Family:2 DstLength:0 SrcLength:0 Tos:0 Table:0 Protocol:4 Scope:0 Type:1 Flags:0 Attributes:{Dst:<nil> Src:<nil> Gateway:<nil> OutIface:9 Priority:1 Table:180 Mark:0 Pref:<nil> Expires:<nil> Metrics:0xc001254ca8 Multipath:[]}}\n\t* error adding route: netlink receive: network is down, message {Family:10 DstLength:0 SrcLength:0 Tos:0 Table:0 Protocol:4 Scope:0 Type:1 Flags:0 Attributes:{Dst:<nil> Src:<nil> Gateway:<nil> OutIface:9 Priority:1 Table:180 Mark:0 Pref:<nil> Expires:<nil> Metrics:0xc001254d08 Multipath:[]}}\n\n"}
+5.78.43.147: kern:    info: [2026-03-17T11:16:52.977782121Z]:  sda: sda1 sda2 sda3 sda4 sda5
+5.78.43.147: user: warning: [2026-03-17T11:16:53.024970121Z]: [talos] service[apid](Running): Started task apid (PID 2428) for container apid
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.050190121Z]: XFS (sda5): Mounting V5 Filesystem 2c3abbf8-3f0f-471c-8ba8-308371d7b2e7
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.081843121Z]: XFS (sda5): Starting recovery (logdev: internal)
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.100784121Z]: XFS (sda5): resetting quota flags
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.105847121Z]: XFS (sda5): Ending recovery (logdev: internal)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.107260121Z]: [talos] mounting "/dev/sda5" to "/tmp/talos-growfs-3182626581" {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "EPHEMERAL"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.110879121Z]: [talos] growing XFS filesystem {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "EPHEMERAL", "device": "/dev/sda5"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.113617121Z]: [talos] syncfs(/tmp/talos-growfs-3182626581) ok {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "EPHEMERAL"}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.117213121Z]: XFS (sda5): Unmounting Filesystem 2c3abbf8-3f0f-471c-8ba8-308371d7b2e7
+5.78.43.147: user: warning: [2026-03-17T11:16:53.122994121Z]: [talos] volume status {"component": "controller-runtime", "controller": "block.VolumeManagerController", "volume": "EPHEMERAL", "phase": "waiting -> ready", "location": "/dev/sda5", "parentLocation": "/dev/sda"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.127636121Z]: [talos] TPM device is not available, skipping PCR extension
+5.78.43.147: user: warning: [2026-03-17T11:16:53.129003121Z]: [talos] TPM is locked to block any disk encryption operation (if available) {"component": "controller-runtime", "controller": "hardware.PCRStatusController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.131952121Z]: [talos] task diskSizeCheck (1/1): disk size is OK
+5.78.43.147: user: warning: [2026-03-17T11:16:53.131959121Z]: [talos] task diskSizeCheck (1/1): disk size is 152147 MiB
+5.78.43.147: user: warning: [2026-03-17T11:16:53.131978121Z]: [talos] task diskSizeCheck (1/1): done, 223.60198ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.131989121Z]: [talos] phase diskSizeCheck (2/9): done, 226.165411ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.131994121Z]: [talos] phase env (3/9): 2 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132007121Z]: [talos] task waitForCARoots (2/2): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132020121Z]: [talos] task setUserEnvVars (1/2): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132036121Z]: [talos] task setUserEnvVars (1/2): done, 22.365µs
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132117121Z]: [talos] task waitForCARoots (2/2): done, 113.772µs
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132126121Z]: [talos] phase env (3/9): done, 137.394µs
+5.78.43.147: user: warning: [2026-03-17T11:16:53.132130121Z]: [talos] phase dbus (4/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.144626121Z]: [talos] task startDBus (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.145062121Z]: [talos] task startDBus (1/1): done, 449.698µs
+5.78.43.147: user: warning: [2026-03-17T11:16:53.147324121Z]: [talos] phase dbus (4/9): done, 15.756236ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.148470121Z]: [talos] phase ephemeral (5/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.149562121Z]: [talos] task mountEphemeralPartition (1/1): starting
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.154853121Z]: XFS (sda5): Mounting V5 Filesystem 2c3abbf8-3f0f-471c-8ba8-308371d7b2e7
+5.78.43.147: kern:    info: [2026-03-17T11:16:53.165792121Z]: XFS (sda5): Ending clean mount
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.167588121Z]: XFS (sda5): Quotacheck needed: Please wait.
+5.78.43.147: user: warning: [2026-03-17T11:16:53.576215121Z]: [talos] created route {"component": "controller-runtime", "controller": "network.RouteSpecController", "destination": "default", "gateway": "", "table": "180", "link": "kubespan", "priority": 1, "family": "inet4"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.580373121Z]: [talos] created route {"component": "controller-runtime", "controller": "network.RouteSpecController", "destination": "default", "gateway": "", "table": "180", "link": "kubespan", "priority": 1, "family": "inet6"}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:53.679327121Z]: XFS (sda5): Quotacheck: Done.
+5.78.43.147: user: warning: [2026-03-17T11:16:53.681088121Z]: [talos] mounting "/dev/sda5" to "/var" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.683419121Z]: [talos] volume mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "EPHEMERAL", "source": "/dev/sda5", "target": "/var", "filesystem": "xfs", "read_only": false, "detached": false}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.687918121Z]: [talos] task mountEphemeralPartition (1/1): done, 558.413608ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.689964121Z]: [talos] phase ephemeral (5/9): done, 561.67282ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.691167121Z]: [talos] phase udevSetup (6/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.692352121Z]: [talos] task writeUdevRules (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.693729121Z]: [talos] task writeUdevRules (1/1): done, 1.457253ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.694926121Z]: [talos] phase udevSetup (6/9): done, 3.89916ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.696123121Z]: [talos] phase userDisks (7/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.697205121Z]: [talos] task mountUserDisks (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.698334121Z]: [talos] task mountUserDisks (1/1): done, 1.178361ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.699592121Z]: [talos] phase userDisks (7/9): done, 3.599034ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.700712121Z]: [talos] phase userSetup (8/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.701741121Z]: [talos] task writeUserFiles (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.702818121Z]: [talos] task writeUserFiles (1/1): done, 1.117328ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.704038121Z]: [talos] phase userSetup (8/9): done, 3.44995ms
+5.78.43.147: user: warning: [2026-03-17T11:16:53.705144121Z]: [talos] phase startEverything (9/9): 1 tasks(s)
+5.78.43.147: user: warning: [2026-03-17T11:16:53.706280121Z]: [talos] task startAllServices (1/1): starting
+5.78.43.147: user: warning: [2026-03-17T11:16:53.707428121Z]: [talos] service[cri](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:53.708595121Z]: [talos] service[cri](Waiting): Waiting for volumes /var/lib, /var/lib/cni, /var/lib/containerd, /var/run, /var/run/lock, /etc/cni, /etc/kubernetes, /usr/libexec/kubernetes, /opt to be mounted, network
+5.78.43.147: user: warning: [2026-03-17T11:16:53.712260121Z]: [talos] service[trustd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:53.712300121Z]: [talos] service[trustd](Waiting): Waiting for service "containerd" to be "up", time sync, network
+5.78.43.147: user: warning: [2026-03-17T11:16:53.712388121Z]: [talos] service[etcd](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:53.712401121Z]: [talos] service[etcd](Waiting): Waiting for volumes /var/lib, ETCD to be mounted, service "cri" to be "up", time sync, network, etcd spec
+5.78.43.147: user: warning: [2026-03-17T11:16:53.712464121Z]: [talos] task startAllServices (1/1): waiting for 13 services
+5.78.43.147: user: warning: [2026-03-17T11:16:53.721481121Z]: [talos] service[trustd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:53.721512121Z]: [talos] task startAllServices (1/1): service "apid" to be "up", service "auditd" to be "up", service "containerd" to be "up", service "cri" to be "up", service "dashboard" to be "up", service "etcd" to be "up", service "ext-iscsid" to be "up", service "ext-qemu-guest-agent" to be "up", service "kubelet" to be "up", service "machined" to be "up", service "syslogd" to be "up", service "trustd" to be "up", service "udevd" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:16:53.721557121Z]: [talos] creating directory tree "/var/system/overlays/etc-cni-diff" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.721677121Z]: [talos] service[trustd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:53.722332121Z]: [talos] creating directory tree "/var/system/overlays/etc-cni-workdir" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.741770121Z]: [talos] mounting "" to "/etc/cni" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.744102121Z]: [talos] overlay mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "/etc/cni", "target": "/etc/cni", "parent": "EPHEMERAL"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.747649121Z]: [talos] creating directory tree "/var/system/overlays/etc-kubernetes-diff" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.750571121Z]: [talos] creating directory tree "/var/system/overlays/etc-kubernetes-workdir" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.754019121Z]: [talos] mounting "" to "/etc/kubernetes" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.756318121Z]: [talos] overlay mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "/etc/kubernetes", "target": "/etc/kubernetes", "parent": "EPHEMERAL"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.760207121Z]: [talos] creating directory tree "/var/system/overlays/usr-libexec-kubernetes-diff" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.763435121Z]: [talos] creating directory tree "/var/system/overlays/usr-libexec-kubernetes-workdir" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.767057121Z]: [talos] mounting "" to "/usr/libexec/kubernetes" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.769586121Z]: [talos] overlay mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "/usr/libexec/kubernetes", "target": "/usr/libexec/kubernetes", "parent": "EPHEMERAL"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.773846121Z]: [talos] creating directory tree "/var/system/overlays/opt-diff" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.776535121Z]: [talos] creating directory tree "/var/system/overlays/opt-workdir" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.780086121Z]: [talos] mounting "" to "/opt" {"component": "controller-runtime", "controller": "block.MountController"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.782229121Z]: [talos] overlay mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "/opt", "target": "/opt", "parent": "EPHEMERAL"}
+5.78.43.147: user: warning: [2026-03-17T11:16:53.785649121Z]: [talos] service[cri](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:53.786837121Z]: [talos] service[cri](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:53.804099121Z]: [talos] service[cri](Running): Process Process(["/bin/containerd" "--address" "/run/containerd/containerd.sock" "--config" "/etc/cri/containerd.toml"]) started with PID 2526
+5.78.43.147: user: warning: [2026-03-17T11:16:53.814082121Z]: [talos] service[trustd](Running): Started task trustd (PID 2520) for container trustd
+5.78.43.147: user: warning: [2026-03-17T11:16:53.876738121Z]: [talos] service[apid](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:54.111974121Z]: [talos] peer address overlap {"component": "controller-runtime", "controller": "kubespan.PeerSpecController", "this_peer": "icUtLCcEyWReOM0WBl4TGlS+LvBxl/GeOjFNiMKU+DY=", "other_peer": "OmNpLdUPKsd+imCGbqq4Y7AHuI3Qoizen0+E0OWTlFo=", "this_ips": ["10.0.106.97-10.0.106.97", "10.96.0.0-10.111.255.255", "10.244.4.0-10.244.4.255", "100.64.0.3-100.64.0.3", "172.17.0.1-172.17.0.1", "fd7a:115c:a1e0::3-fd7a:115c:a1e0::3", "fd9a:9e63:252c:8202:be24:11ff:fe43:6fc0-fd9a:9e63:252c:8202:be24:11ff:fe43:6fc0", "fdd0:3b09:ab96:78f:1993:64d2:f86d:c190-fdd0:3b09:ab96:78f:1993:64d2:f86d:c190", "fdd0:3b09:ab96:78f:7f5e:54a1:94e0:619-fdd0:3b09:ab96:78f:7f5e:54a1:94e0:619"], "other_ips": ["10.96.0.0-10.111.255.255", "10.215.171.94-10.215.171.94", "10.244.0.0-10.244.0.255", "100.64.0.6-100.64.0.6", "172.17.0.1-172.17.0.1", "fd7a:115c:a1e0::6-fd7a:115c:a1e0::6", "fd9a:9e63:252c:8202:eabf:e1ff:febb:9883-fd9a:9e63:252c:8202:eabf:e1ff:febb:9883"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.141129121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 3}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.141179121Z]: [talos] service[kubelet](Starting): Starting service
+5.78.43.147: user: warning: [2026-03-17T11:16:54.141225121Z]: [talos] service[kubelet](Waiting): Waiting for volumes /var/lib, /var/lib/kubelet, /var/log, /var/log/audit, /var/log/containers, /var/log/pods, /var/lib/kubelet/seccomp, /var/lib/kubelet/seccomp/profiles, /var/log/audit/kube, /var/mnt to be mounted, service "cri" to be "up", time sync, network
+5.78.43.147: user: warning: [2026-03-17T11:16:54.154444121Z]: [talos] peer address overlap {"component": "controller-runtime", "controller": "kubespan.PeerSpecController", "this_peer": "icUtLCcEyWReOM0WBl4TGlS+LvBxl/GeOjFNiMKU+DY=", "other_peer": "OmNpLdUPKsd+imCGbqq4Y7AHuI3Qoizen0+E0OWTlFo=", "this_ips": ["10.0.106.97-10.0.106.97", "10.96.0.0-10.111.255.255", "10.244.4.0-10.244.4.255", "100.64.0.3-100.64.0.3", "172.17.0.1-172.17.0.1", "fd7a:115c:a1e0::3-fd7a:115c:a1e0::3", "fd9a:9e63:252c:8202:be24:11ff:fe43:6fc0-fd9a:9e63:252c:8202:be24:11ff:fe43:6fc0", "fdd0:3b09:ab96:78f:1993:64d2:f86d:c190-fdd0:3b09:ab96:78f:1993:64d2:f86d:c190", "fdd0:3b09:ab96:78f:7f5e:54a1:94e0:619-fdd0:3b09:ab96:78f:7f5e:54a1:94e0:619"], "other_ips": ["10.96.0.0-10.111.255.255", "10.215.171.94-10.215.171.94", "10.244.0.0-10.244.0.255", "100.64.0.6-100.64.0.6", "172.17.0.1-172.17.0.1", "fd7a:115c:a1e0::6-fd7a:115c:a1e0::6", "fd9a:9e63:252c:8202:eabf:e1ff:febb:9883-fd9a:9e63:252c:8202:eabf:e1ff:febb:9883"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.154528121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.156586121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.195332121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: user: warning: [2026-03-17T11:16:54.681503121Z]: [talos] service[etcd](Waiting): Waiting for service "cri" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:16:54.685687121Z]: [talos] service[ext-iscsid](Waiting): Waiting for service "cri" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:16:54.694669121Z]: [talos] service[trustd](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:54.759157121Z]: [talos] service[cri](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:16:54.760792121Z]: [talos] service[ext-iscsid](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:54.762459121Z]: [talos] service[etcd](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:54.763999121Z]: [talos] service[kubelet](Preparing): Running pre state
+5.78.43.147: user: warning: [2026-03-17T11:16:54.765579121Z]: [talos] service[ext-iscsid](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:54.785955121Z]: [talos] service[kubelet](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:54.787560121Z]: [talos] service[etcd](Preparing): Creating service runner
+5.78.43.147: user: warning: [2026-03-17T11:16:54.866242121Z]: [talos] service[ext-iscsid](Running): Started task ext-iscsid (PID 2609) for container ext-iscsid
+5.78.43.147: user: warning: [2026-03-17T11:16:54.908879121Z]: [talos] service[etcd](Running): Started task etcd (PID 2678) for container etcd
+5.78.43.147: user: warning: [2026-03-17T11:16:54.918442121Z]: [talos] service[kubelet](Running): Started task kubelet (PID 2679) for container kubelet
+5.78.43.147: user: warning: [2026-03-17T11:16:55.347532121Z]: [talos] fetching hcloud network config from: "http://169.254.169.254/hetzner/v1/metadata/network-config"
+5.78.43.147: kern:  notice: [2026-03-17T11:16:55.355423121Z]: XFS (sda1): Mounting V5 Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: kern:    info: [2026-03-17T11:16:55.366643121Z]: XFS (sda1): Ending clean mount
+5.78.43.147: user: warning: [2026-03-17T11:16:55.372802121Z]: [talos] volume mount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs", "read_only": false, "detached": true}
+5.78.43.147: kern:  notice: [2026-03-17T11:16:55.385142121Z]: XFS (sda1): Unmounting Filesystem 55d518db-a525-4a2e-9d76-f13e5a0d4a5f
+5.78.43.147: user: warning: [2026-03-17T11:16:55.389802121Z]: [talos] volume unmount {"component": "controller-runtime", "controller": "block.MountController", "volume": "STATE", "source": "/dev/sda1", "target": "/system/state", "filesystem": "xfs"}
+5.78.43.147: user: warning: [2026-03-17T11:16:56.759371121Z]: [talos] service[kubelet](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:17:08.501376121Z]: [talos] task startAllServices (1/1): service "etcd" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:17:14.613313121Z]: [talos] service[etcd](Running): Health check failed: context deadline exceeded
+5.78.43.147: user: warning: [2026-03-17T11:17:20.996933121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:21.587663121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.693109121Z]: eth0: renamed from tmp2efaf
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.749144121Z]: eth0: renamed from tmp2e530
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.777594121Z]: eth0: renamed from tmp2f631
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.813529121Z]: eth0: renamed from tmpaea93
+5.78.43.147: user: warning: [2026-03-17T11:17:21.842259121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.846001121Z]: eth0: renamed from tmpd4bcb
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.913508121Z]: eth0: renamed from tmpde7e5
+5.78.43.147: kern:    info: [2026-03-17T11:17:21.917010121Z]: eth0: renamed from tmp600a4
+5.78.43.147: user: warning: [2026-03-17T11:17:21.995837121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:22.038178121Z]: eth0: renamed from tmp4d9bc
+5.78.43.147: kern:    info: [2026-03-17T11:17:22.062236121Z]: eth0: renamed from tmpa7c73
+5.78.43.147: user: warning: [2026-03-17T11:17:22.088499121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:22.247119121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:22.280127121Z]: eth0: renamed from tmpded32
+5.78.43.147: user: warning: [2026-03-17T11:17:22.580038121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: user: warning: [2026-03-17T11:17:22.603917121Z]: [talos] nftables chains updated {"component": "controller-runtime", "controller": "network.NfTablesChainController", "chains": ["kubespan_outgoing", "kubespan_prerouting"]}
+5.78.43.147: user: warning: [2026-03-17T11:17:23.470149121Z]: [talos] task startAllServices (1/1): service "etcd" to be "up"
+5.78.43.147: user: warning: [2026-03-17T11:17:26.136496121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.140138121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:26.178491121Z]: eth0: renamed from tmpfcc60
+5.78.43.147: kern:    info: [2026-03-17T11:17:26.204870121Z]: eth0: renamed from tmpcb16b
+5.78.43.147: user: warning: [2026-03-17T11:17:26.211339121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.263377121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.668474121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.718066121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:26.718590121Z]: eth0: renamed from tmp32cb0
+5.78.43.147: user: warning: [2026-03-17T11:17:26.725581121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.758618121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.888179121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.896753121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:26.919852121Z]: eth0: renamed from tmp0a238
+5.78.43.147: user: warning: [2026-03-17T11:17:26.939333121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.993867121Z]: [talos] service[etcd](Running): Health check successful
+5.78.43.147: user: warning: [2026-03-17T11:17:26.995263121Z]: [talos] task startAllServices (1/1): done, 33.54319736s
+5.78.43.147: user: warning: [2026-03-17T11:17:26.998779121Z]: [talos] rendered new static pod {"component": "controller-runtime", "controller": "k8s.StaticPodServerController", "id": "kube-apiserver"}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.998800121Z]: [talos] rendered new static pod {"component": "controller-runtime", "controller": "k8s.StaticPodServerController", "id": "kube-controller-manager"}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.998811121Z]: [talos] rendered new static pod {"component": "controller-runtime", "controller": "k8s.StaticPodServerController", "id": "kube-scheduler"}
+5.78.43.147: user: warning: [2026-03-17T11:17:26.999101121Z]: [talos] phase startEverything (9/9): done, 33.54437628s
+5.78.43.147: user: warning: [2026-03-17T11:17:26.999109121Z]: [talos] boot sequence: done: 34.390249856s
+5.78.43.147: user: warning: [2026-03-17T11:17:26.999204121Z]: [talos] machine is running and ready {"component": "controller-runtime", "controller": "runtime.MachineStatusController"}
+5.78.43.147: kern:    info: [2026-03-17T11:17:27.038686121Z]: eth0: renamed from tmp5c780
+5.78.43.147: user: warning: [2026-03-17T11:17:27.047084121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:27.191132121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:27.308120121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:27.313104121Z]: eth0: renamed from tmp7c941
+5.78.43.147: user: warning: [2026-03-17T11:17:27.367571121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:27.402459121Z]: eth0: renamed from tmp3d78b
+5.78.43.147: user: warning: [2026-03-17T11:17:27.472706121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:27.478418121Z]: eth0: renamed from tmp7abca
+5.78.43.147: kern:    info: [2026-03-17T11:17:27.503376121Z]: eth0: renamed from tmp1866c
+5.78.43.147: user: warning: [2026-03-17T11:17:27.528965121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:32.787904121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:32.788515121Z]: eth0: renamed from tmpfb960
+5.78.43.147: user: warning: [2026-03-17T11:17:32.806005121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:32.815218121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:48.854118121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: user: warning: [2026-03-17T11:17:48.877940121Z]: [talos] reconfigured wireguard link {"component": "controller-runtime", "controller": "network.LinkSpecController", "link": "kubespan", "peers": 4}
+5.78.43.147: kern:    info: [2026-03-17T11:17:53.464079121Z]: scsi host7: iSCSI Initiator over TCP/IP
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host7
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.475820121Z]: scsi 7:0:0:0: RAID              IET      Controller       0001 PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.482150121Z]: scsi 7:0:0:0: Attached scsi generic sg2 type 12
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.484462121Z]: scsi 7:0:0:1: Direct-Access     IET      VIRTUAL-DISK     0001 PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern: warning: [2026-03-17T11:17:53.487194121Z]: sd 7:0:0:1: Power-on or device reset occurred
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.487522121Z]: sd 7:0:0:1: [sdb] 20971520 512-byte logical blocks: (10.7 GB/10.0 GiB)
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.487604121Z]: sd 7:0:0:1: [sdb] Write Protect is off
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:   debug: [2026-03-17T11:17:53.487607121Z]: sd 7:0:0:1: [sdb] Mode Sense: 69 00 10 08
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.487781121Z]: sd 7:0:0:1: [sdb] Write cache: disabled, read cache: enabled, supports DPO and FUA
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.490922121Z]: sd 7:0:0:1: Attached scsi generic sg3 type 0
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:    info: [2026-03-17T11:17:53.563291121Z]: scsi host8: iSCSI Initiator over TCP/IP
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:host8
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.567179121Z]: scsi 8:0:0:0: RAID              IET      Controller       0001 PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.571596121Z]: scsi 8:0:0:0: Attached scsi generic sg4 type 12
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:0
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.573392121Z]: scsi 8:0:0:1: Direct-Access     IET      VIRTUAL-DISK     0001 PQ: 0 ANSI: 5
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern: warning: [2026-03-17T11:17:53.579595121Z]: sd 8:0:0:1: Power-on or device reset occurred
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.581196121Z]: sd 8:0:0:1: Attached scsi generic sg5 type 0
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.585414121Z]: sd 8:0:0:1: [sdc] 41943040 512-byte logical blocks: (21.5 GB/20.0 GiB)
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.588732121Z]: sd 8:0:0:1: [sdc] Write Protect is off
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:   debug: [2026-03-17T11:17:53.589775121Z]: sd 8:0:0:1: [sdc] Mode Sense: 69 00 10 08
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.590148121Z]: sd 8:0:0:1: [sdc] Write cache: disabled, read cache: enabled, supports DPO and FUA
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.614216121Z]: sd 7:0:0:1: [sdb] Attached SCSI disk
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:7:0:0:1
+5.78.43.147: kern:  notice: [2026-03-17T11:17:53.720615121Z]: sd 8:0:0:1: [sdc] Attached SCSI disk
+ SUBSYSTEM=scsi
+ DEVICE=+scsi:8:0:0:1
+5.78.43.147: kern:    info: [2026-03-17T11:17:55.004750121Z]: eth0: renamed from tmp986f7
+5.78.43.147: kern:    info: [2026-03-17T11:17:55.972082121Z]: eth0: renamed from tmp88c18
+5.78.43.147: kern:    info: [2026-03-17T11:18:16.959787121Z]: eth0: renamed from tmpa619d
+5.78.43.147: kern:    info: [2026-03-17T11:18:17.433303121Z]: eth0: renamed from tmp6da0e
+5.78.43.147: kern:    info: [2026-03-17T11:18:18.369423121Z]: eth0: renamed from tmp6e41b
+5.78.43.147: kern:    info: [2026-03-17T11:18:21.097067121Z]: eth0: renamed from tmp037cb
+5.78.43.147: kern:    info: [2026-03-17T11:18:45.617355121Z]: eth0: renamed from tmpefe65
+5.78.43.147: kern:    info: [2026-03-17T11:18:46.165981121Z]: eth0: renamed from tmpe6c44
+5.78.43.147: kern:    info: [2026-03-17T11:18:46.241955121Z]: eth0: renamed from tmp6c4e6
+5.78.43.147: kern:    info: [2026-03-17T11:18:47.935183121Z]: eth0: renamed from tmpafda3
+5.78.43.147: kern:    info: [2026-03-17T11:19:10.313640121Z]: eth0: renamed from tmpc7d6f
+5.78.43.147: kern:    info: [2026-03-17T11:19:11.094009121Z]: eth0: renamed from tmp2a3a0
+5.78.43.147: kern:    info: [2026-03-17T11:19:11.386265121Z]: eth0: renamed from tmp76d81
+5.78.43.147: kern:    info: [2026-03-17T11:19:12.971605121Z]: eth0: renamed from tmp4f81f
+5.78.43.147: kern:    info: [2026-03-17T11:19:14.173998121Z]: eth0: renamed from tmp3ec04
+5.78.43.147: kern:    info: [2026-03-17T11:19:38.609176121Z]: eth0: renamed from tmp22dde
+5.78.43.147: kern:    info: [2026-03-17T11:19:38.729109121Z]: eth0: renamed from tmp4d568
+5.78.43.147: kern:    info: [2026-03-17T11:19:39.151920121Z]: eth0: renamed from tmpe4f57
+5.78.43.147: kern:    info: [2026-03-17T11:19:39.198317121Z]: eth0: renamed from tmp5e41b
+5.78.43.147: kern:    info: [2026-03-17T11:19:40.672840121Z]: eth0: renamed from tmpa60df
+5.78.43.147: kern:    info: [2026-03-17T11:19:41.310174121Z]: eth0: renamed from tmp3f327
+5.78.43.147: kern:    info: [2026-03-17T11:20:05.179763121Z]: eth0: renamed from tmp54d12
+5.78.43.147: kern:    info: [2026-03-17T11:20:05.804353121Z]: eth0: renamed from tmp23f78
+5.78.43.147: kern:    info: [2026-03-17T11:20:07.483895121Z]: eth0: renamed from tmp4ca0f
+5.78.43.147: kern:    info: [2026-03-17T11:20:07.749861121Z]: eth0: renamed from tmp9958a
+5.78.43.147: kern:    info: [2026-03-17T11:20:07.963473121Z]: eth0: renamed from tmp2fcc4
+5.78.43.147: kern:    info: [2026-03-17T11:20:07.993774121Z]: eth0: renamed from tmpfd1e5
+5.78.43.147: kern:    info: [2026-03-17T11:20:09.800037121Z]: eth0: renamed from tmp9a05f
+5.78.43.147: kern:    info: [2026-03-17T11:20:34.338893121Z]: eth0: renamed from tmp5c542
+5.78.43.147: kern:    info: [2026-03-17T11:20:35.042245121Z]: eth0: renamed from tmp9684c
+5.78.43.147: kern:    info: [2026-03-17T11:20:35.631114121Z]: eth0: renamed from tmpf164b
+5.78.43.147: kern:    info: [2026-03-17T11:20:35.969284121Z]: eth0: renamed from tmpf2182
+5.78.43.147: kern:    info: [2026-03-17T11:20:36.591581121Z]: eth0: renamed from tmp35ac6
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.315140121Z]: eth0: renamed from tmpbb1d5
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.386885121Z]: eth0: renamed from tmp3c7c8
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.584533121Z]: eth0: renamed from tmpab527
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.683078121Z]: eth0: renamed from tmp2d97a
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.779069121Z]: eth0: renamed from tmp7892a
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.780255121Z]: eth0: renamed from tmp9009d
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.886145121Z]: eth0: renamed from tmp18c6d
+5.78.43.147: kern:    info: [2026-03-17T11:21:02.986813121Z]: eth0: renamed from tmp1ce06
+5.78.43.147: kern:    info: [2026-03-17T11:21:03.018782121Z]: eth0: renamed from tmpaecb0
+5.78.43.147: kern:    info: [2026-03-17T11:21:03.151826121Z]: eth0: renamed from tmp85db3
+5.78.43.147: kern:    info: [2026-03-17T11:21:03.195947121Z]: eth0: renamed from tmp584d4
+5.78.43.147: kern:    info: [2026-03-17T11:21:36.876786121Z]: eth0: renamed from tmp8847e
+5.78.43.147: kern:    info: [2026-03-17T11:21:36.987633121Z]: eth0: renamed from tmpbf32b
+5.78.43.147: kern:    info: [2026-03-17T11:21:37.539627121Z]: eth0: renamed from tmp71bbc
+5.78.43.147: kern:    info: [2026-03-17T11:21:37.762270121Z]: eth0: renamed from tmp15a99
+5.78.43.147: kern:    info: [2026-03-17T11:21:38.402297121Z]: eth0: renamed from tmp3c421
+5.78.43.147: kern:    info: [2026-03-17T11:21:38.511487121Z]: eth0: renamed from tmp37474
+5.78.43.147: kern:    info: [2026-03-17T11:21:38.591661121Z]: eth0: renamed from tmp3988b
+5.78.43.147: kern:    info: [2026-03-17T11:22:04.451028121Z]: eth0: renamed from tmp76bef
+5.78.43.147: kern:    info: [2026-03-17T11:22:04.591183121Z]: eth0: renamed from tmpae749
+5.78.43.147: kern:    info: [2026-03-17T11:22:05.523797121Z]: eth0: renamed from tmp12c4b
+5.78.43.147: kern:    info: [2026-03-17T11:22:05.875413121Z]: eth0: renamed from tmp190d8
+5.78.43.147: kern:    info: [2026-03-17T11:22:06.415680121Z]: eth0: renamed from tmp58f94
+5.78.43.147: kern:    info: [2026-03-17T11:22:30.922611121Z]: eth0: renamed from tmp6f6ff
+5.78.43.147: kern:    info: [2026-03-17T11:22:31.704357121Z]: eth0: renamed from tmp8b619
+5.78.43.147: kern:    info: [2026-03-17T11:22:31.843934121Z]: eth0: renamed from tmp0832d
+5.78.43.147: kern:    info: [2026-03-17T11:22:32.635974121Z]: eth0: renamed from tmp198bc
+5.78.43.147: kern:    info: [2026-03-17T11:22:58.617790121Z]: eth0: renamed from tmp2f4c9
+5.78.43.147: kern:    info: [2026-03-17T11:22:58.910434121Z]: eth0: renamed from tmpc1cd9
+5.78.43.147: kern:    info: [2026-03-17T11:22:59.041915121Z]: eth0: renamed from tmp67c12
+5.78.43.147: kern:    info: [2026-03-17T11:23:00.105643121Z]: eth0: renamed from tmpba9e1
+5.78.43.147: kern:    info: [2026-03-17T11:23:25.924744121Z]: eth0: renamed from tmp24b98
+5.78.43.147: kern:    info: [2026-03-17T11:23:26.336908121Z]: eth0: renamed from tmpd8847
+5.78.43.147: kern:    info: [2026-03-17T11:23:27.861435121Z]: eth0: renamed from tmpd524c
+5.78.43.147: kern:    info: [2026-03-17T11:23:52.660333121Z]: eth0: renamed from tmp51966
+5.78.43.147: kern:    info: [2026-03-17T11:23:54.654216121Z]: eth0: renamed from tmp7e08a
+5.78.43.147: kern:    info: [2026-03-17T11:23:55.183667121Z]: eth0: renamed from tmpdfdd6
+5.78.43.147: kern:    info: [2026-03-17T11:24:18.979063121Z]: eth0: renamed from tmp9d343
+5.78.43.147: kern:    info: [2026-03-17T11:24:19.768118121Z]: eth0: renamed from tmp120c8
+5.78.43.147: kern:    info: [2026-03-17T11:24:21.150397121Z]: eth0: renamed from tmpe1119
+5.78.43.147: kern:    info: [2026-03-17T11:24:21.399443121Z]: eth0: renamed from tmp19a98
+5.78.43.147: kern:    info: [2026-03-17T11:24:46.453509121Z]: eth0: renamed from tmp7743f
+5.78.43.147: kern:    info: [2026-03-17T11:24:46.573455121Z]: eth0: renamed from tmpd9f88
+5.78.43.147: kern:    info: [2026-03-17T11:24:48.061626121Z]: eth0: renamed from tmped8b9
+5.78.43.147: kern:    info: [2026-03-17T11:24:48.091117121Z]: eth0: renamed from tmp5deb0
+5.78.43.147: kern:    info: [2026-03-17T11:24:48.994005121Z]: eth0: renamed from tmpa2e96
+5.78.43.147: kern:    info: [2026-03-17T11:25:13.567665121Z]: eth0: renamed from tmp1ac3e
+5.78.43.147: kern:    info: [2026-03-17T11:25:13.918821121Z]: eth0: renamed from tmpdbe5a
+5.78.43.147: kern:    info: [2026-03-17T11:25:14.086708121Z]: eth0: renamed from tmpe848d
+5.78.43.147: kern:    info: [2026-03-17T11:25:15.035350121Z]: eth0: renamed from tmp577fb
+5.78.43.147: kern:    info: [2026-03-17T11:25:15.914218121Z]: eth0: renamed from tmp83f4a
+5.78.43.147: kern:    info: [2026-03-17T11:25:41.979392121Z]: eth0: renamed from tmpd9e7a
+5.78.43.147: kern:    info: [2026-03-17T11:25:42.426895121Z]: eth0: renamed from tmpa9724
+5.78.43.147: kern:    info: [2026-03-17T11:25:43.497355121Z]: eth0: renamed from tmp4c76e
+5.78.43.147: kern:    info: [2026-03-17T11:25:43.515355121Z]: eth0: renamed from tmpd752f

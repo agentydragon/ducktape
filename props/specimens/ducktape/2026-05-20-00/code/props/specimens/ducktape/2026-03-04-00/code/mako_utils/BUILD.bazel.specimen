@@ -1,0 +1,21 @@
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "preprocessor",
+    srcs = ["preprocessor.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//mako"],
+)
+
+py_test(
+    name = "test_preprocessor",
+    srcs = ["test_preprocessor.py"],
+    imports = [".."],
+    deps = [
+        ":preprocessor",
+        "@pypi//mako",
+        "@pypi//pytest_bazel",
+    ],
+)

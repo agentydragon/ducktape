@@ -1,0 +1,15 @@
+rationale: |
+  `props.cli.resources.get_database_config` is a trivial forwarder that just
+  calls `props.db.config.get_database_config`. The wrapper adds no caching,
+  transformation, or typer-di–specific behavior — `Depends()` works identically
+  with the original function. Callers should import from `props.db.config`
+  directly and the module can be deleted.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      props/cli/resources.py:
+        - [27, 34]
+    note: "Forwarder definition — body is just `return _get_database_config()`"
+    critic_scopes_expected_to_recall:
+      - [props/cli/resources.py]

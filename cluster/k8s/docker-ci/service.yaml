@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-ci
+  namespace: docker-ci
+spec:
+  selector:
+    app.kubernetes.io/name: docker-ci
+  ports:
+    - port: 2376
+      targetPort: 2376
+      protocol: TCP

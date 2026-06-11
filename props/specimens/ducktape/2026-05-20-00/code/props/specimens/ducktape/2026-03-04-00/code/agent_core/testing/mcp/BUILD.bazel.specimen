@@ -1,0 +1,80 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+package(default_testonly = True)
+
+py_library(
+    name = "echo_server",
+    srcs = ["echo_server.py"],
+    imports = ["../../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:naming",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//openai_utils:pydantic_strict_mode",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":echo_server",
+        "//agent_core:events",
+        "//agent_core:mcp_provider",
+        "//agent_core:tool_provider",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    imports = ["../../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":echo_server",
+        "//agent_core/testing:responses",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    deps = [
+        ":responses",
+        "//agent_core/testing:responses",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_responses",
+    srcs = ["test_responses.py"],
+    imports = ["../../.."],
+    deps = [
+        ":conftest",
+        ":responses",
+        "//agent_core/testing:matchers",
+        "//agent_core/testing:responses",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)

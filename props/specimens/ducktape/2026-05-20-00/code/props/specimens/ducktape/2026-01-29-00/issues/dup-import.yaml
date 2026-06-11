@@ -1,0 +1,18 @@
+rationale: |
+  `gmail_client.py` imports `format_truncation_suffix` twice from different
+  module paths (line 17 from `fmt_util`, line 18 from `fmt_util.fmt_util`).
+  The second import shadows the first. If the two module paths ever diverge
+  (e.g., the package `__init__` re-export is removed), the shadowed import
+  silently changes behavior. One of the two imports should be removed.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [17, 18]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/gmail_client.py]
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py

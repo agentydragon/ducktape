@@ -22,7 +22,7 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace, get_build_workspace_directory
+from util.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_backend, get_build_workspace_directory
 
 
 @dataclasses.dataclass
@@ -62,15 +62,14 @@ def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
 
     Uses labels(srcs/data, //...) for standard attributes, and adds full
     deps() traversal for rules that hold source files in non-standard
-    attributes (helm_package auto-discovers chart files; create_data_blob
-    uses issue_files rather than srcs/data for specimen YAML).
+    attributes (create_data_blob uses issue_files rather than srcs/data
+    for specimen YAML).
     All sets are retrieved in a single bazel query invocation.
     """
     expr = (
         "kind('source file',"
         "  labels(srcs, //...)"
         "  union labels(data, //...)"
-        "  union deps(kind('helm_package', //...))"
         "  union deps(kind('create_data_blob', //...))"
         ")"
     )
@@ -140,7 +139,7 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = get_build_workspace_directory()
-    workspace = BazelWorkspace(root=repo_root)
+    workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     whitelist_path = args.whitelist or repo_root / "devinfra/orphans/whitelist.txt"
 
     orphans, stats = run_report(workspace, whitelist_path)

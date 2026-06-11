@@ -1,0 +1,8 @@
+---
+- name: Configure Linux desktop VM
+  hosts: linux_desktop
+  become: true
+  gather_facts: true
+  pre_tasks:
+  roles:
+    - linux_desktop_gui

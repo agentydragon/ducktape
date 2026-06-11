@@ -1,0 +1,81 @@
+# gazelle:ignore
+# Uses @pypi_homeassistant hub, not the main @pypi
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "indoor_aqi",
+    srcs = [
+        "__init__.py",
+        "config_flow.py",
+        "sensor.py",
+    ],
+    data = glob(["**/*.json"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi_homeassistant//homeassistant",
+    ],
+)
+
+_TEST_ARGS = [
+    "--import-mode=importlib",
+    "-p",
+    "pytest_homeassistant_custom_component",
+]
+
+_TEST_DEPS = [
+    ":indoor_aqi",
+    "@pypi//pytest_bazel",
+    "@pypi_homeassistant//pyhamcrest",
+    "@pypi_homeassistant//pytest",
+    "@pypi_homeassistant//pytest_homeassistant_custom_component",
+]
+
+py_test(
+    name = "test_config_flow",
+    srcs = [
+        "conftest.py",
+        "test_config_flow.py",
+    ],
+    args = _TEST_ARGS,
+    imports = ["../.."],
+    main = "test_config_flow.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_init",
+    srcs = [
+        "conftest.py",
+        "test_init.py",
+    ],
+    args = _TEST_ARGS,
+    imports = ["../.."],
+    main = "test_init.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_sensor",
+    srcs = [
+        "conftest.py",
+        "test_sensor.py",
+    ],
+    args = _TEST_ARGS,
+    imports = ["../.."],
+    main = "test_sensor.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_sensor_simple",
+    srcs = [
+        "conftest.py",
+        "test_sensor_simple.py",
+    ],
+    args = _TEST_ARGS,
+    imports = ["../.."],
+    main = "test_sensor_simple.py",
+    deps = _TEST_DEPS,
+)

@@ -1,0 +1,25 @@
+rationale: |
+  `decide_call` resolves DENY_CONTINUE with `ContinueDecision()` (line 532),
+  identical to APPROVE (line 526). The gateway's `on_call_tool` treats
+  `ContinueDecision` as permission to execute: it calls `call_next(context)`
+  (line 362), which runs the tool. So a human operator who denies a tool call
+  with "deny but continue the turn" sees the tool execute anyway. The comment
+  on lines 530-531 ("Continue without executing - resolve with continue
+  decision / The call is skipped but turn continues") is actively misleading
+  — it describes the intended behavior, not what the code does. The gateway's
+  own policy-evaluation path handles DENY_CONTINUE correctly by raising
+  `_policy_denied_error` (lines 345-348), but the admin decision path does
+  not — the hub's binary type system (`ContinueDecision |
+  AbortTurnDecision`) cannot represent "skip execution, continue turn."
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/mcp/approval_policy/engine.py:
+        - [525, 532] # decide_call: APPROVE and DENY_CONTINUE both → ContinueDecision
+        - [345, 348] # gateway correctly raises error for DENY_CONTINUE
+        - [358, 365] # gateway executes tool on ContinueDecision
+    critic_scopes_expected_to_recall:
+      - [agent_server/mcp/approval_policy/engine.py]
+    match_file_restriction:
+      - agent_server/mcp/approval_policy/engine.py

@@ -1,0 +1,14 @@
+rationale: |
+  Line 37 registers a Typer callback via `app.callback()(make_logging_callback())`.
+  Line 45 registers a second callback via `@app.callback(invoke_without_command=True)`
+  on the `edit` function. In Typer, calling `app.callback()` a second time replaces
+  the first. The logging callback's `--log-output` and `--log-level` options are
+  never registered and `configure_logging()` is never called. Line 37 is dead code.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      editor_agent/host/cli.py:
+        - [37, 37]

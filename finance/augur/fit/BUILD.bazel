@@ -1,0 +1,352 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "evidence_data",
+    srcs = ["evidence_data.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "synthetic_evidence",
+    testonly = True,
+    srcs = ["synthetic_evidence.py"],
+    deps = [
+        "//finance/evidence:sources",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [":synthetic_evidence"],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+    deps = [
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpyro",
+    ],
+)
+
+py_library(
+    name = "scoring",
+    srcs = ["scoring.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    deps = [
+        ":model",
+        ":scoring",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_library(
+    name = "state_space",
+    srcs = ["state_space.py"],
+    deps = [
+        ":evidence_data",
+        ":private_equity",
+        "//finance/augur:dates",
+        "//finance/augur/model:conditioning",
+        "//finance/augur/model:series",
+        "//finance/augur/model:state_space",
+        "//finance/augur/model/path_models:scenarios",
+        "//finance/augur/product:asset_key",
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_library(
+    name = "data",
+    srcs = ["data.py"],
+    deps = [
+        ":evidence_data",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "metrics_report",
+    srcs = ["metrics_report.py"],
+    data = ["//finance/augur/api:public_fixture_config"],
+    deps = [
+        ":data",
+        ":metrics",
+        ":model",
+        "//finance/augur/api:config",
+        "//finance/augur/model:independent",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:vecm",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "train_lib",
+    srcs = ["main.py"],
+    deps = [
+        ":data",
+        ":evidence_data",
+        ":state_space",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:state_space",
+        "//finance/augur/model:vecm",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "train",
+    main_module = "finance.augur.fit.main",
+    deps = [":train_lib"],
+)
+
+py_library(
+    name = "private_equity",
+    srcs = ["private_equity.py"],
+    deps = [
+        "//finance/augur:dates",
+        "//finance/augur/model:schemas",
+        "//finance/augur/model:trained_private_equity",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "stock_like_priors",
+    srcs = ["stock_like_priors.py"],
+    deps = [
+        "//finance/augur/model:schemas",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "train_private_equity",
+    main_module = "finance.augur.fit.private_equity",
+    deps = [":private_equity"],
+)
+
+py_test(
+    name = "data_test",
+    srcs = ["data_test.py"],
+    deps = [
+        ":conftest",
+        ":data",
+        ":evidence_data",
+        "//finance/evidence:sources",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.py"],
+    deps = [
+        ":metrics",
+        ":model",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "private_equity_test",
+    srcs = ["private_equity_test.py"],
+    deps = [
+        ":private_equity",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:trained_private_equity",
+        "//util/testing:jsonl",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "stock_like_priors_test",
+    srcs = ["stock_like_priors_test.py"],
+    deps = [
+        ":stock_like_priors",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "train_round_trip_test",
+    size = "large",
+    srcs = ["train_round_trip_test.py"],
+    deps = [
+        ":conftest",
+        ":train_lib",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:independent",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:series",
+        "//finance/augur/model:state_space",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "state_space_acceptance_test",
+    size = "large",
+    srcs = ["state_space_acceptance_test.py"],
+    deps = [
+        ":conftest",
+        ":train_lib",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:series",
+        "//finance/augur/model:state_space",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "dilution_prior",
+    srcs = ["dilution_prior.py"],
+    deps = [":private_equity"],
+)
+
+py_library(
+    name = "bayes_dilution",
+    srcs = ["bayes_dilution.py"],
+    deps = [
+        ":private_equity",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_library(
+    name = "bayes_mint_streams",
+    srcs = ["bayes_mint_streams.py"],
+    deps = [
+        ":private_equity",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_binary(
+    name = "fit_mint_streams_report",
+    srcs = ["fit_mint_streams_report.py"],
+    deps = [
+        ":bayes_mint_streams",
+        ":private_equity",
+    ],
+)
+
+py_library(
+    name = "derive_dilution_prior_lib",
+    srcs = ["derive_dilution_prior.py"],
+    deps = [
+        ":dilution_prior",
+        ":private_equity",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "derive_dilution_prior",
+    main_module = "finance.augur.fit.derive_dilution_prior",
+    deps = [":derive_dilution_prior_lib"],
+)
+
+py_test(
+    name = "test_dilution_prior",
+    srcs = ["test_dilution_prior.py"],
+    deps = [
+        ":dilution_prior",
+        ":private_equity",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bayes_dilution",
+    size = "large",
+    srcs = ["test_bayes_dilution.py"],
+    deps = [
+        ":bayes_dilution",
+        ":private_equity",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bayes_mint_streams",
+    size = "large",
+    srcs = ["test_bayes_mint_streams.py"],
+    deps = [
+        ":bayes_mint_streams",
+        ":private_equity",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_derive_dilution_prior",
+    srcs = ["test_derive_dilution_prior.py"],
+    deps = [
+        ":derive_dilution_prior_lib",
+        ":dilution_prior",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

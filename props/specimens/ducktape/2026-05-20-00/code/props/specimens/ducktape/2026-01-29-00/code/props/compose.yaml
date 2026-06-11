@@ -1,0 +1,89 @@
+# Props infrastructure services
+# Run: docker compose up -d
+# Stop: docker compose down
+
+networks:
+  # Internal network for registry/backend/postgres communication
+  # Agents cannot access this network directly
+  props-internal:
+    name: props-internal
+    internal: true
+  # Network for agent containers to reach backend and postgres
+  props-agents:
+    name: props-agents
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: props-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: eval_results
+    command: ["-c", "max_connections=200"]
+    volumes:
+      - props_eval_results_data:/var/lib/postgresql/data
+    networks:
+      - props-internal
+      - props-agents
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  registry:
+    image: registry:2
+    container_name: props-registry
+    # Note: Registry is not exposed on host - agents talk to it via the backend proxy
+    # Only exposed for debugging; use a different port to avoid conflict
+    ports:
+      - "5000:5000"
+    volumes:
+      - props_registry_data:/var/lib/registry
+    networks:
+      - props-internal
+      - default # For host port publishing (internal network blocks it)
+
+  # Unified backend: dashboard API + LLM proxy + registry proxy + eval API
+  # Dashboard API: /api/stats, /api/runs, /api/gt
+  # LLM Proxy: POST /v1/responses
+  # Registry Proxy: /v2/* (OCI Distribution API)
+  # Eval API: /api/eval/run_critic, /api/eval/grading_status/{run_id}
+  # Note: wait_until_graded is implemented by agents polling the database directly
+  backend:
+    image: props-backend:latest
+    container_name: props-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_UPSTREAM_URL: https://api.openai.com
+      PROPS_REGISTRY_UPSTREAM_URL: http://props-registry:5000
+      PROPS_GRADER_MODEL: ${PROPS_GRADER_MODEL:-gpt-5.1-codex-mini}
+      PGHOST: props-postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: eval_results
+    networks:
+      - props-internal
+      - props-agents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      registry:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  props_eval_results_data:
+  props_registry_data:

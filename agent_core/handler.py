@@ -261,14 +261,24 @@ class RedirectOnTextMessageHandler(BaseHandler):
         """
         self._reminder = reminder_message
         self._text_detected = False
+        self._tool_called = False
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Mark that assistant text was detected."""
-        self._text_detected = True
+        """Mark non-empty assistant text. Empty output_text items (some models emit
+        one on every turn alongside their tool call) are not "text output"."""
+        if evt.text.strip():
+            self._text_detected = True
+
+    def on_tool_call_event(self, evt: ToolCall) -> None:
+        """Mark that a tool was called this turn."""
+        self._tool_called = True
 
     def on_before_sample(self) -> LoopDecision:
-        """If text was detected last turn, inject reminder and reset flag."""
-        if self._text_detected:
-            self._text_detected = False
+        """Inject the reminder only when the previous turn produced text *instead of*
+        tools — i.e. non-empty text with no accompanying tool call."""
+        redirect = self._text_detected and not self._tool_called
+        self._text_detected = False
+        self._tool_called = False
+        if redirect:
             return InjectItems(items=[UserMessage.text(self._reminder)])
         return NoAction()

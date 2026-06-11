@@ -1,0 +1,8 @@
+.stack-work
+_cache
+*.hi
+*.o
+*.sw*
+
+# Do not store the built website in Git.
+_site

@@ -1,0 +1,36 @@
+# Restrict Grocy ingress to the Authentik shared proxy outpost only.
+# Grocy trusts X-authentik-username for user identity — any pod that
+# can reach port 80 can impersonate any user.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grocy-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grocy
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 80
+          protocol: TCP
+    # Gatus: health check probes
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 80
+          protocol: TCP

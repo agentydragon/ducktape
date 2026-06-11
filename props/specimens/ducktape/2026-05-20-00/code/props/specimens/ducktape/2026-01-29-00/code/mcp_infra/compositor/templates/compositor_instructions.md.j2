@@ -1,0 +1,66 @@
+{% set ns = namespace(had_block=false) %}
+# MCP Server Access
+
+You have access to one or more MCP (Model Context Protocol) servers that provide tools and resources to help you complete tasks. These servers are multiplexed behind a compositor that coordinates access to them.
+
+**Key concepts:**
+- **Tools**: Functions you can call to perform actions (e.g., execute commands, read files, make API calls)
+- **Resources**: Data endpoints you can read from, identified by URIs (e.g., `resource://server-name/path`)
+- **Resource templates**: URI patterns (RFC 6570) that describe how to construct resource URIs with parameters
+
+**Tool naming convention:**
+All tools are namespaced with their server's prefix.
+- Example: server with prefix `runtime` and tool `exec` becomes `{{ build_mcp_function("runtime", "exec") }}`
+- Tool names may contain underscores
+
+**How to use:**
+- Call tools by their full prefixed name (see each server's tool list below)
+- Access resources via the `resources` server using (server, URI) pairs
+- Check each server's instructions below for specific guidance on their capabilities
+
+{% for prefix, state in states|dictsort %}
+  {% if state.state == 'running' %}
+    {% set instr = (state.initialize.instructions or '') %}
+    {% set caps = state.initialize.capabilities %}
+    {% if instr or caps %}
+      {% if not ns.had_block %}
+
+The following MCP servers have provided instructions or capabilities:
+        {% set ns.had_block = true %}
+      {% endif %}
+
+{# Extract server's advertised name from serverInfo #}
+{# TODO: Reconsider title vs name handling. Currently prefers title (human-readable) over name (programmatic). #}
+{# Should we show both? Show title with name as fallback? Show name with title as subtitle? #}
+{% set sinfo = state.initialize.serverInfo if state.initialize.serverInfo is defined else none %}
+{% set server_name = (sinfo.title if sinfo and sinfo.title else (sinfo.name if sinfo and sinfo.name else '')) %}
+# {{ prefix }}{% if server_name %} ({{ server_name }}){% endif %}
+
+**Prefix:** `{{ prefix }}`
+
+{% if state.tools %}
+**Available tools:**
+{% for tool in state.tools %}
+- `{{ build_mcp_function(prefix, tool.name) }}`{% if tool.description %} — {{ tool.description }}{% endif %}
+{% endfor %}
+{% endif %}
+
+## Instructions
+{{ instr|default('')|trim if instr else "None available" }}
+
+## Additional capabilities
+{% if caps and caps.resources is not none -%}
+* Resources
+{%- else -%}
+None available
+{%- endif %}
+
+{% if caps %}
+## Capabilities (raw)
+{{ caps | model_dump_json() }}
+
+Semantics: resources.subscribe/listChanged → notifications support; presence of a section implies feature is supported.
+{% endif %}
+    {% endif %}
+  {% endif %}
+{% endfor %}

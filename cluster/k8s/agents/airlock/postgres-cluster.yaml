@@ -1,0 +1,33 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: airlock-db
+  namespace: airlock
+spec:
+  instances: 2
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    # One PostgreSQL instance per OVH kimsufi node for real HA.
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: airlock
+      owner: airlock
+      # CNPG auto-generates credentials in secret airlock-db-app

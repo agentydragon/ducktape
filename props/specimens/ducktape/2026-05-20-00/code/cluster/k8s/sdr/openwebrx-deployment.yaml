@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openwebrx
+  namespace: sdr
+  annotations:
+    description: "OpenWebRX+ SDR receiver web UI — waterfall, demodulation, digital modes"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openwebrx
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openwebrx
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      # Seed admin user idempotently on each startup. Hardcoded admin/admin is
+      # acceptable because Authentik proxy auth is the real access boundary —
+      # NetworkPolicy blocks all traffic except from authentik-server pods, so
+      # no one reaches the OpenWebRX+ login page without authenticating first.
+      initContainers:
+        - name: seed-admin
+          image: slechev/openwebrxplus:1.2.111
+          command: ["openwebrx", "admin", "--noninteractive", "--silent", "adduser", "admin"]
+          env:
+            - name: OWRX_PASSWORD
+              value: admin
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/openwebrx
+      containers:
+        - name: openwebrx
+          image: slechev/openwebrxplus:1.2.111
+          ports:
+            - containerPort: 8073
+              name: http
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/openwebrx/config_webrx.py
+              subPath: config_webrx.py
+            - name: data
+              mountPath: /var/lib/openwebrx
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: settings
+          configMap:
+            name: openwebrx-settings
+        - name: data
+          persistentVolumeClaim:
+            claimName: openwebrx-data

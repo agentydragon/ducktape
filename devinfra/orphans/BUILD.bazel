@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
 py_binary(
     name = "find_orphans",
     srcs = ["find_orphans.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
@@ -15,7 +14,6 @@ py_binary(
 py_test(
     name = "test_find_orphans",
     srcs = ["test_find_orphans.py"],
-    imports = ["../.."],
     deps = [
         ":find_orphans",
         "//util/bazel:workspace",

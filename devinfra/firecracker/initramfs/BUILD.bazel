@@ -1,20 +1,21 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/cpio:defs.bzl", "cpio_archive")
+
+pkg_files(
+    name = "init",
+    srcs = ["//devinfra/claude/web_env/re/process_api:process_api_re"],
+    renames = {"//devinfra/claude/web_env/re/process_api:process_api_re": "init"},
+)
 
 # Build a cpio initramfs containing the RE process_api as /init.
 # Firecracker boots the kernel with this initramfs; process_api (PID 1)
 # mounts /dev/vda (NixOS rootfs), pivot_roots, and starts the WebSocket +
 # HTTP control server.
-genrule(
+cpio_archive(
     name = "initramfs",
-    srcs = ["//devinfra/claude/web_env/re/process_api/91c789ff:process_api_re"],
-    outs = ["initramfs.cpio"],
-    cmd = """
-        WORK=$$(mktemp -d)
-        cp $(location //devinfra/claude/web_env/re/process_api/91c789ff:process_api_re) $$WORK/init
-        chmod 755 $$WORK/init
-        (cd $$WORK && find . | cpio -o -H newc --quiet) > $@
-        rm -rf $$WORK
-    """,
+    srcs = [":init"],
+    out = "initramfs.cpio",
     visibility = ["//devinfra/firecracker:__subpackages__"],
 )
 

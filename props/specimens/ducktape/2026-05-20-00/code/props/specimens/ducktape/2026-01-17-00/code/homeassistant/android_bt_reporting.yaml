@@ -1,0 +1,53 @@
+# TODO: ugly duplication, fix
+_tmpl:
+  px6_connected: &px6_connected
+    name: "Pixel 6 BT – {{ trigger.event.data.name }} Connected"
+    device_class: connectivity
+    state: "{{ trigger.event.data.connected | default('false') | lower == 'true' }}"
+  px6_battery: &px6_battery
+    name: "Pixel 6 BT – {{ trigger.event.data.name }} Battery"
+    device_class: battery
+    unit_of_measurement: "%"
+    state_class: measurement
+    state: >
+      {% set v = trigger.event.data.battery_level | default('unknown') %}
+      {% if v not in ['unknown', '', none] %}{{ v | int }}{% endif %}
+    availability: >
+      {{ trigger.event.data.battery_level not in ['unknown', '', none] }}
+  px6_rssi: &px6_rssi
+    name: "Pixel 6 BT – {{ trigger.event.data.name }} RSSI"
+    device_class: signal_strength
+    unit_of_measurement: "dBm"
+    state_class: measurement
+    state: >
+      {% set v = trigger.event.data.signal_strength | default('unknown') %}
+      {% if v not in ['unknown', '', none] %}{{ v | int }}{% endif %}
+    availability: >
+      {{ trigger.event.data.signal_strength not in ['unknown', '', none] }}
+
+template:
+  # Shokz
+  - trigger:
+      - platform: event
+        event_type: pixel6_tasker_A8_F5_E1_77_2C_59
+    binary_sensor:
+      - unique_id: pixel6_tasker_A8_F5_E1_77_2C_59_connected
+        <<: *px6_connected
+    sensor:
+      - unique_id: pixel6_tasker_A8_F5_E1_77_2C_59_battery
+        <<: *px6_battery
+      - unique_id: pixel6_tasker_A8_F5_E1_77_2C_59_rssi
+        <<: *px6_rssi
+
+  # Bose QC45
+  - trigger:
+      - platform: event
+        event_type: pixel6_tasker_78_2B_64_A1_0E_1E
+    binary_sensor:
+      - unique_id: pixel6_tasker_78_2B_64_A1_0E_1E_connected
+        <<: *px6_connected
+    sensor:
+      - unique_id: pixel6_tasker_78_2B_64_A1_0E_1E_battery
+        <<: *px6_battery
+      - unique_id: pixel6_tasker_78_2B_64_A1_0E_1E_rssi
+        <<: *px6_rssi

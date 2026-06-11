@@ -1,0 +1,41 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "claude_optimizer",
+    srcs = [
+        "generic_graders.py",
+        "requirement_templates.py",
+        "scoresheet.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":generic_graders",
+        ":scoresheet",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "generic_graders",
+    srcs = ["generic_graders.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":scoresheet",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "requirement_templates",
+    srcs = ["requirement_templates.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":generic_graders"],
+)
+
+py_library(
+    name = "scoresheet",
+    srcs = ["scoresheet.py"],
+    visibility = ["//:__subpackages__"],
+)

@@ -1,0 +1,67 @@
+"""Critic development CLI and shared types.
+
+Shared infrastructure for prompt optimizer and improvement agents.
+"""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "shared",
+    srcs = ["shared.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "cli_helpers",
+    srcs = ["cli_helpers.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_types",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":cli_helpers",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//props/cli:cmd_stats",
+        "//props/core:agent_helpers",
+        "//props/core:agent_types",
+        "//props/core:display",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "critic_dev",
+    srcs = ["__main__.py"],
+    imports = ["../.."],
+    main = "__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+    ],
+)

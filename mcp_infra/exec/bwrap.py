@@ -7,7 +7,6 @@ from shutil import which
 
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult, ExecArgsBase, ExecOutcome, render_outcome_to_result
@@ -19,7 +18,7 @@ BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
 
 
-async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdin_text: str | None) -> ExecOutcome:
+async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None) -> ExecOutcome:
     if sys.platform != "linux":
         raise ToolError("NOT_LINUX: bubblewrap sandbox available only on Linux")
     if which(BWRAP) is None:
@@ -54,11 +53,11 @@ async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdi
     ]
 
     # chdir handled inside bwrap; pass cwd=None to subprocess
-    return await run_proc(argv, timeout_s=timeout_s, cwd=None, stdin=stdin_text)
+    return await run_proc(argv, timeout_s=timeout_s, cwd=None)
 
 
 class BwrapExecArgs(ExecArgsBase):
-    cmd: list[str] = Field(min_length=1)
+    """Bwrap exec args; inherits the `cmd` argv field from ExecArgsBase."""
 
 
 class BwrapExecServer(EnhancedFastMCP):
@@ -87,7 +86,7 @@ class BwrapExecServer(EnhancedFastMCP):
                 cwd_val = default_cwd_val
 
             timeout_s = max(0.001, input.timeout_ms / 1000.0)
-            outcome = await _run_in_bwrap(input.cmd, timeout_s, cwd_val, input.stdin_text)
+            outcome = await _run_in_bwrap(input.cmd, timeout_s, cwd_val)
             return render_outcome_to_result(outcome, input.max_bytes)
 
         self.exec_tool = self.flat_model()(exec)

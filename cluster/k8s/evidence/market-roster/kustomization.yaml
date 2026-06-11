@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The prediction-market mirror roster, reflected into the augur namespace (which is
+# reconciled from gaffer-private — same cross-repo delivery as the augur-evidence git
+# creds, see tf/gitops/augur-evidence). The scraper CronJob mounts the reflected
+# ConfigMap and passes `--roster <mount>/market-roster.yaml`.
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    description: >-
+      Mirror roster for the augur-evidence scraper (finance/scraper); schema
+      finance.evidence.markets.MarketRoster. Edit in ducktape
+      cluster/k8s/evidence/market-roster/, never by hand here.
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur
+
+configMapGenerator:
+  - name: market-roster
+    namespace: evidence
+    files:
+      - market-roster.yaml

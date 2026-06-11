@@ -1,0 +1,13 @@
+rationale: "Test issue for validation testing.
+
+  This is a minimal issue to satisfy specimen validation.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      calculator.py:
+        - [6, 16]
+    critic_scopes_expected_to_recall:
+      - - calculator.py

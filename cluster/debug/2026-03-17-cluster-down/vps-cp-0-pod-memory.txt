@@ -1,0 +1,23 @@
+=== talos-vps-cp-0 pod memory usage (captured 2026-03-17T05:15Z during recurring incident) ===
+
+Node total: 6565Mi / 7.5GiB (92%)
+
+Top consumers:
+monitoring     prometheus-monitoring-0                    1686Mi  (limit: 2Gi, OOM-killed 8+ times)
+kube-system    kube-apiserver-talos-vps-cp-0               689Mi
+longhorn-sys   instance-manager-4e031...                   674Mi
+authentik      authentik-server-5999ff7cf8-fgcp7           553Mi
+authentik      authentik-worker-6dbc78fd99-kdvh4           425Mi
+flux-system    image-automation-controller                 297Mi
+kube-system    cilium-d2qmg                                254Mi
+authentik      authentik-db-1                               243Mi
+longhorn-sys   longhorn-manager-jg8wq                      193Mi
+
+Total visible pod memory on vps-cp-0: ~5463Mi
+Remaining for system (etcd, kubelet, containerd, kernel): ~1102Mi
+
+Key finding: Prometheus (1686Mi) + Longhorn instance-manager (674Mi) +
+Authentik stack (1221Mi combined) = 3581Mi = 48% of node RAM on their own.
+Prometheus repeatedly OOM-killed at 2Gi limit, consuming 22% of node RAM.
+
+34 pods running on a 7.5GiB node.

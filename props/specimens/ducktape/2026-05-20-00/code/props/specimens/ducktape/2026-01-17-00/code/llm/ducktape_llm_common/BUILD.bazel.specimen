@@ -1,0 +1,39 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "core",
+    srcs = [
+        "ducktape_llm_common/claude_code_api.py",
+        "ducktape_llm_common/claude_hook.py",
+        "ducktape_llm_common/claude_hooks.py",
+        "ducktape_llm_common/claude_outcomes.py",
+        "ducktape_llm_common/hook_logging.py",
+        "ducktape_llm_common/hook_session_state.py",
+    ],
+    data = glob(["ducktape_llm_common/**/*.md"]),
+    imports = ["."],
+    visibility = ["//llm/ducktape_llm_common:__subpackages__"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+# Umbrella target that re-exports everything
+py_library(
+    name = "ducktape_llm_common",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        "//llm/ducktape_llm_common/ducktape_llm_common/claude_linter",
+        "//llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":core"],
+)

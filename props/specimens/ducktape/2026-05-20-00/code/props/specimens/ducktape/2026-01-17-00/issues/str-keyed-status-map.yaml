@@ -1,0 +1,22 @@
+rationale: |
+  `PR_STATUS_DISPLAY_MAP` (view_formatter.py:14-20) is keyed by
+  `PRStatus.*.display_text` strings rather than `PRStatus` enum values.
+  `get_pr_status_text` (lines 61-80) manually resolves `PRState` + mergeability
+  + merged_at into a display string, duplicating the `PRState → PRStatus`
+  resolution that should produce a `PRStatus` enum value. The lookup site
+  (line 287) then compares this string output against display-text keys.
+
+  The entire chain is string-based when it should be enum-based:
+  `get_pr_status_text` should return `PRStatus` (not `str`), the map should
+  be keyed by `PRStatus`, and display formatting should happen at the end.
+  As-is, any change to `display_text` silently breaks the map lookup.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/view_formatter.py:
+        - [14, 20]
+        - [61, 80]
+        - [286, 291]
+    critic_scopes_expected_to_recall:
+      - [wt/client/view_formatter.py]

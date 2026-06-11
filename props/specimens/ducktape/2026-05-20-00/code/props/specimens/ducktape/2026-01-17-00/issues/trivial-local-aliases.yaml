@@ -1,0 +1,37 @@
+rationale: |
+  Trivial local variable aliases that add no value - either rename the source or use it directly.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/testing/fixtures.py:
+        - [79, 81]
+      mcp_infra/compositor/test_lifecycle.py:
+        - [115, 115]
+        - [140, 140]
+        - [160, 160]
+        - [184, 184]
+        - [231, 232]
+        - [284, 284]
+        - [302, 302]
+        - [342, 342]
+    note: >-
+      Fixture named 'make_simple_mcp' but returns a value not a factory; tests then rename
+      to 'backend'. Rename fixture to 'simple_mcp' and use directly.
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/compositor/test_lifecycle.py
+      - - mcp_infra/testing/fixtures.py
+    match_file_restriction:
+      - mcp_infra/compositor/test_lifecycle.py
+
+  - occurrence_id: occ-1
+    files:
+      wt/server/git_manager.py:
+        - [196, 196]
+    note: "path_obj = path then used once - pointless rename, just use 'path' directly"
+    critic_scopes_expected_to_recall:
+      - - wt/server/git_manager.py
+    match_file_restriction:
+      - wt/server/git_manager.py

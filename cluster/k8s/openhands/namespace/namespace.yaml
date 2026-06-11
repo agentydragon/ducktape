@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openhands
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    goldilocks.fairwinds.com/enabled: "true"

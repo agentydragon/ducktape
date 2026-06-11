@@ -1,0 +1,163 @@
+"""Props test fixtures package."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    data = [
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/test1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/test1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/train1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/train1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_data_blob",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:setup",
+        "//props/db/sync",
+        "//props/db/sync:model_metadata",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "e2e",
+    srcs = ["e2e.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
+        "//props/agents/critic_dev:main",
+        "//props/core:ids",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "e2e_container",
+    srcs = ["e2e_container.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//props:config",
+        "//props/backend:app",
+        "//props/core:agent_types",
+        "//props/core:oci_utils",
+        "//props/db:config",
+        "//props/db:database",
+        "//props/orchestration:agent_registry",
+        "//props/orchestration:docker_env",
+        "//props/orchestration:docker_executor",
+        "//props/testing:constants",
+        "//props/testing:fake_openai_server",
+        "//util:crane",
+        "//util:net",
+        "@pypi//aiodocker",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "e2e_infra",
+    srcs = ["e2e_infra.py"],
+    data = [
+        "//third_party/containers:registry_2",
+        "//third_party/containers:ryuk",
+    ],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:models",
+        "//third_party/containers:rlocations",
+        "//util:crane",
+        "//util:oci",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "ground_truth",
+    srcs = ["ground_truth.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/db:examples",
+        "//props/db:models",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":runs",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/orchestration:agent_credentials",
+        "//props/testing:constants",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runs",
+    srcs = ["runs.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ground_truth",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/core/models:types",
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:constants",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "scopes",
+    srcs = ["scopes.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest",
+    ],
+)

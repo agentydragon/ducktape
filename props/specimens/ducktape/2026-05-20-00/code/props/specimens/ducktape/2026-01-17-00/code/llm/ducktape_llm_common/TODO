@@ -1,0 +1,11 @@
+- if claude writes a plain "except:" into code -> immediate block, including on edit
+
+- detect "this just hides errors" (with LLM?)
+  - i.e. run llm on edited file - for checks which are hard to easily check
+  - e.g. ask gpt-4o-mini?
+
+- if llm wants to edit something i'm blocking by default -> fail, tell llm how to request edit in error msg
+  - "this is not allowed, if you want you can request user to run <claude-linter whitelist ...> if you complete this checklist/questionnaire"
+  -> per-session specific allowlist, time-limited
+
+- prevent barrel __init__.py files (imports in __init__.py that just re-export everything)

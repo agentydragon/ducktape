@@ -1,0 +1,4 @@
+bazel build github.com/agentydragon/worthy/worthy
+bazel build :index.html
+cat ../bazel-bin/worthy/index.html > index.html
+./worthy -command=server

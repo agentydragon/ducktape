@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: flux-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: flux
+      rules:
+        - alert: FluxReconciliationFailure
+          expr: gotk_reconcile_condition{status="False",type="Ready"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux resource {{ $labels.kind }}/{{ $labels.name }} failed to reconcile"
+            description: "{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} has been failing to reconcile for more than 15 minutes."

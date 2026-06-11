@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gitea-servicemonitor
+  namespace: flux-system
+spec:
+  suspend: true
+  # Wyrm2 offline during relocation — suspended until hardware is back up.
+  interval: 10m
+  path: ./cluster/k8s/gitea/servicemonitor
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: gitea
+    - name: monitoring-stack

@@ -1,0 +1,54 @@
+version: 1
+metadata:
+  name: SSO - Claude Code Airlock
+  labels:
+    blueprints.goauthentik.io/description: >-
+      Public OAuth2 client for Claude Code to propose actions via airlock.
+      Uses Authorization Code + PKCE (no client_secret) with "propose" and
+      "read" scopes. Needed because the existing airlock-operator client only
+      has "decide" + "read" (operator role), and openclaw-agent uses
+      client_credentials (incompatible with Claude Code's browser-based
+      PKCE flow).
+
+entries:
+  - model: authentik_providers_oauth2.oauth2provider
+    id: claude-code-airlock-provider
+    state: present
+    identifiers:
+      name: claude-code-airlock
+    attrs:
+      client_id: claude-code-airlock
+      client_type: public
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      issuer_mode: per_provider
+      include_claims_in_id_token: true
+      access_token_validity: "hours=24"
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "airlock: propose"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "airlock: read"]]
+      redirect_uris:
+        - url: "http://localhost:.*"
+          matching_mode: regex
+        - url: "http://127.0.0.1:.*"
+          matching_mode: regex
+
+  - model: authentik_core.application
+    id: claude-code-airlock-app
+    state: present
+    identifiers:
+      slug: claude-code-airlock
+    attrs:
+      name: Claude Code (Airlock)
+      provider: !KeyOf claude-code-airlock-provider
+      meta_description: "Claude Code proposer access to airlock MCP"
+
+  # Only authentik Admins may use this client.
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf claude-code-airlock-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+      order: 0

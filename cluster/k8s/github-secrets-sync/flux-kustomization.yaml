@@ -4,6 +4,7 @@ metadata:
   name: github-secrets-sync
   namespace: flux-system
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync
   prune: true
@@ -19,6 +20,6 @@ spec:
       namespace: flux-system
   dependsOn:
     - name: tofu-controller
-    - name: harbor-ci
-    - name: agent-shared-secrets
+    - name: tofu-state-db
     - name: github-secrets-sync-secrets
+    - name: seaweedfs-public-s3

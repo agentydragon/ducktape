@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-registry.k3s.agentydragon.com}"
+IMAGE_NAME="${IMAGE_NAME:-emberd}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE_REF="${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+NAMESPACE="${NAMESPACE:-ember}"
+DEPLOYMENT="${DEPLOYMENT:-ember}"
+
+echo "[ember-deploy] Building container image"
+docker build --progress=plain -t "${IMAGE_NAME}:local" .
+
+echo "[ember-deploy] Tagging image as ${IMAGE_REF}"
+docker tag "${IMAGE_NAME}:local" "${IMAGE_REF}"
+
+echo "[ember-deploy] Pushing ${IMAGE_REF}"
+docker push "${IMAGE_REF}"
+
+echo "[ember-deploy] Restarting deployment $DEPLOYMENT in namespace $NAMESPACE"
+kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
+kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT"
+
+echo "[ember-deploy] Deployment updated successfully"

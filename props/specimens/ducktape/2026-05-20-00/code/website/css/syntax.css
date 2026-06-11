@@ -1,0 +1,127 @@
+/* Forked from: https://raw.githubusercontent.com/jgm/highlighting-kate/master/css/hk-kate.css */
+/* Loosely based on pygment's default colors */
+table.sourceCode,
+tr.sourceCode,
+td.lineNumbers,
+td.sourceCode,
+table.sourceCode pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  vertical-align: baseline;
+  border: none;
+}
+td.lineNumbers {
+  text-align: right;
+  background-color: #ebebeb;
+  color: black;
+  padding-right: 5px;
+  padding-left: 5px;
+}
+td.sourceCode {
+  padding-left: 5px;
+}
+
+/* Solarized theme for Pandoc Code */
+/* From:
+ * https://raw.githubusercontent.com/runxel/skylighting-theme/master/solarized.css * */
+pre.sourceCode {
+  background: rgba(0, 0, 0, 0.035);
+}
+pre code {
+  color: #657b83;
+}
+code span.kw {
+  color: #859900;
+} /* Keyword */
+code span.dt {
+  color: #b58900;
+} /* DataType */
+code span.dv {
+  color: #2aa198;
+} /* DecVal */
+code span.bn {
+  color: #2aa198;
+} /* BaseN */
+code span.fl {
+  color: #2aa198;
+} /* Float */
+code span.ch {
+  color: #2aa198;
+} /* Char */
+code span.st {
+  color: #2aa198;
+} /* String */
+code span.co {
+  color: #93a1a1;
+  font-style: italic;
+} /* Comment */
+code span.ot {
+  color: #268bd2;
+} /* Other */
+code span.al {
+  color: #dc322f;
+} /* Alert */
+code span.fu {
+  color: #268bd2;
+} /* Function */
+code span.cn {
+  color: #2aa198;
+} /* Constant */
+code span.sc {
+  color: #dc322f;
+} /* SpecialChar */
+code span.vs {
+  color: #657b83;
+} /* VerbatimString */
+code span.ss {
+  color: #dc322f;
+} /* SpecialString */
+code span.im {
+  color: #657b83;
+} /* Import */
+code span.va {
+  color: #268bd2;
+} /* Variable */
+code span.cf {
+  color: #859900;
+} /* ControlFlow */
+code span.op {
+  color: #859900;
+} /* Operator */
+code span.bu {
+  color: #657b83;
+} /* BuiltIn */
+code span.ex {
+  color: #657b83;
+} /* Extension */
+code span.pp {
+  color: #cb4b16;
+} /* Preprocessor */
+code span.at {
+  color: #657b83;
+} /* Attribute */
+code span.er {
+  color: #dc322f;
+} /* Error */
+code span.wa {
+  color: #cb4b16;
+  font-style: italic;
+} /* Warning */
+code span.do {
+  color: #93a1a1;
+  font-style: italic;
+} /* Documentation */
+code span.an {
+  color: #93a1a1;
+  font-style: italic;
+} /* Annotation */
+code span.cv {
+  color: #93a1a1;
+  font-style: italic;
+} /* CommentVar */
+code span.in {
+  color: #93a1a1;
+  font-weight: normal;
+  font-style: normal;
+} /* Information */

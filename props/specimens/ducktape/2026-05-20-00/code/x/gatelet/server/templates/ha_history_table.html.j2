@@ -1,0 +1,20 @@
+{# Shared table of entity history #} {% if history %}
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>State</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for h in history %}
+    <tr>
+      <td>{{ h.last_changed.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td>{{ h.state }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No history available.</p>
+{% endif %}

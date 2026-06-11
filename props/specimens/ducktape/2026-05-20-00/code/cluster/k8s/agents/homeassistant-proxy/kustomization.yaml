@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - ha-token.sops.yaml
+  - proxy-tokens-eso.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: homeassistant-proxy-config
+    namespace: homeassistant-proxy
+    files:
+      - config.yaml

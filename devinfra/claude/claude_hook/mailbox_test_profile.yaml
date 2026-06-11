@@ -1,0 +1,21 @@
+# Test profile for the mailbox delivery E2E test.
+#
+# No startup_env_script (no secrets needed for this test).
+# One background command that writes sentinel files so the test can
+# observe staged output across multiple REPL hook calls.
+
+idle_watchdog: false
+
+background_commands:
+  - name: test-task
+    command: |
+      echo "output_X"
+      # Sleep to give the daemon's async stdout reader time to buffer the line
+      # before the test polls the sentinel file and sends the next hook.
+      sleep 0.5
+      touch /tmp/task_ready
+      while [ ! -f /tmp/signal ]; do sleep 0.1; done
+      echo "output_Y"
+      sleep 0.5
+      touch /tmp/task_done
+    timeout: 30

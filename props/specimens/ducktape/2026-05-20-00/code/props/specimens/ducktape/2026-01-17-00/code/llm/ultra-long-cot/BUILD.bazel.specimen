@@ -1,0 +1,41 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "ultra_long_cot_lib",
+    srcs = [
+        "ultra_long_cot.py",
+        "ultra_long_cot_o4.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_binary(
+    name = "ultra_long_cot",
+    srcs = ["ultra_long_cot.py"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_binary(
+    name = "ultra_long_cot_o4",
+    srcs = ["ultra_long_cot_o4.py"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":ultra_long_cot_lib"],
+)

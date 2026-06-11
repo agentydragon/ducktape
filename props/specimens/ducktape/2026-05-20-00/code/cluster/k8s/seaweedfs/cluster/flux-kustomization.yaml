@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: seaweedfs-cluster
+  namespace: flux-system
+spec:
+  suspend: false
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/cluster
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: seaweedfs-operator
+      namespace: flux-system
+    - name: seaweedfs-secrets
+      namespace: flux-system
+    - name: local-path-provisioner
+      namespace: flux-system
+  wait: false
+  timeout: 5m

@@ -1,0 +1,18 @@
+# HTTPRoute for Scanner File Browser via shared Authentik proxy outpost.
+# Traffic flows: Gateway → outpost (auth) → filebrowser backend.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: scanner-filebrowser
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "scanbox.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80

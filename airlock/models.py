@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
+from uuid import UUID
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,7 +34,7 @@ class ActionKey(BaseModel):
     action_seq is 1-based and monotonically increasing per session_key.
     """
 
-    session_key: str
+    session_key: UUID
     action_seq: int
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -103,6 +104,7 @@ class Action(BaseModel):
     call: ToolCall
     justification: str
     state: ActionState
+    client_id: str | None = Field(default=None, description="OAuth client_id of the caller that proposed this action.")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -156,7 +158,7 @@ class LogEntry(BaseModel):
     """A single append-only event log entry, scoped to a session."""
 
     entry_id: int
-    session_key: str
+    session_key: UUID
     action_seq: int
     detail: LogEventDetail
     timestamp: datetime
@@ -227,10 +229,50 @@ class DisconnectedOAuthStatus(BaseModel):
 OAuthConnectionStatus = Annotated[ConnectedOAuthStatus | DisconnectedOAuthStatus, Field(discriminator="state")]
 
 
+class DeploymentInfo(BaseModel):
+    """Pod-level deployment metadata derived from the `AIRLOCK_IMAGE_TAG` env var."""
+
+    image_tag: str | None = None
+    source_commit: str | None = None
+    source_commit_url: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OAuthProviderStatus(BaseModel):
     name: str = Field(description="Provider identifier")
     display_name: str = Field(description="Human-readable name")
-    provider_type: str = Field(description="oauth2 or plaid")
+    provider_type: str = Field(description="OAuth provider type.")
+    requested_scopes: list[str] = Field(
+        description=(
+            "Scopes configured for this provider. Compared against the granted scope on the "
+            "connected token to surface scope drift (re-auth required)."
+        )
+    )
     status: OAuthConnectionStatus
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BackendConnectedStatus(BaseModel):
+    state: Literal["connected"] = "connected"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BackendDegradedStatus(BaseModel):
+    state: Literal["degraded"] = "degraded"
+    error: str
+    since: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+BackendConnectionStatus = Annotated[BackendConnectedStatus | BackendDegradedStatus, Field(discriminator="state")]
+
+
+class BackendStatus(BaseModel):
+    name: str
+    connection_status: BackendConnectionStatus
 
     model_config = ConfigDict(extra="forbid")

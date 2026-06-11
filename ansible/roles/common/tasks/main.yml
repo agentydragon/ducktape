@@ -16,34 +16,3 @@
   ansible.builtin.set_fact:
     common_dpkg_arch: "{{ common_raw_dpkg_arch.stdout }}"
   tags: [always]
-
-# Python environment health checks
-- name: Check for problematic packages in global Python environment
-  block:
-    - name: Check if pytest-socket is installed globally
-      ansible.builtin.command: pip show pytest-socket
-      register: common_pytest_socket_check
-      failed_when: false
-      changed_when: false
-
-    - name: Fail if pytest-socket is in global environment
-      ansible.builtin.fail:
-        msg: |
-          ⚠️  ERROR: pytest-socket is installed in your global Python environment!
-          This package can interfere with network-dependent tests and tools.
-
-          To fix:
-            pip uninstall pytest-socket
-
-          To check what depends on it:
-            pipdeptree --reverse --packages pytest-socket
-      when: common_pytest_socket_check.rc == 0
-
-    - name: Set fact for pytest-socket presence
-      ansible.builtin.set_fact:
-        common_has_pytest_socket: "{{ common_pytest_socket_check.rc == 0 }}"
-
-- name: Report Python environment health
-  ansible.builtin.debug:
-    msg: |
-      pytest-socket: {{ 'FOUND ⚠️' if common_has_pytest_socket else 'Not found ✅' }}

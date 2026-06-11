@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana-operator
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/monitoring/grafana-operator
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: grafana-operator
+      namespace: monitoring
+  timeout: 5m
+  dependsOn:
+    - name: monitoring-namespace

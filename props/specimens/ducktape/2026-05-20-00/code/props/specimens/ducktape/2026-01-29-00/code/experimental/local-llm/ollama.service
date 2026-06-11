@@ -1,0 +1,19 @@
+# TODO: This is a loose config file for wyrm's Ollama setup.
+# Future: Create a proper inference VM or k8s job once cluster/ is working,
+# with declarative NixOS/Ansible configuration instead of manual service files.
+
+[Unit]
+Description=Ollama Service
+After=network-online.target nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ollama
+Group=ollama
+Restart=always
+RestartSec=3
+Environment="OLLAMA_MODELS=/wyrmhdd/ollama-models"
+
+[Install]
+WantedBy=default.target

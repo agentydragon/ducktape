@@ -1,0 +1,18 @@
+# Allow ingress from Cilium Gateway API (embedded Envoy) to the webhook receiver.
+# The default allow-webhooks policy uses namespaceSelector which doesn't match
+# Cilium's internal Envoy identity. Using unrestricted source on port 9292 only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-webhook-ingress
+  namespace: flux-system
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-controller
+  ingress:
+    - ports:
+        - port: 9292
+          protocol: TCP
+  policyTypes:
+    - Ingress

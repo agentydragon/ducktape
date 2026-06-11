@@ -1,0 +1,78 @@
+{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html" %} {% block title %}Gatelet
+- Dashboard{% endblock %} {% block nav %}
+<nav>
+  <a href="{{ auth.create_url('') }}">Home</a>
+  <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+  <a href="{{ auth.create_url('ha') }}">Home Assistant</a>
+  {% if auth.auth_type == 'admin' %}
+  <a href="/admin/admin-sessions/">Admin Sessions</a>
+  <a href="/admin/llm-sessions/">LLM Sessions</a>
+  <a href="/admin/keys/">Manage Keys</a>
+  {% endif %}
+</nav>
+{% endblock %} {% block content %}
+<section>
+  <h2>Welcome to Gatelet</h2>
+  <p>You are authenticated and can access the following resources:</p>
+</section>
+
+<section>
+  <h3>Available Services</h3>
+  <ul>
+    <li><a href="{{ auth.create_url('webhooks') }}">Webhooks</a> - View and filter webhook payloads</li>
+    <li><a href="{{ auth.create_url('ha') }}">Home Assistant Entities</a></li>
+  </ul>
+</section>
+
+<section>
+  <h3>Latest Webhook Events</h3>
+  {% if recent_payloads %}
+  <ul>
+    {% for p in recent_payloads %}
+    <li>
+      {{ p.received_at.strftime('%Y-%m-%d %H:%M:%S') }} -
+      <a href="{{ auth.create_url('webhooks/' + p.integration_name) }}">{{ p.integration_name }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No events recorded.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h3>Home Assistant Status</h3>
+  {% if ha_states %}
+  <ul>
+    {% for s in ha_states %}
+    <li><a href="{{ auth.create_url('ha/' + s.entity_id) }}">{{ s.entity_id }}</a>: {{ s.state }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>Home Assistant data unavailable.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h3>ActivityWatch (last 15 minutes)</h3>
+  {% if aw_activity %}
+  <p>Active {{ aw_activity.active | minutes }} / AFK {{ aw_activity.afk | minutes }}</p>
+  {% if aw_activity.app %}
+  <h4>Top applications</h4>
+  <ul>
+    {% for app, td in aw_activity.app[:5] %}
+    <li>{{ app }} - {{ td | minutes }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %} {% if aw_activity.url %}
+  <h4>Top URLs</h4>
+  <ul>
+    {% for url, td in aw_activity.url[:5] %}
+    <li>{{ url }} - {{ td | minutes }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %} {% else %}
+  <p>No ActivityWatch data.</p>
+  {% endif %}
+</section>
+{% endblock %}

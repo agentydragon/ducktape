@@ -1,0 +1,12 @@
+rationale: |
+  Line 115 checks `if self._persistence is not None` but `_persistence` is
+  assigned from a non-optional constructor parameter (`persistence:
+  SQLitePersistence`, line 79) at line 86. The check can never be False.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/runtime/container.py:
+        - [115, 115]

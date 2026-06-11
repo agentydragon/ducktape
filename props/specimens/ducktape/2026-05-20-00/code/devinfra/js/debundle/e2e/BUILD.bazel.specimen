@@ -1,0 +1,110 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# End-to-end tests treating the debundler as a black-box binary.
+
+rust_library(
+    name = "support",
+    srcs = ["support.rs"],
+    crate_name = "debundle_e2e_support",
+    crate_root = "support.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
+        "@crates//:tempfile",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+[
+    rust_test(
+        name = name,
+        srcs = ["{}.rs".format(name)],
+        crate_root = "{}.rs".format(name),
+        data = [
+            "//devinfra/js/debundle",
+            "@nodejs_linux_amd64//:bin/node",
+        ],
+        edition = "2024",
+        deps = [
+            ":support",
+            "//devinfra/js/debundle:analysis",
+            "@crates//:serde",
+            "@crates//:serde_json",
+            "@crates//:serde_yaml",
+            "@crates//:swc_common",
+            "@crates//:swc_ecma_ast",
+            "@crates//:swc_ecma_parser",
+            "@crates//:tempfile",
+            "@rules_rust//tools/runfiles",
+        ],
+    )
+    for name in [
+        "anonymous_statement_test",
+        "comma_list_owner_split_test",
+        "lowering_test",
+        "mini_factors_test",
+        "naturalization_test",
+        "object_plain_data_calls_test",
+        "pure_members_test",
+        "url_rebase_test",
+        "vendor_swap_test",
+        "identifier_rename_queue_test",
+        "sibling_declarator_steal_test",
+        "chunk_rename_cross_module_test",
+        "chunk_renames_test",
+        "missing_binding_member_test",
+        "residual_member_rename_test",
+        "source_order_emit_test",
+        "realizability_test",
+        "cross_module_emission_test",
+        "purity_test",
+        "peelability_test",
+        "direct_status_overpromise_test",
+        "peel_horizon_pure_hub_test",
+        "peel_atomic_unit_test",
+        "owner_graph_purity_reason_test",
+        "import_coalescing_test",
+        "peel_emit_resolvability_test",
+        "object_literal_import_collapse_test",
+        "object_literal_return_shorthand_drops_import_test",
+        "duplicate_export_test",
+        "at_init_promotion_nested_closure_test",
+        "at_init_promotion_post_await_test",
+        "at_init_promotion_fndecl_direct_read_test",
+        "at_init_s_chain_dataflow_test",
+        "auto_grown_export_alias_collision_test",
+        "runtime_tdz_on_imported_class_test",
+        "accepted_spec_runs_under_node_test",
+    ]
+]
+
+# The factorizer-landability e2e test takes one extra dep
+# (`:peel_factorize`) to call into the factorizer library directly
+# alongside the standard fixture pipeline.
+rust_test(
+    name = "peel_factorize_landability_test",
+    srcs = ["peel_factorize_landability_test.rs"],
+    crate_root = "peel_factorize_landability_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel_factorize",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)

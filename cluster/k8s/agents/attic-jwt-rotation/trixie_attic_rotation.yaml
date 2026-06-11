@@ -1,0 +1,28 @@
+# Deb packages for the attic-jwt-rotation CronJob image.
+#
+# The rotator uses `kubectl exec deploy/attic -- atticadm make-token …` to
+# mint JWTs, sidestepping the upstream attic image's nix-only binaries.
+# Apt-installed: bash + git + jq for the SOPS round-trip and commit/push,
+# ca-certificates for HTTPS to GitHub. (`base64` from coreutils ships in
+# debian-trixie-slim's base.) `kubectl` and `sops` come from static-binary
+# tar layers in BUILD.bazel.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_attic_rotation//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "bash"
+  - "ca-certificates"
+  - "curl"
+  - "git"
+  - "jq"

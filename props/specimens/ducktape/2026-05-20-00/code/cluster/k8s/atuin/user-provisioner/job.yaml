@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atuin-user-provisioner-script
+  namespace: atuin
+data:
+  provision.py: |
+    """Provision the agentydragon user in Atuin's PostgreSQL database.
+
+    Idempotent: creates user if missing, updates password if the SOPS source
+    changed, no-op if password already matches.
+    """
+
+    import os
+    import secrets
+    import sys
+
+    import argon2
+    import psycopg2
+
+    USERNAME = "agentydragon"
+    EMAIL = "agentydragon@allegedly.works"
+    DB_HOST = "atuin-db-rw.atuin.svc.cluster.local"
+    DB_PORT = 5432
+    DB_NAME = "atuin"
+    DB_USER = "atuin"
+
+
+    def main() -> None:
+        user_password = os.environ["ATUIN_USER_PASSWORD"]
+        db_password = os.environ["POSTGRES_PASSWORD"]
+
+        conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=db_password)
+        conn.autocommit = True
+
+        ph = argon2.PasswordHasher()
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, password FROM users WHERE username = %s", (USERNAME,))
+            row = cur.fetchone()
+
+            if row is None:
+                hashed = ph.hash(user_password)
+                cur.execute(
+                    "INSERT INTO users (username, email, password) VALUES (%s, %s, %s) RETURNING id",
+                    (USERNAME, EMAIL, hashed),
+                )
+                user_id = cur.fetchone()[0]
+
+                # Atuin's login endpoint requires an existing session row.
+                token = secrets.token_urlsafe(24)
+                cur.execute("INSERT INTO sessions (user_id, token) VALUES (%s, %s)", (user_id, token))
+                print(f"Created user {USERNAME!r} (id={user_id}) with session.")
+                return
+
+            user_id, stored_hash = row
+
+            try:
+                ph.verify(stored_hash, user_password)
+                print(f"User {USERNAME!r} exists and password matches. No-op.")
+            except argon2.exceptions.VerifyMismatchError:
+                new_hash = ph.hash(user_password)
+                cur.execute("UPDATE users SET password = %s WHERE id = %s", (new_hash, user_id))
+                print(f"Updated password for user {USERNAME!r} (id={user_id}).")
+
+        conn.close()
+
+
+    if __name__ == "__main__":
+        try:
+            main()
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atuin-user-provisioner
+  namespace: atuin
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: atuin-user-provisioner
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: provisioner
+          image: python:3.13-alpine
+          command:
+            - sh
+            - -c
+            - pip install --quiet psycopg2-binary argon2-cffi && python /scripts/provision.py
+          env:
+            - name: ATUIN_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atuin-user-password
+                  key: user_password
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atuin-db-app
+                  key: password
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: atuin-user-provisioner-script

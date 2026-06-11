@@ -1,0 +1,52 @@
+version: 1
+metadata:
+  name: SSO - Kagent
+  labels:
+    blueprints.goauthentik.io/description: "Kagent forward-auth proxy provider, application, and outpost"
+
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: kagent-provider
+    state: present
+    identifiers:
+      name: kagent
+    attrs:
+      external_host: "https://kagent.allegedly.works"
+      mode: forward_single
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      access_token_validity: "hours=1"
+
+  - model: authentik_core.application
+    id: kagent-app
+    state: present
+    identifiers:
+      slug: kagent
+    attrs:
+      name: Kagent
+      provider: !KeyOf kagent-provider
+      meta_description: "Kubernetes Agent Platform - AI agents with K8s integration"
+      meta_icon: "https://cdn.simpleicons.org/kubernetes"
+      meta_launch_url: "https://kagent.allegedly.works"
+      open_in_new_tab: true
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf kagent-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+      order: 0
+
+  - model: authentik_outposts.outpost
+    state: present
+    identifiers:
+      name: kagent-outpost
+    attrs:
+      type: proxy
+      providers:
+        - !KeyOf kagent-provider
+      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
+      config:
+        authentik_host: "http://authentik-server.authentik:80"
+        authentik_host_browser: "https://auth.allegedly.works"

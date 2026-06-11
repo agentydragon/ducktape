@@ -1,0 +1,169 @@
+name: Release artifact
+description: Build a Bazel artifact via RBE, upload to GitHub Release if content changed.
+
+inputs:
+  pkg:
+    description: "Package name (e.g. claude-hooks)"
+    required: true
+  bazel_target:
+    description: "Bazel target to build (e.g. //:claude_hooks_wheel)"
+    required: true
+  bazel_output:
+    description: "Path to artifact under bb-out/ (e.g. bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl)"
+    required: true
+  extra_outputs:
+    description: "Space-separated additional artifact paths to include in the release"
+    required: false
+    default: ""
+  release_metadata:
+    description: "Upload <pkg>.release.json with source commit and primary artifact digest"
+    required: false
+    default: "false"
+  metadata_platform:
+    description: "Optional platform string to include in release metadata"
+    required: false
+    default: ""
+  rbe_image:
+    description: "Override RBE container image (optional)"
+    required: false
+    default: ""
+  retention_days:
+    description: "Delete releases older than this many days"
+    required: false
+    default: "30"
+
+runs:
+  using: composite
+  steps:
+    # Build 1: unstamped (default, --stamp off) — deterministic, for skip decision
+    - name: Build artifact (unstamped)
+      uses: ./.github/actions/bb-remote
+      with:
+        args: build ${{ inputs.bazel_target }}
+        rbe_image: ${{ inputs.rbe_image }}
+
+    - name: Check content hash
+      id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+      run: |
+        set -euo pipefail
+
+        # Skip [skip ci] commits
+        subject=$(git log -1 --format=%s)
+        if [[ "$subject" == *"[skip ci]"* ]]; then
+          echo "$PKG: commit has [skip ci], skipping"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        artifact="${{ inputs.bazel_output }}"
+        if [[ ! -f "$artifact" ]]; then
+          echo "::error::Artifact not found at $artifact"
+          ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
+          exit 1
+        fi
+
+        # Verify extra outputs exist
+        for extra in ${{ inputs.extra_outputs }}; do
+          if [[ ! -f "$extra" ]]; then
+            echo "::error::Extra output not found at $extra"
+            exit 1
+          fi
+        done
+
+        # Content-addressed skip check: tag by hash of the primary artifact.
+        # If a release with this tag already exists, the content hasn't changed.
+        content_sha=$(sha256sum "$artifact" | awk '{print $1}')
+        tag="${PKG}-${content_sha:0:12}"
+        echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
+        echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+        if gh release view "$tag" >/dev/null 2>&1; then
+          echo "$PKG: unchanged (release $tag exists), skipping"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+    # Build 2: stamped — injects GIT_COMMIT via expand_template.
+    # Only _build_info_gen + wheel targets re-run; everything else is cache-hit.
+    - name: Build artifact (stamped)
+      if: steps.check.outputs.should_release == 'true'
+      uses: ./.github/actions/bb-remote
+      with:
+        args: build ${{ inputs.bazel_target }} --stamp
+        rbe_image: ${{ inputs.rbe_image }}
+
+    - name: Upload release
+      if: steps.check.outputs.should_release == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+      run: |
+        set -euo pipefail
+
+        tag="${{ steps.check.outputs.tag }}"
+        artifact="${{ inputs.bazel_output }}"
+        files=("$artifact")
+
+        # Collect extra outputs
+        for extra in ${{ inputs.extra_outputs }}; do
+          files+=("$extra")
+        done
+
+        if [[ "${{ inputs.release_metadata }}" == "true" ]]; then
+          metadata="$RUNNER_TEMP/${PKG}.release.json"
+          metadata_platform="${{ inputs.metadata_platform }}"
+          metadata_platform_args=()
+          artifact_sha=$(sha256sum "$artifact" | awk '{print $1}')
+          if [[ -n "$metadata_platform" ]]; then
+            metadata_platform_args=(--platform "$metadata_platform")
+          fi
+          python3 devinfra/ci/release_metadata.py \
+            --output "$metadata" \
+            --package "$PKG" \
+            --tag "$tag" \
+            --git-commit "$(git rev-parse HEAD)" \
+            --binary "$(basename "$artifact")" \
+            --sha256 "$artifact_sha" \
+            "${metadata_platform_args[@]}"
+          files+=("$metadata")
+        fi
+
+        echo "$PKG: content changed, creating release $tag"
+
+        gh release create "$tag" "${files[@]}" \
+          --title "$PKG (${tag#"${PKG}"-})" \
+          --notes "$PKG release" \
+          --target "$GITHUB_SHA" \
+          --latest=false
+
+        echo "Released: $PKG ($tag)"
+
+    # Prune runs unconditionally so unchanged-content jobs still clean up old
+    # releases. -L 5000 ensures we see all releases for high-churn packages
+    # (e.g. skills has 500+); the default 200 hides everything past the
+    # 30-day cutoff for daily-released packages.
+    - name: Prune stale releases
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+        KEEP_TAG: ${{ steps.check.outputs.tag }}
+      run: |
+        set -euo pipefail
+        cutoff=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+        gh release list --json tagName,createdAt -L 5000 \
+          --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{12}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
+          | while read -r old_tag; do
+              [[ "$old_tag" == "$KEEP_TAG" ]] && continue
+              echo "  pruning $old_tag"
+              gh release delete "$old_tag" --yes --cleanup-tag
+            done

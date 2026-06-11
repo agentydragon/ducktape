@@ -1,0 +1,187 @@
+/* Shared styles extracted from multiple components */
+
+/* Error messages */
+.error,
+.error-message {
+  padding: 0.5rem;
+  background: rgba(176, 0, 32, 0.1);
+  border: 1px solid rgba(176, 0, 32, 0.3);
+  border-radius: 4px;
+  color: #b00020;
+  margin: 0.5rem;
+}
+
+/* Legacy variant for ChatPane.svelte */
+.error {
+  background: #fee;
+  color: #900;
+  border-color: #f99;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+/* Badge variants - modes */
+.badge.mode {
+  font-weight: 600;
+}
+
+.badge.mode.mode-local {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2e7d32;
+  border-color: rgba(46, 204, 113, 0.4);
+}
+
+.badge.mode.mode-bridge {
+  background: rgba(33, 150, 243, 0.15);
+  color: #1565c0;
+  border-color: rgba(33, 150, 243, 0.4);
+}
+
+/* Badge variants - capabilities */
+.badge.capability,
+.badge.cap {
+  background: rgba(255, 193, 7, 0.15);
+  color: #b26a00;
+  border-color: rgba(255, 193, 7, 0.4);
+}
+
+.badge.cap {
+  background: var(--surface-2);
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+  color: var(--muted);
+  border-radius: 999px;
+}
+
+/* Modal containers */
+.modal {
+  background: var(--surface);
+  color: var(--text);
+  min-width: 320px;
+  max-width: 90vw;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.modal header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.modal .body {
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.modal .row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Button utilities */
+.small {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.4rem;
+}
+
+.danger {
+  color: #b00020;
+}
+
+.secondary {
+  background: var(--surface-2);
+}
+
+/* Form utilities */
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.err {
+  color: #b00020;
+  font-size: 0.85rem;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+/* Typography utilities */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+}
+
+/* Copy button */
+.copy {
+  margin-left: 0.5rem;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+}
+
+/* Status indicator dots */
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #bbb;
+  display: inline-block;
+}
+
+.dot.on {
+  background: #2ecc71;
+}
+
+.dot.off {
+  background: #c0392b;
+}

@@ -1,0 +1,24 @@
+.git
+**/.devenv/
+**/__pycache__/
+.mypy_cache/
+.pytest_cache/
+**/.pytest_cache/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+build/
+dist/
+*.egg-info/
+tests/
+.uv-cache/
+.venv/
+.direnv/
+.ruff_cache/
+
+# Exclude specimens (snapshots/issues) - in separate repo, mounted at runtime
+# (specimens repo is external, not in adgn package)
+
+# Exclude log files
+**/*.log
+**/logs/

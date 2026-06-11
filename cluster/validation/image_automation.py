@@ -1,0 +1,53 @@
+"""Consistency between Flux image automation and the GitHub webhook receiver.
+
+Every `ImageRepository` must be listed in the `flux-webhook` GitHub `Receiver` so a push /
+`registry_package` webhook reconciles it immediately — otherwise new GHCR tags are only
+picked up on the 5-minute `ImageRepository` poll. Also checks that every `ImagePolicy`
+references a defined `ImageRepository`, and that the webhook doesn't reference one that no
+longer exists.
+
+Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
+output the validator already produces — and isinstance-dispatches on the parsed variants, so
+it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
+Authentik blueprints' custom `!Find`/`!Env` tags).
+"""
+
+from __future__ import annotations
+
+from cluster.validation.cluster import ParsedCluster
+from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
+
+
+def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
+    image_repos: set[str] = set()
+    policy_refs: dict[str, str] = {}
+    webhook_repos: set[str] = set()
+
+    for result in cluster.build_results:
+        for resource in result.resources:
+            if isinstance(resource, ImageRepositoryResource):
+                image_repos.add(resource.name)
+            elif isinstance(resource, ImagePolicyResource):
+                policy_refs[resource.name] = resource.spec.image_repository_ref.name
+            elif isinstance(resource, ReceiverResource):
+                webhook_repos.update(
+                    ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
+                )
+
+    return [
+        *(
+            f"ImageRepository '{name}' is not listed in flux-webhook/github-webhook-receiver.yaml; "
+            "new GHCR tags will only be picked up on the 5m poll, not on push. Add it to the Receiver's resources."
+            for name in sorted(image_repos - webhook_repos)
+        ),
+        *(
+            f"flux-webhook/github-webhook-receiver.yaml references ImageRepository '{name}', "
+            "but no such ImageRepository is defined under cluster/k8s."
+            for name in sorted(webhook_repos - image_repos)
+        ),
+        *(
+            f"ImagePolicy '{policy}' references ImageRepository '{ref}', which is not defined."
+            for policy, ref in sorted(policy_refs.items())
+            if ref not in image_repos
+        ),
+    ]

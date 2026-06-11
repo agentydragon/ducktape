@@ -104,11 +104,11 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 # ============================================================================
 # FLUX DEPLOY KEY (ED25519 for GitHub repository access)
 # ============================================================================
-# Stored in secrets/flux-deploy-key.yaml (SOPS-encrypted).
+# Stored in secrets/shared/flux-deploy-key.yaml (SOPS-encrypted).
 # Public key must be registered as a deploy key on the GitHub repo.
 
 data "sops_file" "flux_deploy_key" {
-  source_file = "${path.module}/../../../secrets/flux-deploy-key.yaml"
+  source_file = "${path.module}/../../../secrets/shared/flux-deploy-key.yaml"
 }
 
 
@@ -121,46 +121,50 @@ data "sops_file" "flux_deploy_key" {
 locals {
   nebula_cert_dir = "${path.module}/nebula-certs"
 
-  # All Nebula mesh nodes — add new nodes here when expanding the mesh.
+  # Tofu-managed Talos nodes — derived from the mesh roster
+  # (../../../nebula-mesh.json). Tofu issues certs and embeds them in machine
+  # config patches (nebula.tf). To add a new Talos node, edit the roster — see
+  # cluster/docs/mesh_membership.md.
+  #
   # Cert names use FQDN under nebula.allegedly.works so that systemd-resolved
   # can route queries via ~nebula.allegedly.works without +DefaultRoute (which
   # breaks public DNS when cluster nodes are unreachable).
-  # Groups are unused (no nebula firewall rules reference them) but kept
-  # minimal for future use.
-  nebula_nodes = {
-    "talos-vps-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.1/16", groups = "lighthouse" }
-    "talos-vps-cp-1.nebula.allegedly.works"     = { ip = "10.42.0.2/16", groups = "lighthouse" }
-    "talos-pve-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.10/16", groups = "" }
-    "talos-vps-worker-0.nebula.allegedly.works" = { ip = "10.42.0.11/16", groups = "lighthouse" }
-    "talos-vps-worker-1.nebula.allegedly.works" = { ip = "10.42.0.12/16", groups = "lighthouse" }
-    "wyrm2.nebula.allegedly.works"              = { ip = "10.42.0.20/16", groups = "" }
-    "rugged.nebula.allegedly.works"             = { ip = "10.42.0.30/16", groups = "" }
-    "iguana.nebula.allegedly.works"             = { ip = "10.42.0.31/16", groups = "" }
-    "k8s-worker-test.nebula.allegedly.works"    = { ip = "10.42.0.99/16", groups = "" }
-    "atlas.nebula.allegedly.works"              = { ip = "10.42.0.5/16", groups = "" }
-    "activitywatch.nebula.allegedly.works"      = { ip = "10.42.0.40/16", groups = "" }
+  #
+  # Non-tofu nodes (atlas, wyrm2, rugged, iguana, pixel6) have certs in
+  # secrets/nebula/. See docs/secrets.md "Nebula Certs for Non-Talos Nodes".
+  talos_nebula_nodes = {
+    for name, h in local.nebula_hosts :
+    "${name}.nebula.allegedly.works" => {
+      ip     = "${h.nebula_ip}/16"
+      groups = join(",", try(h.cert_groups, []))
+    }
+    if startswith(try(h.managed_by, ""), "tofu-")
   }
 }
 
-# Generate CA cert + key (once, stored on disk + in state).
-# Nebula CA from SOPS — written to disk so nebula-cert sign can read it.
-data "sops_file" "nebula_ca" {
-  source_file = "${path.module}/../../../secrets/nebula-ca.yaml"
+# Nebula CA — plaintext cert + SOPS binary key (secrets/nebula/).
+data "local_file" "nebula_ca_crt" {
+  filename = "${path.module}/../../../secrets/nebula/ca.crt"
+}
+
+data "sops_file" "nebula_ca_key" {
+  source_file = "${path.module}/../../../secrets/nebula/ca.sops.key"
+  input_type  = "raw"
 }
 
 resource "local_sensitive_file" "nebula_ca_key" {
-  content  = data.sops_file.nebula_ca.data["ca_key"]
+  content  = data.sops_file.nebula_ca_key.raw
   filename = "${local.nebula_cert_dir}/ca.key"
 }
 
 resource "local_file" "nebula_ca_crt" {
-  content  = data.sops_file.nebula_ca.data["ca_crt"]
+  content  = data.local_file.nebula_ca_crt.content
   filename = "${local.nebula_cert_dir}/ca.crt"
 }
 
 # Generate per-node certs signed by the CA.
 resource "null_resource" "nebula_node_cert" {
-  for_each = local.nebula_nodes
+  for_each = local.talos_nebula_nodes
 
   triggers = {
     ca_hash = sha256(local_file.nebula_ca_crt.content)
@@ -186,13 +190,13 @@ resource "null_resource" "nebula_node_cert" {
 }
 
 data "local_file" "nebula_node_crt" {
-  for_each   = local.nebula_nodes
+  for_each   = local.talos_nebula_nodes
   filename   = "${local.nebula_cert_dir}/${each.key}.crt"
   depends_on = [null_resource.nebula_node_cert]
 }
 
 data "local_sensitive_file" "nebula_node_key" {
-  for_each   = local.nebula_nodes
+  for_each   = local.talos_nebula_nodes
   filename   = "${local.nebula_cert_dir}/${each.key}.key"
   depends_on = [null_resource.nebula_node_cert]
 }
@@ -200,12 +204,12 @@ data "local_sensitive_file" "nebula_node_key" {
 # ============================================================================
 # SOPS AGE KEYPAIR — cluster k8s secrets
 # ============================================================================
-# Keypair stored in secrets/cluster-secrets-age.yaml (SOPS-encrypted to admin +
+# Keypair stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted to admin +
 # user keys). Public key in .sops.yaml (&cluster-secrets anchor).
 # Tofu decrypts via sops provider and deploys the private key to flux-system.
 
 data "sops_file" "cluster_secrets_age" {
-  source_file = "${path.module}/../../../secrets/cluster-secrets-age.yaml"
+  source_file = "${path.module}/../../../secrets/shared/cluster-secrets-age.yaml"
 }
 
 resource "kubernetes_namespace" "flux_system" {

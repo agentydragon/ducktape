@@ -1,0 +1,141 @@
+# Claude Linter v2 Configuration
+version = "2.0"
+
+# Display settings
+max_errors_to_show = 3
+
+# Path-based access control
+[[access_control]]
+paths = ["production/**", "*.prod.py"]
+tools = ["Write", "Edit", "MultiEdit"]
+action = "deny"
+message = "Production files are read-only"
+
+# Python tools
+python_tools = ["ruff"]
+
+# Rule configurations
+[rules]
+# Core Python checks that block
+[rules."python.bare_except"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.hasattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.getattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.setattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.barrel_init"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+# Critical ruff rules
+[rules."ruff.E722"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.BLE001"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B009"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B010"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+# Other important ruff rules
+[rules."ruff.S113"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B008"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.E402"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.PLC0415"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.S608"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B904"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B006"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.PGH003"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+# Hook behaviors
+[hooks.pre]
+enabled = true
+
+[hooks.post]
+enabled = true
+auto_fix = true
+autofix_categories = ["formatting"]
+inject_permissions = true
+
+[hooks.stop]
+enabled = true
+quality_gate = true
+max_files_to_show = 5
+max_violations_per_file = 3
+
+# Test file patterns
+[[pattern_rules]]
+name = "test_files"
+patterns = ["**/test_*.py", "**/*_test.py", "**/tests/**/*.py"]
+relaxed_checks = []
+enabled = true
+
+# Task profiles
+[[profiles]]
+name = "refactoring"
+description = "Python refactoring with git and tests"
+predicate = 'Edit("**/*.py") and Bash("git:*") and Bash("pytest:*")'
+duration = "4h"
+
+[[profiles]]
+name = "debugging"
+description = "Full read access, limited write"
+predicate = 'Read("**/*") and Edit("debug/**/*")'
+duration = "2h"

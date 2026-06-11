@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sdr
+  namespace: flux-system
+spec:
+  interval: 10m
+  # Temporarily disabled until the radio is set up again after relocation.
+  suspend: true
+  retryInterval: 1m
+  path: ./cluster/k8s/sdr
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m
+  dependsOn:
+    - name: gateway
+    - name: authentik

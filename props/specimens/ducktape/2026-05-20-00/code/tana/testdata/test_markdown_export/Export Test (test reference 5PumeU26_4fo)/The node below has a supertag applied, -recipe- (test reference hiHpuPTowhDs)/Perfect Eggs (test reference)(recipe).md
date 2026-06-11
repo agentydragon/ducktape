@@ -1,0 +1,11 @@
+Perfect Eggs (test reference) #recipe
+
+- This node has attributes set
+- **Attribute with multiple node values**:
+  - Value 1
+  - Value 2
+  - Value 3
+- **Attribute with one node value**: Value A
+- **Attribute referencing 2 other nodes**:
+  - Node X
+  - Node Y

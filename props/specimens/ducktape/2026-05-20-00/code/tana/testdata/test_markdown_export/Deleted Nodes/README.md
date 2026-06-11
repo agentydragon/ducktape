@@ -1,0 +1,21 @@
+Deleted Nodes _(When a node is deleted, it is moved here)_
+
+- **Checkbox attribute 3 (unset)**:
+- **Checkbox attribute 3 (unset)**:
+- **Checkbox attribute 2 (false)**:
+- **Checkbox attribute 2 (false)**: [No](https://app.tana.inc/?nodeid=SYS_V04)
+- **Checkbox attribute 1 (true)**:
+- **Checkbox attribute 1 (true)**: [Yes](https://app.tana.inc/?nodeid=SYS_V03)
+- **Attribute**
+- **Attri**
+- #recipe
+- ****:
+- @#recipe
+- @#recipe
+- @perfect
+- [7QNfu0weDODI(recipe).md](<7QNfu0weDODI(recipe).md>)
+- @foobar
+- @Node Y
+- @x
+- Sarch node looking up all #recipe nodes
+- #recipe

@@ -1,0 +1,41 @@
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+  # bearer_token: sourced from .envrc (cli_env.sh → DUCKTAPE_OTEL_BEARER_TOKEN).
+
+git_shim:
+  block_amend: true
+  # block_stash is disabled because pre-commit (invoked as a git commit hook) uses
+  # git stash internally to save/restore unstaged changes before running checks.
+  # When the shim blocks git stash, the hook process receives SIGSEGV (signal 11)
+  # and git commit fails with "pre-commit died of signal 11", even though all
+  # checks actually pass. Disabling the block lets pre-commit operate normally.
+  block_stash: false
+  block_add_all: true
+idle_watchdog: true
+setup_tmpfs: false
+env_exports: |
+  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
+  export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
+  # Ansible tmp dir: Claude Code sandbox makes /tmp read-only; redirect to $TMPDIR.
+  export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"
+  # Source direnv so .envrc exports propagate into Claude Code Bash tool calls.
+  # This works with CWD tracking because Claude Code sources the session env file
+  # before every command, after cd'ing to the tracked working directory. So when
+  # the agent cd's between directories, direnv picks up the correct .envrc on the
+  # next command. The `which` guard avoids errors when direnv isn't installed.
+  if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
+background_commands:
+  - name: authentik api banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_banner.sh"
+    timeout: 10
+    after_env: true
+  - name: bazelisk warmup (query //...)
+    command: |
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
+    timeout: 300
+    after_env: true
+context_template: devinfra/claude/hook_daemon/profiles/cli/context.mako

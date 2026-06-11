@@ -1,0 +1,17 @@
+rationale: |
+  `state_map` (view_formatter.py:199-205) is keyed by string literals
+  (`"running"`, `"failed"`, etc.) when `gitstatusd_state` is a
+  `GitstatusdState` StrEnum. The lookup coerces via `or ""` to avoid None.
+  Key by `GitstatusdState` enum values instead.
+
+  Additionally, the map is a trivial identity mapping — every key maps to
+  itself. The entire map and lookup can be replaced with
+  `status.gitstatusd_state or ""` (or `.value` if an explicit str is needed).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/view_formatter.py:
+        - [199, 206]
+    critic_scopes_expected_to_recall:
+      - [wt/client/view_formatter.py]

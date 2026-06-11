@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: docker-ci
+  labels:
+    name: docker-ci
+    pod-security.kubernetes.io/enforce: privileged
+    goldilocks.fairwinds.com/enabled: "false"

@@ -1,0 +1,13 @@
+# gazelle:ignore
+load("@rules_python//python:defs.bzl", "py_binary")
+
+# Claude Code history reader - standalone script
+py_binary(
+    name = "claude_history_reader",
+    srcs = ["claude_history_reader.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//anthropic",
+        "@pypi//pydantic",
+    ],
+)

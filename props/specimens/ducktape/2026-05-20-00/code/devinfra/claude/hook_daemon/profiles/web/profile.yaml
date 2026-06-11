@@ -1,0 +1,125 @@
+startup_env_script: devinfra/secrets/web_env.sh
+
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+  # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
+
+idle_watchdog: false
+setup_tmpfs: true
+setup_docker: true
+bazel_bes_proxy:
+  target: remote.buildbuddy.io:443
+env_exports: |
+  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
+  export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
+  # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must
+  # come before /opt/node22/bin so the nix versions are preferred.
+  export PATH="${HOME}/.nix-profile/bin:${PATH}"
+background_commands:
+  # Materializes ~/.kube/config from the SOPS-encrypted JWT in
+  # secrets/claude-web-k8s-jwt.yaml. See kubeconfig.py's module
+  # docstring for the full rationale (token vs cert, why the egress proxy
+  # breaks client-cert auth on CC web).
+  - name: kubeconfig
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
+    timeout: 30
+    after_env: true
+  - name: authentik api banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_banner.sh"
+    timeout: 10
+    after_env: true
+  - name: nix nixpkgs check
+    command: |
+      if ! command -v nix &>/dev/null; then
+        echo "ERROR: Nix not found on PATH. web_setup.sh should have installed Nix — did it complete successfully?"
+        exit 1
+      fi
+      if nix-instantiate '<nixpkgs>' --eval -E '1' &>/dev/null 2>&1; then
+        echo "Nix: nixpkgs available. Use 'nix-shell -p <pkg> --run <cmd>' or 'nix shell nixpkgs#<pkg>'."
+      else
+        echo "Nix: nixpkgs not configured. Configuring nixpkgs-unstable channel..."
+        nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs
+        nix-channel --update nixpkgs
+        echo "Nix: nixpkgs channel configured."
+      fi
+    timeout: 120
+  - name: apt package install
+    command: |
+      apt-get update -qq &&
+      apt-get install -y -qq libgirepository-2.0-dev libcairo2-dev libdbus-1-dev
+    timeout: 300
+  - name: pre-commit setup
+    command: pre-commit install --install-hooks
+    timeout: 300
+  - name: git remote info
+    command: |
+      echo "Git remotes (set up by web_setup.sh):"
+      echo "  origin          — Anthropic's local git proxy (routes to GitHub). Push here: git push origin <branch>."
+      echo "  github-no-proxy — Plain GitHub HTTPS URL, no credentials."
+      echo "                    Exists ONLY as a bbr shim: BB's RBE runner runs on their cloud and cannot"
+      echo "                    reach the local proxy URL (127.0.0.1:51318) that 'origin' uses. bbr selects"
+      echo "                    this remote so the cloud runner can fetch the repo from GitHub directly."
+      echo "                    Do NOT push to github-no-proxy — no push credentials. Always push to origin."
+    timeout: 10
+  - name: fork remote setup
+    command: |
+      if [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo "GITHUB_TOKEN not set — skipping fork remote setup"
+        exit 0
+      fi
+      user_json=$(curl -sf \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "User-Agent: ducktape-session-hook/1.0" \
+        https://api.github.com/user 2>/dev/null) || {
+        echo "WARNING: GitHub /user API call failed" >&2
+        exit 1
+      }
+      username=$(printf '%s' "$user_json" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])') || {
+        echo "WARNING: could not parse username" >&2
+        exit 1
+      }
+      origin_url=$(git remote get-url origin 2>/dev/null) || {
+        echo "WARNING: no origin remote" >&2
+        exit 1
+      }
+      repo_name="${origin_url%/}"; repo_name="${repo_name%.git}"; repo_name="${repo_name##*/}"
+      fork_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/$username/$repo_name") || fork_status="000"
+      if [ "$fork_status" != "200" ]; then
+        msg="Fork https://github.com/$username/$repo_name not found (HTTP $fork_status). Create: gh repo fork agentydragon/ducktape --org $username --clone=false"
+        curl -sf --unix-socket "$HOOK_DAEMON_SOCK" -X POST http://localhost/mailbox \
+          -H 'Content-Type: application/json' \
+          -d "$(python3 -c "import json,sys; print(json.dumps({'message': sys.argv[1]}))" "$msg")"
+        exit 0
+      fi
+      fork_url="https://$username:$GITHUB_TOKEN@github.com/$username/$repo_name.git"
+      if git remote get-url fork &>/dev/null; then
+        git remote set-url fork "$fork_url"; action="updated"
+      else
+        git remote add fork "$fork_url"; action="added"
+      fi
+      msg=$(python3 -c "
+      import json, sys
+      username, repo, action = sys.argv[1], sys.argv[2], sys.argv[3]
+      print(json.dumps({'message':
+        f'Fork remote {action}: git push -u fork <branch>, then: '
+        f'gh pr create --repo agentydragon/ducktape --head {username}:<branch> --base devel.'
+      }))" "$username" "$repo_name" "$action")
+      curl -sf --unix-socket "$HOOK_DAEMON_SOCK" -X POST http://localhost/mailbox \
+        -H 'Content-Type: application/json' -d "$msg"
+    timeout: 30
+    after_env: true
+  - name: bazelisk warmup (query //...)
+    command: |
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
+    timeout: 300
+    after_env: true
+context_template: devinfra/claude/hook_daemon/profiles/web/context.mako

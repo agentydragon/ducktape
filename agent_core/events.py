@@ -17,9 +17,11 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from pydantic import BaseModel, Field
 
 from agent_core.tool_provider import ToolResult
+from openai_utils.api_shape import LLMApiShape
 from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
 
 
@@ -70,8 +72,8 @@ class ApiRequest(BaseModel):
 
     type: Literal["api_request"] = "api_request"
 
-    # The complete request (reuses existing typed model)
-    request: ResponsesRequest
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES
+    request: ResponsesRequest | CompletionCreateParamsNonStreaming
 
     # TODO: Consider moving model into ResponsesRequest and removing the "model handle" layer
     # Currently model lives on client, not in request object
@@ -83,7 +85,7 @@ class ApiRequest(BaseModel):
 
 
 class Response(BaseModel):
-    """One OpenAI responses.create result (non-streaming) with usage.
+    """One model result (non-streaming) with usage.
 
     Emitted once per model call to avoid duplicating usage across assistant/tool events.
     """

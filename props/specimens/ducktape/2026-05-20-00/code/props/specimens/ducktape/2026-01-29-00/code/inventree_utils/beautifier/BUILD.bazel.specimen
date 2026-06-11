@@ -1,0 +1,123 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "assign_jellybean",
+    srcs = ["assign_jellybean.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        ":lcsc_util",
+        "@pypi//inventree",
+        "@pypi//tqdm",
+    ],
+)
+
+py_library(
+    name = "cli_util",
+    srcs = ["cli_util.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":iter_util"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//inventree",
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "fix_lcsc_links",
+    srcs = ["fix_lcsc_links.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":lcsc_util",
+        "@pypi//inventree",
+    ],
+)
+
+py_library(
+    name = "inventree_util",
+    srcs = ["inventree_util.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//inventree"],
+)
+
+py_library(
+    name = "iter_util",
+    srcs = ["iter_util.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "lcsc_util",
+    srcs = ["lcsc_util.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "upload_lcsc_images",
+    srcs = ["upload_lcsc_images.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        ":lcsc_util",
+        "@pypi//beautifulsoup4",
+        "@pypi//inventree",
+        "@pypi//requests",
+        "@pypi//structlog",
+    ],
+)
+
+py_binary(
+    name = "beautifier_bin",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":assign_jellybean",
+        ":config",
+        ":fix_lcsc_links",
+        ":upload_lcsc_images",
+        "@pypi//structlog",
+    ],
+)
+
+py_test(
+    name = "test_assign_jellybean",
+    srcs = ["test_assign_jellybean.py"],
+    deps = [
+        ":assign_jellybean",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_fix_lcsc_links",
+    srcs = ["test_fix_lcsc_links.py"],
+    deps = [
+        ":fix_lcsc_links",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_lcsc_util",
+    srcs = ["test_lcsc_util.py"],
+    deps = [
+        ":lcsc_util",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

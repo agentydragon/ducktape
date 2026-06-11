@@ -1,0 +1,55 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "server",
+    srcs = [
+        "copy_strategies.py",
+        "git_manager.py",
+        "git_refs_watcher.py",
+        "github_client.py",
+        "github_watcher.py",
+        "gitstatus_refresh.py",
+        "gitstatusd_listener.py",
+        "handlers/path_handler.py",
+        "handlers/pr_handler.py",
+        "handlers/status_handler.py",
+        "handlers/worktree_handler.py",
+        "repo_status.py",
+        "rpc.py",
+        "services.py",
+        "stores.py",
+        "types.py",
+        "watcher.py",
+        "worktree_ids.py",
+        "worktree_index.py",
+        "worktree_registry.py",
+        "worktree_service.py",
+        "wt_server.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/shared",
+        "@pypi//psutil",
+        "@pypi//punq",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pygithub",
+        "@pypi//reaktiv",
+        "@pypi//watchdog",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = [
+        "handlers/test_status_handler.py",
+        "test_worktree_service.py",
+    ],
+    main = "test_worktree_service.py",
+    deps = [
+        "//wt/testing",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)

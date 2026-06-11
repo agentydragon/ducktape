@@ -7,7 +7,7 @@
     class?: string;
   }
 
-  let { href: hrefProp, label = "← Back", class: className }: Props = $props();
+  const { href: hrefProp, label = "← Back", class: className }: Props = $props();
 </script>
 
 <a

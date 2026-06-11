@@ -1,0 +1,12 @@
+rationale: |
+  The module docstring (lines 5-10) appears after `from __future__ import
+  annotations` (line 1). Since that import is a statement, Python will not
+  set the string literal as `__doc__`. Move the docstring before imports.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      openai_utils/builders.py:
+        - [5, 10]

@@ -1,0 +1,34 @@
+rationale: |
+  `MAIN_WORKTREE_DISPLAY_NAME` (constants.py:23) implies a presentation-only
+  string, yet it is used as the canonical identity key throughout the server:
+  fed into `make_worktree_id` to produce opaque WorktreeIDs, used as the
+  index lookup key in `WorktreeIndex.by_name`, and assigned to
+  `DiscoveredWorktree.name`. Meanwhile `make_worktree_id`'s parameter is named
+  `dirname` (worktree_ids.py:13), implying a filesystem directory name, but
+  for the main worktree it receives the display name "main" which is not a
+  directory name.
+
+  More broadly, display name logic belongs in the client/presentation layer,
+  not in the server/protocol layer. The server uses this constant for identity,
+  indexing, and ID construction (worktree_index.py:30, worktree_handler.py,
+  path_handler.py) — none of which are display concerns. The constant should
+  be renamed to reflect its actual role (e.g. `MAIN_WORKTREE_NAME`), the
+  `dirname` parameter renamed to `name`, and any true display formatting
+  pushed to the client.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/shared/constants.py:
+        - [23, 23]
+      wt/server/worktree_ids.py:
+        - [13, 13]
+      wt/server/worktree_index.py:
+        - [30, 30]
+      wt/server/handlers/worktree_handler.py:
+        - [179, 185]
+        - [195, 201]
+    critic_scopes_expected_to_recall:
+      - [wt/shared/constants.py, wt/server/worktree_ids.py]
+      - [wt/server/handlers/worktree_handler.py, wt/shared/constants.py]
+      - [wt/server/worktree_index.py, wt/shared/constants.py]

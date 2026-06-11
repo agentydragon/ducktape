@@ -1,0 +1,19 @@
+rationale: |
+  The test client fixture bypasses FastAPI's lifespan context, manually initializing
+  CSRF config and templates instead of triggering proper startup. This causes routes
+  registered in lifespan (like `/k/{key}/`, `/s/{session}/`) to not exist during tests,
+  resulting in spurious 404 errors.
+
+  Use `asgi-lifespan.LifespanManager` to properly trigger app startup/shutdown:
+  ```python
+  from asgi_lifespan import LifespanManager
+  async with LifespanManager(app) as manager:
+      async with AsyncClient(transport=ASGITransport(app=manager.app), ...) as client:
+          yield client
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gatelet/server/conftest.py:
+        - [147, 159]

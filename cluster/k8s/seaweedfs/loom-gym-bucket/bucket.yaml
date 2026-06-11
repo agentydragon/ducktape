@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: loom-gym
+  namespace: seaweedfs
+spec:
+  name: loom-gym
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: claude-reader
+      actions: [Read, Write, List, Tagging]

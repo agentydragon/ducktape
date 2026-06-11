@@ -1,0 +1,21 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle will create per-file py_library targets
+
+py_library(
+    name = "mcp",
+    srcs = ["mcp.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "output",
+    srcs = ["output.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//jinja2"],
+)

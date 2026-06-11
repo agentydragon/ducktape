@@ -1,0 +1,15 @@
+rationale: |
+  Lines 151-153 catch all exceptions from stdin write/close and only
+  `logger.debug` them. The comment claims "exit code/streams will reflect
+  errors," but if stdin delivery silently fails the child process may see
+  empty stdin and produce plausible-looking output with exit code 0. The
+  caller has no indication the input was never delivered. Either let the
+  exception propagate or surface the failure in the tool result.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/exec/seatbelt.py:
+        - [151, 153]

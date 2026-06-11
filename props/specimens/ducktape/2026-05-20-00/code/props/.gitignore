@@ -1,0 +1,12 @@
+# Prompt evaluation runs
+core/runs/
+
+# Bootstrap output dumps from e2e tests
+tests/bootstrap_dumps/
+
+# Database backups
+db_backups/
+
+# GEPA outputs and logs
+core/gepa/**/*.log
+core/gepa/gepa_output/

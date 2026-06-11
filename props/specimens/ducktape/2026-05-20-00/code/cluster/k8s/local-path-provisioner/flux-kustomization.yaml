@@ -1,0 +1,24 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-path-provisioner
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/local-path-provisioner"
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: local-path-provisioner
+      namespace: local-path-storage
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: local-path-provisioner
+      namespace: local-path-storage

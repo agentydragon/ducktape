@@ -1,0 +1,22 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files([
+    "parse_str_edf.py",
+    "read_waveforms.py",
+])
+
+py_library(
+    name = "parse_str_edf",
+    srcs = ["parse_str_edf.py"],
+    visibility = ["//cpap/skill:__pkg__"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_library(
+    name = "generate_test_edf",
+    srcs = ["generate_test_edf.py"],
+    visibility = ["//cpap/skill:__pkg__"],
+)

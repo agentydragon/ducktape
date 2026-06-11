@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Token Verification</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <nav class="menu">
+      <a href="/">Home</a>
+      {% for page in markdown_pages %}
+      <a href="/{{ page }}">{{ page|capitalize }}</a>
+      {% endfor %}
+    </nav>
+
+    <div class="verification-container">
+      <h1>Token Verification</h1>
+
+      <form method="get" action="/verify">
+        <div class="form-group">
+          <label for="token">Enter Token:</label>
+          <input
+            type="text"
+            id="token"
+            name="token"
+            value="{{ token }}"
+            placeholder="Enter your full signature token here"
+            class="token-input"
+            required
+          />
+        </div>
+        <button type="submit" class="verify-button">Verify Token</button>
+      </form>
+
+      {% if result %}
+      <div
+        class="result-container {{ 'success' if result.status == 'success' else 'error' }}"
+      >
+        <h2>Verification Result</h2>
+        {% if result.status == 'success' %}
+        <p class="status-message success">✅ {{ result.message }}</p>
+        {% else %}
+        <p class="status-message error">❌ Token verification FAILED</p>
+        <div class="error-details">
+          <h3>Issues found:</h3>
+          <ul>
+            {% for issue in result.errors %}
+            <li>✗ {{ issue }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </body>
+</html>

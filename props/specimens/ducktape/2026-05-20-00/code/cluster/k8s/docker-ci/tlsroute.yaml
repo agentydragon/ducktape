@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: docker-ci
+  namespace: docker-ci
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: docker-ci-tls
+  hostnames:
+    - docker-ci.allegedly.works
+  rules:
+    - backendRefs:
+        - name: docker-ci
+          port: 2376

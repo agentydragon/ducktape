@@ -1,0 +1,16 @@
+[Unit]
+Description=virtiofs daemon for gitea-mirrors
+Before=pve-guests.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/run
+ExecStart=/usr/lib/kvm/virtiofsd \
+  --socket-path=/var/run/virtiofsd-gitea-mirrors.sock \
+  --shared-dir=/tank/gitea-public-mirrors \
+  --cache=always
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

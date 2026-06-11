@@ -9,27 +9,31 @@ FastMCP server: per-session Docker container exec.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Annotated, Any
 
 import aiodocker
 import mcp.types as mcp_types
 from fastmcp.server.context import Context
-from pydantic import Field, create_model
+from pydantic import Field, WithJsonSchema, create_model
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
-    AlwaysSetTo,
-    ContainerOptions,
-    CwdPolicy,
-    DefaultValue,
-    ModelChooses,
     make_container_lifespan,
     render_container_result,
     run_session_container,
     session_state_from_ctx,
 )
-from mcp_infra.exec.docker.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
-from mcp_infra.exec.models import BaseExecResult, EnvVar, ExecInput, TimeoutMs, async_timer
+from mcp_infra.exec.docker.types import (
+    AlwaysSetTo,
+    ContainerExecServerConfig,
+    ContainerImageHistoryEntry,
+    ContainerImageInfo,
+    ContainerInfo,
+    CwdPolicy,
+    DefaultValue,
+    ModelChooses,
+)
+from mcp_infra.exec.models import BaseExecResult, EnvVar, ResolvedExecInput, TimeoutMs, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
@@ -38,6 +42,14 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 # URI template for file:// resource (file:///absolute/path format)
 # Uses {path*} wildcard syntax (RFC 6570) to match paths with slashes
 FILE_RESOURCE_URI_TEMPLATE = "file://{path*}"
+
+
+def _get_running_container(ctx: Context) -> aiodocker.docker.DockerContainer:
+    """Get the aiodocker container handle for the current session, or raise."""
+    session = session_state_from_ctx(ctx)
+    if session.container_id is None:
+        raise RuntimeError("No container available")
+    return session.docker_client.containers.container(session.container_id)
 
 
 def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
@@ -57,8 +69,10 @@ def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
             raise TypeError(f"Unknown CwdPolicy: {policy!r}")
 
 
-def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
-    """Dynamically create an ExecInput-compatible Pydantic model for the exec tool.
+def _make_exec_input_model(
+    *, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy
+) -> type[OpenAIStrictModeBaseModel]:
+    """Dynamically create the Pydantic input model for the exec tool.
 
     When allow_user=False or allow_env=False, the corresponding field is omitted from
     the schema so the LLM cannot set it (the handler substitutes None for disabled fields).
@@ -78,7 +92,13 @@ def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: Cwd
             ),
         ),
         "timeout_ms": (
-            TimeoutMs,
+            # ``TimeoutMs`` is ``Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]``,
+            # which lands in the JSON Schema as ``exclusiveMinimum`` / ``maximum``.
+            # Anthropic's strict tool-use mode rejects integer constraints
+            # (``"For 'integer' type, properties exclusiveMinimum, maximum are not
+            # supported"``), so we override the schema to a plain ``{"type": "integer"}``
+            # while keeping the Pydantic runtime validators that ``TimeoutMs`` carries.
+            Annotated[TimeoutMs, WithJsonSchema({"type": "integer"})],
             Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
         ),
     }
@@ -125,31 +145,17 @@ class ContainerExecServer(EnhancedFastMCP):
         """Construct file:// URI for a container path (file:///absolute/path)."""
         return f"file://{path}"
 
-    def __init__(
-        self,
-        docker_client: aiodocker.Docker,
-        opts: ContainerOptions,
-        *,
-        allow_user_field: bool = True,
-        allow_env_field: bool = True,
-        cwd_policy: CwdPolicy,
-    ):
+    def __init__(self, docker_client: aiodocker.Docker, config: ContainerExecServerConfig):
         """Create a generic per-session container exec FastMCP server.
-
-        Args:
-            docker_client: Async Docker client (owned and managed by caller).
-            opts: Container configuration options
-            allow_user_field: Expose ``user`` in the exec tool schema. Set False to
-                prevent the LLM from switching Unix users inside the container.
-            allow_env_field: Expose ``env`` in the exec tool schema. Set False to
-                prevent the LLM from injecting arbitrary environment variables.
-            cwd_policy: Controls how the ``cwd`` field appears in the exec tool schema.
 
         Note:
             The caller must create and manage the docker_client lifecycle. The server
             lifespan uses the client but does not close it - caller remains responsible
             for cleanup (typically via atexit or app shutdown hooks).
         """
+        cwd_policy = config.cwd_policy
+        allow_user_field = config.allow_user_field
+        allow_env_field = config.allow_env_field
         # Define container.info resource URI (before super().__init__ so it can be used in instructions)
         container_info_uri = "resource://container.info"
 
@@ -161,14 +167,14 @@ class ContainerExecServer(EnhancedFastMCP):
                 f"/tmp is writable and can be used as a scratchpad for notes, intermediate results, "
                 f"or organizing your thoughts."
             ),
-            lifespan=make_container_lifespan(opts, docker_client),
+            lifespan=make_container_lifespan(config, docker_client),
         )
 
         # Register container.info resource
         async def container_info_json(ctx: Context) -> str:
-            s = session_state_from_ctx(ctx)
-            img_info = await s.docker_client.images.inspect(s.image)
-            img_history_raw = await s.docker_client.images.history(s.image)
+            session = session_state_from_ctx(ctx)
+            img_info = await session.docker_client.images.inspect(session.opts.image)
+            img_history_raw = await session.docker_client.images.history(session.opts.image)
             img_history = (
                 [ContainerImageHistoryEntry.model_validate(entry) for entry in img_history_raw]
                 if img_history_raw
@@ -176,13 +182,11 @@ class ContainerExecServer(EnhancedFastMCP):
             )
 
             ci = ContainerInfo(
-                image=ContainerImageInfo(
-                    name=s.image, id=img_info.get("Id", "unknown"), tags=img_info.get("RepoTags", [s.image])
-                ),
-                container_id=s.container_id,
-                binds=s.binds,
-                working_dir=str(s.working_dir),
-                network_mode=s.network_mode,
+                image=ContainerImageInfo(name=session.opts.image, id=img_info["Id"], tags=img_info["RepoTags"]),
+                container_id=session.container_id,
+                binds=session.opts.binds,
+                working_dir=str(session.opts.working_dir),
+                network_mode=session.opts.network_mode,
                 image_history=img_history,
             )
             return ci.model_dump_json()
@@ -223,7 +227,7 @@ class ContainerExecServer(EnhancedFastMCP):
             "Common mistakes:",
             """- DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)""",
             """- DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)""",
-            '- DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}',
+            '- DO: {"cmd": ["sh", "-c", "printf %s content > file.txt"]}',
         ]
 
         if isinstance(cwd_policy, AlwaysSetTo):
@@ -232,8 +236,8 @@ class ContainerExecServer(EnhancedFastMCP):
 
         async def exec(input, context: Context) -> BaseExecResult:
             async with async_timer() as get_duration_ms:
-                s = session_state_from_ctx(context)
-                effective = ExecInput(
+                session = session_state_from_ctx(context)
+                effective = ResolvedExecInput(
                     cmd=input.cmd,
                     cwd=resolve_cwd(cwd_policy, input),
                     timeout_ms=input.timeout_ms,
@@ -241,7 +245,7 @@ class ContainerExecServer(EnhancedFastMCP):
                     user=getattr(input, "user", None) if allow_user_field else None,
                 )
                 (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(
-                    s, effective.cmd, effective, opts
+                    session, effective.cmd, effective
                 )
                 duration_ms = get_duration_ms()
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)
@@ -252,10 +256,7 @@ class ContainerExecServer(EnhancedFastMCP):
         # Register file:// resource template for reading files from container
         async def read_container_file(path: str, ctx: Context) -> str:
             """Read file at absolute path from container."""
-            s = session_state_from_ctx(ctx)
-            if s.container_id is None:
-                raise RuntimeError("No container available")
-            container = s.docker_client.containers.container(s.container_id)
+            container = _get_running_container(ctx)
             # get_archive returns a TarFile directly (not an async iterable)
             tar = await container.get_archive(path)
             # The archive contains one member with basename of the path
@@ -276,11 +277,8 @@ class ContainerExecServer(EnhancedFastMCP):
 
         # Register read_image tool for reading images from container
         async def read_image(input: ReadImageInput, ctx: Context) -> list[mcp_types.ImageContent]:
-            """Read an image file from the container and return it for the model to see."""
-            s = session_state_from_ctx(ctx)
-            if s.container_id is None:
-                raise RuntimeError("No container available")
-            container = s.docker_client.containers.container(s.container_id)
+            """Read an image file from the container and return it for the model to see. Supported formats: JPEG, PNG, GIF, WebP."""
+            container = _get_running_container(ctx)
             # Pull file from container via Docker API
             tar = await container.get_archive(input.path)
             member_name = PurePosixPath(input.path).name

@@ -1,0 +1,54 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "assertions",
+    srcs = ["assertions.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:agent",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "matchers",
+    srcs = ["matchers.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:tool_provider",
+        "//openai_utils:model",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:builders",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)

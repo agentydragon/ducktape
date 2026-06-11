@@ -1,0 +1,62 @@
+# Authelia configuration — non-secret parts.
+# Secrets injected via AUTHELIA_*_FILE env vars from authelia-secrets Secret.
+
+theme: auto
+
+server:
+  address: tcp://0.0.0.0:9091/
+
+log:
+  level: info
+
+# Single user — local file backend, no LDAP.
+authentication_backend:
+  password_reset:
+    disable: true
+  file:
+    path: /config/users.yml
+
+# SQLite — no external DB needed for a single-user instance.
+storage:
+  local:
+    path: /data/db.sqlite3
+
+session:
+  cookies:
+    - domain: allegedly.works
+      authelia_url: https://authelia.allegedly.works
+
+# Access control: default deny, allow admin user everywhere.
+access_control:
+  default_policy: deny
+  rules:
+    - domain: "*.allegedly.works"
+      policy: one_factor
+      subject: "user:agentydragon"
+
+# TODO: Enable OIDC provider once clients are migrated from Authentik.
+# Requires at least one client. JWKS key in authelia-jwks Secret, load via
+# AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE env var (already in deployment).
+# Example client:
+#   identity_providers:
+#     oidc:
+#       jwks:
+#         - key_id: default
+#           algorithm: RS256
+#           use: sig
+#       clients:
+#         - client_id: headlamp
+#           client_name: Headlamp
+#           client_secret: '$pbkdf2-sha512$310000$...'
+#           redirect_uris:
+#             - https://headlamp.allegedly.works/oidc-callback
+#           scopes: [openid, profile, email]
+#           grant_types: [authorization_code]
+#           response_types: [code]
+#           token_endpoint_auth_method: client_secret_basic
+#           authorization_policy: one_factor
+
+notifier:
+  # Filesystem notifier for development. TODO: switch to SMTP for production.
+  filesystem:
+    filename: /data/notification.txt

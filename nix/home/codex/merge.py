@@ -1,6 +1,8 @@
 import os
+import sys
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import tomli_w
 
@@ -23,6 +25,48 @@ def deep_merge(dst: dict, src: dict) -> dict:
     return dst
 
 
+def unmanaged_live_paths(
+    live: dict, base: dict, *, prefix: tuple[str, ...] = (), preserve_keys: tuple[str, ...] = PRESERVE_KEYS
+) -> list[tuple[str, ...]]:
+    paths = []
+    for key in sorted(live):
+        path = (*prefix, key)
+        if (not prefix and key in preserve_keys) or key not in base:
+            paths.append(path)
+        elif isinstance(live[key], dict) and isinstance(base[key], dict):
+            paths.extend(unmanaged_live_paths(live[key], base[key], prefix=path, preserve_keys=preserve_keys))
+    return paths
+
+
+def path_value(doc: dict, path: tuple[str, ...]) -> Any:
+    value: Any = doc
+    for key in path:
+        value = value[key]
+    return value
+
+
+def set_path(doc: dict, path: tuple[str, ...], value: Any) -> None:
+    cursor: dict = doc
+    for key in path[:-1]:
+        cursor = cursor.setdefault(key, {})
+    cursor[path[-1]] = value
+
+
+def unmanaged_live_doc(live: dict, base: dict) -> dict:
+    doc: dict[str, Any] = {}
+    for path in unmanaged_live_paths(live, base):
+        set_path(doc, path, path_value(live, path))
+    return doc
+
+
+def print_unmanaged_live_doc(doc: dict) -> None:
+    if not doc:
+        return
+
+    print("codex config merge: preserved unmanaged live config TOML:", file=sys.stderr)
+    print(tomli_w.dumps(doc).rstrip(), file=sys.stderr)
+
+
 def main() -> None:
     base = Path(os.environ["BASE"])
     live = Path(os.environ["LIVE"])
@@ -32,6 +76,8 @@ def main() -> None:
         raise SystemExit(0)
 
     live_doc = load(live)
+    print_unmanaged_live_doc(unmanaged_live_doc(live_doc, base_doc))
+
     preserved = {}
     for key in PRESERVE_KEYS:
         if key in live_doc:

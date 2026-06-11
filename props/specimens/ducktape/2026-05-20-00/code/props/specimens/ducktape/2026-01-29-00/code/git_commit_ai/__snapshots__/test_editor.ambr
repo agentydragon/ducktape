@@ -1,0 +1,20 @@
+# serializer version: 1
+# name: test_staged_files_not_duplicated_in_unstaged_section
+  '''
+  test
+  
+  # ai-draft: 0.00s
+  # 
+  # Please enter the commit message for your changes. Lines starting
+  # with '#' will be ignored, and an empty message aborts the commit.
+  # 
+  # On branch main
+  # 
+  # Changes to be committed:
+  # 	modified:    tracked.txt
+  # 
+  # ------------------------ >8 ------------------------
+  # Do not modify or remove the line above.
+  # Everything below it will be ignored.
+  '''
+# ---

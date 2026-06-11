@@ -1,0 +1,17 @@
+{
+  "name": "@ducktape/airlock",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin — airlock MCP proxy bridge",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

@@ -1,0 +1,44 @@
+name: Get Journal Filtered
+request:
+  method: GET
+  url: https://api.habitify.me/journal
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  params:
+    target_date: "2025-05-09T00:00:00+00:00"
+    order_by: priority
+    time_of_day: morning,evening
+    status: none
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      - id: -Lo9Nnnt86Zg7fJZ0qCK
+        name: M***********s
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 3.1691265005705735e+29
+        status: none
+        habit_type: 1
+    version: v1.2
+    status: true
+    errors: []

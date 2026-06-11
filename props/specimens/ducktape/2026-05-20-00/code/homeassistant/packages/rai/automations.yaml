@@ -1,0 +1,111 @@
+automation:
+  - id: "1728265492434"
+    alias: Rai room switch toggles lights
+    description: ""
+    triggers:
+      - domain: mqtt
+        device_id: b649581b5e54c051885be074ff0adba7
+        type: action
+        subtype: single
+        metadata: {}
+        trigger: device
+    conditions: []
+    actions:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.rai_s_room_ceiling_lights
+    mode: single
+
+  - id: "1728693363194"
+    alias: Rai remote "off" -> turn off lights
+    description: ""
+    triggers:
+      - domain: mqtt
+        device_id: d52c27d44fe6dcffb045f5b47f6c991b
+        type: action
+        subtype: "off"
+        trigger: device
+    conditions: []
+    actions:
+      - action: light.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.rai_s_room_ceiling_lights
+    mode: single
+
+  - id: "1728693417656"
+    alias: Rai remote "on" -> lights on
+    description: ""
+    triggers:
+      - domain: mqtt
+        device_id: d52c27d44fe6dcffb045f5b47f6c991b
+        type: action
+        subtype: "on"
+        trigger: device
+    conditions: []
+    actions:
+      - action: light.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.rai_s_room_ceiling_lights
+    mode: single
+
+  - id: "rai_wake_up_lights"
+    alias: "Rai room: wake-up light ramp @ 9:40 AM"
+    triggers:
+      - trigger: time
+        at: "09:40:00"
+    conditions: []
+    actions:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: person.rai
+                state: home
+              - condition: state
+                entity_id: input_boolean.skip_morning_lights
+                state: "off"
+            sequence:
+              - action: light.turn_on
+                target:
+                  entity_id: light.rai_s_room_ceiling_lights
+                data:
+                  brightness_pct: 1
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.skip_morning_lights
+    mode: single
+
+  - id: "1730106847448"
+    alias: "Rai room: sleep lights @ 0:00 AM"
+    description: ""
+    triggers:
+      - trigger: time
+        at: "00:00:00"
+    conditions: []
+    actions:
+      - action: switch.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_rai_room_lights
+    mode: single
+
+  - id: "1730106913259"
+    alias: Rai room - sleep lights off @ 6 AM
+    description: ""
+    triggers:
+      - trigger: time
+        at: "06:00:00"
+    conditions: []
+    actions:
+      - action: switch.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_rai_room_lights
+    mode: single

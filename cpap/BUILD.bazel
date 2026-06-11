@@ -1,0 +1,74 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "bookworm_cpap_sync.yaml",
+    "bookworm_cpap_sync.lock.json",
+])
+
+py_library(
+    name = "card",
+    srcs = ["card.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "gitstore",
+    srcs = ["gitstore.py"],
+)
+
+py_library(
+    name = "sync_lib",
+    srcs = ["sync.py"],
+    deps = [
+        ":card",
+        ":gitstore",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "sync",
+    main_module = "cpap.sync",
+    deps = [":sync_lib"],
+)
+
+py_test(
+    name = "test_sync",
+    srcs = ["test_sync.py"],
+    deps = [
+        ":card",
+        ":sync_lib",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# ── OCI Image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "sync_bin",
+    main = "sync.py",
+    deps = [":sync_lib"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":sync_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("sync_bin"),
+    env = py_image_env(binary_name = "sync_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@bookworm_cpap_sync//:flat",
+        ":layers",
+    ],
+)

@@ -1,0 +1,19 @@
+// dot -Tpng -o2016-10-05-knowledge-vault.png 2016-10-05-knowledge-vault.dot
+digraph kg {
+	{
+		"Output - merged probability estimate" [fillcolor=green
+		shape=rectangle style=filled];
+		"Initial knowledge base" [fillcolor=red shape=rectangle
+		style=filled]; "Corpus of additional unstructured text"
+		[fillcolor=red shape=rectangle style=filled];
+	}
+	"Initial knowledge base" -> "Pattern mining (PRA/SFE)";
+	"Initial knowledge base" -> "Entity embeddings";
+	"Corpus of additional unstructured text" -> "New predictions from corpus";
+	"Initial knowledge base" -> "New predictions from corpus";
+	"Pattern mining (PRA/SFE)" -> "Probability estimates from patterns";
+	"Entity embeddings" -> "Probability estimates from entity embeddings";
+	"New predictions from corpus" -> "Output - merged probability estimate";
+	"Probability estimates from patterns" -> "Output - merged probability estimate";
+	"Probability estimates from entity embeddings" -> "Output - merged probability estimate";
+}

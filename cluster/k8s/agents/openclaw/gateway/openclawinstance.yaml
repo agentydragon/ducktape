@@ -5,11 +5,9 @@ metadata:
   namespace: openclaw-gateway
 spec:
   image:
-    repository: registry.allegedly.works/ducktape/openclaw-matrix
-    tag: "devel-20260401064319-79303ab" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    repository: ghcr.io/agentydragon/openclaw-matrix
+    tag: "devel-20260430104728-a5387f2" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
-    pullSecrets:
-      - name: harbor-pull-robot
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
     # but a dummy value satisfies the auth-profiles check.
@@ -213,6 +211,12 @@ spec:
                 input: ["text", "image"]
                 contextWindow: 200000
                 maxTokens: 64000
+      tools:
+        # Built-in exec is disabled. The Airlock plugin registers an exec
+        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
+        # injection, replacing the node-host exec path entirely.
+        exec:
+          security: deny
       plugins:
         entries:
           airlock:
@@ -222,12 +226,6 @@ spec:
                 url: "http://127.0.0.1:8767/mcp/"
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
-      tools:
-        # Built-in exec is disabled. The Airlock plugin registers an exec
-        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
-        # injection, replacing the node-host exec path entirely.
-        exec:
-          enabled: false
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
@@ -273,8 +271,8 @@ spec:
     persistence:
       enabled: true
       size: 20Gi
-      storageClass: proxmox-csi-retain
-  # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+      storageClass: local-path-proxmox
+  # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
   resources:
     requests:
       cpu: "250m"
@@ -293,7 +291,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock-auth-proxy
-      image: ghcr.io/agentydragon/auth-proxy:devel-20260401040557-df942a4 # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: ghcr.io/agentydragon/auth-proxy:devel-20260610075119-2c51610 # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
@@ -321,7 +319,7 @@ spec:
           cpu: 200m
           memory: 128Mi
     - name: exec-server
-      image: ghcr.io/agentydragon/openclaw-exec:devel-20260401040551-df942a4 # {"$imagepolicy": "flux-system:openclaw-exec"}
+      image: ghcr.io/agentydragon/openclaw-exec:devel-20260610075033-2c51610 # {"$imagepolicy": "flux-system:openclaw-exec"}
       # DirectExecServer entrypoint is baked into the base image.
       # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
       args: ["--host", "127.0.0.1", "--port", "8766"]
@@ -376,7 +374,7 @@ spec:
         - to:
             - namespaceSelector:
                 matchLabels:
-                  kubernetes.io/metadata.name: openclaw-mitmproxy
+                  kubernetes.io/metadata.name: agents-mitmproxy
           ports:
             - port: 8080
               protocol: TCP

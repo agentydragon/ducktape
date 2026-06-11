@@ -1,0 +1,21 @@
+rationale: |
+  `github_models.py` mixes GitHub API boundary types with internal domain
+  types in one flat module. API types that directly mirror GitHub response
+  shapes (`PRState`, `PullRequestSearch`, `PullRequestList`,
+  `GitHubPRResponse`, `HasBasicPR`, `GitHubError`) live alongside internal
+  domain types (`PRStatus`, `PRData`, `PRInfo`, `PRInfoRepr`,
+  `PRMergeability`, `coerce_prdata`). The API types use `Field(alias=...)`
+  and match GitHub field names; the domain types use different field names
+  (e.g. `pr_number` vs `number`) and add derived concepts.
+
+  Separate the GitHub API shapes into their own module (e.g.
+  `github_api_types.py`) so the boundary is explicit and domain types can
+  evolve independently.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/shared/github_models.py:
+        - [1, 189]
+    critic_scopes_expected_to_recall:
+      - [wt/shared/github_models.py]

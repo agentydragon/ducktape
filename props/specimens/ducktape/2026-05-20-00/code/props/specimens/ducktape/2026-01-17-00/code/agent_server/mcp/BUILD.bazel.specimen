@@ -1,0 +1,100 @@
+"""MCP servers aggregate and root-level tests."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Aggregate target for all MCP servers
+py_library(
+    name = "mcp",
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/mcp/chat",
+        "//agent_server/mcp/loop",
+        "//agent_server/mcp/matrix",
+        "//agent_server/mcp/runtime:mcp_runtime",
+        "//agent_server/mcp/ui",
+    ],
+)
+
+# Root-level mcp tests
+_TEST_DEPS = [
+    "//agent_server/testing",
+    "//mcp_infra/notifications",
+    "//mcp_infra/testing",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+py_test(
+    name = "test_chat_notifications",
+    srcs = ["test_chat_notifications.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/chat",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_test(
+    name = "test_chat_server",
+    srcs = ["test_chat_server.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/chat",
+        "//mcp_infra/stubs",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_test(
+    name = "test_notifications_envelope",
+    srcs = ["test_notifications_envelope.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + ["//agent_server/notifications"],
+)
+
+py_test(
+    name = "test_policy_gateway_middleware",
+    srcs = ["test_policy_gateway_middleware.py"],
+    imports = ["../.."],
+    tags = [
+        "requires_docker",
+        "requires_runtime_image",
+    ],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/approval_policy",
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_test(
+    name = "test_policy_gateway_middleware_unit",
+    srcs = ["test_policy_gateway_middleware_unit.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/approval_policy",
+        "@pypi//mcp",
+    ],
+)
+
+py_test(
+    name = "test_stdio_notifications_envelope",
+    srcs = ["test_stdio_notifications_envelope.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + ["//agent_server/notifications"],
+)
+
+py_test(
+    name = "test_ui_server",
+    srcs = ["test_ui_server.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/ui",
+        "//agent_server/server:handlers",
+    ],
+)

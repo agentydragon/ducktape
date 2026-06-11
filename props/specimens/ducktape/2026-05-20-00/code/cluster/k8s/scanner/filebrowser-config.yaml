@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebrowser-config
+  namespace: scanner
+data:
+  .filebrowser.json: |
+    {
+      "port": 8080,
+      "baseURL": "",
+      "address": "0.0.0.0",
+      "log": "stdout",
+      "database": "/data/.filebrowser/filebrowser.db",
+      "root": "/data"
+    }

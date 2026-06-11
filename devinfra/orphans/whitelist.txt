@@ -26,9 +26,7 @@ MODULE.bazel
 # Root-level CI and tool config files (yaml — not blanket *.yaml)
 .pre-commit-config.yaml
 .gitlab-ci.yml
-buildbuddy.yaml
 .ansible-lint.yaml
-.yamllint.yaml
 pnpm-workspace.yaml
 pnpm-lock.yaml
 
@@ -46,8 +44,9 @@ LICENSE*
 # Shell scripts (many are standalone utilities)
 *.sh
 
-# Age-encrypted secrets (only in .claude_hooks/secrets/)
-.claude_hooks/secrets/*.age
+# Profile YAML and Mako templates
+devinfra/claude/claude_hook/profiles/**/*.yaml
+devinfra/claude/claude_hook/profiles/**/*.mako
 
 # Nginx configs
 *.conf
@@ -56,7 +55,6 @@ LICENSE*
 found/**
 ansible/**
 nix/**
-k8s_old/**
 
 # k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
 cluster/k8s/**
@@ -97,9 +95,6 @@ finance/worthy/worthy/graph.js
 # Nix files
 *.nix
 
-# Helm charts (files auto-discovered by helm_chart rule, but .helmignore
-# is not part of the chart content — whitelist it)
-*.helmignore
 
 # npm manifests (never Bazel targets)
 **/package.json

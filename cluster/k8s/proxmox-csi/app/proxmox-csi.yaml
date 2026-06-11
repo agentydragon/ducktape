@@ -56,7 +56,7 @@ spec:
 
     node:
       enableTopology: true
-      # Only run on Proxmox nodes (VPS nodes use local-path/hcloud-volumes)
+      # Only run on Proxmox nodes.
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       resources:

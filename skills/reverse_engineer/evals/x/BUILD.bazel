@@ -1,0 +1,95 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "task",
+    srcs = ["task.py"],
+    data = [
+        "compose.yaml",
+        "//skills/reverse_engineer:reverse_engineer_tar",
+        "//skills/reverse_engineer/evals/tasks/go_crypto_server:go_crypto_server_garbled",
+        # Reference Go source + rubric + spec — bind-mounted into the
+        # rubric_judge's grader container at /grade/{reference,spec,rubric}/.
+        "//skills/reverse_engineer/evals/tasks/go_crypto_server:srcs",
+        "//skills/reverse_engineer/evals/tasks/go_crypto_server:RUBRIC.yaml",
+        "//skills/reverse_engineer/evals/tasks/go_crypto_server:SPEC.md",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//inspect_ai",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Inspect's Anthropic / OpenAI providers are imported lazily on first
+# call to `inspect_eval(model=...)`. They aren't transitive deps of
+# `@pypi//inspect_ai` itself (Inspect packages them as extras), so every
+# py_binary that calls `inspect_eval()` needs to bring them in directly.
+_INSPECT_PROVIDER_DEPS = [
+    "@pypi//anthropic",
+    "@pypi//inspect_ai",
+    "@pypi//openai",
+]
+
+# Shared CLI plumbing for run.py + validate_judge.py.
+py_library(
+    name = "_runner",
+    srcs = ["_runner.py"],
+    deps = ["@pypi//inspect_ai"],
+)
+
+# The real eval: react agent against the garbled binary, then rubric_judge
+# grades the recovered /work/.
+py_binary(
+    name = "run",
+    srcs = ["run.py"],
+    deps = [
+        ":_runner",
+        ":task",
+    ] + _INSPECT_PROVIDER_DEPS,
+)
+
+# Judge floor/ceiling sanity checks. NOT an agent eval — these only
+# exercise the rubric_judge scorer against a known /grade/recovered/.
+# Each `:validate_<case>` target is a thin wrapper around
+# `validate_judge.py --case=<case>`.
+py_binary(
+    name = "validate_judge",
+    srcs = ["validate_judge.py"],
+    deps = [
+        ":_runner",
+        ":task",
+    ] + _INSPECT_PROVIDER_DEPS,
+)
+
+py_binary(
+    name = "validate_empty",
+    srcs = ["validate_judge.py"],
+    args = ["--case=empty"],
+    main = "validate_judge.py",
+    deps = [
+        ":_runner",
+        ":task",
+    ] + _INSPECT_PROVIDER_DEPS,
+)
+
+py_binary(
+    name = "validate_reference",
+    srcs = ["validate_judge.py"],
+    args = ["--case=reference"],
+    main = "validate_judge.py",
+    deps = [
+        ":_runner",
+        ":task",
+    ] + _INSPECT_PROVIDER_DEPS,
+)
+
+# No Bazel `:view` target on purpose — Inspect's view server mounts its
+# frontend bundle through Starlette `StaticFiles`, which uses
+# `os.path.realpath` and refuses to serve files whose real path exits the
+# mounted directory. Under Bazel runfiles `dist/` is a real dir but the
+# `index.html` and `assets/*` inside it are symlinks pointing into
+# `external/.../site-packages/inspect_ai/_view/dist`, so every request
+# 404s. Use `uvx inspect-ai view start --log-dir eval_logs/<ts>` instead;
+# `.eval` log files are self-contained so the viewer doesn't need any of
+# this package's deps.

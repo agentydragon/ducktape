@@ -1,0 +1,52 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files([
+    "devenv.nix",
+])
+
+py_library(
+    name = "cli",
+    srcs = [
+        "cli.py",
+        "demo_plugin.py",
+        "plugins.py",
+    ],
+    imports = [".."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//cli_util",
+        "//wt/client",
+        "//wt/shared",
+        "//wt/shell",
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//pluggy",
+        "@pypi//typer",
+    ],
+)
+
+# Umbrella target that re-exports everything
+py_library(
+    name = "wt",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+        "//wt/client",
+        "//wt/server",
+        "//wt/shared",
+        "//wt/shell",
+    ],
+)
+
+py_binary(
+    name = "wt-cli",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    deps = [":cli"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":wt"],
+)

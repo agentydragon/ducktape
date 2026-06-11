@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# TODO: usage; spaces in name!
+
+COMMAND="git rm --cached --ignore-unmatch '$1'"
+git filter-branch -f --index-filter "$COMMAND" --prune-empty --tag-name-filter cat -- --all

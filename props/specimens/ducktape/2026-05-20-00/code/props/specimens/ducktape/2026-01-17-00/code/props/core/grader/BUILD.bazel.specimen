@@ -1,0 +1,236 @@
+"""Grader module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "submit_server",
+    srcs = ["submit_server.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//fastmcp",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "grader",
+    srcs = ["grader.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":submit_server",
+        "//mcp_infra",
+        "//props/core:agent_setup",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core/db:config",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "persistence",
+    srcs = ["persistence.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/db:models",
+        "//props/core/db:snapshots",
+    ],
+)
+
+py_library(
+    name = "drift_handler",
+    srcs = ["drift_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "//props/core/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "daemon",
+    srcs = ["daemon.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":drift_handler",
+        "//props/core:ids",
+        "//props/core/db:config",
+        "@pypi//asyncpg",
+    ],
+)
+
+py_library(
+    name = "daemon_manager",
+    srcs = ["daemon_manager.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_registry",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+    ],
+)
+
+py_library(
+    name = "snapshot_grader_env",
+    srcs = ["snapshot_grader_env.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":submit_server",
+        "//mcp_infra",
+        "//props/core:agent_setup",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core/db:config",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "edge_helpers",
+    srcs = ["edge_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_pkg/runtime",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "staleness",
+    srcs = ["staleness.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":persistence",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "//props/core/models:examples",
+        "@pypi//canonicaljson",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+_POSTGRES_TEST_ENV = {
+    "PGHOST": "127.0.0.1",
+    "PGPORT": "5433",
+}
+
+_POSTGRES_TEST_TAGS = [
+    "requires_postgres",
+]
+
+py_test(
+    name = "test_grader_sql_integration",
+    srcs = [
+        "conftest.py",
+        "test_grader_sql_integration.py",
+    ],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":grader",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_grading_edges_constraints",
+    srcs = ["test_grading_edges_constraints.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":grader",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_matchable_occurrences",
+    srcs = ["test_matchable_occurrences.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":grader",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        ":grader",
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

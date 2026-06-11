@@ -1,0 +1,219 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  interval: 24h
+  url: https://helm.goharbor.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  interval: 15m
+  chart:
+    spec:
+      chart: harbor
+      version: "1.18.2"
+      sourceRef:
+        kind: HelmRepository
+        name: harbor
+        namespace: harbor
+  install:
+    timeout: 10m
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 10m
+    crds: CreateReplace
+  values:
+    # Core Harbor configuration
+    # Traffic routed via Gateway API HTTPRoute → harbor-nginx service
+    expose:
+      type: clusterIP
+      tls:
+        enabled: false # TLS terminated at Gateway
+      clusterIP:
+        name: harbor
+        ports:
+          httpPort: 80
+
+    # External URL (used for OIDC redirects)
+    externalURL: https://registry.allegedly.works
+
+    # CRITICAL: Use Recreate strategy for RWO volumes (global setting for all components)
+    # Harbor registry (5Gi) and jobservice (1Gi) use RWO persistent volumes.
+    # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.
+    # Init:Error pods hold RWO volumes, preventing new pods from attaching.
+    # This has caused production deadlocks requiring manual intervention (3rd occurrence).
+    # See docs/RWO_VOLUME_DEPLOYMENT_STRATEGY.md for complete explanation.
+    # Brief downtime during updates is acceptable vs manual deadlock recovery.
+    updateStrategy:
+      type: Recreate
+
+    # Persistence configuration
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          storageClass: lvm-proxmox-hdd
+          size: 30Gi
+        jobservice:
+          jobLog:
+            storageClass: lvm-proxmox-hdd
+            size: 1Gi
+        redis:
+          storageClass: lvm-proxmox-hdd
+          size: 1Gi
+        # trivy PVC removed — trivy disabled below
+
+    # Admin password from SOPS-managed bootstrap secret.
+    harborAdminPassword: "" # Will be set via existingSecret
+    existingSecretAdminPassword: "harbor-admin-initial"
+    existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
+
+    # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
+    # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
+    # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
+    # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
+    core:
+      replicas: 1
+      podAnnotations:
+        reloader.stakater.com/auto: "true"
+      # Co-locate with Redis to avoid cross-node Cilium eBPF startup failures
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 20m
+        limits:
+          memory: 512Mi
+          cpu: 500m
+
+    registry:
+      replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    database:
+      type: external
+      external:
+        host: harbor-db-rw
+        port: "5432"
+        username: harbor
+        coreDatabase: registry
+        existingSecret: harbor-db-app
+        # CNPG auto-generates this secret; Harbor chart reads "password" key
+
+    redis:
+      type: internal
+      internal:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 20m
+          limits:
+            memory: 512Mi
+            cpu: 200m
+
+    # Trivy is Harbor's built-in container image vulnerability scanner
+    # (CVE database download + on-push scanning). Disabled — we don't
+    # consume scan results and it wastes 5Gi storage + ~1Gi memory limit.
+    trivy:
+      enabled: false
+
+    # Notary (optional)
+    notary:
+      enabled: false
+
+    jobservice:
+      replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      resources:
+        requests:
+          memory: 64Mi
+          cpu: 20m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    portal:
+      replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      resources:
+        requests:
+          memory: 32Mi
+          cpu: 20m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    # Metrics and monitoring
+    metrics:
+      enabled: true
+      core:
+        path: /metrics
+        port: 8001
+      registry:
+        path: /metrics
+        port: 8001
+      jobservice:
+        path: /metrics
+        port: 8001
+      exporter:
+        path: /metrics
+        port: 8001
+      # ServiceMonitor split into harbor/servicemonitor/ to avoid
+      # blocking Harbor deploys on monitoring-stack readiness.
+      serviceMonitor:
+        enabled: false
+
+    nginx:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+
+    exporter:
+      replicas: 1
+      # Co-locate with Redis (same reason as core)
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 50m
+        limits:
+          memory: 256Mi
+          cpu: 200m

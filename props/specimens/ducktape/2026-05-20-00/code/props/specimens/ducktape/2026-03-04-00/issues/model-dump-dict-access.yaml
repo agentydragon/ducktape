@@ -1,0 +1,13 @@
+rationale: |
+  `extract_input_text_content` (lines 31-42) dumps Pydantic models to dicts
+  via `model_dump()` then uses `.get()` for content extraction. The `InputItem`
+  union members have typed `content` fields. Use `isinstance` checks and direct
+  attribute access instead of dict traversal.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      openai_utils/text_extraction.py:
+        - [31, 42]

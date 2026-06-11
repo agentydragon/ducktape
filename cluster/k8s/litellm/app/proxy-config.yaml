@@ -93,9 +93,78 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  - model_name: gemma4-31b-it-q8_0-128k-openai-chat
+    litellm_params:
+      model: openai/gemma4:31b-it-q8_0
+      api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: gemma4-31b-it-q8_0-128k-ollama-native
+    litellm_params:
+      model: ollama/gemma4:31b-it-q8_0
+      api_base: http://ollama.ollama.svc.cluster.local:11434
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-4.5-anthropic
+    litellm_params:
+      model: anthropic/glm-4.5
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-4.5-air-anthropic
+    litellm_params:
+      model: anthropic/glm-4.5-air
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-4.6-anthropic
+    litellm_params:
+      model: anthropic/glm-4.6
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-4.7-anthropic
+    litellm_params:
+      model: anthropic/glm-4.7
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-5-anthropic
+    litellm_params:
+      model: anthropic/glm-5
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-5-turbo-anthropic
+    litellm_params:
+      model: anthropic/glm-5-turbo
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: glm-5.1-anthropic
+    litellm_params:
+      model: anthropic/glm-5.1
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
 litellm_settings:
   drop_params: true
-  success_callback:
-    - langfuse
-environment_variables:
-  LANGFUSE_HOST: http://langfuse-web.langfuse.svc.cluster.local:3000
+  callbacks:
+    - langfuse_otel

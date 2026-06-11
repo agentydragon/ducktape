@@ -1,0 +1,8 @@
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+
+# Link npm packages for this workspace member
+npm_link_all_packages(name = "node_modules")
+
+# TODO: js_run_binary for Vite build not working - artifact prefix conflict with node_modules
+# Build with: cd rspcache/admin_ui && npx vite build
+# TypeScript check with: cd rspcache/admin_ui && npx tsc --noEmit

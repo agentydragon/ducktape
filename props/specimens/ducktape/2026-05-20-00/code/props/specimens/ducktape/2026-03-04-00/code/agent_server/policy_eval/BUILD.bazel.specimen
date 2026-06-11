@@ -1,0 +1,72 @@
+"""Policy evaluation package - container-based policy execution."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_binary(
+    name = "shim",
+    srcs = ["shim.py"],
+    main = "shim.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        "//agent_server:approvals",
+        "//agent_server/policies:default_policy",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policies:scaffold",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+    ],
+)
+
+aspect_py_binary(
+    name = "shim_bin",
+    srcs = ["shim.py"],
+    main = "shim.py",
+    visibility = ["//agent_server:__pkg__"],
+    deps = [
+        ":constants",
+        "//agent_server:approvals",
+        "//agent_server/policies:default_policy",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policies:scaffold",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":shim_bin",
+    visibility = ["//agent_server:__pkg__"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "container",
+    srcs = ["container.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":runner",
+        "//agent_server/policies:policy_types",
+        "//agent_server/runtime:images",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        "//agent_server/policies:policy_types",
+        "//agent_server/runtime:images",
+        "@pypi//aiodocker",
+    ],
+)

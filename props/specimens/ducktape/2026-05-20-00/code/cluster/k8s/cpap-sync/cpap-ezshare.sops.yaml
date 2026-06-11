@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cpap-ezshare
+  namespace: cpap-sync
+stringData:
+  wifi_password: ENC[AES256_GCM,data:o2ns9FvJn7A=,iv:8W9L46hnm6g3XBBMFS/55vNZ3HFXEVf2dYPBmAHoNAA=,tag:vJtj7MLHs6AozZlsbcM40A==,type:str]
+  admin_password: ENC[AES256_GCM,data:Ve7SUUflHbo=,iv:Eq64l78/cKEoVkE+rTn71SBhf9z7rEsbQjTPilAfx+w=,tag:SfEPfsvJyISB76p1m9voBg==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3OEdUenBSR0l5S3krbVFs
+        REhsNS9pSDd4d3V2dzFZb2FBcmcrMkFqNWpVCk9IQVFFS04va3dnd2xhcFNrSS9V
+        VTFOZ0ZVcGkrRFVVR3pkdi9vamJUOFEKLS0tIE1rYnlMRjlxdHZQWHhybTVwMzZk
+        VmFud0g4L1dzdUFnclRHQjFTcUI3eWcKE6Dnd8DRKbEW8G1rDKQROfMITcMJYV8G
+        OYudsthagh/x6tWFO1Ur3uXcJySh/j0TMMg4rvOf+saljye1VPNEVQ==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDWDlTSDFyaTRZT3E3cEJi
+        cDBlWjJKRHltYVpHZGJYNjVZMit2QitKbGo4Cllyb2x2LzRJQjd4Sit3WGF3cG5I
+        NzRjK3BGc2c2UXVQejlQSVozbmZjSWsKLS0tIEUvRVhrQ2M3T2xVTnJqWlZ1b0NX
+        VWJwZ0RWR0hMNHlsZUpBMHlyZ1c5UkkKtW+ZpFdoA+rT25v2kgkcCDc+Y6UZhchY
+        /16OMzit1oAb9zgQT04idziVC5WWBGXfVAQ7vxYNPIJem+ehGOiBUQ==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-19T22:04:02Z"
+  mac: ENC[AES256_GCM,data:kBTjhXsEODkAgWZth6Fcesxv1/hf+sFVGh5HmsExSu888lYNtDwgMjfuRKAz3uc6wHaexPZNPes/rJ87VAsJVGmnfQ1el2HhXT/+Hwd4UGywlXwtXlazYBT/QZUZRMjClQy7Eo+7ieZIFmitM1Y/FCpzRLtaI1ku6lBVTqATUqI=,iv:pJNCY4ZsIvF3MM9eUf27Jc3DnSzm+EnylR7rb2nr4kg=,tag:Oiuv6n1TtWPM3fsVm6LqMw==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

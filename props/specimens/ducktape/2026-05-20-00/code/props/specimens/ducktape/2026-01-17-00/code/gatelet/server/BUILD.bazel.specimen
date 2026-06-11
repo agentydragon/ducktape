@@ -1,0 +1,181 @@
+"""Gatelet server package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_binary(
+    name = "server",
+    srcs = ["__main__.py"],
+    imports = ["../.."],
+    main = "__main__.py",
+    visibility = ["//gatelet:__pkg__"],
+    deps = [":server_lib"],
+)
+
+py_library(
+    name = "server_lib",
+    srcs = [
+        # server
+        "app.py",
+        "config.py",
+        "database.py",
+        "lifespan.py",
+        "models.py",
+        "prompts.py",
+        "security.py",
+        "shared.py",
+        # auth
+        "auth/dependencies.py",
+        "auth/handlers.py",
+        "auth/key_auth.py",
+        "auth/webhook_auth.py",
+        # endpoints
+        "endpoints/activitywatch.py",
+        "endpoints/admin.py",
+        "endpoints/challenge.py",
+        "endpoints/homeassistant.py",
+        "endpoints/webhook_receive.py",
+        "endpoints/webhook_view.py",
+        # migrations
+        "migrations/env.py",
+        "migrations/versions/001_initial_schema.py",
+        "migrations/versions/002_normalize_webhook_payload.py",
+        # tests (utilities only, not test files)
+        "tests/activitywatch_sample.py",
+        "tests/utils.py",
+    ],
+    data = glob([
+        "**/*.css",
+        "**/*.html",
+        "**/*.jinja2",
+    ]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//aqipy",
+        "@pypi//asyncpg",
+        "@pypi//aw_client",
+        "@pypi//aw_core",
+        "@pypi//compact_json",
+        "@pypi//cryptography",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//fastapi_sessions",
+        "@pypi//fastapi_users",
+        "@pypi//fastapi_users_db_sqlalchemy",
+        "@pypi//geopy",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+        "@pypi//homeassistant_api",
+        "@pypi//jinja2",
+        "@pypi//meteostat",
+        "@pypi//oura",
+        "@pypi//passlib",
+        "@pypi//psycopg2_binary",
+        "@pypi//pydantic",
+        "@pypi//pyowm",
+        "@pypi//python_metar",
+        "@pypi//python_multipart",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+        "@pypi//uvicorn",
+    ],
+)
+
+# Common test dependencies
+_TEST_DEPS = [
+    ":server_lib",
+    "//gatelet:manage_lib",
+    "//gatelet:reporter_lib",
+    "@pypi//httpx",
+    "@pypi//playwright",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+_TEST_DATA = ["//gatelet:gatelet.toml"]
+
+py_test(
+    name = "test_server_core",
+    srcs = [
+        "conftest.py",
+        "pytest_runner.py",
+        "test_admin_webhook_e2e.py",
+        "test_report_battery.py",
+        "test_report_event.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_auth",
+    srcs = [
+        "auth/test_handlers.py",
+        "auth/test_key_auth.py",
+        "auth/test_key_path_auth.py",
+        "auth/test_webhook_auth.py",
+        "conftest.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_admin",
+    srcs = [
+        "conftest.py",
+        "endpoints/test_admin_cr_sessions.py",
+        "endpoints/test_admin_keys.py",
+        "endpoints/test_admin_login.py",
+        "endpoints/test_admin_logs.py",
+        "endpoints/test_admin_sessions.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_webhook",
+    srcs = [
+        "conftest.py",
+        "endpoints/test_webhook_receive.py",
+        "endpoints/test_webhook_view.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_other",
+    srcs = [
+        "conftest.py",
+        "endpoints/test_activitywatch.py",
+        "endpoints/test_challenge.py",
+        "endpoints/test_compute_correct_option.py",
+        "endpoints/test_homeassistant.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":server_lib"],
+)

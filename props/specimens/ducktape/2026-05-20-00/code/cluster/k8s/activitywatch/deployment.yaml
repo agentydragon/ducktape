@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+  labels:
+    app.kubernetes.io/name: activitywatch
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: activitywatch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: activitywatch
+    spec:
+      serviceAccountName: activitywatch
+      securityContext:
+        fsGroup: 999
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        - name: aw-server
+          image: ghcr.io/agentydragon/aw-server:devel-20260412063319-aad53eb # {"$imagepolicy": "flux-system:activitywatch"}
+          ports:
+            - containerPort: 5600
+              name: http
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: readonly-proxy
+          image: nginx:alpine
+          ports:
+            - containerPort: 5601
+              name: readonly
+          volumeMounts:
+            - name: readonly-proxy-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 2
+            periodSeconds: 10
+        - name: nebula
+          image: ghcr.io/slackhq/nebula:v1.10.0
+          command: ["nebula", "-config", "/etc/nebula/config.yaml"]
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: dev-tun
+              mountPath: /dev/net/tun
+            - name: nebula-certs
+              mountPath: /etc/nebula/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: nebula-certs
+              mountPath: /etc/nebula/host.crt
+              subPath: host.crt
+              readOnly: true
+            - name: nebula-certs
+              mountPath: /etc/nebula/host.key
+              subPath: host.key
+              readOnly: true
+            - name: nebula-config
+              mountPath: /etc/nebula/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: activitywatch-data
+        - name: readonly-proxy-config
+          configMap:
+            name: activitywatch-readonly-proxy
+        - name: dev-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        - name: nebula-certs
+          secret:
+            secretName: activitywatch-nebula-certs
+        - name: nebula-config
+          configMap:
+            name: activitywatch-nebula-config

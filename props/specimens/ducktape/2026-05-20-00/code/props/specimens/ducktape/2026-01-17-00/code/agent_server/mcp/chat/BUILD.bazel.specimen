@@ -1,0 +1,19 @@
+"""MCP Chat server - inter-agent messaging."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "chat",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/persist",
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "@pypi//aiosqlite",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

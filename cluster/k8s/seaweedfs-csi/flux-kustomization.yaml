@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: seaweedfs-csi
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/seaweedfs-csi
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: seaweedfs-csi-driver
+      namespace: seaweedfs-csi-system
+  dependsOn:
+    - name: seaweedfs-cluster

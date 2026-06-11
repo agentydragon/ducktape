@@ -1,0 +1,77 @@
+# Periodic backup of grocy-sf's grocy-config-ovh PVC into a SeaweedFS-backed
+# PVC. Same pattern as cluster/k8s/agents/tana-mcp/volsync-backup.yaml.
+#
+# Direction: OVH local-path (primary, hot) → seaweedfs-ovh (cold, SeaweedFS
+# replicates across kimsufi nodes). Backup PVC is a restore point before any
+# node-rename operation that touches grocy-config-ovh's pinned hostname.
+#
+# copyMethod: Direct (no VolumeSnapshotClass installed). Mover and live grocy
+# pod both bind-mount the same host path; backups may catch torn SQLite
+# writes occasionally — acceptable for crash-consistent restore.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-config-ovh-backup
+  namespace: grocy-sf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: grocy-config-ovh-backup
+  namespace: grocy-sf
+spec:
+  rsyncTLS:
+    destinationPVC: grocy-config-ovh-backup
+    copyMethod: Direct
+    serviceType: ClusterIP
+    moverSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: grocy-config-ovh-backup
+  namespace: grocy-sf
+spec:
+  sourcePVC: grocy-config-ovh
+  trigger:
+    schedule: "23 */6 * * *"
+  rsyncTLS:
+    copyMethod: Direct
+    keySecret: volsync-rsync-tls-grocy-config-ovh-backup
+    address: volsync-rsync-tls-dst-grocy-config-ovh-backup.grocy-sf.svc
+    port: 8000
+    moverSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]

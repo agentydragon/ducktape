@@ -1,0 +1,352 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//tools/deps:check.bzl", "assert_no_deps")
+load("//tools/testing:defs.bzl", "py_test")
+
+# Core models - no MCP dependencies, usable outside fastmcp
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+    ],
+)
+
+# Subprocess execution utility - no MCP dependencies
+# Includes DirectExecArgs and run_direct_exec for in-container agent loops
+py_library(
+    name = "subprocess",
+    srcs = ["subprocess.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+# Image reading utility (shared by direct, seatbelt, bwrap, docker)
+py_library(
+    name = "read_image",
+    srcs = ["read_image.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//mcp",
+    ],
+)
+
+# Direct (unsandboxed) exec MCP server
+py_library(
+    name = "direct",
+    srcs = ["direct.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        ":subprocess",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_binary(
+    name = "direct_bin",
+    imports = ["../.."],
+    main_module = "mcp_infra.exec.direct",
+    visibility = ["//visibility:public"],
+    deps = [":direct"],
+)
+
+# ── OCI Image (approval-gate exec backend) ───────────────────────────────────
+
+aspect_py_binary(
+    name = "direct_aspect_bin",
+    imports = ["../.."],
+    main = "direct.py",
+    deps = [":direct"],
+)
+
+py_image_layer(
+    name = "direct_layers",
+    binary = ":direct_aspect_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "direct_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("direct_aspect_bin"),
+    env = py_image_env(binary_name = "direct_aspect_bin"),
+    tars = [":direct_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "direct_load",
+    image = ":direct_image",
+    repo_tags = ["approval-gate-exec-backend:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "direct_push",
+    image = ":direct_image",
+    remote_tags = ["latest"],
+    repository = "registry.allegedly.works/approval-gate/exec-backend",
+)
+
+# macOS seatbelt sandbox exec MCP server
+py_library(
+    name = "seatbelt",
+    srcs = ["seatbelt.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/seatbelt:model",
+        "//mcp_infra/seatbelt:runner",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+# Linux bubblewrap sandbox exec MCP server
+py_library(
+    name = "bwrap",
+    srcs = ["bwrap.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        ":subprocess",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+# Docker container exec MCP server
+py_library(
+    name = "docker",
+    srcs = [
+        "docker/container_session.py",
+        "docker/launcher.py",
+        "docker/server.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        "//mcp_infra:constants",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/enhanced:simple",
+        "//util:logging",
+        "//util:typer",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//typer_di",
+    ],
+)
+
+py_library(
+    name = "matchers",
+    srcs = ["matchers.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_test(
+    name = "test_direct",
+    srcs = ["test_direct.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":direct",
+        ":models",
+        ":subprocess",
+        "//mcp_infra/testing:exec_stubs",
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_seatbelt",
+    srcs = ["test_seatbelt.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        ":seatbelt",
+        "//mcp_infra:_markers",
+        "//mcp_infra/seatbelt:model",
+        "//mcp_infra/testing:exec_stubs",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bwrap",
+    srcs = ["test_bwrap.py"],
+    requires_docker = True,
+    deps = [
+        ":bwrap",
+        ":conftest",
+        ":models",
+        "//mcp_infra/testing:exec_stubs",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_docker",
+    srcs = ["test_docker.py"],
+    data = ["//third_party/debian_slim:load"],
+    main = "test_docker.py",
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Verify models and subprocess have no MCP/fastmcp dependencies
+assert_no_deps(
+    name = "test_models_no_mcp_deps",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+    targets = ["//mcp_infra/exec:models"],
+)
+
+assert_no_deps(
+    name = "test_subprocess_no_mcp_deps",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+    targets = ["//mcp_infra/exec:subprocess"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/testing:docker_fixtures",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils/testing:fixtures",
+        "//third_party/debian_slim:fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_docker_unit",
+    srcs = ["test_docker_unit.py"],
+    data = ["//third_party/debian_slim:load"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":docker",
+        ":models",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
+    name = "test_exec_roundtrip",
+    srcs = ["test_exec_roundtrip.py"],
+    data = ["//third_party/debian_slim:load"],
+    imports = ["../.."],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:logging_handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:turn_limit",
+        "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:responses",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils:model",
+        "//openai_utils/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = ["test_mcp_integration.py"],
+    data = ["//third_party/debian_slim:load"],
+    imports = ["../.."],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":direct",
+        ":docker",
+        ":models",
+        ":subprocess",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:simple_servers",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)

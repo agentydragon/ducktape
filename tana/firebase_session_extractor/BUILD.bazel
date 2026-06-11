@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "firebase_session_extractor",
+    srcs = ["main.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:rusty-leveldb",
+        "@crates//:v8_valueserializer",
+    ],
+)

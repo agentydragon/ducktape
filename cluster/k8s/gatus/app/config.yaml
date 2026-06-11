@@ -1,5 +1,3 @@
-# TODO: Consider consolidating the many per-app PostgreSQL instances
-# in the cluster into a shared instance, and using postgres backend.
 security:
   oidc:
     issuer-url: https://auth.allegedly.works/application/o/gatus/
@@ -9,8 +7,8 @@ security:
     scopes: [openid]
 
 storage:
-  type: sqlite
-  path: /data/gatus.db
+  type: postgres
+  path: ${GATUS_DB_URI}
 
 endpoints:
   # ── core ─────────────────────────────────────────────────────────────
@@ -22,14 +20,7 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Vault
-    group: core
-    url: https://vault.allegedly.works/v1/sys/health
-    interval: 60s
-    conditions:
-      - "[STATUS] == any(200, 429)" # 429 = standby node, still healthy
-
-  - name: Gitea
+  - name: Forgejo
     group: core
     url: https://git.allegedly.works/api/v1/version
     interval: 60s
@@ -141,23 +132,30 @@ endpoints:
 
   # ── cluster ───────────────────────────────────────────────────────────
 
-  - name: Loki
+  - name: Loki write
     group: cluster
-    url: http://loki.loki.svc.cluster.local:3100/ready
+    url: http://loki-write.loki.svc.cluster.local:3100/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Loki read
+    group: cluster
+    url: http://loki-read.loki.svc.cluster.local:3100/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"
 
   - name: Loki labels API
     group: cluster
-    url: http://loki.loki.svc.cluster.local:3100/loki/api/v1/labels
+    url: http://loki-read.loki.svc.cluster.local:3100/loki/api/v1/labels
     interval: 120s
     conditions:
       - "[STATUS] == 200"
 
-  - name: Prometheus
+  - name: Mimir
     group: cluster
-    url: http://monitoring-prometheus.monitoring.svc.cluster.local:9090/-/ready
+    url: http://mimir-gateway.monitoring.svc.cluster.local/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"
@@ -207,9 +205,16 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Grocy
+  - name: Grocy SF
     group: services
-    url: http://grocy.grocy.svc.cluster.local:80/login
+    url: http://grocy.grocy-sf.svc.cluster.local:80/login
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Grocy Vallejo
+    group: services
+    url: http://grocy.grocy-vallejo.svc.cluster.local:80/login
     interval: 60s
     conditions:
       - "[STATUS] == 200"
@@ -227,3 +232,17 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == any(200, 302)"
+
+  - name: kubectl-sandbox-mcp
+    group: services
+    url: http://kubectl-sandbox-mcp.kubectl-sandbox-mcp.svc.cluster.local:8080/healthz
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: kubectl-passthrough-mcp
+    group: services
+    url: http://kubectl-passthrough-mcp.kubectl-passthrough-mcp.svc.cluster.local:8080/healthz
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"

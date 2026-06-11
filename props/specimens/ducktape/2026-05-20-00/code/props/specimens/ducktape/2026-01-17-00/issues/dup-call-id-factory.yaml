@@ -1,0 +1,28 @@
+rationale: |
+  `call_id_gen` / `make_tool_call` / `make_tool_call_output` in
+  `agent_core_testing/fixtures.py` (lines 217-261) and
+  `agent_server/conftest.py` (lines 468-504) are duplicated loose-closure
+  fixtures that hand-roll sequential ID generation and tool call construction.
+  `ItemFactory` in `openai_utils/builders.py` (line 32) already provides the
+  same pattern as a proper class (`next_call_id()`, `tool_call()`) for the
+  OpenAI layer. The agent-event fixtures do the same thing — generate IDs,
+  build named tool calls with JSON args — but for `ToolCall` events instead
+  of `FunctionCallItem`.
+
+  These are two closely related pieces of code doing the same thing in two
+  different ways. The agent-event fixtures should use or extend `ItemFactory`
+  rather than reimplementing ID generation as `{"count": 0}` dict mutation
+  in closures, duplicated across two files.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core_testing/fixtures.py:
+        - [217, 261]
+      agent_server/conftest.py:
+        - [468, 504]
+      openai_utils/builders.py:
+        - [32, 47]
+    critic_scopes_expected_to_recall:
+      - [agent_core_testing/fixtures.py, openai_utils/builders.py]
+      - [agent_server/conftest.py, openai_utils/builders.py]

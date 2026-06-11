@@ -25,17 +25,19 @@ cgroup:
   autoMount:
     enabled: false
 
-# Account for double encapsulation (VXLAN + Nebula overlay)
-# eth0 MTU (1500) - VXLAN overhead (50) - Nebula overhead (~38) = 1412
-# Verify with: ping -M do -s 1380 <nebula-ip> after Nebula deployment.
-# NOTE: MTU accounts for Nebula + VXLAN double encapsulation.
-MTU: 1412
+# MTU = the UNDERLYING network MTU Cilium tunnels VXLAN over (= nebula1, see
+# nebula.tf), NOT the pod MTU. Cilium subtracts the 50-byte VXLAN overhead itself,
+# so MTU=1420 -> 1370 cross-node pod MTU. Do NOT set the desired pod MTU here:
+# MTU=1370 wrongly yields a 1320 pod MTU (measured 2026-06-08).
+# Full model + layering: cluster/docs/network.md. Helm key is uppercase `MTU`.
+MTU: 1420
 
 # Gateway API: replaces ingress-nginx (retired March 2026)
 # Reuses per-node Envoy DaemonSet — zero additional controllers.
-# hostNetwork binds ports 80/443 directly on VPS nodes (same as ingress-nginx did).
+# hostNetwork binds ports 80/443 directly on gateway nodes.
 gatewayAPI:
   enabled: true
+  enableAppProtocol: true
   hostNetwork:
     enabled: true
     nodes:
@@ -54,17 +56,6 @@ envoy:
         - NET_ADMIN
         - SYS_ADMIN
         - NET_BIND_SERVICE
-
-# Mutual authentication via SPIRE — disabled for now.
-# SPIRE install times out during bootstrap on Talos (SPIRE pods never
-# start despite namespace creation). TODO: investigate Talos compatibility
-# and re-enable once Gateway API migration is complete.
-# authentication:
-#   mutual:
-#     spire:
-#       enabled: true
-#       install:
-#         enabled: true
 
 # Observability (optional, not networking-critical)
 hubble:

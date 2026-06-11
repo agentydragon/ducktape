@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gitea-admin-token
+  namespace: flux-system
+  annotations:
+    description: "Gitea admin API token generation for Terraform - DISABLED: Not used, pending removal"
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/gitea/admin-token
+  prune: true
+  wait: true
+  dependsOn:
+    - name: gitea

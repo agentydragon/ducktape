@@ -1,0 +1,11 @@
+rationale: |
+  `bad_template.py` is dead test data — nothing in the codebase imports or
+  references it. Remove the file.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/testing/testdata/approval_policy/bad_template.py:
+        - [1, 23]

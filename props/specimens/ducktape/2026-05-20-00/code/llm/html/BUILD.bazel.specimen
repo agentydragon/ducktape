@@ -1,0 +1,39 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+filegroup(
+    name = "content_files",
+    srcs = [
+        "base.html.j2",
+        "coding.md",
+        "index.md",
+        "stats.html.j2",
+        "style.css",
+        "tana.md",
+        "verify.html.j2",
+    ],
+    visibility = ["//llm/html:__subpackages__"],
+)
+
+# --- OCI Image ---
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint(
+        "server_bin",
+        binary_package = "llm/html/llm_html",
+    ),
+    env = py_image_env(
+        "server_bin",
+        binary_package = "llm/html/llm_html",
+    ),
+    exposed_ports = ["9000/tcp"],
+    tars = ["//llm/html/llm_html:layers"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["llm-html:latest"],
+)

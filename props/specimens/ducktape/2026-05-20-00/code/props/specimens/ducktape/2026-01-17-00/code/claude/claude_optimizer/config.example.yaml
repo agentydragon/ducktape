@@ -1,0 +1,82 @@
+pre_task_setup_script: ""
+seeds_file: "data/seeds.yaml"
+graders_file: "data/graders_consolidated.yaml"
+
+rollouts:
+  max_parallel: 16
+  max_turns: 100
+  bash_timeout_ms: 10000
+
+prompt_engineer:
+  model: "o3"
+  reasoning_effort: "high"
+
+grader:
+  model: "o3"
+  reasoning_effort: "high"
+
+summarizer:
+  model: "o3"
+  max_tokens: 15000
+
+tokens:
+  max_response_tokens: 30000
+  reasoning_buffer_tokens: 20000
+  max_context_tokens: 200000
+  max_files_tokens: 100000
+
+truncation:
+  max_file_size_grading: 30000
+  max_file_size_pattern_analysis: 30000
+  log_message_length: 120
+
+exclude_patterns:
+  # Gitignore-style pattern matching:
+  # - "*.log"          # Any .log file anywhere
+  # - "/config.json"   # Only in root directory (leading slash = root-only)
+  # - "temp/"          # Any directory named temp (trailing slash = directory)
+  # - "build/**"       # Everything under build directories
+  # - "!debug.log"     # Negation (re-include this specific file)
+  # - ".aws/"          # AWS credentials directory
+  # - "**/.cache/**"   # Any .cache directory at any depth
+
+  # System files that should never reach grader
+  - "CLAUDE.md" # Claude system prompt
+  - ".gitignore"
+  - ".dockerignore"
+  - ".DS_Store" # Mac filesystem metadata
+
+  # Authentication & secrets (CRITICAL FOR SECURITY)
+  - ".aws/" # AWS credentials
+  - ".azure/" # Azure credentials
+  - "*.key" # Private keys
+  - "*.pem" # SSL certificates
+  - "*.p12" # PKCS#12 certificates
+  - ".env*" # Environment files with secrets
+  - "secrets.*" # Any secrets files
+
+  # Build artifacts & caches
+  - "*.pyc"
+  - "*.pyo"
+  - "**/__pycache__/"
+  - "**/.pytest_cache/"
+  - "**/.mypy_cache/"
+  - "**/node_modules/"
+  - "**/build/"
+  - "**/dist/"
+  - "**/.venv/"
+  - "**/venv/"
+
+  # Temporary & log files
+  - "*.tmp"
+  - "*.log"
+  - "*.swp"
+  - "*.bak"
+
+  # Version control
+  - "**/.git/"
+  - "**/.svn/"
+
+  # IDE files
+  - "**/.vscode/"
+  - "**/.idea/"

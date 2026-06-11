@@ -1,0 +1,25 @@
+rationale: |
+  Discriminator function uses imprecise `Any` typing and redundant getattr calls.
+
+  The function handles dict (JSON input) explicitly, then uses getattr for the else
+  branch. But the else branch only receives model instances that all have `tool_name`
+  as a required field. The imprecise typing forces defensive getattr that wouldn't
+  be needed with proper types.
+
+  Fix: Extract the union of tool call models to a type alias, use it in the function
+  signature, then type narrowing after isinstance(v, dict) proves v has .tool_name.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py:
+        - [135, 155]
+    note: >-
+      v: Any too imprecise - extract union type alias, use in signature, replace getattr
+      with direct .tool_name access after narrowing
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py

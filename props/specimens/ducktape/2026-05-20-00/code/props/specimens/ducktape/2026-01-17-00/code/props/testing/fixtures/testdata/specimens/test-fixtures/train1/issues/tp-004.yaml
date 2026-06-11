@@ -1,0 +1,18 @@
+rationale: "Duplicated pattern: binary operation wrapper functions.
+
+  Both add() and multiply() follow the same pattern with minimal documentation.
+
+  Consider extracting a common abstraction or improving documentation consistency.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      add.py:
+        - [4, 6]
+      multiply.py:
+        - [4, 6]
+    critic_scopes_expected_to_recall:
+      - - add.py
+      - - multiply.py

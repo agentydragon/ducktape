@@ -1,0 +1,53 @@
+# Decrypt CI secrets from git using SOPS age key.
+#
+# Installs sops, runs devinfra/secrets/ci_env.sh, and exports the decrypted
+# secrets as environment variables for subsequent steps.
+#
+# Usage:
+#   - uses: ./.github/actions/setup-ci-secrets
+#     with:
+#       sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+#
+#   # Subsequent steps have BUILDBUDDY_API_KEY, etc. in env
+name: Setup CI Secrets
+description: Decrypt SOPS-encrypted CI secrets and export as env vars
+
+inputs:
+  sops_age_key:
+    description: "SOPS age private key for CI decryption"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install sops
+      shell: bash
+      run: |
+        if command -v sops &>/dev/null; then
+          echo "sops already on PATH: $(sops --version)"
+        else
+          SOPS_VERSION="3.9.4"
+          curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
+          chmod +x /usr/local/bin/sops
+          sops --version
+        fi
+
+    - name: Decrypt CI secrets
+      shell: bash
+      env:
+        SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
+      run: |
+        source devinfra/secrets/ci_env.sh
+        # Mask secret values so they don't appear in logs.
+        # GITHUB_TOKEN / GHCR_TOKEN are intentionally absent — GHCR pushes
+        # now use the workflow-scoped secrets.GITHUB_TOKEN plumbed directly
+        # through bb remote env_overrides (see push-images.yml).
+        for var in BUILDBUDDY_API_KEY ATTIC_TOKEN \
+                   PROPS_REGISTRY_PASSWORD GH_RELEASE_PAT; do
+          val="${!var:-}"
+          if [ -n "$val" ]; then
+            echo "::add-mask::$val"
+          fi
+        done
+        # Export to GITHUB_ENV for subsequent steps
+        env | grep -E '^(BUILDBUDDY_API_KEY|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"

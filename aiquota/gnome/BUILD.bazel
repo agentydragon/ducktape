@@ -1,0 +1,87 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//devinfra/python:defs.bzl", "py_test")
+
+pkg_files(
+    name = "extension_files",
+    # Source files that GNOME Shell loads at runtime. Single source of
+    # truth: the zip target, local devkit launcher, and render tests all
+    # consume this package mapping.
+    srcs = [
+        "extension.js",
+        "icons/claude-symbolic.svg",
+        "icons/openai-symbolic.svg",
+        "icons/zai-symbolic.svg",
+        "metadata.json",
+        "stylesheet.css",
+    ],
+    strip_prefix = strip_prefix.from_pkg(),
+    visibility = ["//visibility:public"],
+)
+
+# GNOME extension zip distribution. Layout is the standard convention used by
+# `gnome-extensions pack` and `gnome-extensions install --from-file`: the
+# extension's files live at the root of the archive (no UUID-prefixed
+# subdirectory). This is what gets shipped to users via the CI release pin
+# and what the render tests + devkit launcher consume.
+pkg_zip(
+    name = "aiquota_zip",
+    srcs = [":extension_files"],
+    out = "aiquota.zip",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "fixtures",
+    testonly = True,
+    srcs = glob(["test_fixtures/*.json"]),
+)
+
+filegroup(
+    name = "snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__snapshots__/*.png"],
+        allow_empty = True,
+    ),
+)
+
+py_test(
+    name = "test_render",
+    size = "medium",
+    srcs = ["test_render.py"],
+    data = [
+        ":aiquota_zip",
+        ":fixtures",
+        ":snapshots",
+        "//gnome/test_image:gnome_shell_test",
+    ],
+    requires_docker = True,
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:png_diff",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
+
+# Local iteration: install the bazel-built extension zip into the user's
+# gnome-shell extension dir and launch a nested devkit shell.
+sh_binary(
+    name = "devkit",
+    srcs = ["devkit.sh"],
+    data = [
+        ":aiquota_zip",
+        # In-repo CLI so the spawned gnome-shell extension hits the local
+        # build instead of whatever `aiquota` is on PATH (whole point of
+        # devkit is to iterate without re-installing).
+        "//aiquota",
+    ],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

@@ -1,0 +1,15 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gitea-namespace
+  namespace: flux-system
+spec:
+  suspend: true
+  # Wyrm2 offline during relocation — suspended until hardware is back up.
+  interval: 1h
+  path: ./cluster/k8s/gitea/namespace
+  prune: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 1m

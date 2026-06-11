@@ -1,0 +1,167 @@
+rules:
+  # String concatenation for structured data (from your site)
+  - id: no-string-url-building
+    patterns:
+      - pattern-either:
+          - pattern: $URL + "?" + $PARAMS
+          - pattern: $URL + "&" + $PARAMS
+          - pattern: f"{$URL}?{$PARAMS}"
+          - pattern: f"{$URL}&{$PARAMS}"
+          - pattern: f"http://{$HOST}/{$PATH}"
+          - pattern: f"https://{$HOST}/{$PATH}"
+    message: Use urllib.parse for URL building instead of string concatenation
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      references:
+        - https://llm.agentydragon.com/coding
+
+  - id: no-string-sql-building
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "SELECT * FROM " + $TABLE
+          - pattern: |
+              f"SELECT * FROM {$TABLE}"
+          - pattern: |
+              "INSERT INTO " + $TABLE + " VALUES (" + $VALUES + ")"
+          - pattern: |
+              f"INSERT INTO {$TABLE} VALUES ({$VALUES})"
+          - pattern: |
+              "WHERE " + $COLUMN + " = '" + $VALUE + "'"
+    message: Use parameterized queries instead of string concatenation for SQL
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89"
+
+  - id: no-string-html-building
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "<" + $TAG + ">" + $CONTENT + "</" + $TAG + ">"
+          - pattern: |
+              f"<{$TAG}>{$CONTENT}</{$TAG}>"
+          - pattern: |
+              '<div class="' + $CLASS + '">'
+    message: Use proper HTML templating or escaping libraries
+    languages: [python]
+    severity: ERROR
+
+  # Exception handling (from your site)
+  - id: no-broad-except
+    patterns:
+      - pattern: |
+          try:
+            ...
+          except Exception:
+            ...
+      - pattern-not: |
+          try:
+            ...
+          except Exception:
+            raise
+      - pattern-not: |
+          try:
+            ...
+          except Exception as $E:
+            $LOG(...)
+            raise
+    message: Catch specific exceptions instead of broad Exception
+    languages: [python]
+    severity: ERROR
+
+  - id: no-silent-except
+    patterns:
+      - pattern: |
+          try:
+            ...
+          except ...:
+            pass
+      - pattern-not: |
+          try:
+            ...
+          except ...:
+            pass  # Explicitly ignoring
+    message: Don't silently ignore exceptions
+    languages: [python]
+    severity: ERROR
+
+  # Avoid getattr/hasattr (from your site)
+  - id: no-getattr-with-literal
+    patterns:
+      - pattern: getattr($OBJ, "$ATTR")
+      - pattern: getattr($OBJ, '$ATTR')
+    message: Use direct attribute access instead of getattr with string literals
+    languages: [python]
+    severity: WARNING
+    fix: $OBJ.$ATTR
+
+  - id: no-hasattr
+    patterns:
+      - pattern: hasattr($OBJ, ...)
+    message: Prefer direct attribute access with try/except AttributeError
+    languages: [python]
+    severity: WARNING
+
+  # DRY violations
+  - id: repeated-string-literals
+    patterns:
+      - pattern: |
+          $X = "$STRING"
+          ...
+          $Y = "$STRING"
+          ...
+          $Z = "$STRING"
+    message: Extract repeated string literals to constants
+    languages: [python]
+    severity: WARNING
+
+  # Redundant variables (from your site)
+  - id: redundant-variable-return
+    patterns:
+      - pattern: |
+          $VAR = $EXPR
+          return $VAR
+    message: Return expression directly instead of assigning to variable
+    languages: [python]
+    severity: INFO
+    fix: return $EXPR
+
+  # Missing type hints for complex types
+  - id: untyped-dict-return
+    patterns:
+      - pattern: |
+          def $FUNC(...) -> dict:
+            ...
+    message: Use specific TypedDict or dict[str, X] instead of bare dict
+    languages: [python]
+    severity: WARNING
+
+  # JSON string building
+  - id: no-string-json-building
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "{" + ... + "}"
+          - pattern: |
+              '{"' + $KEY + '": "' + $VALUE + '"}'
+          - pattern: |
+              f'{{"$KEY": "{$VALUE}"}}'
+    message: Use json.dumps() instead of string concatenation for JSON
+    languages: [python]
+    severity: ERROR
+
+  # Early return pattern encouragement
+  - id: prefer-early-return
+    patterns:
+      - pattern: |
+          if $COND:
+            ...
+          else:
+            return $VALUE
+    message: Consider using early return pattern to reduce nesting
+    languages: [python]
+    severity: INFO

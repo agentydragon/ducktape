@@ -1,0 +1,63 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "apt.yaml",
+    "apt.lock.json",
+])
+
+pkg_files(
+    name = "boot_script",
+    testonly = True,
+    srcs = ["boot.sh"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "boot_script_layer",
+    testonly = True,
+    srcs = [":boot_script"],
+)
+
+# Headless gnome-shell + Xvfb + dbus + scrot, plus a single helper:
+#
+#   /usr/local/bin/boot.sh  — one-shot: postinst-equivalent setup, starts
+#                             Xvfb, forks a long-lived session bus,
+#                             writes its address to /tmp/dbus.env, blocks.
+#                             The test driver runs this once per container.
+#
+# Per-fixture orchestration (start gnome-shell, poll for ready/active,
+# screenshot, kill) lives in the Python test driver — clearer error
+# attribution per step than the equivalent bash polling.
+#
+# The container has no extension or fixture baked in — the test driver
+# bind-mounts the live extension dir from the source tree and the chosen
+# fixture JSON at run time, so iterating on extension code does not
+# rebuild the image. The GNOME Shell.Screenshot D-Bus API is gated on
+# global.context.unsafe_mode in modern GNOME and rejects external
+# callers, so we screenshot at the X layer directly with scrot.
+oci_image(
+    name = "gnome_shell_test_image",
+    testonly = True,
+    base = "@debian_trixie_slim_linux_amd64",
+    cmd = [
+        "sleep",
+        "infinity",
+    ],
+    tars = [
+        "@gnome_shell_test//:flat",
+        ":boot_script_layer",
+    ],
+)
+
+oci_layout_rloc(
+    name = "gnome_shell_test",
+    testonly = True,
+    image = ":gnome_shell_test_image",
+    visibility = ["//visibility:public"],
+)

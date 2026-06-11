@@ -29,30 +29,37 @@ spec:
   values:
     externalConfigMap: gatus-config
 
+    env:
+      GATUS_DB_URI:
+        valueFrom:
+          secretKeyRef:
+            name: gatus-db-app
+            key: uri
+
     envFrom:
       - secretRef:
-          name: gatus-ollama-api-key
+          name: litellm-api-key
       - secretRef:
           name: gatus-oidc-secret
+
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
 
     ingress:
       enabled: false
 
+    # Storage moved off the local SQLite PVC onto the gatus-db CNPG
+    # cluster on OVH-HA (cluster/k8s/gatus/db/).
     persistence:
-      enabled: true
-      size: 200Mi
-      # CLEANUP(2026-04-02): Migrate to local-path-hetzner
-      storageClassName: local-path
+      enabled: false
 
+    # ServiceMonitor split into gatus/servicemonitor/ to avoid
+    # blocking Gatus deploys on monitoring-stack readiness.
     serviceMonitor:
-      enabled: true
+      enabled: false
 
     nodeSelector:
-      topology.kubernetes.io/region: hil
-    tolerations:
-      - key: "node-role.kubernetes.io/control-plane"
-        operator: "Exists"
-        effect: "NoSchedule"
+      topology.kubernetes.io/zone: hil-ovh
 
     resources:
       requests:

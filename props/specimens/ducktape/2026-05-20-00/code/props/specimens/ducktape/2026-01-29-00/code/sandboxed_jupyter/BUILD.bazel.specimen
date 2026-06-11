@@ -1,0 +1,86 @@
+# gazelle:ignore
+# Has intra-package imports via imports=[".."] that Gazelle can't validate
+
+"""Sandboxed Jupyter execution package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "sandboxed_jupyter",
+    srcs = [
+        "_jupyter_shared.py",
+        "cli.py",
+        "jupyter_sandbox_compose.py",
+        "kernel_bootstrap.py",
+        "kernel_exec.py",
+        "kernel_shim.py",
+        "launch.py",
+        "sandboxer.py",
+        "wrapper.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/seatbelt:compile",
+        "//mcp_infra/seatbelt:model",
+        "//net_util:net",
+        "@pypi//ipykernel",
+        "@pypi//jupyter_mcp_server",
+        "@pypi//jupyter_server",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "sandbox-jupyter",
+    srcs = ["wrapper.py"],
+    main = "wrapper.py",
+    deps = [
+        ":sandboxed_jupyter",
+        "//mcp_infra:constants",
+        "//net_util:net",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "sandboxed-jupyter",
+    srcs = ["sandboxer.py"],
+    main = "sandboxer.py",
+    deps = [
+        ":sandboxed_jupyter",
+        "//mcp_infra/seatbelt:compile",
+        "//mcp_infra/seatbelt:model",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_sandboxed_jupyter",
+    srcs = [
+        "_markers.py",
+        "conftest.py",
+        "policy_fixture.py",
+        "test_exec_allow_all_cli.py",
+        "test_kernel_sandbox_end_to_end.py",
+        "test_sandboxer_narrow.py",
+        "test_wrapper_unsandbox_smoke.py",
+    ],
+    data = glob(["testdata/**"]),
+    main = "test_sandboxer_narrow.py",
+    deps = [
+        ":sandboxed_jupyter",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpap-webdav
+  namespace: cpap-sync
+  annotations:
+    description: Read-only WebDAV server for CPAP EDF data. Basic auth from cpap-webdav-auth secret.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpap-webdav
+  template:
+    metadata:
+      labels:
+        app: cpap-webdav
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      containers:
+        - name: webdav
+          image: rclone/rclone:1.73
+          args:
+            - serve
+            - webdav
+            - /data/cpap
+            - --addr
+            - :8080
+            - --read-only
+            - --user
+            - $(WEBDAV_USER)
+            - --pass
+            - $(WEBDAV_PASS)
+          env:
+            - name: WEBDAV_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cpap-webdav-auth
+                  key: username
+            - name: WEBDAV_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: cpap-webdav-auth
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /data/cpap
+              readOnly: true
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cpap-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cpap-webdav
+  namespace: cpap-sync
+spec:
+  selector:
+    app: cpap-webdav
+  ports:
+    - port: 8080
+      targetPort: 8080

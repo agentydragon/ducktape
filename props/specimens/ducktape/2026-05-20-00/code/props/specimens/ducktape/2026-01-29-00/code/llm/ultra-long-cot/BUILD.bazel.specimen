@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "ultra_long_cot_lib",
+    srcs = [
+        "ultra_long_cot.py",
+        "ultra_long_cot_o4.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_binary(
+    name = "ultra_long_cot",
+    srcs = ["ultra_long_cot.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_binary(
+    name = "ultra_long_cot_o4",
+    srcs = ["ultra_long_cot_o4.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)

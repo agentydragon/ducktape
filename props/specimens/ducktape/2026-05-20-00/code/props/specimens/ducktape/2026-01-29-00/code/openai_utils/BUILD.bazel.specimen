@@ -1,0 +1,183 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_only_py_test", "live_openai_py_test")
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//typing_extensions"],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//openai"],
+)
+
+py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "json_schema",
+    srcs = ["json_schema.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":errors",
+        ":types",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "builders",
+    srcs = ["builders.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":model",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "http_logging",
+    srcs = ["http_logging.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "pydantic_strict_mode",
+    srcs = ["pydantic_strict_mode.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":json_schema",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "retry",
+    srcs = ["retry.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":errors",
+        ":model",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "client_factory",
+    srcs = ["client_factory.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":http_logging",
+        ":model",
+        ":retry",
+        ":types",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "text_extraction",
+    srcs = ["text_extraction.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [":model"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//openai_utils:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_json_schema",
+    srcs = ["test_json_schema.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":json_schema",
+        ":pydantic_strict_mode",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
+    name = "test_pydantic_strict_mode",
+    srcs = ["test_pydantic_strict_mode.py"],
+    imports = [".."],
+    deps = [
+        ":client_factory",
+        ":conftest",
+        ":json_schema",
+        ":model",
+        ":pydantic_strict_mode",
+        "//openai_utils/testing:strict_mode_models",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_only_py_test(
+    name = "test_live_api",
+    srcs = ["test_live_api.py"],
+    imports = [".."],
+    deps = [
+        ":client_factory",
+        ":conftest",
+        ":errors",
+        ":model",
+        ":retry",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

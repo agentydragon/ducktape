@@ -1,6 +1,6 @@
 # Claude Code Configuration Module
 #
-# Reference: Claude Code documentation as of 2026-01-20
+# Reference: Claude Code documentation as of 2026-05-26
 # JSON Schema: https://json.schemastore.org/claude-code-settings.json
 #
 # Sources:
@@ -15,7 +15,19 @@
 # General Settings:
 #   theme                     : string   : UI theme ("dark", "light")
 #   language                  : string   : Response language ("japanese", "spanish", etc.)
-#   model                     : string   : Default model ("opus", "sonnet", "haiku", "opusplan")
+#   model                     : string   : Default model:
+#                                          "default"    - account-tier default (clears override)
+#                                          "best"       - most capable available (currently Opus)
+#                                          "opus"       - latest Opus
+#                                          "sonnet"     - latest Sonnet
+#                                          "haiku"      - fast Haiku
+#                                          "opus[1m]"   - Opus with 1M context window
+#                                          "sonnet[1m]" - Sonnet with 1M context window
+#                                          "opusplan"   - Opus for planning, Sonnet for execution
+#                                          full model ID (e.g. "claude-sonnet-4-6") also works
+#   effortLevel               : string   : Persist effort across sessions ("low","medium","high","xhigh")
+#   availableModels           : array    : Restrict model selection (enterprise)
+#   modelOverrides            : object   : Map Anthropic IDs to provider-specific IDs (Bedrock/Vertex/Foundry)
 #   outputStyle               : string   : Output style name (e.g., "Explanatory")
 #   promptSuggestions         : boolean  : Enable prompt suggestions in UI
 #   showTurnDuration          : boolean  : Show "Cooked for Xm Ys" messages (default: true)
@@ -24,6 +36,36 @@
 #   cleanupPeriodDays         : integer  : Days before session cleanup (0 = IMMEDIATE deletion, default: 30, use 9999 to disable)
 #   plansDirectory            : string   : Plan file storage (default: "~/.claude/plans")
 #   respectGitignore          : boolean  : File picker respects .gitignore (default: true)
+#   editorMode                : string   : Input key binding mode ("normal" or "vim")
+#   prefersReducedMotion      : boolean  : Reduce animations (accessibility)
+#   syntaxHighlightingDisabled: boolean  : Disable syntax highlighting
+#   autoScrollEnabled         : boolean  : Follow new output in fullscreen mode (default: true)
+#   awaySummaryEnabled        : boolean  : Show recap when returning to terminal (default: true)
+#   preferredNotifChannel     : string   : Task completion notifications: "auto", "terminal_bell",
+#                                          "iterm2", "iterm2_with_bell", "kitty", "ghostty",
+#                                          "notifications_disabled"
+#   spinnerVerbs              : object   : Customize action verbs {mode: "append", verbs: [...]}
+#   showClearContextOnPlanAccept: boolean: Show context clearing on plan accept (default: false)
+#   prUrlTemplate             : string   : PR URL template for code-review tools
+#   feedbackSurveyRate        : number   : Survey probability (0-1)
+#
+# Auto Mode:
+#   disableAutoMode           : string   : Set "disable" to prevent auto mode (remove from Shift+Tab cycle)
+#   autoMode                  : object   : Customize auto mode classifier:
+#                                          {environment: [...], allow: [...], soft_deny: [...], hard_deny: [...]}
+#                                          Include "$defaults" in an array to inherit built-in rules
+#   useAutoModeDuringPlan     : boolean  : Use auto mode semantics in plan mode (default: true)
+#   NOTE: defaultMode "auto" is ignored in project/local settings (managed settings only since v2.1.142)
+#   NOTE: "$defaults" content is not publicly documented; "claude auto-mode" subcommand exists
+#         in help but sub-subcommands (defaults/config/critique) may not work in all versions
+#
+# Extended Thinking:
+#   alwaysThinkingEnabled     : boolean  : Enable extended thinking by default
+#   showThinkingSummaries     : boolean  : Display thinking summaries in interactive sessions (default: false)
+#
+# Auto Memory:
+#   autoMemoryEnabled         : boolean  : Enable auto memory (default: true)
+#   autoMemoryDirectory       : string   : Custom auto memory storage location
 #
 # Attribution (git commits/PRs):
 #   includeCoAuthoredBy       : boolean  : DEPRECATED - use attribution.* instead
@@ -49,24 +91,35 @@
 #   fileSuggestion.command    : string   : Custom script for @ file autocomplete
 #
 # Sandbox (bash isolation):
-#   sandbox.enabled                  : boolean : Enable bash sandboxing
-#   sandbox.autoAllowBashIfSandboxed : boolean : Auto-approve sandboxed bash (default: true)
-#   sandbox.allowUnsandboxedCommands : boolean : Allow dangerouslyDisableSandbox (default: true)
-#   sandbox.excludedCommands         : array   : Commands that bypass sandbox (e.g., ["docker"])
-#   sandbox.enableWeakerNestedSandbox: boolean : Weaker sandbox for unprivileged Docker (Linux)
-#   sandbox.ignoreViolations         : object  : Command patterns to paths for violations
-#   sandbox.network.allowLocalBinding: boolean : Allow localhost port binding (macOS)
-#   sandbox.network.allowUnixSockets : array   : Unix socket paths accessible in sandbox
-#   sandbox.network.httpProxyPort    : integer : HTTP proxy port (auto if not set)
-#   sandbox.network.socksProxyPort   : integer : SOCKS5 proxy port (auto if not set)
+#   sandbox.enabled                   : boolean : Enable bash sandboxing
+#   sandbox.autoAllowBashIfSandboxed  : boolean : Auto-approve sandboxed bash (default: true)
+#   sandbox.allowUnsandboxedCommands  : boolean : Allow dangerouslyDisableSandbox (default: true)
+#   sandbox.excludedCommands          : array   : Commands that bypass sandbox (e.g., ["docker"])
+#   sandbox.enableWeakerNestedSandbox : boolean : Weaker sandbox for unprivileged Docker (Linux)
+#   sandbox.ignoreViolations          : object  : Command patterns to paths for violations
+#   sandbox.failIfUnavailable         : boolean : Fail if sandbox cannot be activated
+#   sandbox.filesystem.allowWrite     : array   : Extra writable paths
+#   sandbox.filesystem.denyWrite      : array   : Deny writes (takes priority over allowWrite)
+#   sandbox.filesystem.denyRead       : array   : Deny reads
+#   sandbox.network.allowLocalBinding : boolean : Allow localhost port binding (macOS)
+#   sandbox.network.allowUnixSockets  : array   : Unix socket paths accessible in sandbox
+#   sandbox.network.allowedDomains    : array   : Allow-listed outbound domains
+#   sandbox.network.deniedDomains     : array   : Deny-listed outbound domains
+#   sandbox.network.allowManagedDomainsOnly: boolean : Only managed domain rules apply
+#   sandbox.network.httpProxyPort     : integer : HTTP proxy port (auto if not set)
+#   sandbox.network.socksProxyPort    : integer : SOCKS5 proxy port (auto if not set)
 #
 # Permissions:
-#   permissions.allow              : array  : Rules to allow (lowest priority)
-#   permissions.ask                : array  : Rules that prompt for confirmation
-#   permissions.deny               : array  : Rules to deny (highest priority)
-#   permissions.defaultMode        : string : "acceptEdits", "bypassPermissions", "default", "plan"
-#   permissions.additionalDirectories      : array  : Extra working directories
+#   permissions.allow                     : array  : Rules to allow (lowest priority)
+#   permissions.ask                       : array  : Rules that prompt for confirmation
+#   permissions.deny                      : array  : Rules to deny (highest priority)
+#   permissions.defaultMode               : string : "acceptEdits", "bypassPermissions", "default", "plan"
+#                                                    ("auto" was removed from user settings in v2.1.142)
+#   permissions.additionalDirectories     : array  : Extra working directories
 #   permissions.disableBypassPermissionsMode: string: Set "disable" to prevent bypass
+#   permissions.skipDangerousModePermissionPrompt: boolean: Skip --dangerously-skip-permissions confirm
+#   permissions.allowManagedPermissionRulesOnly: boolean: Only managed settings' permission rules apply
+#   allowedHttpHookUrls               : array  : HTTP hook URL allowlist
 #
 # Permission Rule Syntax:
 #   "Tool"                    : Match all uses of tool
@@ -81,14 +134,26 @@
 #   enabledMcpjsonServers     : array   : MCP servers from .mcp.json to approve
 #   enableAllProjectMcpServers: boolean : Auto-approve all project MCP servers
 #
+# Skills/Commands:
+#   skillOverrides            : object  : Per-skill visibility: "on","name-only","user-invocable-only","off"
+#   maxSkillDescriptionChars  : integer : Skill description char limit (default: 1536)
+#   skillListingBudgetFraction: number  : Context allocation for skill listing (default: 0.01)
+#
 # Plugins:
 #   enabledPlugins            : object  : Format: "plugin@marketplace": true/false
+#
+# Worktree:
+#   worktree.bgIsolation      : string  : Background session isolation ("worktree" or "none")
+#   worktree.baseRef          : string  : Base ref for worktree creation
+#   worktree.symlinkDirectories: array  : Dirs to symlink into worktrees
+#   worktree.sparsePaths      : array   : Sparse-checkout paths for worktrees
 #
 # Environment Variables (passed to sessions):
 #   env                       : object  : Key-value environment variables
 #
 # Hooks:
 #   disableAllHooks           : boolean : Disable all hooks and statusLine execution
+#   allowedHttpHookUrls       : array   : HTTP hook URL allowlist
 #
 # WebFetch:
 #   skipWebFetchPreflight     : boolean : Skip blocklist check
@@ -98,10 +163,21 @@
 #
 # Enterprise/Managed Settings (system-level only):
 #   allowManagedHooksOnly     : boolean : Only load managed + SDK hooks
+#   allowManagedMcpServersOnly: boolean : Only admin-defined MCP servers allowed
 #   allowedMcpServers         : array   : Allowlist of MCP servers
 #   deniedMcpServers          : array   : Denylist of MCP servers
 #   strictKnownMarketplaces   : array   : Allowlist of plugin marketplaces
+#   blockedMarketplaces       : array   : Denylist of marketplaces
+#   allowedChannelPlugins     : array   : Allowlist of channel plugins
+#   pluginTrustMessage        : string  : Custom plugin trust warning
+#   strictPluginOnlyCustomization: boolean|array: Block non-plugin customization
 #   companyAnnouncements      : array   : Startup announcements
+#   claudeMd                  : string  : Organization-wide CLAUDE.md content
+#   claudeMdExcludes          : array   : Glob patterns to skip in CLAUDE.md loading
+#   policyHelper              : string  : Executable for dynamic managed settings (v2.1.136+)
+#   disableRemoteControl      : boolean : Disable Remote Control feature (v2.1.128+)
+#   channelsEnabled           : boolean : Allow channels (default: true for Console API key accounts)
+#   allowManagedPermissionRulesOnly: boolean: Only managed permission rules apply
 #
 # ============================================================================
 # ENVIRONMENT VARIABLES
@@ -120,8 +196,25 @@
 #   ANTHROPIC_MODEL                      : Model alias or name
 #   ANTHROPIC_DEFAULT_OPUS_MODEL         : Full model name for "opus" alias
 #   ANTHROPIC_DEFAULT_SONNET_MODEL       : Full model name for "sonnet" alias
-#   ANTHROPIC_DEFAULT_HAIKU_MODEL        : Full model name for "haiku" alias
-#   CLAUDE_CODE_SUBAGENT_MODEL           : Model for subagents
+#   ANTHROPIC_DEFAULT_HAIKU_MODEL        : Full model name for "haiku" alias (replaces ANTHROPIC_SMALL_FAST_MODEL, deprecated)
+#   ANTHROPIC_DEFAULT_OPUS_MODEL_NAME/_DESCRIPTION/_SUPPORTED_CAPABILITIES: Display overrides for Opus
+#   ANTHROPIC_DEFAULT_SONNET_MODEL_NAME/_DESCRIPTION/_SUPPORTED_CAPABILITIES: Display overrides for Sonnet
+#   ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME/_DESCRIPTION/_SUPPORTED_CAPABILITIES: Display overrides for Haiku
+#   ANTHROPIC_CUSTOM_MODEL_OPTION        : Add a single custom entry to /model picker
+#   ANTHROPIC_CUSTOM_MODEL_OPTION_NAME   : Display name for custom model
+#   ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: Display description for custom model
+#   CLAUDE_CODE_SUBAGENT_MODEL           : Model for all subagents/agent teams
+#   CLAUDE_CODE_EFFORT_LEVEL             : Set effort level ("low","medium","high","xhigh","max")
+#   CLAUDE_CODE_DISABLE_1M_CONTEXT       : 0/1 - Disable 1M context window variants
+#   CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: 0/1 - Enable LLM gateway /v1/models discovery
+#
+# Extended Thinking:
+#   CLAUDE_CODE_DISABLE_THINKING         : 0/1 - Override alwaysThinkingEnabled setting
+#   CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: 0/1 - Revert to fixed thinking budget (Opus 4.6/Sonnet 4.6)
+#   MAX_THINKING_TOKENS                  : Fixed thinking budget when adaptive disabled (default: 31999, 0=disable)
+#
+# Auto Memory:
+#   CLAUDE_CODE_DISABLE_AUTO_MEMORY      : 0/1 - Disable auto memory
 #
 # Prompt Caching:
 #   DISABLE_PROMPT_CACHING               : 0/1 - Disable for all models
@@ -142,7 +235,6 @@
 #   CLAUDE_AUTOCOMPACT_PCT_OVERRIDE      : Context threshold for auto-compaction (1-100)
 #   CLAUDE_CODE_MAX_OUTPUT_TOKENS        : Max output tokens (default: 32000, max: 64000)
 #   CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS : Override token limit for file reads
-#   MAX_THINKING_TOKENS                  : Extended thinking budget (default: 31999, 0=disable)
 #   MAX_MCP_OUTPUT_TOKENS                : Max tokens in MCP responses (default: 25000)
 #
 # Cloud Providers:
@@ -161,6 +253,7 @@
 #   NO_PROXY                             : Domains/IPs to bypass proxy
 #   NODE_EXTRA_CA_CERTS                  : Path to custom CA certificate
 #   CLAUDE_CODE_PROXY_RESOLVES_HOSTS     : true/false - Proxy does DNS
+#   CLAUDE_CODE_CERT_STORE               : CA certificate sources ("bundled", "system")
 #
 # mTLS:
 #   CLAUDE_CODE_CLIENT_CERT              : Path to client certificate (.pem)
@@ -195,8 +288,9 @@
 #   CLAUDE_CODE_DISABLE_TERMINAL_TITLE   : 0/1 - Disable terminal title updates
 #   IS_DEMO                              : true/false - Demo mode
 #
-# Background Tasks:
+# Background Tasks & Agents:
 #   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS : 0/1 - Disable Ctrl+B, subagent backgrounds
+#   CLAUDE_CODE_DISABLE_AGENT_VIEW       : 0/1 - Disable background agent view
 #   CLAUDE_CODE_EXIT_AFTER_STOP_DELAY    : ms to wait before auto-exit (SDK mode)
 #
 # Configuration & Storage:
@@ -211,12 +305,12 @@
   pkgsUnstable,
   lib,
   claude-plugins-official,
-  siderolabs-docs,
-  skills-tar,
+  sharedSkillsArgs,
   ...
 }:
 let
   cfg = config.programs.claude-code;
+  allowed = import ../allowed-commands.nix;
 
   # Gmail MCP Server - pinned to specific commit for security
   gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
@@ -242,27 +336,44 @@ let
   # Directories where Read/Grep/Glob are always allowed without prompting
   alwaysAllowedReadDirs = [
     "~/.claude" # Claude Code session history, settings, commands
+    "/nix"
   ]
   ++ cfg.extraAllowedReadDirs;
 
-  # Helper to generate WebFetch domain permissions
+  # WebFetch domain allowlist. Domain-specific rules trigger --unshare-net,
+  # which breaks Bazel (see docs/claude_code_sandbox.md). Accepted tradeoff:
+  # sandboxed Bazel commands must use dangerouslyDisableSandbox: true.
   mkWebFetchDomainPerms = domains: map (domain: "WebFetch(domain:${domain})") domains;
 
-  # Domains where WebFetch is always allowed
   allowedWebFetchDomains = [
     "pypi.org"
     "docs.python.org"
+    "code.claude.com"
+    "files.pythonhosted.org" # PyPI wheels
+    "docs.siderolabs.com" # Talos/Omni docs
+    "go.dev"
+
     "json.schemastore.org"
     "www.schemastore.org"
-    "code.claude.com" # Claude Code documentation
+
+    "github.com"
+    "codeload.github.com"
+    "raw.githubusercontent.com"
+    "release-assets.githubusercontent.com"
+
     "app.buildbuddy.io" # BuildBuddy remote build UI
     "remote.buildbuddy.io" # BuildBuddy remote execution/cache
-    "bcr.bazel.build" # Bazel Central Registry
-    "github.com" # GitHub repos and downloads
-    "raw.githubusercontent.com" # GitHub raw file access
-    "release-assets.githubusercontent.com" # GitHub release downloads
-    "files.pythonhosted.org" # PyPI wheel downloads
-    "docs.siderolabs.com" # Talos/Omni docs and llms.txt
+
+    "registry.npmjs.org"
+
+    "index.crates.io"
+    "static.crates.io"
+
+    "bcr.bazel.build"
+    "docs.bazel.build"
+    "bazel.build"
+
+    "docs.cilium.io"
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 
@@ -270,12 +381,20 @@ let
   # /code contains all git repos organized by host (github.com, gitlab.com, etc.)
   baseAdditionalDirs = [
     "/code"
-    "~/.cache/pre-commit"
   ]
   ++ cfg.additionalDirectories;
 
   # System inspection command permissions (auto-allow for read-only commands)
   inspectionPerms = import ./inspection-permissions.nix { inherit lib; };
+
+  # Shared always-allowed command permissions.
+  toBashPerm =
+    entry:
+    let
+      suffix = if entry.type == "prefix" then ":*" else "";
+    in
+    "Bash(${entry.cmd}${suffix})";
+  allowedCommandPerms = map toBashPerm allowed.noSudo;
 
   # Auto-discover all .md files in commands/ directory
   commandsDir = ./commands;
@@ -285,15 +404,8 @@ let
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
   # Shared skill files — generates home.file entries for ~/.claude/skills/
-  mkSkills = import ../skills/skills.nix {
-    inherit
-      lib
-      pkgs
-      siderolabs-docs
-      skills-tar
-      ;
-  };
-  skillFiles = mkSkills ".claude";
+  mkSkills = import ../skills.nix sharedSkillsArgs;
+  skillFiles = mkSkills { prefix = ".claude"; };
 
   # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets
   parsedPlugins = map (
@@ -409,16 +521,16 @@ in
     plugins = [
       "frontend-design@claude-plugins-official"
       "pyright-lsp@claude-plugins-official"
-      # TODO: creates target/ dirs everywhere (unconfigurable — no initializationOptions
-      # or cargo.targetDir passthrough). Mitigated by .gitignore for now.
+      # Configured via repo-level rust-analyzer.toml (linkedProjects + no sccache).
       "rust-analyzer-lsp@claude-plugins-official"
     ];
 
     mcpServers = {
-      tana-local = {
-        type = "http";
-        url = "http://localhost:8262/mcp";
-      };
+      # Disabled - Tana MCP server now in cluster
+      # tana-local = {
+      #   type = "http";
+      #  url = "http://localhost:8262/mcp";
+      # };
 
       airlock = {
         type = "http";
@@ -450,6 +562,8 @@ in
       theme = "dark";
       attribution.commit = ""; # Disable "Co-authored-by" in commits
       attribution.pr = ""; # Disable attribution in PR descriptions
+      showThinkingSummaries = true;
+      autoMemoryEnabled = true;
       # 9999 = effectively disable cleanup (0 = delete immediately, which is wrong)
       cleanupPeriodDays = 9999;
       promptSuggestions = true;
@@ -463,7 +577,18 @@ in
         autoAllowBashIfSandboxed = true;
         allowUnsandboxedCommands = true;
         excludedCommands = [ "nvidia-smi" ];
+        filesystem = {
+          allowWrite = [
+            "~/.cache/bazel"
+            "~/.cache/pre-commit"
+          ];
+        };
       };
+
+      # Enable sandbox-runtime debug logging so network allow/deny decisions
+      # (e.g. "Denied by config rule: telemetry.aspect.build:443") appear in
+      # ~/.claude/debug/ session logs.
+      env.SRT_DEBUG = "1";
 
       # Auto-generated from cfg.plugins
       enabledPlugins = lib.listToAttrs (
@@ -481,13 +606,12 @@ in
           "MultiEdit"
           "Search"
           "Task"
-          "Bash(git status:*)"
-          "Bash(git diff:*)"
-          "Bash(git stash show:*)"
-          "Bash(git stash list:*)"
-          "WebFetch"
+          # Domain-scoped WebFetch rules auto-approve sandbox network prompts for
+          # known domains. Tradeoff: triggers --unshare-net, so Bazel commands must
+          # use dangerouslyDisableSandbox: true. See docs/claude_code_sandbox.md.
           "WebSearch"
         ]
+        ++ allowedCommandPerms
         ++ mkWebFetchDomainPerms allowedWebFetchDomains
         ++ mkReadPerms alwaysAllowedReadDirs
         ++ inspectionPerms.permissions;
@@ -501,13 +625,19 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  # Deploy skills, plugin cache, and installed_plugins.json
+  # Deploy skills and plugin cache.
   config.home.file =
     skillFiles
     # Plugin cache directories
-    // pluginCacheFiles
-    # Plugin registry
-    // lib.optionalAttrs (cfg.plugins != [ ]) {
-      ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
-    };
+    // pluginCacheFiles;
+
+  # TODO: If re-enabling management of installed_plugins.json, first update
+  # installedPluginsJson to match Claude's current registry shape. Claude rewrites
+  # installPath with a versioned suffix (for example, /pyright-lsp/1.0.0) and
+  # updates mutable timestamps, which makes the old deterministic file conflict
+  # on every Home Manager activation.
+  # Re-enable by folding this back into config.home.file above:
+  # // lib.optionalAttrs (cfg.plugins != [ ]) {
+  #   ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
+  # };
 }

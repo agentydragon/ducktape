@@ -1,0 +1,159 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+# Core utilities (no external deps)
+py_library(
+    name = "iter_util",
+    srcs = ["beautifier/iter_util.py"],
+)
+
+py_library(
+    name = "lcsc_util",
+    srcs = ["beautifier/lcsc_util.py"],
+)
+
+py_library(
+    name = "cli_util",
+    srcs = ["beautifier/cli_util.py"],
+    deps = [":iter_util"],
+)
+
+# InventTree-dependent utilities
+py_library(
+    name = "config",
+    srcs = ["beautifier/config.py"],
+    deps = [
+        "@pypi//inventree",
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "inventree_util",
+    srcs = ["beautifier/inventree_util.py"],
+    deps = ["@pypi//inventree"],
+)
+
+py_library(
+    name = "fix_lcsc_links",
+    srcs = ["beautifier/fix_lcsc_links.py"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        ":lcsc_util",
+        "@pypi//inventree",
+        "@pypi//structlog",
+    ],
+)
+
+py_library(
+    name = "assign_jellybean",
+    srcs = ["beautifier/assign_jellybean.py"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        "@pypi//inventree",
+        "@pypi//tqdm",
+    ],
+)
+
+py_library(
+    name = "upload_lcsc_images",
+    srcs = ["beautifier/upload_lcsc_images.py"],
+    deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        ":lcsc_util",
+        "@pypi//beautifulsoup4",
+        "@pypi//inventree",
+        "@pypi//requests",
+        "@pypi//structlog",
+    ],
+)
+
+# Main beautifier library
+py_library(
+    name = "beautifier",
+    srcs = ["beautifier/__main__.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":assign_jellybean",
+        ":config",
+        ":fix_lcsc_links",
+        ":upload_lcsc_images",
+        "@pypi//structlog",
+    ],
+)
+
+py_binary(
+    name = "inventree_beautifier",
+    srcs = ["beautifier/__main__.py"],
+    main = "beautifier/__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":beautifier",
+        "@pypi//structlog",
+    ],
+)
+
+# Samplebooks import (standalone script)
+py_library(
+    name = "samplebooks_parts_data",
+    srcs = ["samplebooks_import/samplebooks_parts_data.py"],
+    deps = ["@pypi//pint"],
+)
+
+py_binary(
+    name = "import_samplebooks",
+    srcs = ["samplebooks_import/import_samplebooks2.py"],
+    imports = ["samplebooks_import"],
+    main = "samplebooks_import/import_samplebooks2.py",
+    deps = [
+        ":samplebooks_parts_data",
+        "@pypi//inventree",
+        "@pypi//pint",
+        "@pypi//tqdm",
+    ],
+)
+
+# Tests
+py_test(
+    name = "test_lcsc_util",
+    srcs = ["beautifier/test_lcsc_util.py"],
+    imports = [".."],
+    deps = [
+        ":lcsc_util",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_fix_lcsc_links",
+    srcs = ["beautifier/test_fix_lcsc_links.py"],
+    imports = [".."],
+    deps = [
+        ":fix_lcsc_links",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_assign_jellybean",
+    srcs = ["beautifier/test_assign_jellybean.py"],
+    imports = [".."],
+    deps = [
+        ":assign_jellybean",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":beautifier"],
+)

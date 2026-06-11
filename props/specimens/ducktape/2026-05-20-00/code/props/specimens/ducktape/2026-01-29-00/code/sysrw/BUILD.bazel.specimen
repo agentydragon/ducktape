@@ -1,0 +1,202 @@
+"""System rewriter package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Gazelle will create per-file py_library targets
+# Subdirectories (anthropic/, templates/, tools/) have their own BUILD files
+
+py_test(
+    name = "test_templates_conformance",
+    srcs = ["test_templates_conformance.py"],
+    deps = [
+        ":conftest",
+        "//sysrw/templates:loader",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_loader_min",
+    srcs = ["test_loader_min.py"],
+    data = glob(["testdata/*.jsonl"]),
+    deps = [
+        ":conftest",
+        ":run_eval",
+        ":schemas",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_check_crush_dataset",
+    srcs = ["test_check_crush_dataset.py"],
+    data = glob(["testdata/*.jsonl"]),
+    deps = [
+        ":conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compare_eval_vs_ccr",
+        ":extract_dataset_ccr",
+        ":extract_dataset_crush",
+        ":leaderboard",
+        ":run_eval",
+        "//openai_utils:client_factory",
+        "//sysrw/templates:loader",
+        "@pypi//rich",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "compare_eval_vs_ccr",
+    srcs = ["compare_eval_vs_ccr.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "extract_common",
+    srcs = ["extract_common.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":openai_typing",
+    ],
+)
+
+py_binary(
+    name = "extract_dataset",
+    srcs = ["extract_dataset.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":extract_common",
+        ":extract_dataset_ccr",
+    ],
+)
+
+py_library(
+    name = "extract_dataset_ccr",
+    srcs = ["extract_dataset_ccr.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":extract_common",
+    ],
+)
+
+py_binary(
+    name = "extract_dataset_crush",
+    srcs = ["extract_dataset_crush.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":extract_common",
+    ],
+)
+
+py_binary(
+    name = "leaderboard",
+    srcs = ["leaderboard.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sysrw/templates:loader",
+        "@pypi//pydantic",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "openai_typing",
+    srcs = ["openai_typing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":schemas",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "run_eval",
+    srcs = ["run_eval.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":openai_typing",
+        ":prompts",
+        ":schemas",
+        ":translation",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "//openai_utils:retry",
+        "//sysrw/anthropic:types",
+        "//sysrw/templates:loader",
+        "@pypi//jinja2",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_library(
+    name = "schemas",
+    srcs = ["schemas.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//sysrw/anthropic:types",
+        "@pypi//anthropic",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "translation",
+    srcs = ["translation.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sysrw/anthropic:text_extraction",
+        "//sysrw/anthropic:types",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)

@@ -1,0 +1,36 @@
+rationale: |
+  InitFailedError includes stderr content twice when raised with exec_result.
+
+  At line 91, the raise site includes stderr in the message:
+  ```python
+  raise InitFailedError(
+      f"Init script failed: {exec_result.exit.model_dump()}\nstderr: {stderr_preview}",
+      exec_result=exec_result
+  )
+  ```
+
+  Then __init__ (lines 30-36) appends it again:
+  ```python
+  full_message = f"{message}\n\nSTDOUT:\n{stdout_text}\n\nSTDERR:\n{stderr_text}"
+  ```
+
+  Result: stderr appears twice in the final error message. Either the raise site
+  should not include stderr (let __init__ handle it), or __init__ should not append
+  when exec_result is provided.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_pkg/host/init_runner.py:
+        - [29, 38]
+        - [86, 92]
+        - [95, 102]
+    note: >-
+      stderr/stdout included in message at raise sites (L91, L97, L101) and again by
+      __init__ (L36) - content appears twice in final error
+    critic_scopes_expected_to_recall:
+      - - agent_pkg/host/init_runner.py
+    match_file_restriction:
+      - agent_pkg/host/init_runner.py

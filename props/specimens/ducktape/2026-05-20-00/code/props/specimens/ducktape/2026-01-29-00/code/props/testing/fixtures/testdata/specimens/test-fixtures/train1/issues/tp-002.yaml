@@ -1,0 +1,15 @@
+rationale: "Second test issue for integration testing.
+
+  This ensures the snapshot has multiple files with issues.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      add.py:
+        - [4, 6]
+    critic_scopes_expected_to_recall:
+      - - add.py
+    match_file_restriction:
+      - add.py

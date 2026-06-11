@@ -12,9 +12,21 @@ from dataclasses import dataclass
 
 import aiodocker
 
-from props.orchestration.executor import ContainerResult, Exited, TimedOut
+from props.orchestration.executor import ContainerResult, Exited, PodInfo, PodPhase, TimedOut
 
 logger = logging.getLogger(__name__)
+
+# Docker container state -> runtime-agnostic PodPhase. Docker's list summary
+# carries a coarse state string (no exit code), so "exited" maps to "failed";
+# terminal pods are finalized by the supervisor either way.
+_DOCKER_STATE_MAP: dict[str, PodPhase] = {
+    "created": "pending",
+    "restarting": "pending",
+    "running": "running",
+    "paused": "running",
+    "exited": "failed",
+    "dead": "failed",
+}
 
 
 @dataclass
@@ -100,9 +112,19 @@ class DockerExecutor:
         return image_id
 
     async def run_container(
-        self, *, name: str, image_id: str, env: dict[str, str], labels: dict[str, str]
+        self,
+        *,
+        name: str,
+        image_id: str,
+        env: dict[str, str],
+        labels: dict[str, str],
+        annotations: dict[str, str] | None = None,
     ) -> DockerContainerHandle:
-        """Create and start a Docker container."""
+        """Create and start a Docker container.
+
+        Docker has no annotations, so annotations are folded into labels (slug
+        values are valid Docker label values, unlike k8s label values).
+        """
         host_config: dict[str, object] = {"NetworkMode": self._network_name, "AutoRemove": False}
         if self._extra_hosts:
             host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
@@ -111,7 +133,7 @@ class DockerExecutor:
             "Image": image_id,
             "Env": [f"{k}={v}" for k, v in env.items()],
             "HostConfig": host_config,
-            "Labels": labels,
+            "Labels": {**labels, **(annotations or {})},
         }
 
         container = await self._docker_client.containers.create(
@@ -123,6 +145,29 @@ class DockerExecutor:
         await container.start()
         logger.info("Started container %s", name)
         return DockerContainerHandle(container=container, name=name)
+
+    async def list_pods(self, label_selector: dict[str, str]) -> list[PodInfo]:
+        filters = {"label": [f"{k}={v}" for k, v in label_selector.items()]}
+        containers = await self._docker_client.containers.list(all=True, filters=filters)
+        pods: list[PodInfo] = []
+        for c in containers:
+            summary = c._container  # list() summary dict
+            names = summary.get("Names") or [summary.get("Id", "")]
+            labels = summary.get("Labels") or {}
+            phase: PodPhase = _DOCKER_STATE_MAP.get(summary.get("State", ""), "unknown")
+            pods.append(
+                PodInfo(
+                    name=names[0].lstrip("/"),
+                    image=summary.get("Image", ""),
+                    phase=phase,
+                    labels=labels,
+                    annotations={},  # folded into labels on create
+                )
+            )
+        return pods
+
+    def handle_for(self, name: str) -> DockerContainerHandle:
+        return DockerContainerHandle(container=self._docker_client.containers.container(name), name=name)
 
     async def close(self) -> None:
         """Close the Docker client."""

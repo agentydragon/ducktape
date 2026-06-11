@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - node-data-pvc.yaml
+  - openclawinstance.yaml
+  - rolebinding-ollama-consumer.yaml
+  - networkpolicy-authentik.yaml
+  - networkpolicy-node-ingress.yaml
+  - cnp-kube-api-egress.yaml
+  - role-openclaw-reader.yaml

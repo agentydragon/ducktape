@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress-proxy-rugged
+  namespace: egress-proxy
+  labels:
+    app.kubernetes.io/name: egress-proxy
+    app.kubernetes.io/instance: rugged
+  annotations:
+    description: HTTP CONNECT proxy pinned to the rugged Kubernetes node for opt-in egress tests
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: egress-proxy
+      app.kubernetes.io/instance: rugged
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: egress-proxy
+        app.kubernetes.io/instance: rugged
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: rugged
+      tolerations:
+        - key: node-role.kubernetes.io/roaming
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gost
+          image: docker.io/gogost/gost:3.2.4
+          args:
+            - -L
+            - http://:8080
+          ports:
+            - name: http-proxy
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            tcpSocket:
+              port: http-proxy
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http-proxy
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

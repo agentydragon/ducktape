@@ -1,0 +1,305 @@
+load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+expand_template(
+    name = "_build_info_gen",
+    out = "_build_info.py",
+    stamp = -1,
+    stamp_substitutions = {
+        "{{GIT_COMMIT}}": "{{STABLE_BUILD_COMMIT}}",
+    },
+    substitutions = {
+        "{{GIT_COMMIT}}": "dev",
+    },
+    template = "build_info.tpl",
+)
+
+py_library(
+    name = "_build_info",
+    srcs = [":_build_info_gen"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        "//util:otel",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_exporter_otlp_proto_http",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//devinfra/claude/claude_api/hooks:output",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "bes_interceptor",
+    srcs = ["bes_interceptor.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/googleapis:build_v1_py_proto",
+        "@buildbuddy_protos//:action_cache_py_proto",
+        "@buildbuddy_protos//:build_event_stream_py_proto",
+        "@buildbuddy_protos//:command_line_py_proto",
+        "@buildbuddy_protos//:failure_details_py_proto",
+        "@buildbuddy_protos//:invocation_policy_py_proto",
+        "@buildbuddy_protos//:option_filters_py_proto",
+        "@buildbuddy_protos//:package_load_metrics_py_proto",
+        "@buildbuddy_protos//:strategy_policy_py_proto",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bes_interceptor",
+        ":config",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+    ],
+)
+
+py_library(
+    name = "worktree",
+    srcs = ["worktree.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:output",
+        "//devinfra/claude/claude_api/hooks:worktree_create",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        ":session",
+        ":tracing",
+        ":worktree",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:output",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/hook_daemon/session_start:session_start_lib",
+        "@pypi//anyio",
+        "@pypi//fastapi",
+        "@pypi//opentelemetry_api",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        ":server",
+        ":tracing",
+        "//devinfra/claude:env_file",
+        "//devinfra/claude:settings",
+        "@pypi//filelock",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "main",
+    main_module = "devinfra.claude.hook_daemon.main",
+    deps = [":main_lib"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//util/bazel:subprocess",
+        "@pypi//filelock",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "shim_install",
+    srcs = ["shim_install.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:session_paths",
+    ],
+)
+
+py_library(
+    name = "shim_lib",
+    srcs = ["shim.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        ":shim_install",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+    ],
+)
+
+py_binary(
+    name = "shim",
+    main_module = "devinfra.claude.hook_daemon.shim",
+    visibility = ["//visibility:public"],
+    deps = [":shim_lib"],
+)
+
+py_library(
+    name = "hook_dispatch_lib",
+    srcs = ["hook_dispatch.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_build_info",
+        ":client",
+        ":shim_lib",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "@pypi//mako",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "hook_dispatch",
+    main_module = "devinfra.claude.hook_daemon.hook_dispatch",
+    visibility = ["//visibility:public"],
+    deps = [":hook_dispatch_lib"],
+)
+
+py_test(
+    name = "test_tracing",
+    srcs = ["test_tracing.py"],
+    deps = [
+        ":config",
+        ":tracing",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hook_daemon",
+    srcs = ["test_hook_daemon.py"],
+    deps = [
+        ":config",
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "hook_daemon_conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_hook_daemon_restart",
+    srcs = ["test_hook_daemon_restart.py"],
+    deps = [
+        ":client",
+        ":hook_daemon_conftest",
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_ensure_daemon",
+    size = "medium",
+    srcs = ["test_ensure_daemon.py"],
+    deps = [
+        ":client",
+        ":hook_daemon_conftest",
+        ":main_lib",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bg_output",
+    srcs = ["test_bg_output.py"],
+    legacy_create_init = 0,
+    deps = [
+        ":session",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_shim",
+    srcs = ["test_shim.py"],
+    deps = [
+        ":shim_install",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

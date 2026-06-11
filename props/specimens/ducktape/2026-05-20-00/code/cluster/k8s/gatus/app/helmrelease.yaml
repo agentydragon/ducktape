@@ -1,0 +1,65 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: twin
+  namespace: gatus
+spec:
+  interval: 24h
+  url: https://twin.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: gatus
+      version: "1.5.0"
+      sourceRef:
+        kind: HelmRepository
+        name: twin
+        namespace: gatus
+  values:
+    externalConfigMap: gatus-config
+
+    envFrom:
+      - secretRef:
+          name: litellm-api-key
+      - secretRef:
+          name: gatus-oidc-secret
+
+    ingress:
+      enabled: false
+
+    persistence:
+      enabled: true
+      size: 200Mi
+      # CLEANUP(2026-04-02): Migrate to local-path-hetzner
+      storageClassName: local-path
+
+    # ServiceMonitor split into gatus/servicemonitor/ to avoid
+    # blocking Gatus deploys on monitoring-stack readiness.
+    serviceMonitor:
+      enabled: false
+
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi

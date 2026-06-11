@@ -1,0 +1,224 @@
+"""Server package - FastAPI app, state management, reducers."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":protocol",
+        ":state",
+        "//agent_core:events",
+        "//agent_server/persist:events",
+        "//mcp_infra:prefix",
+        "@pypi//mcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_end_turn_ui_integration",
+    srcs = [
+        "conftest.py",
+        "test_end_turn_ui_integration.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":bus",
+        ":conftest",
+        ":protocol",
+        ":reducer",
+        ":state",
+        "//agent_server/testing:typed_asserts",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_history_fold_typed",
+    srcs = [
+        "conftest.py",
+        "test_history_fold_typed.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":reducer",
+        "//agent_server/testing:typed_asserts",
+        "//mcp_infra:prefix",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_reducer",
+    srcs = [
+        "conftest.py",
+        "test_reducer.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":bus",
+        ":conftest",
+        ":protocol",
+        ":reducer",
+        ":state",
+        "//agent_server/testing:typed_asserts",
+        "//mcp_infra/exec:models",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mcp_routing",
+        "//agent_server/mcp_bridge:auth",
+        "//agent_server/mcp_bridge:compositor_factory",
+        "//agent_server/mcp_bridge:registry",
+        "//agent_server/persist:sqlite",
+        "//agent_server/runtime:registry",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "bus",
+    srcs = ["bus.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "mcp_routing",
+    srcs = ["mcp_routing.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/mcp_bridge:auth",
+        "//agent_server/runtime:registry",
+        "//mcp_infra/compositor",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bus",
+        ":protocol",
+        ":reducer",
+        ":state",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_server:agent_types",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:types",
+        "//mcp_infra:mounted",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "mode_handler",
+    srcs = ["mode_handler.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bus",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_server/notifications",
+        "//mcp_infra/notifications:types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bus",
+        "//agent_core:events",
+        "//agent_server/models:policy_error",
+        "//agent_server/models:proposal_status",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "reducer",
+    srcs = ["reducer.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bus",
+        ":protocol",
+        ":state",
+        "//agent_core:events",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:events",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":protocol",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "status_shared",
+    srcs = ["status_shared.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "system_message",
+    srcs = ["system_message.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)

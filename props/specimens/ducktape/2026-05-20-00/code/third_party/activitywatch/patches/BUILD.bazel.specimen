@@ -1,0 +1,1 @@
+exports_files(["vue-demi-has-injection-context.patch"])

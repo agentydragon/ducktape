@@ -1,0 +1,7 @@
+---
+# Handlers for gitea-mirrors role
+
+- name: Reload Systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true

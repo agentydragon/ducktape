@@ -1,0 +1,76 @@
+# Lint tooling configuration
+
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@io_bazel_rules_go//go:def.bzl", "nogo")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Custom mypy CLI that uses symlinks instead of copies for upstream caches.
+# This reduces disk usage from O(n²) to O(n) for the mypy cache merge step.
+# See mypy_runner.py for details on the patch.
+#
+# deps includes mypy and its plugins:
+#   - pydantic: understands Field aliases, model validation
+#   - sqlalchemy: ORM type inference for mapped columns
+#
+# Type stubs and packages with py.typed are provided by:
+# 1. The types extension (@pip_types) for types-*/stubs packages
+# 2. The target's deps for packages with py.typed (via MYPYPATH from aspect)
+py_binary(
+    name = "mypy_cli",
+    srcs = ["mypy_runner.py"],
+    main = "mypy_runner.py",
+    python_version = "3.13",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//mypy",
+        "@pypi//pydantic",  # For pydantic.mypy plugin
+        "@pypi//sqlalchemy",  # For sqlalchemy.ext.mypy.plugin
+    ],
+)
+
+# ESLint binary for JS/TS linting
+# Used by lint_eslint_aspect in linters.bzl
+#
+# Unlike Prettier (which is invoked directly via `bazel run`), ESLint is
+# invoked by the lint_eslint_aspect which sets BAZEL_BINDIR to ctx.bin_dir.path
+# in the action env. Do NOT set BAZEL_BINDIR here — the binary's env export
+# would override the aspect's, causing `cd` to the execroot instead of bin dir,
+# which breaks source file resolution for copy_files_to_bin_actions copies.
+#
+# The --config flag points ESLint at the config in runfiles rather than the
+# source tree. This ensures plugin resolution works in sandboxed execution where
+# node_modules doesn't exist at the execroot. See aspect-build/rules_lint#176.
+eslint_bin.eslint_binary(
+    name = "eslint",
+    data = ["//:eslintrc"],
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:eslintrc)",
+    ],
+)
+
+# Format Bazel files
+buildifier(
+    name = "buildifier",
+    lint_mode = "fix",
+    mode = "fix",
+)
+
+# Check Bazel formatting
+buildifier(
+    name = "buildifier.check",
+    lint_mode = "warn",
+    mode = "diff",
+)
+
+# Go static analysis via rules_go nogo.
+# Runs go vet analyzers on every go_library/go_binary compile action.
+# TODO: Add third-party analyzers (staticcheck, errcheck).
+nogo(
+    name = "nogo",
+    vet = True,
+    visibility = ["//visibility:public"],
+)

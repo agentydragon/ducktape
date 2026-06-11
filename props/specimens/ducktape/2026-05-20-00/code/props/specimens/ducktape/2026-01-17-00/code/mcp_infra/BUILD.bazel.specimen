@@ -1,0 +1,70 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+# Core mcp_infra types and utilities (no subpackages - consumers add those explicitly)
+py_library(
+    name = "mcp_infra",
+    srcs = [
+        "calltool.py",
+        "client_helpers.py",
+        "config_loader.py",
+        "constants.py",
+        "mcp_types.py",
+        "mount_types.py",
+        "mounted.py",
+        "naming.py",
+        "prefix.py",
+        "resource_utils.py",
+        "snapshots.py",
+        "tool_schemas.py",
+        "urls.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//typer",
+    ],
+)
+
+# Shared test utilities
+py_library(
+    name = "test_support",
+    srcs = [
+        "_markers.py",
+        "conftest.py",
+    ],
+    imports = [".."],
+    visibility = ["//mcp_infra:__subpackages__"],
+    deps = [
+        ":mcp_infra",
+        "//agent_core_testing",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//mcp_infra/notifications",
+        "//mcp_infra/resources",
+        "//mcp_infra/stubs",
+        "//mcp_infra/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_types",
+    srcs = ["test_types.py"],
+    deps = [
+        ":test_support",
+        "@pypi//pydantic",  # imports TypeAdapter, ValidationError
+        "@pypi//pytest",  # imports pytest
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":mcp_infra"],
+)

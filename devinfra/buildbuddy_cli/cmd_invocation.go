@@ -6,10 +6,18 @@ import (
 	"strings"
 	"time"
 
-	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/spf13/cobra"
 )
+
+func formatTags(inv *invocationpb.Invocation) string {
+	var names []string
+	for _, t := range inv.GetTags() {
+		names = append(names, t.GetName())
+	}
+	return strings.Join(names, ",")
+}
 
 func invocationCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -48,6 +56,12 @@ func invocationCmd() *cobra.Command {
 				fmt.Printf("Commit:      %s\n", sha)
 				fmt.Printf("Branch:      %s\n", inv.GetBranchName())
 				fmt.Printf("Repo:        %s\n", inv.GetRepoUrl())
+				if role := inv.GetRole(); role != "" {
+					fmt.Printf("Role:        %s\n", role)
+				}
+				if tags := formatTags(inv); tags != "" {
+					fmt.Printf("Tags:        %s\n", tags)
+				}
 				fmt.Printf("Actions:     %d\n", inv.GetActionCount())
 				fmt.Printf("Success:     %v\n", inv.GetSuccess())
 				if cs := inv.GetCacheStats(); cs != nil {
@@ -74,13 +88,15 @@ func invocationCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(invocationListCmd())
-	cmd.AddCommand(invocationLogCmd())
+	cmd.AddCommand(invocationStatSubCmd())
 	return cmd
 }
 
 func invocationListCmd() *cobra.Command {
 	var repo string
 	var count int32
+	var tagFilter string
+	var roleFilter string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List recent invocations",
@@ -95,8 +111,15 @@ func invocationListCmd() *cobra.Command {
 					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
 				}
 			}
+			query := &invocationpb.InvocationQuery{RepoUrl: repo}
+			if tagFilter != "" {
+				query.Tags = []string{tagFilter}
+			}
+			if roleFilter != "" {
+				query.Role = []string{roleFilter}
+			}
 			req := &invocationpb.SearchInvocationRequest{
-				Query: &invocationpb.InvocationQuery{RepoUrl: repo},
+				Query: query,
 				Count: count,
 			}
 			resp := &invocationpb.SearchInvocationResponse{}
@@ -107,7 +130,7 @@ func invocationListCmd() *cobra.Command {
 				return printProtoJSON(resp)
 			}
 			t := newTable()
-			t.header("INVOCATION", "CREATED", "DUR", "COMMAND", "STATUS", "SHA")
+			t.header("INVOCATION", "CREATED", "DUR", "COMMAND", "STATUS", "ROLE", "TAGS", "SHA")
 			for _, inv := range resp.GetInvocation() {
 				sha := inv.GetCommitSha()
 				if len(sha) > 8 {
@@ -119,6 +142,8 @@ func invocationListCmd() *cobra.Command {
 					fmtDurationUsec(inv.GetDurationUsec()),
 					inv.GetCommand()+" "+strings.Join(inv.GetPattern(), " "),
 					inv.GetInvocationStatus().String(),
+					inv.GetRole(),
+					formatTags(inv),
 					sha,
 				)
 			}
@@ -128,36 +153,8 @@ func invocationListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations to list")
-	return cmd
-}
-
-func invocationLogCmd() *cobra.Command {
-	var minLines int32
-	cmd := &cobra.Command{
-		Use:   "log <invocation-id>",
-		Short: "Print build log",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			req := &eventlogpb.GetEventLogChunkRequest{
-				InvocationId: args[0],
-				MinLines:     minLines,
-			}
-			resp := &eventlogpb.GetEventLogChunkResponse{}
-			if err := c.call("GetEventLogChunk", req, resp); err != nil {
-				return err
-			}
-			if jsonOutput {
-				return printProtoJSON(resp)
-			}
-			os.Stdout.Write(resp.GetBuffer())
-			return nil
-		},
-	}
-	cmd.Flags().Int32Var(&minLines, "lines", 500, "Minimum lines to fetch")
+	cmd.Flags().StringVar(&tagFilter, "tag", "", "Filter by tag (exact match)")
+	cmd.Flags().StringVar(&roleFilter, "role", "", "Filter by role (exact match)")
 	return cmd
 }
 
@@ -201,4 +198,92 @@ func resolveInvocationIDs(c *client, invocationID string) ([]string, error) {
 		return children, nil
 	}
 	return []string{invocationID}, nil
+}
+
+var aggTypeMap = map[string]invocationpb.AggType{
+	"user":    invocationpb.AggType_USER_AGGREGATION_TYPE,
+	"host":    invocationpb.AggType_HOSTNAME_AGGREGATION_TYPE,
+	"repo":    invocationpb.AggType_REPO_URL_AGGREGATION_TYPE,
+	"commit":  invocationpb.AggType_COMMIT_SHA_AGGREGATION_TYPE,
+	"date":    invocationpb.AggType_DATE_AGGREGATION_TYPE,
+	"branch":  invocationpb.AggType_BRANCH_AGGREGATION_TYPE,
+	"pattern": invocationpb.AggType_PATTERN_AGGREGATION_TYPE,
+}
+
+// TODO: --agg-type date returns a server-side ClickHouse error:
+// "Illegal type Float64 of first argument of function fromUnixTimestamp".
+// BuildBuddy stores updated_at_usec as Float64 but FROM_UNIXTIME expects integer.
+// Other aggregation types (branch, user, host, etc.) work fine.
+
+func invocationStatSubCmd() *cobra.Command {
+	var repo string
+	var aggType string
+	var limit int32
+	cmd := &cobra.Command{
+		Use:   "stat",
+		Short: "Show aggregated invocation statistics",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			c, err := newClient()
+			if err != nil {
+				return err
+			}
+			if repo == "" {
+				repo, err = detectRepoURL()
+				if err != nil {
+					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
+				}
+			}
+			at, ok := aggTypeMap[aggType]
+			if !ok {
+				return fmt.Errorf("unknown --agg-type %q; valid: user, host, repo, commit, date, branch, pattern", aggType)
+			}
+			groupID, err := c.resolveGroupID(repo)
+			if err != nil {
+				return err
+			}
+			req := &invocationpb.GetInvocationStatRequest{
+				RequestContext:  &ctxpb.RequestContext{GroupId: groupID},
+				AggregationType: at,
+				Limit:           limit,
+				Query: &invocationpb.InvocationStatQuery{
+					RepoUrl: repo,
+				},
+			}
+			resp := &invocationpb.GetInvocationStatResponse{}
+			if err := c.call("GetInvocationStat", req, resp); err != nil {
+				return err
+			}
+			if jsonOutput {
+				return printProtoJSON(resp)
+			}
+			t := newTable()
+			t.header("NAME", "BUILDS", "PASS", "FAIL", "ACTIONS", "BUILD_TIME", "LAST_GREEN", "LAST_RED")
+			for _, s := range resp.GetInvocationStat() {
+				lastGreen := "-"
+				if s.GetLastGreenBuildUsec() > 0 {
+					lastGreen = time.UnixMicro(s.GetLastGreenBuildUsec()).Format("2006-01-02 15:04")
+				}
+				lastRed := "-"
+				if s.GetLastRedBuildUsec() > 0 {
+					lastRed = time.UnixMicro(s.GetLastRedBuildUsec()).Format("2006-01-02 15:04")
+				}
+				t.row(
+					s.GetName(),
+					s.GetTotalNumBuilds(),
+					s.GetTotalNumSucessfulBuilds(),
+					s.GetTotalNumFailingBuilds(),
+					s.GetTotalActions(),
+					fmtDurationUsec(s.GetTotalBuildTimeUsec()),
+					lastGreen,
+					lastRed,
+				)
+			}
+			t.flush()
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
+	cmd.Flags().StringVar(&aggType, "agg-type", "branch", "Aggregation type: user, host, repo, commit, date (broken), branch, pattern")
+	cmd.Flags().Int32Var(&limit, "limit", 20, "Maximum number of results")
+	return cmd
 }

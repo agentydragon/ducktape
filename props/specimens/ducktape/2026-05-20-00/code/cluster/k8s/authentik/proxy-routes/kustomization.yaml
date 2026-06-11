@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - hubble-httproute.yaml
+  - openclaw-httproute.yaml
+  - alloy-otlp-httproute.yaml
+  - grocy-sf-httproute.yaml
+  - grocy-vallejo-httproute.yaml
+  - filebrowser-httproute.yaml
+  - agents-mitmproxy-httproute.yaml
+  - proxmox-httproute.yaml
+  - google-workspace-mcp-httproute.yaml
+  - longhorn-httproute.yaml
+  - goldilocks-httproute.yaml
+  - tandoor-httproute.yaml
+  - authentik-mcp-poc-backend-httproute.yaml
+  - sdr-httproute.yaml
+  - adsb-httproute.yaml
+  - openhands-httproute.yaml

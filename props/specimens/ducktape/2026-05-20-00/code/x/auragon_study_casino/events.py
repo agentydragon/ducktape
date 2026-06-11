@@ -1,0 +1,168 @@
+"""Pydantic schemas for casino audit event reads.
+
+Both `client_reported` (pre-2026-05-07 cutover) and `server_resolved` rows live
+in `game_events`; the corresponding `legacy_client_sync` and `server_action`
+rows in `ledger_events` are likewise historical. The Literal unions below
+preserve those source values so old rows still deserialize cleanly.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Literal, cast
+
+from pydantic import BaseModel, ConfigDict
+
+from x.auragon_study_casino.models import GameEventRow, LedgerEventRow
+
+
+class Card(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rank: str
+    suit: str
+
+
+class RouletteOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bet_type: str
+    bet_number: int | None
+    multiplier: int
+    result_color: str
+    result_number: int
+    # Server-resolved rows include the wheel index; pre-2026-05-07
+    # `client_reported` rows predate that field.
+    result_index: int | None = None
+    won: bool
+
+
+class SlotsOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str]
+    glyphs: list[str]
+    label: str
+    payout_kind: str
+
+
+class BlackjackOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str
+    text: str
+    player_cards: list[Card]
+    dealer_cards: list[Card]
+    player_value: int
+    dealer_value: int
+    player_blackjack: bool
+    dealer_blackjack: bool
+    initial_wager: int
+    doubled: bool
+
+
+GameOutcome = RouletteOutcome | SlotsOutcome | BlackjackOutcome
+
+_OUTCOME_BY_GAME: dict[str, type[RouletteOutcome] | type[SlotsOutcome] | type[BlackjackOutcome]] = {
+    "roulette": RouletteOutcome,
+    "slots": SlotsOutcome,
+    "blackjack": BlackjackOutcome,
+}
+
+
+class GameEventMutation(BaseModel):
+    """Per-action fields a mutator emits when it wants to write a
+    `game_events` row. `run_server_action` adds the persistence-side fields
+    (id, occurred_at_ms, credits/tokens before/after, etc.) at commit time.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    game: Literal["roulette", "slots", "blackjack"]
+    wager_credits: int
+    payout_tokens: int
+    outcome: GameOutcome
+
+
+class GameEventRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    client_event_id: str
+    server_at_ms: int
+    occurred_at_ms: int
+    game: Literal["roulette", "slots", "blackjack"]
+    event_type: Literal["settle"]
+    source: Literal["client_reported", "server_resolved"]
+    wager_credits: int
+    payout_tokens: int
+    credits_before: int
+    credits_after: int
+    tokens_before: int
+    tokens_after: int
+    server_credits: int
+    server_tokens: int
+    rules_version: str | None = None
+    rng_version: str | None = None
+    outcome: GameOutcome
+
+
+def game_event_from_row(row: GameEventRow) -> GameEventRead:
+    game = cast(Literal["roulette", "slots", "blackjack"], row.game)
+    outcome = _OUTCOME_BY_GAME[game].model_validate_json(row.outcome_json)
+    return GameEventRead(
+        id=row.id,
+        client_event_id=row.client_event_id,
+        server_at_ms=row.server_at_ms,
+        occurred_at_ms=row.occurred_at_ms,
+        game=game,
+        event_type=cast(Literal["settle"], row.event_type),
+        source=cast(Literal["client_reported", "server_resolved"], row.source),
+        wager_credits=row.wager_credits,
+        payout_tokens=row.payout_tokens,
+        credits_before=row.credits_before,
+        credits_after=row.credits_after,
+        tokens_before=row.tokens_before,
+        tokens_after=row.tokens_after,
+        server_credits=row.server_credits,
+        server_tokens=row.server_tokens,
+        rules_version=row.rules_version,
+        rng_version=row.rng_version,
+        outcome=outcome,
+    )
+
+
+class LedgerEventRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    client_action_id: str
+    server_at_ms: int
+    action_type: str
+    source: Literal["server_action", "legacy_client_sync"]
+    rules_version: str
+    rng_version: str | None = None
+    credits_before: int
+    credits_after: int
+    tokens_before: int
+    tokens_after: int
+    details: dict[str, Any]
+    result: dict[str, Any]
+
+
+def ledger_event_from_row(row: LedgerEventRow) -> LedgerEventRead:
+    return LedgerEventRead(
+        id=row.id,
+        client_action_id=row.client_action_id,
+        server_at_ms=row.server_at_ms,
+        action_type=row.action_type,
+        source=cast(Literal["server_action", "legacy_client_sync"], row.source),
+        rules_version=row.rules_version,
+        rng_version=row.rng_version,
+        credits_before=row.credits_before,
+        credits_after=row.credits_after,
+        tokens_before=row.tokens_before,
+        tokens_after=row.tokens_after,
+        details=json.loads(row.details_json),
+        result=json.loads(row.result_json),
+    )

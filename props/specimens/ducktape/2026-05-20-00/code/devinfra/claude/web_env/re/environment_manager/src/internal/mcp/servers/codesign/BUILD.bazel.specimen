@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "codesign",
+    srcs = [
+        "registration.go",
+        "server.go",
+        "sign_operations.go",
+        "types.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp/servers/codesign",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp",
+        "@com_github_mark3labs_mcp_go//mcp",
+        "@com_github_mark3labs_mcp_go//server",
+    ],
+)

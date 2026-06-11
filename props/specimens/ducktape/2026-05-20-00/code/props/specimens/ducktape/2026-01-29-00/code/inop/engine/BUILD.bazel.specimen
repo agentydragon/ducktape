@@ -1,0 +1,56 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "optimizer",
+    srcs = ["optimizer.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        ":runner_factory",
+        "//agent_core:agent",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:transcript_handler",
+        "//inop:config",
+        "//inop:model_factory",
+        "//inop:plots",
+        "//inop/grading:grader",
+        "//inop/io:jsonl_logger",
+        "//inop/io:logging_utils",
+        "//inop/io:task_loader",
+        "//inop/io:yaml_loader",
+        "//inop/mcp:prompt_feedback_server",
+        "//inop/prompting:pe_controller",
+        "//inop/prompting:prompt_engineer",
+        "//inop/prompting:summarizer",
+        "//inop/prompting:truncation_utils",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "runner_factory",
+    srcs = ["runner_factory.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/runners:base",
+        "//inop/runners:claude_runner",
+        "//inop/runners:openai_runner",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+    ],
+)

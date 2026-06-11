@@ -7,7 +7,7 @@
 # Why inline manifest: The CCM removes the
 # node.cloudprovider.kubernetes.io/uninitialized taint from nodes. Without
 # it running before Flux, no workloads (including Flux itself) can schedule
-# on VPS workers.
+# on Talos nodes.
 
 locals {
   talos_ccm_helmrelease = yamldecode(

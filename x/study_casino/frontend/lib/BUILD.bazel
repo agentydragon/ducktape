@@ -1,0 +1,8 @@
+load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+
+package(default_visibility = ["//x/study_casino/frontend:__pkg__"])
+
+js_openapi_zod(
+    name = "schema_zod",
+    generator = "//x/study_casino:export_schema_bin",
+)

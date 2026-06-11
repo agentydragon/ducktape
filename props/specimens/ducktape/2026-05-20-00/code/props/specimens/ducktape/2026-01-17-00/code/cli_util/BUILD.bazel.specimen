@@ -1,0 +1,23 @@
+"""CLI utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "cli_util",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":cli_util"],
+)

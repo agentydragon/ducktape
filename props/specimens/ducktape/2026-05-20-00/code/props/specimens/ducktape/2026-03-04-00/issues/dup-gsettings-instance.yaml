@@ -1,0 +1,16 @@
+rationale: |
+  Module-level `GSETTINGS_PROFILES_LIST` (line 19) duplicates the
+  `Gio.Settings` instance created by `GSettingsProfiles.__init__` (line 24).
+  `gsettings_set_default_profile_uuid` (line 42) uses the module-level
+  duplicate instead of being a `default_profile_uuid` setter on the class.
+  Move the function onto `GSettingsProfiles` and remove the module-level
+  duplicate.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [19, 19]
+        - [42, 43]

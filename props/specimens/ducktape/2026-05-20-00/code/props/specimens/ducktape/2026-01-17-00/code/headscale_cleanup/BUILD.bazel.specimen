@@ -1,0 +1,52 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "headscale_cleanup",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["tests/**"],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cli_util",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "headscale-cleanup",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [":headscale_cleanup"],
+)
+
+py_package(
+    name = "headscale_cleanup_pkg",
+    packages = ["headscale_cleanup"],
+    deps = [":headscale_cleanup"],
+)
+
+py_wheel(
+    name = "headscale_cleanup_wheel",
+    distribution = "headscale_cleanup",
+    entry_points = {
+        "console_scripts": [
+            "headscale-cleanup = headscale_cleanup.cli:main",
+        ],
+    },
+    python_requires = ">=3.11",
+    requires = [
+        "structlog",
+        "typer",
+    ],
+    version = "0.1.0",
+    deps = [":headscale_cleanup_pkg"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":headscale_cleanup"],
+)

@@ -28,7 +28,7 @@ spec:
         operator: Exists
         effect: NoSchedule
     transformations:
-      - name: hcloud-nodes
+      - name: ovh-nodes
         nodeSelector:
           - matchExpressions:
               - key: "topology.kubernetes.io/region"

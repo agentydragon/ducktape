@@ -1,0 +1,13 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: plaid-mcp-server
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: plaid-mcp-server
+  filterTags:
+    pattern: "^devel-[0-9]{14}-[0-9a-f]{7}$"
+  policy:
+    alphabetical:
+      order: asc

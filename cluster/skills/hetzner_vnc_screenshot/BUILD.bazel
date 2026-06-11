@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//skills:defs.bzl", "skill_package")
+
+py_library(
+    name = "vnc_screenshot",
+    srcs = ["vnc_screenshot.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//asyncvnc",
+        "@pypi//hcloud",
+        "@pypi//pillow",
+        "@pypi//typer_slim",
+        "@pypi//websockets",
+    ],
+)
+
+py_binary(
+    name = "vnc_screenshot_bin",
+    main_module = "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot",
+    deps = [":vnc_screenshot"],
+)
+
+skill_package(
+    name = "hetzner_vnc_screenshot",
+    srcs = ["SKILL.md"],
+)

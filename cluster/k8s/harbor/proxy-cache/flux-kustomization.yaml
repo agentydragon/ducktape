@@ -5,6 +5,7 @@ metadata:
   name: harbor-proxy-cache
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m0s
   path: ./cluster/k8s/harbor/proxy-cache
@@ -21,4 +22,5 @@ spec:
       namespace: flux-system
   dependsOn:
     - name: tofu-controller
+    - name: tofu-state-db
     - name: harbor # Wait for Harbor to be deployed

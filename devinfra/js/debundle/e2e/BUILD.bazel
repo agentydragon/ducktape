@@ -1,0 +1,361 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# End-to-end tests treating the debundler as a black-box binary.
+
+rust_library(
+    name = "support",
+    srcs = ["support.rs"],
+    crate_name = "debundle_e2e_support",
+    crate_root = "support.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
+        "@crates//:tempfile",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+# Standard e2e tests: shell out to the built debundler binary against
+# a fixture spec and assert on the emitted artifact tree. They do not
+# call into the `:analysis` Rust library — splitting that dep off
+# avoids dragging the library through every test's compile graph.
+_STANDARD_E2E_DEPS = [
+    ":support",
+    "@crates//:serde",
+    "@crates//:serde_json",
+    "@crates//:serde_yaml",
+    "@crates//:swc_common",
+    "@crates//:swc_ecma_ast",
+    "@crates//:swc_ecma_parser",
+    "@crates//:tempfile",
+    "@rules_rust//tools/runfiles",
+]
+
+[
+    rust_test(
+        name = name,
+        srcs = ["{}.rs".format(name)],
+        crate_root = "{}.rs".format(name),
+        data = [
+            "//devinfra/js/debundle",
+            "@nodejs_linux_amd64//:bin/node",
+        ],
+        edition = "2024",
+        deps = _STANDARD_E2E_DEPS,
+    )
+    for name in [
+        "anonymous_statement_test",
+        "binding_group_adopt_names_test",
+        "comma_list_owner_split_test",
+        "lowering_test",
+        "mini_factors_test",
+        "naturalization_test",
+        "object_plain_data_calls_test",
+        "pure_members_test",
+        "url_rebase_test",
+        "vendor_swap_test",
+        "identifier_rename_queue_test",
+        "sibling_declarator_steal_test",
+        "chunk_rename_cross_module_test",
+        "chunk_renames_test",
+        "rename_shadowed_inner_binding_test",
+        "missing_binding_member_test",
+        "residual_member_rename_test",
+        "source_order_emit_test",
+        "cross_module_emission_test",
+        "purity_test",
+        "import_coalescing_test",
+        "object_literal_import_collapse_test",
+        "object_literal_return_shorthand_drops_import_test",
+        "duplicate_export_test",
+        "at_init_promotion_nested_closure_test",
+        "at_init_promotion_post_await_test",
+        "auto_grown_export_alias_collision_test",
+        "reserved_word_mint_test",
+        "runtime_tdz_on_imported_class_test",
+        "accepted_spec_runs_under_node_test",
+        "lemma_two_rescued_asymmetric_cycle_test",
+        "mediator_reaches_asymmetric_cycle_test",
+        "namespace_aggregator_split_tdz_test",
+        "spec_comments_test",
+        "syntactic_holes_test",
+    ]
+]
+
+# E2E tests that also inspect the in-process analysis types
+# (`OwnerGraphReport`, `BindingReport`, etc.) emitted alongside the
+# debundler's text output. These need a direct dep on `:analysis`.
+[
+    rust_test(
+        name = name,
+        srcs = ["{}.rs".format(name)],
+        crate_root = "{}.rs".format(name),
+        data = [
+            "//devinfra/js/debundle",
+            "@nodejs_linux_amd64//:bin/node",
+        ],
+        edition = "2024",
+        deps = _STANDARD_E2E_DEPS + ["//devinfra/js/debundle:analysis"],
+    )
+    for name in [
+        "realizability_test",
+        "owner_graph_purity_reason_test",
+        "at_init_promotion_fndecl_direct_read_test",
+        "at_init_cross_module_call_body_reads_test",
+        "at_init_s_chain_dataflow_test",
+    ]
+]
+
+# The factorizer-landability e2e test calls into the factorizer library
+# directly alongside the standard fixture pipeline.
+rust_test(
+    name = "peel_factorize_landability_test",
+    srcs = ["peel_factorize_landability_test.rs"],
+    crate_root = "peel_factorize_landability_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+# Coverage for the factorizer routing orphaned anonymous statements
+# into the extension of their target active module.
+rust_test(
+    name = "peel_factorize_extend_anonymous_test",
+    srcs = ["peel_factorize_extend_anonymous_test.rs"],
+    crate_root = "peel_factorize_extend_anonymous_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+# CLI verb `debundle modules merge` (+ deprecated `debundle module
+# merge`): pure YAML splice with the new `--dry-run` flag. The
+# binary-shelling tests cover the new clap top-level node and the
+# deprecation-alias path.
+rust_test(
+    name = "module_merge_test",
+    srcs = ["module_merge_test.rs"],
+    crate_root = "module_merge_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:cli",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+# CLI verb `debundle modules delete`: validate-by-default deletion
+# of module YAML files with `--force` (non-empty override),
+# `--dry-run`, `--no-verify`, and the batch atomicity contract.
+rust_test(
+    name = "modules_delete_cli_test",
+    srcs = ["modules_delete_cli_test.rs"],
+    crate_root = "modules_delete_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:cli",
+        "@crates//:tempfile",
+    ],
+)
+
+# Realizability gate hookup (task #84) for `debundle modules merge`
+# and `debundle modules delete --force`. Shells out to the built
+# binary against synthetic owner_graph.json fixtures.
+rust_test(
+    name = "modules_gate_cli_test",
+    srcs = ["modules_gate_cli_test.rs"],
+    crate_root = "modules_gate_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# Realizability + atom-split gate hookup for `debundle bindings
+# assign` (see CLI_DOGFOOD.md). Same fixture pattern as
+# `modules_gate_cli_test`: shell out to the built binary against
+# synthetic owner_graph.json.
+rust_test(
+    name = "bindings_assign_gate_cli_test",
+    srcs = ["bindings_assign_gate_cli_test.rs"],
+    crate_root = "bindings_assign_gate_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# Realizability + atom-split gate hookup for `debundle bindings
+# unassign`. Mirrors `bindings_assign_gate_cli_test`: shells out to
+# the built binary against synthetic owner_graph.json fixtures.
+rust_test(
+    name = "bindings_unassign_gate_cli_test",
+    srcs = ["bindings_unassign_gate_cli_test.rs"],
+    crate_root = "bindings_unassign_gate_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# CLI verbs `debundle bindings comment` + `debundle modules comment`:
+# YAML `comment:` field edits including a fake-`$EDITOR` flow. Calls
+# the library's public Rust entry points directly.
+rust_test(
+    name = "comment_cli_test",
+    srcs = ["comment_cli_test.rs"],
+    crate_root = "comment_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:cli",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+# Top-level query commands lifted from `peel <sub>` to top-level:
+# `atoms`, `coverage`, `graph-summary`, `describe`, `show-source`,
+# `modules propose`. Calls the public peel report fns directly.
+rust_test(
+    name = "top_level_query_cli_test",
+    srcs = ["top_level_query_cli_test.rs"],
+    crate_root = "top_level_query_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# `debundle modules list` filters + the env-var plumbing for
+# DEBUNDLE_MODULES. Shells out to the built binary so the env var
+# resolution is exercised.
+rust_test(
+    name = "modules_list_cli_test",
+    srcs = ["modules_list_cli_test.rs"],
+    crate_root = "modules_list_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# `debundle spec stats`: one-shot spec-wide summary. Shells out to the
+# built binary so the clap subcommand wiring + text/json/ndjson format
+# selectors are exercised end-to-end.
+rust_test(
+    name = "spec_stats_cli_test",
+    srcs = ["spec_stats_cli_test.rs"],
+    crate_root = "spec_stats_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# `debundle gate {list,describe,cut}` against a synthetic
+# owner_graph.json + cycles.json fixture pair. Covers the trimmed
+# wire shape, evidence-recompute from owner_graph.json, the
+# `--binding` filter, `--cycles` override, and error handling for
+# unknown ids.
+rust_test(
+    name = "gate_cli_test",
+    srcs = ["gate_cli_test.rs"],
+    crate_root = "gate_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# `debundle scc` filters + `debundle cluster` neighbors against a
+# synthetic quotient-graph fixture.
+rust_test(
+    name = "scc_cluster_cli_test",
+    srcs = ["scc_cluster_cli_test.rs"],
+    crate_root = "scc_cluster_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# `debundle bindings list` / `rename` / `assign` against in-memory
+# YAML fixtures. Calls the library entry points directly.
+rust_test(
+    name = "bindings_assign_cli_test",
+    srcs = ["bindings_assign_cli_test.rs"],
+    crate_root = "bindings_assign_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:cli",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
+    name = "binding_name_resolution_cli_test",
+    srcs = ["binding_name_resolution_cli_test.rs"],
+    crate_root = "binding_name_resolution_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

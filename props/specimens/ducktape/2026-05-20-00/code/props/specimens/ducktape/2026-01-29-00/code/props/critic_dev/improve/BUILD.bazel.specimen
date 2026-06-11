@@ -1,0 +1,126 @@
+"""Improvement agent - implementation and container image.
+
+Build targets:
+    bazel run //props/critic_dev/improve:load  -- Load into local Docker
+    bazel run //props/critic_dev/improve:push  -- Push to local registry (localhost:8000)
+
+The container runs an agent loop that:
+1. Queries LLM via proxy (OPENAI_BASE_URL)
+2. Executes improvement tools via REST API
+3. Improves prompts based on critic feedback
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+        "//props/core:agent_helpers",
+        "//props/core:agent_types",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core:loop_utils",
+        "//props/core/models:examples",
+        "//props/critic_dev/optimize:main",
+        "//props/db:config",
+        "//props/db:session",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "improve",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":improve"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "improve_agent",
+    srcs = ["improve_agent.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/orchestration:agent_registry",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":load",
+    ],
+    env = {
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "e2e",
+        "requires_docker",
+    ],
+    deps = [
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props/db:agent_definition_ids",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/improve"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["improvement-agent:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/improvement",
+)

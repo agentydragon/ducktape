@@ -1,0 +1,71 @@
+# Lint tooling configuration
+
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Custom mypy CLI that uses symlinks instead of copies for upstream caches.
+# This reduces disk usage from O(n²) to O(n) for the mypy cache merge step.
+# See mypy_runner.py for details on the patch.
+#
+# deps includes mypy and its plugins:
+#   - pydantic: understands Field aliases, model validation
+#   - sqlalchemy: ORM type inference for mapped columns
+#
+# Type stubs and packages with py.typed are provided by:
+# 1. The types extension (@pip_types) for types-*/stubs packages
+# 2. The target's deps for packages with py.typed (via MYPYPATH from aspect)
+py_binary(
+    name = "mypy_cli",
+    srcs = ["mypy_runner.py"],
+    main = "mypy_runner.py",
+    python_version = "3.13",
+    deps = [
+        "@pypi//mypy",
+        "@pypi//pydantic",  # pydantic.mypy plugin
+        "@pypi//sqlalchemy",  # sqlalchemy.ext.mypy.plugin
+    ],
+)
+
+# ESLint binary for JS/TS linting
+# Used by lint_eslint_aspect in linters.bzl
+# Set BAZEL_BINDIR to allow running outside Bazel build actions
+eslint_bin.eslint_binary(
+    name = "eslint",
+    env = {"BAZEL_BINDIR": "."},
+)
+
+# Prettier binary for JS/TS/Svelte formatting
+# Set BAZEL_BINDIR to allow running outside Bazel build actions
+# See: https://github.com/aspect-build/rules_js#running-nodejs-programs
+#
+# The --config flag points prettier at the config in runfiles rather than the
+# source tree. This ensures plugin resolution works in CI where node_modules
+# doesn't exist. See aspect-build/rules_lint#176 and PR #417.
+prettier_bin.prettier_binary(
+    name = "prettier",
+    data = ["//:prettierrc"],
+    env = {"BAZEL_BINDIR": "."},
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
+    ],
+)
+
+# Buildifier targets for BUILD/Starlark linting
+# Run: bazel run //:buildifier (fix mode)
+# Run: bazel run //:buildifier.check (check mode)
+buildifier(
+    name = "buildifier",
+    lint_mode = "fix",
+    mode = "fix",
+)
+
+buildifier(
+    name = "buildifier.check",
+    lint_mode = "warn",
+    mode = "diff",
+)

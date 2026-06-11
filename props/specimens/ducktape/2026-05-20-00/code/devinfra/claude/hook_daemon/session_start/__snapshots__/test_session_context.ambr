@@ -1,0 +1,155 @@
+# serializer version: 1
+# name: test_cli_nix_with_nixpkgs
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_cli_nix_without_nixpkgs
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_cli_no_nix
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_cli_with_buildbuddy
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  
+  ## BuildBuddy
+  Bazel builds and tests by default execute remotely via BuildBuddy.
+  Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_startup_script_failed
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  **startup_env_script** `None` FAILED (exit 1) — yielded 0 vars
+  ```
+  WARNING: secrets: BUILDBUDDY_API_KEY: sops decrypt failed: age: no identity matched
+  ```
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_startup_script_succeeded
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  **startup_env_script** `None` succeeded — yielded 2 vars: BUILDBUDDY_API_KEY, GITHUB_TOKEN
+  ```
+  secrets: BUILDBUDDY_API_KEY: OK
+  kubeconfig: wrote ~/.kube/config
+  Nix: available with nixpkgs.
+  ```
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_web_connectivity_failed
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** firecracker sandbox
+  **Connectivity:** WARNING — outbound internet probe failed: ConnectError: cannot reach host.
+  If this container requires explicit proxy configuration (HTTPS_PROXY with JWT,
+  UDS proxy for Bazel gRPC, Java truststore), restore the `devinfra/claude/auth_proxy/`
+  subsystem from git history.
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_web_no_nix
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** firecracker sandbox
+  
+  ## BuildBuddy
+  Bazel builds and tests by default execute remotely via BuildBuddy.
+  Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_web_with_background_commands
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** firecracker sandbox
+  
+  ## Background tasks
+  - apt package install
+  - bazel info (after env)
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_web_with_docker
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** firecracker sandbox
+  
+  running, `DOCKER_HOST=unix:///var/run/docker.sock`
+  - `docker run` works. `docker build --network=host` works (BuildKit handles large output gracefully).
+    Details: <devinfra/claude/docs/docker_evaluation_results.md>
+    Use `--network=host` for builds; Alpine apk may need `--no-check-certificate` for TLS proxy.
+  - Storage: overlay on tmpfs (layer caching works for <~35 layers). Use `--layers=false` for larger Dockerfiles.
+  
+  ## BuildBuddy
+  Bazel builds and tests by default execute remotely via BuildBuddy.
+  Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_with_warnings_in_log
+  '''
+  # Claude Code session start hook — OK with warnings
+  
+  **Environment:** CLI (local)
+  
+  - WARNING: Something went wrong during setup
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---

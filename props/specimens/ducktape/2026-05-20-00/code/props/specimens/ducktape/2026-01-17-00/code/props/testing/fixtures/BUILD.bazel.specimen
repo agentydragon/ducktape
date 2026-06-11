@@ -1,0 +1,52 @@
+"""Props test fixtures package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = [
+        "__init__.py",
+        "db.py",
+        "e2e.py",
+        "ground_truth.py",
+        "runs.py",
+        "scopes.py",
+    ],
+    data = glob(["testdata/**"]),
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core_testing",
+        "//mcp_infra",
+        "//openai_utils",
+        # props.core modules
+        "//props/core:agent_registry",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:ids",
+        # props.core/db modules
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:config",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:setup",
+        "//props/core/db:snapshots",
+        "//props/core/db/sync",
+        # props.core/models modules
+        "//props/core/models:examples",
+        "//props/core/models:true_positive",
+        "//props/core/models:types",
+        # props.core/prompt_improve modules
+        "//props/core/prompt_improve:improve_agent",
+        "//props/core/prompt_improve:reminder_handler",
+        # props.core/prompt_optimize modules
+        "//props/core/prompt_optimize:prompt_optimizer",
+        "//props/core/prompt_optimize:target_metric",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)

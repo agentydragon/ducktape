@@ -1,0 +1,221 @@
+"""Critic agent - implementation and container image.
+
+Build targets:
+    bazel run //props/agents/critic:load  -- Load into local Docker
+    bazel run //props/agents/critic:push  -- Push to local registry (localhost:8000)
+
+The container runs an agent loop that:
+1. Fetches snapshot to /workspace
+2. Renders system prompt from template
+3. Queries LLM via proxy (OPENAI_BASE_URL)
+4. Executes shell commands via exec tool
+5. Handles critic tools (insert_issue, submit, etc.) in Python
+6. Exits 0 on successful submit
+"""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
+
+exports_files(
+    ["prompt.md.mako"],
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    data = [
+        "prompt.md.mako",
+        "//props/agents/critic/variants:contract_truthfulness.md",
+        "//props/agents/critic/variants:dead_code.md",
+        "//props/agents/critic/variants:flag_propagation.md",
+        "//props/agents/critic/variants:high_recall_critic.md",
+        "//props/agents/critic/variants:verbose_docs.md",
+        "//props/agents/docs:db/critiques.md.mako",
+        "//props/agents/docs:source_inspection.md.mako",
+        "//props/agents/docs:system_access.md",
+    ],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:logging_handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "//props/agents:runtime",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "critic",
+    main_module = "props.agents.critic.main",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
+    name = "critic_bin",
+    main = "main.py",
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":main",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":critic_bin",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_python3_symlink(
+    name = "python3_symlink",
+    binary_name = "critic_bin",
+)
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_critic_sql_integration",
+    size = "medium",
+    srcs = ["test_critic_sql_integration.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_reported_issues_constraints",
+    srcs = ["test_reported_issues_constraints.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:runs",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":image",
+        "//props/agents/grader:image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":main",
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props:conftest",
+        "//props/agents/critic/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing:constants",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("critic_bin"),
+    env = py_image_env(binary_name = "critic_bin"),
+    labels = {"org.opencontainers.image.title": "critic"},
+    tars = [
+        ":layers",
+        ":python3_symlink",
+    ],
+    visibility = ["//visibility:public"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["critic:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/critic",
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/orchestration:agent_credentials",
+        "//props/testing/fixtures:runs",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -1,0 +1,86 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vm-images-publisher
+  namespace: vm-images-publisher
+  annotations:
+    description: >-
+      Builds `.#bootstrap-image` from a chosen git ref in-cluster and uploads
+      the qcow2 to SeaweedFS via the internal S3 endpoint. Suspended on purpose;
+      operators invoke with `kubectl create job --from=cronjob/vm-images-publisher
+      publish-<sha> -n vm-images-publisher`. See README.md.
+spec:
+  schedule: "0 0 1 1 *"
+  suspend: true
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 5400
+      template:
+        spec:
+          restartPolicy: Never
+          # Internal SeaweedFS endpoint resolves via normal pod DNS — no need
+          # for hostNetwork (which the x/ smoke Job used to work around a
+          # sandbox-namespace DNS quirk that doesn't exist here).
+          nodeSelector:
+            topology.kubernetes.io/region: hil
+          containers:
+            - name: publish
+              image: nixos/nix:2.24.11
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: 4Gi
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+              env:
+                - name: NIX_CONFIG
+                  value: |
+                    experimental-features = nix-command flakes
+                    substituters = https://cache.nixos.org/
+                    trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+                    system-features = benchmark big-parallel kvm nixos-test uid-range
+                    accept-flake-config = true
+              envFrom:
+                - secretRef:
+                    name: vm-images-s3-writer
+              # nixos/nix has no /bin/sh and only a minimal profile (no git,
+              # awscli2, gawk). Drop into a `nix shell` that provides the
+              # script's runtime deps, then exec it. `nix shell` (unlike
+              # `nix profile install`) doesn't read the existing user profile,
+              # so it works under default pure-eval.
+              command:
+                - bash
+                - -c
+                - >-
+                  exec nix shell
+                  nixpkgs#git nixpkgs#awscli2 nixpkgs#gawk
+                  --command bash /scripts/publish.sh
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: kvm
+                  mountPath: /dev/kvm
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: vm-images-publisher-scripts
+                defaultMode: 0o555
+            - name: kvm
+              hostPath:
+                path: /dev/kvm
+                type: CharDevice
+            # No /nix mount: the image already populates /nix/store with bash,
+            # nix, coreutils, etc. An emptyDir here would shadow them and the
+            # container couldn't exec `bash`. Container overlay handles writes.
+            - name: tmp
+              emptyDir:
+                sizeLimit: 8Gi

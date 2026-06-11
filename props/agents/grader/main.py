@@ -18,17 +18,13 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from agent_core.agent import Agent
-from agent_core.direct_provider import DirectToolProvider
-from agent_core.handler import RedirectOnTextMessageHandler
-from agent_core.logging_handler import LoggingHandler
-from agent_core.loop_control import AllowAnyToolOrTextMessage
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
-from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import SystemMessage
+from openai_utils.errors import ContextLengthExceededError, translate_context_length
+from props.agents.af.exec_tool import make_exec_tool
+from props.agents.af.loop import make_agent, run_until_done
+from props.agents.af.middleware import terminate_after_tools
+from props.agents.af.tools import direct_tools
 from props.agents.grader.drift_handler import Drift, get_drift as get_drift_fn
-from props.agents.grader.notification_handler import GraderNotificationsHandler
+from props.agents.grader.notification_middleware import notification_chat_middleware
 from props.agents.grader.tools import (
     AddToClusterArgs,
     ClusterDetails,
@@ -55,7 +51,6 @@ from props.agents.grader.tools import (
 )
 from props.agents.runtime import (
     WORKSPACE,
-    create_bound_model_from_env,
     get_current_agent_run,
     get_current_agent_run_id,
     render_system_prompt,
@@ -97,8 +92,8 @@ TEXT_OUTPUT_REMINDER = (
 _WORKSPACE = Path("/workspace")
 
 
-class GraderAbortError(BaseException):
-    """Raised by report_failure to terminate the grader with exit code 1."""
+class GraderAbortError(Exception):
+    """Raised after the run ends when the report_failure tool fired; grader exits with code 1."""
 
 
 class GraderState:
@@ -112,6 +107,9 @@ class GraderState:
         self.snapshot_slug = snapshot_slug
         self.wake_event = asyncio.Event()
         self.notification_queue: list[GradingPendingNotification] = []
+        # Set by the report_failure tool; the loop raises GraderAbortError once the run ends.
+        self.failed = False
+        self.failure_message = ""
 
     def notification_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -130,25 +128,9 @@ class GraderState:
         self.wake_event.set()
 
 
-def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
-    """Create a GTRef from a GradingPending row."""
-    if pending.tp_id:
-        return TPRef(tp_id=pending.tp_id, occurrence_id=pending.tp_occurrence_id)
-    return FPRef(fp_id=pending.fp_id, occurrence_id=pending.fp_occurrence_id)
+def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> list:
+    """Build the grader tools (MAF FunctionTools) bound to the given run."""
 
-
-def _create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database
-) -> DirectToolProvider:
-    """Create a tool provider with grader tools bound to the given run."""
-    provider = DirectToolProvider()
-
-    @provider.tool
-    async def exec(args: DirectExecArgs) -> BaseExecResult:
-        """Execute a shell command. Use for file operations, database queries, etc."""
-        return await run_direct_exec(args, default_cwd=_WORKSPACE)
-
-    @provider.tool
     def get_drift() -> Drift:
         """Get all pending work: grading edges and clustering issues.
 
@@ -157,7 +139,6 @@ def _create_grader_tool_provider(
         """
         return get_drift_fn(snapshot_slug, db)
 
-    @provider.tool
     def show_issue(args: ShowIssueArgs) -> IssueDetails:
         """Show details of a critique issue including its locations."""
         with db.session() as session:
@@ -178,7 +159,6 @@ def _create_grader_tool_provider(
                 occurrences=[OccurrenceInfo(locations=list(occ.locations or [])) for occ in occs],
             )
 
-    @provider.tool
     def show_tp(args: ShowTPArgs) -> GTDetails:
         """Show details of a true positive occurrence."""
         with db.session() as session:
@@ -198,7 +178,6 @@ def _create_grader_tool_provider(
             gt_ref = TPRef(tp_id=args.tp_id, occurrence_id=args.occurrence_id)
             return GTDetails(gt_ref=gt_ref, rationale=tp.rationale, files=files_dict, note=occ.note)
 
-    @provider.tool
     def show_fp(args: ShowFPArgs) -> GTDetails:
         """Show details of a false positive occurrence."""
         with db.session() as session:
@@ -218,7 +197,6 @@ def _create_grader_tool_provider(
             gt_ref = FPRef(fp_id=args.fp_id, occurrence_id=args.occurrence_id)
             return GTDetails(gt_ref=gt_ref, rationale=fp.rationale, files=files_dict, note=occ.note)
 
-    @provider.tool
     def insert_edges(args: InsertEdgesArgs) -> str:
         """Create grading edges matching an issue to GT occurrences.
 
@@ -253,7 +231,6 @@ def _create_grader_tool_provider(
 
         return f"Created {len(args.edges)} edges for {args.run}/{args.issue_id}"
 
-    @provider.tool
     def fill_remaining(args: FillRemainingArgs) -> str:
         """Fill remaining pending edges for an issue with credit=0.
 
@@ -289,7 +266,6 @@ def _create_grader_tool_provider(
 
         return f"Filled {len(pending)} edges with credit=0 for {args.run}/{args.issue_id}"
 
-    @provider.tool
     def delete_edges(args: DeleteEdgesArgs) -> str:
         """Delete all grading edges for an issue. Use to redo grading."""
         with db.session() as session:
@@ -301,12 +277,13 @@ def _create_grader_tool_provider(
 
         return f"Deleted {count} edges for {args.run}/{args.issue_id}"
 
-    @provider.tool
-    def report_failure(args: ReportFailureArgs) -> None:
+    def report_failure(args: ReportFailureArgs) -> str:
         """Report that grading could not be completed. Terminates the grader."""
-        raise GraderAbortError(args.message)
+        state.failed = True
+        state.failure_message = args.message
+        logger.info("Reported failure: %s", args.message)
+        return f"Reported failure: {args.message}"
 
-    @provider.tool
     async def sleep(args: SleepArgs) -> str:
         """Sleep until new work arrives.
 
@@ -332,7 +309,6 @@ def _create_grader_tool_provider(
 
     # --- Clustering tools ---
 
-    @provider.tool
     def list_clusters(args: ListClustersArgs) -> list[ClusterSummary]:
         """List all clusters for this snapshot."""
         with db.session() as session:
@@ -347,7 +323,6 @@ def _create_grader_tool_provider(
                 for c in clusters
             ]
 
-    @provider.tool
     def show_cluster(args: ShowClusterArgs) -> ClusterDetails:
         """Show full details of a cluster including all members."""
         with db.session() as session:
@@ -367,7 +342,6 @@ def _create_grader_tool_provider(
                 ],
             )
 
-    @provider.tool
     def create_cluster(args: CreateClusterArgs) -> str:
         """Create a new cluster with initial member issues.
 
@@ -394,7 +368,6 @@ def _create_grader_tool_provider(
                 )
         return f"Created cluster '{args.cluster_id}' with {len(args.members)} members"
 
-    @provider.tool
     def add_to_cluster(args: AddToClusterArgs) -> str:
         """Add issues to an existing cluster."""
         with db.session() as session:
@@ -416,7 +389,6 @@ def _create_grader_tool_provider(
                 )
         return f"Added {len(args.members)} members to cluster '{args.cluster_id}'"
 
-    @provider.tool
     def remove_from_cluster(args: RemoveFromClusterArgs) -> str:
         """Remove an issue from a cluster. Fails if it would leave the cluster empty."""
         with db.session() as session:
@@ -434,7 +406,6 @@ def _create_grader_tool_provider(
                 raise ValueError(f"Member not found: {args.run}/{args.issue_id} in cluster '{args.cluster_id}'")
         return f"Removed {args.run}/{args.issue_id} from cluster '{args.cluster_id}'"
 
-    @provider.tool
     def delete_cluster(args: DeleteClusterArgs) -> str:
         """Delete a cluster and all its memberships. Members become unclustered."""
         with db.session() as session:
@@ -445,7 +416,26 @@ def _create_grader_tool_provider(
                 raise ValueError(f"Cluster not found: {args.cluster_id}")
         return f"Deleted cluster '{args.cluster_id}'"
 
-    return provider
+    return [
+        make_exec_tool(_WORKSPACE),
+        *direct_tools(
+            get_drift,
+            show_issue,
+            show_tp,
+            show_fp,
+            insert_edges,
+            fill_remaining,
+            delete_edges,
+            report_failure,
+            sleep,
+            list_clusters,
+            show_cluster,
+            create_cluster,
+            add_to_cluster,
+            remove_from_cluster,
+            delete_cluster,
+        ),
+    ]
 
 
 async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> None:
@@ -458,23 +448,18 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
     with db.session() as session:
         grader_run_id = get_current_agent_run_id(session)
 
-    tool_provider = _create_grader_tool_provider(grader_run_id, snapshot_slug, state, db)
-    bound_model = create_bound_model_from_env(db)
-
-    agent = await Agent.create(
-        tool_provider=tool_provider,
-        handlers=[
-            LoggingHandler(logger),
-            GraderNotificationsHandler(state.notification_queue),
-            RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
-        ],
-        client=bound_model,
-        parallel_tool_calls=False,
-        tool_policy=AllowAnyToolOrTextMessage(),
+    agent = make_agent(
+        db,
+        instructions=system_prompt,
+        tools=_create_grader_tools(grader_run_id, snapshot_slug, state, db),
+        middleware=[notification_chat_middleware(state.notification_queue), terminate_after_tools({"report_failure"})],
     )
 
-    agent.process_message(SystemMessage.text(system_prompt))
-    await agent.run()
+    # Persistent loop: the model grades and calls `sleep` (which blocks until pg_notify);
+    # the run only ends on report_failure (terminate middleware) or a context-length overflow.
+    await translate_context_length(run_until_done, agent, done=lambda: state.failed, reminder=TEXT_OUTPUT_REMINDER)
+    if state.failed:
+        raise GraderAbortError(state.failure_message)
 
 
 async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:

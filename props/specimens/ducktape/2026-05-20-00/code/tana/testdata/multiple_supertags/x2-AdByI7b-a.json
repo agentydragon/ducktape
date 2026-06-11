@@ -1,0 +1,247 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "x2-AdByI7b-a",
+      "props": {
+        "created": 1749775773142,
+        "name": "Node with multiple supertags: (test reference x2-AdByI7b-a)",
+        "_ownerId": "MFjacEHVlv36"
+      },
+      "touchCounts": [53, 0],
+      "modifiedTs": [1749780142970, 0],
+      "children": ["x_DxhU6IlETf", "N5M5-9TapzvZ"]
+    },
+    {
+      "id": "x_DxhU6IlETf",
+      "props": {
+        "created": 1749775783216,
+        "name": "Foobar",
+        "_ownerId": "x2-AdByI7b-a",
+        "_metaNodeId": "rTUuD8gPafDI"
+      },
+      "touchCounts": [45, 0],
+      "modifiedTs": [1749775803846, 0],
+      "children": ["kK2b7z-44F00"]
+    },
+    {
+      "id": "nc2QfkloInZH",
+      "props": {
+        "created": 1749775788273,
+        "name": "tag-a",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "v7uqLU6eYtiY"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749775788506, 0]
+    },
+    {
+      "id": "v7uqLU6eYtiY",
+      "props": {
+        "created": 1749775788284,
+        "_ownerId": "nc2QfkloInZH",
+        "_docType": "metanode"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775788506, 0],
+      "children": ["FbRO9wIHhR5C", "OA2nWpCMZs7-", "hEPb4y-jjMLg"]
+    },
+    {
+      "id": "FbRO9wIHhR5C",
+      "props": {
+        "created": 1749775788286,
+        "_docType": "tuple",
+        "_ownerId": "v7uqLU6eYtiY"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775788506, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "rTUuD8gPafDI",
+      "props": {
+        "created": 1749775788340,
+        "_ownerId": "x_DxhU6IlETf",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749775789014, 0],
+      "children": ["U920rxGTLl6c"]
+    },
+    {
+      "id": "U920rxGTLl6c",
+      "props": {
+        "created": 1749775788341,
+        "_docType": "tuple",
+        "_ownerId": "rTUuD8gPafDI"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749775796354, 0],
+      "children": ["SYS_A13", "nc2QfkloInZH", "un7qL99zcRrd", "_ORFMoPhGH_R", "AHC9CAhqpuG2"]
+    },
+    {
+      "id": "un7qL99zcRrd",
+      "props": {
+        "created": 1749775791301,
+        "name": "tag-b",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "zE5pJZRvnaWu"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749775791521, 0]
+    },
+    {
+      "id": "zE5pJZRvnaWu",
+      "props": {
+        "created": 1749775791307,
+        "_ownerId": "un7qL99zcRrd",
+        "_docType": "metanode"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775791521, 0],
+      "children": ["kkAbCBYctuYN", "IKEisYhpmZBl", "8aNHIhFKbbQr"]
+    },
+    {
+      "id": "kkAbCBYctuYN",
+      "props": {
+        "created": 1749775791308,
+        "_docType": "tuple",
+        "_ownerId": "zE5pJZRvnaWu"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775791521, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "_ORFMoPhGH_R",
+      "props": {
+        "created": 1749775793954,
+        "name": "tag-c",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "1Nxji-vBriG6"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749775794324, 0]
+    },
+    {
+      "id": "1Nxji-vBriG6",
+      "props": {
+        "created": 1749775793964,
+        "_ownerId": "_ORFMoPhGH_R",
+        "_docType": "metanode"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775794324, 0],
+      "children": ["LaREisAFEYI3", "e5nzCVwd9BdG", "yPVxvqOmlFcD"]
+    },
+    {
+      "id": "LaREisAFEYI3",
+      "props": {
+        "created": 1749775793967,
+        "_docType": "tuple",
+        "_ownerId": "1Nxji-vBriG6"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775794324, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "AHC9CAhqpuG2",
+      "props": {
+        "created": 1749775795640,
+        "name": "tag-d",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "p9q5VESL2qhl"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749775795865, 0]
+    },
+    {
+      "id": "p9q5VESL2qhl",
+      "props": {
+        "created": 1749775795644,
+        "_ownerId": "AHC9CAhqpuG2",
+        "_docType": "metanode"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775795865, 0],
+      "children": ["MGT2LJaBy_Fm", "nJQIzWQ7EASb", "MK3kDnt1CIn7"]
+    },
+    {
+      "id": "MGT2LJaBy_Fm",
+      "props": {
+        "created": 1749775795645,
+        "_docType": "tuple",
+        "_ownerId": "p9q5VESL2qhl"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749775795865, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "kK2b7z-44F00",
+      "props": {
+        "created": 1749775802468,
+        "name": "testing",
+        "_ownerId": "x_DxhU6IlETf"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749775803179, 0]
+    },
+    {
+      "id": "N5M5-9TapzvZ",
+      "props": {
+        "created": 1749775803343,
+        "name": "Reference (full-block) to node with multiple supertags:",
+        "_ownerId": "x2-AdByI7b-a"
+      },
+      "touchCounts": [92, 0],
+      "modifiedTs": [1749775991898, 0],
+      "children": ["x_DxhU6IlETf"]
+    }
+  ]
+}

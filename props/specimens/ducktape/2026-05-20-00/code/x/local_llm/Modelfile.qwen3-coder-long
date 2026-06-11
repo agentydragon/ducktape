@@ -1,0 +1,14 @@
+# Qwen3-Coder with extended context for 2x 5090 (64GB VRAM)
+# Based on analysis: Q4_K_M (19GB) + FP16 KV cache supports ~218K context
+# Starting with 131K as a safe default, can increase to 200K+
+
+FROM qwen3-coder:30b
+
+# Extended context window (131072 tokens = ~100K words)
+PARAMETER num_ctx 131072
+
+# Keep model loaded longer (10 minutes)
+PARAMETER num_keep 600
+
+# Use both GPUs
+PARAMETER num_gpu 99

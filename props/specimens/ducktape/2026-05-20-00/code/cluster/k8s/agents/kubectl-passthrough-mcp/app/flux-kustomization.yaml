@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubectl-passthrough-mcp
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/kubectl-passthrough-mcp/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kubectl-passthrough-mcp
+      namespace: kubectl-passthrough-mcp
+  dependsOn:
+    - name: gateway
+    - name: kubectl-passthrough-mcp-namespace
+    # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
+    - name: agent-machine-access-tf

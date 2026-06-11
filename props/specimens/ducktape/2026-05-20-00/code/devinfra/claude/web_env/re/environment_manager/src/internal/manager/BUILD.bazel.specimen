@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "manager",
+    srcs = [
+        "manager.go",
+        "mcp.go",
+        "skill_extraction.go",
+        "tunnel_register.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/manager",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/input",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y/diag",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions",
+    ],
+)

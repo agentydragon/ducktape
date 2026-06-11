@@ -1,0 +1,24 @@
+%%tana%%
+- Node rendered as a table (test reference SGrUB4iyWYde)
+  - Table
+    - Row 1
+      - Standard column::
+        - A1
+          - A1a
+      - Number column:: 11
+      - Row 1 content foo
+      - Row 1 content bar
+    - Row 2
+      - Standard column::
+        - A2
+          - A2a
+      - Number column:: 22
+      - Row 2 content foo
+      - Row 2 content bar
+    - Row 3
+      - Standard column::
+        - A3
+          - A3a
+      - Number column:: 33
+      - Row 3 content foo
+      - Row 3 content bar

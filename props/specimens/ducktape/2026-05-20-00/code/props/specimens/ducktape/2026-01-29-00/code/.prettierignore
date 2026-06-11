@@ -1,0 +1,64 @@
+# HTML fragments that are intentionally incomplete
+finance/worthy/worthy/index_head.html
+finance/worthy/worthy/index_tail.html
+
+# Symbolic links and Jinja2 templates
+llm/html/**
+
+# Claude Code testdata - description.md are extracted content from Claude Code
+claude/claude_hooks/testdata/claude_tools/**/*.md
+
+# OrcaSlicer config - machine-generated, should not be formatted
+nonrcm-dotfiles/config/OrcaSlicer/**
+
+# Jinja2 templates - prettier mangles block tag formatting
+gatelet/server/templates/**
+inventree_utils/labels/**
+
+# Tana export references - generated content, should not be formatted
+tana/export/references/**
+
+# Tana testdata - exclude non-JSON fixtures (JSON should be formatted)
+tana/testdata/**/*.md
+tana/testdata/**/*.tanapaste
+tana/testdata/**/*.txt
+
+# Logseq export - generated content
+llm/instruct-logseq/**
+
+# Old k8s configs - archived, contains Helm templates that aren't valid YAML
+k8s-old/**
+
+# Flux-generated GitOps manifests
+cluster/flux-system/**
+cluster/k8s/flux-system/**
+
+# Helm chart templates - Go templating, not valid YAML
+cluster/charts/**/templates/**
+cluster/k8s/*-chart/templates/**
+
+# Jinja2 YAML templates
+**/*.yaml.j2
+**/*.yml.j2
+
+# Lock files - managed by package managers
+**/pnpm-lock.yaml
+**/package-lock.json
+**/uv.lock
+
+# TODO: Fix formatting and remove exclusions below
+claude-commands-old/ccr-code-work.md
+claude-commands-old/commit.md
+claude-commands-old/rulelint.md
+claude-commands/TODO.md
+finance/reconcile/README.md
+llm/claude-instructions/CLAUDE-2025-07-12.md
+llm/claude-instructions/history.md
+mcp_infra/docs/eliminating-class-constants-analysis.md
+nix/home/claude-code/commands/dump.md
+prompts/scans/useless-comments-and-docs.md
+props/standards/self-describing-names.md
+sandboxed_jupyter/docs/TODO-SANDBOX.md
+sandboxed_jupyter/docs/TODO.md
+tana/export/headless_autoexport/README
+website/posts/2015-08-23-static-typing-in-python.markdown

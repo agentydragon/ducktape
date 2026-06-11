@@ -1,0 +1,64 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+    ],
+)
+
+py_library(
+    name = "claude_runner",
+    srcs = ["claude_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":base",
+        ":containerized_claude",
+        "//inop/engine:models",
+        "//inop/io:file_utils",
+        "@pypi//claude_code_sdk",
+        "@pypi//structlog",
+    ],
+)
+
+py_library(
+    name = "containerized_claude",
+    srcs = ["containerized_claude.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//pathspec",
+    ],
+)
+
+py_library(
+    name = "openai_runner",
+    srcs = ["openai_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":base",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:transcript_handler",
+        "//inop/engine:models",
+        "//inop/io:file_utils",
+        "//mcp_infra:constants",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display:event_renderer",
+        "//mcp_infra/exec:bwrap",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:docker",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

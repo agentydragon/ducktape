@@ -1,0 +1,52 @@
+# gazelle:ignore
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = [".."],
+    # Requires system libraries (libgirepository1.0-dev, libdbus-1-dev) - manual only
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//absl_py",
+        "@pypi//dbus_python",
+        "@pypi//pycairo",
+        "@pypi//pygobject",
+    ],
+)
+
+py_binary(
+    name = "switch_gnome_terminal_profile",
+    srcs = ["main.py"],
+    imports = [".."],
+    main = "main.py",
+    tags = ["manual"],
+    deps = [":main"],
+)
+
+py_package(
+    name = "gnome_terminal_profile_switcher_pkg",
+    packages = ["gnome_terminal_profile_switcher"],
+    tags = ["manual"],
+    deps = [":main"],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "gnome_terminal_profile_switcher",
+    entry_points = {
+        "console_scripts": ["switch-gnome-terminal-profile = gnome_terminal_profile_switcher.main:main"],
+    },
+    python_requires = ">=3.11",
+    requires = [
+        "absl-py",
+        "dbus-python",
+        "pycairo",
+        "pygobject",
+    ],
+    tags = ["manual"],
+    version = "0.1.0",
+    deps = [":gnome_terminal_profile_switcher_pkg"],
+)

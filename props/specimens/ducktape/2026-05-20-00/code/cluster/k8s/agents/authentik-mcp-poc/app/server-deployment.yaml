@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-mcp-poc-server
+  namespace: authentik-mcp-poc
+  labels:
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: server
+  annotations:
+    description: "FastMCP server with OIDCProxy wrapping Authentik; forwards the caller's JWT to the whoami backend via the Authentik proxy outpost."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik-mcp-poc
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authentik-mcp-poc
+        app.kubernetes.io/component: server
+    spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars from same-namespace
+      # Services. Pydantic-settings on the backend pod parses
+      # `AUTHENTIK_MCP_POC_BACKEND_PORT=tcp://...` as the `port: int` field and
+      # crashes; symmetric protection here so the server pod can't trip on the
+      # same trap if the field set ever changes.
+      enableServiceLinks: false
+      containers:
+        - name: server
+          image: ghcr.io/agentydragon/authentik-mcp-poc-server:devel-20260515211047-a51187a # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            # OIDCProxy creates an encrypted DCR client store at
+            # `${FASTMCP_HOME}/oauth_proxy_client_storage/...` on init. The OCI
+            # image runs as user 1000 with no HOME set, so without this
+            # platformdirs falls back to `~/.local/share/fastmcp` which expands
+            # to `/.local/share/fastmcp` and EPERM. /tmp is writable for any
+            # user; the POC doesn't need persistent DCR registrations.
+            - name: FASTMCP_HOME
+              value: "/tmp/fastmcp"
+            - name: AUTHENTIK_MCP_POC_OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/authentik-mcp-poc/"
+            - name: AUTHENTIK_MCP_POC_PUBLIC_BASE_URL
+              value: "https://authentik-mcp-poc.allegedly.works"
+            - name: AUTHENTIK_MCP_POC_BACKEND_URL
+              value: "https://authentik-mcp-poc-backend.allegedly.works"
+            - name: AUTHENTIK_MCP_POC_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: client_id
+            - name: AUTHENTIK_MCP_POC_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: client_secret
+            # Backend proxy provider's auto-generated client_id — used by
+            # the tool handler's JWT-bearer token exchange (see server.py
+            # and NOTES.md §5). TF writes this into the same secret.
+            - name: AUTHENTIK_MCP_POC_BACKEND_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: backend_client_id
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20

@@ -1,0 +1,32 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mimir
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/monitoring/mimir
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: mimir
+      namespace: monitoring
+  timeout: 10m
+  dependsOn:
+    # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack
+    - name: monitoring-stack
+    - name: grafana-helmrepository
+    # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
+    # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
+    - name: seaweedfs-cluster
+      namespace: flux-system

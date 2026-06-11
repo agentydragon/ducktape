@@ -1,0 +1,63 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: emberstack
+  namespace: reflector-system
+spec:
+  interval: 24h
+  url: https://emberstack.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: reflector
+  namespace: reflector-system
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: reflector
+      version: "10.0.10"
+      sourceRef:
+        kind: HelmRepository
+        name: emberstack
+        namespace: reflector-system
+  values:
+    nameOverride: reflector
+    fullnameOverride: reflector
+
+    replicaCount: 1
+
+    image:
+      repository: emberstack/kubernetes-reflector
+      tag: "10.0.7"
+      pullPolicy: IfNotPresent
+
+    configuration:
+      logging:
+        minimumLevel: Information
+      watcher:
+        timeout: 300
+
+    rbac:
+      enabled: true
+
+    serviceAccount:
+      create: true
+      name: reflector
+
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 200m
+
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}

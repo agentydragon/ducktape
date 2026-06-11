@@ -138,7 +138,6 @@ js_library(
     srcs = ["ExampleLink.svelte"],
     deps = [
         ":client",
-        ":formatters",
         ":router",
     ],
 )

@@ -1,0 +1,108 @@
+rationale: |
+  Multiple pytest fixtures defined in shared locations have zero test
+  consumers and should be deleted.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core_testing/fixtures.py:
+        - [88, 88]
+        - [102, 102]
+    note: "`make_fake_openai` and `make_capturing_client` — no test uses either"
+    critic_scopes_expected_to_recall:
+      - [agent_core_testing/fixtures.py]
+  - occurrence_id: occ-1
+    files:
+      agent_server/conftest.py:
+        - [219, 219]
+        - [231, 231]
+        - [239, 239]
+        - [251, 251]
+        - [257, 257]
+        - [262, 262]
+    note: >-
+      policy_ui_send_message_allow, policy_failing_tests,
+      policy_version_test, policy_invalid_syntax,
+      policy_context_checking, policy_const — no test uses any
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+  - occurrence_id: occ-2
+    files:
+      agent_server/conftest.py:
+        - [291, 291]
+        - [335, 335]
+        - [348, 348]
+        - [359, 359]
+    note: >-
+      create_live_agent, patch_agent_build_client,
+      agent_app_client, agent_test_client — no test uses
+      any; last two form a chain
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+  - occurrence_id: occ-3
+    files:
+      mcp_infra/seatbelt/conftest.py:
+        - [60, 60]
+        - [76, 76]
+    note: "`cat_process` and `run_async` — no test uses either"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/seatbelt/conftest.py]
+  - occurrence_id: occ-4
+    files:
+      mcp_infra/testing/fixtures.py:
+        - [103, 103]
+    note: "`resource_capture` — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/testing/fixtures.py]
+  - occurrence_id: occ-5
+    files:
+      agent_core_testing/fixtures.py:
+        - [119, 146]
+    note: "`make_test_agent` — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [agent_core_testing/fixtures.py]
+  - occurrence_id: occ-6
+    files:
+      agent_server/conftest.py:
+        - [424, 437]
+    note: "`failing_server` — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+  - occurrence_id: occ-7
+    files:
+      claude/claude_hooks/conftest.py:
+        - [163, 170]
+    note: "`mock_context` — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [claude/claude_hooks/conftest.py]
+  - occurrence_id: occ-8
+    files:
+      git_commit_ai/conftest.py:
+        - [39, 68]
+    note: "`patch_fake_editor` — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [git_commit_ai/conftest.py]
+    match_file_restriction:
+      - git_commit_ai/conftest.py
+  - occurrence_id: occ-9
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py:
+        - [33, 71]
+        - [104, 110]
+    note: >-
+      `local_git_repo_for_remote_hook` and
+      `pre_commit_config_remote` — no test uses either;
+      latter depends on former
+    critic_scopes_expected_to_recall:
+      - [llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py]
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py
+  - occurrence_id: occ-10
+    files:
+      wt/testing/conftest.py:
+        - [125, 133]
+    note: "`TestData` fixture — no test uses it"
+    critic_scopes_expected_to_recall:
+      - [wt/testing/conftest.py]
+    match_file_restriction:
+      - wt/testing/conftest.py

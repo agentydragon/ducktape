@@ -1,0 +1,74 @@
+{
+  "proposals": [
+    {
+      "proposed_module_id": "auto_partition_0000",
+      "owner_ids": [
+        "owner:a"
+      ],
+      "binding_ids": [
+        "BindingA"
+      ],
+      "size_lines_estimate": 10,
+      "source_line_range": [
+        100,
+        109
+      ],
+      "ordinal_span": 0,
+      "internal_edges": 0,
+      "edges_to_other_residual_cells": 0,
+      "other_residual_cells_referenced": [],
+      "edges_to_active_modules": 0,
+      "active_modules_referenced": [],
+      "status": "peelable_now",
+      "landable_today": true,
+      "extension_owner_ids": []
+    },
+    {
+      "proposed_module_id": "auto_partition_0001",
+      "owner_ids": [
+        "owner:b"
+      ],
+      "binding_ids": [
+        "BindingB"
+      ],
+      "size_lines_estimate": 10,
+      "source_line_range": [
+        200,
+        209
+      ],
+      "ordinal_span": 0,
+      "internal_edges": 0,
+      "edges_to_other_residual_cells": 0,
+      "other_residual_cells_referenced": [],
+      "edges_to_active_modules": 0,
+      "active_modules_referenced": [],
+      "status": "peelable_now",
+      "landable_today": true,
+      "extension_owner_ids": []
+    }
+  ],
+  "diagnostics": [],
+  "size_cap_lines": 10000,
+  "residual_owner_count": 2,
+  "active_claimed_binding_count": 0,
+  "status_counts": {
+    "peelable_now": 2
+  },
+  "diagnostic_counts": {},
+  "size_distributions": {
+    "by_members": [
+      {
+        "bucket": "1",
+        "count": 2,
+        "landable_count": 2
+      }
+    ],
+    "by_lines": [
+      {
+        "bucket": "6-10",
+        "count": 2,
+        "landable_count": 2
+      }
+    ]
+  }
+}

@@ -8,10 +8,9 @@ terraform {
   required_providers {
     # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
-    # From infrastructure + persistent-auth + nixos-dev-env
-    proxmox = { source = "bpg/proxmox", version = "~> 0.91.0" }
+    # From persistent-auth + nixos-dev-env
+    proxmox = { source = "bpg/proxmox", version = "~> 0.93.0" }
     # From infrastructure
-    hcloud     = { source = "hetznercloud/hcloud", version = "~> 1.45" }
     talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
     # From flux
@@ -21,6 +20,7 @@ terraform {
     local = { source = "hashicorp/local", version = "~> 2.5.0" }
     null  = { source = "hashicorp/null", version = "~> 3.2.0" }
     tls   = { source = "hashicorp/tls", version = "~> 4.1.0" }
+    ovh   = { source = "ovh/ovh", version = "~> 2.0" }
   }
 }
 
@@ -70,8 +70,15 @@ provider "flux" {
   }
 }
 
-provider "hcloud" {
-  token = var.hcloud_token
+provider "talos" {}
+
+data "sops_file" "ovh_credentials" {
+  source_file = "${path.module}/../../../secrets/ovh-credentials.sops.yaml"
 }
 
-provider "talos" {}
+provider "ovh" {
+  endpoint           = "ovh-us"
+  application_key    = data.sops_file.ovh_credentials.data["application_key"]
+  application_secret = data.sops_file.ovh_credentials.data["application_secret"]
+  consumer_key       = data.sops_file.ovh_credentials.data["consumer_key"]
+}

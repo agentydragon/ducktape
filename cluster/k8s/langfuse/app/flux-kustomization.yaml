@@ -4,7 +4,7 @@ metadata:
   name: langfuse
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/langfuse/app
@@ -21,6 +21,7 @@ spec:
   dependsOn:
     - name: langfuse-namespace
     - name: langfuse-secrets
+    - name: langfuse-cache
     - name: langfuse-db
+    - name: seaweedfs-langfuse-bucket
     - name: gateway
-    - name: proxmox-csi

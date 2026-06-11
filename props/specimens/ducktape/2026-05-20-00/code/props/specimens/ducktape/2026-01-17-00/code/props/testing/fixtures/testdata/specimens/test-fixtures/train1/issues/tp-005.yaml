@@ -1,0 +1,16 @@
+rationale: "Coordinated dependency: divide.py imports from subtract.py.
+
+  This issue requires reviewing BOTH files together to understand the full picture.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      divide.py:
+        - [1, 3]
+      subtract.py:
+        - [1, 3]
+    critic_scopes_expected_to_recall:
+      - - divide.py
+        - subtract.py

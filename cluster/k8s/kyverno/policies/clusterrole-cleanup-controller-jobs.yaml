@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno-cleanup-controller-jobs
+  labels:
+    # Aggregates into the kyverno cleanup controller's ClusterRole. Required
+    # before any CleanupPolicy can target Jobs: kyverno validates at policy
+    # admission that the cleanup controller holds delete permission for the
+    # matched kind. First consumer: gaffer-private's wedged-Job reaper in the
+    # thrive-scraper namespace.
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "delete"]

@@ -1,0 +1,125 @@
+"""Database sync module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "_models",
+    srcs = ["_models.py"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/core/models:types",
+    ],
+)
+
+py_library(
+    name = "_yaml_models",
+    srcs = ["_yaml_models.py"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
+    deps = [
+        ":_models",
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/core/models:types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "_yaml",
+    srcs = ["_yaml.py"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
+    deps = [
+        ":_models",
+        ":_yaml_models",
+        "//props/core:ids",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "loader",
+    srcs = ["loader.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:snapshot",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "export",
+    srcs = ["export.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/db:models",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":_yaml",
+        ":loader",
+        "//openai_utils:model_metadata",
+        "//props/core:ids",
+        "//props/core:runs_context",
+        "//props/core/models:snapshot",
+        "//props/core/models:true_positive",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//pygit2",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_example_generation",
+    srcs = ["test_example_generation.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_manifest_loading",
+    srcs = ["test_manifest_loading.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":loader",
+        "//props/core:ids",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

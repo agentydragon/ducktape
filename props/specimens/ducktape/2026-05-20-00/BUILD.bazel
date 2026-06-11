@@ -1,0 +1,15 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+# Sparse Bazel graph hygiene specimen for ducktape at 995a1fce6410ec4a882d2e861b41423c8c839148.
+# Included: active issue target packages, their internal Bazel package closure,
+# package-local source/data files, and workflow/deployment evidence needed for
+# reachability.
+# Excluded: unrelated packages outside that closure and all-repo BUILD-only
+# scaffolding.
+specimen_targets(
+    name = "specimen",
+    code_srcs = glob(["code/**/*"]),
+    slug = "ducktape/2026-05-20-00",
+    split = "train",
+    test_size = "medium",
+)

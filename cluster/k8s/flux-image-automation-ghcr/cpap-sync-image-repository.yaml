@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: cpap-sync
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/cpap-sync
+  interval: 5m

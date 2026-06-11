@@ -1,0 +1,24 @@
+rationale: |
+  _initial_status_task is assigned a new asyncio.Task each time a worktree's
+  gitstatusd starts, overwriting any previous task reference. If multiple
+  worktrees start in quick succession, earlier tasks become orphaned - they
+  continue running but if they raise exceptions, the errors are silently lost.
+  Should track background tasks in a set with done-callback cleanup, and
+  cancel/await them at shutdown. Note: _startup_tasks list exists at line 189
+  but is never used - could be repurposed for this.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/wt_server.py:
+        - [301, 301]
+    note: >-
+      self._initial_status_task overwrites previous task on each new worktree.
+      Earlier tasks become orphaned with no error handling. Should use a set
+      with done-callback cleanup pattern.
+    critic_scopes_expected_to_recall:
+      - - wt/server/wt_server.py
+    match_file_restriction:
+      - wt/server/wt_server.py

@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - rtl-tcp-deployment.yaml
+  - rtl-tcp-service.yaml
+  - openwebrx-pvc.yaml
+  - openwebrx-deployment.yaml
+  - openwebrx-service.yaml
+  - networkpolicy.yaml
+  - ultrafeeder-deployment.yaml
+  - ultrafeeder-service.yaml
+  - ultrafeeder-pvc.yaml
+  - ultrafeeder-networkpolicy.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: openwebrx-settings
+    namespace: sdr
+    files:
+      - config_webrx.py

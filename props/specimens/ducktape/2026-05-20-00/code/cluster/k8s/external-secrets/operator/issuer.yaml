@@ -1,0 +1,8 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: external-secrets-selfsigned-issuer
+  namespace: external-secrets-system
+spec:
+  selfSigned: {}

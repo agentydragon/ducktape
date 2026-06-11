@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-existing-volumes
+  namespace: claude-sandbox
+spec:
+  containers:
+    - name: manager
+      image: example/manager:latest
+      env:
+        - name: MY_VAR
+          value: hello
+      volumeMounts:
+        - name: config
+          mountPath: /etc/config
+  volumes:
+    - name: config
+      configMap:
+        name: my-config

@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "flake8_early_bailout",
+    srcs = ["flake8_early_bailout.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_early_bailout",
+    srcs = ["test_early_bailout.py"],
+    imports = ["."],
+    deps = [
+        ":flake8_early_bailout",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":flake8_early_bailout"],
+)

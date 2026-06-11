@@ -18,18 +18,18 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
-    deploymentMode: SingleBinary
+    deploymentMode: SimpleScalable
 
     loki:
       auth_enabled: false
 
       commonConfig:
-        replication_factor: 1
+        replication_factor: 2
 
       storage:
         type: s3
         s3:
-          endpoint: http://minio.minio.svc.cluster.local:9000
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
           region: us-east-1
           s3ForcePathStyle: true
           insecure: true
@@ -55,19 +55,37 @@ spec:
         ingestion_burst_size_mb: 20
         per_stream_rate_limit: 5MB
         per_stream_rate_limit_burst: 10MB
+        # Enables /loki/api/v1/index/volume, which the Grafana Loki
+        # Explore app uses for its log-volume sparkline and label
+        # drilldowns. Without it the UI shows "Log volume has not been
+        # configured".
+        volume_enabled: true
 
       compactor:
         retention_enabled: true
         retention_delete_delay: 2h
         compaction_interval: 10m
+        delete_request_store: s3
 
     singleBinary:
-      replicas: 1
+      replicas: 0
+
+    # SimpleScalable: write owns the ingester WAL (needs PVC), backend's disk
+    # is shipper/compactor cache (emptyDir is fine), read is stateless.
+    # All pinned to OVH kimsufi zone so the PVCs land on local-path-ovh.
+
+    write:
+      replicas: 2
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
+      persistence:
+        storageClass: local-path-ovh
+        size: 10Gi
       extraEnvFrom:
         - secretRef:
-            name: loki-minio-credentials
+            name: loki-s3-credentials
       resources:
         requests:
           cpu: 100m
@@ -76,13 +94,41 @@ spec:
           cpu: 500m
           memory: 512Mi
 
-    # Disable unused deployment targets
     read:
-      replicas: 0
-    write:
-      replicas: 0
+      replicas: 2
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      extraEnvFrom:
+        - secretRef:
+            name: loki-s3-credentials
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
     backend:
-      replicas: 0
+      replicas: 2
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      persistence:
+        volumeClaimsEnabled: false
+      extraEnvFrom:
+        - secretRef:
+            name: loki-s3-credentials
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
 
     gateway:
       enabled: false

@@ -1,0 +1,47 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "truncation_utils",
+    srcs = ["truncation_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop:config",
+        "//inop/engine:models",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_library(
+    name = "pe_controller",
+    srcs = ["pe_controller.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+    ],
+)
+
+py_library(
+    name = "prompt_engineer",
+    srcs = ["prompt_engineer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+    ],
+)
+
+py_library(
+    name = "summarizer",
+    srcs = ["summarizer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":prompt_engineer",
+        ":truncation_utils",
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+        "//openai_utils:model",
+        "//openai_utils:model_metadata",
+        "//openai_utils:text_extraction",
+    ],
+)

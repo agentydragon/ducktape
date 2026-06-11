@@ -1,0 +1,66 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "r1shM2RHNgCv",
+      "props": {
+        "created": 1749756994147,
+        "name": "Basic formatting (test reference r1shM2RHNgCv)",
+        "_ownerId": "vbbsJ3M6tPKc"
+      },
+      "touchCounts": [90, 0],
+      "modifiedTs": [1749780019256, 0],
+      "children": ["B9xfldAyI82i", "yKdqA5lXBvwp", "yemr8XTqEW_Q", "AFIBqh3--5S4", "b1O84oxOCSbn"]
+    },
+    {
+      "id": "B9xfldAyI82i",
+      "props": {
+        "created": 1749757002638,
+        "name": "This is <b>Bold</b>",
+        "_ownerId": "r1shM2RHNgCv"
+      },
+      "touchCounts": [24, 0],
+      "modifiedTs": [1749757006526, 0]
+    },
+    {
+      "id": "yKdqA5lXBvwp",
+      "props": {
+        "created": 1749757006353,
+        "name": "This is <i>Italic</i>",
+        "_ownerId": "r1shM2RHNgCv"
+      },
+      "touchCounts": [17, 0],
+      "modifiedTs": [1749757009189, 0]
+    },
+    {
+      "id": "yemr8XTqEW_Q",
+      "props": {
+        "created": 1749757009041,
+        "name": "This is <mark>Highlit</mark>",
+        "_ownerId": "r1shM2RHNgCv"
+      },
+      "touchCounts": [19, 0],
+      "modifiedTs": [1749757014692, 0]
+    },
+    {
+      "id": "AFIBqh3--5S4",
+      "props": {
+        "created": 1749757015409,
+        "name": "This is <u>Underscored</u>",
+        "_ownerId": "r1shM2RHNgCv"
+      },
+      "touchCounts": [42, 0],
+      "modifiedTs": [1749757024136, 0]
+    },
+    {
+      "id": "b1O84oxOCSbn",
+      "props": {
+        "created": 1749757024568,
+        "name": "This is <strike>Strikethrough</strike>",
+        "_ownerId": "r1shM2RHNgCv"
+      },
+      "touchCounts": [31, 0],
+      "modifiedTs": [1749757029840, 0]
+    }
+  ]
+}

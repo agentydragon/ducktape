@@ -1,0 +1,12 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: devbot-computer-control
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: devbot-computer-control
+    app.kubernetes.io/part-of: devbot
+spec:
+  description: "Computer control MCP server for devbot agent - provides mouse, keyboard, screenshot, and OCR capabilities"
+  protocol: STREAMABLE_HTTP
+  url: "http://devbot-desktop.agents.svc.cluster.local:8080"

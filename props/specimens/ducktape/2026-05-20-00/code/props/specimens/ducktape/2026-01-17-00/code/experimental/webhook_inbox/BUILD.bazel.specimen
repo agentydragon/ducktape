@@ -1,0 +1,80 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "webhook_inbox",
+    srcs = ["webhook_inbox.py"],
+    data = glob(["templates/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//compact_json",
+        "@pypi//cryptography",
+        "@pypi//fastapi",
+        "@pypi//jinja2",
+        "@pypi//starlette",
+    ],
+)
+
+py_binary(
+    name = "gen_key",
+    srcs = ["gen_key.py"],
+    deps = ["@pypi//cryptography"],
+)
+
+py_test(
+    name = "test_webhook_inbox",
+    srcs = ["test_webhook_inbox.py"],
+    imports = ["."],
+    deps = [
+        ":webhook_inbox",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":webhook_inbox"],
+)
+
+# --- OCI Image ---
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["."],
+    deps = [
+        ":webhook_inbox",
+        "@pypi//uvicorn",
+    ],
+)
+
+pkg_tar(
+    name = "server_tar",
+    srcs = [":server"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/server"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+    tars = [":server_tar"],
+    workdir = "/app",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["webhook-inbox:latest"],
+)

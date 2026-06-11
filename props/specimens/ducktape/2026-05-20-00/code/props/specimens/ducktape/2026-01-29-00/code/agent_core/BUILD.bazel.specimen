@@ -1,0 +1,274 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+py_library(
+    name = "tool_provider",
+    srcs = ["tool_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "logging_utils",
+    srcs = ["logging_utils.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//structlog"],
+)
+
+py_library(
+    name = "loop_control",
+    srcs = ["loop_control.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//openai_utils:model"],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":tool_provider",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handler",
+    srcs = ["handler.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":events",
+        ":loop_control",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "compaction",
+    srcs = ["compaction.py"],
+    data = ["compaction_prompt.md"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":events",
+        ":handler",
+        ":loop_control",
+    ],
+)
+
+py_library(
+    name = "progress",
+    srcs = ["progress.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":events",
+        ":handler",
+        "//openai_utils:model",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "transcript_handler",
+    srcs = ["transcript_handler.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":events",
+        ":handler",
+        "//openai_utils:model",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "turn_limit",
+    srcs = ["turn_limit.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":handler",
+        ":loop_control",
+    ],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":events",
+        ":handler",
+        ":loop_control",
+        ":tool_provider",
+        "//openai_utils:model",
+        "//openai_utils:types",
+        "@pypi//anyio",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "direct_provider",
+    srcs = ["direct_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "//openai_utils:json_schema",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "mcp_provider",
+    srcs = ["mcp_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//agent_core:__pkg__"],
+    deps = [
+        ":agent",
+        ":loop_control",
+        ":tool_provider",
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:responses",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = ["test_mcp_integration.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":loop_control",
+        "//agent_core/testing:matchers",
+        "//agent_core_testing:responses",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/testing:simple_servers",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tool_execution",
+    srcs = ["test_tool_execution.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":events",
+        ":handler",
+        ":loop_control",
+        ":tool_provider",
+        "//agent_core/testing:matchers",
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:responses",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/testing:simple_servers",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_message_processing",
+    srcs = ["test_message_processing.py"],
+    deps = [
+        ":agent",
+        ":compaction",
+        ":conftest",
+        ":events",
+        ":handler",
+        ":loop_control",
+        "//agent_core/testing:matchers",
+        "//agent_core_testing:echo_server",
+        "//agent_core_testing:responses",
+        "//mcp_infra:naming",
+        "//openai_utils:model",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_handlers",
+    srcs = ["test_handlers.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":events",
+        ":handler",
+        ":loop_control",
+        ":turn_limit",
+        "//agent_core/testing:assertions",
+        "//agent_core_testing:responses",
+        "//mcp_infra:prefix",
+        "//mcp_infra/bootstrap",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
+    name = "test_testing_infrastructure",
+    srcs = ["test_testing_infrastructure.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":events",
+        ":loop_control",
+        "//agent_core/testing:matchers",
+        "//agent_core_testing:responses",
+        "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

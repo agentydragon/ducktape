@@ -1,0 +1,18 @@
+rationale: |
+  `write_property` type annotation says `value: bool | str` (line 81) but
+  lines 90-91 handle `isinstance(value, list)`. `read_property` returns
+  `str | bool` (line 54) and raises ValueError for lists (line 64-66). The
+  `palette` dconf property is list-typed, so `copy_profile_colors` would crash
+  when copying it. Both methods need `list[str]` in their type annotations and
+  implementations.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [54, 54]
+        - [64, 66]
+        - [81, 81]
+        - [90, 91]

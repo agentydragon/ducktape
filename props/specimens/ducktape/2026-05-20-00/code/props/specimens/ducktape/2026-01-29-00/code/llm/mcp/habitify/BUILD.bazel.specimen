@@ -1,0 +1,234 @@
+# gazelle:ignore
+# gazelle:exclude utils
+# gazelle:exclude examples
+# Per-file py_library targets (Gazelle-compatible pattern)
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# --- Base types (no internal deps) ---
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//python_dotenv"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "testing_models",
+    srcs = ["testing_models.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+# --- Utils (some have internal deps) ---
+
+py_library(
+    name = "date_utils",
+    srcs = ["utils/date_utils.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cli_utils",
+    srcs = ["utils/cli_utils.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":habitify_client",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "habit_resolver",
+    srcs = ["utils/habit_resolver.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":habitify_client",
+        ":types",
+    ],
+)
+
+# --- Core modules ---
+
+py_library(
+    name = "habitify_client",
+    srcs = ["habitify_client.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":date_utils",
+        ":types",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//python_dotenv",
+    ],
+)
+
+py_library(
+    name = "context",
+    srcs = ["context.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":habitify_client",
+    ],
+)
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":habit_resolver",
+        ":habitify_client",
+        ":types",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context",
+        ":habitify_client",
+        ":tools",
+        ":types",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli_utils",
+        ":habitify_client",
+        ":server",
+        ":types",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
+)
+
+# --- Binaries ---
+
+py_binary(
+    name = "habitify_cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    deps = [
+        ":cli",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "run_server",
+    srcs = ["examples/run_server.py"],
+    imports = [".."],
+    main = "examples/run_server.py",
+    deps = [
+        ":cli_utils",
+        ":server",
+    ],
+)
+
+py_binary(
+    name = "mcp_dev_runner",
+    srcs = ["examples/mcp_dev_runner.py"],
+    imports = [".."],
+    main = "examples/mcp_dev_runner.py",
+    deps = [":cli_utils"],
+)
+
+# --- Tests ---
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    deps = [
+        ":habitify_client",
+        ":testing_models",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_date_objects",
+    srcs = ["test_date_objects.py"],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":types",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_habitify_client",
+    srcs = ["test_habitify_client.py"],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":habitify_client",
+        ":types",
+        "@pypi//httpx",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# --- Lint ---

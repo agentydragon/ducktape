@@ -1,0 +1,92 @@
+## Shell Configuration Migration (2025-10)
+
+- [ ] Decide on Node.js version management strategy
+  - **Current state**: NVM and Bun are NOT installed (directories don't exist)
+  - **Current approach**: Node.js from Nix (`nodejs_22` package, v22.17.1)
+  - **All NVM/Bun init code removed** from shell initialization
+  - **Decision needed**: Keep using Nix-only, or install a version manager?
+  - **Alternatives if multiple versions needed**:
+    - `nix-node`: Nix flakes (`nix shell node#16`, `nix shell node#16.3.0`)
+    - `fnm`: Fast, cross-platform, works with `.node-version` files
+    - `Volta`: Rust-based, uses package.json for version config
+    - Direct Nix shells: Create `shell.nix` per project
+- [ ] Evaluate full Neovim HM integration (plugins & settings) vs lazy.nvim
+  - Current: HM deploys `config/nvim/`, lazy handles plugins at runtime
+  - Future option: use `programs.neovim.plugins` and disable lazy bootstrap
+- [ ] Learn ranger + consider HM-managed config
+  - Maybe port ranger rc/colors over to `nix/home/config/ranger/`
+  - Would replace the ad-hoc setup in dotfiles
+- [ ] Fold readline/inputrc tweaks into Home Manager
+  - Right now `programs.readline` only sets `show-all-if-ambiguous`
+  - Need to mirror other readline customizations from dotfiles
+- [ ] Investigate bringing git-worktree-switcher under HM
+  - Understand current workflow (scripts? aliases?) and migrate settings
+  - Learn the tool well enough to document best practices
+- [ ] Consider using Home Manager for GitHub CLI (`gh`) config
+  - Capture auth/hosts config (if feasible) and any gh extensions
+
+## Infrastructure
+
+- [ ] Set up personal Nix binary cache on homelab
+  - Options: `nix-serve`, `attic`, `harmonia`, or `cachix` self-hosted
+  - Host on atlas or k3s cluster
+  - Share cache between all personal machines via Headscale network
+
+## Ansible migration items
+
+- [ ] Migrate tuxguitar to Nix when swt build issue is fixed
+  - Currently broken in nixpkgs: swt-4.34 fails to build (deprecated gdk-pixbuf APIs)
+  - Kept in Ansible apt packages for now
+  - Issue: https://github.com/NixOS/nixpkgs/issues/...
+
+- install cli packages
+- zsh as login shell
+- ~/Downloads ~/Pictures etc. should be empty or absent
+- ducktape cloned
+- rcup - manual intervention if needed
+- Rust tools (build deps?) s cli : Install build dependencies for Rust tools	TAGS: []
+- cli : Create ~/.local/share directory for gitstatus	TAGS: [dev-tools, gitstatus]
+     why were we doing this?
+- Gnome Shell:
+      petermosmans.customize-gnome : Manage GNOME Shell extensions	TAGS: [extensions]
+      petermosmans.customize-gnome : Modify application settings using dconf	TAGS: [dconf, settings]
+- Gnome customization:
+- Kube:
+      k3s-client : Copy k3s kubeconfig from atlas	TAGS: [k3s-client]
+      k3s-client : Update kubeconfig server URL to k3s master hostname	TAGS: [k3s-client]
+      k3s-client : Set kubeconfig permissions	TAGS: [k3s-client]
+      k3s-client : Verify cluster access	TAGS: [k3s-client, verify]
+      k3s-client : Display cluster status	TAGS: [k3s-client, verify]
+
+## To test
+
+- claude code MCP configuration
+
+## Handled
+
+- GUI:
+      Disable GNOME screensaver and screen blanking	TAGS: [vm-display]
+
+      gui : Hide gnome-terminal menu	TAGS: [gnome-terminal]
+      gui : Set GNOME default terminal to gnome-terminal.wrapper	TAGS: [gnome-terminal]
+      gui : Expicitly set GNOME default terminal exec-arg empty	TAGS: [gnome-terminal]
+      gui : Autostart Syncthing-GTK	TAGS: [syncthing]
+      gui : Clear default Pop!_OS workspace/monitor shortcuts to free up Ctrl+Alt+↑/↓	TAGS: [pop_extension_bug_workaround]
+      gui : Clear GNOME Shell vertical workspace switch+move shortcuts	TAGS: [pop_extension_bug_workaround]
+      gui : Set GNOME Shell horizontal workspace left/right switch+move shortcuts to Ctrl+Alt+(Shift+)↑/↓	TAGS: [pop_extension_bug_workaround]
+
+      gui : Query current MIME type associations	TAGS: [mime, xdg]
+      gui : Set MIME type associations	TAGS: [mime, xdg]
+
+- install npm-based tools - cli : Install Node.js CLI tools globally with pnpm	TAGS: [pnpm]
+
+## Not handled, OK to handle later
+
+- OpenAI Codex - with pnpm, or nix once in nixpkgs
+- Discord autostarts: Nix creates only, does not check there's no conflicting ones present
+
+## Currently system level but maybe make user-level later
+
+- Anki (latest release)
+- Nerd Fonts
+- neovim version

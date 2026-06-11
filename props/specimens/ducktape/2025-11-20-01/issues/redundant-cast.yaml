@@ -1,0 +1,15 @@
+rationale: |
+  The cast() on line 333 is redundant: the wrapped responses_create already returns
+  ResponsesResult per its type annotation, and the result is returned unchanged. The
+  cast adds no value and should be removed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [333, 333]
+    note: cast(ResponsesResult, result) where result is already ResponsesResult
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py

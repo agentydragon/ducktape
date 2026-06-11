@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grocy-sf-agent-rbac
+  namespace: flux-system
+  annotations:
+    description: Agent RBAC for grocy-sf namespace. Lightweight — only RoleBindings. Depends on namespace existing + claude-rbac for ClusterRoles.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/grocy/sf/agent-rbac
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    - name: grocy-sf
+    - name: claude-rbac

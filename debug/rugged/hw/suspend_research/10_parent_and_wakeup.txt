@@ -1,0 +1,84 @@
+=== parent bridge 0000:00:1c.0 ===
+\_SB_.PC00.RP02
+power_state: D0
+runtime_status: active
+runtime_enabled: enabled
+d3cold_allowed: 1
+wakeup: enabled
+
+=== modem wakeup GPE ===
+device -> ../../../device:48
+subsystem -> ../../../../../../../../class/wakeup
+active_count
+active_time_ms
+event_count
+expire_count
+last_change_ms
+max_time_ms
+name
+prevent_suspend_time_ms
+relax_count
+total_time_ms
+uevent
+wakeup_count
+--- active_count ---
+0
+--- active_time_ms ---
+0
+--- event_count ---
+0
+--- expire_count ---
+0
+--- last_change_ms ---
+0
+--- max_time_ms ---
+0
+--- name ---
+device:48
+--- prevent_suspend_time_ms ---
+0
+--- relax_count ---
+0
+--- total_time_ms ---
+0
+--- uevent ---
+--- wakeup_count ---
+0
+
+=== /proc/acpi/wakeup ===
+Device	S-state	  Status   Sysfs node
+XDCI	  S4	*disabled
+XHCI	  S0	*enabled   pci:0000:00:14.0
+HDAS	  S4	*disabled  pci:0000:00:1f.3
+I3C0	  S4	*disabled
+I3C2	  S4	*disabled
+CNVW	  S4	*disabled  pci:0000:00:14.3
+BTPC	  S4	*disabled  pci:0000:00:14.7
+ISHD	  S4	*disabled  pci:0000:00:12.0
+RP01	  S4	*disabled
+PXSX	  S4	*disabled
+RP02	  S4	*enabled   pci:0000:00:1c.0
+PXSX	  S4	*disabled  pci:0000:71:00.0
+RP03	  S4	*disabled
+PXSX	  S4	*disabled
+RP04	  S4	*enabled   pci:0000:00:1c.3
+PXSX	  S4	*disabled  pci:0000:72:00.0
+		*disabled  platform:rtsx_pci_sdmmc.0
+RP05	  S4	*enabled   pci:0000:00:1c.4
+PXSX	  S4	*disabled  pci:0000:73:00.0
+RP06	  S4	*disabled
+PXSX	  S4	*disabled
+TXHC	  S4	*enabled   pci:0000:00:0d.0
+TDM0	  S4	*enabled   pci:0000:00:0d.2
+TDM1	  S4	*disabled
+TRP0	  S4	*enabled   pci:0000:00:07.0
+PXSX	  S4	*disabled
+TRP1	  S4	*enabled   pci:0000:00:07.1
+PXSX	  S4	*disabled
+TRP2	  S4	*disabled
+PXSX	  S4	*disabled
+TRP3	  S4	*disabled
+PXSX	  S4	*disabled
+AWAC	  S4	*enabled   platform:ACPI000E:00
+LID0	  S3	*enabled   platform:PNP0C0D:00
+PBTN	  S3	*enabled   platform:PNP0C0C:00

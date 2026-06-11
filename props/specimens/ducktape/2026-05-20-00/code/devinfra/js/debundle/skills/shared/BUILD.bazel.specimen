@@ -1,0 +1,5 @@
+exports_files([
+    "debundle_user_guide.md",
+    "module_shape.md",
+    "workflow.md",
+])

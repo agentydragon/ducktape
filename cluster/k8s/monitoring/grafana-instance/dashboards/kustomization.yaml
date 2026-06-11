@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-cluster.yaml
+  - flux-control-plane.yaml
+  - harbor.yaml
+  - cert-manager.yaml
+  - authentik.yaml
+  - cloudnative-pg.yaml
+  - cilium-agent.yaml
+  - etcd.yaml
+  - seaweedfs.yaml

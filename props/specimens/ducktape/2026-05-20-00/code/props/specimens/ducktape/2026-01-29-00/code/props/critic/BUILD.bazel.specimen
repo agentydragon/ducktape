@@ -1,0 +1,200 @@
+"""Critic agent - implementation and container image.
+
+Build targets:
+    bazel run //props/critic:load  -- Load into local Docker
+    bazel run //props/critic:push  -- Push to local registry (localhost:8000)
+
+The container runs an agent loop that:
+1. Fetches snapshot to /workspace
+2. Renders system prompt from template
+3. Queries LLM via proxy (OPENAI_BASE_URL)
+4. Executes shell commands via exec tool
+5. Handles critic tools (insert_issue, submit, etc.) in Python
+6. Exits 0 on successful submit
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+        "//props/core:agent_helpers",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "@pypi//jinja2",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "critic",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":critic"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_critic_sql_integration",
+    srcs = ["test_critic_sql_integration.py"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//props/core:ids",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_reported_issues_constraints",
+    srcs = ["test_reported_issues_constraints.py"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//props/core:ids",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:runs",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":load",  # Critic agent image
+        "//props/grader:load",  # Grader for grading critic output
+    ],
+    env = {
+        # E2E container networking
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../.."],
+    tags = [
+        "e2e",
+        "requires_docker",
+    ],
+    deps = [
+        ":conftest",
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props/db:agent_definition_ids",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/critic"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["critic-agent:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/critic",
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "//props/orchestration:agent_credentials",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -1,0 +1,40 @@
+"""MCP Chat server - inter-agent messaging."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "chat",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/persist:sqlite",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//aiosqlite",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    imports = ["../../.."],
+    deps = [
+        "//agent_server/mcp:conftest",
+        "//agent_server/mcp/chat",
+        "//agent_server/testing:chat_stubs",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:notifications",
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)

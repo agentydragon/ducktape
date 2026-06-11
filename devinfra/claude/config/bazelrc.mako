@@ -13,65 +13,36 @@ startup --output_user_root=${bazel_cache_dir | sh}
 startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
-% else:
-## Unknown/CLI platform — conservative default.
-startup --host_jvm_args=-Xmx4g
 % endif
-% if web_proxy:
+% if truststore_path:
+# JVM truststore for Bazel's bundled JDK. Bazel's own cacerts lacks custom
+# CAs (e.g. Anthropic's TLS inspection CA on Claude Code web), so direct
+# HTTPS fetches (BCR, gazelle fetch_repo, etc.) fail with PKIX path building
+# failed. /etc/ssl/certs/java/cacerts is kept in sync with
+# /etc/ssl/certs/ca-certificates.crt by Debian's ca-certificates-java on web
+# containers; None means no override (CLI/NixOS, bundled JDK cacerts works).
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
-% if use_tcp_proxy:
-## CLEANUP(2026-03-26): Remove TCP proxy block once UDS mode is confirmed stable.
-# Legacy TCP mode: route all Bazel JVM traffic through the local auth proxy.
-# The auth proxy adds Proxy-Authorization credentials when forwarding to the
-# egress proxy. Needed because gRPC-Java's ProxyDetectorImpl cannot reliably
-# authenticate — Bazel's ProxyHelper installs the Authenticator only when a
-# repository rule triggers a download, which may be after the gRPC channel
-# is already established.
-startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
-startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
-% else:
-# UDS mode: BCR fetches use the native JVM proxy settings from Anthropic's
-# JAVA_TOOL_OPTIONS (proxyHost/proxyPort/proxyUser/proxyPassword). Only gRPC
-# traffic (remote execution, cache, BES) needs the UDS proxy.
-startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
 % endif
-% if remote_proxy_sock:
-# Route gRPC remote execution/cache and BES through a UDS proxy that
-# establishes a CONNECT tunnel through the egress proxy. Uses Bazel's native
-# --remote_proxy/--bes_proxy, bypassing the gRPC-Java Authenticator timing issue.
-build --remote_proxy=unix:${remote_proxy_sock}
-build --bes_proxy=unix:${remote_proxy_sock}
-% endif
-
-# Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
-# GONOPROXY=* forces all Go module downloads through HTTP proxy.
-# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
-# (see also _strip_no_proxy_google in env_file.py which fixes this globally).
-common --repo_env=HTTP_PROXY
-common --repo_env=HTTPS_PROXY
-common --repo_env=http_proxy
-common --repo_env=https_proxy
-common --repo_env=GONOPROXY=*
-common --repo_env=GOPRIVATE=
-common --repo_env=GOSUMDB=sum.golang.org
-# TLS inspection CA: the egress proxy MITMs HTTPS, so git and Go need the
-# proxy CA in their trust stores.  GIT_SSL_CAINFO covers git-ls-remote
-# (used by Gazelle fetch_repo), SSL_CERT_FILE covers Go's net/http and most
-# other tools that repo rules shell out to.  These are --repo_env so they
-# only affect the Bazel host (repo rules); RBE workers are unaffected.
-common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
-common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
-
-# Tag invocations for BuildBuddy filtering
-build --build_metadata=ROLE=claude-code
 
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
+
+% if bazel_bes_proxy_sock:
+# Route BES to the local interceptor which inspects events and forwards to BuildBuddy.
+# The interceptor is a gRPC service on a UDS; we point --bes_backend (not --bes_proxy) at it.
+build --bes_backend=unix:${bazel_bes_proxy_sock}
+build --bes_results_url=https://app.buildbuddy.io/invocation/
 % endif
 
-# BuildBuddy remote cache (API key in separate bazelrc, no-op if absent)
+% if buildbuddy_bazelrc:
+# BuildBuddy remote cache (API key written to per-session bazelrc)
 try-import ${buildbuddy_bazelrc}
+% endif
+% if bbr_bazelrc:
+# bbr metadata (ROLE, session TAGS) — also read by bbr for bb remote invocations
+try-import ${bbr_bazelrc}
+% endif
 
 # AI agent quiet mode (suppress verbose progress for agent transcript)
 # Bazel 7.6+ reads workspace and user RC files in addition to --bazelrc=,

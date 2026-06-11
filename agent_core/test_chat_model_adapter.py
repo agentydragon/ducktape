@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+import json
+from typing import cast
+
+import httpx
+import pytest_bazel
+from openai import AsyncOpenAI
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
+
+from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
+from openai_utils.model import (
+    AssistantMessageOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    FunctionToolParam,
+    ReasoningItem,
+    SystemMessage,
+    UserMessage,
+)
+
+
+async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
+    captured_body: CompletionCreateParamsNonStreaming | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_body
+        captured_body = cast(CompletionCreateParamsNonStreaming, json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl_test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "chat-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "reasoning_content": "I should call the tool.",
+                            "content": "Calling now.",
+                            "tool_calls": [
+                                {
+                                    "id": "call_2",
+                                    "type": "function",
+                                    "function": {"name": "next_tool", "arguments": '{"ok": true}'},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "prompt_tokens_details": {"cached_tokens": 3},
+                    "completion_tokens": 5,
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                    "total_tokens": 15,
+                },
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        client = AsyncOpenAI(base_url="http://test/v1", api_key="sk-test", http_client=http_client)
+        model = ChatCompletionsAgentModel(client=client, model="chat-model")
+        request = AgentModelRequest(
+            input=[
+                SystemMessage.text("static system"),
+                UserMessage.text("hello"),
+                FunctionCallItem(name="first_tool", arguments='{"x": 1}', call_id="call_1"),
+                FunctionCallOutputItem(call_id="call_1", output='{"result": 2}'),
+            ],
+            instructions="dynamic instructions",
+            tools=[
+                FunctionToolParam(
+                    name="next_tool",
+                    description="Next tool",
+                    parameters={"type": "object", "properties": {}, "additionalProperties": False},
+                    strict=True,
+                )
+            ],
+            tool_choice="required",
+            parallel_tool_calls=False,
+        )
+
+        prepared = model.prepare(request)
+        wire_body = prepared.wire_body
+        assert isinstance(wire_body, dict)
+        assert wire_body["messages"] == [
+            {"role": "system", "content": "static system"},
+            {"role": "system", "content": "dynamic instructions"},
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "first_tool", "arguments": '{"x": 1}'}}
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": '{"result": 2}'},
+        ]
+
+        result = await model.sample(prepared)
+    finally:
+        await http_client.aclose()
+
+    assert captured_body == prepared.wire_body
+    assert result.id == "chatcmpl_test"
+    assert result.usage is not None
+    assert result.usage.input_tokens == 10
+    assert result.usage.input_tokens_details is not None
+    assert result.usage.input_tokens_details.cached_tokens == 3
+    assert result.usage.output_tokens == 5
+    assert result.usage.output_tokens_details is not None
+    assert result.usage.output_tokens_details.reasoning_tokens == 2
+    assert isinstance(result.output[0], ReasoningItem)
+    assert isinstance(result.output[1], AssistantMessageOut)
+    assert isinstance(result.output[2], FunctionCallItem)
+    assert result.output[2].call_id == "call_2"
+
+
+def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
+    model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
+
+    prepared = model.prepare(AgentModelRequest(input=[], instructions="system instructions"))
+
+    assert isinstance(prepared.wire_body, dict)
+    assert prepared.wire_body["messages"] == [
+        {"role": "system", "content": "system instructions"},
+        {"role": "user", "content": "Begin the task using the available tools."},
+    ]
+
+
+def test_chat_adapter_does_not_add_kickoff_when_user_input_exists() -> None:
+    model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
+
+    prepared = model.prepare(AgentModelRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
+
+    assert isinstance(prepared.wire_body, dict)
+    assert prepared.wire_body["messages"] == [
+        {"role": "system", "content": "static system"},
+        {"role": "user", "content": "hello"},
+    ]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

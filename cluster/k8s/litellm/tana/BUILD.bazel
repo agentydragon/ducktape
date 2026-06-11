@@ -1,0 +1,37 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "generate_tana_litellm",
+    srcs = ["generate_tana_litellm.py"],
+    deps = [
+        "//devinfra:prettier",
+        "//tana/litellm_proxy:model_registry",
+        "//util/bazel:workspace",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "generate_tana_litellm_bin",
+    main_module = "cluster.k8s.litellm.tana.generate_tana_litellm",
+    deps = [":generate_tana_litellm"],
+)
+
+py_test(
+    name = "test_generate_tana_litellm",
+    srcs = ["test_generate_tana_litellm.py"],
+    data = [
+        "custom_handler.py",
+        "proxy-config.yaml",
+    ],
+    deps = [
+        ":generate_tana_litellm",
+        "//tana/litellm_proxy:model_registry",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

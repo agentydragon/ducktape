@@ -1,0 +1,140 @@
+.quota-indicator {
+  spacing: 4px;
+}
+
+.quota-provider {
+  spacing: 2px;
+  padding: 0 2px;
+}
+
+.quota-icon {
+  icon-size: 16px;
+  color: #bebebe;
+}
+
+.quota-icon.quota-cool {
+  color: #4a90d9;
+}
+
+.quota-icon.quota-ok {
+  color: #bebebe;
+}
+
+.quota-icon.quota-warn {
+  color: #f5c211;
+}
+
+.quota-icon.quota-hot {
+  color: #e01b24;
+}
+
+.quota-icon.quota-unknown {
+  color: #6e6e6e;
+}
+
+.quota-icon.quota-stale {
+  color: #6e6e6e;
+}
+
+.quota-icon.quota-error {
+  color: #e01b24;
+}
+
+.quota-pace {
+  font-feature-settings: "tnum";
+  font-size: 10pt;
+  color: #bebebe;
+}
+
+.quota-pace.quota-cool {
+  color: #4a90d9;
+}
+
+.quota-pace.quota-warn {
+  color: #f5c211;
+}
+
+.quota-pace.quota-hot {
+  color: #e01b24;
+}
+
+.quota-pace.quota-unknown {
+  color: #6e6e6e;
+}
+
+.quota-pace.quota-error {
+  color: #e01b24;
+  font-weight: bold;
+}
+
+.quota-popup-row {
+  font-feature-settings: "tnum";
+}
+
+.quota-popup-bar-item {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.quota-popup-bar-content {
+  spacing: 4px;
+  min-width: 210px;
+}
+
+.quota-bars {
+  spacing: 2px;
+}
+
+.quota-bar-track {
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
+}
+
+.quota-bar-fill {
+  height: 4px;
+  border-radius: 2px;
+  background-color: #6e6e6e;
+}
+
+.quota-bar-fill.quota-bar-time {
+  background-color: #888;
+}
+
+.quota-bar-fill.quota-cool {
+  background-color: #4a90d9;
+}
+
+.quota-bar-fill.quota-ok {
+  background-color: #bebebe;
+}
+
+.quota-bar-fill.quota-warn {
+  background-color: #f5c211;
+}
+
+.quota-bar-fill.quota-hot {
+  background-color: #e01b24;
+}
+
+.quota-bar-fill.quota-unknown,
+.quota-bar-fill.quota-stale {
+  background-color: #6e6e6e;
+}
+
+.quota-popup-header {
+  font-size: 0.9em;
+}
+
+.quota-popup-header-stale {
+  color: #f5c211;
+}
+
+.quota-popup-header-error {
+  color: #f5c211;
+}
+
+.quota-popup-forecast {
+  color: #888;
+  font-size: 0.9em;
+}

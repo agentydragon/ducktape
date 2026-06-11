@@ -1,0 +1,54 @@
+# Force all external egress in sandbox namespaces through mitmproxy.
+# Allows: DNS, cluster-internal traffic, kube-apiserver, mitmproxy port 8080.
+# Blocks: direct external internet access.
+#
+# To add a new sandbox namespace, add it to the namespaces list below
+# and add the corresponding mitmproxy-ca-cert SOPS secret + Kyverno
+# injection (already handled by inject-mitmproxy ClusterPolicy).
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: sandbox-force-proxy-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: "k8s:io.kubernetes.pod.namespace"
+        operator: In
+        values:
+          - claude-sandbox
+          - openclaw-sandbox
+  egress:
+    # DNS resolution (CoreDNS in kube-system)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY)
+    - toEntities:
+        - cluster
+    # Kubernetes API server
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    # mitmproxy — all external internet traffic must go through here.
+    # Label `app.kubernetes.io/name: mitmproxy` matches the deployment selector
+    # in <deployment.yaml>; the previous selector `app: mitmproxy` did not
+    # match any pod, so claude-sandbox couldn't actually reach mitmproxy and
+    # external pip/curl through HTTP_PROXY timed out.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agents-mitmproxy
+            k8s:app.kubernetes.io/name: mitmproxy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

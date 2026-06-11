@@ -1,0 +1,94 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Layering: Client code must not depend on server code (//wt/server:*).
+# Both layers may depend on shared code (//wt/shared:*).
+# This visibility constraint enforces the layering at build time.
+# See also: wt/server/BUILD.bazel for the server-side constraint.
+package(default_visibility = [
+    "//wt:__pkg__",
+    "//wt/client:__subpackages__",
+    "//wt/testing:__pkg__",
+])
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "cd_utils",
+    srcs = ["cd_utils.py"],
+    visibility = [
+        "//wt:__pkg__",
+        "//wt/client:__subpackages__",
+    ],
+    deps = [":shell_utils"],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    deps = [
+        ":cd_utils",
+        ":wt_client",
+        "//wt/shared:constants",
+        "//wt/shared:env",
+        "//wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//psutil",
+    ],
+)
+
+py_library(
+    name = "shell_utils",
+    srcs = ["shell_utils.py"],
+    deps = ["@pypi//click"],
+)
+
+py_library(
+    name = "view_formatter",
+    srcs = ["view_formatter.py"],
+    deps = [
+        "//wt/shared:github_models",
+        "//wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//tabulate",
+    ],
+)
+
+py_library(
+    name = "wt_client",
+    srcs = ["wt_client.py"],
+    deps = [
+        "//wt/shared:configuration",
+        "//wt/shared:env",
+        "//wt/shared:error_handling",
+        "//wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_test(
+    name = "test_cli_click_integration",
+    srcs = ["test_cli_click_integration.py"],
+    deps = [
+        ":conftest",
+        "//wt:cli",
+        "//wt/shared:protocol",
+        "//wt/testing:asserts",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer_slim",
+    ],
+)

@@ -1,0 +1,14 @@
+rationale: |
+  `docker_exec_server_py312slim` is defined identically in both
+  `mcp_infra/conftest.py` (line 39) and `agent_server/conftest.py` (line 95).
+  Consolidate into one location to avoid drift.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/conftest.py:
+        - [39, 39]
+      agent_server/conftest.py:
+        - [95, 95]
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/conftest.py, agent_server/conftest.py]

@@ -1,0 +1,34 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "manager",
+    srcs = ["manager.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2:types",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2:types",
+        "//llm/claude_linter_v2/config:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "violations",
+    srcs = ["violations.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2:types",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/session:manager",
+    ],
+)

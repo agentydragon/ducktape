@@ -1,0 +1,284 @@
+"""Props core package - per-file targets.
+
+TODO: This package is being phased out. Remaining modules should move to:
+- types/ (SHARED): agent_types, ids, splits, models/, eval_api_models
+- orchestration/ (HOST): Already moved (agent_registry, loop_agent_env, etc.)
+- Agent folders (CONTAINER): agent_helpers, docker_env, agent_workspace, loop_utils
+- shared/ (SHARED utility): display, oci_utils, eval_client, exceptions
+"""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Leaf modules (no props.core deps)
+# TODO: Move to props/types/
+# =============================================================================
+
+py_library(
+    name = "ids",
+    srcs = ["ids.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "splits",
+    srcs = ["splits.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Second-tier modules (depend on leaf modules or db/)
+# =============================================================================
+
+py_library(
+    name = "display",
+    srcs = ["display.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:models",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "oci_utils",
+    srcs = ["oci_utils.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_types",
+        "@pypi//aiodocker",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
+    name = "docker_env",
+    srcs = ["docker_env.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec:docker",
+        "//props/db:config",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "agent_types",
+    srcs = ["agent_types.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ids",
+        "//props/core/models:examples",
+        "//props/critic_dev:shared",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [":agent_types"],
+)
+
+py_library(
+    name = "agent_workspace",
+    srcs = ["agent_workspace.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//platformdirs"],
+)
+
+py_library(
+    name = "eval_api_models",
+    srcs = ["eval_api_models.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ids",
+        ":splits",
+        "//props/core/models:examples",
+        "//props/db:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "eval_client",
+    srcs = ["eval_client.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_helpers",
+        ":eval_api_models",
+        ":ids",
+        "//props/core/models:examples",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "agent_helpers",
+    srcs = ["agent_helpers.py"],
+    data = glob([
+        "docs/**/*.md",
+        "docs/**/*.j2",
+    ]),
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshot_io",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "loop_utils",
+    srcs = ["loop_utils.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_helpers",
+        "//openai_utils:model",
+        "//props/db:session",
+        "@pypi//jinja2",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "agent_pkg_utils",
+    srcs = ["agent_pkg_utils.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "runs_context",
+    srcs = ["runs_context.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_rationale",
+    srcs = ["test_rationale.py"],
+    imports = ["../.."],
+    deps = [
+        "//props:conftest",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_agent_types",
+    srcs = ["test_agent_types.py"],
+    imports = ["../.."],
+    deps = [
+        ":agent_types",
+        ":ids",
+        "//props/core/models:examples",
+        "//props/db:agent_definition_ids",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_agent_workspace",
+    srcs = ["test_agent_workspace.py"],
+    imports = ["../.."],
+    deps = [
+        ":agent_workspace",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_production_specimens",
+    srcs = ["test_production_specimens.py"],
+    imports = ["../.."],
+    tags = [
+        "integration",
+        "requires_docker",
+        "requires_production_specimens",
+    ],
+    deps = [
+        ":splits",
+        "//props:conftest",
+        "//props/db:config",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:setup",
+        "//props/db/sync",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_agent_pkg_e2e",
+    srcs = ["test_agent_pkg_e2e.py"],
+    data = [
+        "//props/critic:load",  # Critic agent image
+        "//props/critic_dev/optimize:load",  # Optimizer agent image
+        "//props/grader:load",  # Grader agent image
+    ],
+    imports = ["../.."],
+    tags = [
+        "e2e",
+        "integration",
+        "requires_docker",
+        "slow",
+    ],
+    deps = [
+        ":eval_api_models",
+        ":ids",
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props/core/models:examples",
+        "//props/critic_dev:shared",
+        "//props/critic_dev/optimize:main",
+        "//props/critic_dev/optimize:orchestration_fixtures",
+        "//props/db:agent_definition_ids",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Collect all library targets for ruff

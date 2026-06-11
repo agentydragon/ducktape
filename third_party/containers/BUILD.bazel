@@ -6,13 +6,12 @@
 # Usage in BUILD.bazel data deps:
 #     data = ["//third_party/containers:postgres_18"]
 
-load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "rlocations",
     srcs = ["rlocations.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["//util:oci"],
 )
@@ -21,7 +20,6 @@ py_library(
     name = "fixtures",
     testonly = True,
     srcs = ["fixtures.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":rlocations",
@@ -62,6 +60,12 @@ oci_layout_rloc(
     name = "mitmproxy",
     testonly = True,
     image = "@mitmproxy_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
+    name = "grocy",
+    image = "@grocy_linux_amd64",
     visibility = ["//visibility:public"],
 )
 

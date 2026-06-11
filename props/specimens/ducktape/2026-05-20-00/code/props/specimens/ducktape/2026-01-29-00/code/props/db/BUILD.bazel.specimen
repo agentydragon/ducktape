@@ -1,0 +1,253 @@
+"""Database module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Leaf modules (no db/ deps)
+# =============================================================================
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    # Note: TempUserCredentials import is TYPE_CHECKING only - no runtime dep needed
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "snapshot_io",
+    srcs = ["snapshot_io.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        ":session",
+    ],
+)
+
+# =============================================================================
+# Core models (depend on config, snapshots, external modules)
+# =============================================================================
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":snapshots",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/core/models:snapshot",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    data = ["//props/db/migrations"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+        "@pypi//alembic",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "examples",
+    srcs = ["examples.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Higher-level modules (depend on models, session)
+# =============================================================================
+
+py_library(
+    name = "agent_definition_ids",
+    srcs = ["agent_definition_ids.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "query_builders",
+    srcs = ["query_builders.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":examples",
+        ":models",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    data = ["//props/db/migrations"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+        "@pypi//alembic",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+# Test support
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
+
+# Static analysis test - no postgres needed
+py_test(
+    name = "test_layer_isolation",
+    srcs = ["test_layer_isolation.py"],
+    imports = ["../../.."],
+    deps = [
+        ":conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_agent_queries",
+    srcs = [
+        "test_agent_queries.py",
+    ],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        ":examples",
+        ":models",
+        ":query_builders",
+        ":session",
+        "//props/core:splits",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_failed_critic_runs_as_zero_recall",
+    srcs = [
+        "test_failed_critic_runs_as_zero_recall.py",
+    ],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":agent_definition_ids",
+        ":conftest",
+        ":examples",
+        ":models",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_pydantic_column_null",
+    srcs = [
+        "test_pydantic_column_null.py",
+    ],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        ":models",
+        ":session",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_split_based_rls",
+    srcs = [
+        "test_split_based_rls.py",
+    ],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":agent_definition_ids",
+        ":config",
+        ":conftest",
+        ":examples",
+        ":models",
+        ":session",
+        "//props/core:agent_types",
+        "//props/critic_dev:shared",
+        "//props/orchestration:agent_credentials",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_view_extracts_grade_fields",
+    srcs = ["test_view_extracts_grade_fields.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":config",
+        ":conftest",
+        ":examples",
+        ":models",
+        ":session",
+        "//props/core:ids",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

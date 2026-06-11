@@ -1,0 +1,17 @@
+# Allow egress to the Kubernetes API server.
+# Needed for the node-host sidecar to run kubectl commands
+# scoped to the openclaw-sandbox namespace (via mounted SA token).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-kube-api-egress
+  namespace: openclaw-gateway
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP

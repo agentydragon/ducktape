@@ -1,0 +1,66 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "claude_hooks",
+    srcs = [
+        "__init__.py",
+        "actions.py",
+        "base.py",
+        "config.py",
+        "inputs.py",
+        "logging_context.py",
+        "precommit_autofix.py",
+        "tool_models.py",
+    ],
+    data = glob(["testdata/**"]),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pre_commit",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+        "@pypi//typing_extensions",
+    ],
+)
+
+py_binary(
+    name = "claude-autofixer",
+    srcs = ["precommit_autofix.py"],
+    imports = [".."],
+    main = "precommit_autofix.py",
+    deps = [":claude_hooks"],
+)
+
+py_test(
+    name = "test_claude_hooks",
+    srcs = [
+        "conftest.py",
+        "test_autofixer.py",
+        "test_helpers.py",
+        "test_input_parsing.py",
+        "test_integration.py",
+        "test_models.py",
+        "test_precommit_integration.py",
+        "test_precommit_syntax_check.py",
+        "test_protocol_actions.py",
+    ],
+    imports = [".."],
+    main = "conftest.py",
+    deps = [
+        ":claude_hooks",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_hooks"],
+)

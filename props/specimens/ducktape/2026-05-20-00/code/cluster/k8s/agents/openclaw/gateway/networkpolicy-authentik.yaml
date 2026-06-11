@@ -1,0 +1,23 @@
+# Allow ingress from authentik-server pods (embedded outpost proxy → OpenClaw gateway).
+# Additive with the operator's default-deny NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authentik-ingress
+  namespace: openclaw-gateway
+spec:
+  podSelector: {}
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
+      ports:
+        - port: 18790
+          protocol: TCP
+  policyTypes:
+    - Ingress

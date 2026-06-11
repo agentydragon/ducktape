@@ -1,0 +1,86 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "claude_hooks",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+            "test_*.py",
+        ],
+    ),
+    data = glob(["config/**"]),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//mako",
+        "@pypi//pproxy",
+        "@pypi//pydantic",
+        "@pypi//pyjks",
+        "@pypi//pyjwt",
+        "@pypi//supervisor",
+    ],
+)
+
+py_package(
+    name = "claude_hooks_pkg",
+    packages = ["claude_hooks"],
+    deps = [":claude_hooks"],
+)
+
+py_wheel(
+    name = "claude_hooks_wheel",
+    distribution = "claude_hooks",
+    entry_points = {
+        "console_scripts": [
+            "claude-session-start = claude_hooks.session_start:main",
+            "bazel = claude_hooks.bazel_wrapper:main",
+            "bazelisk = claude_hooks.bazel_wrapper:main",
+        ],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        "cryptography",
+        "mako",
+        "pproxy",
+        "pydantic",
+        "pyjks",
+        "pyjwt",
+        "supervisor",
+    ],
+    version = "0.1.0",
+    deps = [":claude_hooks_pkg"],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    imports = [".."],
+    deps = [
+        ":claude_hooks",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    imports = [".."],
+    tags = ["integration"],
+    deps = [
+        ":claude_hooks",
+        "//net_util",
+        "@pypi//cryptography",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_hooks"],
+)

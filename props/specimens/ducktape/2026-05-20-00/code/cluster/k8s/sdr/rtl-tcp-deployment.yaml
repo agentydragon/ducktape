@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtl-tcp
+  namespace: sdr
+  annotations:
+    description: "Streams RTL-SDR Blog V4 IQ data over TCP for OpenWebRX+ consumption"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rtl-tcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rtl-tcp
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      containers:
+        - name: rtl-tcp
+          image: ghcr.io/agentydragon/rtl-tcp:devel-20260505004348-76ce8da # {"$imagepolicy": "flux-system:rtl-tcp"}
+          ports:
+            - containerPort: 1234
+              name: iq-stream
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev

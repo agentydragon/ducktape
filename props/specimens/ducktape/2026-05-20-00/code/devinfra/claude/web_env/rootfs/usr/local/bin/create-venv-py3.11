@@ -1,0 +1,8 @@
+#!/bin/bash
+if [ -z "$1" ]; then
+    echo "Usage: create-venv-py3.11 <venv-name>"
+    exit 1
+fi
+python3.11 -m venv "$1"
+echo "Virtual environment created with Python 3.11 at $1"
+echo "Activate with: source $1/bin/activate"

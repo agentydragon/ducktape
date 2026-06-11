@@ -1,0 +1,80 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 30m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: cert-manager
+      version: "v1.19.4"
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      interval: 12h
+  values:
+    # Install CRDs automatically
+    crds:
+      enabled: true
+
+    # Default ClusterIssuer for Ingress resources without explicit annotation.
+    # Driven by cert-manager-issuer-config ConfigMap via Flux postBuild substitution.
+    ingressShim:
+      defaultIssuerName: "${LETSENCRYPT_ISSUER}"
+      defaultIssuerKind: ClusterIssuer
+
+    # Use external DNS servers for ACME challenge verification
+    # This avoids hairpin NAT issues where pods can't reach their own node's public IP
+    # Gateway API support — enables gateway-shim controller that watches Gateway
+    # resources for cert-manager.io/cluster-issuer annotations.
+    # Since v1.15 the old --feature-gates=ExperimentalGatewayAPISupport flag is
+    # ignored; must use config-based enablement instead.
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true
+
+    extraArgs:
+      - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
+      - --dns01-recursive-nameservers-only
+
+    # Enable metrics
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: false # Deployed separately via cert-manager-servicemonitor/ kustomization
+
+    # Resource configuration
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+
+    webhook:
+      # Configure additional DNS names for webhook certificate
+      extraArgs:
+        - --dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
+    cainjector:
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi

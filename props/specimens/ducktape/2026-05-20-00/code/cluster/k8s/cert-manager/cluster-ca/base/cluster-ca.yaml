@@ -1,0 +1,53 @@
+---
+# Cluster-wide self-signed CA for internal service certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cluster-ca-bootstrap
+spec:
+  selfSigned: {}
+---
+# Root CA certificate for the cluster
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: cluster-root-ca
+  secretName: cluster-root-ca-secret
+  duration: 87600h # 10 years
+  renewBefore: 8760h # 1 year
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: cluster-ca-bootstrap
+    kind: ClusterIssuer
+---
+# ClusterIssuer using the root CA for issuing internal certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cluster-internal-ca
+spec:
+  ca:
+    secretName: cluster-root-ca-secret
+---
+# trust-manager Bundle to distribute CA to all namespaces
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: cluster-internal-ca-bundle
+spec:
+  sources:
+    - secret:
+        name: cluster-root-ca-secret
+        key: ca.crt
+    - secret:
+        name: "${LETSENCRYPT_ISSUER}-root-ca"
+        key: ca.crt
+  target:
+    configMap:
+      key: ca-certificates.crt

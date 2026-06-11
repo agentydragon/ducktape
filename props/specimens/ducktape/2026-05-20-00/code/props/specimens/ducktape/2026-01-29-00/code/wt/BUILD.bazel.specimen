@@ -1,0 +1,43 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugins",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//wt/client:cd_utils",
+        "//wt/client:handlers",
+        "//wt/client:view_formatter",
+        "//wt/client:wt_client",
+        "//wt/shared:configuration",
+        "//wt/shared:constants",
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "wt-cli",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
+)
+
+py_library(
+    name = "demo_plugin",
+    srcs = ["demo_plugin.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "plugins",
+    srcs = ["plugins.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pluggy"],
+)

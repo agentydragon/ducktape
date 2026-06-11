@@ -1,0 +1,74 @@
+"""Testing utilities package for agent_server."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "approval_policy_testdata",
+    srcs = ["approval_policy_testdata.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_server/policies:policy_types"],
+)
+
+py_library(
+    name = "chat_stubs",
+    srcs = ["chat_stubs.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/mcp/chat",
+        "//mcp_infra/stubs:server_stubs",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/policies:policy_types",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+    ],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//net_util:net",
+        "//openai_utils:model",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "steps",
+    srcs = ["steps.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/ui",
+        "//mcp_infra:constants",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "typed_asserts",
+    srcs = ["typed_asserts.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/server:state",
+        "@pypi//pyhamcrest",
+    ],
+)

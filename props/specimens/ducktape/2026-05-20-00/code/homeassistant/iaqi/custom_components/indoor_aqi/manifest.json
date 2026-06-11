@@ -1,0 +1,8 @@
+{
+  "domain": "indoor_aqi",
+  "name": "Indoor AQI",
+  "version": "0.0.1",
+  "documentation": "https://example.com/indoor_aqi_docs",
+  "requirements": [],
+  "codeowners": []
+}

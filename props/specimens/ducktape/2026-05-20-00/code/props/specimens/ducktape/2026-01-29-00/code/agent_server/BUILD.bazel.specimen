@@ -1,0 +1,456 @@
+"""Agent server package - root modules, binaries, and OCI image."""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+exports_files(["conftest.py"])
+
+# UI assertion helpers for agent_server tests
+py_library(
+    name = "ui_asserts",
+    testonly = True,
+    srcs = ["ui_asserts.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/server:state",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+# Shared test fixtures for agent_server tests (requires Docker)
+# Subdirectory tests can depend on this to get access to conftest fixtures
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":approvals",
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:responses",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/persist:sqlite",
+        "//agent_server/persist:types",
+        "//agent_server/policies:loader",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policy_eval:container",
+        "//agent_server/runtime:container",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/testing:fixtures",
+        "//test_util",
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+# Root-level modules that don't belong in subdirectories
+# Split to break circular dependency: persist needs agent_types, presets needs persist
+
+py_library(
+    name = "agent_types",
+    srcs = ["agent_types.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+# --- Binaries ---
+# Each binary depends only on what it actually uses
+
+py_binary(
+    name = "adgn-agent-serve",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/mcp_bridge:auth",
+        "//agent_server/server:app",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//mcp_infra:config_loader",
+        "//net_util:net",
+        "@pypi//typer_slim",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "agent-server-matrix-bot",
+    srcs = ["matrix_bot.py"],
+    main = "matrix_bot.py",
+    deps = [
+        ":logging_config",
+        "//agent_core:agent",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//mcp_infra:config_loader",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/display:event_renderer",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//mautrix",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "agent-server-generate-frontend-code",
+    srcs = ["scripts/generate_frontend_code.py"],
+    main = "scripts/generate_frontend_code.py",
+    deps = [
+        ":approvals",
+        "//agent_core:events",
+        "//agent_server/mcp_bridge:agents",
+        "//agent_server/persist:types",
+        "//agent_server/server:protocol",
+        "@pypi//pydantic",
+    ],
+)
+
+# --- Root-level Tests ---
+
+# Tests requiring Docker and runtime image
+py_test(
+    name = "test_approval_integration",
+    srcs = ["test_approval_integration.py"],
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core_testing:responses",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/policies:policy_types",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_infra:resource_utils",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_default_approval_policy",
+    srcs = ["test_default_approval_policy.py"],
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_server/policies:policy_types",
+        "//agent_server/testing:fixtures",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:simple_servers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+    ],
+)
+
+# Tests requiring Docker (python-slim only)
+live_openai_py_test(
+    name = "test_exec_roundtrip",
+    srcs = ["test_exec_roundtrip.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = ["test_mcp_integration.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:simple_servers",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_notifications_flow",
+    srcs = ["test_mcp_notifications_flow.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core_testing:responses",
+        "//agent_server/notifications",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:urls",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/stubs:typed_stubs",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_resources_flow",
+    srcs = ["test_mcp_resources_flow.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core_testing:responses",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/display:event_renderer",
+        "//openai_utils:model",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_policy_eval_abort_on_error",
+    srcs = ["test_policy_eval_abort_on_error.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runtime_timeout",
+    srcs = ["test_runtime_timeout.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Tests NOT requiring Docker (run in regular bazel-test)
+py_test(
+    name = "test_notifications_handler",
+    srcs = ["test_notifications_handler.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//agent_core:loop_control",
+        "//agent_server/notifications",
+        "//agent_server/testing:helpers",
+        "//mcp_infra/notifications:types",
+        "//openai_utils:text_extraction",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_rendering_instructions",
+    srcs = ["test_rendering_instructions.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/compositor:rendering",
+        "@pypi//mcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# E2E tests moved to agent_server/e2e/BUILD.bazel
+
+# --- Linting ---
+
+# --- OCI Runtime Image ---
+
+py_binary(
+    name = "runtime_image",
+    srcs = ["runtime_image.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+pkg_tar(
+    name = "runtime_image_tar",
+    srcs = [
+        ":runtime_image",
+        "//agent_server/policy_eval:shim",
+    ],
+    include_runfiles = True,
+    package_dir = "/opt/adgn",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/opt/adgn/runtime_image"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":runtime_image_tar"],
+    workdir = "/opt/adgn",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["adgn-runtime:latest"],
+    visibility = ["//agent_server:__subpackages__"],
+)
+
+py_library(
+    name = "approvals",
+    srcs = ["approvals.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "logging_config",
+    srcs = ["logging_config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_core:logging_utils"],
+)
+
+py_library(
+    name = "matrix_bot",
+    srcs = ["matrix_bot.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":logging_config",
+        "//agent_core:agent",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//mcp_infra:config_loader",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/display:event_renderer",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "presets",
+    srcs = ["presets.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_types",
+        "//agent_server/persist:sqlite",
+        "//agent_server/persist:types",
+        "@pypi//fastmcp",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)

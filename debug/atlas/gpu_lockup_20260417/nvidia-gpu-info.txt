@@ -1,0 +1,27 @@
+=== 0000:01:00.0 ===
+Model: 		 NVIDIA GeForce RTX 5090
+IRQ:   		 16
+GPU UUID: 	 GPU-690929fc-97bf-9d39-d2f5-0322f1715b16
+Video BIOS: 	 ??.??.??.??.??
+Bus Type: 	 PCIe
+DMA Size: 	 52 bits
+DMA Mask: 	 0xfffffffffffff
+Bus Location: 	 0000:01:00.0
+Device Minor: 	 0
+GPU Firmware: 	 N/A
+GPU Excluded:	 No
+Binary: ""
+
+=== 0000:02:00.0 ===
+Model: 		 NVIDIA GeForce RTX 5090
+IRQ:   		 16
+GPU UUID: 	 GPU-6154a49f-2cad-6b72-1e85-09b8006d08b5
+Video BIOS: 	 ??.??.??.??.??
+Bus Type: 	 PCIe
+DMA Size: 	 52 bits
+DMA Mask: 	 0xfffffffffffff
+Bus Location: 	 0000:02:00.0
+Device Minor: 	 1
+GPU Firmware: 	 N/A
+GPU Excluded:	 No
+Binary: ""

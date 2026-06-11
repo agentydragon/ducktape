@@ -12,7 +12,6 @@ Load for local testing:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
 
 # The aw-webui frontend bundle is built by @aw_webui//:dist (a js_run_binary
 # declared in aw-webui.BUILD.bazel).  It is wired into the Rust build via
@@ -60,10 +59,4 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["aw-server:latest"],
-)
-
-ghcr_push(
-    name = "push_ghcr",
-    image = ":image",
-    repository = "ghcr.io/agentydragon/aw-server",
 )

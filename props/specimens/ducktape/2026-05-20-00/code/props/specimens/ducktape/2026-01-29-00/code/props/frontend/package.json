@@ -1,0 +1,35 @@
+{
+  "name": "props-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.1",
+    "esbuild-svelte": "^0.9.4",
+    "esbuild-plugin-tailwindcss": "^2.0.3",
+    "openapi-typescript": "^7.10.1",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
+    "puppeteer": "^23.11.1",
+    "svelte": "^5.38.1",
+    "svelte-check": "^4.3.1",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@careswitch/svelte-data-table": "^0.6.3",
+    "@humanspeak/svelte-markdown": "^0.8.13",
+    "date-fns": "^4.1.0",
+    "highlight.js": "^11.11.1",
+    "lucide-svelte": "^0.562.0",
+    "marked": "^12.0.2",
+    "marked-highlight": "^2.1.1",
+    "openapi-fetch": "^0.15.0",
+    "svelte-sonner": "^0.3.28"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "puppeteer"
+    ]
+  }
+}

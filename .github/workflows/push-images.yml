@@ -1,0 +1,330 @@
+# Push OCI images to GHCR via bb remote build + runner-side `crane push`.
+#
+# For each image in the matrix:
+#
+#   1. Optionally run tests (`test_target`). A failing test fails this
+#      matrix job loudly and skips the push for this image. Other matrix
+#      entries are unaffected (`fail-fast: false`).
+#
+#   2. `bb remote build <image>.digest --remote_download_outputs=toplevel`
+#      downloads only the ~70-byte sibling `.json.sha256` digest file that
+#      `rules_oci`'s `oci_image` macro auto-generates. The digest is
+#      reproducible across rebuilds, so when nothing changed this is a
+#      Bazel cache hit that ships back a single tiny file.
+#
+#   3. `crane ls` + `crane digest` against the newest `devel-*` tag (the
+#      one Flux ImagePolicy currently picks). If the local digest equals
+#      the remote digest, skip the push entirely — no new tag, no Flux
+#      churn. Otherwise mark `push=true` and continue.
+#
+#   4. Only when push is needed:
+#        a) `bb remote build <image> --remote_download_outputs=toplevel`
+#           downloads the OCI layout directory.
+#        b) `crane push` + `crane tag <pinned> latest`.
+#
+# Credentials live exactly where they should: the workflow's
+# `secrets.GITHUB_TOKEN` (with `permissions: packages: write`) is used by
+# `crane auth login` on the runner. No more env_overrides plumbing
+# through the BB runner VM.
+#
+# Also pushes the props *agent* images to the props registry (not GHCR) via the
+# `props-agents` job below — folded in from the former props-images.yml.
+name: Push Images
+
+on:
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
+jobs:
+  push:
+    name: Push ${{ matrix.image_name }}
+    # Only push from devel. `workflow_dispatch` can be triggered from any
+    # branch, but Flux ImagePolicy filters on `devel-YYYYMMDDHHMMSS-shortsha`
+    # and picks newest-alphabetical — so pushing that tag shape from a
+    # feature branch would immediately deploy unmerged code. Gate at the
+    # job level rather than on individual steps so the whole matrix
+    # short-circuits off-devel with a clear "skipped" status.
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Test-gated images: push only if their tests pass.
+          - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
+          - { image: "//airlock/auth_proxy:image", image_name: auth-proxy, test_target: "//airlock/auth_proxy/..." }
+          - { image: "//finance/augur/api:image", image_name: augur, test_target: "//finance/augur/api/..." }
+          - {
+              image: "//finance/augur/frontend:image",
+              image_name: augur-frontend,
+              test_target: "//finance/augur/frontend:image_build_test",
+            }
+          - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
+          - {
+              image: "//homeassistant/proxy:image",
+              image_name: homeassistant-proxy,
+              test_target: "//homeassistant/proxy/...",
+            }
+          - { image: "//mcp_infra/exec:direct_image", image_name: exec-backend, test_target: "//mcp_infra/exec/..." }
+          - { image: "//props/backend:image", image_name: props-backend, test_target: "//props/backend/..." }
+          - { image: "//props/llm_proxy:image", image_name: props-llm-proxy, test_target: "//props/llm_proxy/..." }
+          - {
+              image: "//props/registry_proxy:image",
+              image_name: props-registry-proxy,
+              test_target: "//props/registry_proxy/...",
+            }
+          - { image: "//tana/firebase_resigner:image", image_name: tana-firebase-resigner, test_target: "" }
+          - {
+              image: "//tana/litellm_proxy:image",
+              image_name: tana-litellm-proxy,
+              test_target: "//tana/litellm_proxy/...",
+            }
+          - {
+              image: "//x/mcp_oauth_facade:image",
+              image_name: mcp-oauth-facade,
+              test_target: "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
+            }
+          - { image: "//x/manifold_mcp_server:image", image_name: manifold-mcp-server, test_target: "" }
+          - {
+              image: "//x/postscanmail_mcp_server:image",
+              image_name: postscanmail-mcp-server,
+              test_target: "//x/postscanmail_mcp_server/...",
+            }
+          - {
+              image: "//x/authentik_mcp_poc:server_image",
+              image_name: authentik-mcp-poc-server,
+              test_target: "//x/authentik_mcp_poc/...",
+            }
+          - {
+              image: "//x/authentik_mcp_poc:backend_image",
+              image_name: authentik-mcp-poc-backend,
+              test_target: "//x/authentik_mcp_poc/...",
+            }
+          - { image: "//x/grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//x/grocy_mcp/..." }
+          - {
+              image: "//finance/plaid/link:server_image",
+              image_name: plaid-mcp-server,
+              test_target: "//finance/plaid/...",
+            }
+          - { image: "//finance/plaid/sync:sync_image", image_name: plaid-mcp-sync, test_target: "//finance/plaid/..." }
+          - {
+              image: "//finance/beancount_export:image",
+              image_name: budget-exporter,
+              test_target: "//finance/beancount_export/...",
+            }
+          - { image: "//x/study_casino:image", image_name: study-casino, test_target: "//x/study_casino/..." }
+          # Untested images: always-push if content changed. Explicit
+          # `test_target: ""` so the `matrix.test_target != ''` check on
+          # the test step evaluates the same as on test-gated rows —
+          # GitHub Actions treats a missing matrix key as null, which
+          # compares != "" truthy, so we'd accidentally run an empty
+          # `bb remote test` on these rows otherwise.
+          - {
+              image: "//cluster/k8s/agents/claude-jwt-rotation:image",
+              image_name: claude-jwt-rotation,
+              test_target: "",
+            }
+          - { image: "//cluster/k8s/agents/attic-jwt-rotation:image", image_name: attic-jwt-rotation, test_target: "" }
+          - { image: "//cluster/k8s/inventree/token-provisioner:image", image_name: token-provisioner, test_target: "" }
+          - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
+          - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
+          - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
+          - { image: "//openclaw/exec:image", image_name: openclaw-exec, test_target: "" }
+          - { image: "//third_party/activitywatch:image", image_name: aw-server, test_target: "" }
+          - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Test (gate for push)
+        id: test
+        if: matrix.test_target != ''
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test ${{ matrix.test_target }}
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Resolve image output paths
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        id: paths
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          # //pkg:name → pkg, name
+          PKG="${IMAGE#//}"
+          PKG="${PKG%:*}"
+          NAME="${IMAGE##*:}"
+          # `bb remote build` downloads artifacts into
+          # `bb-out/bazel-out/<config>/bin/<pkg>/<name>`. The `<config>` is
+          # `k8-fastbuild` for the Linux x86_64 fastbuild we always use
+          # here (via --config=rbe --config=ci in the bb-remote action).
+          # There is no `bb-out/bazel-bin/` convenience symlink on `bb
+          # remote` output — that symlink only exists in local Bazel
+          # workspaces.
+          BIN="bb-out/bazel-out/k8-fastbuild/bin"
+          {
+            echo "oci_dir=${BIN}/${PKG}/${NAME}"
+            echo "digest_file=${BIN}/${PKG}/${NAME}.json.sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      # Phase 1 — download just the .digest sibling target (~70 bytes).
+      - name: bb remote build digest
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ matrix.image }}.digest --remote_download_outputs=toplevel
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - uses: imjasonh/setup-crane@v0.4
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+
+      - name: Check whether digest already published
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        id: dedup
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST_FILE: ${{ steps.paths.outputs.digest_file }}
+          REPO: ghcr.io/agentydragon/${{ matrix.image_name }}
+        run: |
+          set -euo pipefail
+
+          LOCAL_DIGEST=$(cat "$DIGEST_FILE")
+
+          # Newest devel-* tag = the one Flux ImagePolicy currently picks
+          # (filters on `^devel-\d{14}-[0-9a-f]{7}$`, alphabetical: asc).
+          #
+          # `crane ls` on a brand-new GHCR package exits non-zero with
+          # `NAME_UNKNOWN: repository name not known to registry` — that's
+          # an expected first-push case, treat it as "no existing tag".
+          # Any OTHER failure (auth, transport, 5xx) must fail loudly; we
+          # don't want to silently fall into "push a new tag" on e.g. an
+          # auth glitch, because that would churn Flux ImagePolicy.
+          #
+          # Using a temp file + explicit exit code capture so a failure
+          # inside the command substitution doesn't get swallowed by
+          # bash's errexit-in-subshell semantics.
+          ls_stderr=$(mktemp)
+          ls_rc=0
+          crane_ls_out=$(crane ls "$REPO" 2>"$ls_stderr") || ls_rc=$?
+          if [ $ls_rc -ne 0 ]; then
+            if grep -q NAME_UNKNOWN "$ls_stderr"; then
+              echo "$REPO: new package, no existing tags"
+              LATEST=""
+            else
+              echo "crane ls $REPO failed (exit $ls_rc):" >&2
+              cat "$ls_stderr" >&2
+              rm -f "$ls_stderr"
+              exit 1
+            fi
+          else
+            LATEST=$(echo "$crane_ls_out" \
+              | { grep -E '^devel-[0-9]{14}-[0-9a-f]{7}$' || true; } \
+              | sort | tail -1)
+          fi
+          rm -f "$ls_stderr"
+
+          PUSH=true
+          if [ -n "$LATEST" ]; then
+            REMOTE_DIGEST=$(crane digest "$REPO:$LATEST")
+            if [ "$LOCAL_DIGEST" = "$REMOTE_DIGEST" ]; then
+              echo "$REPO: digest unchanged ($LOCAL_DIGEST), latest devel tag still $LATEST — skipping push"
+              PUSH=false
+            fi
+          fi
+
+          {
+            echo "push=$PUSH"
+            echo "local_digest=$LOCAL_DIGEST"
+            echo "latest=${LATEST:-<none>}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Phase 2 — only when content actually changed: download the OCI
+      # layout directory and crane push it.
+      - name: bb remote build OCI layout
+        if: steps.dedup.outputs.push == 'true'
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ matrix.image }} --remote_download_outputs=toplevel
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Push to GHCR
+        if: steps.dedup.outputs.push == 'true'
+        shell: bash
+        env:
+          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
+          REPO: ghcr.io/agentydragon/${{ matrix.image_name }}
+          LOCAL_DIGEST: ${{ steps.dedup.outputs.local_digest }}
+          LATEST: ${{ steps.dedup.outputs.latest }}
+        run: |
+          set -euo pipefail
+          PINNED="devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED (was :$LATEST)"
+          crane push "$OCI_DIR" "$REPO:$PINNED"
+          crane tag "$REPO:$PINNED" latest
+
+  # Props agent images go to the props registry (not GHCR): the props backend's
+  # registry proxy fronts Forgejo, and the orchestrator + critic-dev flow pull
+  # and push agent / critic-variant images there at runtime. They're pushed by
+  # the bespoke //props/agents:push_images binary (which handles the critic
+  # variants and the digest+tag scheme), not the GHCR matrix above. Gated on
+  # props tests; like the matrix it only pushes from devel, and (via the
+  # always() && !cancelled() caller in ci.yml) runs regardless of unrelated CI
+  # failures — only a props test failure blocks it.
+  props-agents:
+    name: Push props agent images
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Test (gate for push)
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test //props/...
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Push agent images
+        uses: ./.github/actions/bb-remote
+        with:
+          args: run //props/agents:push_images
+          rbe_image: ${{ inputs.rbe_image }}
+          env_overrides: |
+            PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
+            PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}
+            PROPS_REGISTRY_PASSWORD=${{ env.PROPS_REGISTRY_PASSWORD }}

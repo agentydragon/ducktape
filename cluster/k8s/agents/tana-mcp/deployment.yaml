@@ -4,7 +4,7 @@ metadata:
   name: tana-mcp
   namespace: tana-mcp
   labels:
-    app: tana-mcp
+    app.kubernetes.io/name: tana-mcp
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
@@ -13,21 +13,19 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: tana-mcp
+      app.kubernetes.io/name: tana-mcp
   template:
     metadata:
       labels:
-        app: tana-mcp
+        app.kubernetes.io/name: tana-mcp
     spec:
-      serviceAccountName: tana-token-broker
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      imagePullSecrets:
-        - name: harbor-pull-robot
+        topology.kubernetes.io/zone: hil-ovh
+      serviceAccountName: tana-firebase-resigner
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop
-          image: ghcr.io/agentydragon/tana-desktop:devel-20260401040549-df942a4 # {"$imagepolicy": "flux-system:tana-mcp"}
+          image: ghcr.io/agentydragon/tana-desktop:devel-20260603203137-5af6401 # {"$imagepolicy": "flux-system:tana-mcp"}
           ports:
             - name: mcp
               containerPort: 8262
@@ -40,34 +38,48 @@ spec:
               value: "1280x800x24"
           volumeMounts:
             - name: tana-config
-              mountPath: /home/tana/.config/Tana
+              mountPath: /home/tana/.config/tana
           resources:
             requests:
               cpu: 200m
-              memory: 512Mi
+              memory: 1Gi
             limits:
-              memory: 2Gi
+              memory: 4Gi
+          # Tana only serves /health on loopback inside the container. Kubelet
+          # httpGet probes target the pod IP, which stays unreachable even when
+          # Tana is healthy, so probe from inside the container instead.
           # Generous startup probe: /health won't respond until Tana is logged in
           # and MCP server is enabled (done manually via noVNC).
           startupProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             failureThreshold: 120
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             periodSeconds: 30
             failureThreshold: 5
           readinessProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             periodSeconds: 15
         # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
-        # accepts requests from cluster clients
+        # accepts requests from cluster clients. Probe the proxy over HTTP so
+        # readiness reflects the actual cluster-facing path on :8263, not just
+        # that the port is open.
         - name: proxy
           image: nginx:alpine
           ports:
@@ -85,27 +97,57 @@ spec:
             limits:
               memory: 64Mi
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 8263
             periodSeconds: 30
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 8263
             periodSeconds: 10
-        # OAuth token broker: performs OAuth 2.1 + PKCE flow against Tana's
-        # MCP server and writes tokens to a K8s secret
-        - name: token-broker
-          image: ghcr.io/agentydragon/tana-token-broker:devel-20260401040549-df942a4 # {"$imagepolicy": "flux-system:tana-token-broker"}
+        # firebase_resigner: when the in-pod Tana's Firebase session is dead
+        # (probes /health on loopback), swap the SOPS-managed refresh token
+        # for an ID token, mint a Tana custom token via the fetchCustomToken
+        # Cloud Function, and deliver it to the desktop container's reseed
+        # receiver as a tana://auth deep-link. See
+        # cluster/docs/plans/tana_mcp_sane_signin.md.
+        - name: firebase-resigner
+          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260610075236-2c51610 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          env:
+            - name: FIREBASE_API_KEY
+              # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project
+              # tagr-prod. Firebase web API keys are public identifiers per
+              # Google's docs, so this is config, not a secret.
+              value: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
+            - name: TARGET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Server-held PAT: readiness then also requires that Tana's MCP
+            # accepts it (POST /mcp initialize -> 200), so a renderer that
+            # drifts off the matching account drives a re-sign instead of
+            # silently leaving the facade serving zero tools.
+            - name: TANA_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
           resources:
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 64Mi
             limits:
               memory: 128Mi
       volumes:
+        # Tana's ~/.config/tana is just workspace cache + Firebase auth
+        # IndexedDB. Both are re-derivable on cold start: workspace from the
+        # upstream Tana RTDB, Firebase session re-minted by the
+        # firebase_resigner sidecar from the SOPS-managed refresh token. So
+        # this can stay an emptyDir — see
+        # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: tana-config
-          persistentVolumeClaim:
-            claimName: tana-mcp-config
+          emptyDir: {}
         - name: nginx-config
           configMap:
             name: tana-mcp-nginx-config

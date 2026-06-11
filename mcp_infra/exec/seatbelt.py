@@ -9,7 +9,6 @@ from pathlib import Path
 import anyio
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import (
@@ -46,10 +45,9 @@ DEFAULT_ENV_WHITELIST: tuple[str, ...] = (
 
 
 class SandboxExecArgs(ExecArgsBase):
-    # Stateless: require a full policy on every call
+    # Stateless: require a full policy on every call.
+    # The `cmd` argv field (with execve semantics) is inherited from ExecArgsBase.
     policy: SBPLPolicy
-    # TODO: unify argv/cmd naming across exec args models
-    argv: list[str] = Field(min_length=1)
     # Explicit env to set/override in the child (applied after policy.env passthrough base)
     env: dict[str, str] | None = None
     trace: bool = False
@@ -92,16 +90,13 @@ class SeatbeltExecServer(EnhancedFastMCP):
             if sys.platform != "darwin":
                 raise ToolError("NOT_DARWIN: sandbox available only on macOS")
 
-            # Pydantic has already validated argv min length and max_bytes range
+            # Pydantic has already validated cmd min length and max_bytes range
             max_b = input.max_bytes
 
             cwd_path = await anyio.Path(input.cwd).resolve() if input.cwd else None
 
             # Stateless: require inline policy (validated by Pydantic)
             policy = input.policy
-
-            # Prepare stdin bytes (clamped to max_bytes); no metadata returned for stdin
-            stdin_b = input.stdin_text.encode("utf-8", errors="replace") if input.stdin_text else b""
 
             # Compute child environment based on policy.env (default: whitelist with safe defaults),
             # then overlay any explicit env values provided in the request.
@@ -120,12 +115,12 @@ class SeatbeltExecServer(EnhancedFastMCP):
             try:
                 async with async_timer() as get_duration_ms:
                     async with await apopen(
-                        input.argv,
+                        input.cmd,
                         policy,
                         cwd=cwd_path,
                         env=child_env,
                         trace=input.trace,
-                        stdin=asyncio.subprocess.PIPE,
+                        stdin=asyncio.subprocess.DEVNULL,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     ) as proc:
@@ -137,20 +132,9 @@ class SeatbeltExecServer(EnhancedFastMCP):
                         def _remaining() -> float:
                             return max(0.0, deadline - loop.time())
 
-                        # Kick off reads first; then write stdin; this avoids fill/lock
+                        # Kick off reads before waiting for the process to exit.
                         stdout_task = asyncio.create_task(read_stream_limited_async(proc.stdout, store_limit=max_b))
                         stderr_task = asyncio.create_task(read_stream_limited_async(proc.stderr, store_limit=max_b))
-
-                        # Write stdin (if any), then close to signal EOF
-                        try:
-                            if proc.stdin is not None:
-                                if stdin_b:
-                                    proc.stdin.write(stdin_b)
-                                    await proc.stdin.drain()
-                                proc.stdin.close()
-                        except Exception as e:
-                            # Record the failure but do not crash; exit code/streams will reflect errors
-                            logger.debug("stdin write/close failed: %s", e)
 
                         timed_out = False
                         try:

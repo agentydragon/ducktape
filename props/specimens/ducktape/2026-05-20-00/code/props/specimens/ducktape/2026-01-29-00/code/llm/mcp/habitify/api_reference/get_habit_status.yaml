@@ -1,0 +1,20 @@
+name: Get Habit Status
+request:
+  method: GET
+  url: https://api.habitify.me/status/-Lo9NTLRX3aCxg-PjN25
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  params:
+    target_date: "2025-05-09T00:00:00+00:00"
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      status: completed
+    version: v1.2
+    status: true
+    errors: []

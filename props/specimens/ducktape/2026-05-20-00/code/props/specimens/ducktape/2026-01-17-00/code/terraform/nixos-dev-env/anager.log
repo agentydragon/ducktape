@@ -1,0 +1,453 @@
+✓ Detected OPENAI_API_KEY - will be copied to VM
+[0m[1mdata.external.terraform_user: Reading...[0m[0m
+[0m[1mdata.external.terraform_user: Read complete after 1s [id=-][0m
+[0m[1mdata.external.pool_user: Reading...[0m[0m
+[0m[1mdata.external.terraform_token: Reading...[0m[0m
+[0m[1mdata.external.terraform_token: Read complete after 1s [id=-][0m
+[0m[1mdata.external.pool_user: Read complete after 2s [id=-][0m
+[0m[1mdata.external.user_token: Reading...[0m[0m
+[0m[1mdata.external.user_token: Read complete after 1s [id=-][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create[0m
+
+Terraform will perform the following actions:
+
+[1m  # null_resource.cleanup[0m will be created
+[0m  [32m+[0m[0m resource "null_resource" "cleanup" {
+      [32m+[0m[0m id       = (known after apply)
+      [32m+[0m[0m triggers = {
+          [32m+[0m[0m "proxmox_host" = "root@atlas"
+          [32m+[0m[0m "role_name"    = "VMAdmin-agent-test"
+          [32m+[0m[0m "username"     = "agent-test@pve"
+        }
+    }
+
+[1m  # null_resource.nixos_cloud_image[0m will be created
+[0m  [32m+[0m[0m resource "null_resource" "nixos_cloud_image" {
+      [32m+[0m[0m id       = (known after apply)
+      [32m+[0m[0m triggers = {
+          [32m+[0m[0m "cloud_image_config" = "d694d8c9bfb5ad8c3bc92ba9f6207a9d"
+          [32m+[0m[0m "proxmox_host"       = "atlas"
+          [32m+[0m[0m "storage"            = "local-zfs"
+        }
+    }
+
+[1m  # proxmox_virtual_environment_acl.pool_admin[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_acl" "pool_admin" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m path      = "/pool/pool-agent-test"
+      [32m+[0m[0m propagate = true
+      [32m+[0m[0m role_id   = "PVEVMAdmin"
+      [32m+[0m[0m user_id   = "agent-test@pve"
+    }
+
+[1m  # proxmox_virtual_environment_acl.sdn_access[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_acl" "sdn_access" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m path      = "/sdn"
+      [32m+[0m[0m propagate = true
+      [32m+[0m[0m role_id   = "PVESDNUser"
+      [32m+[0m[0m user_id   = "agent-test@pve"
+    }
+
+[1m  # proxmox_virtual_environment_acl.storage_access[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_acl" "storage_access" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m path      = "/storage/local-zfs"
+      [32m+[0m[0m propagate = true
+      [32m+[0m[0m role_id   = "PVEDatastoreUser"
+      [32m+[0m[0m user_id   = "agent-test@pve"
+    }
+
+[1m  # proxmox_virtual_environment_acl.storage_access_local[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_acl" "storage_access_local" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m path      = "/storage/local"
+      [32m+[0m[0m propagate = true
+      [32m+[0m[0m role_id   = "PVEDatastoreAdmin"
+      [32m+[0m[0m user_id   = "agent-test@pve"
+    }
+
+[1m  # proxmox_virtual_environment_download_file.nixos_image[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_download_file" "nixos_image" {
+      [32m+[0m[0m content_type        = "iso"
+      [32m+[0m[0m datastore_id        = "local"
+      [32m+[0m[0m file_name           = "nixos-unstable-minimal.iso"
+      [32m+[0m[0m id                  = (known after apply)
+      [32m+[0m[0m node_name           = "atlas"
+      [32m+[0m[0m overwrite           = false
+      [32m+[0m[0m overwrite_unmanaged = false
+      [32m+[0m[0m size                = (known after apply)
+      [32m+[0m[0m upload_timeout      = 600
+      [32m+[0m[0m url                 = "https://channels.nixos.org/nixos-unstable/latest-nixos-minimal-x86_64-linux.iso"
+      [32m+[0m[0m verify              = true
+    }
+
+[1m  # proxmox_virtual_environment_file.cloud_init_config[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_file" "cloud_init_config" {
+      [32m+[0m[0m content_type           = "snippets"
+      [32m+[0m[0m datastore_id           = "local"
+      [32m+[0m[0m file_modification_date = (known after apply)
+      [32m+[0m[0m file_name              = (known after apply)
+      [32m+[0m[0m file_size              = (known after apply)
+      [32m+[0m[0m file_tag               = (known after apply)
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m node_name              = "atlas"
+      [32m+[0m[0m overwrite              = true
+      [32m+[0m[0m timeout_upload         = 1800
+
+      [32m+[0m[0m source_raw {
+          [32m+[0m[0m data      = <<-EOT
+                #cloud-config
+                # Cloud-init configuration for NixOS with ducktape home-manager
+                # Sets up user 'user' with no password, auto-login, and home-manager
+
+                hostname: user-nixos
+
+                users:
+                  - name: user
+                    gecos: user
+                    sudo: ALL=(ALL) NOPASSWD:ALL
+                    groups: users, wheel
+                    shell: /run/current-system/sw/bin/bash
+                    ssh_authorized_keys:
+                      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm
+                    lock_passwd: true  # No password
+
+                # System configuration
+                package_update: false
+                package_upgrade: false
+
+                # Run commands to set up home-manager from ducktape repo
+                runcmd:
+                  # Ensure /run/current-system/sw/bin is in PATH for cloud-init scripts
+                  - export PATH="/run/current-system/sw/bin:$PATH"
+
+                  # Clone ducktape repository for user
+                  - mkdir -p /home/user/code
+                  - git clone https://gitlab.com/agentydragon/ducktape.git /home/user/code/ducktape
+                  - chown -R user:users /home/user/code
+
+                  # Apply home-manager configuration from ducktape repo (with GUI enabled)
+                  # Use the standalone home-manager, not a flake-based approach
+                  - su - user -c 'home-manager switch -f ~/code/ducktape/nix/home/home.nix --arg enableGui true --arg enableKube false'
+
+                final_message: "NixOS system ready! User 'user' configured with ducktape home-manager."
+            EOT
+          [32m+[0m[0m file_name = "user-nixos-cloud-init.yaml"
+          [32m+[0m[0m resize    = 0
+        }
+    }
+
+[1m  # proxmox_virtual_environment_file.home_manager_flake[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_file" "home_manager_flake" {
+      [32m+[0m[0m content_type           = "snippets"
+      [32m+[0m[0m datastore_id           = "local"
+      [32m+[0m[0m file_modification_date = (known after apply)
+      [32m+[0m[0m file_name              = (known after apply)
+      [32m+[0m[0m file_size              = (known after apply)
+      [32m+[0m[0m file_tag               = (known after apply)
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m node_name              = "atlas"
+      [32m+[0m[0m overwrite              = true
+      [32m+[0m[0m timeout_upload         = 1800
+
+      [32m+[0m[0m source_raw {
+          [32m+[0m[0m data      = <<-EOT
+                {
+                  description = "Home Manager configuration for user-nixos";
+
+                  inputs = {
+                    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+                    home-manager = {
+                      url = "github:nix-community/home-manager/unstable";
+                      inputs.nixpkgs.follows = "nixpkgs";
+                    };
+                    ducktape.url = "github:agentydragon/ducktape/main";
+                  };
+
+                  outputs = { nixpkgs, home-manager, ducktape, ... }: {
+                    homeConfigurations."user" = home-manager.lib.homeManagerConfiguration {
+                      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+                      modules = [
+                        {
+                          home = {
+                            username = "user";
+                            homeDirectory = "/home/user";
+                            stateVersion = "24.11";
+                          };
+
+                          # Import ducktape home-manager config
+                          imports = [ ducktape.packages.x86_64-linux.home ];
+                        }
+                      ];
+                    };
+                  };
+                }
+            EOT
+          [32m+[0m[0m file_name = "user-nixos-flake.nix"
+          [32m+[0m[0m resize    = 0
+        }
+    }
+
+[1m  # proxmox_virtual_environment_file.nixos_config[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_file" "nixos_config" {
+      [32m+[0m[0m content_type           = "snippets"
+      [32m+[0m[0m datastore_id           = "local"
+      [32m+[0m[0m file_modification_date = (known after apply)
+      [32m+[0m[0m file_name              = (known after apply)
+      [32m+[0m[0m file_size              = (known after apply)
+      [32m+[0m[0m file_tag               = (known after apply)
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m node_name              = "atlas"
+      [32m+[0m[0m overwrite              = true
+      [32m+[0m[0m timeout_upload         = 1800
+
+      [32m+[0m[0m source_raw {
+          [32m+[0m[0m data      = (sensitive value)
+          [32m+[0m[0m file_name = "user-nixos-configuration.nix"
+          [32m+[0m[0m resize    = 0
+        }
+    }
+
+[1m  # proxmox_virtual_environment_pool.user_pool[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_pool" "user_pool" {
+      [32m+[0m[0m comment = "Resource pool for agent-test"
+      [32m+[0m[0m id      = (known after apply)
+      [32m+[0m[0m members = (known after apply)
+      [32m+[0m[0m pool_id = "pool-agent-test"
+    }
+
+[1m  # proxmox_virtual_environment_vm.nixos_vm[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_vm" "nixos_vm" {
+      [32m+[0m[0m acpi                    = true
+      [32m+[0m[0m bios                    = "ovmf"
+      [32m+[0m[0m description             = "NixOS unstable with ducktape home-manager for user"
+      [32m+[0m[0m id                      = (known after apply)
+      [32m+[0m[0m ipv4_addresses          = (known after apply)
+      [32m+[0m[0m ipv6_addresses          = (known after apply)
+      [32m+[0m[0m keyboard_layout         = "en-us"
+      [32m+[0m[0m mac_addresses           = (known after apply)
+      [32m+[0m[0m migrate                 = false
+      [32m+[0m[0m name                    = "user-nixos"
+      [32m+[0m[0m network_interface_names = (known after apply)
+      [32m+[0m[0m node_name               = "atlas"
+      [32m+[0m[0m on_boot                 = true
+      [32m+[0m[0m pool_id                 = "pool-agent-test"
+      [32m+[0m[0m protection              = false
+      [32m+[0m[0m reboot                  = false
+      [32m+[0m[0m reboot_after_update     = true
+      [32m+[0m[0m scsi_hardware           = "virtio-scsi-pci"
+      [32m+[0m[0m started                 = true
+      [32m+[0m[0m stop_on_destroy         = false
+      [32m+[0m[0m tablet_device           = true
+      [32m+[0m[0m template                = false
+      [32m+[0m[0m timeout_clone           = 1800
+      [32m+[0m[0m timeout_create          = 1800
+      [32m+[0m[0m timeout_migrate         = 1800
+      [32m+[0m[0m timeout_move_disk       = 1800
+      [32m+[0m[0m timeout_reboot          = 1800
+      [32m+[0m[0m timeout_shutdown_vm     = 1800
+      [32m+[0m[0m timeout_start_vm        = 1800
+      [32m+[0m[0m timeout_stop_vm         = 300
+      [32m+[0m[0m vm_id                   = (known after apply)
+
+      [32m+[0m[0m agent {
+          [32m+[0m[0m enabled = true
+          [32m+[0m[0m timeout = "15m"
+          [32m+[0m[0m trim    = false
+          [32m+[0m[0m type    = "virtio"
+        }
+
+      [32m+[0m[0m cpu {
+          [32m+[0m[0m cores      = 4
+          [32m+[0m[0m hotplugged = 0
+          [32m+[0m[0m limit      = 0
+          [32m+[0m[0m numa       = false
+          [32m+[0m[0m sockets    = 1
+          [32m+[0m[0m type       = "host"
+          [32m+[0m[0m units      = 100
+        }
+
+      [32m+[0m[0m disk {
+          [32m+[0m[0m aio               = "io_uring"
+          [32m+[0m[0m backup            = true
+          [32m+[0m[0m cache             = "none"
+          [32m+[0m[0m datastore_id      = "local-zfs"
+          [32m+[0m[0m discard           = "on"
+          [32m+[0m[0m file_format       = (known after apply)
+          [32m+[0m[0m import_from       = "local:import/nixos-cloud.qcow2"
+          [32m+[0m[0m interface         = "scsi0"
+          [32m+[0m[0m iothread          = true
+          [32m+[0m[0m path_in_datastore = (known after apply)
+          [32m+[0m[0m replicate         = true
+          [32m+[0m[0m size              = 50
+          [32m+[0m[0m ssd               = false
+        }
+
+      [32m+[0m[0m efi_disk {
+          [32m+[0m[0m datastore_id      = "local-zfs"
+          [32m+[0m[0m file_format       = "raw"
+          [32m+[0m[0m pre_enrolled_keys = false
+          [32m+[0m[0m type              = "4m"
+        }
+
+      [32m+[0m[0m initialization {
+          [32m+[0m[0m datastore_id         = "local-zfs"
+          [32m+[0m[0m interface            = "sata0"
+          [32m+[0m[0m meta_data_file_id    = (known after apply)
+          [32m+[0m[0m network_data_file_id = (known after apply)
+          [32m+[0m[0m type                 = (known after apply)
+          [32m+[0m[0m user_data_file_id    = (known after apply)
+          [32m+[0m[0m vendor_data_file_id  = (known after apply)
+
+          [32m+[0m[0m ip_config {
+              [32m+[0m[0m ipv4 {
+                  [32m+[0m[0m address = "dhcp"
+                }
+            }
+
+          [32m+[0m[0m user_account {
+              [32m+[0m[0m keys     = [
+                  [32m+[0m[0m "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm",
+                ]
+              [32m+[0m[0m username = "user"
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+
+      [32m+[0m[0m memory {
+          [32m+[0m[0m dedicated      = 8192
+          [32m+[0m[0m floating       = 0
+          [32m+[0m[0m keep_hugepages = false
+          [32m+[0m[0m shared         = 0
+        }
+
+      [32m+[0m[0m network_device {
+          [32m+[0m[0m bridge      = "vmbr0"
+          [32m+[0m[0m enabled     = true
+          [32m+[0m[0m firewall    = false
+          [32m+[0m[0m mac_address = (known after apply)
+          [32m+[0m[0m model       = "virtio"
+          [32m+[0m[0m mtu         = 0
+          [32m+[0m[0m queues      = 0
+          [32m+[0m[0m rate_limit  = 0
+          [32m+[0m[0m vlan_id     = 0
+        }
+
+      [32m+[0m[0m vga (known after apply)
+    }
+
+[1mPlan:[0m 12 to add, 0 to change, 0 to destroy.
+[0m
+Changes to Outputs:
+  [32m+[0m[0m instructions      = (known after apply)
+  [32m+[0m[0m pool_id           = "pool-agent-test"
+  [32m+[0m[0m user_api_token    = (sensitive value)
+  [32m+[0m[0m username          = "agent-test@pve"
+  [32m+[0m[0m vm_id             = (known after apply)
+  [32m+[0m[0m vm_ipv4_addresses = (known after apply)
+  [32m+[0m[0m vm_name           = "user-nixos"
+[0m[1mnull_resource.nixos_cloud_image: Creating...[0m[0m
+[0m[1mnull_resource.cleanup: Creating...[0m[0m
+[0m[1mnull_resource.cleanup: Creation complete after 0s [id=5565992781569981057][0m
+[0m[1mnull_resource.nixos_cloud_image: Provisioning with 'local-exec'...[0m[0m
+[0m[1mnull_resource.nixos_cloud_image (local-exec):[0m [0mExecuting: ["/bin/sh" "-c" "set -e\necho \"Building NixOS qcow2 cloud image...\"\n\n# Build the qcow2 image\nnix run github:nix-community/nixos-generators -- \\\n  --format qcow-efi \\\n  --configuration ./cloud-image.nix \\\n  -o nixos-cloud-image\n\n# Get the actual qcow2 path from the symlink\nQCOW2_PATH=$(readlink -f nixos-cloud-image)/nixos.qcow2\n\necho \"Uploading qcow2 to Proxmox import directory...\"\n# Upload to the import directory on Proxmox for use with import_from\nssh root@atlas \"mkdir -p /var/lib/vz/import\"\nscp \"$QCOW2_PATH\" \"root@atlas:/var/lib/vz/import/nixos-cloud.qcow2\"\n\necho \"qcow2 image ready for import at local:import/nixos-cloud.qcow2\"\n"]
+[0m[1mnull_resource.nixos_cloud_image (local-exec):[0m [0mBuilding NixOS qcow2 cloud image...
+[0m[1mproxmox_virtual_environment_download_file.nixos_image: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_pool.user_pool: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_acl.storage_access_local: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_acl.sdn_access: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_acl.storage_access: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_pool.user_pool: Creation complete after 1s [id=pool-agent-test][0m
+[0m[1mproxmox_virtual_environment_acl.pool_admin: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_acl.pool_admin: Creation complete after 0s [id=/pool/pool-agent-test?agent-test@pve?PVEVMAdmin][0m
+[0m[1mproxmox_virtual_environment_acl.sdn_access: Creation complete after 1s [id=/sdn?agent-test@pve?PVESDNUser][0m
+[0m[1mproxmox_virtual_environment_acl.storage_access_local: Creation complete after 2s [id=/storage/local?agent-test@pve?PVEDatastoreAdmin][0m
+[0m[1mproxmox_virtual_environment_acl.storage_access: Creation complete after 2s [id=/storage/local-zfs?agent-test@pve?PVEDatastoreUser][0m
+[0m[1mproxmox_virtual_environment_file.home_manager_flake: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_file.nixos_config: Creating...[0m[0m
+[0m[1mnull_resource.nixos_cloud_image: Still creating... [00m10s elapsed][0m[0m
+[0m[1mproxmox_virtual_environment_download_file.nixos_image: Still creating... [00m10s elapsed][0m[0m
+[0m[1mnull_resource.nixos_cloud_image (local-exec):[0m [0m/nix/store/9v0syyda7dsm325r40wqk95irlix3l4q-nixos-disk-image/nixos.qcow2
+[0m[1mnull_resource.nixos_cloud_image (local-exec):[0m [0mUploading qcow2 to Proxmox import directory...
+[0m[1mproxmox_virtual_environment_file.home_manager_flake: Still creating... [00m10s elapsed][0m[0m
+[0m[1mproxmox_virtual_environment_file.nixos_config: Still creating... [00m10s elapsed][0m[0m
+[0m[1mnull_resource.nixos_cloud_image: Still creating... [00m20s elapsed][0m[0m
+[0m[1mproxmox_virtual_environment_download_file.nixos_image: Still creating... [00m20s elapsed][0m[0m
+[0m[1mnull_resource.nixos_cloud_image (local-exec):[0m [0mqcow2 image ready for import at local:import/nixos-cloud.qcow2
+[0m[1mnull_resource.nixos_cloud_image: Creation complete after 20s [id=8763321884815992535][0m
+[0m[1mproxmox_virtual_environment_file.nixos_config: Creation complete after 20s [id=local:snippets/user-nixos-configuration.nix][0m
+[0m[1mproxmox_virtual_environment_download_file.nixos_image: Creation complete after 22s [id=local:iso/nixos-unstable-minimal.iso][0m
+[0m[1mproxmox_virtual_environment_file.home_manager_flake: Creation complete after 20s [id=local:snippets/user-nixos-flake.nix][0m
+[0m[1mproxmox_virtual_environment_file.cloud_init_config: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_file.cloud_init_config: Still creating... [00m10s elapsed][0m[0m
+[0m[1mproxmox_virtual_environment_file.cloud_init_config: Creation complete after 16s [id=local:snippets/user-nixos-cloud-init.yaml][0m
+[0m[1mproxmox_virtual_environment_vm.nixos_vm: Creating...[0m[0m
+[0m[1mproxmox_virtual_environment_vm.nixos_vm: Creation complete after 7s [id=101][0m
+[33m╷[0m[0m
+[33m│[0m [0m[1m[33mWarning: [0m[0m[1mthe VM startup task finished with a warning, task log:
+[33m│[0m [0m
+[33m│[0m [0m	| generating cloud-init ISO
+[33m│[0m [0m	| WARN: iothread is only valid with virtio disk or virtio-scsi-single controller, ignoring
+[33m│[0m [0m	| TASK WARNINGS: 1[0m
+[33m│[0m [0m
+[33m│[0m [0m[0m  with proxmox_virtual_environment_vm.nixos_vm,
+[33m│[0m [0m  on main.tf line 359, in resource "proxmox_virtual_environment_vm" "nixos_vm":
+[33m│[0m [0m 359: resource "proxmox_virtual_environment_vm" "nixos_vm" [4m{[0m[0m
+[33m│[0m [0m
+[33m╵[0m[0m
+[0m[1m[32m
+Apply complete! Resources: 12 added, 0 changed, 0 destroyed.
+[0m[0m[1m[32m
+Outputs:
+
+[0minstructions = <<EOT
+
+✅ Environment created successfully!
+
+Pool: pool-agent-test
+User: agent-test@pve
+VM:   user-nixos (ID: 101)
+
+📋 Next steps:
+
+1. Wait for VM to boot and cloud-init to complete (~2-3 minutes)
+
+2. Get VM IP address:
+   terraform output vm_ipv4_addresses
+
+3. SSH into the VM (passwordless):
+   ssh user@<vm-ip>
+
+4. Check home-manager status:
+   ssh user@<vm-ip> 'home-manager generations'
+
+5. Access Proxmox web UI as the user:
+   URL: https://atlas.agentydragon.com:8006
+   User: agent-test@pve
+   Password: (set with: ssh root@atlas "pveum user password agent-test@pve")
+
+6. View user's API token:
+   terraform output -raw user_api_token
+
+7. Access GNOME desktop via Proxmox console (auto-login enabled)
+
+Configuration:
+- NixOS channel: unstable
+- Ducktape repo: github:agentydragon/ducktape/main
+- GUI: enabled (GNOME with auto-login)
+
+🔐 Environment variables baked into VM:
+- Proxmox: PROXMOX_VE_ENDPOINT, PROXMOX_VE_USERNAME, PROXMOX_VE_API_TOKEN, PROXMOX_POOL_ID
+- LLM API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY (if provided via ./apply.sh)
+- VM can manage itself and create sibling VMs in its pool
+
+EOT
+pool_id = "pool-agent-test"
+user_api_token = <sensitive>
+username = "agent-test@pve"
+vm_id = 101
+vm_name = "user-nixos"

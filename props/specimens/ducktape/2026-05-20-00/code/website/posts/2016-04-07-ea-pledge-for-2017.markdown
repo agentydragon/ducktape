@@ -1,0 +1,80 @@
+---
+title: EA pledge for 2017
+---
+
+<!--
+**Content warning**: Below, I encourage you to think about significant
+problems. Reading this content might cause you psychological distress
+if you are not resilient in the face of adversity. Please do not read this
+post unless you are confident you can handle
+
+TODO TODO TODO
+-->
+
+The universe does not love us.
+
+If it did, it probably would not have us suffering and dying all the time.
+
+Okay. Do we have a problem with this?
+
+I guess we don't.
+It's just a fact of life that you will be hurt. And of course, you have to die.
+Your family and friends and everyone you care about? Yes, they have to
+be in pain. If you're lucky, it will be just every now and then.
+Do they also have to die? Oh, yes, they do. Possibly, painfully so. And
+let me tell you about, say, neurodegenerative diseases.
+When your best friend gets one, she will spend several last years of her life
+with her personality and memories wasting away, and frightened to death.
+And at the end, she will, of course, die.
+And when she does, you will never see her again.
+
+But that's OK. It's a fact of life, so it's OK. It's not like you can really do
+anything about it, so it would be useless to try. Hey, look at this new shiny
+widget! Isn't it really shiny? Come on, you already feel like everything is
+OK, right?
+
+Wrong.
+
+I will no longer allow this.
+
+I can't protect everyone.
+I am just a human and I don't have the ability.
+But I promise that if I could protect everyone, I would not allow a single
+person to die or suffer. I want everyone to live as happily as possible and
+as long as they want to, and I want nothing to prevent people from enjoying
+life.
+
+I can't protect everyone, but I can try my best.
+
+I promise to give at least 10% of my pre-tax income between October 1, 2016
+and October 1, 2017 to fighting the Arch-Enemy.
+
+<figure>
+<img src="/images/dragon-tyrant.jpg" style="width: 150px;"
+     title="The Dragon-Tyrant">
+</figure>
+
+I am sorry I am not yet strong enough to commit more.
+I hope to become stronger one day.
+
+We will fight. If you'd like to join us, we would be honored to fight by your
+side. We are called _[effective altruists](http://www.effectivealtruism.org/)_.
+Some of us fight diseases that kill in the developing world. Some of us fight
+to save animals. Some us fight to end death itself. All of us fight to remove
+suffering from the world.
+
+The philosopher Peter Singer did an excellent TED talk on the effective
+altruism and you should watch it:
+
+<div style="text-align: center">
+<iframe width="560" height="315" src="https://www.youtube.com/embed/Diuv3XZQXyc" frameborder="0" allowfullscreen></iframe>
+</div>
+
+Ben Kuhn has a good list of [effective altruism reading material](http://www.benkuhn.net/ea-reading).
+I also personally recommend Nick Bostrom's [Fable of the
+Dragon-Tyrant](http://www.nickbostrom.com/fable/dragon.html)
+([Czech translation](http://lesswrong.cz/dragon.html)).
+
+If you think there's any chance it might a good idea to try to do good,
+please don't dismiss it easily. If you'd like to learn more or if you'd like
+to talk with me about this, I would be happy to talk.

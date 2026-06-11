@@ -1,0 +1,20 @@
+// dot -Tpng -o2016-10-05-kg.png 2016-10-05-kg.dot
+digraph kg {
+	"Patricia Churchland" -> "University of Oxford" [label = "studied at"];
+	"Patricia Churchland" -> "University of Pittsburgh" [label = "studied at"];
+	"Patricia Churchland" -> "University of British Columbia" [label = "studied at"];
+	"Patricia Churchland" -> "Neurophilosophy" [label = "field of work"];
+	"Patricia Churchland" -> "Oliver, British Columbia" [label = "place of birth"];
+	"University of Oxford" -> "Oxford, UK" [label = "geographical location"];
+	"Patricia Churchland" -> "Paul Churchland" [label = "married"];
+	"Paul Churchland" -> "Patricia Churchland" [label = "married"];
+	"Paul Churchland" -> "Neurophilosophy" [label = "field of work"];
+	"Paul Churchland" -> "University of Pittsburgh" [label = "studied at"];
+	"University of British Columbia" -> "Santa J. Ono" [label = "president"];
+	"Patricia Churchland" -> "Mark M. Churchland" [label = "mother of"];
+	"Paul Churchland" -> "Mark M. Churchland" [label = "father of"];
+	"Patricia Churchland" -> "Anne K. Churchland" [label = "mother of"];
+	"Paul Churchland" -> "Anne K. Churchland" [label = "father of"];
+	"Mark M. Churchland" -> "Anne K. Churchland" [label = "sibling"];
+	"Anne K. Churchland" -> "Mark M. Churchland" [label = "sibling"];
+}

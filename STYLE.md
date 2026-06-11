@@ -39,8 +39,11 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **No suspicious nullability**: If a field is optional, it must be for a clear transitional reason or represent an intentional, valid state with defined behavior. Otherwise, model as non-nullable and remove guards. For external inputs (API payloads, hook inputs): if a field may be absent, use `None` as the default — never use empty string `""`, empty list `[]`, or other "zero values" to represent absence. A field is either guaranteed present (no default) or optional (`| None = None`).
 - **No dead code**: Remove unused code, unused imports, and historical comments that no longer reflect the behavior.
 - **No redundant derived fields**: API responses should not include both a collection and a trivially computable function of it (e.g., returning both a list and its `len()`). The consumer can compute `len(items)` themselves. Exception: pagination, where `total_count` represents the full count before offset/limit slicing — this is not derivable from the returned page.
+- **Every field needs a reader**: A field in structured data (Pydantic models, config schemas, YAML/JSON payloads) exists for machines — to be processed, validated against, or displayed to an end user. A field that is only ever _set_ and never read is dead payload: it implies a contract that doesn't exist and travels through parsers and diffs for no reason. Two common offenders:
+  - Authoring-only annotations (provenance, "why this entry exists") modeled as schema fields. Those belong in inert comments next to the data — in a config file, write a YAML `#` comment above the entry, not a `note:` field nothing consumes.
+  - Write-only fields that survived a refactor: code populates them at every construction site, but no consumer remains. Delete the field, not just the readers.
 - **No unnecessary aliasing**: Avoid renaming imports (`import foo as bar`), assigning fixtures to local variables, trivial parameter aliasing (`slug = snapshot_slug`), or any other form of aliasing unless it adds real semantic value or is required to avoid a collision. Prefer using variables under their actual names. Include a comment when an alias is genuinely needed. Do not create "convenience" re-export aliases like `AgentEvent = EventType` — import from the module that actually defines the symbol. Aliases are only justified at public API boundaries (e.g., `__init__.py` re-exports for external consumers) or when adapting between internal/external naming conventions.
-- **Import from the defining module**: Always import a symbol from the module that defines it, not from a module that happens to re-export or re-import it. If `SecretSource` is defined in `hook_config.py`, import it from `hook_config`, not from `secret_sources` which happens to import it. This keeps the dependency graph honest and makes it clear where types originate.
+- **Import from the defining module**: Always import a symbol from the module that defines it, not from a module that happens to re-export or re-import it. If `SecretSource` is defined in `config.py`, import it from `config`, not from `secret_sources` which happens to import it. This keeps the dependency graph honest and makes it clear where types originate.
 - **No dynamic attribute probing**: Avoid `getattr`/`hasattr`/`setattr` unless justified and documented. In tests, prefer direct attribute access with precise expectations.
 - **No exception swallowing**: Never use bare `except:` or broad `except Exception:` as a silent fallback. Catch specific exception types, let exceptions propagate, or re-raise with precise context. Do not default to empty values on error. **Real errors must surface** - if a config file has invalid syntax, a source file won't parse, or I/O fails, that's a bug the user needs to know about. Silently returning empty defaults hides the problem.
 
@@ -70,6 +73,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 - **Prefer exceptions over error lists**: Functions that validate or check preconditions should raise exceptions on failure, not return lists of errors. Exceptions provide immediate control flow, clear error types, and standard patterns for callers.
 - **Let exceptions propagate**: Self-explanatory exceptions with actionable messages should propagate to the existing error boundary (CLI wrapper, request handler, FastMCP tool handler) rather than being caught and reformatted at each call site. Define error boundaries once (e.g., in a CLI entry point or request middleware), not repeatedly throughout the code. FastMCP already converts unhandled exceptions to MCP errors with the exception message - use this pattern. Only catch exceptions when you need to transform them, add context, or handle them differently than the default boundary.
+- **Do not restate parser/I/O exceptions**: Do not wrap config file reads or parser calls in `try`/`except` blocks that only say "invalid file" or "could not read file" before re-raising. The original `OSError`, YAML/TOML/JSON parser exception, or Pydantic `ValidationError` already includes the useful traceback and failure details. Add a wrapper only when it supplies non-obvious domain context, recovery behavior, or a stable public error contract.
 - **Exceptions are for exceptional things**: Don't use exceptions for expected control flow. Prefer: query preconditions first, then execute without catch. Avoid: execute with catch, then parse what went wrong from the exception.
 
   ```python
@@ -244,6 +248,15 @@ old_field: str | None = None
 - **Fixture imports belong in conftest.py, not test files**: Never import pytest fixtures directly in `test_*.py` files. Instead, add fixture imports to the nearest `conftest.py`. Ruff ignores F401 in conftest files via `per-file-ignores` in `ruff.toml` (`"**/conftest.py" = ["F401"]`), so no `# noqa` comments are needed. Importing fixtures in test files causes F811 (redefinition) when the same name appears as a test function parameter.
 - **Concise test bodies**: Keep test functions focused on assertions. Delegate setup to fixtures.
 - **Update tests with production code**: When editing production code, check what tests use the interfaces you touched and propagate edits. Type signature changes, parameter changes, renamed functions, or changed behavior require corresponding test updates.
+- **No pure change-detector tests**: Do not add tests that only assert a
+  checked-in constant, enum value, fixture field, or config literal equals the
+  same literal copied into the test. These tests exercise no behavior and only
+  force mechanical updates when intentional data changes. Prefer tests that
+  prove semantics: parsing rejects invalid values, invariants hold, generated
+  schemas contain required structure, or representative calculations/flows
+  produce expected results. Example: testing that `FooMode.BAR == "bar"` is
+  usually not useful; testing that an unknown mode is rejected or that BAR mode
+  changes runtime behavior is useful.
 - **No lint silencing without approval**: Do not add ignore rules or silence individual lint errors unless explicitly approved.
 - **Use pre-commit**: Prefer `pre-commit run --all-files` over manually running individual tools (ruff, mypy, etc.) since pre-commit is configured correctly for this repository.
 - **Use `textwrap.dedent` for inline multiline strings**: When embedding multiline strings in tests (YAML, JSON, scripts), use `textwrap.dedent()` to maintain proper indentation in the test file while removing leading whitespace from the string content:
@@ -338,4 +351,21 @@ Use backtick inline code (`` `...` ``) or fenced code blocks for any code-like t
 - Reduce file-read\* to the minimum required
 - Set JUPYTER\_\* dirs and HOME
 - Map fs.read_paths → ro binds
+```
+
+### Brace-Expansion Shorthand for Lists
+
+When listing multiple items that share a common prefix, prefer brace-expansion shorthand over naming each individually. Only use when there are 2+ suffixed variants (single-item braces like `foo-{bar}` are worse than plain `foo-bar`).
+
+```markdown
+# Good — concise, pattern is clear
+
+- **Gitea**: `gitea-{namespace,secrets,db,admin-token,servicemonitor}`
+- **kagent**: `kagent-{crds,db,secrets}`
+- Directories: `k8s/langfuse/{namespace,secrets,db,app}/`
+
+# Bad — verbose, every item spelled out
+
+- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-db`,
+  `gitea-admin-token`, `gitea-servicemonitor`
 ```

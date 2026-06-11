@@ -24,10 +24,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cluster-ca": set(),
     "kyverno": {"ClusterPolicy", "Policy"},
     "kyverno-policies": set(),
-    "vault-operator": {"Vault"},
-    "vault": set(),
     "tofu-controller": {"Terraform"},
-    "powerdns-operator": {"ClusterZone", "ClusterRRset", "Zone", "RRset"},
     "monitoring-stack": {"ServiceMonitor", "PodMonitor"},
     "cnpg": {
         "Cluster",
@@ -40,11 +37,39 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "Publication",
         "Subscription",
     },
-    "longhorn": set(),  # Longhorn CRDs (Volume, Engine, etc.) are internal to the operator
     "vpa": {"VerticalPodAutoscaler", "VerticalPodAutoscalerCheckpoint"},
     "node-feature-discovery": {"NodeFeatureRule", "NodeFeature", "NodeFeatureGroup"},
+    "kubevirt-operator": {"KubeVirt"},
+    "kubevirt": {
+        "VirtualMachine",
+        "VirtualMachineClone",
+        "VirtualMachineExport",
+        "VirtualMachineInstance",
+        "VirtualMachineInstanceMigration",
+        "VirtualMachineInstancePreset",
+        "VirtualMachineInstanceReplicaSet",
+        "VirtualMachinePool",
+        "VirtualMachineRestore",
+        "VirtualMachineSnapshot",
+        "VirtualMachineSnapshotContent",
+    },
+    "cdi-operator": {"CDI"},
+    "cdi": {
+        "CDIConfig",
+        "DataImportCron",
+        "DataSource",
+        "DataVolume",
+        "ObjectTransfer",
+        "StorageProfile",
+        "VolumeCloneSource",
+        "VolumeImportSource",
+        "VolumeSnapshotSource",
+        "VolumeUploadSource",
+    },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
-    "flux-image-automation": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
+    # TODO: if non-GHCR image automations are added, add a separate entry here
+    # (e.g. "flux-image-automation-harbor": {"ImageRepository", ...}).
+    "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)

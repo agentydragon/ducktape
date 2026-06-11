@@ -10,6 +10,10 @@ Tokens contain base64-encoded username:password. Both schemes are supported:
 - Basic: OCI/crane tooling doesn't support token auth (Bearer); crane/docker
   send Basic auth from Docker config
 
+Browser users instead authenticate via Authentik SSO (see oidc.py and
+routes/auth_routes.py), which sets a signed session cookie. A request with no
+Authorization header but a valid session resolves to a SessionIdentity (admin).
+
 This module provides:
 - Credential validation with access level determination
 - Request identity resolution with DB lookup for agent types
@@ -71,14 +75,30 @@ class AnonymousIdentity:
 
 @dataclass(frozen=True)
 class AuthenticatedIdentity:
-    """Authenticated request with Postgres credentials and a role."""
+    """Authenticated request with Postgres credentials and a role.
+
+    Used by machine clients (agents, CI crane pushes, evaluator scripts) that
+    present base64 Postgres credentials as a Bearer/Basic token.
+    """
 
     username: str
     password: str
     role: Role
 
 
-RequestIdentity = AnonymousIdentity | AuthenticatedIdentity
+@dataclass(frozen=True)
+class SessionIdentity:
+    """Browser user authenticated via Authentik SSO (admin-only).
+
+    Unlike AuthenticatedIdentity there is no Postgres password: DB access uses
+    the server-held admin pool (see get_caller_db). SSO currently grants admin
+    only; evaluator/agent roles remain token-based.
+    """
+
+    email: str
+
+
+RequestIdentity = AnonymousIdentity | AuthenticatedIdentity | SessionIdentity
 
 
 _CRITIC_DEV_TYPES = {AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE}
@@ -86,6 +106,8 @@ _CRITIC_DEV_TYPES = {AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE
 
 def is_admin_or_evaluator(identity: RequestIdentity) -> bool:
     """Admin or evaluator — full read access, can launch any agent type."""
+    if isinstance(identity, SessionIdentity):
+        return True  # SSO grants admin
     return isinstance(identity, AuthenticatedIdentity) and isinstance(identity.role, (AdminRole, EvaluatorRole))
 
 
@@ -174,6 +196,17 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
     authorization = request.headers.get("authorization")
 
     if not authorization:
+        # No token: fall back to an Authentik SSO session cookie if one is present.
+        # "session" is in scope only when SessionMiddleware is installed (SSO enabled).
+        # Re-check the admin allowlist on every request — sessions are client-side
+        # (signed) cookies, so revoked access must not linger until the cookie expires.
+        if "session" in request.scope and (user := request.session.get("user")):
+            settings = request.app.state.oidc_settings
+            email = user.get("email")
+            if email and settings is not None and settings.is_admin(email):
+                return SessionIdentity(email=email)
+            # Stale or revoked session: drop it and treat the request as anonymous.
+            request.session.pop("user", None)
         return AnonymousIdentity()
 
     parsed = parse_credentials(authorization)
@@ -219,12 +252,16 @@ def require_critic_run_access(auth: Auth) -> RequestIdentity:
 
 def require_admin_access(auth: Auth) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
+    if isinstance(auth, SessionIdentity):
+        return  # SSO grants admin
     if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AdminRole)):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def require_evaluator_or_admin_access(auth: Auth) -> None:
     """FastAPI dependency allowing admin or evaluator access."""
+    if isinstance(auth, SessionIdentity):
+        return  # SSO grants admin
     if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, (AdminRole, EvaluatorRole))):
         raise HTTPException(status_code=403, detail="Admin or evaluator access required")
 
@@ -237,6 +274,7 @@ def require_evaluator_or_admin_access(auth: Auth) -> None:
 def get_caller_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
     """Get Database using caller's credentials for RLS/permission enforcement.
 
+    SSO session: admin-only — returns the shared admin Database.
     Admin: returns the shared admin Database (full access, bypasses RLS).
     Evaluator: per-request Database with evaluator's Postgres role (BYPASSRLS + SELECT-only).
     Agent: per-request Database with agent's Postgres role (RLS-scoped access).
@@ -244,6 +282,11 @@ def get_caller_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
     """
     if isinstance(auth, AnonymousIdentity):
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    # SSO sessions are admin-only: use the server-held admin pool (no caller password).
+    if isinstance(auth, SessionIdentity):
+        yield admin_db
+        return
 
     assert isinstance(auth, AuthenticatedIdentity)
 

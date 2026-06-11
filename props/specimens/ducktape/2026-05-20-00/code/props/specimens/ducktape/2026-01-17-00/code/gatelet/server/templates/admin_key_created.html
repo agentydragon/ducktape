@@ -1,0 +1,16 @@
+{# Audience: human admin (via session) #} {% extends "base.html" %} {% block title %}Key Created{% endblock %} {% block
+nav %}
+<nav>
+  <a href="/admin/">Admin Home</a>
+  <a href="/admin/keys/">Keys</a>
+</nav>
+{% endblock %} {% block content %}
+<section>
+  <h2>New Key Created</h2>
+  <p>Key ID: {{ key.id }}</p>
+  <p>Key Value: {{ key.key_value }}</p>
+  <p>Use for key-in-url: <code>/k/{{ key.key_value }}/</code></p>
+  <p>Use for challenge-response: <code>/cr/{{ key.id }}</code></p>
+  <p><a href="/admin/keys/">Back to Keys</a></p>
+</section>
+{% endblock %}

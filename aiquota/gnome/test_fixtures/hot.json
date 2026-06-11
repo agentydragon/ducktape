@@ -1,0 +1,35 @@
+{
+  "_comment": "Pace-based hot with Anthropic extra usage burning. claude: short=hot(dev+20, 50% used at 30% elapsed)/long=100% → extra usage active, ⚡ in panel, 5h/7d rows hidden. extraUsage matches real api.anthropic.com/api/oauth/usage shape (nothing-up-my-sleeve: 314159/500000 = pi digits). codex: both ok(dev+0) → panel ok. zai: short=null (off-peak)/long=warn(dev+10, 40% at 30%) → panel warn.",
+  "claude": {
+    "short": { "usedPercent": 50, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 100, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": 1,
+    "error": null,
+    "extraUsage": {
+      "is_enabled": true,
+      "monthly_limit": 500000,
+      "used_credits": 314159.0,
+      "utilization": 62.8318,
+      "currency": "USD",
+      "disabled_reason": null,
+      "used_usd": 3141.59,
+      "monthly_limit_usd": 5000.0
+    },
+    "currentlyOverPlan": true,
+    "extraStatus": "active"
+  },
+  "codex": {
+    "short": { "usedPercent": 30, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": 1,
+    "error": null,
+    "extraUsage": null
+  },
+  "zai": {
+    "short": null,
+    "long": { "usedPercent": 40, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": 1,
+    "error": null,
+    "extraUsage": null
+  }
+}

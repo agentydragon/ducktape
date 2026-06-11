@@ -1,0 +1,21 @@
+"""Policies package - policy types, presets, and standalone policy programs."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "policies",
+    srcs = [
+        "approve_all.py",
+        "default_policy.py",
+        "loader.py",
+        "policy_types.py",
+        "presets.py",
+        "scaffold.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//mcp_infra",  # for constants, naming
+        "@pypi//pydantic",
+    ],
+)

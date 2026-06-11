@@ -39,6 +39,7 @@ from agent_core.loop_control import (
     RequireSpecific,
     ToolPolicy,
 )
+from agent_core.model import AgentModelProto, AgentModelRequest, ResponsesAgentModel
 from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
@@ -49,7 +50,6 @@ from openai_utils.model import (
     InputItem,
     OpenAIModelProto,
     ReasoningItem,
-    ResponsesRequest,
     SystemMessage,
     ToolChoice,
     ToolChoiceFunction,
@@ -362,7 +362,7 @@ class Agent:
         self,
         *,
         tool_provider: ToolProvider,
-        client: OpenAIModelProto,
+        client: AgentModelProto | OpenAIModelProto,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool,
@@ -371,7 +371,7 @@ class Agent:
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._tool_provider = tool_provider
-        self._client = client
+        self._client = client if isinstance(client, AgentModelProto) else ResponsesAgentModel(client)
         self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
@@ -585,10 +585,9 @@ class Agent:
             prompt_file = Path(__file__).parent / "compaction_prompt.md"
             custom_prompt = prompt_file.read_text()
 
-        # Build summarization request
-        req = ResponsesRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
+        req = AgentModelRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
 
-        resp = await self._client.responses_create(req)
+        resp = await self._client.sample(self._client.prepare(req))
 
         # Extract text from response
         if resp.output and len(resp.output) > 0:
@@ -858,7 +857,7 @@ class Agent:
             # Build OpenAI Responses tools list from tool provider
             tool_schemas = await self._tool_provider.list_tools()
 
-            req = ResponsesRequest(
+            req = AgentModelRequest(
                 input=self.to_openai_messages(),
                 instructions=await self._build_effective_instructions(),
                 stream=False,
@@ -875,12 +874,19 @@ class Agent:
             # and reconstructing full request from transcript + metadata.
             request_id = uuid4()
             phase_number = sum(1 for evt in self._transcript if isinstance(evt, Response))
+            prepared_request = self._client.prepare(req)
             for h in self._handlers:
                 h.on_api_request_event(
-                    ApiRequest(request=req, model=self._client.model, request_id=request_id, phase_number=phase_number)
+                    ApiRequest(
+                        api_shape=prepared_request.api_shape,
+                        request=prepared_request.wire_body,
+                        model=self._client.model,
+                        request_id=request_id,
+                        phase_number=phase_number,
+                    )
                 )
 
-            resp = await self._client.responses_create(req)
+            resp = await self._client.sample(prepared_request)
             sdk_usage = resp.usage
             usage = (
                 GroundTruthUsage(
@@ -971,7 +977,7 @@ class Agent:
         *,
         tool_provider: ToolProvider,
         handlers: Iterable[BaseHandler],
-        client: OpenAIModelProto,
+        client: AgentModelProto | OpenAIModelProto,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,

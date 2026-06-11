@@ -1,0 +1,13 @@
+{
+  "runner_exec_properties": {
+    "EstimatedFreeDiskBytes": "50000000000",
+    "EstimatedComputeUnits": "4",
+    "workload-isolation-type": "firecracker",
+    "init-dockerd": "true",
+    "recycle-runner": "true",
+    "remote-snapshot-save-policy": "always",
+    "snapshot-read-policy": "newest"
+  },
+  "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:5db835839c75956a182790ae90b5875bb07ba4113b017bfa98c9ac11dec27617",
+  "bazel_args": ["--config=rbe"]
+}

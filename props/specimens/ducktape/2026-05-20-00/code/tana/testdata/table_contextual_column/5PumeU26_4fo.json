@@ -1,0 +1,406 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_T02",
+      "props": {
+        "created": 1749756870580,
+        "name": "field-definition",
+        "description": "Field definition.  All field definitions are instances of this",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T02_META"
+      },
+      "children": [
+        "SYS_A208_T",
+        "SYS_A01",
+        "SYS_A10",
+        "SYS_A02",
+        "SYS_T44",
+        "SYS_T60",
+        "SYS_T82",
+        "SYS_T127",
+        "SYS_T85",
+        "SYS_T90",
+        "SYS_A03",
+        "SYS_T51",
+        "SYS_T52",
+        "SYS_T53",
+        "SYS_A06",
+        "SYS_A08",
+        "SYS_T46",
+        "SYS_T28",
+        "SYS_T30",
+        "SYS_T40",
+        "SYS_TEV001",
+        "SYS_TEV002",
+        "SYS_TEV003",
+        "SYS_TEV004",
+        "SYS_TEV005",
+        "SYS_TEV006",
+        "SYS_TEV007"
+      ]
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SYS_T02_META",
+      "props": {
+        "created": 1749756870612,
+        "_ownerId": "SYS_T02",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T02_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T02_META_SYS_A13",
+      "props": {
+        "created": 1749756870612,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T02_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "Oh-JrJ73G9iK",
+      "props": {
+        "created": 1749757574874,
+        "name": "Perfect Eggs (test reference)",
+        "_ownerId": "hiHpuPTowhDs",
+        "_metaNodeId": "7c60pi0xbTMx"
+      },
+      "touchCounts": [43, 0],
+      "modifiedTs": [1749779908545, 0],
+      "children": ["Hu1bTZ9WJZNG", "mCbshUgjARbg", "tfGjKEqhkZzl", "9EQJdyAfOeo9"]
+    },
+    {
+      "id": "IUBpjxF8AZ_K",
+      "props": {
+        "created": 1749757586147,
+        "name": "recipe",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "kdg3laJWdatc"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757586329, 0]
+    },
+    {
+      "id": "kdg3laJWdatc",
+      "props": {
+        "created": 1749757586149,
+        "_ownerId": "IUBpjxF8AZ_K",
+        "_docType": "metanode"
+      },
+      "touchCounts": [8, 0],
+      "modifiedTs": [1749757606205, 0],
+      "children": ["V-gsMA2TQ2Ws", "Kz-LpZ9iPnt7", "88eFn8WdHjpO", "3Eh3c9DhMdpJ"]
+    },
+    {
+      "id": "V-gsMA2TQ2Ws",
+      "props": {
+        "created": 1749757586150,
+        "_docType": "tuple",
+        "_ownerId": "kdg3laJWdatc"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757586329, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "7c60pi0xbTMx",
+      "props": {
+        "created": 1749757586181,
+        "_ownerId": "Oh-JrJ73G9iK",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757586773, 0],
+      "children": ["-Fb2kXyj1gNo"]
+    },
+    {
+      "id": "-Fb2kXyj1gNo",
+      "props": {
+        "created": 1749757586182,
+        "_docType": "tuple",
+        "_ownerId": "7c60pi0xbTMx"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757586773, 0],
+      "children": ["SYS_A13", "IUBpjxF8AZ_K"]
+    },
+    {
+      "id": "Hldnr8OJrKHh",
+      "props": {
+        "created": 1749757708368,
+        "name": "Scramble",
+        "_ownerId": "u00FQD8V08fy",
+        "_metaNodeId": "mXjKTNAQWU3R"
+      },
+      "touchCounts": [23, 0],
+      "modifiedTs": [1749779715129, 0],
+      "children": ["KJ2xy0EFP-Y3"]
+    },
+    {
+      "id": "mXjKTNAQWU3R",
+      "props": {
+        "created": 1749757712446,
+        "_ownerId": "Hldnr8OJrKHh",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757712809, 0],
+      "children": ["D4v88GX-d_07"]
+    },
+    {
+      "id": "D4v88GX-d_07",
+      "props": {
+        "created": 1749757712448,
+        "_docType": "tuple",
+        "_ownerId": "mXjKTNAQWU3R"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757712809, 0],
+      "children": ["SYS_A13", "IUBpjxF8AZ_K"]
+    },
+    {
+      "id": "BA8e4EUg0rpa",
+      "props": {
+        "created": 1749757712837,
+        "name": "Steak",
+        "_ownerId": "u00FQD8V08fy",
+        "_metaNodeId": "5K1VVHkJH1s9"
+      },
+      "touchCounts": [21, 0],
+      "modifiedTs": [1749779731383, 0],
+      "children": ["1MwparQ39_vT"]
+    },
+    {
+      "id": "5K1VVHkJH1s9",
+      "props": {
+        "created": 1749757716066,
+        "_ownerId": "BA8e4EUg0rpa",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757716378, 0],
+      "children": ["OkOYi_MmIEOS"]
+    },
+    {
+      "id": "OkOYi_MmIEOS",
+      "props": {
+        "created": 1749757716067,
+        "_docType": "tuple",
+        "_ownerId": "5K1VVHkJH1s9"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757716378, 0],
+      "children": ["SYS_A13", "IUBpjxF8AZ_K"]
+    },
+    {
+      "id": "5PumeU26_4fo",
+      "props": {
+        "created": 1749779436407,
+        "name": "Table with contextual column (test reference 5PumeU26_4fo)",
+        "_ownerId": "MFjacEHVlv36",
+        "_metaNodeId": "oNKbGt9F0xMA"
+      },
+      "touchCounts": [49, 0],
+      "modifiedTs": [1749780215889, 0],
+      "associationMap": {
+        "Oh-JrJ73G9iK": "KcuGILFF3bMM",
+        "BA8e4EUg0rpa": "3NqfzhGMcIXm",
+        "Hldnr8OJrKHh": "Uq9XIeAmGPkf"
+      },
+      "children": ["Oh-JrJ73G9iK", "BA8e4EUg0rpa", "Hldnr8OJrKHh"]
+    },
+    {
+      "id": "oNKbGt9F0xMA",
+      "props": {
+        "created": 1749779448563,
+        "_ownerId": "5PumeU26_4fo",
+        "_docType": "metanode"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749779448970, 0],
+      "children": ["cfm3fGhweeU0", "-ZR1YsqeDW-s"]
+    },
+    {
+      "id": "GCQVJnS0bIAp",
+      "props": {
+        "created": 1749779492011,
+        "name": "Contextual column",
+        "_docType": "attrDef",
+        "_metaNodeId": "LzxQgI4YO1Gu",
+        "_ownerId": "c31pEPAoeMQL"
+      },
+      "touchCounts": [22, 0],
+      "modifiedTs": [1749779495125, 0]
+    },
+    {
+      "id": "LzxQgI4YO1Gu",
+      "props": {
+        "created": 1749779492012,
+        "_ownerId": "GCQVJnS0bIAp",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779492393, 0],
+      "children": ["ySW0NMyE2tUl"]
+    },
+    {
+      "id": "ySW0NMyE2tUl",
+      "props": {
+        "created": 1749779492015,
+        "_docType": "tuple",
+        "_ownerId": "LzxQgI4YO1Gu"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749779492393, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "KcuGILFF3bMM",
+      "props": {
+        "created": 1749779495747,
+        "_ownerId": "5PumeU26_4fo",
+        "_sourceId": "SYS_V05",
+        "_docType": "associatedData"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779496150, 0],
+      "children": ["zGkWwuJX3cmn"]
+    },
+    {
+      "id": "zGkWwuJX3cmn",
+      "props": {
+        "created": 1749779495750,
+        "_docType": "tuple",
+        "_ownerId": "KcuGILFF3bMM",
+        "_sourceId": "c31pEPAoeMQL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779496150, 0],
+      "children": ["GCQVJnS0bIAp", "3aP9G56lRBUG"]
+    },
+    {
+      "id": "3aP9G56lRBUG",
+      "props": {
+        "created": 1749779495750,
+        "name": "Good",
+        "_ownerId": "zGkWwuJX3cmn",
+        "_sourceId": "65UwZ9Z8v8V9"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749779498698, 0]
+    },
+    {
+      "id": "3NqfzhGMcIXm",
+      "props": {
+        "created": 1749779499335,
+        "_ownerId": "5PumeU26_4fo",
+        "_sourceId": "SYS_V05",
+        "_docType": "associatedData"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779499733, 0],
+      "children": ["EVPpGnm6AXIQ"]
+    },
+    {
+      "id": "EVPpGnm6AXIQ",
+      "props": {
+        "created": 1749779499337,
+        "_docType": "tuple",
+        "_ownerId": "3NqfzhGMcIXm",
+        "_sourceId": "c31pEPAoeMQL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779499733, 0],
+      "children": ["GCQVJnS0bIAp", "AMjmOz20SLBp"]
+    },
+    {
+      "id": "AMjmOz20SLBp",
+      "props": {
+        "created": 1749779499338,
+        "name": "Bad",
+        "_ownerId": "EVPpGnm6AXIQ",
+        "_sourceId": "65UwZ9Z8v8V9"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779499733, 0]
+    },
+    {
+      "id": "Uq9XIeAmGPkf",
+      "props": {
+        "created": 1749779500208,
+        "_ownerId": "5PumeU26_4fo",
+        "_sourceId": "SYS_V05",
+        "_docType": "associatedData"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779500587, 0],
+      "children": ["YHPQfyMOuj5V"]
+    },
+    {
+      "id": "YHPQfyMOuj5V",
+      "props": {
+        "created": 1749779500210,
+        "_docType": "tuple",
+        "_ownerId": "Uq9XIeAmGPkf",
+        "_sourceId": "c31pEPAoeMQL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779500587, 0],
+      "children": ["GCQVJnS0bIAp", "CunA-NTX3fl5"]
+    },
+    {
+      "id": "CunA-NTX3fl5",
+      "props": {
+        "created": 1749779500211,
+        "name": "Meh",
+        "_ownerId": "YHPQfyMOuj5V",
+        "_sourceId": "65UwZ9Z8v8V9"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779501281, 0]
+    }
+  ]
+}

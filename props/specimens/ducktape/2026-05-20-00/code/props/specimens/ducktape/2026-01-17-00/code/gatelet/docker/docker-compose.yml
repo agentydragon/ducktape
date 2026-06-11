@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gatelet
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gatelet:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/gatelet
+      # Mount your gatelet.toml from host
+      GATELET_CONFIG: /app/config/gatelet.toml
+    volumes:
+      # Mount source code for live reload
+      - ./gatelet:/app/gatelet:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+      # Mount config file - user needs to create this
+      - ./gatelet.toml:/app/config/gatelet.toml:ro
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn gatelet.server.app:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/gatelet
+      "
+
+volumes:
+  postgres_data:

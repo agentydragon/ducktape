@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_ollama_reasoning.py
@@ -8,7 +7,6 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 py_library(
     name = "pydantic_utils",
     srcs = ["pydantic_utils.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -16,7 +14,6 @@ py_library(
 py_library(
     name = "tool_provider",
     srcs = ["tool_provider.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -24,7 +21,6 @@ py_library(
 py_library(
     name = "logging_utils",
     srcs = ["logging_utils.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//structlog"],
 )
@@ -32,7 +28,6 @@ py_library(
 py_library(
     name = "loop_control",
     srcs = ["loop_control.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = ["//openai_utils:model"],
 )
@@ -40,11 +35,12 @@ py_library(
 py_library(
     name = "events",
     srcs = ["events.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":tool_provider",
+        "//openai_utils:api_shape",
         "//openai_utils:model",
+        "@pypi//openai",
         "@pypi//pydantic",
     ],
 )
@@ -52,7 +48,6 @@ py_library(
 py_library(
     name = "handler",
     srcs = ["handler.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -66,7 +61,6 @@ py_library(
     name = "compaction",
     srcs = ["compaction.py"],
     data = ["compaction_prompt.md"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -78,7 +72,6 @@ py_library(
 py_library(
     name = "progress",
     srcs = ["progress.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -91,7 +84,6 @@ py_library(
 py_library(
     name = "transcript_handler",
     srcs = ["transcript_handler.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -104,7 +96,6 @@ py_library(
 py_library(
     name = "logging_handler",
     srcs = ["logging_handler.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -117,7 +108,6 @@ py_library(
 py_library(
     name = "turn_limit",
     srcs = ["turn_limit.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":handler",
@@ -126,14 +116,27 @@ py_library(
 )
 
 py_library(
+    name = "model",
+    srcs = ["model.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:api_shape",
+        "//openai_utils:model",
+        "//openai_utils:retry",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "agent",
     srcs = ["agent.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":events",
         ":handler",
         ":loop_control",
+        ":model",
         ":tool_provider",
         "//openai_utils:model",
         "//openai_utils:types",
@@ -147,7 +150,6 @@ py_library(
 py_library(
     name = "direct_provider",
     srcs = ["direct_provider.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":pydantic_utils",
@@ -161,7 +163,6 @@ py_library(
 py_library(
     name = "mcp_provider",
     srcs = ["mcp_provider.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":tool_provider",
@@ -173,7 +174,6 @@ py_library(
 py_library(
     name = "script_handler",
     srcs = ["script_handler.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":events",
@@ -196,7 +196,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
     visibility = ["//agent_core:__pkg__"],
     deps = [
         ":agent",
@@ -261,6 +260,43 @@ py_test(
 )
 
 py_test(
+    name = "test_chat_model_adapter",
+    srcs = ["test_chat_model_adapter.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        "//openai_utils:model",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_zai_chat_adapter_live",
+    srcs = ["test_zai_chat_adapter_live.py"],
+    env_inherit = [
+        "ZAI_API_KEY",
+        "ZAI_MODEL",
+    ],
+    tags = [
+        "live_openai_api",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        ":model",
+        "//openai_utils:api_shape",
+        "//openai_utils:model",
+        "@pypi//anthropic",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_message_processing",
     srcs = ["test_message_processing.py"],
     deps = [
@@ -310,6 +346,7 @@ py_test(
         ":loop_control",
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -1,24 +1,83 @@
 @README.md
 
+## Dependency Sync
+
+The Python statusline package dependencies are declared in **two places** that must stay in sync:
+
+1. **Wheel `requires`**: `//:claude_hooks_wheel` in `BUILD.bazel`
+2. **Nix `propagatedBuildInputs`**: `claude-hooks` in `nix/packages/default.nix` — currently exposed through the `claude-statusline` wrapper while `claude-hook` itself is Rust-only
+
+When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` when `claude-statusline` starts in whichever environment has the stale list. Both files have `SYNC:` comments pointing to each other.
+
+## bb CLI Source
+
+The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Remote Bazel logic lives in `cli/remotebazel/remotebazel.go` and `cli/storage/storage.go`. When debugging `bb remote` behavior (remote selection, flag semantics, git config keys), read the source directly.
+
 ## Agent Instructions
 
-- **Hook daemon logs** (includes session start): `~/.claude/session-env/<session_id>/hook-daemon/daemon.log`
-- **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (supervisor daemon, used for container runtime)
-- **Platform detection**: Claude Code web runs on Firecracker microVMs (ext4 root, real Linux kernel). The session start hook detects the platform at runtime via `platform_detect.py`. See <web_env/docs/container_spec.md> for specs and IO benchmarks.
+- **Rust hook daemon logs** (includes session start): `/tmp/claude-hd/<session_id>/daemon.log`
+- **Rust hook daemon stderr log** (check this first for SessionStart crashes): `/tmp/claude-hd/<session_id>/daemon.err.log`
+- **Hook daemon startup failure marker** (written when the dispatcher couldn't reach the daemon at all): `/tmp/claude-hd/<session_id>/startup_failure.json`
+- **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (retired Python container-runtime path only)
+- **Platform detection**: Claude Code sessions (web and CLI-managed remote) run on Firecracker microVMs (ext4 root, real Linux kernel; `--firecracker-init` on the PID 1 cmdline). The Rust session start hook detects enough platform state to size Bazel's JVM heap. See <web_env/docs/container_spec.md> for specs and IO benchmarks. Historically (pre-2026-06) sessions ran under gVisor (9p root, `runsc` hostname); `is_gvisor()` in `claude_hook/main.rs` still detects it. **If you ever observe gVisor markers in a live session — 9p root, `runsc` hostname, sparse `/sys/module`, no `--firecracker-init` in `dmesg` — notify the user immediately: that platform is not expected anymore, so a sighting means something weird is happening.** Current Docker guidance: <docs/docker_evaluation_results.md>; the gVisor-era workarounds are archived and actively harmful on Firecracker.
 - **Supervisor uses TCP**: `127.0.0.1:19001` instead of Unix socket (historical: 9p hard link issues on gVisor, kept for compatibility).
+
+## Container Lifecycle — Reverse-Engineered Source
+
+Anthropic's `environment-manager` binary (Go, garble-obfuscated) is partially
+reverse-engineered under <web_env/re/environment_manager/>. **The RE is
+incomplete and may be wrong in places — treat it as a starting point, not
+ground truth.** When running inside a Claude Code web session you can pull
+the live binary from the container and cross-check it against the committed
+RE (or update the RE if it's drifted). Read this before speculating about
+when/how session-start-adjacent things fire. Specifically:
+
+- **Which hook points fire on which session modes** (`new` / `resume` /
+  `resume-cached` / `setup-only`): see
+  <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
+  `Initialize()`. Steps 1–2 (install languages, clone sources) are gated on
+  `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
+  `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**.
+  **`resume-cached` exits early** (after FJqRbR1MIeE + ProcessSources, VMA
+  `0x1fbb074`) and does NOT run Steps 4–6. Steps 4–6 (`claude --init-only`
+  which fires SessionStart hooks, skill bootstrap, hook bootstrap) run for
+  `new` and `resume` modes only. `setup-only` runs the init script and exits
+  partway through the subsequent steps.
+- **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
+  <web_env/re/process_api/README.md>.
+- **CLI flags and env vars** that tune the above:
+  <web_env/re/SETUP_FLAGS_INVENTORY.md>.
+
+If something in the lifecycle is unclear, grep
+`devinfra/claude/web_env/re/environment_manager/src/` for the function name
+or error string before opening an issue — there's likely already a decompiled
+source file with line-annotated binary offsets. If the RE looks wrong or
+stale, pull the live binary from the web container and verify against it
+before assuming the RE is authoritative.
 
 ## Debugging Commands
 
 ```bash
-# Check hook daemon log (includes session start output)
-tail -100 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
+# Check Rust hook daemon logs (derive LIVE from CLAUDE_ENV_FILE)
+LIVE=$(basename "$(dirname "$CLAUDE_ENV_FILE")")
+tail -100 "/tmp/claude-hd/$LIVE/daemon.log"
 
-# Verify auth proxy connectivity (AUTH_PROXY_URL is set in the session env file)
-curl -s --max-time 5 -x "$AUTH_PROXY_URL" https://bcr.bazel.build/ | head -1
+# Check Rust hook daemon stderr
+tail -100 "/tmp/claude-hd/$LIVE/daemon.err.log"
 
 # Check session bazelrc
-cat "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bazelrc"
+cat "$HOME/.claude/session-env/$LIVE/bazelrc"
 
-# Check supervisor status (container runtime only)
-python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
+# Historical Python container-runtime path only:
+# python -m supervisor.supervisorctl -c "$HOME/.claude/session-env/$LIVE/supervisor/supervisord.conf" status
+
+# Check installed claude-hooks vs the pin — git= shows the commit the wheel was built from
+claude-hook --version
+jq -r '.pins["claude-hooks"].url' nix/artifact-pins.json
 ```
+
+If the version shows `git=dev` (unstamped) or an old commit, the installed
+wheel has drifted behind the pin — re-run
+`bash devinfra/claude/web_setup.sh` to pull forward. See
+<docs/web-setup-debug.md> "Pin drift on persistent rootfs" for the underlying
+cause.

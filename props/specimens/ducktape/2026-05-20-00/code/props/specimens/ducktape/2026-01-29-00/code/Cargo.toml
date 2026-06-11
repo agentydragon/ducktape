@@ -1,0 +1,63 @@
+cargo-features = ["edition2024"]
+
+[package]
+name = "ducktape"
+version = "0.0.1"
+authors = ["Rai <agentydragon@gmail.com>"]
+edition = "2024"
+
+[dependencies]
+log = "*"
+env_logger = "*"
+rust_decimal = "*"
+tokio = { version = "*", features = ["macros", "rt-multi-thread"], default-features=false} #, features = ["full", "time"] }
+serde_path_to_error = "*"
+# native-tls makes trouble
+reqwest = {version="*", features=["json", "rustls-tls"], default-features=false} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
+serde = {version="*", features=["derive"]}
+url = {version="*", features=["serde"]}
+
+serde_json = "*"
+toml = "*"
+
+# worthy
+chrono = {features=["serde"], version="*"}
+petgraph = "*"
+chrono-tz = {features=["serde"], version="*"}
+#tokio = { version = "*", features = ["full", "time"] }
+warp = "*"
+futures = "*"
+rand = "*"
+base64 = "*"
+openssl = "*"
+jwt = {version="*", features=["openssl"]}
+rusty-money = "0.4"
+serde_yaml = "*"
+structopt = "*"
+xdg = "*"
+alphavantage = "*"
+shellexpand = "*"
+# coinbase-rs removed - legacy API deprecated, needs rewrite for CDP API
+# coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="..."}
+bigdecimal = { version = "0.4", features = ["serde"] }
+currency_layer = "0.2.0"
+serde-xml-rs = "0.6"
+async-trait = "*"
+rust_decimal_macros = "*"
+regex = "*"
+term-table = "*"
+uuid = { version="*", features=["v4"] }
+glob = "*"
+csv = "*"
+oauth2 = "*"
+biscuit = "*"
+# ftx removed - FTX exchange collapsed in 2022
+# ftx = "*"
+scraper = "*"
+
+[[bin]]
+name = "ducktape_fake"
+path = "main.rs"
+
+# Only generate BUILD files for Linux.
+targets = ["x86_64-unknown-linux-gnu"]

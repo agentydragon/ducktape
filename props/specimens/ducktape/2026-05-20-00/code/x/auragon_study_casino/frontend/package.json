@@ -1,0 +1,14 @@
+{
+  "name": "auragon-study-casino-frontend",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.25.1",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,0 +1,287 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//x/auragon_study_casino/frontend:vite/package_json.bzl", vite_bin = "bin")
+
+npm_link_all_packages(name = "node_modules")
+
+# Hermetic font assets bundled with both the production frontend and the
+# visual-regression test harness. The two woff2 files are latin-subset
+# variable fonts (Playfair Display v40 / Outfit v15, OFL-licensed); fonts.css
+# wires them into @font-face declarations the React component expects. The
+# files live under public/ so Vite copies them to dist/ verbatim during the
+# production build.
+filegroup(
+    name = "casino_fonts",
+    srcs = [
+        "public/fonts/Outfit-latin.woff2",
+        "public/fonts/PlayfairDisplay-latin.woff2",
+        "public/fonts/fonts.css",
+    ],
+    visibility = ["//x/auragon_study_casino:__subpackages__"],
+)
+
+filegroup(
+    name = "visual_golden_snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__screenshots__/*.png"],
+        allow_empty = True,
+    ),
+    visibility = ["//x/auragon_study_casino:__subpackages__"],
+)
+
+# ── Per-file source libraries ──────────────────────────────────────────────────
+
+js_library(
+    name = "sync",
+    srcs = ["sync.js"],
+    deps = [
+        ":node_modules/react",
+        "//x/auragon_study_casino/frontend/lib:schema_zod",
+    ],
+)
+
+js_library(
+    name = "use_casino",
+    srcs = ["use_casino.js"],
+    deps = [
+        ":node_modules/react",
+        ":sync",
+    ],
+)
+
+js_library(
+    name = "use_url_state",
+    srcs = ["use_url_state.js"],
+    deps = [":node_modules/react"],
+)
+
+js_library(
+    name = "sync_icon",
+    srcs = ["SyncIcon.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":sync",
+    ],
+)
+
+js_library(
+    name = "shared",
+    srcs = ["shared.jsx"],
+    deps = [":node_modules/react"],
+)
+
+js_library(
+    name = "study_view",
+    srcs = ["StudyView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "roulette",
+    srcs = ["Roulette.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "slots",
+    srcs = ["Slots.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "blackjack",
+    srcs = ["Blackjack.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "prizes_view",
+    srcs = ["PrizesView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "stats_view",
+    srcs = ["StatsView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "admin_view",
+    srcs = ["AdminView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+        ":sync",
+    ],
+)
+
+js_library(
+    name = "casino_stats_view",
+    srcs = ["CasinoStatsView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+        ":sync",
+    ],
+)
+
+js_library(
+    name = "study_casino",
+    srcs = ["study_casino.jsx"],
+    deps = [
+        ":admin_view",
+        ":blackjack",
+        ":casino_stats_view",
+        ":node_modules/react",
+        ":prizes_view",
+        ":roulette",
+        ":shared",
+        ":slots",
+        ":stats_view",
+        ":study_view",
+        ":sync_icon",
+        ":use_casino",
+        ":use_url_state",
+    ],
+)
+
+js_library(
+    name = "main",
+    srcs = ["main.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":study_casino",
+    ],
+)
+
+# ── Production bundle (Vite) ───────────────────────────────────────────────────
+#
+# Vite reads index.html as the entry point, content-hashes the JS bundle
+# (dist/assets/index-<hash>.js), rewrites the script tag in dist/index.html,
+# and copies everything under public/ verbatim to dist/. Filenames are not
+# predictable ahead of time → out_dirs (TreeArtifact), not outs.
+
+vite_bin.vite_binary(name = "vite")
+
+js_run_binary(
+    name = "bundle",
+    srcs = [
+        "index.html",
+        "vite.config.js",
+        ":main",
+        ":node_modules",
+    ] + glob(["public/**/*"]),
+    args = ["build"],
+    chdir = package_name(),
+    out_dirs = ["dist"],
+    tool = ":vite",
+    visibility = [
+        "//x/auragon_study_casino:__pkg__",
+        "//x/auragon_study_casino/tests:__pkg__",
+    ],
+)
+
+# ── Visual regression test ────────────────────────────────────────────────────
+#
+# Renders the StudyCasino component with mocked state and compares the
+# resulting screenshot against baselines/main_page-chromium-linux.png. Reuses
+# the shared Puppeteer + pixelmatch lib at //util/testing/frontend_visual.
+# Casino fonts above are wired in instead of the lib's Inter so the test
+# captures the same typography users see in production.
+
+js_library(
+    name = "visual_harness_lib",
+    srcs = ["tests/harness/harness.jsx"],
+    tags = ["no-lint"],
+    deps = [
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":study_casino",
+        ":sync",
+    ],
+)
+
+js_binary(
+    name = "build_visual_harness",
+    data = [
+        "tests/harness/esbuild.config.mjs",
+        ":casino_fonts",
+        ":node_modules",
+        ":visual_harness_lib",
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "visual_harness_bundle",
+    srcs = [
+        "tests/harness/esbuild.config.mjs",
+        ":casino_fonts",
+        ":visual_harness_lib",
+    ],
+    outs = [
+        "tests/harness/dist/harness.js",
+    ],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_visual_harness",
+)
+
+# Single-file alias so $(rootpath) resolves to one path the test can read.
+filegroup(
+    name = "visual_harness_js",
+    srcs = ["tests/harness/dist/harness.js"],
+)
+
+js_test(
+    name = "visual_main_page",
+    size = "small",
+    data = [
+        "tests/harness/index.html",
+        ":casino_fonts",
+        ":visual_harness_js",
+        "//util/testing/frontend_visual:fonts_conf",
+        "//util/testing/frontend_visual:visual_test_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ] + glob(
+        ["tests/baselines/*.png"],
+        allow_empty = True,
+    ),
+    entry_point = "tests/visual_test_main_page.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :visual_harness_js)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+        "BASELINE_WORKSPACE_PATH": "x/auragon_study_casino/frontend/tests/baselines",
+        "EXPECTED_FONT_FAMILY": "Outfit",
+    },
+    no_copy_to_bin = [
+        ":casino_fonts",
+        ":visual_harness_js",
+        "//util/testing/frontend_visual:fonts_conf",
+        "//util/testing/frontend_visual:visual_test_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+)

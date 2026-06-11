@@ -1,0 +1,377 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_T02",
+      "props": {
+        "created": 1749756870580,
+        "name": "field-definition",
+        "description": "Field definition.  All field definitions are instances of this",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T02_META"
+      },
+      "children": [
+        "SYS_A208_T",
+        "SYS_A01",
+        "SYS_A10",
+        "SYS_A02",
+        "SYS_T44",
+        "SYS_T60",
+        "SYS_T82",
+        "SYS_T127",
+        "SYS_T85",
+        "SYS_T90",
+        "SYS_A03",
+        "SYS_T51",
+        "SYS_T52",
+        "SYS_T53",
+        "SYS_A06",
+        "SYS_A08",
+        "SYS_T46",
+        "SYS_T28",
+        "SYS_T30",
+        "SYS_T40",
+        "SYS_TEV001",
+        "SYS_TEV002",
+        "SYS_TEV003",
+        "SYS_TEV004",
+        "SYS_TEV005",
+        "SYS_TEV006",
+        "SYS_TEV007"
+      ]
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SYS_T02_META",
+      "props": {
+        "created": 1749756870612,
+        "_ownerId": "SYS_T02",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T02_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T02_META_SYS_A13",
+      "props": {
+        "created": 1749756870612,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T02_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "Qi0AlCNyZgW0",
+      "props": {
+        "created": 1749757030732,
+        "name": "Node X",
+        "_ownerId": "6aoZJeWmOXcl"
+      },
+      "touchCounts": [21, 0],
+      "modifiedTs": [1749768188904, 0]
+    },
+    {
+      "id": "Oh-JrJ73G9iK",
+      "props": {
+        "created": 1749757574874,
+        "name": "Perfect Eggs (test reference)",
+        "_ownerId": "hiHpuPTowhDs",
+        "_metaNodeId": "7c60pi0xbTMx"
+      },
+      "touchCounts": [43, 0],
+      "modifiedTs": [1749779908545, 0],
+      "children": ["Hu1bTZ9WJZNG", "mCbshUgjARbg", "tfGjKEqhkZzl", "9EQJdyAfOeo9"]
+    },
+    {
+      "id": "IUBpjxF8AZ_K",
+      "props": {
+        "created": 1749757586147,
+        "name": "recipe",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "kdg3laJWdatc"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757586329, 0]
+    },
+    {
+      "id": "kdg3laJWdatc",
+      "props": {
+        "created": 1749757586149,
+        "_ownerId": "IUBpjxF8AZ_K",
+        "_docType": "metanode"
+      },
+      "touchCounts": [8, 0],
+      "modifiedTs": [1749757606205, 0],
+      "children": ["V-gsMA2TQ2Ws", "Kz-LpZ9iPnt7", "88eFn8WdHjpO", "3Eh3c9DhMdpJ"]
+    },
+    {
+      "id": "V-gsMA2TQ2Ws",
+      "props": {
+        "created": 1749757586150,
+        "_docType": "tuple",
+        "_ownerId": "kdg3laJWdatc"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757586329, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "7c60pi0xbTMx",
+      "props": {
+        "created": 1749757586181,
+        "_ownerId": "Oh-JrJ73G9iK",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757586773, 0],
+      "children": ["-Fb2kXyj1gNo"]
+    },
+    {
+      "id": "-Fb2kXyj1gNo",
+      "props": {
+        "created": 1749757586182,
+        "_docType": "tuple",
+        "_ownerId": "7c60pi0xbTMx"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757586773, 0],
+      "children": ["SYS_A13", "IUBpjxF8AZ_K"]
+    },
+    {
+      "id": "Hu1bTZ9WJZNG",
+      "props": {
+        "created": 1749757597479,
+        "name": "This node has attributes set",
+        "_ownerId": "Oh-JrJ73G9iK"
+      },
+      "touchCounts": [43, 0],
+      "modifiedTs": [1749757605885, 0]
+    },
+    {
+      "id": "mCbshUgjARbg",
+      "props": {
+        "created": 1749757605785,
+        "_ownerId": "Oh-JrJ73G9iK",
+        "_docType": "tuple"
+      },
+      "touchCounts": [8, 0],
+      "modifiedTs": [1749757617387, 0],
+      "children": ["kZRKbR4pxKht", "HIj0tsDim9_L", "qqlqCQiL3oDA", "CsikUx8yAGZ9"]
+    },
+    {
+      "id": "kZRKbR4pxKht",
+      "props": {
+        "created": 1749757606070,
+        "name": "Attribute with multiple node values",
+        "_docType": "attrDef",
+        "_metaNodeId": "tThxMbila-o9",
+        "_ownerId": "mCbshUgjARbg"
+      },
+      "touchCounts": [46, 0],
+      "modifiedTs": [1749757614651, 0]
+    },
+    {
+      "id": "tThxMbila-o9",
+      "props": {
+        "created": 1749757606070,
+        "_ownerId": "kZRKbR4pxKht",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757606205, 0],
+      "children": ["sSha0WE8IEvK"]
+    },
+    {
+      "id": "sSha0WE8IEvK",
+      "props": {
+        "created": 1749757606071,
+        "_docType": "tuple",
+        "_ownerId": "tThxMbila-o9"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757606205, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "HIj0tsDim9_L",
+      "props": {
+        "created": 1749757606073,
+        "name": "Value 1",
+        "_ownerId": "mCbshUgjARbg"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749757616416, 0]
+    },
+    {
+      "id": "qqlqCQiL3oDA",
+      "props": {
+        "created": 1749757616220,
+        "name": "Value 2",
+        "_ownerId": "mCbshUgjARbg"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749757617062, 0]
+    },
+    {
+      "id": "CsikUx8yAGZ9",
+      "props": {
+        "created": 1749757617160,
+        "name": "Value 3",
+        "_ownerId": "mCbshUgjARbg"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749757618351, 0]
+    },
+    {
+      "id": "tfGjKEqhkZzl",
+      "props": {
+        "created": 1749757618839,
+        "_ownerId": "Oh-JrJ73G9iK",
+        "_docType": "tuple"
+      },
+      "touchCounts": [53, 0],
+      "modifiedTs": [1749757627089, 0],
+      "children": ["Mbo8tXvzKh5z", "an_4yFHYAxSG"]
+    },
+    {
+      "id": "Mbo8tXvzKh5z",
+      "props": {
+        "created": 1749757626698,
+        "name": "Attribute with one node value",
+        "_docType": "attrDef",
+        "_metaNodeId": "J52DocW7QScQ",
+        "_ownerId": "tfGjKEqhkZzl"
+      },
+      "touchCounts": [8, 0],
+      "modifiedTs": [1749757633548, 0]
+    },
+    {
+      "id": "J52DocW7QScQ",
+      "props": {
+        "created": 1749757626698,
+        "_ownerId": "Mbo8tXvzKh5z",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749757627089, 0],
+      "children": ["Hby9Wfup9Ex3"]
+    },
+    {
+      "id": "Hby9Wfup9Ex3",
+      "props": {
+        "created": 1749757626699,
+        "_docType": "tuple",
+        "_ownerId": "J52DocW7QScQ"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749757627089, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "an_4yFHYAxSG",
+      "props": {
+        "created": 1749757626700,
+        "name": "Value A",
+        "_ownerId": "tfGjKEqhkZzl"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749757630560, 0]
+    },
+    {
+      "id": "9EQJdyAfOeo9",
+      "props": {
+        "created": 1749768302317,
+        "_ownerId": "Oh-JrJ73G9iK",
+        "_docType": "tuple"
+      },
+      "touchCounts": [10, 0],
+      "modifiedTs": [1749768319838, 0],
+      "children": ["0efnrQG-KRsG", "Qi0AlCNyZgW0", "nDZ-2gyNELRb"]
+    },
+    {
+      "id": "0efnrQG-KRsG",
+      "props": {
+        "created": 1749768302325,
+        "name": "Attribute referencing 2 other nodes",
+        "_docType": "attrDef",
+        "_metaNodeId": "sqmlLx-BKsdu",
+        "_ownerId": "9EQJdyAfOeo9"
+      },
+      "touchCounts": [57, 0],
+      "modifiedTs": [1749775766890, 0]
+    },
+    {
+      "id": "sqmlLx-BKsdu",
+      "props": {
+        "created": 1749768302326,
+        "_ownerId": "0efnrQG-KRsG",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749768302698, 0],
+      "children": ["h6hl7pJ9LPVf"]
+    },
+    {
+      "id": "h6hl7pJ9LPVf",
+      "props": {
+        "created": 1749768302329,
+        "_docType": "tuple",
+        "_ownerId": "sqmlLx-BKsdu"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749768302698, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "nDZ-2gyNELRb",
+      "props": {
+        "created": 1749768319452,
+        "name": "Node Y",
+        "_ownerId": "z-GIaRFjsyQ5_STASH"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749768329421, 0],
+      "children": ["9f4XwytVRCCs"]
+    }
+  ]
+}

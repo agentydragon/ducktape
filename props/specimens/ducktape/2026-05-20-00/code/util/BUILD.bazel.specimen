@@ -1,0 +1,155 @@
+"""Shared utility libraries."""
+
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "otel",
+    srcs = ["otel.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "fs",
+    srcs = ["fs.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "net",
+    srcs = ["net.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//tenacity"],
+)
+
+py_library(
+    name = "docker",
+    srcs = ["docker.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//aiodocker",
+        "@pypi//docker",
+    ],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "typer",
+    srcs = ["typer.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "logging",
+    srcs = ["logging.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "fmt",
+    srcs = ["fmt.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "oci",
+    srcs = ["oci.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":crane",
+        "//util/bazel:runfiles",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "crane",
+    srcs = ["crane.py"],
+    data = ["@crane"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_test(
+    name = "test_crane",
+    srcs = ["test_crane.py"],
+    deps = [
+        ":crane",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "json_schema",
+    srcs = ["json_schema.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "playwright",
+    testonly = True,
+    srcs = ["playwright.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)
+
+py_package(
+    name = "util_pkg",
+    packages = [
+        "util",
+        "util.bazel",
+    ],
+    # `util.bazel.runfiles` is intentionally not shipped: it calls into
+    # `rules_python.runfiles`, which fails when imported from a path that
+    # isn't under a Bazel-built binary's runfiles tree. Shipping it in a
+    # Nix-installed wheel just shadows the Bazel-runfiles version with a
+    # broken copy — `Rlocation()` calls `CurrentRepository(frame=...)` on
+    # the caller, sees the /nix/store path, and raises "does not lie under
+    # the runfiles root". `util.bazel.{subprocess,workspace}` work fine
+    # outside Bazel and are needed by Nix-shipped wheels (claude-hooks,
+    # ducktape-git-hooks).
+    deps = [
+        ":env",
+        ":fmt",
+        ":fs",
+        ":net",
+        ":otel",
+        ":typer",
+        "//util/bazel:subprocess",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "ducktape_util",
+    python_requires = ">=3.13",
+    requires = [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "tenacity",
+    ],
+    version = "0.1.0",
+    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
+    deps = [":util_pkg"],
+)

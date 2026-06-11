@@ -1,0 +1,34 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: proxmox-csi
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/proxmox-csi/app"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: proxmox-csi-namespace
+    - name: proxmox-csi-secrets
+  # Note: CNI (Cilium) now managed by Terraform, not Flux
+  # Storage components deploy after cluster networking is ready
+  # Verify Proxmox CSI controller is ready
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: proxmox-csi-plugin
+      namespace: csi-proxmox
+    - apiVersion: v1
+      kind: Secret
+      name: proxmox-csi-plugin
+      namespace: csi-proxmox
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: proxmox-csi-controller
+      namespace: csi-proxmox

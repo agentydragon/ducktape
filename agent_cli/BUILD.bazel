@@ -1,11 +1,10 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # gazelle:map_kind py_binary py_library cli.py
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core:agent",
@@ -29,7 +28,6 @@ py_library(
 
 py_binary(
     name = "adgn_agent",
-    imports = [".."],
     main_module = "agent_cli.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],

@@ -1,0 +1,52 @@
+# Git files
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+*.jsonl
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Test files
+test_*.json
+
+# Output directories
+agent_output/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Docker cache
+.docker-cache/

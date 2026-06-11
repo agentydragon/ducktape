@@ -1,0 +1,12 @@
+rationale: |
+  `text_content` fixture (conftest.py:25) returns a lambda that calls
+  `mcp_types.TextContent(type="text", text=text)`. This is a trivial wrapper
+  — callers should construct `TextContent` directly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core/conftest.py:
+        - [24, 27]
+    critic_scopes_expected_to_recall:
+      - [agent_core/conftest.py]

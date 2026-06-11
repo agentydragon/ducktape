@@ -1,0 +1,26 @@
+{# Audience: human admin or LLM (public page) #} {% extends "base.html" %} {% block title %}Gatelet - Welcome{% endblock
+%} {% block content %}
+<section>
+  <h2>Welcome to Gatelet</h2>
+  <p>A service that provides LLM-friendly access to real-time and historical information.</p>
+</section>
+
+{% if show_admin_login %}
+<section class="login-form">
+  <h2>Administrator Login</h2>
+  {% if login_error %}
+  <p>{{ login_error }}</p>
+  {% endif %}
+  <form method="post" action="/admin/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label>Password: <input type="password" name="password" /></label>
+    <button type="submit">Login</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="llm-instructions">
+  <h2>For LLMs</h2>
+  <p>{{ llm_instructions }}</p>
+</section>
+{% endblock %}

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-ci-robot-desired
+  namespace: flux-system
+  annotations:
+    description: Desired harbor CI robot credentials (SOPS source of truth)
+type: Opaque
+stringData:
+  username: ENC[AES256_GCM,data:8BJ827IlZ3VwcLNduHWsdm4=,iv:YpQ223ARGBfM+eFQ5unLkeYOLEfGCbhFKkoJ9wDaoRg=,tag:pj607+LVEM7JnIW00/QQwQ==,type:str]
+  password: ENC[AES256_GCM,data:Ki6pcXHGhrsf5VVbEBqxf0RRU9vojuODzSA2sd0t5FM7N7ANafVY5QCvQ4A=,iv:wPo80t0iE763Y3C4uofXs75cS7ob1MUnbIfp5Hm7qQk=,tag:xLIbGD6EfXDCwRd6W4ARUA==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBUYnB3Y2c2V2h6ZkYyRHYv
+        TmJRUVM1cDJtb3laQVB2WUNMbTZGQjBDOXpvCnd6WGJwNFVhc29uWmszeThiTVl4
+        a3lWQWQ0N2Y3bmRTZi9ldXlPaXphZjQKLS0tIEJzTVRjM1U5WmdyTXFJNmJmVzNC
+        TURsVDl6ckZ1czRjd1JwL05QSHZFWjAKnLM/6RlZVNKaH82DH2+mXmWuA1V1mKHE
+        UvY5oDP+OvSte+JTbRMfzOlAVWF9DurmZbqNORdMT+SVd0xQbRkL4A==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKNVZRbVR0SEtJaXBVK3FS
+        dGp4WDBJZjNhR3ZTcVkwQklPaEorZlRFaFV3CnNJbmNUM1huQ0hBTE94K0dpZFR0
+        dGZTUGcvNGc2Q2xNa2c3cU0wWS95MjQKLS0tIERYTk8vL2c5dTl0VnhDbUpGTUpS
+        Tm9lMmF5TmVJUmZWV2QwTHFJNWV1djAKL7x4kZCOg+ze21h1TYN8RnQNvhGUD2uf
+        SYG/rG3iXm0WBD5LTwzyIPzDmE/WbRSlGiSKI/RyDog9slp3p5NMGg==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-09T10:22:07Z"
+  mac: ENC[AES256_GCM,data:za0pXqPJl19YNJHdQ+BoxrnB11gxLi9NuGx4st00WTm/81sMWRwKlv/Igk84hg0Z5n5jJST+Z1DHICFqduCwvWoLRF4fQwHrMdNQAnbCsCUuThjrB6gY5PvLnFbhdkZURrZKUro1cZFcrsIg46OnmZucAoUw27KmDLm3OZXTyH4=,iv:wtps67811r4at9R3U405kqRsavyhjsQ99jQgmabxsLI=,tag:+2JBoW6IMob8P50GpWrM4g==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

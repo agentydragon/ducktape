@@ -1,4 +1,10 @@
-"""Kubernetes resource models and parsing utilities."""
+"""Kubernetes resource models and parsing utilities.
+
+`parse_k8s_resources` is a small kind-discriminated parser: it returns the typed subclass
+for the kinds that carry extra spec fields checks care about (HelmRelease, ImageRepository,
+ImagePolicy, Receiver); every other kind stays as the generic `K8sResource` base. Consumers
+isinstance-narrow to the variant they need.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 
 class K8sMetadata(BaseModel):
@@ -19,39 +26,32 @@ class K8sMetadata(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class HelmChartSpec(BaseModel):
-    """HelmRelease chart spec."""
+class Condition(BaseModel):
+    """A standard Kubernetes status condition.
 
-    model_config = ConfigDict(extra="ignore")
+    Used by controllers across the cluster (Flux Kustomizations, HelmReleases,
+    Deployments via `Available`/`Progressing`, CNPG `Cluster.Ready`, etc.) to
+    report observed state. Consumers usually filter by `type` and check
+    `status` ("True"/"False"/"Unknown")."""
 
-    version: str | None = None
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
-
-class HelmChart(BaseModel):
-    """HelmRelease chart reference."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    spec: HelmChartSpec = Field(default_factory=HelmChartSpec)
-
-
-class HelmReleaseSpec(BaseModel):
-    """HelmRelease spec."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    chart: HelmChart = Field(default_factory=HelmChart)
+    type: str
+    status: str  # "True" / "False" / "Unknown"
+    reason: str | None = None
+    message: str | None = None
+    last_transition_time: str | None = None
+    observed_generation: int | None = None
 
 
 class K8sResource(BaseModel):
-    """Parsed Kubernetes resource from YAML."""
+    """Parsed Kubernetes resource from YAML (generic base; see module docstring)."""
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     kind: str
     api_version: str = Field(default="", alias="apiVersion")
     metadata: K8sMetadata = Field(default_factory=K8sMetadata)
-    spec: HelmReleaseSpec | None = None
 
     @property
     def name(self) -> str:
@@ -61,21 +61,78 @@ class K8sResource(BaseModel):
     def namespace(self) -> str:
         return self.metadata.namespace
 
+
+class HelmChartSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    version: str | None = None
+
+
+class HelmChart(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    spec: HelmChartSpec = Field(default_factory=HelmChartSpec)
+
+
+class HelmReleaseSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    chart: HelmChart = Field(default_factory=HelmChart)
+
+
+class HelmReleaseResource(K8sResource):
+    spec: HelmReleaseSpec = Field(default_factory=HelmReleaseSpec)
+
     @property
     def chart_version(self) -> str | None:
-        if self.kind != "HelmRelease" or not self.spec:
-            return None
         return self.spec.chart.spec.version
 
 
-def _is_k8s_resource_doc(doc: object) -> bool:
-    """Check if a YAML document looks like a K8s resource (dict with kind)."""
-    return isinstance(doc, dict) and bool(doc.get("kind"))
+class ImageRepositoryResource(K8sResource):
+    """Flux `ImageRepository` — only its name is needed."""
+
+
+class _ImageRepositoryRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = ""
+
+
+class ImagePolicySpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    image_repository_ref: _ImageRepositoryRef = Field(default_factory=_ImageRepositoryRef)
+
+
+class ImagePolicyResource(K8sResource):
+    spec: ImagePolicySpec = Field(default_factory=ImagePolicySpec)
+
+
+class ReceiverResourceRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    kind: str = ""
+    name: str = ""
+
+
+class ReceiverSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    resources: list[ReceiverResourceRef] = []
+
+
+class ReceiverResource(K8sResource):
+    spec: ReceiverSpec = Field(default_factory=ReceiverSpec)
+
+
+_KIND_MODELS: dict[str, type[K8sResource]] = {
+    "HelmRelease": HelmReleaseResource,
+    "ImageRepository": ImageRepositoryResource,
+    "ImagePolicy": ImagePolicyResource,
+    "Receiver": ReceiverResource,
+}
 
 
 def parse_k8s_resources(docs: Iterable[object]) -> list[K8sResource]:
-    """Parse an iterable of YAML documents into K8s resources, skipping non-resource documents."""
-    return [K8sResource.model_validate(doc) for doc in docs if _is_k8s_resource_doc(doc)]
+    """Parse YAML documents into K8s resources (typed subclass per kind), skipping non-resources."""
+    return [
+        _KIND_MODELS.get(doc["kind"], K8sResource).model_validate(doc)
+        for doc in docs
+        if isinstance(doc, dict) and doc.get("kind")
+    ]
 
 
 def parse_k8s_resource_file(yaml_file: Path) -> list[K8sResource]:

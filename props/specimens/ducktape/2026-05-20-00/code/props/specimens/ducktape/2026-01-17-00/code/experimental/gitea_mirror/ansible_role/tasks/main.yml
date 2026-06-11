@@ -1,0 +1,103 @@
+---
+# Setup ZFS dataset and virtiofs for Gitea public mirrors
+# This is a separate storage slice from tankshare
+
+- name: Check if running on atlas
+  ansible.builtin.fail:
+    msg: "This role should only run on atlas (Proxmox host)"
+  when: inventory_hostname != "atlas"
+  tags: [gitea-mirrors]
+
+- name: Check if ZFS dataset exists
+  command: zfs list tank/gitea-public-mirrors
+  register: zfs_check
+  failed_when: false
+  changed_when: false
+
+- name: Create ZFS dataset for Gitea public mirrors
+  command: |
+    zfs create \
+      -o recordsize=128k \
+      -o compression=lz4 \
+      -o dedup=off \
+      -o atime=off \
+      -o quota=200G \
+      -o mountpoint=/tank/gitea-public-mirrors \
+      tank/gitea-public-mirrors
+  when: zfs_check.rc != 0
+  become: true
+
+- name: Set ZFS dataset permissions
+  file:
+    path: /tank/gitea-public-mirrors
+    owner: 1000
+    group: 1000
+    mode: "0755"
+  become: true
+
+# Note: virtiofs configuration for k3s VMs needs to be done manually in Proxmox UI
+# Steps:
+# 1. Edit VM configuration
+# 2. Add shared filesystem:
+#    - ID: gitea-mirrors
+#    - Path: /tank/gitea-public-mirrors
+#    - Mount tag: gitea-mirrors
+# 3. In each k3s VM, add to /etc/fstab:
+#    gitea-mirrors /mnt/gitea-mirrors virtiofs defaults,_netdev 0 0
+# 4. Create mount point and mount:
+#    mkdir -p /mnt/gitea-mirrors
+#    mount /mnt/gitea-mirrors
+
+- name: Create ZFS snapshot schedule
+  cron:
+    name: "ZFS snapshot for gitea-public-mirrors"
+    minute: "0"
+    hour: "2"
+    job: >-
+      /sbin/zfs snapshot tank/gitea-public-mirrors@$(date +\%Y\%m\%d-\%H\%M\%S) &&
+      /sbin/zfs list -t snapshot -o name -s creation tank/gitea-public-mirrors |
+      head -n -30 | xargs -n1 /sbin/zfs destroy 2>/dev/null
+    user: root
+  become: true
+
+- name: Configure virtiofs for k3s VMs
+  ansible.builtin.shell: |
+    # Check if virtiofs is already configured
+    if ! qm config {{ item.vmid }} | grep -q "virtiofs.*gitea-mirrors"; then
+      # Stop VM if running
+      qm status {{ item.vmid }} | grep -q "running" && qm stop {{ item.vmid }} && sleep 5
+
+      # Add virtiofs shared filesystem
+      qm set {{ item.vmid }} --args "-chardev socket,id=gitea-mirrors,path=/var/run/virtiofsd-gitea-mirrors.sock \
+        -device vhost-user-fs-pci,queue-size=1024,chardev=gitea-mirrors,tag=gitea-mirrors"
+
+      # Start VM
+      qm start {{ item.vmid }}
+      echo "configured"
+    else
+      echo "already configured"
+    fi
+  loop:
+    - { vmid: 200, name: k3s-master }
+    - { vmid: 201, name: k3s-worker }
+  register: virtiofs_config
+  changed_when: virtiofs_config.stdout == "configured"
+  tags: [gitea-mirrors, virtiofs]
+
+- name: Install virtiofs daemon systemd service
+  ansible.builtin.copy:
+    src: virtiofsd-gitea-mirrors.service
+    dest: /etc/systemd/system/virtiofsd-gitea-mirrors.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Systemd
+  tags: [gitea-mirrors, virtiofs]
+
+- name: Enable and start virtiofs daemon
+  ansible.builtin.systemd:
+    name: virtiofsd-gitea-mirrors
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  tags: [gitea-mirrors, virtiofs]

@@ -1,0 +1,52 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "compositor",
+    srcs = [
+        "__init__.py",
+        "admin.py",
+        "clients.py",
+        "meta_server.py",
+        "mount.py",
+        "notifications_buffer.py",
+        "rendering.py",
+        "resources_server.py",
+        "server.py",
+    ],
+    data = ["templates/compositor_instructions.md.j2"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/notifications",
+        "//mcp_infra/resources",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_compositor",
+    srcs = [
+        "conftest.py",
+        "test_admin.py",
+        "test_admin_client.py",
+        "test_inproc_server_storage.py",
+        "test_lifecycle.py",
+        "test_meta_basic.py",
+        "test_meta_inproc_proxies.py",
+        "test_pinned_unmount.py",
+    ],
+    main = "test_admin.py",
+    deps = [
+        ":compositor",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+    ],
+)

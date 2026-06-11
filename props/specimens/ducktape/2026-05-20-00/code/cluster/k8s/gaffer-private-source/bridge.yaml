@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gaffer-private
+  namespace: flux-system
+  annotations:
+    description: "Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private GitRepository — entry point for every private app's flux-kustomization.yaml."
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: gaffer-private
+  path: ./k8s
+  prune: true
+  # No `wait: true` — pod readiness depends on the GHCR pull secret
+  # (provisioned by the gaffer-private-ghcr-pull Kustomization, which
+  # in turn dependsOn this one to ensure the augur namespace
+  # exists). Waiting here would circle back. The downstream
+  # Kustomization tolerates apply-then-eventually-ready.
+  dependsOn:
+    - name: authentik
+    - name: gateway
+    - name: cert-manager-issuer-config

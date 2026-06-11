@@ -1,0 +1,110 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "buildbuddy",
+    srcs = ["buildbuddy.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "container_runtime",
+    srcs = ["container_runtime.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:errors",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:service_utils",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "connectivity",
+    srcs = ["connectivity.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "platform_detect",
+    srcs = ["platform_detect.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//psutil",
+        "@pypi//types_psutil",
+    ],
+)
+
+py_library(
+    name = "tmpfs",
+    srcs = ["tmpfs.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//psutil",
+        "@pypi//types_psutil",
+    ],
+)
+
+py_library(
+    name = "session_start_lib",
+    srcs = ["handler.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":buildbuddy",
+        ":connectivity",
+        ":container_runtime",
+        ":platform_detect",
+        ":tmpfs",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:env_file",
+        "//devinfra/claude:errors",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:output",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/hook_daemon:config",
+        "//devinfra/claude/hook_daemon:models",
+        "//devinfra/claude/hook_daemon:session",
+        "//devinfra/claude/hook_daemon:shim_install",
+        "//devinfra/claude/hook_daemon/templates",
+        "//devinfra/claude/supervisor:setup",
+        "@pypi//anyio",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+# === Tests ===
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:otel_tracing"],
+)
+
+py_test(
+    name = "test_session_context",
+    srcs = ["test_session_context.py"],
+    data = ["__snapshots__/test_session_context.ambr"],
+    uses_syrupy = True,
+    deps = [
+        ":connectivity",
+        ":container_runtime",
+        ":platform_detect",
+        ":session_start_lib",
+        "//devinfra/claude/hook_daemon:config",
+        "//devinfra/claude/hook_daemon:models",
+        "//devinfra/claude/hook_daemon/templates",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//syrupy",
+    ],
+)

@@ -1,0 +1,39 @@
+# Bearer token for firecracker-manager API authentication.
+# Generated once by ESO Password generator; reflected to openclaw-sandbox
+# for cross-namespace access.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: firecracker-manager-auth-token-generator
+  namespace: claude-sandbox
+spec:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: firecracker-manager-auth-token
+  namespace: claude-sandbox
+spec:
+  refreshInterval: 8760h
+  target:
+    name: firecracker-manager-auth-token
+    template:
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "openclaw-sandbox,claude-sandbox"
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "openclaw-sandbox,claude-sandbox"
+      data:
+        token: "{{ .password }}"
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: firecracker-manager-auth-token-generator

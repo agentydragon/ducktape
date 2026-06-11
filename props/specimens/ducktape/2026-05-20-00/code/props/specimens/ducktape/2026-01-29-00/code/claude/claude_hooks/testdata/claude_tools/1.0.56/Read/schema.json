@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "file_path": {
+      "description": "The absolute path to the file to read",
+      "type": "string"
+    },
+    "limit": {
+      "description": "The number of lines to read. Only provide if the file is too large to read at once.",
+      "type": "number"
+    },
+    "offset": {
+      "description": "The line number to start reading from. Only provide if the file is too large to read at once",
+      "type": "number"
+    }
+  },
+  "required": ["file_path"],
+  "type": "object"
+}

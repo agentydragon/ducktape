@@ -1,0 +1,32 @@
+# U.S. federal income tax — 2024 tax-year brackets.
+#
+# Single filer only (MFJ / HoH / MFS deferred). Standard deduction
+# only (itemized deductions deferred until housing layer lands).
+#
+# `upper_usd: .inf` is the open-ended top bracket. Brackets are
+# walked low to high; the rate applies to income in the slice
+# (lower_of_this_bracket, upper_of_this_bracket].
+#
+# LTCG brackets are walked separately on long-term capital gains
+# (holding period >= 12 months); the LTCG bracket position depends
+# on total taxable income (ordinary + LTCG combined) per §1(h).
+jurisdiction_id: federal_us
+
+ordinary_income_brackets:
+  single:
+    - { upper_usd: 11600.0, rate: 0.10 }
+    - { upper_usd: 47150.0, rate: 0.12 }
+    - { upper_usd: 100525.0, rate: 0.22 }
+    - { upper_usd: 191950.0, rate: 0.24 }
+    - { upper_usd: 243725.0, rate: 0.32 }
+    - { upper_usd: 609350.0, rate: 0.35 }
+    - { upper_usd: .inf, rate: 0.37 }
+
+ltcg_brackets:
+  single:
+    - { upper_usd: 47025.0, rate: 0.00 }
+    - { upper_usd: 518900.0, rate: 0.15 }
+    - { upper_usd: .inf, rate: 0.20 }
+
+standard_deduction:
+  single: 14600.0

@@ -1,0 +1,15 @@
+rationale: |
+  `AgentContainer._ready` is an `asyncio.Event` (line 233) awaited in
+  `start()` (line 501) after `_post_msg(_StartMsg(...))` completes.
+  `_ready.set()` is never called anywhere in the codebase. Every call to
+  `start()` — and therefore `build_container()` — deadlocks on
+  `self._ready.wait()`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/runtime/container.py:
+        - [233, 233] # _ready: asyncio.Event declared
+        - [501, 501] # await self._ready.wait() — blocks forever
+    critic_scopes_expected_to_recall:
+      - [agent_server/runtime/container.py]

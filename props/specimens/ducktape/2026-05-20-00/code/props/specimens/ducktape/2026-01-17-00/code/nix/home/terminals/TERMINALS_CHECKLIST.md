@@ -1,0 +1,74 @@
+# Terminal Evaluation Checklist
+
+Use this nested checklist when testing each terminal (kitty, WezTerm, Ghostty). Add notes under each sub-item.
+
+- [ ] **Kitty**
+  - [ ] Tabs (creation, moving, detaching)
+  - [ ] Shortcuts / UI affordances
+    - [x] Open tab (`Ctrl+Shift+T`)
+    - [ ] Open window (`Ctrl+Shift+N`)
+    - [ ] Close tab (`Ctrl+Shift+W`)
+    - [ ] Switch tab (`Ctrl+PageUp/PageDown`)
+      - To verify: should follow GNOME Terminal behavior (no Shift).
+    - [ ] Move tab (`Ctrl+Shift+PageUp/PageDown`)
+      - To verify: moves tab left/right without changing focus.
+    - [ ] Scrollback (`Shift+PageUp/PageDown` + scrollbar hover)
+      - Note: kitty has no native scrollbar; rely on mouse/keyboard scrollback.
+    - [ ] Selection + copy/paste workflow (keyboard and mouse)
+    - [ ] Search in scrollback (`Ctrl+Shift+F`)
+    - [x] Mouse scroll (verified; works despite missing native scrollbar)
+    - [ ] Disable “scroll to bottom on output” option tested
+      - Note: kitty already stays in scrollback; no explicit flag available.
+  - [ ] Theme handling
+    - [ ] Light theme renders correctly
+    - [ ] Dark theme renders correctly
+    - [ ] Auto switch follows GNOME preference
+  - [ ] OSC 10/11/12 + OSC 133/302 (color preference signaling) behavior
+  - [ ] Scrollback history length + scrollbar behavior
+  - [ ] Built-in splits / layouts (if using kitty tiling)
+  - [ ] Remote control + kitty @ commands
+  - [ ] Theme watcher service status
+- [ ] **WezTerm**
+  - [ ] Tabs (native tab bar, stacking)
+  - [ ] Shortcuts / UI affordances
+    - [x] Open tab (`Ctrl+Shift+T`)
+    - [x] Open window (`Ctrl+Shift+N`)
+    - [ ] Close tab (`Ctrl+Shift+W`)
+    - [ ] Move tab (`Ctrl+Shift+PageUp/PageDown`)
+    - [ ] Scrollback (`Shift+PageUp/PageDown`, mouse wheel, or scrollbar)
+    - [ ] Mouse scroll (verify smooth scrolling works)
+    - [ ] Disable “scroll to bottom on output” option tested
+    - [ ] Selection + copy/paste workflow (keyboard and mouse)
+    - [ ] Search in scrollback (`Ctrl+Shift+F`)
+  - [ ] Theme handling
+    - [ ] Light palette from nix-colors
+    - [ ] Dark palette from nix-colors
+    - [ ] Auto switch via appearance hook
+  - [ ] OSC color preference reporting
+  - [ ] Scrollback + scrollbar rendering
+  - [ ] Built-in pane splits (horizontal/vertical)
+  - [ ] Lua config hot-reload & events
+  - [ ] Multiplexing / SSH agent shim behavior
+- [ ] **Ghostty**
+  - [ ] Tabs (if available in current build)
+  - [ ] Shortcuts / UI affordances
+    - [x] Open tab (`Ctrl+Shift+T`)
+    - [ ] Open window (`Ctrl+Shift+N`)
+    - [ ] Close tab (`Ctrl+Shift+W`)
+    - [ ] Move tab (`Ctrl+Shift+PageUp/PageDown`)
+    - [ ] Scrollback (`Shift+PageUp/PageDown`, mouse wheel, or scrollbar)
+    - [ ] Mouse scroll (verify smooth scrolling works)
+    - [ ] Disable “scroll to bottom on output” option tested
+    - [ ] Selection + copy/paste workflow (keyboard and mouse)
+    - [ ] Search in scrollback (`Ctrl+Shift+F`)
+  - [ ] Theme handling
+    - [ ] Light preset loads
+    - [ ] Dark preset loads
+    - [ ] Auto switch via config mapping
+  - [ ] OSC color preference reporting
+  - [ ] Scrollback buffer + scrollbar style
+  - [ ] Split support (experimental)
+  - [ ] GPU (OpenGL) requirements under nixGL
+  - [ ] Extra features to validate (Wayland, server mode, etc.)
+
+Add more rows as you discover new features or regressions to test.

@@ -1,0 +1,272 @@
+gpt-5.1:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5-mini:
+  input_usd_per_1m_tokens: 0.25
+  cached_input_usd_per_1m_tokens: 0.025
+  output_usd_per_1m_tokens: 2.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5-nano:
+  input_usd_per_1m_tokens: 0.05
+  cached_input_usd_per_1m_tokens: 0.005
+  output_usd_per_1m_tokens: 0.4
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5.1-chat-latest:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5-chat-latest:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5.1-codex:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5.1-codex-max:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5-codex:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-5-pro:
+  input_usd_per_1m_tokens: 15.0
+  cached_input_usd_per_1m_tokens: 15.0
+  output_usd_per_1m_tokens: 120.0
+  context_window_tokens: 400000
+  max_output_tokens: 128000
+
+gpt-4.1:
+  input_usd_per_1m_tokens: 2.0
+  cached_input_usd_per_1m_tokens: 0.5
+  output_usd_per_1m_tokens: 8.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4.1-mini:
+  input_usd_per_1m_tokens: 0.4
+  cached_input_usd_per_1m_tokens: 0.1
+  output_usd_per_1m_tokens: 1.6
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4.1-nano:
+  input_usd_per_1m_tokens: 0.1
+  cached_input_usd_per_1m_tokens: 0.025
+  output_usd_per_1m_tokens: 0.4
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o:
+  input_usd_per_1m_tokens: 2.5
+  cached_input_usd_per_1m_tokens: 1.25
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o-2024-05-13:
+  input_usd_per_1m_tokens: 5.0
+  cached_input_usd_per_1m_tokens: 5.0
+  output_usd_per_1m_tokens: 15.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o-mini:
+  input_usd_per_1m_tokens: 0.15
+  cached_input_usd_per_1m_tokens: 0.075
+  output_usd_per_1m_tokens: 0.6
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-realtime:
+  input_usd_per_1m_tokens: 4.0
+  cached_input_usd_per_1m_tokens: 0.4
+  output_usd_per_1m_tokens: 16.0
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+
+gpt-realtime-mini:
+  input_usd_per_1m_tokens: 0.6
+  cached_input_usd_per_1m_tokens: 0.06
+  output_usd_per_1m_tokens: 2.4
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+
+gpt-4o-realtime-preview:
+  input_usd_per_1m_tokens: 5.0
+  cached_input_usd_per_1m_tokens: 2.5
+  output_usd_per_1m_tokens: 20.0
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+
+gpt-4o-mini-realtime-preview:
+  input_usd_per_1m_tokens: 0.6
+  cached_input_usd_per_1m_tokens: 0.3
+  output_usd_per_1m_tokens: 2.4
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+
+gpt-audio:
+  input_usd_per_1m_tokens: 2.5
+  cached_input_usd_per_1m_tokens: 2.5
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-audio-mini:
+  input_usd_per_1m_tokens: 0.6
+  cached_input_usd_per_1m_tokens: 0.6
+  output_usd_per_1m_tokens: 2.4
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+
+gpt-4o-audio-preview:
+  input_usd_per_1m_tokens: 2.5
+  cached_input_usd_per_1m_tokens: 2.5
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o-mini-audio-preview:
+  input_usd_per_1m_tokens: 0.15
+  cached_input_usd_per_1m_tokens: 0.15
+  output_usd_per_1m_tokens: 0.6
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+o1:
+  input_usd_per_1m_tokens: 15.0
+  cached_input_usd_per_1m_tokens: 7.5
+  output_usd_per_1m_tokens: 60.0
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o1-pro:
+  input_usd_per_1m_tokens: 150.0
+  cached_input_usd_per_1m_tokens: 150.0
+  output_usd_per_1m_tokens: 600.0
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o1-mini:
+  input_usd_per_1m_tokens: 1.1
+  cached_input_usd_per_1m_tokens: 0.55
+  output_usd_per_1m_tokens: 4.4
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o3:
+  input_usd_per_1m_tokens: 2.0
+  cached_input_usd_per_1m_tokens: 0.5
+  output_usd_per_1m_tokens: 8.0
+  context_window_tokens: 128000
+  max_output_tokens: 100000
+
+o3-pro:
+  input_usd_per_1m_tokens: 20.0
+  cached_input_usd_per_1m_tokens: 20.0
+  output_usd_per_1m_tokens: 80.0
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o3-mini:
+  input_usd_per_1m_tokens: 1.1
+  cached_input_usd_per_1m_tokens: 0.55
+  output_usd_per_1m_tokens: 4.4
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o3-deep-research:
+  input_usd_per_1m_tokens: 10.0
+  cached_input_usd_per_1m_tokens: 2.5
+  output_usd_per_1m_tokens: 40.0
+  context_window_tokens: 200000
+  max_output_tokens: 100000
+
+o4-mini:
+  input_usd_per_1m_tokens: 1.1
+  cached_input_usd_per_1m_tokens: 0.275
+  output_usd_per_1m_tokens: 4.4
+  context_window_tokens: 128000
+  max_output_tokens: 100000
+
+o4-mini-deep-research:
+  input_usd_per_1m_tokens: 2.0
+  cached_input_usd_per_1m_tokens: 0.5
+  output_usd_per_1m_tokens: 8.0
+  context_window_tokens: 128000
+  max_output_tokens: 100000
+
+gpt-5-search-api:
+  input_usd_per_1m_tokens: 1.25
+  cached_input_usd_per_1m_tokens: 0.125
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o-mini-search-preview:
+  input_usd_per_1m_tokens: 0.15
+  cached_input_usd_per_1m_tokens: 0.15
+  output_usd_per_1m_tokens: 0.6
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-4o-search-preview:
+  input_usd_per_1m_tokens: 2.5
+  cached_input_usd_per_1m_tokens: 2.5
+  output_usd_per_1m_tokens: 10.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+computer-use-preview:
+  input_usd_per_1m_tokens: 3.0
+  cached_input_usd_per_1m_tokens: 3.0
+  output_usd_per_1m_tokens: 12.0
+  context_window_tokens: 128000
+  max_output_tokens: 16384
+
+gpt-image-1:
+  input_usd_per_1m_tokens: 5.0
+  cached_input_usd_per_1m_tokens: 1.25
+  output_usd_per_1m_tokens: 0.0
+  context_window_tokens: 128000
+  max_output_tokens: 0
+
+gpt-image-1-mini:
+  input_usd_per_1m_tokens: 2.0
+  cached_input_usd_per_1m_tokens: 0.2
+  output_usd_per_1m_tokens: 0.0
+  context_window_tokens: 128000
+  max_output_tokens: 0

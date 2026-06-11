@@ -1,0 +1,131 @@
+name: Get Journal
+request:
+  method: GET
+  url: https://api.habitify.me/journal
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  params:
+    target_date: "2025-05-09T00:00:00+00:00"
+    order_by: priority
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      - id: -Lo9Nnnt86Zg7fJZ0qCK
+        name: M***********s
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 3.1691265005705735e+29
+        status: none
+        habit_type: 1
+      - id: -Lo9Nix1qj4i4q5uOal6
+        name: M********************g
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - morning
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 1.5845632502852868e+29
+        status: none
+        habit_type: 1
+      - id: -Mo85rG9o7d1V9gH2rvy
+        name: F***s
+        is_archived: false
+        start_date: "2021-11-10T09:08:20.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20211110T090820Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2021-11-10T09:08:20.000Z"
+        priority: 7.922816251426434e+28
+        status: in_progress
+        progress:
+          current_value: 0
+          target_value: 1
+          unit_type: rep
+          periodicity: daily
+          reference_date: "2025-05-09T00:00:00.000Z"
+        habit_type: 1
+      - id: -Lo9RjTQPqlILDw1hvaA
+        name: E********************g
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "22:0"
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 1.5111572745182865e+23
+        status: none
+        habit_type: 1
+      - id: -Lo9TaO0fZXWVgtWxsKt
+        name: E**********s
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "21:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 7.555786372591432e+22
+        status: none
+        habit_type: 1
+    version: v1.2
+    status: true
+    errors: []

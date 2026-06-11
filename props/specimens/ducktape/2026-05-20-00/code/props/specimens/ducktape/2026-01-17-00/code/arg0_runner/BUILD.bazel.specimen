@@ -1,0 +1,28 @@
+"""Arg0 virtual CLI infrastructure and patch utilities."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "arg0_runner",
+    srcs = [
+        "patch.py",
+        "runner.py",
+        "setup.py",
+        "unified_patch.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/openai_cookbook:apply_patch_lib",
+        "@pypi//unidiff",
+    ],
+)
+
+py_test(
+    name = "test_unified_patch",
+    srcs = ["test_unified_patch.py"],
+    deps = [
+        ":arg0_runner",
+        "@pypi//pytest",
+    ],
+)

@@ -1,0 +1,31 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubevirt
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/kubevirt/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 10m
+  dependsOn:
+    - name: kubevirt-operator
+      namespace: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: virt-api
+      namespace: kubevirt
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: virt-controller
+      namespace: kubevirt
+    - apiVersion: apps/v1
+      kind: DaemonSet
+      name: virt-handler
+      namespace: kubevirt

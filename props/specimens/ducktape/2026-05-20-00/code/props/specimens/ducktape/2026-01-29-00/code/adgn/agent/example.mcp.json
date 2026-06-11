@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "seatbelt": {
+      "transport": "http",
+      "url": "http://127.0.0.1:8768/mcp",
+      "auth": "<replace-with-token>",
+      "timeout_secs": 30,
+      "sse_read_timeout_secs": 300
+    }
+  }
+}

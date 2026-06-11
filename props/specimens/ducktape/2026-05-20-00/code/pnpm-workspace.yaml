@@ -1,0 +1,9 @@
+packages:
+  - "x/agent_server/web"
+  - "x/auragon_study_casino/frontend"
+  - "airlock/frontend"
+  - "airlock/openclaw"
+  - "third_party/mcporter"
+  - "x/rspcache/admin_ui"
+  - "props/frontend"
+  - "util/testing/frontend_visual"

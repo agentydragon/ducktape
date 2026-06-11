@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - job.yaml
+
+configMapGenerator:
+  - name: attic-bootstrap-script
+    namespace: nix-cache
+    files:
+      - bootstrap.sh
+
+# disableNameSuffixHash so the Job's volume reference (configMap name
+# `attic-bootstrap-script`) stays stable. The Flux force-recreate annotation
+# on the Job handles re-running on script change.
+generatorOptions:
+  disableNameSuffixHash: true

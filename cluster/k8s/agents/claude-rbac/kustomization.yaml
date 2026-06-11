@@ -1,20 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - serviceaccount.yaml
-  - sa-token-secret.yaml
   - namespace.yaml
   - resourcequota.yaml
   - limitrange.yaml
   - role-sandbox.yaml
   - rolebinding-sandbox.yaml
-  - role-props-reader.yaml
   - rolebinding-ollama-consumer.yaml
-  - role-gatus-reader.yaml
   - clusterrole-cluster-diagnostics-reader.yaml
-  - rolebinding-ollama-reader.yaml
-  - rolebinding-langfuse-reader.yaml
-  - rolebinding-openclaw-reader.yaml
-  - role-harbor-reader.yaml
-  - rolebinding-harbor-reader.yaml
-  - role-logs-configmaps-reader.yaml
+  - clusterrole-logs-configmaps-reader.yaml
+  - clusterrole-namespace-diagnostics-reader.yaml
+  - cleanuppolicy-sandbox-janitor.yaml

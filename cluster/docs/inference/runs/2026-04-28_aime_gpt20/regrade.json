@@ -1,0 +1,499 @@
+{
+  "efforts": {
+    "high": {
+      "stats": {
+        "started_at": "2026-04-29T19:34:48+00:00",
+        "completed_at": "2026-04-29T19:50:15+00:00",
+        "model_usage": {
+          "openai/gpt-oss:20b": {
+            "input_tokens": 2508,
+            "output_tokens": 141868,
+            "total_tokens": 144376
+          }
+        },
+        "role_usage": {}
+      },
+      "model_generate_config": {
+        "reasoning_effort": "high"
+      },
+      "samples": [
+        {
+          "id": "2024-I-11",
+          "target": 371,
+          "inspect_value": "I",
+          "inspect_answer": "395",
+          "regrade_correct": false,
+          "regrade_answer": "395",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 230,
+          "output_tokens": 39456,
+          "working_time_s": 265.768,
+          "total_time_s": 566.82
+        },
+        {
+          "id": "2024-I-12",
+          "target": 385,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": false,
+          "regrade_answer": "5",
+          "regrade_pattern": "boxed",
+          "input_tokens": 235,
+          "output_tokens": 39372,
+          "working_time_s": 253.173,
+          "total_time_s": 855.081
+        },
+        {
+          "id": "2024-I-2",
+          "target": 25,
+          "inspect_value": "C",
+          "inspect_answer": "25",
+          "regrade_correct": true,
+          "regrade_answer": "25",
+          "regrade_pattern": "boxed",
+          "input_tokens": 203,
+          "output_tokens": 3535,
+          "working_time_s": 18.73,
+          "total_time_s": 926.269
+        },
+        {
+          "id": "2024-I-3",
+          "target": 809,
+          "inspect_value": "C",
+          "inspect_answer": "809",
+          "regrade_correct": true,
+          "regrade_answer": "809",
+          "regrade_pattern": "boxed",
+          "input_tokens": 250,
+          "output_tokens": 1979,
+          "working_time_s": 295.222,
+          "total_time_s": 295.718
+        },
+        {
+          "id": "2024-I-4",
+          "target": 116,
+          "inspect_value": "C",
+          "inspect_answer": "116",
+          "regrade_correct": true,
+          "regrade_answer": "116",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 277,
+          "output_tokens": 1419,
+          "working_time_s": 286.474,
+          "total_time_s": 888.401
+        },
+        {
+          "id": "2024-I-8",
+          "target": 197,
+          "inspect_value": "I",
+          "inspect_answer": "2025",
+          "regrade_correct": false,
+          "regrade_answer": "2025",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 246,
+          "output_tokens": 40384,
+          "working_time_s": 254.253,
+          "total_time_s": 254.75
+        },
+        {
+          "id": "2024-II-11",
+          "target": 601,
+          "inspect_value": "C",
+          "inspect_answer": "601",
+          "regrade_correct": true,
+          "regrade_answer": "601",
+          "regrade_pattern": "boxed",
+          "input_tokens": 220,
+          "output_tokens": 5968,
+          "working_time_s": 284.757,
+          "total_time_s": 285.224
+        },
+        {
+          "id": "2024-II-12",
+          "target": 23,
+          "inspect_value": "C",
+          "inspect_answer": "23",
+          "regrade_correct": true,
+          "regrade_answer": "23",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 333,
+          "output_tokens": 4959,
+          "working_time_s": 279.112,
+          "total_time_s": 881.09
+        },
+        {
+          "id": "2024-II-4",
+          "target": 33,
+          "inspect_value": "C",
+          "inspect_answer": "33",
+          "regrade_correct": true,
+          "regrade_answer": "33",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 301,
+          "output_tokens": 1829,
+          "working_time_s": 295.648,
+          "total_time_s": 897.756
+        },
+        {
+          "id": "2024-II-6",
+          "target": 55,
+          "inspect_value": "C",
+          "inspect_answer": "55",
+          "regrade_correct": true,
+          "regrade_answer": "55",
+          "regrade_pattern": "boxed",
+          "input_tokens": 213,
+          "output_tokens": 2967,
+          "working_time_s": 16.089,
+          "total_time_s": 16.993
+        }
+      ],
+      "summary": {
+        "n": 10,
+        "inspect_pass_at_1": 0.7,
+        "regrade_pass_at_1": 0.7,
+        "inspect_correct": 7,
+        "regrade_correct": 7,
+        "scorer_only_failures": 0,
+        "avg_output_tokens": 14186.8,
+        "median_output_tokens": 4959,
+        "max_output_tokens": 40384,
+        "sum_output_tokens": 141868,
+        "avg_working_time_s": 224.92260000000002,
+        "median_working_time_s": 279.112,
+        "sum_working_time_s": 2249.226,
+        "sum_total_time_s": 5868.102
+      }
+    },
+    "low": {
+      "stats": {
+        "started_at": "2026-04-29T19:14:21+00:00",
+        "completed_at": "2026-04-29T19:24:57+00:00",
+        "model_usage": {
+          "openai/gpt-oss:20b": {
+            "input_tokens": 2508,
+            "output_tokens": 81864,
+            "total_tokens": 84372
+          }
+        },
+        "role_usage": {}
+      },
+      "model_generate_config": {
+        "reasoning_effort": "low"
+      },
+      "samples": [
+        {
+          "id": "2024-I-11",
+          "target": 371,
+          "inspect_value": "C",
+          "inspect_answer": "371",
+          "regrade_correct": true,
+          "regrade_answer": "371",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 230,
+          "output_tokens": 29055,
+          "working_time_s": 216.695,
+          "total_time_s": 517.828
+        },
+        {
+          "id": "2024-I-12",
+          "target": 385,
+          "inspect_value": "I",
+          "inspect_answer": "10",
+          "regrade_correct": false,
+          "regrade_answer": "10",
+          "regrade_pattern": "boxed",
+          "input_tokens": 235,
+          "output_tokens": 23492,
+          "working_time_s": 159.409,
+          "total_time_s": 159.895
+        },
+        {
+          "id": "2024-I-2",
+          "target": 25,
+          "inspect_value": "C",
+          "inspect_answer": "25",
+          "regrade_correct": true,
+          "regrade_answer": "25",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 203,
+          "output_tokens": 1349,
+          "working_time_s": 42.774,
+          "total_time_s": 343.842
+        },
+        {
+          "id": "2024-I-3",
+          "target": 809,
+          "inspect_value": "I",
+          "inspect_answer": "808",
+          "regrade_correct": false,
+          "regrade_answer": "808",
+          "regrade_pattern": "boxed",
+          "input_tokens": 250,
+          "output_tokens": 2290,
+          "working_time_s": 13.65,
+          "total_time_s": 314.768
+        },
+        {
+          "id": "2024-I-4",
+          "target": 116,
+          "inspect_value": "C",
+          "inspect_answer": "116",
+          "regrade_correct": true,
+          "regrade_answer": "116",
+          "regrade_pattern": "boxed",
+          "input_tokens": 277,
+          "output_tokens": 1247,
+          "working_time_s": 18.597,
+          "total_time_s": 19.679
+        },
+        {
+          "id": "2024-I-8",
+          "target": 197,
+          "inspect_value": "I",
+          "inspect_answer": "273",
+          "regrade_correct": false,
+          "regrade_answer": "273",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 246,
+          "output_tokens": 9609,
+          "working_time_s": 270.553,
+          "total_time_s": 571.657
+        },
+        {
+          "id": "2024-II-11",
+          "target": 601,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": true,
+          "regrade_answer": "601",
+          "regrade_pattern": "boxed",
+          "input_tokens": 220,
+          "output_tokens": 6071,
+          "working_time_s": 33.526,
+          "total_time_s": 635.667
+        },
+        {
+          "id": "2024-II-12",
+          "target": 23,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": true,
+          "regrade_answer": "23",
+          "regrade_pattern": "boxed",
+          "input_tokens": 333,
+          "output_tokens": 3823,
+          "working_time_s": 35.252,
+          "total_time_s": 336.37
+        },
+        {
+          "id": "2024-II-4",
+          "target": 33,
+          "inspect_value": "C",
+          "inspect_answer": "33",
+          "regrade_correct": true,
+          "regrade_answer": "33",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 301,
+          "output_tokens": 2741,
+          "working_time_s": 297.014,
+          "total_time_s": 598.205
+        },
+        {
+          "id": "2024-II-6",
+          "target": 55,
+          "inspect_value": "C",
+          "inspect_answer": "55",
+          "regrade_correct": true,
+          "regrade_answer": "55",
+          "regrade_pattern": "boxed",
+          "input_tokens": 213,
+          "output_tokens": 2187,
+          "working_time_s": 282.373,
+          "total_time_s": 583.485
+        }
+      ],
+      "summary": {
+        "n": 10,
+        "inspect_pass_at_1": 0.5,
+        "regrade_pass_at_1": 0.7,
+        "inspect_correct": 5,
+        "regrade_correct": 7,
+        "scorer_only_failures": 2,
+        "avg_output_tokens": 8186.4,
+        "median_output_tokens": 3823,
+        "max_output_tokens": 29055,
+        "sum_output_tokens": 81864,
+        "avg_working_time_s": 136.98430000000002,
+        "median_working_time_s": 159.409,
+        "sum_working_time_s": 1369.843,
+        "sum_total_time_s": 4081.396
+      }
+    },
+    "medium": {
+      "stats": {
+        "started_at": "2026-04-29T19:25:11+00:00",
+        "completed_at": "2026-04-29T19:34:33+00:00",
+        "model_usage": {
+          "openai/gpt-oss:20b": {
+            "input_tokens": 2508,
+            "output_tokens": 93026,
+            "total_tokens": 95534
+          }
+        },
+        "role_usage": {}
+      },
+      "model_generate_config": {
+        "reasoning_effort": "medium"
+      },
+      "samples": [
+        {
+          "id": "2024-I-11",
+          "target": 371,
+          "inspect_value": "I",
+          "inspect_answer": "\\(371\\)",
+          "regrade_correct": true,
+          "regrade_answer": "371",
+          "regrade_pattern": "answer-paren",
+          "input_tokens": 230,
+          "output_tokens": 17423,
+          "working_time_s": 97.608,
+          "total_time_s": 398.351
+        },
+        {
+          "id": "2024-I-12",
+          "target": 385,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": false,
+          "regrade_answer": "7",
+          "regrade_pattern": "boxed",
+          "input_tokens": 235,
+          "output_tokens": 27791,
+          "working_time_s": 199.55,
+          "total_time_s": 199.756
+        },
+        {
+          "id": "2024-I-2",
+          "target": 25,
+          "inspect_value": "C",
+          "inspect_answer": "25",
+          "regrade_correct": true,
+          "regrade_answer": "25",
+          "regrade_pattern": "boxed",
+          "input_tokens": 203,
+          "output_tokens": 2596,
+          "working_time_s": 212.868,
+          "total_time_s": 213.054
+        },
+        {
+          "id": "2024-I-3",
+          "target": 809,
+          "inspect_value": "C",
+          "inspect_answer": "809",
+          "regrade_correct": true,
+          "regrade_answer": "809",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 250,
+          "output_tokens": 3222,
+          "working_time_s": 254.369,
+          "total_time_s": 254.561
+        },
+        {
+          "id": "2024-I-4",
+          "target": 116,
+          "inspect_value": "C",
+          "inspect_answer": "116",
+          "regrade_correct": true,
+          "regrade_answer": "116",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 277,
+          "output_tokens": 1969,
+          "working_time_s": 106.918,
+          "total_time_s": 407.674
+        },
+        {
+          "id": "2024-I-8",
+          "target": 197,
+          "inspect_value": "I",
+          "inspect_answer": "1073",
+          "regrade_correct": false,
+          "regrade_answer": "1073",
+          "regrade_pattern": "answer-plain",
+          "input_tokens": 246,
+          "output_tokens": 18248,
+          "working_time_s": 212.467,
+          "total_time_s": 513.254
+        },
+        {
+          "id": "2024-II-11",
+          "target": 601,
+          "inspect_value": "I",
+          "inspect_answer": "\\(601\\)",
+          "regrade_correct": true,
+          "regrade_answer": "601",
+          "regrade_pattern": "answer-paren",
+          "input_tokens": 220,
+          "output_tokens": 7522,
+          "working_time_s": 36.312,
+          "total_time_s": 37.145
+        },
+        {
+          "id": "2024-II-12",
+          "target": 23,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": true,
+          "regrade_answer": "23",
+          "regrade_pattern": "boxed",
+          "input_tokens": 333,
+          "output_tokens": 8817,
+          "working_time_s": 260.569,
+          "total_time_s": 561.414
+        },
+        {
+          "id": "2024-II-4",
+          "target": 33,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": true,
+          "regrade_answer": "33",
+          "regrade_pattern": "boxed",
+          "input_tokens": 301,
+          "output_tokens": 1642,
+          "working_time_s": 238.215,
+          "total_time_s": 238.404
+        },
+        {
+          "id": "2024-II-6",
+          "target": 55,
+          "inspect_value": "I",
+          "inspect_answer": "\\]",
+          "regrade_correct": true,
+          "regrade_answer": "55",
+          "regrade_pattern": "boxed",
+          "input_tokens": 213,
+          "output_tokens": 3796,
+          "working_time_s": 230.711,
+          "total_time_s": 230.894
+        }
+      ],
+      "summary": {
+        "n": 10,
+        "inspect_pass_at_1": 0.3,
+        "regrade_pass_at_1": 0.8,
+        "inspect_correct": 3,
+        "regrade_correct": 8,
+        "scorer_only_failures": 5,
+        "avg_output_tokens": 9302.6,
+        "median_output_tokens": 7522,
+        "max_output_tokens": 27791,
+        "sum_output_tokens": 93026,
+        "avg_working_time_s": 184.9587,
+        "median_working_time_s": 212.868,
+        "sum_working_time_s": 1849.587,
+        "sum_total_time_s": 3054.507
+      }
+    }
+  }
+}

@@ -6,7 +6,9 @@
     - vars/common_vars.yml
   vars:
     docker_state: absent # Proxmox host doesn't need Docker
-    nebula_sops_secrets_file: "{{ playbook_dir }}/../secrets/atlas-nebula.yaml"
+    nebula_ca_cert_file: "{{ playbook_dir }}/../secrets/nebula/ca.crt"
+    nebula_host_cert_file: "{{ playbook_dir }}/../secrets/nebula/atlas.crt"
+    nebula_host_key_sops_file: "{{ playbook_dir }}/../secrets/nebula/atlas.sops.key"
   remote_user: root
 
   tasks:
@@ -39,17 +41,27 @@
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr
       tags: [proxmox, terraform]
 
-    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
-    # The check calls Ext.Msg.show(); replacing it with void prevents the dialog.
-    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
     # Replaces the subscription-status condition with `if (false)` so the
-    # dialog is never shown. Idempotent — patch(1) no-ops if already applied.
+    # "no valid subscription" popup is never shown. Idempotent via --forward.
+    - name: Copy Proxmox no-subscription patch to target
+      ansible.builtin.copy:
+        src: proxmox-no-subscription.patch
+        dest: /tmp/proxmox-no-subscription.patch
+        mode: "0644"
+      tags: [proxmox, ui]
+
     - name: Suppress Proxmox no-subscription popup in web UI
-      ansible.builtin.patch:
-        src: files/proxmox-no-subscription.patch
-        dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
-        strip: 1
-        backup: true
+      ansible.builtin.command:
+        argv:
+          - patch
+          - --forward
+          - --backup
+          - --strip=1
+          - /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+          - /tmp/proxmox-no-subscription.patch
+      register: patch_result
+      changed_when: "'patching file' in patch_result.stdout"
+      failed_when: patch_result.rc != 0 and 'Skipping patch' not in patch_result.stdout
       tags: [proxmox, ui]
 
     - name: Update apt cache after repository changes
@@ -100,6 +112,26 @@
         append: true
         state: present
       tags: [users]
+
+    - name: Ensure root .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+      tags: [users, ssh]
+
+    - name: Authorize SSH keys for root login
+      ansible.builtin.copy:
+        dest: /root/.ssh/authorized_keys
+        content: |
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged
+        mode: "0600"
+        owner: root
+        group: root
+      tags: [users, ssh]
 
     - name: Allow input group access to /dev/uinput
       ansible.builtin.copy:
@@ -290,12 +322,28 @@
       tags: [swap, zram]
 
     - name: Set swappiness to prefer zram over disk
-      ansible.posix.sysctl:
-        name: vm.swappiness
-        value: "150"
-        sysctl_file: /etc/sysctl.d/99-zram.conf
-        reload: true
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-zram.conf
+        content: "vm.swappiness = 150\n"
+        mode: "0644"
+      notify: Apply sysctl settings
       tags: [swap, zram]
+
+    # Disable ZFS Direct I/O on the dataset backing VM disk images.
+    # We observed dio_verify_wr (DIO_CHECKSUM_VERIFY) EIO errors on this
+    # dataset with DIO enabled, causing QEMU to pause VMs. Root cause is
+    # unclear — could be a ZFS DIO bug (feature is new, OpenZFS 2.3.0 Jan
+    # 2025, known open issues like openzfs/zfs#16695), or actual hardware
+    # corruption that DIO verify is correctly catching. Disabling DIO as a
+    # trial to see if the problem goes away.
+    # See debug/wyrm2-io-error-2026-04-08/README.md for investigation.
+    - name: Disable ZFS Direct I/O on VM image dataset
+      community.general.zfs:
+        name: rpool/var-lib-vz
+        state: present
+        extra_zfs_properties:
+          direct: disabled
+      tags: [zfs, storage]
 
     - name: Mask CUPS services (spams dmesg)
       ansible.builtin.systemd:
@@ -310,6 +358,47 @@
         - cups-browsed.service
       failed_when: false
       tags: [cups, services]
+
+    # Disable all sleep states — atlas is a server running VMs with VFIO GPU
+    # passthrough. Host suspend kills VFIO-passed GPUs (GSP-RM firmware doesn't
+    # survive S3) and causes cascading watchdog timeouts in guests.
+    # See debug/atlas/wyrm_gpu_lockup.md.
+    - name: Mask all sleep/suspend/hibernate targets
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - sleep.target
+        - suspend.target
+        - hibernate.target
+        - hybrid-sleep.target
+      tags: [power_management, vfio]
+
+    - name: Ensure logind.conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/logind.conf.d
+        state: directory
+        mode: "0755"
+      tags: [power_management, vfio]
+
+    - name: Disable logind idle/lid suspend actions
+      ansible.builtin.copy:
+        dest: /etc/systemd/logind.conf.d/no-suspend.conf
+        content: |
+          # Managed by Ansible — see atlas.yaml
+          # Atlas is a server; never suspend/hibernate.
+          [Login]
+          HandleSuspendKey=ignore
+          HandleHibernateKey=ignore
+          HandleLidSwitch=ignore
+          HandleLidSwitchExternalPower=ignore
+          HandleLidSwitchDocked=ignore
+          IdleAction=ignore
+        mode: "0644"
+      notify: Restart logind
+      tags: [power_management, vfio]
 
     # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
     # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
@@ -329,7 +418,17 @@
       register: udev_result
       changed_when: udev_result.rc == 0
 
+    - name: Restart logind
+      ansible.builtin.systemd:
+        name: systemd-logind
+        state: restarted
+
     - name: Restart zramswap
       ansible.builtin.systemd:
         name: zramswap
         state: restarted
+
+    - name: Apply sysctl settings
+      ansible.builtin.command:
+        cmd: sysctl --system
+      changed_when: true

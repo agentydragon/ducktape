@@ -1,0 +1,238 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Layering: Server code must not depend on client code (//wt/client:*).
+# Both layers may depend on shared code (//wt/shared:*).
+# This visibility constraint enforces the layering at build time.
+# See also: wt/client/BUILD.bazel for the client-side constraint.
+package(default_visibility = [
+    "//wt/server:__subpackages__",
+    "//wt/testing:__pkg__",
+])
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "copy_strategies",
+    srcs = ["copy_strategies.py"],
+    deps = ["//wt/shared:configuration"],
+)
+
+py_library(
+    name = "git_manager",
+    srcs = ["git_manager.py"],
+    deps = [
+        "//wt/shared:configuration",
+        "//wt/shared:git_utils",
+        "//wt/shared:protocol",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "git_refs_watcher",
+    srcs = ["git_refs_watcher.py"],
+    deps = [
+        ":git_manager",
+        ":stores",
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
+        "@pypi//pygit2",
+        "@pypi//reaktiv",
+        "@pypi//watchdog",
+    ],
+)
+
+py_library(
+    name = "github_client",
+    srcs = ["github_client.py"],
+    deps = [
+        "//wt/shared:env",
+        "//wt/shared:error_handling",
+        "//wt/shared:github_models",
+        "@pypi//pygithub",
+    ],
+)
+
+py_library(
+    name = "github_watcher",
+    srcs = ["github_watcher.py"],
+    deps = [
+        ":github_client",
+        "//wt/shared:configuration",
+        "//wt/shared:env",
+        "//wt/shared:fixtures",
+        "//wt/shared:github_models",
+        "//wt/shared:protocol",
+        "@pypi//reaktiv",
+    ],
+)
+
+py_library(
+    name = "gitstatus_refresh",
+    srcs = ["gitstatus_refresh.py"],
+    deps = ["@pypi//watchdog"],
+)
+
+py_library(
+    name = "gitstatusd_listener",
+    srcs = ["gitstatusd_listener.py"],
+    deps = [
+        "//wt/shared:protocol",
+        "@pypi//reaktiv",
+    ],
+)
+
+py_library(
+    name = "repo_status",
+    srcs = ["repo_status.py"],
+    deps = [
+        ":git_manager",
+        "//wt/shared:protocol",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "rpc",
+    srcs = ["rpc.py"],
+    deps = [
+        ":git_manager",
+        ":git_refs_watcher",
+        ":github_watcher",
+        ":services",
+        ":worktree_service",
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
+        "@pypi//punq",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "services",
+    srcs = ["services.py"],
+    deps = [
+        ":gitstatus_refresh",
+        ":gitstatusd_listener",
+        ":types",
+        ":worktree_ids",
+        ":worktree_index",
+        "//wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "stores",
+    srcs = ["stores.py"],
+    deps = [
+        "//wt/shared:protocol",
+        "@pypi//reaktiv",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    deps = ["//wt/shared:protocol"],
+)
+
+py_library(
+    name = "watcher",
+    srcs = ["watcher.py"],
+    deps = [
+        ":stores",
+        "@pypi//watchdog",
+    ],
+)
+
+py_library(
+    name = "worktree_ids",
+    srcs = ["worktree_ids.py"],
+    deps = [
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "worktree_index",
+    srcs = ["worktree_index.py"],
+    deps = [
+        ":types",
+        ":worktree_ids",
+        "//wt/shared:constants",
+    ],
+)
+
+py_library(
+    name = "worktree_registry",
+    srcs = ["worktree_registry.py"],
+    deps = [":types"],
+)
+
+py_library(
+    name = "worktree_service",
+    srcs = ["worktree_service.py"],
+    deps = [
+        ":copy_strategies",
+        ":git_manager",
+        ":github_client",
+        ":worktree_ids",
+        "//wt/shared:configuration",
+        "//wt/shared:error_handling",
+        "//wt/shared:models",
+        "//wt/shared:protocol",
+        "@pypi//psutil",
+        "@pypi//pygit2",
+    ],
+)
+
+py_binary(
+    name = "wt_server",
+    srcs = ["wt_server.py"],
+    deps = [
+        ":git_manager",
+        ":git_refs_watcher",
+        ":github_client",
+        ":github_watcher",
+        ":gitstatus_refresh",
+        ":gitstatusd_listener",
+        ":repo_status",
+        ":rpc",
+        ":services",
+        ":stores",
+        ":types",
+        ":watcher",
+        ":worktree_index",
+        ":worktree_registry",
+        ":worktree_service",
+        "//wt/server/handlers:path_handler",
+        "//wt/server/handlers:pr_handler",
+        "//wt/server/handlers:status_handler",
+        "//wt/server/handlers:worktree_handler",
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
+    ],
+)
+
+py_test(
+    name = "test_worktree_service",
+    srcs = ["test_worktree_service.py"],
+    data = ["//third_party/gitstatusd"],
+    deps = [
+        ":conftest",
+        ":worktree_service",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

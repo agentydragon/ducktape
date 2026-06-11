@@ -1,0 +1,27 @@
+# Runner configurations
+# Defines available agent runners and their settings
+
+runners:
+  claude:
+    type: claude_runner
+    config:
+      strace_enabled: false
+      # Claude-specific settings
+      max_turns: 30
+      bash_timeout_ms: 120000
+      # TODO: Consider allowing (task, runner) specific Docker configs in the future
+      # For now, Docker setup comes exclusively from task definitions
+
+  mini_codex:
+    type: minicodex_runner
+    config:
+      model: gpt-5
+      # Note: gpt-5 with 'minimal' reasoning_effort tends to produce generic responses
+      # without actually using tools to inspect files. Use 'medium' or 'high' for
+      # code review tasks to ensure the model explores the codebase.
+      reasoning_effort: medium # Options: minimal, medium, high (default: medium)
+      timeout_s: 30
+      truncate_bytes: 50000
+      max_cycles: 1000
+      # TODO: Consider allowing (task, runner) specific Docker configs in the future
+      # For now, Docker setup comes exclusively from task definitions

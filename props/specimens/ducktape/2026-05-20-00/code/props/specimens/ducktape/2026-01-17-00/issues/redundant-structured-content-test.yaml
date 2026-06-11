@@ -1,0 +1,17 @@
+rationale: |
+  `test_app_level_error_payload_surfaced_in_structured_content` (line 95)
+  tests that a successful MCP result with `{"ok": False, "error": "boom"}`
+  in structuredContent passes through to the agent. MCP does not distinguish
+  this from any other successful structured content — the `{"ok": False}`
+  convention is meaningless at the MCP layer. This is already covered by
+  `test_mcp_integration.py` which asserts structured content passthrough
+  (line 37: `has_entries(echo="hello")`, line 56: direct equality check).
+  Delete the redundant test and its `error_payload_server` fixture.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core/test_tool_execution.py:
+        - [95, 120]
+    critic_scopes_expected_to_recall:
+      - [agent_core/test_tool_execution.py, agent_core/test_mcp_integration.py]

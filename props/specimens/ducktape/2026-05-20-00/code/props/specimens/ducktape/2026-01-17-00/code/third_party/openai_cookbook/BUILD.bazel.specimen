@@ -1,0 +1,11 @@
+"""Vendored OpenAI Cookbook utilities."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "apply_patch_lib",
+    srcs = ["apply_patch.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)

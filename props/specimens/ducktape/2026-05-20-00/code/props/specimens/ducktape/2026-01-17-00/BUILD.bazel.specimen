@@ -1,0 +1,10 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+# Snapshot of ducktape at ed0b4c0a.
+# Excluded: py_detectors/
+specimen_targets(
+    name = "specimen",
+    code_srcs = glob(["code/**/*"]),
+    slug = "ducktape/2026-01-17-00",
+    split = "train",
+)

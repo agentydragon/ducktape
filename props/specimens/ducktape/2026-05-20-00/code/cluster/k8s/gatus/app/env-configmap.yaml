@@ -1,0 +1,8 @@
+# Empty ConfigMap required by the gatus Helm chart.
+# The chart hardcodes envFrom.configMapRef with the release name but
+# skips creating it when externalConfigMap is set (chart bug).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus
+  namespace: gatus

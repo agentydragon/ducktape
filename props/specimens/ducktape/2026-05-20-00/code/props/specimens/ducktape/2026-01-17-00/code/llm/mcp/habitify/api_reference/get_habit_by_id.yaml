@@ -1,0 +1,34 @@
+name: Get Habit by ID
+request:
+  method: GET
+  url: https://api.habitify.me/habits/-Lo9NTLRX3aCxg-PjN25
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      id: -Lo9NTLRX3aCxg-PjN25
+      name: R***********t
+      is_archived: false
+      start_date: "2019-09-07T06:19:17.000Z"
+      time_of_day:
+        - morning
+      goal: null
+      goal_history_items: []
+      log_method: ""
+      recurrence: "DTSTART:20190907T061917Z
+
+        RRULE:FREQ=DAILY;INTERVAL=7"
+      remind:
+        - "7:0"
+      area: null
+      created_date: "2019-09-07T06:19:17.000Z"
+      priority: 6.338253001141147e+29
+    version: v1.2
+    status: true
+    errors: []

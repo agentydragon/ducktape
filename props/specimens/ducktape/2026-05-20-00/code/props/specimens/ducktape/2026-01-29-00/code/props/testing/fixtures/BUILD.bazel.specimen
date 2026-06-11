@@ -1,0 +1,117 @@
+"""Props test fixtures package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+# NOTE: No aggregator target - use specific per-file targets like :db, :e2e, :ground_truth, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "//props/db:session",
+        "//props/db:setup",
+        "//props/db/sync",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "e2e",
+    srcs = ["e2e.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils/testing:openai_mock",
+        "//openai_utils:model",
+        "//props/core:ids",
+        "//props/critic_dev/improve:main",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "e2e_container",
+    srcs = ["e2e_container.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//props/backend:auth",
+        "//props/backend/routes:llm",
+        "//props/db:config",
+        "//props/orchestration:agent_registry",
+        "//props/testing:fake_openai_server",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//pytest_asyncio",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "e2e_infra",
+    srcs = ["e2e_infra.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//test_util",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "ground_truth",
+    srcs = ["ground_truth.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/db:examples",
+        "//props/db:models",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "runs",
+    srcs = ["runs.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ground_truth",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/core/models:types",
+        "//props/db:agent_definition_ids",
+        "//props/db:config",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "scopes",
+    srcs = ["scopes.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:config",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//pytest",
+    ],
+)

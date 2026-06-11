@@ -18,6 +18,16 @@ Location: ${workspace_dir}
 2. **Report issues** — `insert_issue` and `insert_occurrence`
 3. **Complete review** — call `submit` when done
 
+## If you're blocked
+
+If your tools or environment stop you from reviewing — `exec` errors on every command, you
+can't read the files in scope, `insert_issue`/`submit` keep failing, or validation rejects input
+you believe is legitimate — call `report_failure` with a clear description. Do not fabricate
+issues, guess, or submit an empty/partial critique to work around broken tooling.
+
+Being unable to **run or build** the code is _not_ a blocker — review code statically by reading
+it (missing language/dev tools is expected). Only call `report_failure` when your own tools break.
+
 ## Important Constraints
 
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)

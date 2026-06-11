@@ -1,0 +1,23 @@
+rationale: |
+  `responses.py` is the low-level response-building layer. `steps.py` defines
+  the `Step` Protocol and concrete step implementations that consume
+  `ResponsesFactory` from `responses.py`. The dependency should be
+  steps → responses (higher layer depends on lower layer).
+
+  Instead, `responses.py` imports `Step` from `steps.py` (line 46) because
+  `StepRunner` (line 134) and the `make_step_runner` fixture (line 493) live
+  in `responses.py`. This inverts the layering: the lower-level module depends
+  on the higher-level one.
+
+  Fix: move `StepRunner` and `make_step_runner` into `steps.py`. The dependency
+  becomes one-directional: steps → responses.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core_testing/responses.py:
+        - [46, 46]
+        - [134, 169]
+        - [493, 502]
+    critic_scopes_expected_to_recall:
+      - [agent_core_testing/responses.py]

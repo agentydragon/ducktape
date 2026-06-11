@@ -1,0 +1,85 @@
+"""MCP Approval Policy server - policy engine and middleware."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "approval_policy",
+    srcs = [
+        "clients.py",
+        "engine.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_server:root_modules",
+        "//agent_server/models",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//mcp_infra/stubs",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+_TEST_DEPS = [
+    ":approval_policy",
+    "//agent_server/testing",
+    "@pypi//docker",
+    "@pypi//fastmcp",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+py_test(
+    name = "test_policy_validation",
+    srcs = ["test_policy_validation.py"],
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_runtime_image",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_preset_policy_loading",
+    srcs = ["test_preset_policy_loading.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_schema",
+    srcs = ["test_schema.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_server_available",
+    srcs = ["test_server_available.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)

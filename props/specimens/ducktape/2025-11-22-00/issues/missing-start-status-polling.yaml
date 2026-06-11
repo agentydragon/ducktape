@@ -1,0 +1,20 @@
+# Recurring across snapshots; same issue in ducktape/2025-11-22-01,
+# ducktape/2025-11-22-02, ducktape/2025-11-26-00.
+rationale: |
+  stopAgentStatusPolling clears `_statusTimer` and resets it to null, and `_statusTimer` is
+  declared at the top of the module, but nothing ever assigns `_statusTimer = setInterval(...)`
+  — there is no startAgentStatusPolling counterpart. Agent status polling is never started, so
+  `_statusTimer` is always null and stopAgentStatusPolling is dead. Contrast
+  startAgentsPolling/stopAgentsPolling for `_timer`, which is properly started and stopped.
+  Either add the missing start function or remove the unused timer and stop function.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/web/src/features/agents/stores.ts:
+        - [15, 15]
+        - [51, 54]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/features/agents/stores.ts
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/features/agents/stores.ts

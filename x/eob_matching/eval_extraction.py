@@ -289,17 +289,19 @@ def eval_pdf(gt: PDFGT, results: EvalResults) -> None:
 
     # Detail pages
     for detail_gt in gt.detail_pages:
-        successes, failures = extract_page_n_times(
+        detail_successes, detail_failures = extract_page_n_times(
             pdf_path, page=detail_gt.page, prompt=CLAIMS_PROMPT, response_model=EOBClaimsPageExtraction, n=RUNS_PER_PAGE
         )
-        results.extraction_failures.extend(exc for _, exc in failures)
+        results.extraction_failures.extend(exc for _, exc in detail_failures)
 
-        for run, e in successes:
-            if len(e.claims) != len(detail_gt.claims):
-                results._add(gt.pdf_stem, run, "claims_length", False, str(len(detail_gt.claims)), str(len(e.claims)))
+        for run, detail_e in detail_successes:
+            if len(detail_e.claims) != len(detail_gt.claims):
+                results._add(
+                    gt.pdf_stem, run, "claims_length", False, str(len(detail_gt.claims)), str(len(detail_e.claims))
+                )
                 continue
 
-            for gt_claim, ext_claim in zip(detail_gt.claims, e.claims, strict=True):
+            for gt_claim, ext_claim in zip(detail_gt.claims, detail_e.claims, strict=True):
                 results.check_str(gt.pdf_stem, run, "claim_number", gt_claim.claim_number, ext_claim.claim_number)
                 results.check_date(gt.pdf_stem, run, "received_date", gt_claim.received_date, ext_claim.received_date)
                 results.check_str(gt.pdf_stem, run, "doctor_name", gt_claim.doctor_name, ext_claim.doctor_name)

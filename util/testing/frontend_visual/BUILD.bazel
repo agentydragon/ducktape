@@ -13,10 +13,21 @@ js_library(
         "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
+        "//x/study_casino/frontend:__pkg__",
     ],
     deps = [
         ":node_modules/pixelmatch",
         ":node_modules/pngjs",
+        ":node_modules/puppeteer",
+    ],
+)
+
+js_library(
+    name = "puppeteer_lib",
+    srcs = ["puppeteer-lib.mjs"],
+    tags = ["no-lint"],
+    visibility = ["//visibility:public"],
+    deps = [
         ":node_modules/puppeteer",
     ],
 )
@@ -29,20 +40,12 @@ filegroup(
         "fonts/fonts.conf",
         "test-fonts.css",
     ],
-    visibility = [
-        "//airlock/frontend:__pkg__",
-        "//props/frontend:__pkg__",
-        "//props/frontend/src:__subpackages__",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 # Single-file target for FONTCONFIG_FILE env var (rootpath needs a single file).
 filegroup(
     name = "fonts_conf",
     srcs = ["fonts/fonts.conf"],
-    visibility = [
-        "//airlock/frontend:__pkg__",
-        "//props/frontend:__pkg__",
-        "//props/frontend/src:__subpackages__",
-    ],
+    visibility = ["//visibility:public"],
 )

@@ -1,0 +1,91 @@
+"""Runtime package - container lifecycle and agent registry."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Utility modules with minimal dependencies - can be imported by persist
+py_library(
+    name = "images",
+    srcs = ["images.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+)
+
+py_library(
+    name = "auto_attach",
+    srcs = ["auto_attach.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = ["@pypi//fastmcp"],
+)
+
+py_library(
+    name = "container",
+    srcs = ["container.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":handlers",
+        ":images",
+        "//agent_core:agent",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_server:agent_types",
+        "//agent_server:approvals",
+        "//agent_server:presets",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/chat",
+        "//agent_server/mcp/loop",
+        "//agent_server/mcp/runtime:mcp_runtime",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:sqlite",
+        "//agent_server/persist:types",
+        "//agent_server/server:bus",
+        "//agent_server/server:runtime",
+        "//agent_server/server:system_message",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/compositor",
+        "//mcp_infra/compositor:clients",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/exec:docker",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_server:agent_types",
+        "//agent_server/notifications",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:types",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//agent_server/server:runtime",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display:event_renderer",
+        "//mcp_infra/notifications:types",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":container",
+        "//agent_server/persist:sqlite",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

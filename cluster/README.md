@@ -3,15 +3,17 @@
 Small Talos k8s cluster with GitOps and HTTPS.
 
 - Deploy: `bazel run //cluster:bootstrap` (single command, automated layered deployment)
-- VMs: Talos on Proxmox + Hetzner VPS, configured with OpenTofu
-- Ingress: Cilium Gateway API (Envoy hostNetwork on VPS)
+- Machines: Talos on OVH Kimsufi bare metal plus NixOS/Proxmox workers, configured with OpenTofu
+- Ingress: Cilium Gateway API (Envoy hostNetwork on OVH)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
-- Secrets: SOPS (age-encrypted in git, decrypted by Flux) + Vault/ESO (runtime)
+- Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
+  provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
+  (see <vault-migration/TODO.md>).
 
 ## Prerequisites
 
 - Proxmox host `atlas` with SSH access (`root@atlas`)
-- Hetzner Cloud API token (`HCLOUD_TOKEN`)
+- OVH API credentials (`secrets/ovh-credentials.sops.yaml`)
 - GitHub CLI (`gh auth login`) for Flux
 - direnv configured in cluster directory
 
@@ -24,27 +26,52 @@ See <docs/bootstrap.md> for full setup.
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4)
   - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
-- Nodes: 2x Hetzner CPX31 CP + 2x Hetzner CPX31 worker (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
-- Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
-- HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
-- Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
-- Cilium MTU: `MTU: 1412` (uppercase key required — VXLAN 50 + Nebula 38 = 88 overhead)
-- Kubeconfig patched post-bootstrap to real VPS IP (no VIP possible across VPS+home)
+- Nodes: see [Node Types](#node-types) below
+- Domain: `*.allegedly.works` (AWS Route 53, DNS-01 challenges, dual LE issuers)
+- HTTPS: Internet → OVH bare metal:443 → Cilium Envoy (Gateway API) → backend pods
+- Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on OVH nodes)
+- MTU stack: pod 1370 → Cilium VXLAN → `nebula1` 1420 → `eno1` 1500. See
+  <docs/network.md> for the layering, encapsulation, and MTU model.
+- Kubeconfig patched post-bootstrap to `api.allegedly.works`
+
+### Node Types
+
+| Node                           | Type             | Region    | Availability     | Hardware            |
+| ------------------------------ | ---------------- | --------- | ---------------- | ------------------- |
+| `ovh-ns102453`                 | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `ovh-ns103656`, `ovh-ns103711` | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `ovh-ns104952`, `ovh-ns104963` | Talos worker     | `hil`     | Always on        | OVH KS-GAME         |
+| `wyrm2`                        | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
+| `iguana`                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
+| `rugged`                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+
+Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
+join/leave the cluster frequently. `rugged` has taint
+`node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
+require persistent availability on roaming nodes.
+
+Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
+lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
+<docs/mesh_membership.md>.
 
 ## Services
 
-| Service        | URL                                | Purpose                         |
-| -------------- | ---------------------------------- | ------------------------------- |
-| Authentik      | <https://auth.allegedly.works>     | SSO provider                    |
-| Gitea          | <https://git.allegedly.works>      | Git hosting                     |
-| Harbor         | <https://registry.allegedly.works> | Container registry              |
-| Vault          | <https://vault.allegedly.works>    | Secrets management              |
-| Matrix/Element | <https://chat.allegedly.works>     | Chat                            |
-| Grafana        | <https://grafana.allegedly.works>  | Monitoring                      |
-| Nix Cache      | <https://cache.allegedly.works>    | Binary cache                    |
-| Gatus          | <https://status.allegedly.works>   | Health monitoring               |
-| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent                 |
-| ActivityWatch  | `activitywatch:5600`               | Activity tracking (Nebula mesh) |
+Key services (not exhaustive — see `k8s/` and `k8s/authentik/proxy-routes/` for all
+HTTPRoutes):
+
+| Service        | URL                                | Purpose                       |
+| -------------- | ---------------------------------- | ----------------------------- |
+| Authentik      | <https://auth.allegedly.works>     | SSO provider                  |
+| Forgejo        | <https://git.allegedly.works>      | Git hosting                   |
+| Harbor         | <https://registry.allegedly.works> | Container registry            |
+| Matrix/Element | <https://chat.allegedly.works>     | Chat                          |
+| Grafana        | <https://grafana.allegedly.works>  | Monitoring                    |
+| Nix Cache      | <https://cache.allegedly.works>    | Binary cache                  |
+| Gatus          | <https://status.allegedly.works>   | Health monitoring             |
+| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent               |
+| Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)           |
+| Airlock        | <https://airlock.allegedly.works>  | Agent infrastructure          |
+| ActivityWatch  | `activitywatch:5600`               | Activity tracking (suspended) |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 OpenClaw requires a one-time gateway token entry in the UI — the token is included in
@@ -52,15 +79,20 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                    |
-| -------------------- | -------- | ------- | ---------------------------------------- |
-| `longhorn`           | Hetzner  | No      | Legacy SC, migrate to `hetzner-longhorn` |
-| `hetzner-longhorn`   | Hetzner  | No      | Replicated across Hetzner VPS nodes      |
-| `proxmox-csi-retain` | Proxmox  | No      | Storage-heavy: Gitea, Loki, Nix          |
-| `hcloud-volumes`     | Hetzner  | No      | (none active)                            |
-| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft    |
+All storage is region-local — no cross-site synchronous replication.
 
-Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
+| StorageClass         | Provisioner            | Region    | Notes                                                                              |
+| -------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------- |
+| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; Matrix, ActivityWatch, Scanner, OpenClaw, Tana MCP        |
+| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | OVH-HA CNPG DBs (authentik, gatus, forgejo, langfuse, …); SeaweedFS volume servers |
+| `seaweedfs-ovh`      | SeaweedFS CSI          | `hil-ovh` | POSIX/S3-backed volumes for apps needing a real filesystem (Forgejo git repos)     |
+| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                                |
+| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Docker CI, Grocy                                    |
+| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)                      |
+
+Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
+with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
+CNPG database placement (OVH-HA vs Proxmox-single) follows <docs/cnpg_conventions.md>.
 
 ## GPU (NVIDIA)
 
@@ -85,38 +117,23 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 
 ## Failure Modes
 
-| Scenario        | Cluster    | Ingress | DNS   | Authentik | Notes                                     |
-| --------------- | ---------- | ------- | ----- | --------- | ----------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | Works | Works     | 1 server+worker replica on surviving VPS  |
-| Both VPS down   | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen     |
-| Home down       | 2/3 quorum | Works   | Works | Works     | All VPS-critical services on `local-path` |
+| Scenario              | Cluster    | Ingress | DNS   | Authentik | Notes                                             |
+| --------------------- | ---------- | ------- | ----- | --------- | ------------------------------------------------- |
+| Single OVH CP down    | 2/3 quorum | Works   | Works | Works     | Surviving OVH CP carries ingress + lighthouse     |
+| Multiple OVH CPs down | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen             |
+| Home down             | 3/3 quorum | Works   | Works | Works     | Public-critical services run on OVH-local storage |
 
-### VPS-Only Resilience Invariants
+### OVH-Only Resilience Invariants
 
-The following services **MUST** work/recover with VPS only (without Proxmox):
-
-- **DNS** (PowerDNS) — all external name resolution depends on this
-- **Website** (`allegedly.works`) — public-facing
-
-These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes.
-Both PowerDNS and Authentik now use CloudNativePG on `local-path`.
-See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
+DNS (AWS Route 53) and the public website must keep working/recovering with OVH
+only (no Proxmox) — so they must not depend on `proxmox-csi-retain` storage or
+Proxmox-pinned nodes. Full invariant set, compliance tracking, and fix plan:
+<docs/plan.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)
 
-All applications use Authentik for SSO via native blueprints — idempotent YAML in
-`k8s/authentik/app/blueprints/` (ConfigMap mounted into the worker, re-applied every
-60 min). No Terraform state for Authentik resources.
-
-- **Secret flow**: `terraform/gitops/sso-secrets/` generates OAuth2 client secrets →
-  Vault → ESO `authentik-sso-client-secrets` in authentik namespace → worker `envFrom` →
-  blueprint `!Env` tags
-- **App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from
-  the same Vault path
-- **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/`
-  (Vault OIDC auth backend) — configure non-Authentik systems
-
-See <AGENTS.md> for the proxy-mode NetworkPolicy template when adding new SSO apps.
+All applications use Authentik SSO via native blueprints. See <docs/sso.md> for
+secret flow, NetworkPolicy template, and blueprint tombstone rules.
 
 ## ActivityWatch
 
@@ -124,9 +141,9 @@ Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch
 Accessible at `activitywatch:5600` via Nebula mesh (lighthouse DNS resolves the cert name).
 No built-in auth; Nebula mesh membership is the trust boundary.
 
-- **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
+- **Server**: `aw-server-rust` on Proxmox, SQLite on `local-path-proxmox` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
-- **Image**: `ghcr.io/agentydragon/aw-server`, pushed via BuildBuddy Workflows (`buildbuddy.yaml`)
+- **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel (`//third_party/activitywatch:image`) and pushed by the `push-images.yml` GHA matrix
 - **Certs**: SOPS secret (`k8s/activitywatch/nebula-certs.sops.yaml`)
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
@@ -137,7 +154,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 Watchers run locally, heartbeat to cluster via Nebula mesh. Config managed by
 Nix home-manager (`nix/home/services/activitywatch.nix`).
 
-1. Ensure Nebula is running on the host (NixOS workers have it via `nebula-mesh.nix`)
+1. Ensure Nebula is running on the host (NixOS workers have it via `nebula.nix`)
 2. Apply config: `home-manager switch --flake ~/code/ducktape#<hostname>`
 3. Start: `aw-qt` (runs `aw-watcher-afk`, `aw-watcher-window`)
 4. Verify: `curl http://activitywatch:5600/api/0/info`
@@ -146,11 +163,10 @@ Nix home-manager (`nix/home/services/activitywatch.nix`).
 
 ```text
 cluster/
-├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
+├── .envrc                  # direnv (KUBECONFIG, TALOSCONFIG; CLI tools from root devShell)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
-│   ├── main/               # Single TF root (PG backend, all resources)
-│   └── gitops/             # tofu-controller managed (DNS, SSO, secrets)
+│   └── main/               # Single TF root (PG backend, all resources)
 ├── k8s/                    # Flux-managed manifests
 │   ├── agents/             # Agent infra (openclaw, airlock, claude-rbac, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)

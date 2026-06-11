@@ -96,7 +96,7 @@ in Claude Code: `"compact"` (context window compaction).
 | `HTTPS_PROXY`                     | `http://<container>:<jwt>@<host>:<port>`              |
 | `JAVA_TOOL_OPTIONS`               | `-Dhttps.proxyHost=... -Dhttps.proxyPassword=<jwt>`   |
 | `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` | K8s SA token (static across sessions)                 |
-| `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY`   | Age key for SOPS (static)                             |
+| `SOPS_AGE_KEY`                    | Age key for SOPS (static, standard sops env var)      |
 
 The `CLAUDE_CODE_SESSION_ID` (API-level, e.g., `cse_01ANqo...`) remains
 constant across resumes. The hook `session_id` (UUID) changes.
@@ -133,10 +133,10 @@ After resume creates session `3a1f5b5a`, the new proxy socket is at:
 
 The Bazel server still tries the old path → connection refused.
 
-The bazel wrapper compounds this: it calls `update_proxy_creds` via
-RPC to the daemon matching `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`. After
-resume, the env points to the new session, so the wrapper talks to the
-new daemon — but then execs `bazelisk --bazelrc=<new-session-bazelrc>`.
+The bazelisk shim compounds this: it injects
+`--bazelrc=<new-session-bazelrc>` based on the current session id. After
+resume, the env points to the new session, so the self-contained shim uses the
+new session bazelrc.
 Since the bazelrc has a different `--remote_proxy` path, Bazel detects
 a startup option change and **kills the existing server** to restart
 with the new bazelrc. This loses the warm Skyframe cache (45-min cold
@@ -202,17 +202,9 @@ canonical field definitions.
 
 ## Trace Data Location
 
-Full hook payloads (including `tool_name`, `tool_input`, `tool_use_id`,
-and the complete caller environment) are stored in OTEL traces at:
-
-```
-~/.claude/session-env/<session_id>/hook-daemon/traces.jsonl
-```
-
-Each line is a JSON span with `attributes["hook.input"]` containing the
-full `HookRequest` (hook payload + caller env) and
-`attributes["hook.output"]` containing the response. Written by
-`server.py:handle_hook()` via `span.set_attribute()`.
+The retired Python daemon wrote full hook payloads to local JSONL/OTEL spans.
+The Rust daemon does not currently implement hook-payload tracing; restoring
+OpenTelemetry export is tracked in <../TODO.md>.
 
 ## Subagent Hook Behavior
 

@@ -1,0 +1,430 @@
+"""CLI module - per-file targets."""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# Leaf modules (minimal deps)
+# =============================================================================
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "@pypi//click",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "common_options",
+    srcs = ["common_options.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":types",
+        "//props/core:docker_env",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["//props/core/db:config"],
+)
+
+py_library(
+    name = "shared",
+    srcs = ["shared.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:runs_context",
+        "//props/core/models:examples",
+        "@pypi//tiktoken",
+        "@pypi//typer",
+    ],
+)
+
+# =============================================================================
+# Subcommand modules
+# =============================================================================
+
+py_library(
+    name = "cmd_agent_pkg",
+    srcs = ["cmd_agent_pkg.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_pkg_utils",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:session",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_analyze_exec",
+    srcs = ["cmd_analyze_exec.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "cmd_classify_noops",
+    srcs = ["cmd_classify_noops.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":common_options",
+        "//openai_utils",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/noop_classifier:classifier",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_critic_agent",
+    srcs = ["cmd_critic_agent.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":shared",
+        "//agent_pkg/runtime",
+        "//cli_util",
+        "//props/core:agent_helpers",
+        "//props/core:agent_registry",
+        "//props/core:agent_types",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core/db:config",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/models:examples",
+        "@pypi//aiodocker",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_critic_dev",
+    srcs = ["cmd_critic_dev.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":cmd_critic_dev_helpers",
+        ":cmd_stats",
+        "//agent_pkg/runtime",
+        "//cli_util",
+        "//props/core:agent_helpers",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:query_builders",
+        "//props/core/db:session",
+        "//props/core/prompt_optimize:prompt_optimizer",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_critic_dev_helpers",
+    srcs = ["cmd_critic_dev_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:display",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "cmd_db",
+    srcs = ["cmd_db.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/db:config",
+        "//props/core/db:session",
+        "//props/core/db:setup",
+        "//props/core/db/sync",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_gepa",
+    srcs = ["cmd_gepa.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":common_options",
+        "//props/core:splits",
+        "//props/core/db:config",
+        "//props/core/db:session",
+        "//props/core/gepa:gepa_adapter",
+        "//props/core/gepa:warm_start",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_grade_validation",
+    srcs = ["cmd_grade_validation.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":resources",
+        "//cli_util",
+        "//props/core:agent_registry",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/db:config",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//aiodocker",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "cmd_grader_agent",
+    srcs = ["cmd_grader_agent.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_pkg/runtime",
+        "//cli_util",
+        "//props/core:agent_helpers",
+        "//props/core:agent_registry",
+        "//props/core:display",
+        "//props/core/db:config",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/grader:daemon_manager",
+        "//props/core/grader:edge_helpers",
+        "@pypi//aiodocker",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_gt",
+    srcs = ["cmd_gt.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db/sync",
+        "//props/core/db/sync:export",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_snapshot",
+    srcs = ["cmd_snapshot.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":common_options",
+        "//cli_util",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db/sync",
+        "//props/core/db/sync:export",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_speak_with_dead",
+    srcs = ["cmd_speak_with_dead.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":common_options",
+        "//cli_util",
+        "//mcp_infra",
+        "//mcp_infra/display",
+        "//openai_utils",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "cmd_stats",
+    srcs = ["cmd_stats.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:display",
+        "//props/core:splits",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:query_builders",
+        "//props/core/db:session",
+        "//props/core/grader:staleness",
+        "//props/core/models:examples",
+        "@pypi//plotext",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+# =============================================================================
+# Main entry point
+# =============================================================================
+
+py_library(
+    name = "main",
+    srcs = ["__main__.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":cmd_agent_pkg",
+        ":cmd_analyze_exec",
+        ":cmd_classify_noops",
+        ":cmd_critic_agent",
+        ":cmd_critic_dev",
+        ":cmd_db",
+        ":cmd_gepa",
+        ":cmd_grade_validation",
+        ":cmd_grader_agent",
+        ":cmd_gt",
+        ":cmd_snapshot",
+        ":cmd_speak_with_dead",
+        ":cmd_stats",
+        ":common_options",
+        ":shared",
+        "//cli_util",
+        "//openai_utils",
+        "//props/core:agent_helpers",
+        "//props/core:agent_registry",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core:runs_context",
+        "//props/core:splits",
+        "//props/core/db:config",
+        "//props/core/db:models",
+        "//props/core/db:query_builders",
+        "//props/core/db:session",
+        "//props/core/models:examples",
+        "//props/core/prompt_improve:improve_agent",
+        "//props/core/prompt_improve:reminder_handler",
+        "//props/core/prompt_optimize:prompt_optimizer",
+        "//props/core/prompt_optimize:target_metric",
+        "@pypi//aiodocker",
+        "@pypi//rich",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+        "@pypi//typer_di",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [":main"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_agent_pkg",
+    srcs = ["test_agent_pkg.py"],
+    imports = ["../../.."],
+    deps = [
+        ":cmd_agent_pkg",
+        "@pypi//pytest",
+        "@pypi//typer",
+    ],
+)
+
+# =============================================================================
+# Shared CLI packaging (used by all agent images)
+# =============================================================================
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# OCI Image for GHCR (specimens validation)
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/cli"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":app_tar"],
+    workdir = "/specimens",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-cli:latest"],
+)
+
+oci_push(
+    name = "push_ghcr",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "ghcr.io/agentydragon/props-cli",
+)

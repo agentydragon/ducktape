@@ -1,0 +1,90 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files([
+    "gatelet.toml",
+    "pyproject.toml",
+])
+
+# Reporter is a standalone CLI tool - doesn't depend on server
+py_library(
+    name = "reporter_lib",
+    srcs = ["reporter.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_binary(
+    name = "reporter",
+    srcs = ["reporter.py"],
+    imports = [".."],
+    main = "reporter.py",
+    deps = [":reporter_lib"],
+)
+
+# Management utility - depends on server
+py_library(
+    name = "manage_lib",
+    srcs = ["manage.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//gatelet/server",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":manage_lib",
+        ":reporter_lib",
+    ],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "server_tar",
+    srcs = ["//gatelet/server"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "alembic_tar",
+    srcs = ["alembic.ini"],
+    package_dir = "/app",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/server"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+    tars = [
+        ":server_tar",
+        ":alembic_tar",
+    ],
+    workdir = "/app",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["gatelet:latest"],
+)

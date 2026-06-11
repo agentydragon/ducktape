@@ -1,0 +1,9 @@
+{
+  "name": "mcporter-bundle",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "esbuild": "^0.25.1",
+    "mcporter": "0.7.3"
+  }
+}

@@ -1,0 +1,230 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mimir
+  namespace: monitoring
+spec:
+  interval: 30m
+  timeout: 10m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: mimir-distributed
+      version: "6.x"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 12h
+  values:
+    global:
+      extraEnvFrom:
+        - secretRef:
+            name: mimir-s3-credentials
+
+    minio:
+      enabled: false
+    kafka:
+      enabled: false
+
+    # S3 storage configuration via structuredConfig overrides.
+    # Credentials injected via global.extraEnvFrom; expanded by -config.expand-env=true.
+    mimir:
+      structuredConfig:
+        common:
+          storage:
+            backend: s3
+            s3:
+              endpoint: seaweedfs-s3.seaweedfs.svc:8333
+              bucket_name: mimir-blocks
+              region: us-east-1
+              insecure: true
+              access_key_id: ${AWS_ACCESS_KEY_ID}
+              secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+        blocks_storage:
+          s3:
+            bucket_name: mimir-blocks
+
+        # Chart 6.x defaults to Kafka ingest storage. Disable — at this
+        # scale (2 ingesters, no Kafka) the decoupled write path isn't
+        # worth the operator + Kafka cluster overhead.
+        ingest_storage:
+          enabled: false
+        ingester:
+          push_grpc_method_enabled: true
+          # 2 ingesters on the 2 OVH kimsufi workers with RF=2:
+          # every sample lives on both pods, so we can drain a node
+          # and the survivor still serves writes + reads.
+          ring:
+            replication_factor: 2
+
+        multitenancy_enabled: false
+
+        ruler:
+          alertmanager_url: http://monitoring-alertmanager.monitoring.svc.cluster.local:9093
+          rule_path: /data/rules
+
+        ruler_storage:
+          backend: s3
+          s3:
+            endpoint: seaweedfs-s3.seaweedfs.svc:8333
+            bucket_name: mimir-ruler
+            region: us-east-1
+            insecure: true
+            access_key_id: ${AWS_ACCESS_KEY_ID}
+            secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+        limits:
+          compactor_blocks_retention_period: 365d
+          out_of_order_time_window: 30m
+          max_global_series_per_user: 0
+          ingestion_rate: 100000
+          ingestion_burst_size: 500000
+
+    # --- Component replicas (minimal for small cluster) ---
+    # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.
+    # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
+
+    distributor:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    ingester:
+      replicas: 2
+      persistentVolume:
+        storageClass: local-path-ovh
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
+      # placement; zone-aware would just add a second StatefulSet and
+      # rollout-operator coupling for no behavioural win at this scale.
+      zoneAwareReplication:
+        enabled: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: ingester
+                  app.kubernetes.io/name: mimir
+                  app.kubernetes.io/instance: mimir
+              topologyKey: kubernetes.io/hostname
+
+    querier:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    query_frontend:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    query_scheduler:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    compactor:
+      replicas: 1
+      # Compactor's local disk is scratch for compaction passes; a lost
+      # in-progress compaction just re-runs next cycle. No reason to back
+      # it with a real PVC.
+      persistentVolume:
+        enabled: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    store_gateway:
+      replicas: 1
+      # Store-gateway's local disk is just bucket-index cache; rebuilt
+      # from S3 on cold start (a few minutes of warm-up). Run on emptyDir.
+      persistentVolume:
+        enabled: false
+        emptyDir:
+          sizeLimit: 10Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      zoneAwareReplication:
+        enabled: false
+
+    gateway:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    # --- Disabled components ---
+
+    ruler:
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
+    alertmanager:
+      enabled: false
+
+    chunks-cache:
+      enabled: false
+    index-cache:
+      enabled: false
+    metadata-cache:
+      enabled: false
+    results-cache:
+      enabled: false
+
+    metaMonitoring:
+      serviceMonitor:
+        enabled: true
+      dashboards:
+        enabled: false
+      grafanaAgent:
+        enabled: false
+
+    rollout_operator:
+      enabled: false
+    overrides_exporter:
+      enabled: false
+    continuous_test:
+      enabled: false

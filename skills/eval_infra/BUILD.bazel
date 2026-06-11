@@ -1,0 +1,83 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+# The "skill off" payload (`empty_skill_tar` + `empty_skill_skill_spec`)
+# lives in the `empty_skill/` subpackage so it goes through the regular
+# `skill_package` macro — same sandbox shape as info_gathering and any
+# other skill.
+
+py_library(
+    name = "docker_exec",
+    srcs = ["docker_exec.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:docker",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "skill_staging",
+    srcs = ["skill_staging.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        "//skills:skill_spec",
+        "//util/bazel:runfiles",
+    ],
+)
+
+_AGENT_FRAMEWORK_DEPS = [
+    # agent_framework's __init__.py references openai/anthropic stubs.
+    "@pypi//agent_framework_anthropic",
+    "@pypi//agent_framework_claude",
+    "@pypi//agent_framework_core",
+    "@pypi//agent_framework_openai",
+]
+
+py_library(
+    name = "transcript",
+    srcs = ["transcript.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
+    name = "termination",
+    srcs = ["termination.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
+    name = "eval_prompt",
+    srcs = ["eval_prompt.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [":eval_sandbox"],
+)
+
+py_library(
+    name = "eval_sandbox",
+    srcs = ["eval_sandbox.py"],
+    data = ["//mcp_infra/exec:docker_launcher"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        ":skill_staging",
+        "//mcp_infra/exec:docker_types",
+        "//util/bazel:runfiles",
+    ] + _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
+    name = "af_chat_client",
+    srcs = ["af_chat_client.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_binary(
+    name = "resurrect",
+    srcs = ["resurrect.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        ":af_chat_client",
+    ] + _AGENT_FRAMEWORK_DEPS,
+)

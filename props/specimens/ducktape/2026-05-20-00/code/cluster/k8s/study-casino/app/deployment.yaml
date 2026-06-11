@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: study-casino
+  namespace: study-casino
+  labels:
+    app.kubernetes.io/name: study-casino
+  annotations:
+    description: "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code flow, confidential client). State lives in CNPG Postgres (study-casino-db)."
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: study-casino
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: study-casino
+    spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars. The same-namespace
+      # `study-casino` Service would inject `STUDY_CASINO_PORT=tcp://...`, which
+      # collides with the `port: int` field on Settings (env_prefix
+      # `STUDY_CASINO_`) and crashes pydantic-settings on startup.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      enableServiceLinks: false
+      containers:
+        - name: app
+          image: ghcr.io/agentydragon/study-casino:devel-20260520092940-b13cdb9 # {"$imagepolicy": "flux-system:study-casino"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # Compose the SQLAlchemy URL from the CNPG-generated secret. The
+            # `$(VAR)` syntax in env values is resolved by the kubelet from
+            # earlier-defined env vars in the same container. `+psycopg`
+            # forces SQLAlchemy to pick the psycopg v3 driver.
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: user
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: password
+            - name: PG_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: host
+            - name: PG_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: port
+            - name: PG_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: dbname
+            - name: STUDY_CASINO_DATABASE_URL
+              value: "postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)"
+            # Comma-separated. Admins can manage other users' prize catalogs
+            # via /admin/*; non-admins can redeem but not create or delete.
+            - name: STUDY_CASINO_ADMIN_USERS
+              value: "agentydragon"
+            - name: STUDY_CASINO_OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/study-casino/"
+            - name: STUDY_CASINO_OIDC_CLIENT_ID
+              value: "study-casino"
+            - name: STUDY_CASINO_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: oidc_client_secret
+            - name: STUDY_CASINO_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: session_secret
+            - name: STUDY_CASINO_RNG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: rng_secret
+            - name: STUDY_CASINO_RNG_KEY_ID
+              value: "study-casino-rng-v1"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "25m"
+            limits:
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

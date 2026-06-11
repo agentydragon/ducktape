@@ -1,0 +1,46 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+
+package(default_visibility = ["//visibility:public"])
+
+js_openapi_zod(
+    name = "schema_zod",
+    out = "api/schema.zod.ts",
+    generator = "//finance/augur/api:export_schema_bin",
+)
+
+js_library(
+    name = "casing",
+    srcs = ["casing.ts"],
+)
+
+js_library(
+    name = "frame",
+    srcs = ["frame.ts"],
+)
+
+js_library(
+    name = "chart",
+    srcs = ["chart.ts"],
+    deps = [":format"],
+)
+
+js_library(
+    name = "controls",
+    srcs = ["controls.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "format",
+    srcs = ["format.ts"],
+)
+
+js_library(
+    name = "toast",
+    srcs = ["toast.ts"],
+    deps = ["//:node_modules/@mantine/notifications"],
+)

@@ -1,0 +1,106 @@
+# Release artifacts to GitHub via per-artifact build + gh release.
+# Each matrix entry builds its artifact on RBE, computes SHA, and creates
+# a GitHub Release if the content changed.
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
+jobs:
+  release:
+    name: Release ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: bbr
+            target: //:bbr_wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl
+            tests: //devinfra:test_bbr
+          - pkg: claude-hooks
+            target: //:claude_hooks_wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
+            tests: //devinfra/claude/...
+          - pkg: ducktape-git-hooks
+            target: //:ducktape_git_hooks_wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl
+            tests: //devinfra/precommit/... //cluster/validation/...
+          - pkg: claude-hook-rs
+            target: //devinfra/claude/claude_hook:claude_hook
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook
+            tests: //devinfra/claude/claude_hook/...
+          - pkg: ducktape-util
+            target: //util:wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
+            tests: //util/...
+          - pkg: ducktape
+            target: //:wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
+            tests: //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/...
+          - pkg: aiquota
+            target: //aiquota:aiquota_wheel //aiquota/gnome:aiquota_zip
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl
+            extra_outputs: bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
+            tests: //aiquota/...
+          - pkg: gterm-theme
+            target: //gnome/gterm_theme:wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
+            tests: ""
+          - pkg: skills
+            target: //skills:all_skills_tar
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills_tar.tar
+            tests: //skills/...
+          - pkg: bbapi
+            target: //devinfra/buildbuddy_cli:bbapi
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi
+            tests: //devinfra/buildbuddy_cli/...
+          - pkg: debundle
+            target: //devinfra/js/debundle:debundle
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/debundle
+            tests: //devinfra/js/debundle/...
+            release_metadata: true
+            metadata_platform: linux-amd64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Run tests for ${{ matrix.pkg }}
+        if: matrix.tests != ''
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test ${{ matrix.tests }}
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - uses: ./.github/actions/release-artifact
+        with:
+          pkg: ${{ matrix.pkg }}
+          bazel_target: ${{ matrix.target }}
+          bazel_output: ${{ matrix.bazel_output }}
+          extra_outputs: ${{ matrix.extra_outputs || '' }}
+          release_metadata: ${{ matrix.release_metadata || 'false' }}
+          metadata_platform: ${{ matrix.metadata_platform || '' }}
+          rbe_image: ${{ inputs.rbe_image }}

@@ -1,0 +1,51 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Gazelle manages adgn_mcp_starter/ subpackage
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        "//mcp_starter/adgn_mcp_starter:server",
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "integration_test",
+    srcs = ["integration_test.py"],
+    # Requires running MCP server
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "manual_test_sdk",
+    srcs = ["manual_test_sdk.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//claude_code_sdk",
+        "@pypi//rich",
+    ],
+)

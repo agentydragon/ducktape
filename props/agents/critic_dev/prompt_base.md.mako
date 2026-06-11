@@ -68,7 +68,7 @@ SCRIPT=$(python3 -c "import importlib.resources; print(importlib.resources.files
 bash $SCRIPT <path-to-custom-main.py> [variant-name]
 ```
 
-Relative paths are resolved from the script's directory. The script derives the registry from `PROPS_BACKEND_URL` automatically.
+Relative paths are resolved from the script's directory. The script uses `PROPS_REGISTRY_URL` for registry access.
 
 ## Recipe Modules
 

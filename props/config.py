@@ -35,6 +35,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, model_validator
 
+from openai_utils.api_shape import LLMApiShape
 from openai_utils.model_metadata import ModelMetadata as BaseModelMetadata
 
 ENV_CONFIG_FILE = "PROPS_CONFIG_FILE"
@@ -73,6 +74,7 @@ class CustomModelConfig(BaseModelMetadata):
     name: str
     upstream: str
     upstream_model: str
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES
     max_parallel_agents: int | None = None
 
 
@@ -99,13 +101,30 @@ class KubernetesExecutorConfig(BaseModel):
 ExecutorConfig = Annotated[DockerExecutorConfig | KubernetesExecutorConfig, Discriminator("type")]
 
 
-class PropsConfig(BaseModel):
+class LLMProxyConfig(BaseModel):
+    """Config the standalone LLM proxy reads from the config file: just the
+    upstream provider definitions (per-upstream URL + API-key env var).
+
+    The proxy's DB comes from `PG*` env vars and its model routing from the DB
+    `model_metadata` table (synced by the API server), so `upstreams` is the only
+    config-file field it needs. `PropsConfig` (the API server's config) extends
+    this with the API-only fields, which the proxy never reads.
+    """
+
     model_config = ConfigDict(frozen=True)
 
+    upstreams: dict[str, UpstreamConfig] = {}
+
+
+class PropsConfig(LLMProxyConfig):
+    """Full config for the API server: the shared `upstreams` plus API-only fields."""
+
     backend_url: str
+    # Base URL agents use for the LLM proxy (split out of the backend); agents get
+    # OPENAI_BASE_URL = <llm_proxy_url>/v1. None falls back to backend_url.
+    llm_proxy_url: str | None = None
     grader_model: str | None = None
     agent_env: dict[str, str]
-    upstreams: dict[str, UpstreamConfig] = {}
     models: list[CustomModelConfig] = []
     executor: ExecutorConfig = Field(default_factory=DockerExecutorConfig)
     auto_migrate: bool = False
@@ -124,3 +143,17 @@ def load_config_from_env() -> PropsConfig:
     if not path_str:
         raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
     return load_config(Path(path_str))
+
+
+def load_proxy_config(path: Path) -> LLMProxyConfig:
+    """Load just the LLM-proxy slice (`upstreams`) from a TOML file; the API-only
+    fields in the same file are ignored."""
+    return LLMProxyConfig.model_validate(tomllib.loads(path.read_text()))
+
+
+def load_proxy_config_from_env() -> LLMProxyConfig:
+    """Load the LLM-proxy config from the path in PROPS_CONFIG_FILE env var."""
+    path_str = os.environ.get(ENV_CONFIG_FILE)
+    if not path_str:
+        raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
+    return load_proxy_config(Path(path_str))

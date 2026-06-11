@@ -1,0 +1,13 @@
+rationale: "Test issue for integration testing.
+
+  This is a minimal issue to satisfy specimen validation.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      sample_subtract.py:
+        - [10, 15]
+    critic_scopes_expected_to_recall:
+      - - sample_subtract.py

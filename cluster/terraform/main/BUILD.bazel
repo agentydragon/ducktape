@@ -1,15 +1,17 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 exports_files(
-    ["cilium-values.yaml"],
+    [
+        "cilium-values.yaml",
+        "ovh-nodes.tf",
+    ],
     visibility = ["//cluster:__subpackages__"],
 )
 
 tf_providers_versions(
     name = "providers",
     providers = {
-        "proxmox": "bpg/proxmox:~>0.91.0",
-        "hcloud": "hetznercloud/hcloud:~>1.45",
+        "proxmox": "bpg/proxmox:~>0.93.0",
         "talos": "siderolabs/talos:~>0.10.0",
         "kubernetes": "hashicorp/kubernetes:~>2.38.0",
         "flux": "fluxcd/flux:~>1.7.0",
@@ -18,6 +20,7 @@ tf_providers_versions(
         "null": "hashicorp/null:~>3.2.0",
         "sops": "carlpett/sops:~>1.4.0",
         "tls": "hashicorp/tls:~>4.1.0",
+        "ovh": "ovh/ovh:~>2.0",
     },
     tf_version = "1.9.8",
 )
@@ -30,7 +33,6 @@ tf_module(
     ],
     providers = [
         "proxmox",
-        "hcloud",
         "talos",
         "kubernetes",
         "flux",
@@ -39,11 +41,11 @@ tf_module(
         "null",
         "sops",
         "tls",
+        "ovh",
     ],
     providers_versions = ":providers",
     tflint_config = "//cluster:.tflint.hcl",
     deps = [
         "//terraform/modules/nixos-image",
-        "//terraform/modules/proxmox-vm",
     ],
 )

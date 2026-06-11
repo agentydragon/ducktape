@@ -1,0 +1,100 @@
+# Agent server E2E tests (manual, require Playwright).
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_test(
+    name = "test_abort",
+    srcs = ["test_abort.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_approvals",
+    srcs = ["test_approvals.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
+        "//mcp_infra:constants",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_notifications_handler",
+    srcs = ["test_notifications_handler.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//agent_core_testing:responses",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/runtime:container",
+        "//mcp_infra:constants",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proposals_reject",
+    srcs = ["test_proposals_reject.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//agent_core_testing:responses",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/ui",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ui",
+    srcs = ["test_ui.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//agent_core_testing:responses",
+        "//agent_server/mcp/ui",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server:agent_types",
+        "//agent_server/server:app",
+        "//agent_server/testing:helpers",
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)

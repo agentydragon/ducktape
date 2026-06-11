@@ -1,0 +1,380 @@
+keys:
+  - &admin age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+  # Host keys (derived from /etc/ssh/ssh_host_ed25519_key via ssh-to-age)
+  - &wyrm2-host age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
+  - &rugged-host age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
+  - &atlas-host age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
+  - &iguana-host age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
+  # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
+  - &wyrm2-agentydragon age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
+  - &rugged-agentydragon age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+  - &atlas-agentydragon age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
+  - &iguana-agentydragon age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+  # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
+  - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
+  # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
+  # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
+  - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
+  # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
+  # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
+  # Manual paste into BuildBuddy org secrets.
+  - &ci age1zl5lv4g0lzd4pcwx9q4vvq0w4rpmkde5r68k4n2zu89urmnx9svs3c2mef
+  # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
+  # Private key stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted).
+  # Bootstrap deploys it to the cluster as a k8s Secret.
+  - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+creation_rules:
+  # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
+  # in-cluster (cluster-secrets), AND tofu running on user machines needs to read
+  # the password to set PG_CONN_STR (user keys). More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/tofu-state/db/credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
+  # Cluster k8s secrets (Flux + admin can decrypt)
+  - path_regex: cluster/k8s/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
+  # --- Docker CI mTLS keys (SOPS binary) ---
+  - path_regex: secrets/docker-ci/ca-key\.sops\.pem$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+  - path_regex: secrets/docker-ci/client-key\.sops\.pem$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *codex-cloud-agent
+          - *ci
+
+  # --- CI secrets (admin + CI key) ---
+  - path_regex: secrets/ci/.*\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *ci
+
+  # ducktape-automation GitHub App private key (RSA PEM, SOPS binary).
+  # Decryptable by admin, in-cluster Flux, and CI. CI here covers both
+  # ducktape and gaffer-private GHA — they share the same age key today
+  # (synced by tf/gitops/github-secrets-sync). TODO: consider splitting
+  # &ci into separate &ducktape-ci and &gaffer-ci recipients. Concretely,
+  # the existing CI rule above (`secrets/ci/.*\.sops\.yaml$`) currently
+  # encrypts BOTH `secrets/ci/attic-main-writer.sops.yaml` (ducktape CI's
+  # cache:rw) and `secrets/ci/attic-gaffer-writer.sops.yaml` (gaffer CI's
+  # cache:rw) to the shared `&ci` recipient — so a compromise of either
+  # repo's age key grants access to both writer tokens. Splitting would
+  # mean the gaffer-ci token is only decryptable by gaffer's age key,
+  # and vice versa.
+  - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *ci
+  - path_regex: secrets/ducktape-automation\..*\.client-secret\.sops\.txt$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *ci
+
+  # --- Nebula private keys (SOPS binary, admin + host) ---
+  - path_regex: secrets/nebula/ca\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  - path_regex: secrets/nebula/wyrm2\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+  - path_regex: secrets/nebula/rugged\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-host
+  - path_regex: secrets/nebula/atlas\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-host
+  - path_regex: secrets/nebula/iguana\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-host
+  # Mobile Nebula import keys are admin-only in git; the generated plaintext
+  # import file installs the key into the phone's app keystore.
+  - path_regex: secrets/nebula/pixel6\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+
+  # --- Per-host attic reader tokens (admin + host + user) ---
+  # Combined NixOS+HM file: NixOS daemon decrypts via host key for
+  # /etc/nix/attic-netrc; home-manager decrypts via user key for
+  # ~/.config/attic/config.toml. Auto-rotated by attic-token-rotation
+  # CronJobs in the cluster (see plans/token-minting-i-think-scalable-moth.md).
+  # Must precede the broader `secrets/hosts/<host>-.*\.yaml$` rules below.
+  - path_regex: secrets/hosts/wyrm2-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *wyrm2-agentydragon
+  - path_regex: secrets/hosts/rugged-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-host
+          - *rugged-agentydragon
+  - path_regex: secrets/hosts/atlas-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-host
+          - *atlas-agentydragon
+  - path_regex: secrets/hosts/iguana-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-host
+          - *iguana-agentydragon
+
+  # --- Per-host secrets (admin + host) ---
+  - path_regex: secrets/hosts/wyrm2-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+  - path_regex: secrets/hosts/rugged-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-host
+  - path_regex: secrets/hosts/atlas-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-host
+  - path_regex: secrets/hosts/iguana-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-host
+
+  # --- SSH keys (SOPS binary, admin + owning host's user key) ---
+  - path_regex: ssh_keys/iguana-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-agentydragon
+  - path_regex: ssh_keys/rugged-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-agentydragon
+  - path_regex: ssh_keys/atlas-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-agentydragon
+
+  # --- Per-user home-manager secrets (admin + user SSH key) ---
+  - path_regex: secrets/home/wyrm2/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+  - path_regex: secrets/home/rugged/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-agentydragon
+  - path_regex: secrets/home/atlas/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-agentydragon
+
+  # --- Talos machine secrets (admin-only, state recovery backup) ---
+  - path_regex: secrets/talos-machine-secrets\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+
+  # --- K8s worker secrets (all k8s worker hosts) ---
+  - path_regex: secrets/k8s-worker\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *rugged-host
+          - *iguana-host
+  # 15 Leroy HA SSH key (user-decryptable for home-manager sops deployment)
+  - path_regex: secrets/15leroy-homeassistant-ssh\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # Dedicated PAT kept in SOPS for now even though the GitHub release-asset
+  # fetch path is being removed. TODO: decide whether to keep, rotate, or
+  # delete it once private-cache delivery is in place.
+  - path_regex: secrets/shared/gaffer-private-fetch-pat\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *rugged-host
+  # Manifold Markets API key — for human/agent local use. The cluster-side
+  # copy at cluster/k8s/agents/manifold-mcp/app/api-key.sops.yaml is encrypted
+  # to admin + cluster-secrets (matches the cluster/k8s/.* rule below).
+  - path_regex: secrets/manifold-api-key\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # --- All-user secrets (admin + all user SSH keys) ---
+  # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
+  # flux-deploy-key: ED25519 SSH key registered as GitHub deploy key
+  # cluster-tokens: hcloud + proxmox API tokens (tofu apply)
+  # habitify, huggingface: personal API tokens exported as env vars
+  - path_regex: secrets/shared/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # Claude web K8s bearer JWT (auto-rotated by the claude-jwt-rotation CronJob)
+  - path_regex: secrets/claude-web-k8s-jwt\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *codex-cloud-agent
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # Shared claude-web Attic reader token (auto-rotated by attic-token-rotation
+  # CronJob). Used by all claude-web sessions to substitute from
+  # cache.allegedly.works/{main,gaffer}.
+  - path_regex: secrets/claude-web-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+  # Alloy OTLP bearer JWT (auto-rotated by the alloy-otlp-jwt-rotation CronJob)
+  - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *codex-cloud-agent
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # Shared dev secrets (all users + claude-web agent + codex agent + CI)
+  - path_regex: secrets/buildbuddy\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *claude-web
+          - *codex-cloud-agent
+          - *ci
+  # Hetzner Robot webservice credentials (admin + all user keys)
+  - path_regex: secrets/hetzner-robot\.sops\.yaml$
+    encrypted_regex: ^password$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
+  # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node)
+  - path_regex: secrets/ovh-credentials\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
+  # OVH rescue-mode SSH key (ED25519, used to SSH into rescue and dd Talos image)
+  - path_regex: secrets/ovh-rescue-ssh\.sops\.yaml$
+    encrypted_regex: ^private_key$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
+  # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
+  - path_regex: secrets/github-ci-read-pat\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *codex-cloud-agent
+  # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw, CI)
+  - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *claude-web
+          - *codex-cloud-agent
+          - *ci

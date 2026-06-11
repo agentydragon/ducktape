@@ -6,7 +6,8 @@ metadata:
 spec:
   interval: 15m
   approvePlan: "auto"
-  path: ./cluster/terraform/gitops/alloy-otlp-bearer-token
+  refreshBeforeApply: true
+  path: ./tf/gitops/alloy-otlp-bearer-token
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -14,10 +15,16 @@ spec:
   serviceAccountName: tf-runner
   backendConfig:
     customConfiguration: |
-      backend "kubernetes" {
-        secret_suffix    = "alloy-otlp-bearer-token"
-        namespace        = "flux-system"
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "alloy_otlp_bearer_token"
       }
-  vars:
-    - name: vault_address
-      value: "http://instance.vault.svc.cluster.local:8200"
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+  vars: []

@@ -1,0 +1,24 @@
+rationale: |
+  OptimizeArgs dataclass defines three parameters that are never used:
+  rollouts_per_task, max_parallel_rollouts, and tasks_per_iteration.
+  The optimize_prompts() function delegates to optimize_prompts_mcp() without
+  passing these values. The main() function sets them but they have no effect.
+  Either these should be wired through to the downstream implementation, or
+  deleted to avoid misleading callers into thinking they control behavior.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/engine/optimizer.py:
+        - [372, 376]
+        - [569, 571]
+    note: >-
+      rollouts_per_task, max_parallel_rollouts, tasks_per_iteration defined on
+      OptimizeArgs but not passed to OptimizeMcpArgs in optimize_prompts().
+      main() sets them at lines 569-571 but values are ignored.
+    critic_scopes_expected_to_recall:
+      - - inop/engine/optimizer.py
+    match_file_restriction:
+      - inop/engine/optimizer.py

@@ -1,6 +1,22 @@
 // Reconstructed from binary: environment-manager (Build ID 495ea204)
 // Source: internal/orchestrator/poll_hook.go
 // Package: github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator
+//
+// PollHook combines polling and hook execution for the orchestrator's
+// poll-then-execute flow. It implements PollerInterface, so it can be
+// used as the orchestrator's poller. When the orchestrator calls Poll(),
+// PollHook executes an external command (the poll hook) and parses its
+// stdout as JSON to determine if work is available. The poll hook
+// receives environment context (environment_id, worker_id, session_id)
+// via JSON on stdin.
+//
+// This is the mechanism used when --execute-hook is passed to the
+// orchestrator command. The PollHook wraps the hook command and presents
+// it as a PollerInterface to the orchestrator loop.
+//
+// Idle behavior: Between polls, SleepWithJitter sleeps for 1-3 seconds
+// with random jitter. The orchestrator's handleLoopTimeout may also run
+// a separate "timeout hook" during extended idle periods.
 
 package orchestrator
 
@@ -24,7 +40,7 @@ import (
 // Fields reconstructed from binary string table and caller patterns in
 // cmd_orchestrator.go (environmentID, workerID passed through orchestrator flow).
 type PollHookStdinContext struct {
-	EnvironmentID string `json:"environment_id,omitempty"`
+	EnvironmentID string `json:"environment_id"`
 	WorkerID      string `json:"worker_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 }

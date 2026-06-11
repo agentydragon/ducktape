@@ -1,92 +1,136 @@
-# Claude Sandbox Namespace
+# Claude Sandbox RBAC
 
-This directory configures a sandbox namespace for Claude AI assistant with full access for experimentation.
+This directory is the **lightweight base** for Claude agent sandbox RBAC. It contains only
+cluster-scoped resources (ClusterRoles) and sandbox-internal resources (namespace + RoleBindings
+within `claude-sandbox`). It must **never** depend on service or database kustomizations.
+
+Namespace-scoped RoleBindings targeting other namespaces live in per-service `agent-rbac/`
+directories (see Architecture below).
+
+**Cross-references**: this README is `@`-transcluded into `cluster/AGENTS.md`; the root
+`AGENTS.md` (Kubernetes MCP Server section) keeps a brief MCP-usage summary that points
+here. Update this file as the single source when changing permissions or the quota.
+
+## Architecture
+
+Agent RBAC is split across three layers:
+
+### 1. `claude-rbac` (this directory) — lightweight base
+
+Depends on: `kyverno-policies` only. No service or database dependencies.
+
+Contains:
+
+- `claude-sandbox` namespace, ResourceQuota, LimitRange
+- Sandbox-internal Role + RoleBinding (`role-sandbox.yaml`, `rolebinding-sandbox.yaml`)
+- Sandbox-internal `rolebinding-ollama-consumer.yaml` (binds ClusterRole in claude-sandbox ns)
+- Three ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
+  `namespace-diagnostics-reader`
+
+### 2. `shared-rbac` — cluster-scoped bindings
+
+Depends on: `claude-rbac`, `kyverno-policies`.
+
+Contains:
+
+- `ClusterRoleBinding` for `cluster-diagnostics-reader` (cluster-wide)
+- `RoleBinding` for `logs-configmaps-reader` in `flux-system` only
+
+### 3. Per-service `<service>/agent-rbac/` — namespace-scoped RoleBindings
+
+Each service that grants agent read access has its own `agent-rbac/` directory with an
+independent Flux kustomization. Depends on: `[service's namespace kustomization]` + `claude-rbac`.
+
+This isolation ensures that missing/suspended service namespaces don't block unrelated RBAC
+from applying.
 
 ## Permissions Granted
 
-**claude-sandbox namespace (full access):**
+### 1. claude-sandbox namespace — full CRUD
 
-- ✅ Create/delete pods, deployments, services, jobs
-- ✅ Full secrets access (create, read, update, delete)
-- ✅ `kubectl exec` into pods
-- ✅ Attach to pods, view logs
-- ⚠️ **Resource limits:** 4 CPU, 8Gi memory, 10 pods max (enforced by ResourceQuota)
+Defined in <role-sandbox.yaml>, bound via <rolebinding-sandbox.yaml>:
 
-## ServiceAccount
+- Pods: create/delete, logs, exec, attach
+- Workloads: deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs
+- Config: configmaps, secrets, PVCs, events, services
+- ⚠️ **Resource limits** (<resourcequota.yaml>): 8 CPU, 16Gi memory, 20 pods
 
-- **Name**: `claude-code-web`
-- **Namespace**: `default`
+### 2. Cluster-wide read — diagnostics
 
-## Generating a Kubeconfig
+`cluster-diagnostics-reader` ClusterRole (<clusterrole-cluster-diagnostics-reader.yaml>),
+bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 
-To generate a kubeconfig for Claude to use:
+- Core: nodes, pods, services, endpoints, PVs, PVCs, events, namespaces, resourcequotas
+- Workloads: deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, HPAs, VPAs
+- Networking: ingresses, networkpolicies, Gateway API routes, Cilium policies
+- Storage: storageclasses, volumeattachments
+- GitOps: Flux kustomizations (+ patch for reconcile), HelmReleases, git/helm/OCI repos,
+  image policies, Terraform resources
+- Certs & secrets: cert-manager certificates/issuers, trust-manager bundles, ExternalSecrets
+- Monitoring: Prometheus, Alertmanager, ServiceMonitors, metrics API (pods + nodes)
+- Other: RBAC roles/bindings, CRDs, webhooks, leases, priority classes, Kyverno policies,
+  PowerDNS zones
 
-```bash
-# Create a token (valid for 1 year)
-kubectl create token claude-code-web -n default --duration=8760h > /tmp/claude-token.txt
+### 3. Cross-namespace read
 
-# Get cluster info
-CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
-SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
+Flux kustomization that depends only on the target namespace + `claude-rbac`.
 
-# Get CA certificate
-kubectl config view --raw --minify --flatten \
-  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
-  | base64 -d > /tmp/ca.crt
+@permissions.md
 
-# Generate kubeconfig
-cat <<EOF > /tmp/claude-kubeconfig.yaml
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    certificate-authority-data: $(base64 -w0 < /tmp/ca.crt)
-    server: $SERVER
-  name: $CLUSTER_NAME
-contexts:
-- context:
-    cluster: $CLUSTER_NAME
-    user: claude-code-web
-    namespace: default
-  name: claude-code-web
-current-context: claude-code-web
-users:
-- name: claude-code-web
-  user:
-    token: $(cat /tmp/claude-token.txt)
-EOF
+## Adding Agent RBAC for a New Service
 
-chmod 600 /tmp/claude-kubeconfig.yaml
-```
+1. Create `<service>/agent-rbac/` with:
+   - `flux-kustomization.yaml` — depends on service's namespace kustomization + `claude-rbac`
+   - `kustomization.yaml` — lists the RoleBinding YAML(s)
+   - RoleBinding YAML(s) referencing the appropriate ClusterRole from `claude-rbac/`
+2. Add the `flux-kustomization.yaml` path to the root `cluster/k8s/kustomization.yaml`
+3. The service namespace kustomization has **zero coupling** to agent infrastructure
+
+## Authentication
+
+Claude Code web sessions authenticate via an **Authentik-issued OIDC JWT**
+that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
+`AuthenticationConfiguration` maps that claim to
+`oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
+subjects on. JWTs are minted biweekly by the `claude-jwt-rotation`
+CronJob in the `agents-infra` namespace — see <../claude-jwt-rotation/>.
+
+OIDC users who log into the `kubectl-sandbox-mcp` Authentik application
+(interactive MCP) receive the same group claim via the same
+`kubectl_sandbox_fixed_groups` scope mapping, so the RBAC below applies
+unchanged.
+
+Laptops run their own admin kubeconfig (deployed by home-manager from
+`secrets/shared/kubeconfig.yaml`) with cluster-admin-level access; it's
+not governed by this sandbox RBAC. See
+<../../../docs/lessons_learned/2026_04_24_k8s_auth_through_mitm_proxy.md>
+for why Claude Code web can't use the laptop's path (L7 TLS-terminating
+egress proxy eats client certs).
 
 ## Kubeconfig Provisioning
 
-Kubeconfig is generated automatically by the session start hook via
-`devinfra/claude/hook_daemon/session_start/secret_sources.py`. The SA token is stored as a k8s Secret in the
-`claude-sandbox` namespace and read at session start. No manual encryption needed.
+The JWT is minted by the `claude-jwt-rotation` CronJob via Authentik's
+`kubectl-sandbox-client-credentials` OAuth2 provider and committed
+SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`. At session start,
+<devinfra/k8s/kubeconfig.py> decrypts it and builds a kubeconfig
+with `user.token` auth pointing at `https://kubeapi.allegedly.works`
+(the `HTTPRoute` in <../../kube-api-proxy/httproute.yaml>).
 
-## Testing Permissions
+Two callers, different kubeconfig materialization strategies:
 
-```bash
-# Should work (full access in sandbox)
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox create deployment nginx --image=nginx
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox get pods
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox create secret generic test --from-literal=key=value
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox get secrets
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox exec -it <pod> -- /bin/bash
-
-# Should fail (no permissions outside sandbox without cluster-wide RBAC)
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml get pods -A
-# Error: pods is forbidden
-```
+- **Session start hook** (background command in the web profile): writes
+  `~/.kube/config` to a real file for interactive `kubectl` use.
+- **`kubectl-local` MCP server** (<devinfra/claude/kubectl_local_mcp.py>):
+  writes the kubeconfig into an anonymous `memfd_create` file with no
+  filesystem path. The fd is passed as `--kubeconfig /proc/self/fd/<N>`
+  and is inherited across `execvp` into `kubernetes-mcp-server`; it
+  disappears when the server exits.
 
 ## Security Considerations
 
-The sandbox provides an isolated environment with resource limits:
-
-- **Namespace isolation**: Only `claude-sandbox` namespace is accessible
-- **Resource quotas**: 4 CPU, 8Gi memory, 10 pods max
-- **Full control**: Create/delete/modify any resources including secrets within sandbox
-- **No cluster access**: Without additional cluster-wide RBAC, access is limited to sandbox only
-
-To grant cluster-wide read access, deploy the separate `claude-rbac-read-only` configuration.
+- **Write isolation**: Full CRUD only in `claude-sandbox` namespace
+- **Broad read**: Cluster-wide diagnostics read (nodes, pods, Flux, certs, metrics, etc.)
+- **Resource quotas**: 8 CPU, 16Gi memory, 20 pods (see <resourcequota.yaml>)
+- **Flux patch**: Can trigger Flux reconciliation via annotation patch (Kyverno policy
+  restricts to annotation-only patches)

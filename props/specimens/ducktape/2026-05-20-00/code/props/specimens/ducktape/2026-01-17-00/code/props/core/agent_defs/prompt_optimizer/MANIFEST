@@ -1,0 +1,20 @@
+# External dependencies (paths relative to repo root)
+# Explicit src + pyproject.toml for each package
+
+openai_utils/src
+openai_utils/pyproject.toml
+agent_core/src
+agent_core/pyproject.toml
+mcp_infra/src
+mcp_infra/pyproject.toml
+mcp_infra/README.md
+cli_util/src
+cli_util/pyproject.toml
+adgn/src
+adgn/pyproject.toml
+props/src
+props/pyproject.toml
+net_util/src
+net_util/pyproject.toml
+agent_pkg/runtime/src
+agent_pkg/runtime/pyproject.toml

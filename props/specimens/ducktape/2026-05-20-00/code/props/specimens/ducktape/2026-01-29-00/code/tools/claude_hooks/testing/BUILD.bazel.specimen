@@ -1,0 +1,49 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "mock_egress_proxy",
+    testonly = True,
+    srcs = ["mock_egress_proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = [
+        "//tools/claude_hooks:proxy_setup",
+        "//tools/claude_hooks:proxy_vars",
+        "@pypi//cryptography",
+    ],
+)
+
+py_test(
+    name = "test_mock_egress_proxy",
+    srcs = ["test_mock_egress_proxy.py"],
+    imports = ["../../.."],
+    deps = [
+        ":fixtures",
+        ":mock_egress_proxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "shell_helpers",
+    testonly = True,
+    srcs = ["shell_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+)
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = [
+        ":mock_egress_proxy",
+        "//net_util:net",
+        "//tools/claude_hooks:settings",
+        "//tools/claude_hooks/supervisor:client",
+        "@pypi//pytest",
+    ],
+)

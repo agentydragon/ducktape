@@ -1,0 +1,57 @@
+rationale: |
+  Exception catches that include exception types that cannot actually occur,
+  hiding the fact that certain error paths are impossible given the code structure.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/client_helpers.py:
+        - [44, 46]
+    note: >-
+      except (KeyError, TypeError, AttributeError, ValueError) is overly broad - KeyError
+      impossible (dict.get used), AttributeError impossible (dataclass fields always exist).
+      Only TypeError from pydantic_core.to_json is possible.
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/client_helpers.py
+    match_file_restriction:
+      - mcp_infra/client_helpers.py
+
+  - occurrence_id: occ-1
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/handler.py:
+        - [130, 135]
+    note: >-
+      Silently falls back to INFO on invalid log level. Should use
+      logging._nameToLevel[level] and raise on invalid value, not .get() with silent
+      fallback.
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/handler.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/handler.py
+
+  - occurrence_id: occ-2
+    files:
+      mcp_infra/enhanced/flat_mixin.py:
+        - [184, 187]
+    note: >-
+      except AttributeError on model.model_rebuild() is impossible - prior
+      issubclass(model, BaseModel) check guarantees method exists in Pydantic v2
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/enhanced/flat_mixin.py
+    match_file_restriction:
+      - mcp_infra/enhanced/flat_mixin.py
+
+  - occurrence_id: occ-3
+    files:
+      mcp_infra/compositor/resources_server.py:
+        - [794, 798]
+    note: >-
+      except AttributeError is impossible - InitializeResult.capabilities is required,
+      ServerCapabilities.resources always exists (may be None). Same file accesses these
+      fields directly at lines 414, 445 without try/except.
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/compositor/resources_server.py
+    match_file_restriction:
+      - mcp_infra/compositor/resources_server.py

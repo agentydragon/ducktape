@@ -1,0 +1,39 @@
+"""Critic agent variants.
+
+Each variant uses the same in-container agent loop (main.py) but with
+a different system prompt markdown file baked into the container.
+
+Build targets:
+    bazel run //props/critic/variants:contract_truthfulness_push
+    bazel run //props/critic/variants:dead_code_push
+    bazel run //props/critic/variants:flag_propagation_push
+    bazel run //props/critic/variants:high_recall_push
+    bazel run //props/critic/variants:verbose_docs_push
+"""
+
+load(":critic.bzl", "critic_variant")
+
+critic_variant(
+    name = "contract_truthfulness",
+    prompt_md = "contract_truthfulness.md",
+)
+
+critic_variant(
+    name = "dead_code",
+    prompt_md = "dead_code.md",
+)
+
+critic_variant(
+    name = "flag_propagation",
+    prompt_md = "flag_propagation.md",
+)
+
+critic_variant(
+    name = "high_recall",
+    prompt_md = "high_recall_critic.md",
+)
+
+critic_variant(
+    name = "verbose_docs",
+    prompt_md = "verbose_docs.md",
+)

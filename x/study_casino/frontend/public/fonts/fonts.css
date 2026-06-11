@@ -1,0 +1,26 @@
+/*
+ * Hermetic font declarations for Study Casino. The two woff2 files in this
+ * directory are latin-subset variable fonts (sourced from Google Fonts'
+ * Playfair Display v40 and Outfit v15 — OFL); both files contain the full
+ * weight axis, so each weight declaration points at the same file.
+ *
+ * Bundling fonts via Bazel (rather than @import-ing from fonts.googleapis.com)
+ * makes the casino render identically online, offline, and inside hermetic
+ * visual-regression tests with no network access.
+ */
+
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: block;
+  src: url("./Outfit-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: block;
+  src: url("./PlayfairDisplay-latin.woff2") format("woff2");
+}

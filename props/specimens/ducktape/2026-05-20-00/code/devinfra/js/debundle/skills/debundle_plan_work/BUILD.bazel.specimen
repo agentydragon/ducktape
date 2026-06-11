@@ -1,0 +1,6 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "debundle_plan_work",
+    srcs = ["SKILL.md"],
+)

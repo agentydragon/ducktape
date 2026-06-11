@@ -1,5 +1,9 @@
 # Hook Performance: Reducing Latency When External Services Are Down
 
+Note: this document describes the historical Python `hook_dispatch.py` path.
+Active hook dispatch is now the Rust `claude-hook` binary; keep this file only
+as background for the earlier latency work.
+
 ## Problem
 
 Every Claude Code hook invocation (PreToolUse, PostToolUse) goes through
@@ -191,9 +195,9 @@ re-probing periodically. No per-hook `force_flush` — spans export
 asynchronously. On daemon shutdown (supervisor SIGTERM), a single
 `force_flush` with short timeout.
 
-**Fallback**: If daemon is unreachable, client falls back to direct
-`hook_dispatch.main()` (current behavior). This handles the case where
-supervisor failed to start the daemon.
+**Fallback**: If daemon is unreachable, the client falls back to direct
+`hook_dispatch.main()` in the historical Python implementation. This handled
+the case where supervisor failed to start the daemon.
 
 **Pros:**
 
@@ -348,7 +352,8 @@ Claude Code supports four hook types, configured via `"type"` in
 Runs a shell command. Event JSON arrives on stdin, results communicated
 via exit code and stdout JSON. **Supported for all hook events.**
 
-This is our current approach (uvx → `hook_dispatch.py`).
+This was the original approach (uvx → Python `hook_dispatch.py`); active
+sessions now use the Rust `claude-hook` command.
 
 ```json
 { "type": "command", "command": "uvx --from <wheel> claude-hook" }

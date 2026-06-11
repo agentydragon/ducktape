@@ -1,0 +1,163 @@
+"""Editor agent host package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Init script for the container image (called as /init)
+filegroup(
+    name = "init_script",
+    srcs = ["definition/init"],
+    visibility = ["//editor_agent/runtime:__pkg__"],
+)
+
+# NOTE: No aggregator target - use specific per-file targets like :agent_runner, :cli, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    data = glob(["definition/**/*"]),
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_runner",
+        ":runner",
+        ":submit_server",
+        "//agent_pkg/host:builder",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//openai_utils:client_factory",
+        "@pypi//aiodocker",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "adgn-editor-docker",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    main = "cli.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_runner",
+        ":runner",
+        ":submit_server",
+        "//agent_pkg/host:builder",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//openai_utils:client_factory",
+        "@pypi//aiodocker",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_test(
+    name = "test_runner_session",
+    srcs = ["test_runner_session.py"],
+    data = ["//editor_agent/runtime:load"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":conftest",
+        ":runner",
+        ":submit_server",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_editor_e2e_steps",
+    srcs = ["test_editor_e2e_steps.py"],
+    data = ["//editor_agent/runtime:load"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":agent_runner",
+        ":conftest",
+        ":submit_server",
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:matchers",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_submit_server",
+    srcs = ["test_submit_server.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":submit_server",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "agent_runner",
+    srcs = ["agent_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":runner",
+        ":submit_server",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:turn_limit",
+        "//agent_pkg/host:init_runner",
+        "//mcp_infra/display:rich_display",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":submit_server",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra/compositor",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/exec:docker",
+        "//net_util:docker",
+        "//net_util:net",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "submit_server",
+    srcs = ["submit_server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//editor_agent/runtime:constants",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/testing:fixtures",
+        "//test_util",
+        "@pypi//pytest",
+    ],
+)

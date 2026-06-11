@@ -1,0 +1,6 @@
+# third_party: external dependency overlays and MODULE.bazel fragments
+
+exports_files([
+    "go.mod",
+    "go.sum",
+])

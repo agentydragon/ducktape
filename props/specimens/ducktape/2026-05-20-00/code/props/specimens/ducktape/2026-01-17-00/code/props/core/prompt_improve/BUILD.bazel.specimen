@@ -1,0 +1,101 @@
+"""Prompt improvement module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "token_budget_handler",
+    srcs = ["token_budget_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+    ],
+)
+
+py_library(
+    name = "reminder_handler",
+    srcs = ["reminder_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core/db:config",
+        "//props/core/db:session",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "improve_agent",
+    srcs = ["improve_agent.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":reminder_handler",
+        ":token_budget_handler",
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
+        "//props/core:agent_handle",
+        "//props/core:agent_registry",
+        "//props/core:agent_setup",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:oci_utils",
+        "//props/core/cli:common_options",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:config",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/models:examples",
+        "//props/core/prompt_optimize:prompt_optimizer",
+        "//props/core/prompt_optimize:target_metric",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        ":improve_agent",
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

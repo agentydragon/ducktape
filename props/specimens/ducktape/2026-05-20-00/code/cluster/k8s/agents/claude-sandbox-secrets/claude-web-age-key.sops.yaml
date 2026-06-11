@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claude-web-age-key
+  namespace: claude-sandbox
+  annotations:
+    description: Age private key for SOPS decryption in Claude Code web sessions
+type: Opaque
+stringData:
+  age-key: ENC[AES256_GCM,data:JVLcGAfash4xiAERR8fDvGPnEsmMz7ByPRol78bJsl7okqCbhwjFt0BDo1p4pQQOajyIXkLy9i9RpaLZwFbs7HbSZ+3RFERcywQ=,iv:lA9XF1KDqlVcznjLb/9oR7EuL27yYe20cJyLtEGl9Kg=,tag:BfLxVfO8VDd8nJd9se95aQ==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3TWNmbWxhZ0hLeDdOOWJS
+        SEd6bTBwVlRxV0xWNEl2eFJCZ2FMSUlaQUQ0CkFJRTNSQnJIUDRyeWNNZHRoNkhX
+        MElmZWc5bDQwS0tWR2JEZkt6SXlYMmsKLS0tIFFrLzdnYllMOGlPWlM3R3VXaUk4
+        NkFsVEYwZ1hMUm5Cb0JRakZMYnVvRG8KQ2BNouJVtcuVrQJrRt5QZyEcROsuUL6u
+        fe3OMj3ggIBdjZ3y0YBx1EUW/a2OZFA+FU20Mu4mS2qTlj9M7L6bZw==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTbzZkTGljVzV6aDBveTI1
+        d3FpNGdYeE1oT0tLd053K0MzWjcyUTZ5SngwCkhITUNheWJqc3ZZeDh3QnpLODhG
+        dWxCcmNkeGlaRmc1Z2RTN0tQSGtMTTgKLS0tIHVjTzM4Z1hwcHdZWmVQblh4M1BH
+        OUZxOVZBVGt6ZWpabExJS01Rc1YrcmsKt6PYi14SOugr3UkQOp3TFH4FkED5wAPH
+        BNGJf+bLW/XuZTv7LOhDPLWizgd7QT60v/mDKSfdg3I961vixADDnQ==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-05T19:50:16Z"
+  mac: ENC[AES256_GCM,data:cHArMTAkwAza1tkVl6So0k0IrXChUNqGEPW7n7X91c6n7EMsNJ1IL7Utl8MOyBhAbctOHPhLV9mYgDunQkI3kgA97OI4XNDkBTMsum7RgQ4MK6b9ln15pd0BH02sEWgytzZAm66Xv5iZi0BV5SZK6clhwdacg3Q/g5VXgpexzLI=,iv:Ax/SHYLhx6wKWC9SK7XtxK4ZO8oZUWfCZVgTmHEGwvQ=,tag:fm05eVa/a0cTYHlKy2ZqvQ==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

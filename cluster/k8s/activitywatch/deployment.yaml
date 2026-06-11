@@ -4,31 +4,30 @@ metadata:
   name: activitywatch
   namespace: activitywatch
   labels:
-    app: activitywatch
+    app.kubernetes.io/name: activitywatch
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: activitywatch
+      app.kubernetes.io/name: activitywatch
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: activitywatch
+        app.kubernetes.io/name: activitywatch
     spec:
-      serviceAccountName: activitywatch
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 999
       nodeSelector:
         topology.kubernetes.io/region: proxmox
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: aw-server
-          image: ghcr.io/agentydragon/aw-server:devel-20260401064257-79303ab # {"$imagepolicy": "flux-system:activitywatch"}
+          image: ghcr.io/agentydragon/aw-server:devel-20260610085449-6ffe9b3 # {"$imagepolicy": "flux-system:activitywatch"}
           ports:
             - containerPort: 5600
               name: http

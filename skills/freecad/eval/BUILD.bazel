@@ -1,0 +1,31 @@
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+oci_layout_rloc(
+    name = "freecad_test",
+    image = "@freecad_test_linux_amd64",
+)
+
+py_library(
+    name = "run_eval_lib",
+    srcs = ["run_eval.py"],
+    deps = [
+        "//mcp_infra/exec:docker_types",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "@pypi//claude_agent_sdk",
+    ],
+)
+
+py_binary(
+    name = "run_eval",
+    data = [
+        "baseplate/CHECKLIST.md",
+        "baseplate/TASK.md",
+        ":freecad_test",
+        "//mcp_infra/exec:docker_launcher",
+        "//skills/freecad:freecad_tar",
+    ],
+    main_module = "skills.freecad.eval.run_eval",
+    deps = [":run_eval_lib"],
+)

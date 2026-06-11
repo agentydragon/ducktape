@@ -1,63 +1,41 @@
-# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
+# Main CI pipeline — dependency chain for Bazel builds, releases, and image pushes.
+#
+# Container images (rbe-worker, freecad-test) are built by container-images.yml
+# independently. CI uses the pinned image from image_pins.json.
+#
+# Independent workflows (pre-commit, ansible-lint, nix-attic-push, openclaw-image,
+# container-images) have their own triggers and run separately.
 name: CI
-"on":
+
+on:
   push:
-    branches:
-      - main
-      - master
-      - devel
-  pull_request: null
-  workflow_dispatch: null
+    branches: [main, devel]
+  pull_request:
+  workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 permissions:
   contents: write
   packages: write
+
 jobs:
-  compute-targets:
-    name: Compute affected targets
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      workflows: ${{ steps.decide.outputs.workflows }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v7
-      - name: Compute CI decision
-        id: decide
-        run: uv run devinfra/ci/ci_decide.py
-  rbe-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
-    uses: ./.github/workflows/rbe-image.yml
-  props-images:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-images')
-    uses: ./.github/workflows/props-images.yml
-    with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+  bazel-ci:
+    uses: ./.github/workflows/bazel-ci.yml
     secrets: inherit
-  openclaw-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
-    uses: ./.github/workflows/openclaw-image.yml
+
+  release:
+    needs: [bazel-ci]
+    if: always() && !cancelled() && github.event_name == 'push'
+    uses: ./.github/workflows/release.yml
     secrets: inherit
-  nix-attic-push:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-attic-push')
-    uses: ./.github/workflows/nix-attic-push.yml
+
+  # push-images also pushes the props agent images (props-agents job) to the
+  # props registry, gated on props tests — see push-images.yml.
+  push-images:
+    needs: [bazel-ci]
+    if: always() && !cancelled() && github.event_name == 'push'
+    uses: ./.github/workflows/push-images.yml
     secrets: inherit
-  ansible-lint:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'ansible-lint')
-    uses: ./.github/workflows/ansible-lint.yml
-  pre-commit:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'pre-commit')
-    uses: ./.github/workflows/pre-commit.yml

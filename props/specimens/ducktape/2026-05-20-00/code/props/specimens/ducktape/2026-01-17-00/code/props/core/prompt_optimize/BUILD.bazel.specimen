@@ -1,0 +1,97 @@
+"""Prompt optimizer module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+# target_metric.py is standalone (no deps) - needed by agent_types
+py_library(
+    name = "target_metric",
+    srcs = ["target_metric.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "budget_handler",
+    srcs = ["budget_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "//props/core/db:query_builders",
+        "//props/core/db:session",
+    ],
+)
+
+py_library(
+    name = "prompt_optimizer",
+    srcs = ["prompt_optimizer.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":budget_handler",
+        ":target_metric",
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
+        "//props/core:agent_handle",
+        "//props/core:agent_registry",
+        "//props/core:agent_setup",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:exceptions",
+        "//props/core:ids",
+        "//props/core:oci_utils",
+        "//props/core:splits",
+        "//props/core/cli:common_options",
+        "//props/core/critic:exceptions",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:config",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/models:examples",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        ":prompt_optimizer",
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

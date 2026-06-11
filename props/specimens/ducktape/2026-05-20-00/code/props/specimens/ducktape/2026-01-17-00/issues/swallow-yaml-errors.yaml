@@ -1,0 +1,29 @@
+rationale: |
+  Broad exception catching around YAML parsing silently swallows errors that should be visible.
+
+  Problems with current code:
+  1. Catches Exception instead of specific yaml parsing errors
+  2. try/except wraps both yaml.safe_load_all AND the processing loop - bugs in loop logic would be silently ignored
+  3. No logging of the error - failures are completely invisible
+
+  Should at minimum:
+  - Narrow the try/except to only wrap yaml.safe_load_all
+  - Catch only yaml.YAMLError, not Exception
+  - Log the error visibly (warning or error level)
+
+  Arguably should also fail on malformed YAML, though there's a separate YAML validator that runs before this.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      cluster/scripts/validate_kustomizations.py:
+        - [95, 97]
+    note: >-
+      except Exception: pass swallows all errors including bugs in processing loop; should
+      catch yaml.YAMLError only, log visibly, and narrow scope to just yaml.safe_load_all
+    critic_scopes_expected_to_recall:
+      - - cluster/scripts/validate_kustomizations.py
+    match_file_restriction:
+      - cluster/scripts/validate_kustomizations.py

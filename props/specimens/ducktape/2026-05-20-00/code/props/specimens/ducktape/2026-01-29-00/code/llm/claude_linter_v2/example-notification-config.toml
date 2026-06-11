@@ -1,0 +1,37 @@
+# Example configuration for Claude Linter v2 with notification hooks
+
+version = "2.0"
+
+# Hook behaviors - each hook type has its own specific configuration
+[hooks.pre]
+# PreToolUse hooks don't need any special config - they just block or allow
+
+[hooks.post]
+# PostToolUse hooks can auto-fix and inject permissions
+auto_fix = true
+autofix_categories = ["formatting"]
+inject_permissions = true
+
+[hooks.stop]
+# Stop hooks can enforce quality gates
+quality_gate = true
+
+[hooks.notification]
+# Notification hooks have notification-specific settings
+send_to_dbus = true
+urgency = "normal"  # Options: "low", "normal", "critical"
+
+[hooks.subagent_stop]
+# SubagentStop hooks don't need special config currently
+
+# Python tools configuration - list format is the correct modular way
+python.tools = ["ruff", "black", "isort"]
+
+# Python-specific checks
+[python.bare_except]
+enabled = true
+message = "Bare except clauses hide errors and make debugging difficult"
+
+[python.hasattr]
+enabled = true
+message = "hasattr() usage is discouraged - use proper type checking"

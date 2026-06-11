@@ -5,7 +5,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/gitops/dns-records
+  refreshBeforeApply: true
+  path: ./tf/gitops/dns-records
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -15,9 +16,9 @@ spec:
 
   backendConfig:
     customConfiguration: |
-      backend "kubernetes" {
-        secret_suffix = "dns-records"
-        namespace     = "flux-system"
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "dns_records"
       }
 
   # Static variables
@@ -25,9 +26,15 @@ spec:
     - name: route53_zone_id
       value: "Z02901943N8ZFQFOD9P5I"
 
-  # AWS credentials as environment variables
+  # AWS credentials + PG password
   runnerPodTemplate:
     spec:
       envFrom:
         - secretRef:
             name: aws-route53-credentials
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password

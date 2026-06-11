@@ -1,0 +1,15 @@
+rationale: |
+  InputTokensDetails and OutputTokensDetails are imported from
+  openai.types.responses.response_usage but are never used in the module (only
+  ResponseUsage from that import is used). The unused imports should be removed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [10, 10]
+    note: InputTokensDetails and OutputTokensDetails imported but unused
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py

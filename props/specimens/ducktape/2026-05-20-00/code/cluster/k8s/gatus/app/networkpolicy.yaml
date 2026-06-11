@@ -1,0 +1,31 @@
+# Restrict Gatus ingress to the Cilium gateway and Prometheus scraping.
+# With native OIDC, auth is handled by Gatus itself — gateway passes traffic directly.
+#
+# Uses CiliumNetworkPolicy because standard K8s NetworkPolicy cannot match
+# Cilium Gateway API traffic (reserved:ingress identity via hostNetwork Envoy).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gatus-ingress
+  namespace: gatus
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
+  ingress:
+    # Cilium Gateway API (reserved:ingress identity) → Gatus
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+    # Prometheus → Gatus (ServiceMonitor scraping)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

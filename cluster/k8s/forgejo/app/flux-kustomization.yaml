@@ -1,0 +1,34 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: forgejo
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/forgejo/app
+  prune: true
+  wait: true
+  # Health check ensures Forgejo is fully operational with SSO
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: forgejo
+      namespace: forgejo
+  dependsOn:
+    - name: forgejo-namespace
+    - name: forgejo-db
+    - name: gateway
+    - name: cert-manager
+    - name: forgejo-secrets
+    - name: seaweedfs-forgejo-bucket # S3 bucket for packages/LFS/attachments
+    - name: seaweedfs-secrets # source of s3-identity-forgejo (mirrored into the namespace by reflector)
+    - name: reflector # Mirrors forgejo-oauth-client-secret + s3-identity-forgejo into the namespace
+    - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace
+    - name: authentik # Authentik must be running for OIDC
+    # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
+    # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.

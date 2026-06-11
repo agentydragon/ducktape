@@ -1,0 +1,89 @@
+"""Instruction optimizer package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+# no-mypy: statsmodels (transitive dep of plotnine) has broken __init__.py structure
+# that causes mypy to error with "Source file found twice under different module names".
+# rules_mypy adds all transitive deps to MYPYPATH, and mypy's exclude pattern doesn't
+# help because the error occurs during module discovery, not import following.
+# See: https://github.com/python/mypy/issues/8944
+py_library(
+    name = "inop",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "conftest.py",
+            "test_*.py",
+        ],
+    ),
+    imports = [".."],
+    tags = ["no-mypy"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//matplotlib",
+        "@pypi//pandas",
+        "@pypi//pathspec",
+        "@pypi//plotnine",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//structlog",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_test(
+    name = "test_optimizer_two_iters",
+    srcs = [
+        "conftest.py",
+        "test_optimizer_two_iters.py",
+    ],
+    imports = [".."],
+    tags = ["no-mypy"],  # see comment on inop library
+    deps = [
+        ":inop",
+        "//agent_core_testing",
+        "@pypi//aiodocker",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_mock",
+    ],
+)
+
+py_test(
+    name = "test_unit",
+    srcs = [
+        "conftest.py",
+        "test_config.py",
+        "test_exclusion_patterns.py",
+        "test_file_truncation.py",
+        "test_types.py",
+    ],
+    imports = [".."],
+    main = "conftest.py",
+    tags = ["no-mypy"],  # see comment on inop library
+    deps = [
+        ":inop",
+        "@pypi//pathspec",
+        "@pypi//pytest",
+        "@pypi//tiktoken",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":inop"],
+)

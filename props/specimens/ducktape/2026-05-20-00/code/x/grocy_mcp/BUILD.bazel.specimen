@@ -1,0 +1,309 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# ── Build-time spec fixup ────────────────────────────────────────────────────
+
+py_library(
+    name = "fix_openapi_spec_lib",
+    srcs = ["fix_openapi_spec.py"],
+)
+
+py_binary(
+    name = "fix_openapi_spec",
+    main_module = "x.grocy_mcp.fix_openapi_spec",
+    deps = [":fix_openapi_spec_lib"],
+)
+
+genrule(
+    name = "grocy_openapi_fixed",
+    srcs = ["@grocy_openapi_spec//file"],
+    outs = ["grocy.openapi.fixed.json"],
+    cmd = "$(execpath :fix_openapi_spec) $(SRCS) $@",
+    tools = [":fix_openapi_spec"],
+)
+
+# ── Libraries ────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "grocy_types",
+    srcs = ["grocy_types.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "mcp_types",
+    srcs = ["mcp_types.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":grocy_types",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "resolver",
+    srcs = ["resolver.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":grocy_types",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "batch_tools",
+    srcs = ["batch_tools.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":grocy_types",
+        ":mcp_types",
+        ":resolver",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    data = [
+        "server_instructions.md",
+        ":grocy_openapi_fixed",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":batch_tools",
+        ":mcp_types",
+        ":tool_metadata",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
+        "//util/bazel:runfiles",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server_cli",
+    main_module = "x.grocy_mcp.server",
+    deps = [":server"],
+)
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "grocy_container",
+    srcs = ["grocy_container.py"],
+    data = ["//third_party/containers:grocy"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        ":mcp_types",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "grocy_fixtures",
+    testonly = True,
+    srcs = ["grocy_fixtures.py"],
+    data = ["//third_party/containers:grocy"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        ":grocy_container",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":grocy_fixtures",
+        "//util/testing:otel_tracing",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":conftest",
+        ":mcp_types",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        ":mcp_types",
+        ":server",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_docstring_cross_links",
+    srcs = ["test_docstring_cross_links.py"],
+    deps = [
+        ":conftest",
+        ":mcp_types",
+        ":server",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_fix_openapi_spec",
+    srcs = ["test_fix_openapi_spec.py"],
+    data = [":grocy_openapi_fixed"],
+    deps = [
+        ":conftest",
+        ":fix_openapi_spec_lib",
+        ":grocy_types",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "dump_tools",
+    srcs = ["dump_tools.py"],
+    main_module = "x.grocy_mcp.dump_tools",
+    deps = [
+        ":mcp_types",
+        ":server",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_retry_safety",
+    srcs = ["test_retry_safety.py"],
+    deps = [
+        ":batch_tools",
+        ":conftest",
+        ":mcp_types",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_resolver",
+    srcs = ["test_resolver.py"],
+    deps = [
+        ":conftest",
+        ":grocy_types",
+        ":resolver",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_library(
+    name = "test_helpers",
+    testonly = True,
+    srcs = ["test_helpers.py"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":grocy_container",
+        ":grocy_fixtures",
+        ":server",
+        ":test_helpers",
+        ":tool_metadata",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# ── OCI image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "server_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "server_load",
+    image = ":server_image",
+    repo_tags = ["grocy-mcp:latest"],
+)
+
+py_library(
+    name = "tool_metadata",
+    srcs = ["tool_metadata.py"],
+)

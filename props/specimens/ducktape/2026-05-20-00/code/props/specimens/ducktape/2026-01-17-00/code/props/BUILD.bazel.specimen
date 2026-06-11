@@ -1,0 +1,3 @@
+# Props workspace - top-level package
+
+exports_files(["devenv.nix"])

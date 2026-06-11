@@ -1,0 +1,13 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-namespace
+  namespace: flux-system
+spec:
+  interval: 1h
+  path: ./cluster/k8s/authentik/namespace
+  prune: false # Don't delete namespace on kustomization removal
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 1m

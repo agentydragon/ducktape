@@ -1,0 +1,54 @@
+rationale: |
+  Code tokens (variable names, CLI flags, config keys, env vars, file paths, glob patterns)
+  written as plain markdown text instead of inline code or fenced code blocks. This causes
+  formatters like prettier to mangle special characters (e.g., `*` → `\*`), loses syntax
+  highlighting, and makes content non-copypasteable. Structured data like YAML schemas and
+  directory trees rendered as markdown nested lists are particularly bad — they don't render
+  as code, won't syntax-highlight, and can't be copy-pasted.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      sandboxed_jupyter/docs/TODO-SANDBOX.md:
+        - [33, 47]
+    note: "YAML policy schema rendered as markdown nested list instead of fenced yaml code block"
+    critic_scopes_expected_to_recall:
+      - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
+
+  - occurrence_id: occ-1
+    files:
+      sandboxed_jupyter/docs/TODO-SANDBOX.md:
+        - [57, 67]
+    note: "Directory tree rendered as markdown nested list instead of fenced code block"
+    critic_scopes_expected_to_recall:
+      - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
+
+  - occurrence_id: occ-2
+    files:
+      sandboxed_jupyter/docs/TODO-SANDBOX.md:
+        - [8, 8]
+        - [34, 35]
+        - [51, 51]
+        - [61, 61]
+        - [75, 81]
+    note: "Code tokens as plain text throughout (file-read*, JUPYTER_*, env vars, config keys)"
+    critic_scopes_expected_to_recall:
+      - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
+
+  - occurrence_id: occ-3
+    files:
+      sandboxed_jupyter/docs/TODO.md:
+        - [5, 6]
+        - [10, 10]
+        - [22, 22]
+    note: "Code tokens as plain text (file-read*, mach-lookup/system-socket, /tmp, mcpServers)"
+    critic_scopes_expected_to_recall:
+      - [sandboxed_jupyter/docs/TODO.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO.md

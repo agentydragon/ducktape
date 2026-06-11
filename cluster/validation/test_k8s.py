@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from cluster.validation.k8s import parse_k8s_resources
+from cluster.validation.k8s import HelmReleaseResource, parse_k8s_resources
 
 
 class TestParseK8sResources:
@@ -28,7 +28,7 @@ class TestParseK8sResources:
             "spec": {"chart": {"spec": {"version": "1.2.3"}}},
         }
         [resource] = parse_k8s_resources([doc])
-        assert resource.kind == "HelmRelease"
+        assert isinstance(resource, HelmReleaseResource)
         assert resource.chart_version == "1.2.3"
 
     def test_skips_empty_and_non_resource_docs(self) -> None:

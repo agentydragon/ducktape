@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="2.2in"
+   height="1in"
+   viewBox="0 0 111.76 50.799997"
+   version="1.1"
+   id="SVGRoot"
+   sodipodi:docname="sticker-2.2in-1in.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   inkscape:export-filename="/home/agentydragon/code/ducktape/found/sticker-2.2in-1in.png"
+   inkscape:export-xdpi="299.79428"
+   inkscape:export-ydpi="299.79428"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#">
+  <sodipodi:namedview
+     id="namedview113"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="false"
+     inkscape:document-units="mm"
+     showgrid="false"
+     inkscape:zoom="2.7145002"
+     inkscape:cx="41.075702"
+     inkscape:cy="85.098539"
+     inkscape:window-width="1280"
+     inkscape:window-height="659"
+     inkscape:window-x="0"
+     inkscape:window-y="32"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="layer1"
+     showguides="true"
+     inkscape:guide-bbox="true"
+     width="75mm"
+     fit-margin-top="3"
+     fit-margin-left="3"
+     fit-margin-right="3"
+     fit-margin-bottom="3"
+     scale-x="2"
+     units="in">
+    <sodipodi:guide
+       position="33.815852,10.915982"
+       orientation="1,0"
+       id="guide54990" />
+    <sodipodi:guide
+       position="56.553775,6.1499992"
+       orientation="0,-1"
+       id="guide129197" />
+    <sodipodi:guide
+       position="52.349248,30.730309"
+       orientation="0,-1"
+       id="guide129199" />
+    <sodipodi:guide
+       position="68.678393,28.642476"
+       orientation="0,-1"
+       id="guide129201" />
+    <sodipodi:guide
+       position="77.24917,8.2132637"
+       orientation="0,-1"
+       id="guide129317" />
+    <sodipodi:guide
+       position="71.722348,9.5473244"
+       orientation="1,0"
+       id="guide129319" />
+    <sodipodi:guide
+       position="3.1500004,33.73031"
+       orientation="0,353.5206"
+       id="guide133322" />
+    <sodipodi:guide
+       position="96.68566,33.73031"
+       orientation="115.57913,0"
+       id="guide133324" />
+    <sodipodi:guide
+       position="96.68566,3.1499988"
+       orientation="0,-353.5206"
+       id="guide133326" />
+    <sodipodi:guide
+       position="3.1500004,3.1499988"
+       orientation="-115.57913,0"
+       id="guide133328" />
+    <sodipodi:guide
+       position="105.02644,44.21588"
+       orientation="1,0"
+       id="guide8568" />
+    <sodipodi:guide
+       position="105.02644,44.21588"
+       orientation="0,-1"
+       id="guide8672" />
+    <sodipodi:guide
+       position="68.264851,7.4542955"
+       orientation="0,-1"
+       id="guide8912" />
+    <sodipodi:guide
+       position="68.264851,7.4542955"
+       orientation="1,0"
+       id="guide8914" />
+  </sodipodi:namedview>
+  <defs
+     id="defs108">
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Strips1_1"
+       id="pattern136248"
+       patternTransform="matrix(0.45135259,0.97105657,-0.97105686,0.45135257,1.9780691,0.0439697)" />
+    <pattern
+       inkscape:collect="always"
+       patternUnits="userSpaceOnUse"
+       width="2"
+       height="1"
+       patternTransform="translate(0,0) scale(10,10)"
+       id="Strips1_1"
+       inkscape:stockid="Stripes 1:1"
+       inkscape:isstock="true">
+      <rect
+         style="fill:black;stroke:none"
+         x="0"
+         y="-0.5"
+         width="1"
+         height="2"
+         id="rect134976" />
+    </pattern>
+    <marker
+       style="overflow:visible"
+       id="Arrow2Lstart"
+       refX="0"
+       refY="0"
+       orient="auto"
+       inkscape:stockid="Arrow2Lstart"
+       inkscape:isstock="true">
+      <path
+         transform="matrix(1.1,0,0,1.1,1.1,0)"
+         d="M 8.7185878,4.0337352 -2.2072895,0.01601326 8.7185884,-4.0017078 c -1.7454984,2.3720609 -1.7354408,5.6174519 -6e-7,8.035443 z"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:0.625;stroke-linejoin:round"
+         id="path133710" />
+    </marker>
+    <marker
+       inkscape:stockid="DistanceEnd"
+       orient="auto"
+       refY="0"
+       refX="0"
+       id="DistanceEnd"
+       style="overflow:visible"
+       inkscape:isstock="true">
+      <g
+         id="g2301">
+        <path
+           id="path2316"
+           d="M 0,0 H -2"
+           style="fill:none;stroke:context-fill;stroke-width:1.15;stroke-linecap:square" />
+        <path
+           id="path2312"
+           d="m 0,0 -13,4 4,-4 -4,-4 z"
+           style="fill:context-stroke;fill-rule:evenodd;stroke:none" />
+        <path
+           id="path2314"
+           d="M 0,-4 V 40"
+           style="fill:none;stroke:context-stroke;stroke-width:1;stroke-linecap:square" />
+      </g>
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(19.800764,3.3245689)">
+    <text
+       xml:space="preserve"
+       style="font-size:2.82222px;line-height:124%;font-family:UnPenheulim;-inkscape-font-specification:UnPenheulim;letter-spacing:0px;word-spacing:0px;fill:none;stroke:#000000;stroke-width:0.295642px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="-13.903278"
+       y="31.85766"
+       id="text6567"><tspan
+         sodipodi:role="line"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:2.82222px;font-family:'Noto Mono';-inkscape-font-specification:'Noto Mono';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.295642px"
+         x="-13.903278"
+         y="31.85766"
+         id="tspan177128"><tspan
+   dx="0"
+   dy="0"
+   rotate="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+   id="tspan14065"
+   style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:2.82222px;font-family:'Noto Mono';-inkscape-font-specification:'Noto Mono';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.295642px">http://adgn.link/found</tspan></tspan><tspan
+         sodipodi:role="line"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:2.82222px;font-family:'Noto Mono';-inkscape-font-specification:'Noto Mono';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.295642px"
+         x="-13.903278"
+         y="35.447247"
+         id="tspan14067">http://t.me/agentydragon</tspan><tspan
+         sodipodi:role="line"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:2.82222px;font-family:'Noto Mono';-inkscape-font-specification:'Noto Mono';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.295642px"
+         x="-13.903278"
+         y="39.036831"
+         rotate="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         dx="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         dy="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         id="tspan178106">agentydragon@gmail.com</tspan><tspan
+         sodipodi:role="line"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:2.82222px;font-family:'Noto Mono';-inkscape-font-specification:'Noto Mono';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.295642px"
+         x="-13.903278"
+         y="42.536381"
+         rotate="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         dx="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         dy="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+         id="tspan177130" /></text>
+    <text
+       xml:space="preserve"
+       style="font-size:3.38667px;line-height:119%;font-family:UnPenheulim;-inkscape-font-specification:UnPenheulim;letter-spacing:0px;word-spacing:0px;fill:none;stroke:#000000;stroke-width:0.301889px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="15.005368"
+       y="6.3903913"
+       id="text26354"><tspan
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.38667px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.301889px"
+         x="15.005368"
+         y="6.3903913"
+         sodipodi:role="line"
+         id="tspan167411">Oops! Did I get lost?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.02167px;line-height:119%;font-family:UnPenheulim;-inkscape-font-specification:UnPenheulim;letter-spacing:0px;word-spacing:0px;fill:none;stroke:#000000;stroke-width:0.301889px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="15.460268"
+       y="13.863836"
+       id="text26354-9"><tspan
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.02167px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.301889px"
+         x="15.460268"
+         y="13.863836"
+         sodipodi:role="line"
+         id="tspan169786">Please help me</tspan><tspan
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.02167px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.301889px"
+         x="15.460268"
+         y="18.750607"
+         sodipodi:role="line"
+         id="tspan169790">return to Rai.</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.04354px;line-height:99%;font-family:UnPenheulim;-inkscape-font-specification:UnPenheulim;letter-spacing:0px;word-spacing:0px;fill:none;stroke:#000000;stroke-width:0.282388px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="19.040098"
+       y="25.017578"
+       id="text26354-5"><tspan
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.04354px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.282388px"
+         x="19.040098"
+         y="25.017578"
+         id="tspan82769-9"
+         sodipodi:role="line">Thank you!</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:url(#pattern136248);stroke-width:0.446955;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:0;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect133352"
+       width="105.46276"
+       height="43.73381"
+       x="-16.627287"
+       y="-0.15109137"
+       ry="0.77844638" />
+    <image
+       preserveAspectRatio="none"
+       inkscape:svg-dpi="96"
+       width="36.761585"
+       height="36.761585"
+       xlink:href="qr.svg"
+       id="image13901"
+       x="48.464088"
+       y="3.2595482" />
+    <image
+       width="24.74342"
+       height="24.74342"
+       preserveAspectRatio="none"
+       style="image-rendering:optimizeQuality"
+       xlink:href="rai_winterskin_sticker_512.png"
+       id="image5762"
+       x="-13.772161"
+       y="2.2897925" />
+  </g>
+  <metadata
+     id="metadata137639">
+    <rdf:RDF>
+      <cc:License
+         rdf:about="http://creativecommons.org/licenses/by-nc-sa/4.0/">
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Reproduction" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Distribution" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Notice" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Attribution" />
+        <cc:prohibits
+           rdf:resource="http://creativecommons.org/ns#CommercialUse" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#DerivativeWorks" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#ShareAlike" />
+      </cc:License>
+      <cc:Work
+         rdf:about="">
+        <cc:license
+           rdf:resource="http://creativecommons.org/licenses/by-nc-sa/4.0/" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>

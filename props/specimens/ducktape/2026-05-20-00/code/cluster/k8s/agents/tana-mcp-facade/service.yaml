@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+  labels:
+    app.kubernetes.io/name: tana-mcp-facade
+spec:
+  selector:
+    app.kubernetes.io/name: tana-mcp-facade
+  ports:
+    - name: http
+      port: 8765
+      targetPort: 8765
+      protocol: TCP
+  type: ClusterIP

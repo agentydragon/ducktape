@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Empty stub for Openbox's default menu.xml, which `include`s
+  /var/lib/openbox/debian-menu.xml. Debian ships that file via the `menu`
+  package; Ubuntu's `openbox` alone does not. Without this stub Openbox
+  warns "Unable to find a valid menu file" on every start.
+
+  We don't use Openbox's right-click menu in this container; the right-click
+  surface is for VNC operator use only and a top-level menu would be noise.
+-->
+<openbox_menu xmlns="http://openbox.org/3.4/menu"></openbox_menu>

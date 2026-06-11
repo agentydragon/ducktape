@@ -1,0 +1,22 @@
+does not work:
+
+    %%tana%%
+    - ```python
+      foo
+      bar
+      baz
+      ```
+
+    Tana "copy as Tana Paste":
+        %%tana%%
+        - Code block value::
+        ```Python
+        print("Hello world")
+        ```
+        - Multiple code block values::
+        ```Python
+        print("Code 1")
+        ```
+        ```bash
+        echo "Code 2"
+        ```

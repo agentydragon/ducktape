@@ -1,0 +1,18 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: plaid-db-mcp-ingress
+  namespace: plaid-mcp
+  annotations:
+    description: "Default-deny ingress for plaid-db-mcp pods. Only Gateway ingress may reach the OAuth facade; postgres-mcp stays loopback-only."
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-db-mcp
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP

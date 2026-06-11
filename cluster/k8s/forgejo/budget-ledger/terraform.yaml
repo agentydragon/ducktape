@@ -1,0 +1,36 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: budget-ledger
+  namespace: flux-system
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./tf/gitops/budget-ledger
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  # forgejo_collaborator.claude grants read to the claude agent account, so the
+  # forgejo-claude module (which provisions that user) must apply first.
+  dependsOn:
+    - name: forgejo-claude
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "budget_ledger"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password

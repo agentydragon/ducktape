@@ -1,0 +1,224 @@
+"""Ember agent package."""
+
+# gazelle:resolve py ember //ember:system_prompt
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+filegroup(
+    name = "data_files",
+    srcs = [
+        "docs/agent_ontology.md",
+        "docs/pilot_plan.md",
+        "resources/examples/matrix-client/quickstart.py",
+        "resources/examples/python-session/demo.sh",
+        "resources/examples/python-session/test_demo.sh",
+        "system_prompt.md.j2",
+    ],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "emberd",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//uvicorn"],
+)
+
+# TODO: ember-eval target disabled - src/ember/evals/runner.py does not exist
+# py_binary(
+#     name = "ember-eval",
+#     srcs = ["src/ember/evals/runner.py"],
+#     main = "src/ember/evals/runner.py",
+#     deps = [":ember"],
+# )
+
+py_binary(
+    name = "ember-python",
+    srcs = ["ember_python_main.py"],
+    main = "ember_python_main.py",
+    deps = [":python_session"],
+)
+
+py_test(
+    name = "test_documentation_snippets",
+    srcs = ["test_documentation_snippets.py"],
+    data = [":data_files"],
+    imports = [".."],
+    deps = [
+        ":system_prompt",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_matrix_client",
+    srcs = ["test_matrix_client.py"],
+    imports = [".."],
+    deps = [
+        ":matrix_client",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_session",
+    srcs = ["test_python_session.py"],
+    imports = [".."],
+    deps = [
+        ":python_session",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "emberd_tar",
+    srcs = [":emberd"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/emberd"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+    tars = [":emberd_tar"],
+    workdir = "/opt/emberd",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["emberd:latest"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        ":runtime",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":secrets",
+        ":system_prompt",
+        "//openai_utils:types",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "matrix_client",
+    srcs = ["matrix_client.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        ":secrets",
+        "@pypi//matrix_nio",
+        "@pypi//mautrix",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_tools",
+    srcs = ["mcp_tools.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        ":matrix_client",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/exec:direct",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "python_session",
+    srcs = ["python_session.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//jupyter_client"],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        ":handlers",
+        ":matrix_client",
+        ":mcp_tools",
+        ":python_session",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "secrets",
+    srcs = ["secrets.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "system_prompt",
+    srcs = ["system_prompt.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//jinja2"],
+)
+
+py_library(
+    name = "ember_python_main",
+    srcs = ["ember_python_main.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":python_session"],
+)

@@ -1,0 +1,21 @@
+rationale: |
+  JSONLLogger.log() opens and closes the file on every single log call. This is
+  inefficient I/O - file open/close has OS overhead, provides no buffering benefit,
+  and creates contention under frequent logging. Should keep the file handle open
+  as instance state (opened in __init__, closed in __del__ or via context manager),
+  or use the standard logging.FileHandler pattern which handles this properly.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/io/jsonl_logger.py:
+        - [15, 19]
+    note: >-
+      Opens file with 'with self.log_path.open("a")' on every log() call.
+      Should keep file handle open as instance state for efficiency.
+    critic_scopes_expected_to_recall:
+      - - inop/io/jsonl_logger.py
+    match_file_restriction:
+      - inop/io/jsonl_logger.py

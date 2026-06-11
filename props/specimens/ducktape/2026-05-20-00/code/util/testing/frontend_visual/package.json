@@ -1,0 +1,15 @@
+{
+  "name": "frontend-visual-test",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
+    "puppeteer": "^23.11.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "puppeteer"
+    ]
+  }
+}

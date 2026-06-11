@@ -1,0 +1,15 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gaffer-private
+  namespace: flux-system
+  annotations:
+    description: "Private companion monorepo. Reconciled from main branch via the ducktape-automation GitHub App (also used to push image-pin commits back here)."
+spec:
+  interval: 1m
+  provider: github
+  ref:
+    branch: main
+  secretRef:
+    name: ducktape-automation-github-app
+  url: https://github.com/agentydragon/gaffer-private.git

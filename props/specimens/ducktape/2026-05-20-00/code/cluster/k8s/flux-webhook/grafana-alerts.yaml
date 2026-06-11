@@ -1,0 +1,26 @@
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  type: grafana
+  address: https://grafana.allegedly.works
+  secretRef:
+    name: grafana-flux-token
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: grafana-annotations
+  namespace: flux-system
+spec:
+  providerRef:
+    name: grafana
+  eventSeverity: info
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+    - kind: HelmRelease
+      name: "*"

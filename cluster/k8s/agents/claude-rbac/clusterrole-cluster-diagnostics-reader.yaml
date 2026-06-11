@@ -111,6 +111,14 @@ rules:
       - pods
       - nodes
     verbs: ["get", "list", "watch"]
+  # nodes/proxy allows GET requests proxied through the apiserver to the kubelet HTTP API.
+  # Enables: /stats/summary (resource usage), /metrics, /pods, /logs/<filename> (node system logs).
+  # get-only: dangerous kubelet operations (exec, run, attach, portforward) use POST → require
+  # the "create" verb, which is intentionally not granted here.
+  - apiGroups: [""]
+    resources:
+      - nodes/proxy
+    verbs: ["get"]
   - apiGroups: ["monitoring.coreos.com"]
     resources:
       - prometheuses
@@ -118,15 +126,6 @@ rules:
       - servicemonitors
       - podmonitors
       - prometheusrules
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["longhorn.io"]
-    resources:
-      - volumes
-      - replicas
-      - engines
-      - nodes
-      - instancemanagers
-      - settings
     verbs: ["get", "list", "watch"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
@@ -172,10 +171,6 @@ rules:
       - clusterzones
       - clusterrrsets
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["vault.banzaicloud.com"]
-    resources:
-      - vaults
-    verbs: ["get", "list", "watch"]
   - apiGroups: ["trust.cert-manager.io"]
     resources:
       - bundles
@@ -185,4 +180,5 @@ rules:
       - externalsecrets
     verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
-# longhorn-system, flux-system (see role-logs-configmaps-reader.yaml).
+# flux-system, grocy-sf, grocy-vallejo, airlock, authentik
+# (see role-logs-configmaps-reader.yaml).

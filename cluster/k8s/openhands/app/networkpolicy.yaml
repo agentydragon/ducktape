@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openhands-ingress
+  namespace: openhands
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openhands
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: authentik
+              app.kubernetes.io/component: server
+      ports:
+        - port: 3000
+          protocol: TCP

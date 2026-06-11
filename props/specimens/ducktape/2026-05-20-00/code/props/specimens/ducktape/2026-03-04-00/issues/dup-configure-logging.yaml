@@ -1,0 +1,22 @@
+rationale: |
+  `agent_core/logging_utils.py` and `util/logging.py` both implement
+  `configure_logging` with nearly identical logic: dictConfig setup with
+  console/file/null handlers, structlog processor chain with the same
+  `MINICODEX_DEBUG` env var check, same `KeyValueRenderer`/`JSONRenderer`
+  switch, same `make_filtering_bound_logger(logging.INFO)` wrapper. The
+  `util/logging.py` version is strictly more capable (env-var defaults,
+  `LogLevel` enum, Typer callback). `agent_core` should use it instead.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core/logging_utils.py:
+        - [16, 80]
+      util/logging.py:
+        - [25, 100]
+    critic_scopes_expected_to_recall:
+      - [agent_core/logging_utils.py]
+      - [util/logging.py]
+      - [agent_core/logging_utils.py, util/logging.py]

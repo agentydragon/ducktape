@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atuin-server
+  namespace: atuin
+  labels:
+    app.kubernetes.io/name: atuin
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atuin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: atuin
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: atuin
+          image: ghcr.io/atuinsh/atuin:v18.12.0
+          args:
+            - start
+          ports:
+            - containerPort: 8888
+              name: http
+          env:
+            - name: ATUIN_HOST
+              value: "0.0.0.0"
+            - name: ATUIN_PORT
+              value: "8888"
+            - name: ATUIN_OPEN_REGISTRATION
+              value: "false"
+            - name: ATUIN_DB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: atuin-db-app
+                  key: uri
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 5
+            periodSeconds: 5

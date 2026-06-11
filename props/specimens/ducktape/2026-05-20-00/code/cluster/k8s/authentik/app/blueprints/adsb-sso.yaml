@@ -1,0 +1,27 @@
+version: 1
+metadata:
+  name: SSO - ADS-B
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: adsb-provider
+    state: present
+    identifiers:
+      name: adsb
+    attrs:
+      external_host: "https://adsb.allegedly.works"
+      internal_host: "http://ultrafeeder.sdr.svc.cluster.local:80"
+      mode: proxy
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      access_token_validity: "hours=24"
+  - model: authentik_core.application
+    id: adsb-app
+    state: present
+    identifiers:
+      slug: adsb
+    attrs:
+      name: ADS-B Tracker
+      provider: !KeyOf adsb-provider
+      meta_description: "Aircraft tracking via ADS-B"
+      meta_launch_url: "https://adsb.allegedly.works"

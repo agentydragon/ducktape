@@ -1,0 +1,3 @@
+# rtl-tcp image is built via Dockerfile (not Bazel) because the RTL-SDR Blog V4
+# needs the rtl-sdr-blog fork built from source — not available as a deb package.
+# See .github/workflows/container-images.yml for the CI build.

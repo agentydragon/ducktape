@@ -14,7 +14,7 @@
     occurrences: OccurrenceStatsRow[];
   }
 
-  let { occurrences }: Props = $props();
+  const { occurrences }: Props = $props();
 
   function pctParts(v: number): { integer: string; fraction: string } {
     const [integer, fraction] = (v * 100).toFixed(1).split(".");

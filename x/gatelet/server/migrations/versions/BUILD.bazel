@@ -1,11 +1,10 @@
 """Gatelet server migration versions."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "001_initial_schema",
     srcs = ["001_initial_schema.py"],
-    imports = ["../../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "@pypi//alembic",
@@ -16,7 +15,6 @@ py_library(
 py_library(
     name = "002_normalize_webhook_payload",
     srcs = ["002_normalize_webhook_payload.py"],
-    imports = ["../../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "@pypi//alembic",

@@ -1,8 +1,12 @@
 ---
 nebula_listen_port: 4242
 
-# Path to sops-encrypted secrets file (relative to repo root)
-nebula_sops_secrets_file: ""
+# Plaintext cert files (no SOPS decryption needed)
+nebula_ca_cert_file: ""
+nebula_host_cert_file: ""
+
+# SOPS binary-encrypted host private key
+nebula_host_key_sops_file: ""
 
 # Upstream DNS servers for dnsmasq (non-mesh queries)
 nebula_upstream_dns:

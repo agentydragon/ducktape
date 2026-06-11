@@ -1,6 +1,6 @@
 # Proxmox Home Nodes
-# 1x controlplane (talos-pve-cp-0) on home Proxmox (atlas), 24 GB RAM
-# Uses Nebula mesh for networking with VPS nodes
+# No active Talos control planes are provisioned on Proxmox. The old
+# talos-pve-cp-0 VM is retired; remove its state after atlas is reachable.
 
 # ============================================================================
 # TALOS IMAGE FACTORY - Generate custom Talos image with extensions
@@ -213,6 +213,8 @@ data "talos_machine_configuration" "proxmox" {
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
         })
+        # Write AuthenticationConfiguration for CP nodes only (workers don't run kube-apiserver).
+        files = each.value.type == "controlplane" ? local.cp_auth_files : []
       })
       })),
       # Explicit hostname — overrides HostnameConfig auto: stable (Talos v1.12+).

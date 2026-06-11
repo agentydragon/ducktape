@@ -1,0 +1,41 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: plaid-valkey-kimsufi
+  namespace: plaid-mcp
+  annotations:
+    description: Kimsufi Valkey for the Plaid DB MCP OAuth facade state
+spec:
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:8-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path-ovh
+        resources:
+          requests:
+            storage: 1Gi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["hil-ovh"]
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: plaid-valkey-kimsufi
+          topologyKey: kubernetes.io/hostname

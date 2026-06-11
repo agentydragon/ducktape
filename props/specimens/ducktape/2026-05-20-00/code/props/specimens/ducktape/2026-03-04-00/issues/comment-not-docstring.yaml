@@ -1,0 +1,11 @@
+rationale: |
+  Line 1 is a comment (`# GNOME terminal profile switching functionality`)
+  describing the module. If the description stays, it should be a docstring.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [1, 1]

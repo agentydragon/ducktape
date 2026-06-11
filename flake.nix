@@ -8,6 +8,11 @@
     # Unstable for packages that need frequent updates (e.g., claude-code)
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # Master for packages that temporarily need changes newer than
+    # nixos-unstable. Keep consumers narrow instead of moving whole hosts to
+    # nixpkgs master.
+    nixpkgs-master.url = "github:NixOS/nixpkgs/master";
+
     # Home Manager tracking 25.11 release
     home-manager = {
       url = "github:nix-community/home-manager/release-25.11";
@@ -65,11 +70,11 @@
         config.allowUnfree = true;
       };
 
-      # CI-released artifact pins (npins/sources.json), updated by release.yml.
+      # CI-released artifact pins (nix/artifact-pins.json), updated by sync-pins.yml.
       # All entries are plain fetchurl; sha256 is SHA-256 SRI of the downloaded file.
       artifacts =
         let
-          data = builtins.fromJSON (builtins.readFile ./npins/sources.json);
+          data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
         in
         builtins.mapAttrs (
           _: spec:
@@ -85,6 +90,20 @@
       pkgsUnstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
+        overlays = [
+          # CLEANUP(2026-04-18): Remove once NixOS/nixpkgs#510952 merges into
+          # nixos-unstable and we update the flake input.
+          # The npm tarball ships vendor/seccomp/*/apply-seccomp at mode 0644;
+          # NixOS preserves this into the store, breaking all sandboxed Bash calls.
+          # Upstream: anthropics/claude-code#43367
+          (final: prev: {
+            claude-code = prev.claude-code.overrideAttrs (old: {
+              postPatch = (old.postPatch or "") + ''
+                chmod -f +x vendor/seccomp/*/apply-seccomp 2>/dev/null || true
+              '';
+            });
+          })
+        ];
       };
 
       # Shared home-manager args passed to every HM configuration.
@@ -94,6 +113,7 @@
           pkgsUnstable
           claude-plugins-official
           siderolabs-docs
+          gafferPkgs
           ;
         solarizedLight = nix-colors.colorSchemes.solarized-light;
         solarizedDark = nix-colors.colorSchemes.solarized-dark;
@@ -104,16 +124,24 @@
         nixGLPackages = nixGL.packages.${system};
         ducktape-artifacts = artifacts;
         skills-tar = skillsUnpacked;
+        sharedSkillsArgs = {
+          inherit (pkgs)
+            lib
+            ;
+          inherit
+            pkgs
+            siderolabs-docs
+            ;
+          skills-tar = skillsUnpacked;
+        };
       };
 
       mkHome =
         {
           hostname,
           enableGui ? true,
-          enableKube ? true,
           isNixOS ? false,
           isK8sWorker ? false,
-          enableHeavyPackages ? true,
           extraModules ? [ ],
         }:
         home-manager.lib.homeManagerConfiguration {
@@ -121,15 +149,14 @@
 
           modules = [
             inputs.sops-nix.homeManagerModules.sops
+            ./nix/home/modules/google-drive.nix
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = hmCommonArgs // {
                 inherit
                   enableGui
-                  enableKube
                   isNixOS
                   isK8sWorker
-                  enableHeavyPackages
                   ;
               };
             }
@@ -148,6 +175,10 @@
           # activation (no hm-bootstrap.nix needed). Requires the HM host
           # config module path (e.g., ./nix/home/hosts/nixos-vm.nix).
           inlineHomeManager ? null,
+          # Whether to include home-manager at all. Bootstrap images set this
+          # false to keep the closure tiny — the real host config takes over
+          # after first `nixos-rebuild switch`.
+          enableHomeManager ? true,
         }:
         let
           hmExtraSpecialArgs =
@@ -155,10 +186,8 @@
               hmCommonArgs
               // {
                 enableGui = inlineHomeManager.enableGui or true;
-                enableKube = inlineHomeManager.enableKube or false;
                 isNixOS = true;
                 isK8sWorker = inlineHomeManager.isK8sWorker or false;
-                enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
               }
             else
               { };
@@ -176,6 +205,8 @@
           modules = [
             ./nix/nixos/modules/base.nix
             ./nix/nixos/hosts/${hostname}
+          ]
+          ++ nixpkgs.lib.optionals enableHomeManager [
             home-manager.nixosModules.home-manager
             (
               if inlineHomeManager != null then
@@ -183,7 +214,10 @@
                   home-manager.useGlobalPkgs = true;
                   home-manager.useUserPackages = true;
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
-                  home-manager.sharedModules = [ inputs.sops-nix.homeManagerModules.sops ];
+                  home-manager.sharedModules = [
+                    inputs.sops-nix.homeManagerModules.sops
+                    ./nix/home/modules/google-drive.nix
+                  ];
                   home-manager.users.${username} = inlineHomeManager.module;
                 }
               else
@@ -210,58 +244,133 @@
           )
           ++ extraModules;
         };
+      inherit (pkgs) lib;
+      ducktapePkgs = import ./nix/packages {
+        inherit
+          lib
+          pkgs
+          pkgsUnstable
+          artifacts
+          ;
+      };
+      # gaffer-private's drivectl/drivefs, fetched purely as store paths from
+      # cache.allegedly.works/gaffer (no source eval). Empty until gaffer CI's
+      # first push populates ./nix/gaffer-pins.json.
+      gafferPkgs = import ./nix/packages/gaffer.nix { };
+      # Dev tools shared between the devShell (local `nix develop` / direnv)
+      # and Claude Code web (`nix profile install .#devtools`).
+      # release.yml pushes this to attic so web installs are cache hits.
+      # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
+      # gettext + locale data. Blocked on slow rebuild (gitMinimal override
+      # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
+      # See devinfra/claude/docs/devtools-closure-size.md for details.
+      # Packages NOT needed on RBE workers (large, only for local/infra use).
+      # Excluded from rbeToolPackages to keep the RBE image small.
+      localOnlyPackages = [
+        pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
+        pkgs.ansible # 650MB
+        # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
+        # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
+        # persistent symbol cache across queries from the same process; the
+        # debundle perf-profile wrapper (devinfra/js/debundle/pipeline.bzl)
+        # prepends a shim that aliases addr2line -> llvm-addr2line when it is
+        # on PATH.
+        pkgs.llvmPackages.bintools-unwrapped
+        # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
+        # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
+        pkgs.talosctl
+        pkgs.awscli2 # AWS CLI for Route 53 management
+        pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
+        pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
+        pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
+        pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
+        pkgs.python313Packages.ovh # OVH Python client for ad-hoc API scripts
+      ];
+      # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
+      systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
+      # Present after the first debundle release has been published and
+      # sync-pins has added the artifact-pins entry.
+      optionalDebundlePackages = lib.optional (ducktapePkgs ? debundle) ducktapePkgs.debundle;
+      # Common dev tools shared by both Python and Rust hook implementations.
+      devToolsCommon = [
+        ducktapePkgs.bb
+        ducktapePkgs.bbapi
+        ducktapePkgs.bbr
+        ducktapePkgs.ducktape-git-hooks
+        ducktapePkgs.skills
+        # Dev tools
+        pkgs.pre-commit
+        pkgs.bazelisk
+        pkgs.nixfmt-rfc-style
+        pkgs.statix
+        pkgs.ruff
+        pkgs.shfmt
+        pkgs.buildifier
+        pkgs.gofumpt
+        ducktapePkgs.prettier
+        pkgs.openssl
+        # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
+        # include a guaranteed Python runtime with pyyaml for that path.
+        (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
+        # Infrastructure tools
+        pkgs.gh
+        pkgs.kubectl
+        pkgs.fluxcd
+        pkgs.kustomize
+        pkgs.kubernetes-helm
+        pkgs.kubeconform
+        pkgs.opentofu
+        pkgs.tflint
+        pkgs.sops
+        pkgs.ssh-to-age
+        ducktapePkgs.kubernetes-mcp-server
+      ]
+      ++ optionalDebundlePackages;
+      # Rust claude-hook is the active hook/shim implementation. The statusline
+      # remains Python, exposed through a package that does not put the legacy
+      # Python `claude-hook` on PATH.
+      devToolPackages = devToolsCommon ++ [
+        ducktapePkgs.claude-hook-rs
+        ducktapePkgs.claude-statusline
+      ];
+      # Compatibility alias for older setup scripts selecting #devtools-rust.
+      devToolPackagesRust = devToolPackages;
     in
     {
-      # Development shell — same tools as web-session, usable via `direnv` (`use flake` in .envrc).
+      # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ self.packages.${system}.web-session ];
+        packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
+        inherit (systemLibs) buildInputs;
+        LD_LIBRARY_PATH = systemLibs.libraryPath;
       };
 
-      # Packages exposed for nix-update and direct builds
       packages.${system} =
-        let
-          inherit (pkgs) lib;
-          ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
-        in
         ducktapePkgs
+        // gafferPkgs
         // {
-          # Shared dev tools — installed by web_setup.sh and used by the devShell.
-          # Add tools here to make them available in both Claude Code web sessions
-          # and local development (via direnv `use flake`).
-          # release.yml pushes this to attic so installs are cache hits.
-          # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
-          # gettext + locale data. Blocked on slow rebuild (gitMinimal override
-          # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
-          # See devinfra/claude/docs/web-session-closure-size.md for details.
-          web-session = pkgs.symlinkJoin {
-            name = "claude-web-session";
+          # Minimal CI package: just bb + sops (no claude-hooks wheel needed).
+          citools = pkgs.symlinkJoin {
+            name = "ducktape-citools";
             paths = [
-              # Repo-specific tools
-              ducktapePkgs.claude-hooks
-              ducktapePkgs.bbapi
-              ducktapePkgs.skills
-              # Dev tools (also provided by .envrc via `use flake`)
-              pkgs.pre-commit
-              pkgs.bazelisk # TODO: ensure binary name matches what session start hook expects (no unconventional symlinks/aliases)
-              pkgs.nixfmt-rfc-style
-              pkgs.statix
-              pkgs.mkcert
-              pkgs.ruff
-              pkgs.shfmt
-              pkgs.buildifier
-              pkgs.gofumpt
-              pkgs.ansible
-              # Infrastructure tools
-              pkgs.gh
-              pkgs.kubectl
-              pkgs.fluxcd
-              pkgs.kustomize
-              pkgs.kubernetes-helm
-              pkgs.kubeconform
-              pkgs.opentofu
-              pkgs.tflint
+              ducktapePkgs.bb
               pkgs.sops
             ];
+          };
+          # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
+          # Default: Rust claude-hook plus Python statusline.
+          devtools = pkgs.symlinkJoin {
+            name = "ducktape-devtools";
+            paths = devToolPackages ++ localOnlyPackages;
+          };
+          # Compatibility alias for old `web_setup.sh --impl=rust` installs.
+          devtools-rust = pkgs.symlinkJoin {
+            name = "ducktape-devtools-rust";
+            paths = devToolPackagesRust ++ localOnlyPackages;
+          };
+          # Lean devtools for RBE worker image (no rustfmt, ansible).
+          rbetools = pkgs.symlinkJoin {
+            name = "ducktape-rbetools";
+            paths = devToolPackages;
           };
           # NixOS container tarball for docker import.
           # Build: nix build .#bazel-test-docker
@@ -269,49 +378,39 @@
           # Run:   docker run --rm -it ducktape-nixos-bazel /init
           # Exec:  docker exec -it <container> bash -l
           bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
+          # Nix-based RBE worker image (plain Docker, no NixOS/systemd).
+          # Build: nix build .#nix-rbe-image
+          # Load:  docker load < result
+          nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
+          # NixOS-based RBE worker (systemd, envfs, nix-ld).
+          # Build: nix build .#nix-rbe-nixos
+          # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
+          nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
           # Pre-built UEFI qcow2 VM images for Proxmox deployment.
           # Build: nix build .#wyrm2-image
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
           bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
-          k8s-worker-test-image =
-            self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
-          # NixOS LXC tarball for Proxmox.
-          # Build: nix build .#lxc-k8s-test-lxc
-          # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
-          lxc-k8s-test-lxc = self.nixosConfigurations.lxc-k8s-test.config.system.build.tarball;
           # Firecracker dev VM rootfs (ext4) and kernel (vmlinux).
-          # Build: nix build .#fc-dev-rootfs  /  nix build .#fc-dev-kernel
           fc-dev-rootfs = self.nixosConfigurations.fc-dev.config.system.build.ext4;
           fc-dev-kernel = self.nixosConfigurations.fc-dev.config.boot.kernelPackages.kernel;
         };
 
       homeConfigurations = {
-        # Wyrm desktop VM on atlas
-        wyrm = mkHome {
-          hostname = "wyrm";
-          enableGui = true;
-          enableKube = true;
-          isNixOS = false;
-          enableHeavyPackages = false;
-        };
-
         # NixOS VM
         nixos-vm = mkHome {
           hostname = "nixos-vm";
           enableGui = true;
-          enableKube = false;
           isNixOS = true;
-          enableHeavyPackages = false;
+
         };
 
         # Atlas Proxmox VE host
         atlas = mkHome {
           hostname = "atlas";
           enableGui = true;
-          enableKube = true;
           isNixOS = false;
-          enableHeavyPackages = false;
+
         };
       };
 
@@ -323,9 +422,8 @@
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = true;
-            enableKube = false;
             isK8sWorker = true;
-            enableHeavyPackages = false;
+
             module = ./nix/home/hosts/wyrm2.nix;
           };
         };
@@ -336,9 +434,7 @@
           # Physical machine - hardware config is in hosts/rugged/
           inlineHomeManager = {
             enableGui = true;
-            enableKube = false;
             isK8sWorker = true;
-            enableHeavyPackages = true;
             module = ./nix/home/hosts/rugged.nix;
           };
         };
@@ -346,29 +442,25 @@
         iguana = mkNixos {
           hostname = "iguana";
           username = "agentydragon";
-          # Physical machine (ThinkPad X1 Extreme) - migrated from Pop!_OS (agentydragon)
+          # Physical machine (ThinkPad X1 Extreme)
           inlineHomeManager = {
             enableGui = true;
-            enableKube = true;
             isK8sWorker = true;
-            enableHeavyPackages = false;
+
             module = ./nix/home/hosts/iguana.nix;
           };
         };
 
-        k8s-worker-test = mkNixos {
-          hostname = "k8s-worker-test";
-          username = "user";
-          homeManagerHost = "nixos-vm";
-          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
-        };
-
-        # NixOS LXC container on Proxmox — test k8s worker in LXC.
-        # No hardwareModule — proxmox-lxc.nix is imported by the host config.
-        lxc-k8s-test = mkNixos {
-          hostname = "lxc-k8s-test";
+        # Gecko - headless CLI-only VM (Proxmox) for Claude Code / Codex
+        gecko = mkNixos {
+          hostname = "gecko";
           username = "agentydragon";
-          homeManagerHost = "nixos-vm";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          inlineHomeManager = {
+            enableGui = false;
+            isK8sWorker = false;
+            module = ./nix/home/hosts/gecko.nix;
+          };
         };
 
         # Generic bootstrap NixOS — minimal SSH-able image for initial provisioning.
@@ -376,6 +468,7 @@
           hostname = "bootstrap";
           username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          enableHomeManager = false;
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
@@ -393,6 +486,14 @@
         fc-dev = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [ ./nix/nixos/hosts/fc_dev ];
+        };
+
+        # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
+        nix-rbe-worker = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./x/nix_rbe_image/nixos.nix
+          ];
         };
       };
     };

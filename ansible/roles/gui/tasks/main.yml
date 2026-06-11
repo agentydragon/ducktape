@@ -23,34 +23,15 @@
       - libreoffice-l10n-cs
       - libreoffice-l10n-de
       - libreoffice-l10n-en-gb
-      - qshutdown # 2025-04-13: was trying as timekpr alrernative, no longer needed
-      - xournal # 2025-04-14: replace with xournalpp
-      - xtermcontrol # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
-      - youtube-dl # 2025-04-14: replace with yt-dlp
 
 - name: Install GUI packages
   become: true
   ansible.builtin.apt:
     pkg:
       # Already default in Pop! OS: gnome-shell
-      # Moved to Nix: audacity, dconf-editor, discord, element-desktop, flameshot
-      #   fonts-roboto, freecad, geeqie, gimp, gnome-tweaks, krita, mplayer, mpv
-      #   openscad, scrcpy, transmission-gtk, virt-viewer, vlc, vscode, wireshark
-      #   xclip, xournalpp, yt-dlp
       - kiwix # For offline Wikipedia etc.
       - openjdk-8-jdk
-      - snapd # For Telegram etc.
       - syncthing-gtk # Not available in nixpkgs, kept in apt
-
-# Snaps now managed by Nix home-manager (nix/home/home.nix)
-- name: Uninstall Nix-managed snaps
-  become: true
-  community.general.snap:
-    name:
-      - code # VSCode
-      - freecad # FreeCAD
-      - yt-dlp # YouTube downloader
-    state: absent
 
 - name: Install Rescuetime
   tags: [rescuetime]
@@ -64,40 +45,6 @@
   community.general.snap:
     name:
       - whatsdesk
-      # yt-dlp moved to Nix
-
-- name: Ensure no youtube-dl (deprecated)
-  become: true
-  community.general.snap:
-    name: youtube-dl
-    state: absent
-
-# Packages now managed by Nix home-manager (nix/home/home.nix)
-- name: Uninstall Nix-managed packages
-  become: true
-  ansible.builtin.apt:
-    pkg:
-      - audacity
-      - dconf-editor
-      - discord
-      - element-desktop
-      - flameshot
-      - geeqie
-      - gimp
-      - gnome-tweaks
-      - krita
-      - mplayer
-      - mpv
-      - vlc
-      - openscad
-      - scrcpy
-      - transmission-gtk
-      - virt-viewer
-      - wireshark
-      - xclip
-      - xournalpp
-      - fonts-roboto
-    state: absent
 
 # Element external repository cleanup
 - name: Remove Element.io repository and keyring
@@ -116,9 +63,6 @@
         path: /usr/share/keyrings/element-io-archive-keyring.gpg
         state: absent
 
-# GNOME terminal configuration moved to legacy_without_home_manager/gui role
-# Datetime format now managed by Nix: nix/home/modules/datetime-format.nix
-
 # AppImageLauncher installation with version acknowledgment
 - name: Install AppImageLauncher
   github_release_install:
@@ -131,16 +75,6 @@
   become: true
   when: common_dpkg_arch == "amd64"
   tags: appimagelauncher
-
-# ActivityWatch is now managed by Nix home-manager
-# See: nix/home/services/activitywatch.nix
-# This task uninstalls the old system-level .deb package
-- name: Uninstall system-level ActivityWatch package
-  become: true
-  ansible.builtin.apt:
-    name: activitywatch
-    state: absent
-  tags: activitywatch
 
 - name: Configure XDG MIME type associations
   ansible.builtin.import_tasks: xdg_mime_types.yml

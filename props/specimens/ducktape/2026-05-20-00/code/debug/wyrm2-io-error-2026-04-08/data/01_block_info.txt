@@ -1,0 +1,51 @@
+qm> info block
+qm> Entering QEMU Monitor for VM 110 - type 'help' for help
+pflash0: /usr/share/pve-edk2-firmware//OVMF_CODE_4M.secboot.fd (raw, read-only)
+    Attached to:      /machine/system.flash0
+    Cache mode:       writeback
+
+drive-efidisk0: json:{"throttle-group": "throttle-drive-efidisk0", "driver": "throttle", "file": {"driver": "raw", "size": 540672, "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-4"}}} (throttle)
+    Attached to:      /machine/system.flash1
+    Cache mode:       writeback
+    Detect zeroes:    on
+
+drive-scsi0: json:{"throttle-group": "throttle-drive-scsi0", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-1"}}} (throttle)
+    Attached to:      scsi0
+    Cache mode:       writeback
+    Detect zeroes:    unmap
+
+drive-virtio0: json:{"throttle-group": "throttle-drive-virtio0", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-2"}}} (throttle)
+    Attached to:      /machine/peripheral/virtio0/virtio-backend
+    Cache mode:       writeback
+    Detect zeroes:    unmap
+
+drive-virtio1: json:{"throttle-group": "throttle-drive-virtio1", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-5"}}} (throttle)
+    Attached to:      /machine/peripheral/virtio1/virtio-backend
+    Cache mode:       writeback
+    Detect zeroes:    unmap
+
+drive-virtio2: json:{"throttle-group": "throttle-drive-virtio2", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-0"}}} (throttle)
+    Attached to:      /machine/peripheral/virtio2/virtio-backend
+    Cache mode:       writeback
+    Detect zeroes:    unmap
+
+drive-virtio3: json:{"throttle-group": "throttle-drive-virtio3", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "host_device", "filename": "/dev/zvol/rpool/data/vm-110-disk-3"}}} (throttle)
+    Attached to:      /machine/peripheral/virtio3/virtio-backend
+    Cache mode:       writeback
+    Detect zeroes:    unmap
+
+drive-scsi4: json:{"throttle-group": "throttle-drive-scsi4", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "file", "filename": "/var/lib/vz/images/9999/vm-9999-pvc-038045aa-adc2-4d79-8942-73d50e4e5597.raw"}}} (throttle)
+    Attached to:      scsi4
+    I/O status:       nospace
+    Cache mode:       writeback
+    Detect zeroes:    on
+
+drive-scsi1: json:{"throttle-group": "throttle-drive-scsi1", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "file", "filename": "/var/lib/vz/images/9999/vm-9999-pvc-2554bd58-f1b0-4a19-90d1-1acbe0a1aecd.raw"}}} (throttle)
+    Attached to:      scsi1
+    Cache mode:       writeback
+    Detect zeroes:    on
+
+drive-scsi2: json:{"throttle-group": "throttle-drive-scsi2", "driver": "throttle", "file": {"driver": "raw", "file": {"driver": "file", "filename": "/var/lib/vz/images/9999/vm-9999-pvc-ab0ee394-4992-4f4a-b21a-b6292e21a9fc.raw"}}} (throttle)
+    Attached to:      scsi2
+    Cache mode:       writeback
+    Detect zeroes:    on

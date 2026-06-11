@@ -1,0 +1,20 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: plaid-mcp-ingress
+  namespace: plaid-mcp
+  annotations:
+    description: "Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can reach the v0 web UI."
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

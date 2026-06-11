@@ -1,0 +1,47 @@
+"""Pydantic models for props - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "snapshot",
+    srcs = ["snapshot.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "examples",
+    srcs = ["examples.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "//props/core:ids",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "true_positive",
+    srcs = ["true_positive.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":types",
+        "//props/core:ids",
+        "@pypi//pydantic",
+    ],
+)

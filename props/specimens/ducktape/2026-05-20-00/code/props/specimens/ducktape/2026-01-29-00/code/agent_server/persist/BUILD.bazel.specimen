@@ -1,0 +1,56 @@
+"""Persistence package - SQLite-backed conversation history and agent storage."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handler",
+    srcs = ["handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":types",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_server:agent_types",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "sqlite",
+    srcs = ["sqlite.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":types",
+        "//agent_core:events",
+        "//agent_server:agent_types",
+        "//agent_server/models:proposal_status",
+        "//agent_server/runtime:auto_attach",
+        "@pypi//aiosqlite",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_server:agent_types",
+        "//agent_server/models:proposal_status",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

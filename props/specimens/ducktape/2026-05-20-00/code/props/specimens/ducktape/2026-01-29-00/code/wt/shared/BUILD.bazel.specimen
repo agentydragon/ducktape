@@ -1,0 +1,94 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "config_file",
+    srcs = ["config_file.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config_file",
+        ":env",
+        "@pypi//click",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "error_handling",
+    srcs = ["error_handling.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":github_models",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":configuration",
+        ":github_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "git_utils",
+    srcs = ["git_utils.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "github_models",
+    srcs = ["github_models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":constants"],
+)
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":github_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_style",
+    srcs = ["test_style.py"],
+    imports = ["../.."],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)

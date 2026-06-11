@@ -5,25 +5,40 @@ metadata:
   namespace: activitywatch
 data:
   config.yaml: |
+    # TODO(2026-05-28): If ActivityWatch is reactivated, generate this Nebula
+    # client config from nebula-mesh.json instead of maintaining a hand-copied
+    # lighthouse/static_host_map here.
     pki:
       ca: /etc/nebula/ca.crt
       cert: /etc/nebula/host.crt
       key: /etc/nebula/host.key
     static_host_map:
-      "10.42.0.1":
-        - "5.78.106.249:4242"
-      "10.42.0.2":
-        - "5.78.43.147:4242"
+      "10.42.0.13":
+        - "147.135.39.162:4242"
+      "10.42.0.14":
+        - "147.135.39.176:4242"
+      "10.42.0.15":
+        - "147.135.37.175:4242"
+      "10.42.0.16":
+        - "147.135.104.5:4242"
+      "10.42.0.17":
+        - "147.135.104.16:4242"
     lighthouse:
       am_lighthouse: false
       interval: 10
       hosts:
-        - "10.42.0.1"
-        - "10.42.0.2"
+        - "10.42.0.13"
+        - "10.42.0.14"
+        - "10.42.0.15"
+        - "10.42.0.16"
+        - "10.42.0.17"
     relay:
       relays:
-        - "10.42.0.1"
-        - "10.42.0.2"
+        - "10.42.0.13"
+        - "10.42.0.14"
+        - "10.42.0.15"
+        - "10.42.0.16"
+        - "10.42.0.17"
       use_relays: true
     listen:
       host: "0.0.0.0"

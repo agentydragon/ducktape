@@ -1,12 +1,11 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
@@ -22,7 +21,6 @@ py_library(
 
 aspect_py_binary(
     name = "editor_submit",
-    imports = ["../.."],
     main = "cli.py",
     deps = [":cli"],
 )

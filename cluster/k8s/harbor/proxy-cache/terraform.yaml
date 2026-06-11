@@ -6,7 +6,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/gitops/harbor-proxy-cache
+  refreshBeforeApply: true
+  path: ./tf/gitops/harbor-proxy-cache
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -16,13 +17,20 @@ spec:
   serviceAccountName: tf-runner
   approvePlan: "auto"
 
-  # Store Terraform state in Kubernetes secret
   backendConfig:
     customConfiguration: |
-      backend "kubernetes" {
-        secret_suffix = "harbor-proxy-cache"
-        namespace     = "flux-system"
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "harbor_proxy_cache"
       }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
 
   # Variables for Terraform
   vars:

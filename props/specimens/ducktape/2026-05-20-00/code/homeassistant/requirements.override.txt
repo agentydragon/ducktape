@@ -1,0 +1,4 @@
+# Override lru-dict to 1.4.1 (provides pre-built Python 3.13 manylinux wheels,
+# avoiding the need for clang to compile the C extension from source).
+# homeassistant pins lru-dict==1.3.0 but 1.4.1 is API-compatible.
+lru-dict==1.4.1

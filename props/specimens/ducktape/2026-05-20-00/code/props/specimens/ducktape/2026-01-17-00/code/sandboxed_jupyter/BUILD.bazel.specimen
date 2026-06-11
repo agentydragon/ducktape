@@ -1,0 +1,74 @@
+"""Sandboxed Jupyter execution package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "sandboxed_jupyter",
+    srcs = [
+        "_jupyter_shared.py",
+        "cli.py",
+        "jupyter_sandbox_compose.py",
+        "kernel_bootstrap.py",
+        "kernel_exec.py",
+        "kernel_shim.py",
+        "launch.py",
+        "sandboxer.py",
+        "wrapper.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/seatbelt",
+        "//net_util",
+        "@pypi//ipykernel",
+        "@pypi//jupyter_mcp_server",
+        "@pypi//jupyter_server",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "sandbox-jupyter",
+    srcs = ["wrapper.py"],
+    main = "wrapper.py",
+    deps = [":sandboxed_jupyter"],
+)
+
+py_binary(
+    name = "sandboxed-jupyter",
+    srcs = ["sandboxer.py"],
+    main = "sandboxer.py",
+    deps = [":sandboxed_jupyter"],
+)
+
+py_test(
+    name = "test_sandboxed_jupyter",
+    srcs = [
+        "_markers.py",
+        "conftest.py",
+        "policy_fixture.py",
+        "test_exec_allow_all_cli.py",
+        "test_kernel_sandbox_end_to_end.py",
+        "test_sandboxer_narrow.py",
+        "test_wrapper_unsandbox_smoke.py",
+    ],
+    data = glob(["testdata/**"]),
+    main = "test_sandboxer_narrow.py",
+    deps = [
+        ":sandboxed_jupyter",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_timeout",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":sandboxed_jupyter"],
+)

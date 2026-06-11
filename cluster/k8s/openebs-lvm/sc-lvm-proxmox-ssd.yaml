@@ -1,0 +1,19 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: lvm-proxmox-ssd
+provisioner: local.csi.openebs.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+# TODO: This SC does not explicitly constrain provisioning to Proxmox nodes.
+# The LVM CSI driver only advertises kubernetes.io/hostname and openebs.io/nodename
+# topology keys, so allowedTopologies using topology.kubernetes.io/region=proxmox
+# cannot be used. The implicit constraint comes from the lvmNode DaemonSet nodeSelector
+# (region=proxmox) — provisioning will fail on other nodes. Consumers of this SC
+# should pin pods to region=proxmox via nodeSelector to avoid failed scheduling attempts.
+parameters:
+  storage: "lvm"
+  volgroup: "openebs-proxmox-ssd"
+  fstype: "ext4"
+  thinProvision: "yes"

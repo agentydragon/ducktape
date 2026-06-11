@@ -1,0 +1,27 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: mimir-blocks
+  namespace: seaweedfs
+spec:
+  name: mimir-blocks
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  access:
+    - user: mimir
+      actions: [Read, Write, List, Tagging]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: mimir-ruler
+  namespace: seaweedfs
+spec:
+  name: mimir-ruler
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  access:
+    - user: mimir
+      actions: [Read, Write, List, Tagging]

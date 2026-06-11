@@ -1,41 +1,7 @@
 # Wyrm2 — NixOS dev workstation + k8s GPU worker on Proxmox
-# Uses shared proxmox-vm and nixos-image modules.
-
-# ============================================================================
-# SSH KEY DETECTION
-# ============================================================================
 
 locals {
-  ssh_key_candidates = [
-    pathexpand("~/.ssh/id_ed25519.pub"),
-    pathexpand("~/.ssh/id_ecdsa.pub"),
-    pathexpand("~/.ssh/id_rsa.pub")
-  ]
-  ssh_key_path = var.ssh_public_key != "" ? "" : (
-    fileexists(local.ssh_key_candidates[0]) ? local.ssh_key_candidates[0] :
-    fileexists(local.ssh_key_candidates[1]) ? local.ssh_key_candidates[1] :
-    fileexists(local.ssh_key_candidates[2]) ? local.ssh_key_candidates[2] :
-    ""
-  )
-  ssh_public_key = var.ssh_public_key != "" ? var.ssh_public_key : (
-    local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
-  )
-
   repo_root = "${path.module}/../../.."
-}
-
-check "ssh_key_required" {
-  assert {
-    condition     = local.ssh_public_key != ""
-    error_message = <<-EOT
-      No SSH public key found!
-      Tried: ${join(", ", local.ssh_key_candidates)}
-
-      Fix by either:
-      1. Creating an SSH key: ssh-keygen -t ed25519 -C "your_email@example.com"
-      2. Providing key via variable: terraform apply -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
-    EOT
-  }
 }
 
 # ============================================================================
@@ -56,48 +22,192 @@ module "wyrm2_image" {
 # VM INSTANCE
 # ============================================================================
 
-# Wyrm2 - NixOS dev workstation + k8s worker (pre-built image, cloud-init for k8s creds)
-module "wyrm2" {
-  source = "../../../terraform/modules/proxmox-vm"
+resource "proxmox_virtual_environment_vm" "wyrm2" {
+  name        = "wyrm2"
+  description = "NixOS VM - wyrm2"
+  node_name   = var.proxmox_node_name
+  vm_id       = 110
+  bios        = "ovmf"
+  machine     = "q35" # Required for PCIe passthrough
 
-  vm_name  = "wyrm2"
-  vm_id    = 110
-  username = "agentydragon"
-  vcpus    = 32
-  # 96GB. Reduced from 112GB — with balloon=0 (VFIO requires pinned memory),
-  # 112GB + Talos CP (8GB) left only 8GB for host+ZFS ARC, causing ZFS write
-  # stalls (memory_available_bytes went negative). 96GB leaves 24GB headroom.
-  memory_mb          = 98304
-  disk_size_gb       = 300
-  auto_start         = true
-  image_import_path  = module.wyrm2_image.import_path
-  machine_type       = "q35"
-  memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
-  gpu_pci_ids        = ["0000:01:00.0", "0000:03:00.0"]
-  vga_type           = "virtio"
-  audio_device       = "ich9-intel-hda"
-  audio_driver       = "spice"
+  cpu {
+    cores = 32
+    type  = "host"
+  }
+
+  memory {
+    # 96GB. Reduced from 112GB — with balloon=0 (VFIO requires pinned memory),
+    # 112GB + Talos CP (8GB) left only 8GB for host+ZFS ARC, causing ZFS write
+    # stalls (memory_available_bytes went negative). 96GB leaves 24GB headroom.
+    dedicated = 98304
+    floating  = 0 # Disable balloon (VFIO incompatible)
+  }
+
+  # GPU passthrough
+  hostpci {
+    device = "hostpci0"
+    id     = "0000:01:00.0"
+    pcie   = true
+    rombar = true
+  }
+  hostpci {
+    device = "hostpci1"
+    id     = "0000:03:00.0"
+    pcie   = true
+    rombar = true
+  }
+
+  audio_device {
+    device  = "ich9-intel-hda"
+    driver  = "spice"
+    enabled = true
+  }
+
+  usb {
+    host = "spice"
+    usb3 = true
+  }
+  # ez Share WiFi SD card reader (MediaTek MT7961) — for CPAP data sync CronJob.
+  # Passed through by vendor:product ID so it survives atlas USB port changes.
+  # Requires a one-time wyrm2 restart to activate USB hotplug.
+  usb {
+    host = "0e8d:7961"
+    usb3 = true
+  }
+  # RTL-SDR Blog V4 (Realtek RTL2838) — for SDR streaming via rtl_tcp.
+  usb {
+    host = "0bda:2838"
+    usb3 = true
+  }
+
+  hotplug = "network,disk,cpu,usb" # note: memory hotplug requires NUMA
+
+  vga {
+    type   = "virtio"
+    memory = 256
+  }
+
   # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
   # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
   # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
-  virtiofs_mounts = [
-    { mapping = "tankshare", cache = "never" },
-    { mapping = "code", cache = "never" },
-  ]
-  additional_disks = [
-    { interface = "scsi30", size_gb = 200 },  # containerd (/var/lib/containerd)
-    { interface = "virtio0", size_gb = 500 }, # local-path provisioner (/var/local-path-provisioner)
-    { interface = "virtio1", size_gb = 100 }, # Longhorn (/var/mnt/longhorn)
-    { interface = "virtio2", size_gb = 500 }, # OpenEBS LVM (VG openebs-lvmvg)
-  ]
+  virtiofs {
+    mapping = "tankshare"
+    cache   = "never"
+  }
+  virtiofs {
+    mapping = "code"
+    cache   = "never"
+  }
 
-  proxmox_node_name = var.proxmox_node_name
-  storage           = var.storage
-  network_bridge    = var.network_bridge
-  ssh_public_key    = local.ssh_public_key
+  efi_disk {
+    datastore_id = var.storage
+    file_format  = "raw"
+    type         = "4m"
+  }
 
-  # K8s + Nebula credentials managed by sops-nix on the NixOS side,
-  # no cloud-init credential injection needed.
+  # Boot disk (NixOS root)
+  disk {
+    datastore_id = var.storage
+    import_from  = module.wyrm2_image.import_path
+    interface    = "scsi0"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+  }
+
+  # Data disks — all on NVMe (local-zfs) unless noted.
+  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio7=/dev/vdh
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio0"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    file_format  = "raw"
+  } # local-path provisioner (/var/local-path-provisioner)
+  # TODO(2026-06-09): remove this disk — Longhorn was decommissioned and its k8s wiring
+  # deleted, so /dev/vdb is unused. Removing it DESTROYS the disk on `tofu apply`, so do
+  # it when wyrm2 is back online. Drop together with the `/var/mnt/longhorn` mount +
+  # `node.longhorn.io/create-default-disk` label in nix/nixos/hosts/wyrm2/default.nix and
+  # `openiscsi` in nix/nixos/modules/k8s-worker.nix.
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio1"
+    iothread     = true
+    discard      = "on"
+    size         = 100
+    file_format  = "raw"
+  } # Longhorn (/var/mnt/longhorn) — redundant, see TODO above
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio2"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    file_format  = "raw"
+  } # OpenEBS LVM SSD (VG openebs-proxmox-ssd)
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio3"
+    iothread     = true
+    discard      = "on"
+    size         = 200
+    file_format  = "raw"
+  } # containerd (/var/lib/containerd)
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio4"
+    iothread     = true
+    discard      = "on"
+    size         = 150
+    file_format  = "raw"
+  } # Bazel output base — SSD (~/.cache/bazel)
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio5"
+    iothread     = true
+    discard      = "on"
+    size         = 100
+    file_format  = "raw"
+  } # Bazel repository cache — HDD (~/.cache/bazel/.../cache/repos)
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio6"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    file_format  = "raw"
+  } # OpenEBS LVM HDD (VG openebs-proxmox-hdd)
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio7"
+    iothread     = true
+    discard      = "on"
+    size         = 1024
+    file_format  = "raw"
+  } # /tmp scratch space (HDD)
+
+  network_device {
+    bridge = "vmbr0"
+    model  = "virtio"
+  }
+
+  started = true
+
+  agent {
+    enabled = true
+    timeout = "2m"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      # Proxmox CSI hotplugs scsi disks — provider can't distinguish
+      # tofu-managed from CSI disks (TypeSet, no stable keys).
+      # Intentional new disks such as virtio7 (/tmp) must be hotplugged manually
+      # and then kept in this resource as the desired VM shape.
+      disk,
+    ]
+  }
 
   depends_on = [module.wyrm2_image]
 }
@@ -110,13 +220,12 @@ resource "null_resource" "wyrm2_nixos_rebuild" {
   count = var.nixos_rebuild ? 1 : 0
 
   triggers = {
-    # Always re-run when the variable is set (user explicitly requested it)
     run = timestamp()
   }
 
   connection {
     type    = "ssh"
-    host    = module.wyrm2.ipv4_addresses[1][0]
+    host    = proxmox_virtual_environment_vm.wyrm2.ipv4_addresses[1][0]
     user    = "root"
     timeout = "5m"
     agent   = true
@@ -129,5 +238,5 @@ resource "null_resource" "wyrm2_nixos_rebuild" {
     ]
   }
 
-  depends_on = [module.wyrm2]
+  depends_on = [proxmox_virtual_environment_vm.wyrm2]
 }

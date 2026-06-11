@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - postgres-cluster.yaml
+  - readonly-secret.sops.yaml
+  - readonly-role-provisioner-job.yaml
+configMapGenerator:
+  - name: study-casino-db-readonly-sql
+    namespace: study-casino
+    files:
+      - readonly-role.sql

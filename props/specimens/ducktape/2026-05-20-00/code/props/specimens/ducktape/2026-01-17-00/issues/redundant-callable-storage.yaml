@@ -1,0 +1,37 @@
+rationale: |
+  GitstatusdService stores the same callable twice: as self._get_client (line 75)
+  and self.get_client (line 81). Both point to the identical lambda. Internal
+  methods use _get_client while external callers use get_client. Should pick one:
+  either keep only _get_client and add a trivial wrapper method for the public API,
+  or keep only get_client and use it everywhere. The duplication adds confusion
+  without benefit. Same pattern appears with DiscoveryService.is_scanning at
+  lines 118 and 122.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/services.py:
+        - [75, 75]
+        - [81, 81]
+    note: >-
+      self._get_client and self.get_client both store the same callable.
+      Pick one - either private with wrapper method, or public used everywhere.
+    critic_scopes_expected_to_recall:
+      - - wt/server/services.py
+    match_file_restriction:
+      - wt/server/services.py
+
+  - occurrence_id: occ-1
+    files:
+      wt/server/services.py:
+        - [118, 118]
+        - [122, 122]
+    note: >-
+      self._is_scanning and self.is_scanning both store the same callable.
+      Same redundant pattern as GitstatusdService.
+    critic_scopes_expected_to_recall:
+      - - wt/server/services.py
+    match_file_restriction:
+      - wt/server/services.py

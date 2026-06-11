@@ -1,0 +1,40 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "resources_stub",
+    srcs = ["resources_stub.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server_stubs",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/resources:types",
+    ],
+)
+
+py_library(
+    name = "server_stubs",
+    srcs = ["server_stubs.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":typed_stubs",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "typed_stubs",
+    srcs = ["typed_stubs.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:client_helpers",
+        "//mcp_infra/enhanced:flat_mixin",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)

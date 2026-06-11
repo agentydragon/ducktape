@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tofu-state-backup
+  namespace: tofu-state
+spec:
+  schedule: "0 */6 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: topology.kubernetes.io/region
+                        operator: In
+                        values: ["proxmox"]
+          containers:
+            - name: backup
+              image: ghcr.io/cloudnative-pg/postgresql:18
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  PGPASSWORD="$DB_PASSWORD" pg_dump \
+                    -h "$DB_HOST" -U "$DB_USER" "$DB_NAME" \
+                    > "/backup/tofu-state-${TIMESTAMP}.sql"
+                  echo "Backup complete: tofu-state-${TIMESTAMP}.sql"
+                  # Keep last 30 backups
+                  ls -t /backup/tofu-state-*.sql | tail -n +31 | xargs rm -f 2>/dev/null || true
+              env:
+                - name: DB_HOST
+                  value: tofu-state-db-rw.tofu-state.svc
+                - name: DB_NAME
+                  value: tfstate
+                - name: DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: tofu-state-db-credentials
+                      key: username
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: tofu-state-db-credentials
+                      key: password
+              volumeMounts:
+                - name: backup-vol
+                  mountPath: /backup
+          volumes:
+            - name: backup-vol
+              persistentVolumeClaim:
+                claimName: tofu-state-backup
+          restartPolicy: OnFailure

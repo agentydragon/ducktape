@@ -1,0 +1,14 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__github__push_files",
+  "tool_input": {
+    "file_path": "/path/to/file.txt",
+    "edits": [{ "old_string": "old", "new_string": "new" }]
+  },
+  "tool_response": {
+    "commit_sha": "def456"
+  }
+}

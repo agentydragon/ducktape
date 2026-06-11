@@ -1,0 +1,158 @@
+"""Prompt optimizer agent - implementation and container image.
+
+Build targets:
+    bazel run //props/critic_dev/optimize:load  -- Load into local Docker
+    bazel run //props/critic_dev/optimize:push  -- Push to local registry (localhost:8000)
+
+The container runs an agent loop that:
+1. Queries LLM via proxy (OPENAI_BASE_URL)
+2. Coordinates critic evaluations and improvements
+3. Optimizes prompts based on target metrics
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core:loop_utils",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "optimize",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":optimize"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "budget_handler",
+    srcs = ["budget_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//openai_utils:model",
+        "//props/db:query_builders",
+        "//props/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "orchestration_fixtures",
+    testonly = True,
+    srcs = ["orchestration_fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core_testing:responses",
+        "//openai_utils:model",
+        "//props/backend:app",
+        "//props/db:config",
+        "//props/orchestration:agent_registry",
+        "//props/testing",
+        "//props/testing:fake_openai_server",
+        "@pypi//aiodocker",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":load",
+        "//props/critic:load",
+        "//props/grader:load",
+    ],
+    env = {
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "e2e",
+        "requires_docker",
+    ],
+    deps = [
+        ":main",
+        ":orchestration_fixtures",
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props/core:agent_types",
+        "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/critic_dev:shared",
+        "//props/db:agent_definition_ids",
+        "//props/db:config",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/testing",
+        "@pypi//aiodocker",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/optimize"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["prompt-optimizer-agent:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/prompt-optimizer",
+)

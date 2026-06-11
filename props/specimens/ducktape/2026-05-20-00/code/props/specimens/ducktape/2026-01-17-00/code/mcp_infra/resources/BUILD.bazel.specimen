@@ -1,0 +1,35 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "resources",
+    srcs = [
+        "__init__.py",
+        "types.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//mcp",  # types.py imports mcp.types
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_resources",
+    srcs = [
+        "test_list_changes_subscriptions.py",
+        "test_list_resources_null_filters.py",
+        "test_notifications.py",
+        "test_read_blocks.py",
+        "test_subscribe.py",
+        "test_subscriptions_index.py",
+    ],
+    main = "test_notifications.py",
+    deps = [
+        ":resources",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)

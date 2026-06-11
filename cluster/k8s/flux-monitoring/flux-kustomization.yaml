@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-monitoring
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 2m
+  path: ./cluster/k8s/flux-monitoring
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
+    - name: monitoring-stack
+  wait: true
+  healthChecks:
+    - apiVersion: monitoring.coreos.com/v1
+      kind: PodMonitor
+      name: flux-system
+      namespace: flux-system

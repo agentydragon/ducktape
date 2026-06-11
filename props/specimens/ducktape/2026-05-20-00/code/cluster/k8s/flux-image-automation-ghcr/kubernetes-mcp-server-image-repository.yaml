@@ -1,0 +1,11 @@
+# CLEANUP: delete when upstream releases the well-known 404 fallback — see
+# third_party/kubernetes-mcp-server-pin.txt and switch deployments back to
+# ghcr.io/containers/kubernetes-mcp-server:<version>.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: kubernetes-mcp-server
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/kubernetes-mcp-server
+  interval: 5m

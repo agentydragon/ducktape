@@ -1,0 +1,46 @@
+"""Arg0 virtual CLI infrastructure and patch utilities."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Gazelle will create per-file py_library targets
+
+py_test(
+    name = "test_unified_patch",
+    srcs = ["test_unified_patch.py"],
+    deps = [
+        ":unified_patch",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "patch",
+    srcs = ["patch.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":unified_patch",
+        "//third_party/openai_cookbook:apply_patch",
+        "@pypi//unidiff",
+    ],
+)
+
+py_binary(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":patch"],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "unified_patch",
+    srcs = ["unified_patch.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//unidiff"],
+)

@@ -1,0 +1,15 @@
+"""Props test infrastructure package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["mocks.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/testing/fixtures",
+        "@pypi//pydantic",
+    ],
+)

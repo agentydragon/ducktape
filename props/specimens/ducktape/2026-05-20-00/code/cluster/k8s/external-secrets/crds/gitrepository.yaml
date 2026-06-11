@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: external-secrets-source
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://github.com/external-secrets/external-secrets.git
+  ref:
+    tag: v2.0.0

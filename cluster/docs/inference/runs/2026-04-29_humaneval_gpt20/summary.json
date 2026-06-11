@@ -1,0 +1,14 @@
+{
+  "config": {
+    "model": "gpt-oss:20b",
+    "limit": 164,
+    "efforts": ["low", "medium", "high"],
+    "sandbox": "docker",
+    "base_url": "https://ollama.allegedly.works/v1"
+  },
+  "exit_codes": {
+    "low": 0,
+    "medium": 0,
+    "high": 0
+  }
+}

@@ -1,0 +1,479 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "schemas",
+    srcs = ["schemas.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "accounting",
+    srcs = ["accounting.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "casing",
+    srcs = ["casing.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "calibration_wire",
+    srcs = ["calibration_wire.py"],
+    deps = [
+        ":schemas",
+        "//finance/augur/calibration",
+        "//finance/augur/model:sample_sanity",
+        "//finance/augur/product:wire",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "finance",
+    srcs = ["finance.py"],
+    deps = [":schemas"],
+)
+
+py_library(
+    name = "local_regulation",
+    srcs = ["local_regulation.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = [
+        ":local_regulation",
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        ":local_regulation",
+        ":portfolio_source_config",
+        ":schemas",
+        ":wire",
+        "//finance/augur/budget:schema",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:state_space",
+        "//finance/augur/model:trained_private_equity",
+        "//finance/augur/model:vecm",
+        "//finance/augur/product:wire",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "portfolio_source_config",
+    srcs = ["portfolio_source_config.py"],
+    deps = [
+        ":finance",
+        ":portfolio",
+        ":schemas",
+        "//finance/augur/sim:tlh_harvest",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "portfolio_sources",
+    srcs = ["portfolio_sources.py"],
+    deps = [
+        ":config",
+        ":finance",
+        ":portfolio",
+        ":portfolio_source_config",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:scenario",
+        "//finance/plaid/db:read_model",
+        "//finance/plaid/db:schema",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    deps = [
+        ":config",
+        ":conftest",
+        ":finance",
+        ":local_regulation",
+        ":portfolio",
+        ":portfolio_source_config",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:independent",
+        "//finance/augur/model:private_equity_risk",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:state_space",
+        "//finance/augur/model:trained_private_equity",
+        "//finance/augur/product:asset_key",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "portfolio_sources_test",
+    srcs = ["portfolio_sources_test.py"],
+    deps = [
+        ":conftest",
+        ":finance",
+        ":portfolio",
+        ":portfolio_source_config",
+        ":portfolio_sources",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/product:asset_key",
+        "//finance/plaid/db:read_model",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "local_regulation_test",
+    srcs = ["local_regulation_test.py"],
+    deps = [
+        ":conftest",
+        ":local_regulation",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "portfolio",
+    srcs = ["portfolio.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:scenario",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "portfolio_test",
+    srcs = ["portfolio_test.py"],
+    deps = [
+        ":conftest",
+        ":portfolio",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        ":config",
+        ":wire",
+        "//finance/augur/calibration:catalog",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "deployment",
+    srcs = ["deployment.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "catalog_test",
+    srcs = ["catalog_test.py"],
+    deps = [
+        ":catalog",
+        ":config",
+        ":conftest",
+        ":local_regulation",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":config",
+        ":finance",
+        ":local_regulation",
+        ":portfolio_source_config",
+        ":server_lib",
+        ":wire",
+        "//finance/augur/model:independent",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:testing",
+        "@pypi//fastapi",
+        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "server_test",
+    size = "medium",
+    srcs = ["server_test.py"],
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        ":server",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_calibration_endpoint",
+    srcs = ["test_calibration_endpoint.py"],
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    deps = [
+        ":config",
+        ":conftest",
+        ":server_lib",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/calibration:catalog",
+        "//finance/augur/calibration:testing",
+        "//finance/augur/model:sample_sanity",
+        "//finance/augur/model:series",
+        "//finance/evidence:markets",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "server_lib",
+    srcs = ["server.py"],
+    deps = [
+        ":calibration_wire",
+        ":casing",
+        ":catalog",
+        ":config",
+        ":deployment",
+        ":portfolio_sources",
+        ":schemas",
+        ":wire",
+        "//finance/augur/budget:service",
+        "//finance/augur/budget:wire",
+        "//finance/augur/calibration",
+        "//finance/augur/calibration:catalog",
+        "//finance/augur/calibration:default_clients",
+        "//finance/augur/calibration:macro_anchors",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:sample_sanity",
+        "//finance/augur/model:series",
+        "//finance/augur/product:portfolio",
+        "//finance/augur/product:scenarios",
+        "//finance/augur/product:service",
+        "//finance/augur/product:wire",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "finance.augur.api.server",
+    deps = [":server_lib"],
+)
+
+py_binary(
+    name = "profile_metric_fan",
+    srcs = ["profile_metric_fan.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    main_module = "finance.augur.api.profile_metric_fan",
+    deps = [
+        ":catalog",
+        ":config",
+        ":portfolio_sources",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/product:scenarios",
+        "//finance/augur/product:service",
+        "//finance/augur/product:wire",
+        "//util/bazel:runfiles",
+    ],
+)
+
+aspect_py_binary(
+    name = "server_image_binary",
+    srcs = ["server.py"],
+    main = "server.py",
+    deps = [
+        ":server_lib",
+        "@pypi//fastapi",
+        "@pypi//more_itertools",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_image_layer(
+    name = "server_image_layers",
+    binary = ":server_image_binary",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    cmd = [
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "--api-only",
+    ],
+    entrypoint = py_image_entrypoint("server_image_binary"),
+    env = py_image_env(
+        binary_name = "server_image_binary",
+        extra_env = {
+            "HOME": "/tmp",
+            "MPLCONFIGDIR": "/tmp/matplotlib",
+            "PYTHONSAFEPATH": "1",
+            "RULES_PYTHON_EXTRACT_ROOT": "/tmp/rules_python",
+            "XDG_CACHE_HOME": "/tmp/cache",
+        },
+    ),
+    exposed_ports = ["8080/tcp"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "augur",
+    },
+    tars = [
+        ":server_image_layers",
+        "//finance/augur/fit/calibrated:trained_vecm_image_layer",
+    ],
+)
+
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["augur:dev"],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":config",
+        ":finance",
+        ":local_regulation",
+        ":portfolio_source_config",
+        ":server_lib",
+        ":wire",
+        "//finance/augur/model:independent",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "finance.augur.api.export_schema",
+    deps = [":export_schema"],
+)
+
+py_test(
+    name = "export_schema_test",
+    srcs = ["test_export_schema.py"],
+    # Source follows the test_<module>.py convention while the target keeps the
+    # conventional <name>_test label, so the inferred main wouldn't match srcs.
+    main = "test_export_schema.py",
+    deps = [
+        ":export_schema",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+filegroup(
+    name = "public_fixture_config",
+    srcs = ["testdata/config.yaml"],
+)
+
+filegroup(
+    name = "public_fixture_properties",
+    srcs = ["testdata/properties.json"],
+)
+
+# The public fixture config registers a calibration catalog at
+# `../../calibration/example_openai_catalog.yaml`; anything that loads that config at
+# startup (the server binary under test, the calibration endpoint test) needs the
+# catalog in its runfiles at the resolved path.
+filegroup(
+    name = "public_fixture_calibration_catalog",
+    srcs = ["//finance/augur/calibration:example_openai_catalog"],
+)
+
+py_test(
+    name = "test_export_schema",
+    srcs = ["test_export_schema.py"],
+    deps = [
+        ":conftest",
+        ":export_schema",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)

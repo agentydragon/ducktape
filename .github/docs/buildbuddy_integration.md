@@ -1,18 +1,24 @@
 # BuildBuddy Integration
 
-Both GitHub Copilot and Claude Code hooks use `devinfra/setup_buildbuddy.sh` to configure BuildBuddy remote cache and RBE.
+BuildBuddy credential setup is separated from repo-aware RBE opt-in:
+
+- `devinfra/setup_buildbuddy.sh` writes `~/.config/bazel/buildbuddy.bazelrc`
+  with the API key and `build --shell_executable=/bin/bash`.
+- Repo-aware entrypoints decide whether to add `build --config=rbe`.
 
 ## Setup Chain
 
 **GitHub Copilot** (`.github/workflows/copilot-setup-steps.yml`):
 
-- `setup-bazel` action → `setup-buildbuddy` action → `devinfra/setup_buildbuddy.sh`
+- `setup-bazel` action → `devinfra/setup_buildbuddy.sh`
+- `setup-bazel` appends `build --config=rbe` to the ephemeral CI `~/.bazelrc`
 - API key from `${{ secrets.BUILDBUDDY_API_KEY }}`
-- Toolchain detection enabled in `bazel-repo-cache` action
 
-**Claude Code Hooks** (`devinfra/claude/session_start.py`):
+**Claude Code Hooks** (`devinfra/claude/claude_hook/main.rs` and Python hook daemon):
 
-- `buildbuddy_setup.setup_buildbuddy()` → `devinfra/setup_buildbuddy.sh`
+- Session start writes a per-session `buildbuddy.bazelrc`
+- The per-session file includes the API key, `build --shell_executable=/bin/bash`,
+  and `build --config=rbe`
 - API key from `BUILDBUDDY_API_KEY` environment variable
 
 ## Key Differences

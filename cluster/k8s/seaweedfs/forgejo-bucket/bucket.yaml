@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: forgejo
+  namespace: seaweedfs
+spec:
+  name: forgejo
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: forgejo
+      actions: [Read, Write, List, Tagging]

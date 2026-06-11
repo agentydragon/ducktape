@@ -21,7 +21,7 @@ sops cluster/k8s/<app>/secrets/new-secret.sops.yaml
 ```bash
 cd /home/agentydragon/code/ducktape/cluster/terraform/main
 
-# Add new node to the `proxmox_nodes` or `hetzner_nodes` locals map
+# Add new node to the relevant OpenTofu topology, usually `ovh-nodes.tf`
 # Apply changes
 tofu apply
 
@@ -34,19 +34,16 @@ tofu apply
 ### Restart Single Node
 
 ```bash
-# Gracefully restart a node (example: controlplane0)
-talosctl \
-  --endpoints 10.2.1.1 \
-  --nodes 10.2.1.1 \
-  reboot
+# Gracefully restart a node via Talos (use the node's Nebula IP or hostname)
+talosctl --endpoints <node> --nodes <node> reboot
 
-# Or force restart via Proxmox
-ssh root@atlas 'qm reboot 10000'
+# Force restart out-of-band: OVH nodes via the OVH manager/IPMI; Proxmox-hosted
+# Talos VMs via `ssh root@atlas 'qm reboot <vmid>'`
 ```
 
 ### Remove Node
 
-Remove the node from `proxmox_nodes` or `hetzner_nodes` locals in OpenTofu, then `tofu apply`.
+Remove the node from the relevant OpenTofu topology, then `tofu apply`.
 Kubernetes node object will be cleaned up automatically.
 
 ## System Diagnostics
@@ -60,16 +57,16 @@ See `~/.claude/skills/proxmox_vm/vm-screenshot.sh`
 ### Direct VM Console Access
 
 ```bash
-# Interactive console access (from Proxmox host)
+# Interactive console for a Proxmox-hosted VM (from the Proxmox host)
 ssh root@atlas
-qm terminal 10000  # talos-pve-cp-0
+qm terminal <vmid>
 ```
 
 ## Switching Let's Encrypt Environment (Staging ↔ Production)
 
 See <bootstrap.md> for the issuer toggle mechanism. To switch:
 
-1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager-issuer-config/configmap.yaml`
+1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager/issuer-config/configmap.yaml`
 2. Commit and push
 3. Flux re-renders all Ingresses and cert-manager re-issues certificates automatically
 
@@ -84,5 +81,5 @@ See <troubleshooting.md> for diagnostic commands and known issues.
 
 ### Privileged Ports (Port < 1024)
 
-Services binding to privileged ports (e.g., PowerDNS on port 53) as non-root need
+Services binding to privileged ports (e.g., port 53) as non-root need
 `NET_BIND_SERVICE` capability with `drop: ["ALL"]` for PSS "restricted" compliance.

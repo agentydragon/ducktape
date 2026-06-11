@@ -1,16 +1,14 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "rd_writer",
     srcs = ["rd_writer.py"],
-    imports = ["../.."],
     visibility = ["//laser:__subpackages__"],
 )
 
 py_test(
     name = "test_rd_writer",
     srcs = ["test_rd_writer.py"],
-    imports = ["../.."],
     deps = [
         ":rd_writer",
         "@pypi//pytest",

@@ -2,7 +2,7 @@
 #
 # airlock server (component: server, port 8765):
 #   Cilium ingress entity — browser requests proxied by Cilium Gateway API (Envoy).
-#     Envoy runs on host network on VPS nodes; traffic arrives as the node IP classified as
+#     Envoy runs on host network on OVH nodes; traffic arrives as the node IP classified as
 #     the reserved "ingress" entity, not as the Envoy pod. Using fromEntities: ingress is
 #     the correct pattern (same as authentik-server-ingress, gatus-ingress, etc.).
 #   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
@@ -20,13 +20,13 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: airlock
-      component: server
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: server
   ingress:
     # Kubelet health probes from the local node + Cilium Gateway API traffic.
     # When the backend pod is on the same node as Envoy, source appears as "host" (local node).
     # When the backend is on a different node (e.g. wyrm2), Cilium on the receiving node sees
-    # the VPS node IP, which is classified as "kube-apiserver" (control plane node IPs).
+    # the OVH node IP, which is classified as "kube-apiserver" (control plane node IPs).
     # Both entities must be allowed for the gateway to work regardless of pod scheduling.
     - fromEntities:
         - host
@@ -63,8 +63,8 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: airlock
-      component: kubeapi-admin-exec-mcp
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: kubeapi-admin-exec-mcp
   ingress:
     - fromEntities:
         - host
@@ -75,8 +75,8 @@ spec:
     # Only the Airlock server pod connects to the exec backend.
     - fromEndpoints:
         - matchLabels:
-            app: airlock
-            component: server
+            app.kubernetes.io/name: airlock
+            app.kubernetes.io/component: server
       toPorts:
         - ports:
             - port: "8766"

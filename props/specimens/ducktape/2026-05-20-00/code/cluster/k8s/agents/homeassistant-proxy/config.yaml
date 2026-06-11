@@ -1,0 +1,31 @@
+# Home Assistant proxy configuration.
+# Secrets (HA token, proxy token secrets) come from env vars,
+# not from this file.
+
+homeassistant:
+  url: https://home.e621.co.uk
+  # token is set via HOMEASSISTANT_PROXY_HA_TOKEN env var
+
+tokens:
+  mcp_agent:
+    # secret comes from HOMEASSISTANT_PROXY_TOKEN_MCP_AGENT env var
+    policy:
+      all:
+        read: true
+        control: false
+      domains:
+        light:
+          read: true
+          control: true
+        switch:
+          read: true
+          control: true
+        climate:
+          read: true
+          control: true
+        cover:
+          read: true
+          control: true
+        fan:
+          read: true
+          control: true

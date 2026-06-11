@@ -1,0 +1,33 @@
+"""Props test infrastructure package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "testing",
+    srcs = ["mocks.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core_testing:responses",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "//props/grader:tools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "fake_openai_server",
+    srcs = ["fake_openai_server.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils:model",
+        "@pypi//fastapi",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)

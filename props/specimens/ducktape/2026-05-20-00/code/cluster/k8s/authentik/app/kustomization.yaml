@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrelease.yaml
+  - authentik-host-configmap.yaml
+  - token-secret.yaml
+  - httproute.yaml
+  - networkpolicy.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: authentik-sso-blueprints
+    files:
+      - blueprints/users.yaml
+      - blueprints/hubble-sso.yaml
+      - blueprints/longhorn-sso.yaml
+      - blueprints/openclaw-sso.yaml
+      - blueprints/kagent-sso.yaml
+      - blueprints/tandoor-sso.yaml
+      - blueprints/filebrowser-sso.yaml
+      - blueprints/agents-mitmproxy-sso.yaml
+      - blueprints/proxmox-sso.yaml
+      - blueprints/goldilocks-sso.yaml
+      - blueprints/google-workspace-mcp-sso.yaml
+      - blueprints/embedded-outpost.yaml
+      - blueprints/airlock-scope-mappings.yaml
+      - blueprints/airlock-sso.yaml
+      - blueprints/claude-code-airlock-oauth2.yaml
+      - blueprints/sdr-sso.yaml
+      - blueprints/adsb-sso.yaml
+      - blueprints/study-casino-sso.yaml
+      - blueprints/claude-service-account.yaml
+      - blueprints/openhands-sso.yaml
+    namespace: authentik

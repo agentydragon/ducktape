@@ -1,0 +1,38 @@
+version: 1
+metadata:
+  name: SSO - Airlock Scope Mappings
+  labels:
+    blueprints.goauthentik.io/description: >-
+      Custom OAuth2 scope mappings for airlock tool access (propose, read, decide).
+      Shared by openclaw-agent, airlock-operator, and claude-code-airlock providers.
+
+entries:
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-propose
+    state: present
+    identifiers:
+      name: "airlock: propose"
+      scope_name: propose
+    attrs:
+      description: "Propose actions via airlock backend tools"
+      expression: "return {}"
+
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-read
+    state: present
+    identifiers:
+      name: "airlock: read"
+      scope_name: read
+    attrs:
+      description: "Read airlock action state and logs"
+      expression: "return {}"
+
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-decide
+    state: present
+    identifiers:
+      name: "airlock: decide"
+      scope_name: decide
+    attrs:
+      description: "Approve or reject pending actions"
+      expression: "return {}"

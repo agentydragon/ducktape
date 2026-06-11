@@ -1,0 +1,31 @@
+rationale: |
+  Fragile string-based parsing when AST provides structured data.
+
+  The code searches for ":" in source lines to find where the function
+  signature ends. This is fragile - colons appear in type annotations,
+  dict literals, and strings. The code also needs exception handling
+  for edge cases.
+
+  Fix: Use ast.unparse() on the function's components:
+  ```python
+  def _get_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+      prefix = "async def " if isinstance(node, ast.AsyncFunctionDef) else "def "
+      args_str = ast.unparse(node.args)
+      returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+      return f"{prefix}{node.name}({args_str}){returns}"
+  ```
+
+  No line reading, no string matching, no exception handling needed.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      prompts/scans/scan_single_line_functions.py:
+        - [47, 65]
+    note: 'Fragile signature extraction using ''if ":" in line:'' - use ast.unparse(node.args) and node.returns instead'
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_single_line_functions.py
+    match_file_restriction:
+      - prompts/scans/scan_single_line_functions.py

@@ -1,0 +1,102 @@
+"""Editor agent host package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+# Init script for the container image (called as /init)
+filegroup(
+    name = "init_script",
+    srcs = ["definition/init"],
+    visibility = ["//editor_agent/runtime:__pkg__"],
+)
+
+py_library(
+    name = "editor_agent_host",
+    srcs = [
+        "__init__.py",
+        "agent_runner.py",
+        "cli.py",
+        "runner.py",
+        "submit_server.py",
+    ],
+    data = glob(["definition/**/*"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//agent_pkg/host",
+        "//cli_util",
+        "//editor_agent/runtime:editor_agent_runtime",
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/exec",
+        "//mcp_infra/resources",
+        "//net_util",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "adgn-editor-docker",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    main = "cli.py",
+    deps = [":editor_agent_host"],
+)
+
+py_test(
+    name = "test_runner_session",
+    srcs = [
+        "conftest.py",
+        "test_runner_session.py",
+    ],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":editor_agent_host",
+        "//agent_core_testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_editor_e2e_steps",
+    srcs = [
+        "conftest.py",
+        "test_editor_e2e_steps.py",
+    ],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":editor_agent_host",
+        "//agent_core_testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_submit_server",
+    srcs = [
+        "conftest.py",
+        "test_submit_server.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":editor_agent_host",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":editor_agent_host"],
+)

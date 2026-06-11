@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-issuer-config
+  namespace: flux-system
+data:
+  # Single toggle for Let's Encrypt issuer selection.
+  # Change to "letsencrypt-staging" for development (avoids rate limits).
+  LETSENCRYPT_ISSUER: letsencrypt-prod

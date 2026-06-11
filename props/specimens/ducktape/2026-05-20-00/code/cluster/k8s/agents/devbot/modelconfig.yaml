@@ -1,0 +1,10 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: devbot-anthropic
+  namespace: agents
+spec:
+  provider: Anthropic
+  model: "claude-sonnet-4-6"
+  apiKeySecret: kagent-anthropic
+  apiKeySecretKey: ANTHROPIC_API_KEY

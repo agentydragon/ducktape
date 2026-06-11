@@ -1,0 +1,59 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Policies package - policy types, presets, and standalone policy programs.
+
+# gazelle:map_kind py_binary py_library approve_all.py
+# gazelle:map_kind py_binary py_library default_policy.py
+# gazelle:map_kind py_binary py_library presets.py
+
+py_library(
+    name = "approve_all",
+    srcs = ["approve_all.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":policy_types",
+        ":scaffold",
+    ],
+)
+
+py_library(
+    name = "default_policy",
+    srcs = ["default_policy.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":policy_types",
+        ":scaffold",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+    ],
+)
+
+py_library(
+    name = "loader",
+    srcs = ["loader.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "policy_types",
+    srcs = ["policy_types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "presets",
+    srcs = ["presets.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":approve_all",
+        ":scaffold",
+    ],
+)
+
+py_library(
+    name = "scaffold",
+    srcs = ["scaffold.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":policy_types"],
+)

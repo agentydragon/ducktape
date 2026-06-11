@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docker-container-prune
+  namespace: docker-ci
+  annotations:
+    description: Remove stopped containers older than 1 hour
+spec:
+  schedule: "0 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: docker-ci-pruner
+          containers:
+            - name: prune
+              image: bitnami/kubectl:latest
+              command:
+                - kubectl
+                - exec
+                - deployment/docker-ci
+                - --
+                - docker
+                - container
+                - prune
+                - -f
+                - --filter
+                - until=1h
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docker-image-prune
+  namespace: docker-ci
+  annotations:
+    description: Remove unused images older than 7 days
+spec:
+  schedule: "0 3 * * 0"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: docker-ci-pruner
+          containers:
+            - name: prune
+              image: bitnami/kubectl:latest
+              command:
+                - kubectl
+                - exec
+                - deployment/docker-ci
+                - --
+                - docker
+                - image
+                - prune
+                - -f
+                - --filter
+                - until=168h
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: docker-ci-pruner
+  namespace: docker-ci
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: docker-ci-pruner
+  namespace: docker-ci
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: docker-ci-pruner
+  namespace: docker-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: docker-ci-pruner
+subjects:
+  - kind: ServiceAccount
+    name: docker-ci-pruner
+    namespace: docker-ci

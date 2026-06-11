@@ -13,7 +13,7 @@
     displayText?: string; // Override default "{issueId}/{occurrenceId}" display
   }
 
-  let { snapshotSlug, issueId, occurrenceId, filePath, displayText }: Props = $props();
+  const { snapshotSlug, issueId, occurrenceId, filePath, displayText }: Props = $props();
 
   const urlPath = $derived.by(() => {
     const url = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;

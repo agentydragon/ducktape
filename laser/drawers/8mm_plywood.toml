@@ -1,0 +1,34 @@
+title = "8.4mm plywood"
+
+[x]
+param = "power_pct"
+values = [25, 27, 29, 32]
+show_labels = false
+
+[y]
+param = "speed_mm_s"
+values = [14, 16, 18, 20]
+show_labels = false
+
+[cut]
+power_min_pct = 10
+z_offset_mm = -0.1
+z_per_pass_mm = -0.7
+num_passes = 4
+
+[geometry]
+cell_size_mm = 20
+
+[labels]
+cell_text = "values"
+show_legend = true
+
+[text_layer]
+power_pct = 7
+
+[border]
+enabled = true
+
+[font]
+name = "zzSTENCIL"
+h_cell_mm = 5.2

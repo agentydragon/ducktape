@@ -1,0 +1,49 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "Qi0AlCNyZgW0",
+      "props": {
+        "created": 1749757030732,
+        "name": "Node X",
+        "_ownerId": "6aoZJeWmOXcl"
+      },
+      "touchCounts": [21, 0],
+      "modifiedTs": [1749768188904, 0]
+    },
+    {
+      "id": "KKaNA5ZPUQjw",
+      "props": {
+        "created": 1749757035208,
+        "name": "Inline reference to Node X: <span data-inlineref-node=\"Qi0AlCNyZgW0\"></span>",
+        "_ownerId": "6aoZJeWmOXcl"
+      },
+      "touchCounts": [70, 0],
+      "modifiedTs": [1749768188904, 0]
+    },
+    {
+      "id": "aTHmm6_f8cYU",
+      "props": {
+        "created": 1749757047802,
+        "name": "Inline reference to Node X with an alternate alias: <span data-inlineref-node=\"Qi0AlCNyZgW0\"></span>",
+        "_ownerId": "6aoZJeWmOXcl"
+      },
+      "touchCounts": [103, 0],
+      "modifiedTs": [1749768188904, 0],
+      "associationMap": {
+        "Qi0AlCNyZgW0": "lOs_rXyz7N2w"
+      }
+    },
+    {
+      "id": "6aoZJeWmOXcl",
+      "props": {
+        "created": 1749768184035,
+        "name": "Inline references (test reference 6aoZJeWmOXcl)",
+        "_ownerId": "MFjacEHVlv36"
+      },
+      "touchCounts": [37, 0],
+      "modifiedTs": [1749780104135, 0],
+      "children": ["Qi0AlCNyZgW0", "KKaNA5ZPUQjw", "aTHmm6_f8cYU"]
+    }
+  ]
+}

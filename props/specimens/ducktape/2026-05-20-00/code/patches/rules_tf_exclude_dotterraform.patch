@@ -1,0 +1,11 @@
+--- a/tf/def.bzl
++++ b/tf/def.bzl
+@@ -51,7 +51,7 @@
+
+     pkg_files(
+         name = "srcs",
+-        srcs = native.glob(["**/*"], exclude=bzl_files) + data,
++        srcs = native.glob(["**/*"], exclude=bzl_files + [".terraform/**", ".terraform.lock.hcl"]) + data,
+         strip_prefix = "", # this is important to preserve directory structure
+         prefix = native.package_name(),
+         tags = tags,

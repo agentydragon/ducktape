@@ -1,0 +1,16 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: drivefs-artifacts
+  namespace: seaweedfs
+spec:
+  name: drivefs-artifacts
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: drivefs-artifacts-writer
+      actions: [Read, Write, List, Tagging]
+    - user: drivefs-artifacts-reader
+      actions: [Read, List]

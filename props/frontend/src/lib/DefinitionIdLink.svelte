@@ -7,7 +7,7 @@
     display_name?: string | null;
   }
 
-  let { id, display_name }: Props = $props();
+  const { id, display_name }: Props = $props();
 </script>
 
 <a

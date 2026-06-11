@@ -1,0 +1,160 @@
+# Ruff configuration for the entire repository
+# Centralized here (not in pyproject.toml) for clean separation:
+# - Root pyproject.toml: uv overrides and tool config only
+# - ruff.toml: All ruff formatting and linting rules
+# - Bazel's aspect_rules_lint reads this file via Label("//:ruff.toml")
+
+# Prefer one-line formatting when code fits
+line-length = 120
+# Target Python 3.13+ consistently
+target-version = "py313"
+
+# Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
+# .gitattributes is the source of truth; this list must stay in sync.
+# Reason: tools/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# See README.md "Lint/Format Exclusions" section for details.
+exclude = [
+    "k8s_old",
+    "tana/export/references",
+    "props/testing/fixtures/testdata",
+    "hack/claude_hooks/testdata",
+    "hack/sandboxed_jupyter/testdata",
+    "sysrw/testdata",
+    "tana/testdata",
+    "props/specimens/*/*/code",
+    "hack/orcaslicer_config",
+]
+
+[format]
+# Ignore trailing commas when deciding whether to collapse to one line
+# (Google-style formatting: pack code densely when it fits)
+skip-magic-trailing-comma = true
+
+[lint]
+select = [
+    # Base
+    "E", "F",
+    # Pylint families
+    "PLC",   # convention
+    "PLE",   # errors
+    "PLR",   # refactor
+    "PLW",   # warnings
+    # Modernization / quality
+    "UP",    # pyupgrade
+    "FA",    # future annotations
+    "FURB",  # refurb
+    "I",     # Imports (isort replacement)
+    # Extras
+    "YTT",
+    "ASYNC",
+    "B",     # bugbear
+    "COM",   # commas
+    "C4",    # comprehensions
+    "LOG",   # logging
+    "PIE",
+    "PT",    # pytest
+    "RSE",
+    "RET",   # returns
+    "SIM",   # simplify
+    "SLOT",
+    "PTH",   # pathlib
+    "NPY",
+    "PD",    # pandas
+    "N",     # naming
+    "RUF"    # ruff-specific
+]
+# Keep these off globally; handled case-by-case or via constants
+ignore = [
+    "PLR2004",  # magic value comparisons
+    "PLR0912",  # too many branches
+    "PLR0915",  # too many statements
+    "PLR0911",  # too many returns
+    "PLR0913",  # too many arguments - often leads to unhelpful refactors
+    "B904",     # raise from e
+    "E501"      # line length (formatter handles wrapping)
+]
+
+# Avoid conflicts between ruff-format and trailing-comma rules
+extend-ignore = ["COM812"]
+
+# Allow mathematical symbols in strings
+allowed-confusables = ["σ"]
+
+# Enforce modern typing
+[lint.pyupgrade]
+# Target Python 3.12+ - no runtime typing imports needed
+keep-runtime-typing = false
+
+[lint.isort]
+# Don't treat same-package imports specially (no local-folder section)
+detect-same-package = false
+# Unknown packages default to third-party (no heuristics)
+default-section = "third-party"
+# Force third-party for packages that have same-named directories in repo
+known-third-party = ["ansible", "docker"]
+# First-party = our workspace packages (ruff uses heuristics otherwise)
+# TODO: Auto-generate this list from Bazel once bazelized
+known-first-party = [
+    "tools",
+    "util",
+    "mcp_starter",
+    "agent_core",
+    "agent_pkg",
+    "agent_server",
+    "hack",
+    "props",
+    "claude_history",
+    "claude_hooks",
+    "claude_linter",
+    "claude_linter_v2",
+    "claude_optimizer",
+    "cli_util",
+    "cotrl",
+    "dbus_fast_example",
+    "difftree",
+    "ducktape",
+    "ducktape_llm_common",
+    "editor_agent",
+    "ember",
+    "finance",
+    "git_commit_ai",
+    "gmail_archiver",
+    "gnome_terminal_profile_switcher",
+    "habitify",
+    "homeassistant",
+    "indoor_aqi",
+    "inop",
+    "inventree_utils",
+    "laser",
+    "llm",
+    "llm_html",
+    "mcp_infra",
+    "mcp_utils",
+    "openai_utils",
+    "py_detectors",
+    "sysrw",
+    "tana",
+    "tests",  # test packages (until colocated under main packages)
+    "wt",
+]
+combine-as-imports = true
+# Compatible with format.skip-magic-trailing-comma
+split-on-trailing-comma = false
+
+[lint.per-file-ignores]
+# Project-specific ignores (consolidated from individual pyproject.toml files)
+"hack/gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"hack/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"hack/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+# AST visitor methods must use visit_<NodeType> naming (framework requirement)
+# Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
+"py_detectors/det_*.py" = ["N802"]
+# Test fixtures are intentionally bad code for detector testing
+"py_detectors/tests/fixtures/**" = ["ALL"]
+"prompts/scans/scan_*.py" = ["N802"]
+# sys.path manipulation must happen before imports in uv run scripts and pytest
+"tools/ci/check_release.py" = ["E402"]
+"tools/ci/ci_decide.py" = ["E402"]
+# conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
+# and fixture parameters naturally shadow the imported fixture names (F811)
+"**/conftest.py" = ["F401", "F811"]

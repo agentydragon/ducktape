@@ -12,6 +12,7 @@ bootstrap, then migrate state to in-cluster PG with tofu init -migrate-state.
 """
 
 import argparse
+import base64
 import json
 import logging
 import os
@@ -22,13 +23,11 @@ from pathlib import Path
 import pygit2
 from kubernetes import client, config
 
-from cluster.flux_convergence import monitor_flux_convergence
 from cluster.network_readiness import (
     restart_cilium_operator_gateway_controller,
     verify_clusterip_routing,
     wait_for_cilium_health,
 )
-from cluster.scripts.generate_claude_kubeconfig import generate
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -49,23 +48,17 @@ PERSISTENT_AUTH_TARGETS = [
     "local_file.nebula_ca_crt",
     "local_sensitive_file.nebula_ca_key",
     "null_resource.nebula_node_cert",
+    "talos_machine_secrets.cluster",
 ]
 
-# Infrastructure resources — VMs, Talos config, Cilium, k8s secrets.
+# Infrastructure resources — machines, Talos config, Cilium, k8s secrets.
 # Applied after persistent-auth, before Flux.
 INFRA_TARGETS = [
-    "talos_machine_secrets.cluster",
-    "talos_image_factory_schematic.hcloud",
     "talos_image_factory_schematic.proxmox",
-    "terraform_data.talos_hcloud_image",
     "tls_private_key.ssh",
-    "hcloud_ssh_key.talos",
-    "hcloud_firewall.talos",
-    "hcloud_server.vps",
     "proxmox_virtual_environment_download_file.talos_disk",
     "proxmox_virtual_environment_file.network_config",
     "proxmox_virtual_environment_vm.talos",
-    "talos_machine_configuration_apply.vps",
     "talos_machine_configuration_apply.proxmox",
     "talos_machine_bootstrap.cluster",
     "talos_cluster_kubeconfig.cluster",
@@ -75,10 +68,17 @@ INFRA_TARGETS = [
     "null_resource.wait_for_k8s_api",
     "null_resource.cilium_bootstrap",
     "null_resource.wait_for_nodes_ready",
-    "kubernetes_secret.hcloud_csi",
     "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
+    # OVH Kimsufi worker nodes (bare metal, rescue→dd→harddisk provisioning)
+    "ovh_dedicated_server.kimsufi",
+    "ovh_dedicated_server_update.kimsufi_rescue",
+    "ovh_dedicated_server_reboot_task.kimsufi_to_rescue",
+    "null_resource.install_talos_kimsufi",
+    "ovh_dedicated_server_update.kimsufi_harddisk",
+    "ovh_dedicated_server_reboot_task.kimsufi_to_talos",
+    "talos_machine_configuration_apply.kimsufi",
 ]
 
 
@@ -95,7 +95,10 @@ def run(
 
 def tofu(*args: str, excludes: list[str], timeout: int = 600) -> subprocess.CompletedProcess[str]:
     exclude_flags = [f"-exclude={e}" for e in excludes]
-    return run([_TOFU_BIN, *args, *exclude_flags], cwd=TF_DIR, timeout=timeout)
+    result = run([_TOFU_BIN, *args, *exclude_flags], cwd=TF_DIR, timeout=timeout, check=False)
+    if result.returncode != 0:
+        raise SystemExit(f"tofu {args[0]} failed (exit {result.returncode})")
+    return result
 
 
 def tofu_output(name: str) -> str:
@@ -108,14 +111,14 @@ def state_has_resources() -> bool:
     if result.returncode != 0:
         return False
     resources = json.loads(result.stdout).get("values", {}).get("root_module", {}).get("resources", [])
-    return len(resources) > 0
+    return bool(resources)
 
 
 def preflight(root: Path) -> None:
     log.info("Preflight Validation")
 
     repo = pygit2.Repository(root)
-    gitops_prefixes = ("cluster/k8s/", "cluster/charts/", "cluster/flux-system/")
+    gitops_prefixes = ("cluster/k8s/", "cluster/flux-system/")
     diff = repo.index.diff_to_tree(repo.head.peel(pygit2.Tree))
     dirty = [d.delta.new_file.path for d in diff if d.delta.new_file.path.startswith(gitops_prefixes)]
     if dirty:
@@ -141,7 +144,47 @@ def deploy_persistent_auth() -> None:
 
     targets = [f"-target={t}" for t in PERSISTENT_AUTH_TARGETS]
     tofu("apply", "-auto-approve", *targets, excludes=[])
+
+    _export_machine_secrets()
     log.info("Persistent auth ready")
+
+
+def _export_machine_secrets() -> None:
+    """Export machine secrets to SOPS and derive k8s-ca.crt + k8s-worker.yaml.
+
+    SOPS file is the durable source of truth for machine secrets — survives
+    tofu state loss. k8s-ca.crt and k8s-worker.yaml are derived from it.
+    """
+    secrets_dir = (SCRIPT_DIR / ".." / "secrets").resolve()
+    sops_file = secrets_dir / "talos-machine-secrets.sops.yaml"
+    ca_crt_file = secrets_dir / "k8s-ca.crt"
+    worker_file = secrets_dir / "k8s-worker.yaml"
+    repo_root = SCRIPT_DIR / ".."
+
+    # Get machine secrets JSON from tofu output
+    result = run([_TOFU_BIN, "output", "-raw", "machine_secrets_json"], cwd=TF_DIR, capture=True, check=False)
+    if result.returncode != 0:
+        log.warning("Could not read machine_secrets_json output — skipping export")
+        return
+
+    secrets = json.loads(result.stdout)
+
+    # 1. Export full machine secrets to SOPS
+    log.info("Exporting machine secrets to SOPS...")
+    sops_file.write_text(result.stdout)
+    run(["sops", "-e", "-i", str(sops_file)], cwd=repo_root)
+    log.info("  → %s", sops_file)
+
+    # 2. Derive k8s-ca.crt (plaintext PEM)
+    ca_pem = base64.b64decode(secrets["certs"]["k8s"]["cert"]).decode()
+    ca_crt_file.write_text(ca_pem)
+    log.info("  → %s", ca_crt_file)
+
+    # 3. Derive k8s-worker.yaml (SOPS-encrypted bootstrap token)
+    token = secrets["secrets"]["bootstrap_token"]
+    worker_file.write_text(f"k8s_bootstrap_token: {token}\n")
+    run(["sops", "-e", "-i", str(worker_file)], cwd=repo_root)
+    log.info("  → %s", worker_file)
 
 
 def deploy_infrastructure() -> None:
@@ -181,13 +224,7 @@ def deploy_services(*, excludes: list[str]) -> None:
     log.info("Deploying all remaining resources (Flux, VMs)...")
     tofu("apply", "-auto-approve", excludes=excludes)
 
-    log.info("Flux deployed. Monitoring kustomization convergence...")
-    config.load_kube_config(str(kubeconfig))
-    monitor_flux_convergence()
-
-    generate(SCRIPT_DIR.parent)
-
-    log.info("Bootstrap complete - all kustomizations converged.")
+    log.info("Bootstrap complete.")
     print(f"\nAccess cluster: export KUBECONFIG='{kubeconfig}'")
 
 
@@ -202,16 +239,20 @@ def main() -> None:
         default=[],
         help="Tofu resource address to exclude from all applies (passed as -exclude= to tofu). Can be repeated.",
     )
+    parser.add_argument(
+        "--skip-preflight", action="store_true", help="Skip preflight validation (pre-commit, tofu validate)"
+    )
     args = parser.parse_args()
 
-    # Safety check: running on wyrm2 without excluding module.wyrm2 will cause
+    # Safety check: running on wyrm2 without excluding it will cause
     # tofu to apply pending VM config changes, rebooting the machine mid-bootstrap.
+    wyrm2_exclude = "proxmox_virtual_environment_vm.wyrm2"
     hostname = socket.gethostname()
-    if hostname == "wyrm2" and "module.wyrm2" not in args.exclude:
+    if hostname == "wyrm2" and wyrm2_exclude not in args.exclude:
         raise SystemExit(
-            "Running on wyrm2 without --exclude=module.wyrm2. "
+            f"Running on wyrm2 without --exclude={wyrm2_exclude}. "
             "Tofu will apply pending VM changes and reboot this machine mid-bootstrap. "
-            "Re-run with: --exclude=module.wyrm2"
+            f"Re-run with: --exclude={wyrm2_exclude}"
         )
 
     excludes = args.exclude
@@ -227,7 +268,8 @@ def main() -> None:
     if start_phase > 1:
         log.info("Starting from phase: %s", args.start_from)
 
-    preflight(root)
+    if not args.skip_preflight:
+        preflight(root)
 
     if start_phase <= 1:
         deploy_persistent_auth()

@@ -1,0 +1,34 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: flux-webhook-token
+  namespace: flux-system
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./tf/gitops/flux-webhook-token
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "flux_webhook_token"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+
+  vars: []

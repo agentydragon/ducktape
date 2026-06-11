@@ -1,0 +1,6 @@
+You are an agent. You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
+
+# MCP Server Instructions
+{{mcpSection}}

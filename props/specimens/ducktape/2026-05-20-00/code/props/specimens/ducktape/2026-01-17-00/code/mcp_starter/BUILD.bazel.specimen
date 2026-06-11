@@ -1,0 +1,69 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "adgn_mcp_starter",
+    srcs = glob(["adgn_mcp_starter/**/*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//claude_code_sdk",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//rich",
+    ],
+)
+
+py_binary(
+    name = "adgn-mcp-starter",
+    srcs = ["adgn_mcp_starter/__main__.py"],
+    main = "adgn_mcp_starter/__main__.py",
+    deps = [":adgn_mcp_starter"],
+)
+
+py_test(
+    name = "test_mcp_starter",
+    srcs = [
+        "conftest.py",
+        "test_server.py",
+    ],
+    imports = ["."],
+    main = "test_server.py",
+    deps = [
+        ":adgn_mcp_starter",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = [
+        "conftest.py",
+        "integration_test.py",
+    ],
+    imports = ["."],
+    main = "integration_test.py",
+    # Requires running MCP server
+    tags = ["manual"],
+    deps = [
+        ":adgn_mcp_starter",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_binary(
+    name = "manual_test_sdk",
+    srcs = ["manual_test_sdk.py"],
+    deps = [
+        "@pypi//claude_code_sdk",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":adgn_mcp_starter"],
+)

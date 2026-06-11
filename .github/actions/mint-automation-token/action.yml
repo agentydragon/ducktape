@@ -1,0 +1,84 @@
+name: Mint ducktape-automation App token
+description: |
+  Mints a short-lived installation token for the ducktape-automation
+  GitHub App. Use this in workflows that need to push to a branch
+  protected by the main-protection ruleset — `GITHUB_TOKEN`
+  (the github-actions Integration) cannot be a bypass actor on a
+  personal-account repo, but the App is registered as one.
+
+  The repo must already be checked out (the App PEM lives at
+  secrets/ducktape-automation.<date>.private-key.sops.pem).
+
+  Outputs are scoped to the composite action; the PEM does not leak to
+  the parent workflow.
+
+inputs:
+  sops_age_key:
+    description: SOPS age key for decrypting the App PEM (typically secrets.SOPS_AGE_KEY)
+    required: true
+
+outputs:
+  token:
+    description: |
+      Installation token (~1h lifetime). actions/create-github-app-token@v1
+      adds the value to GHA's mask list, so it's redacted as `***` in logs
+      even when expanded into command-line arguments. Don't `echo` or
+      otherwise round-trip it back into a non-masked field.
+    value: ${{ steps.app-token.outputs.token }}
+  app_slug:
+    description: App slug (e.g. "ducktape-automation"); use as `<slug>[bot]` in `git config user.name`.
+    value: ${{ steps.app-token.outputs.app-slug }}
+  user_id:
+    description: Bot user numeric id; use in the noreply email as `<id>+<slug>[bot]@users.noreply.github.com`.
+    value: ${{ steps.user-id.outputs.user_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install sops
+      shell: bash
+      run: |
+        if command -v sops >/dev/null 2>&1; then
+          echo "sops already on PATH: $(sops --version)"
+          exit 0
+        fi
+        SOPS_VERSION="3.9.4"
+        curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
+        chmod +x /usr/local/bin/sops
+        sops --version
+
+    - name: Decrypt App PEM
+      id: pem
+      shell: bash
+      env:
+        SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
+      run: |
+        set -euo pipefail
+        PEM=$(sops -d secrets/ducktape-automation.2026-05-03.private-key.sops.pem)
+        # Mask the PEM line-by-line so it never appears in any subsequent
+        # step's logs even if the workflow runs `set -x`.
+        while IFS= read -r line; do
+          [ -n "$line" ] && echo "::add-mask::$line"
+        done <<<"$PEM"
+        {
+          echo "private_key<<__PEM_EOF__"
+          echo "$PEM"
+          echo "__PEM_EOF__"
+        } >>"$GITHUB_OUTPUT"
+
+    - uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        app-id: "3590331"
+        private-key: ${{ steps.pem.outputs.private_key }}
+
+    - name: Look up bot user id
+      id: user-id
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+      run: |
+        set -euo pipefail
+        user_id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+        echo "user_id=${user_id}" >>"$GITHUB_OUTPUT"

@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: loki-vpa
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/monitoring/loki-vpa
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: loki
+    - name: vpa

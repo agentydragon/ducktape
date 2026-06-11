@@ -1,0 +1,10 @@
+min_preset: true
+env:
+  set:
+    HOME: /tmp/sjtest
+fs:
+  read_paths:
+    - /
+  write_paths:
+    - /tmp/sjtest
+net: { mode: loopback }

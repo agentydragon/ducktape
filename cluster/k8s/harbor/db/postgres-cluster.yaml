@@ -11,13 +11,16 @@ spec:
       isolationCheck:
         enabled: false
 
+  # Moved to OVH 2026-06-03: lets Harbor's DB come back up while Proxmox is
+  # down. Previously pinned to region=proxmox + storageClass=local-path.
+  # Still single-instance; bumping to 2 (proper OVH-HA per cnpg_conventions
+  # R3) is a separate decision.
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/region: hil
 
   storage:
-    # CLEANUP(2026-04-02): Migrate to local-path-proxmox
-    storageClass: local-path
+    storageClass: local-path-ovh
     size: 5Gi
 
   monitoring:

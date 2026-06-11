@@ -1,0 +1,11 @@
+# Exclude files that are unnecessary in the image to reduce layers & build time
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.db
+tests/
+.venv/
+*.egg-info/
+*.log
+data/

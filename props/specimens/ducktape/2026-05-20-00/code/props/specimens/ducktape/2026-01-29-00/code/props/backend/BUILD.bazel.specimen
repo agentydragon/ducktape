@@ -1,0 +1,148 @@
+"""Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+#
+# Per-file targets in this directory:
+#   :app, :auth, :cli, :export_schema
+# Route targets in routes/:
+#   //props/backend/routes:eval, :ground_truth, :llm, :registry, :runs, :stats
+
+# =============================================================================
+# Per-file targets
+# =============================================================================
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//fastapi",
+        "@pypi//psycopg",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":auth",
+        "//cli_util:logging",
+        "//props/backend/routes:eval",
+        "//props/backend/routes:ground_truth",
+        "//props/backend/routes:llm",
+        "//props/backend/routes:registry",
+        "//props/backend/routes:runs",
+        "//props/backend/routes:stats",
+        "//props/cli:resources",
+        "//props/orchestration:agent_registry",
+        "//props/orchestration:grader_supervisor",
+        "@pypi//aiodocker",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
+        "//cli_util:logging",
+        "//props/cli:common_options",
+        "@pypi//typer_slim",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":app"],
+)
+
+# =============================================================================
+# Binaries
+# =============================================================================
+
+py_binary(
+    name = "backend_cli",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//props/frontend:__pkg__"],
+    deps = [
+        ":app",
+        ":cli",
+        "//cli_util:logging",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    srcs = ["export_schema.py"],
+    main = "export_schema.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
+        ":export_schema",
+    ],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//props/frontend:__pkg__"],
+)
+
+# =============================================================================
+# Linting
+# =============================================================================
+
+# =============================================================================
+# OCI Image
+# =============================================================================
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":backend_cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = [
+        "/app/backend_cli",
+        "serve",
+    ],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":app_tar"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-backend:latest"],
+)

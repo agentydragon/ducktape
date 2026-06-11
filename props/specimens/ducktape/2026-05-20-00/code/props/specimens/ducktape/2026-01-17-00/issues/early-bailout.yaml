@@ -1,0 +1,12 @@
+rationale: |
+  `worktree_get_by_name` uses if/else assigning to `result` then returns it.
+  The else branch is the "not found" early-exit case. Use early return to
+  flatten the happy path and eliminate the intermediate variable.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/handlers/worktree_handler.py:
+        - [193, 205]
+    critic_scopes_expected_to_recall:
+      - [wt/server/handlers/worktree_handler.py]

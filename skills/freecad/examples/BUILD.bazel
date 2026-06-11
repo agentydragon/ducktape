@@ -1,0 +1,101 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+exports_files(
+    [
+        "export_page.py",
+        "freecad_helpers.py",
+        "render_debug_edges.py",
+        "render_debug_faces.py",
+        "render_dxf.py",
+        "render_fcstd.py",
+        "render_multi_angle.py",
+        "verify_fcstd_load.py",
+    ],
+    visibility = ["//skills/freecad:__pkg__"],
+)
+
+py_library(
+    name = "freecad_helpers",
+    srcs = ["freecad_helpers.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "export_page",
+    srcs = ["export_page.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        ":freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "render_fcstd",
+    srcs = ["render_fcstd.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        ":freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "render_multi_angle",
+    srcs = ["render_multi_angle.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        ":freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "render_debug_edges",
+    srcs = ["render_debug_edges.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        ":freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "render_debug_faces",
+    srcs = ["render_debug_faces.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        ":freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "verify_fcstd_load",
+    srcs = ["verify_fcstd_load.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "render_dxf",
+    srcs = ["render_dxf.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "@pypi//ezdxf",
+        "@pypi//matplotlib",
+        "@pypi//pillow",
+    ],
+)
+
+py_binary(
+    name = "render_dxf_bin",
+    main_module = "skills.freecad.examples.render_dxf",
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [":render_dxf"],
+)

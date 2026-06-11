@@ -1,0 +1,119 @@
+# NOTE: No aggregator target - use specific per-file targets like :models, :bazel_query
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+# === Base modules (no internal deps) ===
+
+py_library(
+    name = "bazel_query",
+    srcs = ["bazel_query.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "github_actions",
+    srcs = ["github_actions.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tools:env_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+# === Library modules ===
+
+py_library(
+    name = "diff_utils",
+    srcs = ["diff_utils.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":github_actions",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "check_release_lib",
+    srcs = ["check_release_lib.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":diff_utils",
+        ":github_actions",
+        "//tools:env_utils",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "ci_decide_lib",
+    srcs = ["ci_decide_lib.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bazel_query",
+        ":diff_utils",
+        ":github_actions",
+        ":models",
+        "//fmt_util",
+        "//tools:env_utils",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "generate_ci_lib",
+    srcs = ["generate_ci_lib.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":github_actions",
+        ":models",
+        "@pypi//pyyaml",
+    ],
+)
+
+# === Exec stubs ===
+
+py_library(
+    name = "check_release",
+    srcs = ["check_release.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":check_release_lib"],
+)
+
+py_library(
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":ci_decide_lib"],
+)
+
+py_library(
+    name = "generate_ci",
+    srcs = ["generate_ci.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":generate_ci_lib"],
+)

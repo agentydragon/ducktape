@@ -1,0 +1,16 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: test-app
+spec:
+  chart:
+    spec:
+      chart: test
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: test-secret
+spec:
+  secretStoreRef:
+    name: vault-backend

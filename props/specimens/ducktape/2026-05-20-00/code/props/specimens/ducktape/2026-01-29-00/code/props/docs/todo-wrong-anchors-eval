@@ -1,0 +1,41 @@
+Updated src/adgn/props/specimens/2025-08-30-crush_internal_db/issues/iss-003-timestamps.libsonnet with 34 additions
+ 1 +  local I = import '../../specimen_issues.libsonnet';
+ 2 +
+ 3 +  // iss-003-timestamps
+ 4 +  // Timestamps: Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units
+   + in names).
+ 5 +  //
+ 6 +  // Instances:
+ 7 +  // - internal/llm/tools/: download.go (`Timeout`/`maxTimeout`), fetch.go (`Timeout int`), tools.go (`StartedAt`/`UpdatedAt int64` ms
+   + epoch)
+ 8 +  // - internal/message/: content.go (`{Started,Finished,Created,Updated}At`, `Finish.Time`), message.go (Watermarks.*TS and Message
+   + timestamps; UpdatedAt microseconds)
+ 9 +  // - internal/history/file.go: CreatedAt/UpdatedAt int64
+10 +  // - internal/tui/components/chat/: chat.go (lastUserMessageTime int64 epoch seconds), messages/renderer.go (timeout int seconds)
+11 +  // - internal/pubsub/broker.go: now := time.Now().UnixMilli()
+12 +  // - internal/session/session.go: CreatedAt/UpdatedAt int64
+13 +  // - internal/transform/transform.go: CreatedAt int64
+14 +  //
+15 +  // Align types: prefer time.Time / time.Duration or explicit unit-suffixed integer names.
+16 +
+17 +  I.issueWithOccurrences(
+18 +    id='iss-003-timestamps',
+19 +    rationale='Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units in
+   +  names).',
+20 +    occurrences=[
+21 +      { files: { 'internal/llm/tools/download.go': [ { start_line: 1 } ] } },
+22 +      { files: { 'internal/llm/tools/fetch.go': [ { start_line: 1 } ] } },
+23 +      { files: { 'internal/llm/tools/tools.go': [ { start_line: 1 } ] } },
+24 +      { files: { 'internal/message/content.go': [ { start_line: 1 } ] } },
+25 +      { files: { 'internal/message/message.go': [ { start_line: 1 } ] } },
+26 +      { files: { 'internal/history/file.go': [ { start_line: 1 } ] } },
+27 +      { files: { 'internal/tui/components/chat/chat.go': [ { start_line: 1 } ] } },
+28 +      { files: { 'internal/tui/components/chat/messages/renderer.go': [ { start_line: 1 } ] } },
+29 +      { files: { 'internal/pubsub/broker.go': [ { start_line: 1 } ] } },
+30 +      { files: { 'internal/session/session.go': [ { start_line: 1 } ] } },
+31 +      { files: { 'internal/transform/transform.go': [ { start_line: 1 } ] } },
+32 +    ],
+33 +    properties=[],
+34 +  )
+
+

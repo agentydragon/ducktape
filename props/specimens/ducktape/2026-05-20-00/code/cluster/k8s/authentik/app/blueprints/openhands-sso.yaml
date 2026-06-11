@@ -1,0 +1,39 @@
+version: 1
+metadata:
+  name: SSO - OpenHands
+  labels:
+    blueprints.goauthentik.io/description: "OpenHands proxy provider, application, and single-user access binding"
+
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: openhands-provider
+    state: present
+    identifiers:
+      name: openhands
+    attrs:
+      external_host: "https://openhands.allegedly.works"
+      internal_host: "http://openhands.openhands.svc.cluster.local:3000"
+      mode: proxy
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      access_token_validity: "hours=24"
+
+  - model: authentik_core.application
+    id: openhands-app
+    state: present
+    identifiers:
+      slug: openhands
+    attrs:
+      name: OpenHands
+      provider: !KeyOf openhands-provider
+      meta_description: "AI software development agent"
+      meta_launch_url: "https://openhands.allegedly.works"
+      open_in_new_tab: true
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf openhands-app
+      user: !Find [authentik_core.user, [username, agentydragon]]
+      order: 0

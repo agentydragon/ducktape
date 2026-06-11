@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wayback-cache-data-ovh
+  namespace: wayback-cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 20Gi # nginx max_size=18g + metadata headroom

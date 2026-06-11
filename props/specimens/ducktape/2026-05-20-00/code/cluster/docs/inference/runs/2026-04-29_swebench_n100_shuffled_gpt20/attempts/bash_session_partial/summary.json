@@ -1,0 +1,13 @@
+{
+  "config": {
+    "model": "gpt-oss:20b",
+    "limit": 100,
+    "dataset": "verified",
+    "dataset_hf_id": "princeton-nlp/SWE-bench_Verified",
+    "message_limit": 50,
+    "max_workers": 2,
+    "sandbox": "docker",
+    "base_url": "https://ollama.allegedly.works/v1"
+  },
+  "exit_code": 0
+}

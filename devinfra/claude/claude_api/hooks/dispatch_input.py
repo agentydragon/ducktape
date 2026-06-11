@@ -1,6 +1,6 @@
 """Discriminated union of all Claude Code hook inputs.
 
-Parsed once in hook_dispatch.py, then isinstance/match dispatches to the
+Parsed once by the hook entrypoint, then isinstance/match dispatches to the
 appropriate handler. Uses hook_event_name as the Pydantic discriminator.
 """
 
@@ -14,6 +14,7 @@ from devinfra.claude.claude_api.hooks.elicitation import ElicitationInput, Elici
 from devinfra.claude.claude_api.hooks.file_changed import FileChangedInput
 from devinfra.claude.claude_api.hooks.instructions_loaded import InstructionsLoadedInput
 from devinfra.claude.claude_api.hooks.notification import NotificationInput
+from devinfra.claude.claude_api.hooks.permission_denied import PermissionDeniedInput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestInput
 from devinfra.claude.claude_api.hooks.post_compact import PostCompactInput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
@@ -45,6 +46,7 @@ AnyHookInput = Annotated[
     | SubagentStartInput
     | SubagentStopInput
     | PostToolUseFailureInput
+    | PermissionDeniedInput
     | PermissionRequestInput
     | ElicitationInput
     | ElicitationResultInput

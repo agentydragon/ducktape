@@ -1,0 +1,15 @@
+"""Notifications package - notification batching and handling."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "notifications",
+    srcs = ["handler.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra/notifications",
+        "//openai_utils",
+    ],
+)

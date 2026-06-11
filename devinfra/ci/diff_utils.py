@@ -1,7 +1,7 @@
 """Shared utilities for bazel-diff based CI tools.
 
 Contains git utilities, infrastructure pattern detection, and bazel-diff execution.
-Used by both ci_decide_lib.py and check_release_lib.py.
+Used by check_release_lib.py.
 """
 
 from __future__ import annotations

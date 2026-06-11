@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "shared",
+    srcs = [
+        "config_file.py",
+        "configuration.py",
+        "constants.py",
+        "env.py",
+        "error_handling.py",
+        "fixtures.py",
+        "git_utils.py",
+        "github_models.py",
+        "models.py",
+        "protocol.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "@pypi//click",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_shared",
+    srcs = [
+        "test_layering.py",
+        "test_style.py",
+    ],
+    main = "test_layering.py",
+    deps = [
+        "//wt/testing",
+    ],
+)

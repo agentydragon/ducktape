@@ -1,0 +1,121 @@
+scene:
+  - id: "1726220894378"
+    name: Rai's room work lights
+    entities:
+      light.left_row_1_closet:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.left_row_2_shelving:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.left_row_3_nook:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.middle_row_1_doorway:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.middle_row_2_room_center:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.middle_row_3_mid_room_nightstand:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.right_row_1_above_desk:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.right_row_2_bed_walkway:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+      light.right_row_3_corner_nightstand:
+        state: "on"
+        brightness: 255
+        color_mode: color_temp
+        color_temp_kelvin: 6535
+
+  - id: "1726221468922"
+    name: Rai's room lights off
+    entities:
+      light.left_row_1_closet:
+        state: "off"
+      light.left_row_2_shelving:
+        state: "off"
+      light.left_row_3_nook:
+        state: "off"
+      light.middle_row_1_doorway:
+        state: "off"
+      light.middle_row_2_room_center:
+        state: "off"
+      light.middle_row_3_mid_room_nightstand:
+        state: "off"
+      light.right_row_1_above_desk:
+        state: "off"
+      light.right_row_2_bed_walkway:
+        state: "off"
+      light.right_row_3_corner_nightstand:
+        state: "off"
+
+  - id: "1738486322099"
+    name: Rai's room sleep mode plus nook light
+    icon: mdi:lightbulb-night
+    entities:
+      light.left_row_1_closet:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.left_row_2_shelving:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.left_row_3_nook:
+        state: "on"
+        brightness: 15
+        color_mode: color_temp
+        color_temp_kelvin: 2700
+      light.middle_row_1_doorway:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.middle_row_2_room_center:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.middle_row_3_mid_room_nightstand:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.right_row_1_above_desk:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.right_row_2_bed_walkway:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]
+      light.right_row_3_corner_nightstand:
+        state: "on"
+        brightness: 3
+        color_mode: hs
+        hs_color: [13, 100]

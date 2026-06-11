@@ -1,0 +1,158 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# NOTE: No aggregator target - use specific per-file targets like :app, :cli, :models
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_binary(
+    name = "rspcache_cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":admin_app",
+        ":cli",
+    ],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "cli_tar",
+    srcs = [":rspcache_cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = [
+        "run",
+        "--app",
+        "proxy",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ],
+    entrypoint = ["/app/rspcache_cli"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = [
+        "8000/tcp",
+        "8100/tcp",
+    ],
+    tars = [":cli_tar"],
+    workdir = "/opt/adgn",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["rspcache:latest"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        ":responses_db",
+        "@pypi//canonicaljson",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "admin_app",
+    srcs = ["admin_app.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
+        ":models",
+        ":responses_db",
+        "//openai_utils:model",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":admin_app",
+        "@pypi//httpx",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "codegen",
+    srcs = ["codegen.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":admin_app",
+        ":app",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "responses_db",
+    srcs = ["responses_db.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
+        ":events",
+        ":models",
+        "@pypi//asyncpg",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)

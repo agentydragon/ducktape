@@ -2,7 +2,7 @@
 
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
@@ -89,7 +89,7 @@ create_data_blob = rule(
     },
 )
 
-def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
+def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_size = "small"):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
@@ -100,6 +100,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
             For remote-VCS specimens, pass the http_archive filegroup label.
         code_strip_prefix: Override strip prefix for code tar. If empty, uses
             "{package}/code" for local or auto-detects for external repos.
+        test_size: Bazel test size for the generated validation test.
 
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
@@ -142,8 +143,8 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
             "SPECIMEN_CODE_TAR": "$(location :" + code_tar_target + ")",
             "SPECIMEN_DATA_YAML": "$(location :" + data_blob_target + ")",
         },
-        imports = ["../.."],
         requires_docker = True,
+        size = test_size,
         tags = ["specimen"],
         deps = [
             "//util/bazel:runfiles",

@@ -1,0 +1,5 @@
+# pnpm configuration
+global-bin-dir=${HOME}/.local/share/pnpm
+store-dir=${HOME}/.local/share/pnpm/store
+# Using hardlinks since store is on same filesystem as projects
+package-import-method=hardlink

@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: langfuse
+  namespace: seaweedfs
+spec:
+  name: langfuse
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: langfuse
+      actions: [Read, Write, List, Tagging]

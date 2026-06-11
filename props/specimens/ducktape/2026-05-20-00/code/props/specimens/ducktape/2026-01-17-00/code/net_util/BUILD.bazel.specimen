@@ -1,0 +1,23 @@
+"""Network utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "net_util",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//aiodocker",
+        "@pypi//tenacity",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":net_util"],
+)

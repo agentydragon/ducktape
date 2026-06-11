@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Action } from "./types.ts";
 
-  let { pending, recent }: { pending: Action[]; recent: Action[] } = $props();
+  const { pending, recent }: { pending: Action[]; recent: Action[] } = $props();
 
   function fmt(iso: string): string {
     return new Date(iso).toLocaleString();
@@ -11,13 +11,6 @@
     return `#/sessions/${a.key.session_key}/actions/${a.key.action_seq}`;
   }
 </script>
-
-<header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
-  <h1 class="app-header-title text-lg font-semibold m-0">Airlock</h1>
-  {#if pending.length > 0}
-    <span class="badge text-xs font-bold rounded-full px-2.5 py-0.5">{pending.length} pending</span>
-  {/if}
-</header>
 
 <main class="max-w-4xl mx-auto px-4 py-6">
   <h2 class="section-heading text-xs font-semibold uppercase tracking-wider mb-3 mt-6 first:mt-0">Pending approval</h2>

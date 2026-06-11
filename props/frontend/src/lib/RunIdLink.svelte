@@ -9,7 +9,7 @@
     id: string;
   }
 
-  let { id }: Props = $props();
+  const { id }: Props = $props();
 </script>
 
 <a

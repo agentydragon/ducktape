@@ -1,0 +1,77 @@
+# Example Claude Linter Configuration
+# Copy this file to ~/.config/claude-linter/config.toml and modify as needed
+
+# Ruff rules that will always be applied on top of any project-specific configuration
+[ruff]
+# Force these rules to always be enabled
+force-select = [
+    # Early bailout patterns
+    "RET505",   # superfluous-else-return (autofix available)
+    "RET506",   # superfluous-else-raise (autofix available)
+    "RET507",   # superfluous-else-continue (autofix available)
+    "RET508",   # superfluous-else-break (autofix available)
+
+    # CLAUDE.md: /attrs/no-hasattr-getattr
+    "B009",     # getattr-with-constant (autofix available)
+    "B010",     # setattr-with-constant (autofix available)
+
+    # Modern Python features
+    "UP007",    # non-pep604-annotation-union (X | Y) (autofix available)
+    "UP032",    # f-string (autofix available)
+
+    # Timeout patterns for blocking operations
+    "S113",     # request-without-timeout
+
+    # Path and imports best practices
+    "E402",     # module-import-not-at-top-of-file
+    "F401",     # unused-import (autofix available)
+
+    # CLAUDE.md: /errors/fail-fast
+    "E722",     # bare-except
+    "BLE001",   # blind-except
+
+    # Code quality
+    "B006",     # mutable-argument-default
+
+    # Add more rules as needed based on your team's standards
+]
+
+# Pre-commit hooks for text fixes that apply to all file types
+# Used by Claude Code post-hook for auto-fixing common text issues
+[pre-commit]
+repos = [
+  {
+    repo = "https://github.com/pre-commit/pre-commit-hooks",
+    rev = "v4.5.0",
+    hooks = [
+      {
+        # Remove trailing whitespace from all lines
+        id = "trailing-whitespace",
+        name = "Fix trailing whitespace",
+        # Apply to common text file types that Claude edits
+        files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$',
+        # Don't fix markdown files that use two spaces for line breaks
+        args = ["--markdown-linebreak-ext=md"],
+      },
+      {
+        # Ensure files end with exactly one newline
+        id = "end-of-file-fixer",
+        name = "Fix end of file",
+        files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$',
+      },
+      {
+        # Normalize line endings to LF
+        id = "mixed-line-ending",
+        name = "Fix mixed line endings",
+        args = ["--fix=lf"],
+        files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$',
+      },
+      {
+        # Remove UTF-8 byte order marker
+        id = "fix-byte-order-marker",
+        name = "Fix UTF-8 byte order marker",
+        files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$',
+      },
+    ],
+  },
+]

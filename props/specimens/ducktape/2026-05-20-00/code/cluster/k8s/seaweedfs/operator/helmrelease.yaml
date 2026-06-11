@@ -1,0 +1,34 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: seaweedfs-operator
+  namespace: seaweedfs
+spec:
+  interval: 30m
+  install:
+    remediation:
+      retries: 3
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  chart:
+    spec:
+      chart: seaweedfs-operator
+      version: "0.1.22" # operator v1.0.19, latest stable as of 2026-05-15
+      sourceRef:
+        kind: HelmRepository
+        name: seaweedfs-operator
+        namespace: flux-system
+      interval: 12h
+  values:
+    # The operator controller itself is lightweight; let it sit anywhere a
+    # worker can host it (no kimsufi pinning needed for the controller).
+    # Operator pods are not data-path, so anti-affinity is unnecessary too.
+    replicaCount: 1
+    # Operator watches all namespaces by default.
+    webhook:
+      # Webhooks are disabled by default in the upstream chart; SeaweedFS
+      # docs strongly recommend enabling them once the cert-manager
+      # integration is verified. Leaving disabled for the trial — webhook
+      # validation provides nicer errors but isn't critical.
+      enabled: false

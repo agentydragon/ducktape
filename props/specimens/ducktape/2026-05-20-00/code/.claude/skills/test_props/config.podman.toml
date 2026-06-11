@@ -1,0 +1,15 @@
+# Props configuration for podman + host networking (gVisor sandbox).
+# Pointed to by PROPS_CONFIG_FILE env var.
+
+# Backend URL — host networking means agents reach backend at 127.0.0.1:8000.
+backend_url = "http://127.0.0.1:8000"
+
+# Model for snapshot grader daemons. If unset, daemon manager is disabled.
+grader_model = "gpt-5-mini"
+
+# Environment variables injected into every agent container.
+# With host networking, agents connect to postgres at 127.0.0.1:5433.
+[agent_env]
+PGHOST = "127.0.0.1"
+PGPORT = "5433"
+PGDATABASE = "eval_results"

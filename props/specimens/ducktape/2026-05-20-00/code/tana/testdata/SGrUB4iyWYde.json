@@ -1,0 +1,470 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_T02",
+      "props": {
+        "created": 1749756870580,
+        "name": "field-definition",
+        "description": "Field definition.  All field definitions are instances of this",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T02_META"
+      },
+      "children": [
+        "SYS_A208_T",
+        "SYS_A01",
+        "SYS_A10",
+        "SYS_A02",
+        "SYS_T44",
+        "SYS_T60",
+        "SYS_T82",
+        "SYS_T127",
+        "SYS_T85",
+        "SYS_T90",
+        "SYS_A03",
+        "SYS_T51",
+        "SYS_T52",
+        "SYS_T53",
+        "SYS_A06",
+        "SYS_A08",
+        "SYS_T46",
+        "SYS_T28",
+        "SYS_T30",
+        "SYS_T40",
+        "SYS_TEV001",
+        "SYS_TEV002",
+        "SYS_TEV003",
+        "SYS_TEV004",
+        "SYS_TEV005",
+        "SYS_TEV006",
+        "SYS_TEV007"
+      ]
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SYS_T02_META",
+      "props": {
+        "created": 1749756870612,
+        "_ownerId": "SYS_T02",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T02_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T02_META_SYS_A13",
+      "props": {
+        "created": 1749756870612,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T02_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SGrUB4iyWYde",
+      "props": {
+        "created": 1749779306327,
+        "name": "Node rendered as a table (test reference SGrUB4iyWYde)",
+        "_ownerId": "MFjacEHVlv36"
+      },
+      "touchCounts": [34, 0],
+      "modifiedTs": [1749780205080, 0],
+      "children": ["8nFeTVv8wM9F"]
+    },
+    {
+      "id": "8nFeTVv8wM9F",
+      "props": {
+        "created": 1749779309901,
+        "name": "Table",
+        "_ownerId": "SGrUB4iyWYde",
+        "_metaNodeId": "x_UDIbJdpkvM"
+      },
+      "touchCounts": [13, 0],
+      "modifiedTs": [1749779361919, 0],
+      "children": ["rTtJTyXYH4T3", "EaXih-konPhV", "gQSniR0OMfDJ"]
+    },
+    {
+      "id": "x_UDIbJdpkvM",
+      "props": {
+        "created": 1749779313047,
+        "_ownerId": "8nFeTVv8wM9F",
+        "_docType": "metanode"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749779313441, 0],
+      "children": ["zPmrCWiL3IAH", "RrsSo__Bm401"]
+    },
+    {
+      "id": "HtLBSkLoPRh8",
+      "props": {
+        "created": 1749779313052,
+        "name": "Standard column",
+        "_docType": "attrDef",
+        "_metaNodeId": "nbEeSN-_2QoW",
+        "_ownerId": "mlLObAPs0yE_"
+      },
+      "touchCounts": [20, 0],
+      "modifiedTs": [1749779321935, 0]
+    },
+    {
+      "id": "nbEeSN-_2QoW",
+      "props": {
+        "created": 1749779313053,
+        "_ownerId": "HtLBSkLoPRh8",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779313441, 0],
+      "children": ["aKcQ2Uu_izGH"]
+    },
+    {
+      "id": "aKcQ2Uu_izGH",
+      "props": {
+        "created": 1749779313053,
+        "_docType": "tuple",
+        "_ownerId": "nbEeSN-_2QoW"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749779313441, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "rTtJTyXYH4T3",
+      "props": {
+        "created": 1749779316501,
+        "name": "Row 1",
+        "_ownerId": "8nFeTVv8wM9F"
+      },
+      "touchCounts": [12, 0],
+      "modifiedTs": [1749779373771, 0],
+      "children": ["n5g8H3yNg9Nw", "bB9rv6JhwTHv", "z3i-EHk3Cw7k", "tlGsCBh1lYsM"]
+    },
+    {
+      "id": "boq5Exn_XiM9",
+      "props": {
+        "created": 1749779340364,
+        "name": "Number column",
+        "_docType": "attrDef",
+        "_metaNodeId": "fdLxk8xrxPIS",
+        "_ownerId": "2nRTcz6D3hXP"
+      },
+      "touchCounts": [20, 0],
+      "modifiedTs": [1749779353175, 0],
+      "children": ["1hYkhzswg4VY"]
+    },
+    {
+      "id": "fdLxk8xrxPIS",
+      "props": {
+        "created": 1749779340365,
+        "_ownerId": "boq5Exn_XiM9",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779340745, 0],
+      "children": ["00hVP6D9yLNT"]
+    },
+    {
+      "id": "00hVP6D9yLNT",
+      "props": {
+        "created": 1749779340367,
+        "_docType": "tuple",
+        "_ownerId": "fdLxk8xrxPIS"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749779340745, 0],
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "n5g8H3yNg9Nw",
+      "props": {
+        "created": 1749779354223,
+        "_docType": "tuple",
+        "_ownerId": "rTtJTyXYH4T3",
+        "_sourceId": "mlLObAPs0yE_"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779354606, 0],
+      "children": ["HtLBSkLoPRh8", "B4TYnP-0-HCa"]
+    },
+    {
+      "id": "B4TYnP-0-HCa",
+      "props": {
+        "created": 1749779354226,
+        "name": "A1",
+        "_ownerId": "n5g8H3yNg9Nw",
+        "_sourceId": "grITlUMM_G-z"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779397607, 0],
+      "children": ["Ia78Nq7egJcJ"]
+    },
+    {
+      "id": "bB9rv6JhwTHv",
+      "props": {
+        "created": 1749779355590,
+        "_docType": "tuple",
+        "_ownerId": "rTtJTyXYH4T3",
+        "_sourceId": "2nRTcz6D3hXP"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779355994, 0],
+      "children": ["boq5Exn_XiM9", "-5SoWv4POk3N"]
+    },
+    {
+      "id": "-5SoWv4POk3N",
+      "props": {
+        "created": 1749779355592,
+        "name": "11",
+        "_ownerId": "bB9rv6JhwTHv",
+        "_sourceId": "rD4JE3yk8VWL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779355994, 0]
+    },
+    {
+      "id": "EaXih-konPhV",
+      "props": {
+        "created": 1749779357033,
+        "name": "Row 2",
+        "_ownerId": "8nFeTVv8wM9F"
+      },
+      "touchCounts": [12, 0],
+      "modifiedTs": [1749779382135, 0],
+      "children": ["Vgi5HQrK_D6g", "jMB4OukDI4W1", "V8SqqY76Hd2X", "gjM5qk_Ovvo1"]
+    },
+    {
+      "id": "Vgi5HQrK_D6g",
+      "props": {
+        "created": 1749779358551,
+        "_docType": "tuple",
+        "_ownerId": "EaXih-konPhV",
+        "_sourceId": "mlLObAPs0yE_"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779358929, 0],
+      "children": ["HtLBSkLoPRh8", "x2_jnXt5sqGb"]
+    },
+    {
+      "id": "x2_jnXt5sqGb",
+      "props": {
+        "created": 1749779358554,
+        "name": "A2",
+        "_ownerId": "Vgi5HQrK_D6g",
+        "_sourceId": "grITlUMM_G-z"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779400624, 0],
+      "children": ["kR5vk5YeWHk9"]
+    },
+    {
+      "id": "jMB4OukDI4W1",
+      "props": {
+        "created": 1749779359597,
+        "_docType": "tuple",
+        "_ownerId": "EaXih-konPhV",
+        "_sourceId": "2nRTcz6D3hXP"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779359998, 0],
+      "children": ["boq5Exn_XiM9", "y96MgoxhfaLD"]
+    },
+    {
+      "id": "y96MgoxhfaLD",
+      "props": {
+        "created": 1749779359599,
+        "name": "22",
+        "_ownerId": "jMB4OukDI4W1",
+        "_sourceId": "rD4JE3yk8VWL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779359998, 0]
+    },
+    {
+      "id": "gQSniR0OMfDJ",
+      "props": {
+        "created": 1749779361536,
+        "name": "Row 3",
+        "_ownerId": "8nFeTVv8wM9F"
+      },
+      "touchCounts": [20, 0],
+      "modifiedTs": [1749779392385, 0],
+      "children": ["YwKHixT3pkOa", "tqN_3c-13V-a", "EmAYjZLZCczG", "DREZ7g4ihTfI"]
+    },
+    {
+      "id": "YwKHixT3pkOa",
+      "props": {
+        "created": 1749779365583,
+        "_docType": "tuple",
+        "_ownerId": "gQSniR0OMfDJ",
+        "_sourceId": "mlLObAPs0yE_"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779366017, 0],
+      "children": ["HtLBSkLoPRh8", "MharHmnwqX6P"]
+    },
+    {
+      "id": "MharHmnwqX6P",
+      "props": {
+        "created": 1749779365586,
+        "name": "A3",
+        "_ownerId": "YwKHixT3pkOa",
+        "_sourceId": "grITlUMM_G-z"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749779402465, 0],
+      "children": ["EzDFGSWvcodO"]
+    },
+    {
+      "id": "tqN_3c-13V-a",
+      "props": {
+        "created": 1749779366926,
+        "_docType": "tuple",
+        "_ownerId": "gQSniR0OMfDJ",
+        "_sourceId": "2nRTcz6D3hXP"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779367320, 0],
+      "children": ["boq5Exn_XiM9", "y52UmYNbFOcn"]
+    },
+    {
+      "id": "y52UmYNbFOcn",
+      "props": {
+        "created": 1749779366928,
+        "name": "33",
+        "_ownerId": "tqN_3c-13V-a",
+        "_sourceId": "rD4JE3yk8VWL"
+      },
+      "touchCounts": [4, 0],
+      "modifiedTs": [1749779367320, 0]
+    },
+    {
+      "id": "z3i-EHk3Cw7k",
+      "props": {
+        "created": 1749779369408,
+        "name": "Row 1 content foo",
+        "_ownerId": "rTtJTyXYH4T3"
+      },
+      "touchCounts": [22, 0],
+      "modifiedTs": [1749779373460, 0]
+    },
+    {
+      "id": "tlGsCBh1lYsM",
+      "props": {
+        "created": 1749779373625,
+        "name": "Row 1 content bar",
+        "_ownerId": "rTtJTyXYH4T3"
+      },
+      "touchCounts": [22, 0],
+      "modifiedTs": [1749779377595, 0]
+    },
+    {
+      "id": "V8SqqY76Hd2X",
+      "props": {
+        "created": 1749779378911,
+        "name": "Row 2 content foo",
+        "_ownerId": "EaXih-konPhV"
+      },
+      "touchCounts": [23, 0],
+      "modifiedTs": [1749779387784, 0]
+    },
+    {
+      "id": "gjM5qk_Ovvo1",
+      "props": {
+        "created": 1749779381842,
+        "name": "Row 2 content bar",
+        "_ownerId": "EaXih-konPhV"
+      },
+      "touchCounts": [24, 0],
+      "modifiedTs": [1749779385439, 0]
+    },
+    {
+      "id": "EmAYjZLZCczG",
+      "props": {
+        "created": 1749779390009,
+        "name": "Row 3 content foo",
+        "_ownerId": "gQSniR0OMfDJ"
+      },
+      "touchCounts": [20, 0],
+      "modifiedTs": [1749779392044, 0]
+    },
+    {
+      "id": "DREZ7g4ihTfI",
+      "props": {
+        "created": 1749779392068,
+        "name": "Row 3 content bar",
+        "_ownerId": "gQSniR0OMfDJ"
+      },
+      "touchCounts": [20, 0],
+      "modifiedTs": [1749779394811, 0]
+    },
+    {
+      "id": "Ia78Nq7egJcJ",
+      "props": {
+        "created": 1749779397189,
+        "name": "A1a",
+        "_ownerId": "B4TYnP-0-HCa"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749779398230, 0]
+    },
+    {
+      "id": "kR5vk5YeWHk9",
+      "props": {
+        "created": 1749779400228,
+        "name": "A2a",
+        "_ownerId": "x2_jnXt5sqGb"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749779400977, 0]
+    },
+    {
+      "id": "EzDFGSWvcodO",
+      "props": {
+        "created": 1749779402085,
+        "name": "A3a",
+        "_ownerId": "MharHmnwqX6P"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749779402792, 0]
+    }
+  ]
+}

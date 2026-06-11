@@ -4,6 +4,7 @@ metadata:
   name: harbor-oidc-config
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -20,6 +21,7 @@ spec:
       namespace: flux-system
   dependsOn:
     - name: tofu-controller
-    - name: vault
+    - name: tofu-state-db
+    - name: sso-providers-tf # writes harbor-oauth-client-secret to authentik ns
+    - name: reflector # mirrors harbor-oauth-client-secret to harbor ns
     - name: harbor # Harbor API must be running
-    - name: authentik-blueprint-sso-secrets # OIDC creds in Vault

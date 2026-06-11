@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - s3-credentials.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: vm-images-publisher-scripts
+    namespace: vm-images-publisher
+    files:
+      - publish.sh
+generatorOptions:
+  disableNameSuffixHash: false

@@ -89,7 +89,7 @@ Detailed profile analysis: <debug/warm_query_profile.md>.
 - **`rdeps(//..., ...)` is unusable** (~34s cold) because `//...`
   transitively loads broken external packages (gymnasium).
 - Scoped queries return fewer targets (297/412 vs 305/429) because
-  `_EXCLUDED_PACKAGES` filters out `x/cotrl` and `gterm_theme`.
+  `_EXCLUDED_PACKAGES` filters out `x/cotrl` and `gnome/gterm_theme`.
 
 ## Known issues from development
 

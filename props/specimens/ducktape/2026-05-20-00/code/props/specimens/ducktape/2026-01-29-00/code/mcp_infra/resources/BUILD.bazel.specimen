@@ -1,0 +1,94 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:prefix",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_list_changes_subscriptions",
+    srcs = ["test_list_changes_subscriptions.py"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:resources_server",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_list_resources_null_filters",
+    srcs = ["test_list_resources_null_filters.py"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/testing:notifications",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_notifications",
+    srcs = ["test_notifications.py"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_read_blocks",
+    srcs = ["test_read_blocks.py"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/enhanced:server",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_subscribe",
+    srcs = ["test_subscribe.py"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/testing:notifications",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_subscriptions_index",
+    srcs = ["test_subscriptions_index.py"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
+        "//mcp_infra/compositor:resources_server",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,18 @@
+# HTTPRoute for Plaid Link via shared Authentik proxy outpost.
+# Traffic flows: Gateway -> Authentik server/outpost -> plaid-mcp web UI.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plaid-mcp
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "plaid-mcp.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80

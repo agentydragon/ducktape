@@ -1,0 +1,10 @@
+# Statix configuration - Nix anti-pattern linter
+# W20 (repeated keys): Disabled — the `foo.bar = ...; foo.baz = ...;` style
+# is idiomatic in home-manager configs and more readable than nested attrsets
+# for top-level option assignments.
+disabled = ["repeated_keys"]
+
+# Specimens are committed snapshots, not our source
+ignore = ["props/specimens"]
+
+nix_version = "2.24"

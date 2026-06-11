@@ -1,10 +1,12 @@
-"""FastAPI application for props backend - unified dashboard, proxy, and run APIs.
+"""FastAPI application for props backend - dashboard and run APIs.
 
-This is the unified props backend that includes:
+This is the props backend that includes:
 - Dashboard API: /api/stats, /api/runs, /api/gt
-- LLM Proxy: /v1/responses
-- Registry Proxy: /v2/*
 - Critic Run API: /api/runs/critic
+
+The data-plane proxies are separate services:
+- LLM proxy (/v1/responses and /v1/chat/completions): props/llm_proxy
+- Registry proxy (/v2/*): props/registry_proxy
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
 view directly, not as a REST endpoint.
@@ -12,20 +14,23 @@ view directly, not as a REST endpoint.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import traceback
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
-from props.backend.routes import agent_definitions, ground_truth, llm, model_metadata, registry, runs, stats
+from props.backend.oidc import build_oauth, load_oidc_settings
+from props.backend.routes import agent_definitions, auth_routes, ground_truth, model_metadata, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -92,62 +97,105 @@ def _sync_all_specimens(db: Database) -> None:
 def _make_lifespan(deps: BackendDeps):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        logger.info("Starting props backend...")
+        # Fast path: bind the HTTP server immediately so kubelet probes can reach
+        # /health and /readyz. All the slow startup work (alembic migrations,
+        # specimen sync, executor + registry construction, grader supervisor)
+        # runs in a background task. Readiness is gated on `startup_complete`
+        # so the Service won't route traffic until the slow work has finished.
+        logger.info("Starting props backend (fast lifespan; slow init backgrounded)...")
+        app.state.startup_complete = False
+        app.state.grader_supervisor = None
+        app.state.registry = None
+        app.state.admin_db = None
 
         db_config = DatabaseConfig()
         db = Database(db_config)
         app.state.admin_db = db
         app.state.config = deps.config
 
-        if deps.config.auto_migrate:
-            upgrade_database(db.engine)
-        ensure_evaluator_role(db_config)
+        async def _slow_startup() -> None:
+            if deps.config.auto_migrate:
+                await asyncio.to_thread(upgrade_database, db.engine)
+            await asyncio.to_thread(ensure_evaluator_role, db_config)
 
-        # Sync model metadata on boot (ensures custom models from config are in DB)
-        with db.session() as session:
-            stats = sync_model_metadata_with_session(session, deps.config)
-            if stats.added or stats.deleted:
-                logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
+            def _sync_metadata() -> None:
+                with db.session() as session:
+                    stats = sync_model_metadata_with_session(session, deps.config)
+                    if stats.added or stats.deleted:
+                        logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
 
-        if deps.config.auto_sync_specimens:
-            _sync_all_specimens(db)
+            await asyncio.to_thread(_sync_metadata)
 
-        executor = await create_executor(deps.config.executor, db_config, deps.registry_proxy_config)
-        logger.info("Using %s executor", deps.config.executor.type)
-        model_parallelism_limits = {
-            m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
-        }
-        app.state.registry = AgentRegistry(
-            executor=executor,
-            db=db,
-            db_config=db_config,
-            backend_url=deps.backend_url,
-            agent_base_env=deps.config.agent_env,
-            registry_config=deps.registry_proxy_config,
-            model_parallelism_limits=model_parallelism_limits,
-        )
+            if deps.config.auto_sync_specimens:
+                await asyncio.to_thread(_sync_all_specimens, db)
 
-        if deps.grader_model:
-            app.state.grader_supervisor = GraderSupervisor(
-                registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
+            executor = await create_executor(deps.config.executor, db_config)
+            logger.info("Using %s executor", deps.config.executor.type)
+            model_parallelism_limits = {
+                m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
+            }
+            # Agents reach the LLM only through props/llm_proxy (the backend dropped
+            # its own /v1 mount in #1894), so this must be configured.
+            llm_proxy_url = deps.config.llm_proxy_url
+            if llm_proxy_url is None:
+                raise RuntimeError("config.llm_proxy_url must be set for agent runs")
+            app.state.registry = AgentRegistry(
+                executor=executor,
+                db=db,
+                db_config=db_config,
+                backend_url=deps.backend_url,
+                agent_base_env=deps.config.agent_env,
+                registry_config=deps.registry_proxy_config,
+                model_parallelism_limits=model_parallelism_limits,
+                llm_base_url=llm_proxy_url,
+                agent_registry_url=deps.registry_proxy_config.proxy_url,
             )
-            await app.state.grader_supervisor.start()
-            logger.info(f"Grader supervisor started (model: {deps.grader_model})")
-        else:
-            app.state.grader_supervisor = None
-            logger.info("Grader supervisor disabled (grader_model not set in config)")
 
-        admin_token = db_config.basic_auth_token
-        protocol = "https" if deps.port == 443 else "http"
-        logger.info(f"Admin token: {admin_token}")
-        logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
-        logger.info("Props backend ready")
+            if deps.grader_model:
+                app.state.grader_supervisor = GraderSupervisor(
+                    registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
+                )
+                await app.state.grader_supervisor.start()
+                logger.info(f"Grader supervisor started (model: {deps.grader_model})")
+            else:
+                logger.info("Grader supervisor disabled (grader_model not set in config)")
+
+            admin_token = db_config.basic_auth_token
+            protocol = "https" if deps.port == 443 else "http"
+            logger.info(f"Admin token: {admin_token}")
+            logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
+            logger.info("Props backend ready")
+            app.state.startup_complete = True
+
+        startup_task = asyncio.create_task(_slow_startup())
+
+        # If the slow-startup task raises, asyncio will only log the unhandled
+        # exception by default — the server keeps running NotReady forever.
+        # That's worse than crashing: a stuck-NotReady pod silently fails any
+        # rollout and obscures the underlying bug. Re-raise via os._exit so
+        # kubelet restarts us and the failure is loud (matches the pre-change
+        # behaviour where lifespan exceptions crashed the worker).
+        def _on_startup_done(task: asyncio.Task[None]) -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc is not None:
+                logger.exception("Background startup failed; exiting to trigger restart", exc_info=exc)
+                os._exit(1)
+
+        startup_task.add_done_callback(_on_startup_done)
+
         yield
 
         logger.info("Shutting down props backend...")
-        if app.state.grader_supervisor:
+        if not startup_task.done():
+            startup_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await startup_task
+        if app.state.grader_supervisor is not None:
             await app.state.grader_supervisor.shutdown()
-        await app.state.registry.close()
+        if app.state.registry is not None:
+            await app.state.registry.close()
         db.dispose()
         logger.info("Props backend stopped")
 
@@ -157,7 +205,7 @@ def _make_lifespan(deps: BackendDeps):
 def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="Props Backend",
-        description="Unified props backend: dashboard, proxies (LLM/registry), and eval APIs",
+        description="Props backend: dashboard and eval APIs",
         version="0.1.0",
         lifespan=_make_lifespan(deps),
         debug=True,
@@ -172,17 +220,51 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Optional Authentik SSO for browser users. When unconfigured (local dev,
+    # tests, docker-compose) the dashboard stays token-only; machine clients
+    # always use the Postgres-credential Bearer/Basic path in auth.py.
+    oidc_settings = load_oidc_settings()
+    app.state.oidc_settings = oidc_settings
+    app.state.oauth = None
+    if oidc_settings is not None:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=oidc_settings.session_secret,
+            session_cookie="props_session",
+            https_only=oidc_settings.cookie_secure,
+            same_site="lax",
+        )
+        app.state.oauth = build_oauth(oidc_settings)
+        app.include_router(auth_routes.router)
+        logger.info("OIDC SSO enabled (issuer=%s)", oidc_settings.issuer)
+    else:
+        logger.info("OIDC SSO not configured; dashboard uses token auth only")
+
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
     app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
     app.include_router(model_metadata.router, prefix="/api/model_metadata", tags=["model_metadata"])
-    app.include_router(llm.router, tags=["llm_proxy"])
-    app.include_router(registry.router, tags=["registry_proxy"])
 
     @app.get("/health")
     def health() -> dict[str, str]:
+        # Liveness: the HTTP server is up and the event loop is responsive.
+        # Returns 200 even during the backgrounded slow-startup window
+        # (alembic migrations, specimen sync, registry construction) so that
+        # kubelet doesn't kill the pod mid-init. Readiness — "is this pod
+        # ready to receive Service traffic?" — lives at /readyz below.
         return {"status": "ok"}
+
+    @app.get("/readyz")
+    def readyz(response: Response) -> dict[str, str]:
+        # Readiness: backgrounded startup task has finished (specimens synced,
+        # registry built, grader supervisor up). Backed by kubelet's
+        # readinessProbe in deployment.yaml; the Service won't route traffic
+        # to the pod until this returns 200.
+        if getattr(app.state, "startup_complete", False):
+            return {"status": "ready"}
+        response.status_code = 503
+        return {"status": "starting"}
 
     @app.exception_handler(Exception)
     async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:

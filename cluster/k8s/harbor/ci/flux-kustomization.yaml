@@ -5,10 +5,15 @@ metadata:
   name: harbor-ci
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/harbor/ci
   prune: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -22,4 +27,4 @@ spec:
   dependsOn:
     - name: harbor # Harbor API must be available to create projects/robots
     - name: tofu-controller
-    - name: vault
+    - name: tofu-state-db

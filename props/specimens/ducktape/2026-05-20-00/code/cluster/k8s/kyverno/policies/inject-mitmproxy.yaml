@@ -1,0 +1,166 @@
+# Auto-inject mitmproxy proxy config into all pods in sandbox namespaces.
+# This makes any pod (e.g. `kubectl run --image=curlimages/curl`) work
+# turnkey with HTTP_PROXY, HTTPS_PROXY, SSL trust, and the CA cert mounted,
+# without the pod spec needing to know about the proxy.
+#
+# Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
+# conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
+#
+# Autogen is disabled: JSON patch "add /-" always appends, so if autogen
+# mutates the Deployment template AND the Pod-level rule fires at Pod
+# creation, volumes/env/mounts get duplicated. With autogen off, only
+# Pod admission is mutated.
+#
+# All rules restrict to CREATE operations only. The patchesJson6902 "add /-"
+# (append) has no idempotency check — if the policy re-evaluates on UPDATE,
+# it appends the same volume/env/mount a second time and the API server
+# rejects the request (duplicate volume name / mount path / env var). This
+# blocked the Kubernetes Job controller from PATCHing completed pods to
+# remove the batch.kubernetes.io/job-tracking finalizer, which prevented
+# Jobs from transitioning to Complete. Since proxy injection only needs to
+# happen at pod creation, matching CREATE-only avoids the re-mutation
+# entirely.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-mitmproxy
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/title: Inject mitmproxy
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Mutates pods in claude-sandbox and openclaw-sandbox to automatically
+      inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
+      SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
+      and mount the mitmproxy CA cert at /mitmproxy-ca/ca-cert.pem.
+spec:
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - name: add-proxy-volume
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/volumes/-"
+            value:
+              name: mitmproxy-ca-cert
+              configMap:
+                name: mitmproxy-ca-cert
+
+    - name: add-proxy-env-and-mount-containers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
+      mutate:
+        foreach:
+          - list: "request.object.spec.containers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true
+
+    - name: add-proxy-env-and-mount-init-containers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
+      preconditions:
+        any:
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      mutate:
+        foreach:
+          - list: "request.object.spec.initContainers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-cert.pem
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true

@@ -12,7 +12,7 @@ variable "cluster_domain" {
 }
 
 variable "talos_version" {
-  description = "Talos version for the cluster (VPS nodes)"
+  description = "Talos version for the cluster"
   type        = string
   default     = "v1.12.3"
 }
@@ -32,24 +32,14 @@ variable "kubernetes_version" {
   default     = "1.35.1"
 }
 
-# Hetzner Cloud (from infrastructure)
-variable "hcloud_token" {
-  description = "Hetzner Cloud API token"
-  type        = string
-  sensitive   = true
-}
-
-variable "hetzner_location" {
-  description = "Hetzner Cloud location"
-  type        = string
-  default     = "hil"
-}
-
 # Proxmox (shared by persistent-auth + infrastructure + VMs)
 variable "proxmox_api_host" {
   description = "Proxmox API host — VLAN IP so CSI pods can reach it"
   type        = string
-  default     = "10.2.0.2"
+  # TEMP DISABLED: atlas down. Sinkhole to 127.0.0.1 makes proxmox provider
+  # refresh fail immediately ("connection refused") instead of timing out for
+  # minutes per resource. Restore to "10.2.0.2" when atlas is back up.
+  default = "127.0.0.1"
 }
 
 variable "proxmox_node_name" {
@@ -65,18 +55,6 @@ variable "storage" {
   default     = "local-zfs"
 }
 
-variable "network_bridge" {
-  description = "Proxmox network bridge"
-  type        = string
-  default     = "vmbr4"
-}
-
-variable "ssh_public_key" {
-  description = "SSH public key (auto-detected if empty)"
-  type        = string
-  default     = ""
-}
-
 variable "rebuild_image" {
   description = "Rebuild NixOS bootstrap image (wyrm2)"
   type        = bool
@@ -87,4 +65,34 @@ variable "nixos_rebuild" {
   description = "Run nixos-rebuild on wyrm2 after apply"
   type        = bool
   default     = false
+}
+
+variable "kimsufi_service_name" {
+  description = "OVH service name of the first Kimsufi KS-5 server"
+  type        = string
+  default     = "ns103656.ip-147-135-39.us"
+}
+
+variable "kimsufi_service_name_1" {
+  description = "OVH service name of the second Kimsufi KS-5 server (empty = not yet provisioned)"
+  type        = string
+  default     = "ns103711.ip-147-135-39.us"
+}
+
+variable "kimsufi_service_name_cp0" {
+  description = "OVH service name of the first Kimsufi KS-5 control plane server"
+  type        = string
+  default     = "ns102453.ip-147-135-37.us"
+}
+
+variable "kimsufi_service_name_ks_game_0" {
+  description = "OVH service name of the first Kimsufi KS-GAME worker"
+  type        = string
+  default     = "ns104952.ip-147-135-104.us"
+}
+
+variable "kimsufi_service_name_ks_game_1" {
+  description = "OVH service name of the second Kimsufi KS-GAME worker"
+  type        = string
+  default     = "ns104963.ip-147-135-104.us"
 }

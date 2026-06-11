@@ -1,0 +1,118 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "habitify",
+    srcs = [
+        "__init__.py",
+        "__main__.py",
+        "cli.py",
+        "config.py",
+        "constants.py",
+        "context.py",
+        "habitify_client.py",
+        "server.py",
+        "testing_models.py",
+        "tools.py",
+        "types.py",
+        "utils/__init__.py",
+        "utils/cli_utils.py",
+        "utils/date_utils.py",
+        "utils/habit_resolver.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "habitify_cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    deps = [
+        ":habitify",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "run_server",
+    srcs = ["examples/run_server.py"],
+    imports = [".."],
+    main = "examples/run_server.py",
+    deps = [":habitify"],
+)
+
+py_binary(
+    name = "mcp_dev_runner",
+    srcs = ["examples/mcp_dev_runner.py"],
+    imports = [".."],
+    main = "examples/mcp_dev_runner.py",
+    deps = [":habitify"],
+)
+
+py_test(
+    name = "test_date_objects",
+    srcs = [
+        "conftest.py",
+        "test_date_objects.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":habitify",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_date_response_models",
+    srcs = [
+        "conftest.py",
+        "test_date_response_models.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":habitify",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_habitify_client",
+    srcs = [
+        "conftest.py",
+        "test_habitify_client.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":habitify",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":habitify"],
+)

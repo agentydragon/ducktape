@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "categorizer",
+    srcs = ["categorizer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/diff:parser",
+    ],
+)
+
+py_library(
+    name = "intelligence",
+    srcs = ["intelligence.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/diff:categorizer",
+        "//llm/claude_linter_v2/diff:parser",
+    ],
+)
+
+py_library(
+    name = "parser",
+    srcs = ["parser.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "@pypi//pydantic",
+    ],
+)

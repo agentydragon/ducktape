@@ -1,0 +1,19 @@
+name: Get Status Invalid ID
+request:
+  method: GET
+  url: https://api.habitify.me/status/invalid-id-that-does-not-exist
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  params:
+    target_date: "2025-05-09T00:00:00+00:00"
+response:
+  status_code: 500
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: The habit does not exist
+    data: null
+    version: v1.2
+    status: false
+    errors: []

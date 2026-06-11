@@ -1,0 +1,461 @@
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Apr 17 02:43:45 2026
+Driver Version                                         : 580.142
+CUDA Version                                           : 13.0
+
+Attached GPUs                                          : 2
+GPU 00000000:01:00.0
+    Product Name                                       : NVIDIA GeForce RTX 5090
+    Product Brand                                      : GPU requires reset
+    Product Architecture                               : Blackwell
+    Display Mode                                       : Requested functionality has been deprecated
+    Display Attached                                   : N/A
+    Display Active                                     : N/A
+    Persistence Mode                                   : Disabled
+    Addressing Mode                                    : HMM
+    MIG Mode
+        Current                                        : GPU requires reset
+        Pending                                        : GPU requires reset
+    Accounting Mode                                    : N/A
+    Accounting Mode Buffer Size                        : N/A
+    Driver Model
+        Current                                        : N/A
+        Pending                                        : N/A
+    Serial Number                                      : 0
+    GPU UUID                                           : GPU-690929fc-97bf-9d39-d2f5-0322f1715b16
+    GPU PDI                                            : GPU requires reset
+    Minor Number                                       : 0
+    VBIOS Version                                      : GPU requires reset
+    MultiGPU Board                                     : N/A
+    Board ID                                           : N/A
+    Board Part Number                                  : N/A
+    GPU Part Number                                    : GPU requires reset
+    FRU Part Number                                    : N/A
+    Platform Info
+        Chassis Serial Number                          : GPU requires reset
+        Slot Number                                    : GPU requires reset
+        Tray Index                                     : GPU requires reset
+        Host ID                                        : GPU requires reset
+        Peer Type                                      : GPU requires reset
+        Module Id                                      : GPU requires reset
+        GPU Fabric GUID                                : GPU requires reset
+    Inforom Version
+        Image Version                                  : N/A
+        OEM Object                                     : N/A
+        ECC Object                                     : N/A
+        Power Management Object                        : N/A
+    Inforom BBX Object Flush
+        Latest Timestamp                               : N/A
+        Latest Duration                                : N/A
+    GPU Operation Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    GPU C2C Mode                                       : GPU requires reset
+    GPU Virtualization Mode
+        Virtualization Mode                            : N/A
+        Host VGPU Mode                                 : N/A
+        vGPU Heterogeneous Mode                        : N/A
+    GPU Recovery Action                                : Reset
+    GSP Firmware Version                               : GPU requires reset
+    IBMNPU
+        Relaxed Ordering Mode                          : N/A
+    PCI
+        Bus                                            : 0x01
+        Device                                         : 0x00
+        Domain                                         : 0x0000
+        Base Classcode                                 : 0x3
+        Sub Classcode                                  : 0x0
+        Device Id                                      : 0x2B8510DE
+        Bus Id                                         : 00000000:01:00.0
+        Sub System Id                                  : 0x176119DA
+        GPU Link Info
+            PCIe Generation
+                Max                                    : N/A
+                Current                                : N/A
+                Device Current                         : N/A
+                Device Max                             : N/A
+                Host Max                               : N/A
+            Link Width
+                Max                                    : N/A
+                Current                                : N/A
+        Bridge Chip
+            Type                                       : N/A
+            Firmware                                   : N/A
+        Replays Since Reset                            : GPU requires reset
+        Replay Number Rollovers                        : GPU requires reset
+        Tx Throughput                                  : GPU requires reset
+        Rx Throughput                                  : GPU requires reset
+        Atomic Caps Outbound                           : N/A
+        Atomic Caps Inbound                            : N/A
+    Fan Speed                                          : GPU requires reset
+    Performance State                                  : GPU requires reset
+    Clocks Event Reasons                               : N/A
+    Clocks Event Reasons Counters
+        SW Power Capping                               : GPU requires reset
+        Sync Boost                                     : GPU requires reset
+        SW Thermal Slowdown                            : GPU requires reset
+        HW Thermal Slowdown                            : GPU requires reset
+        HW Power Braking                               : GPU requires reset
+    Sparse Operation Mode                              : GPU requires reset
+    FB Memory Usage
+        Total                                          : 32607 MiB
+        Reserved                                       : 498 MiB
+        Used                                           : 2 MiB
+        Free                                           : 32109 MiB
+    BAR1 Memory Usage
+        Total                                          : N/A
+        Used                                           : N/A
+        Free                                           : N/A
+    Conf Compute Protected Memory Usage
+        Total                                          : 0 MiB
+        Used                                           : 0 MiB
+        Free                                           : 0 MiB
+    Compute Mode                                       : Default
+    Utilization
+        GPU                                            : N/A
+        Memory                                         : N/A
+        Encoder                                        : N/A
+        Decoder                                        : N/A
+        JPEG                                           : N/A
+        OFA                                            : N/A
+    Encoder Stats
+        Active Sessions                                : N/A
+        Average FPS                                    : N/A
+        Average Latency                                : N/A
+    FBC Stats
+        Active Sessions                                : N/A
+        Average FPS                                    : N/A
+        Average Latency                                : N/A
+    DRAM Encryption Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Errors
+        Volatile
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+        Aggregate
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+            SRAM Threshold Exceeded                    : N/A
+        Aggregate Uncorrectable SRAM Sources
+            SRAM L2                                    : N/A
+            SRAM SM                                    : N/A
+            SRAM Microcontroller                       : N/A
+            SRAM PCIE                                  : N/A
+            SRAM Other                                 : N/A
+        Channel Repair Pending                         : GPU requires reset
+        TPC Repair Pending                             : GPU requires reset
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows                                      : GPU requires reset
+    Temperature
+        GPU Current Temp                               : GPU requires reset
+        GPU T.Limit Temp                               : GPU requires reset
+        GPU Shutdown T.Limit Temp                      : GPU requires reset
+        GPU Slowdown T.Limit Temp                      : GPU requires reset
+        GPU Max Operating T.Limit Temp                 : 0 C
+        GPU Target Temperature                         : N/A
+        Memory Current Temp                            : N/A
+        Memory Max Operating T.Limit Temp              : GPU requires reset
+    GPU Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : GPU requires reset
+        Current Power Limit                            : GPU requires reset
+        Requested Power Limit                          : GPU requires reset
+        Default Power Limit                            : GPU requires reset
+        Min Power Limit                                : GPU requires reset
+        Max Power Limit                                : GPU requires reset
+    GPU Memory Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : GPU requires reset
+        Current Power Limit                            : GPU requires reset
+        Requested Power Limit                          : GPU requires reset
+        Default Power Limit                            : GPU requires reset
+        Min Power Limit                                : GPU requires reset
+        Max Power Limit                                : GPU requires reset
+    Power Smoothing                                    : GPU requires reset
+    Workload Power Profiles
+        Requested Profiles                             : GPU requires reset
+        Enforced Profiles                              : GPU requires reset
+    Clocks
+        Graphics                                       : N/A
+        SM                                             : N/A
+        Memory                                         : N/A
+        Video                                          : N/A
+    Applications Clocks
+        Graphics                                       : GPU requires reset
+        Memory                                         : GPU requires reset
+    Default Applications Clocks
+        Graphics                                       : GPU requires reset
+        Memory                                         : GPU requires reset
+    Deferred Clocks
+        Memory                                         : GPU requires reset
+    Max Clocks
+        Graphics                                       : N/A
+        SM                                             : N/A
+        Memory                                         : N/A
+        Video                                          : N/A
+    Max Customer Boost Clocks
+        Graphics                                       : GPU requires reset
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+    Fabric
+        State                                          : N/A
+        Status                                         : N/A
+        CliqueId                                       : N/A
+        ClusterUUID                                    : N/A
+        Health
+            Summary                                    : N/A
+            Bandwidth                                  : N/A
+            Route Recovery in progress                 : N/A
+            Route Unhealthy                            : N/A
+            Access Timeout Recovery                    : N/A
+            Incorrect Configuration                    : N/A
+            Partition Assigned                         : N/A
+    Processes                                          : None
+    Capabilities
+        EGM                                            : N/A
+
+GPU 00000000:02:00.0
+    Product Name                                       : NVIDIA GeForce RTX 5090
+    Product Brand                                      : GPU requires reset
+    Product Architecture                               : Blackwell
+    Display Mode                                       : Requested functionality has been deprecated
+    Display Attached                                   : N/A
+    Display Active                                     : N/A
+    Persistence Mode                                   : Disabled
+    Addressing Mode                                    : HMM
+    MIG Mode
+        Current                                        : GPU requires reset
+        Pending                                        : GPU requires reset
+    Accounting Mode                                    : N/A
+    Accounting Mode Buffer Size                        : N/A
+    Driver Model
+        Current                                        : N/A
+        Pending                                        : N/A
+    Serial Number                                      : 0
+    GPU UUID                                           : GPU-6154a49f-2cad-6b72-1e85-09b8006d08b5
+    GPU PDI                                            : GPU requires reset
+    Minor Number                                       : 1
+    VBIOS Version                                      : GPU requires reset
+    MultiGPU Board                                     : N/A
+    Board ID                                           : N/A
+    Board Part Number                                  : N/A
+    GPU Part Number                                    : GPU requires reset
+    FRU Part Number                                    : N/A
+    Platform Info
+        Chassis Serial Number                          : GPU requires reset
+        Slot Number                                    : GPU requires reset
+        Tray Index                                     : GPU requires reset
+        Host ID                                        : GPU requires reset
+        Peer Type                                      : GPU requires reset
+        Module Id                                      : GPU requires reset
+        GPU Fabric GUID                                : GPU requires reset
+    Inforom Version
+        Image Version                                  : N/A
+        OEM Object                                     : N/A
+        ECC Object                                     : N/A
+        Power Management Object                        : N/A
+    Inforom BBX Object Flush
+        Latest Timestamp                               : N/A
+        Latest Duration                                : N/A
+    GPU Operation Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    GPU C2C Mode                                       : GPU requires reset
+    GPU Virtualization Mode
+        Virtualization Mode                            : N/A
+        Host VGPU Mode                                 : N/A
+        vGPU Heterogeneous Mode                        : N/A
+    GPU Recovery Action                                : Reset
+    GSP Firmware Version                               : GPU requires reset
+    IBMNPU
+        Relaxed Ordering Mode                          : N/A
+    PCI
+        Bus                                            : 0x02
+        Device                                         : 0x00
+        Domain                                         : 0x0000
+        Base Classcode                                 : 0x3
+        Sub Classcode                                  : 0x0
+        Device Id                                      : 0x2B8510DE
+        Bus Id                                         : 00000000:02:00.0
+        Sub System Id                                  : 0x416F1458
+        GPU Link Info
+            PCIe Generation
+                Max                                    : N/A
+                Current                                : N/A
+                Device Current                         : N/A
+                Device Max                             : N/A
+                Host Max                               : N/A
+            Link Width
+                Max                                    : N/A
+                Current                                : N/A
+        Bridge Chip
+            Type                                       : N/A
+            Firmware                                   : N/A
+        Replays Since Reset                            : GPU requires reset
+        Replay Number Rollovers                        : GPU requires reset
+        Tx Throughput                                  : GPU requires reset
+        Rx Throughput                                  : GPU requires reset
+        Atomic Caps Outbound                           : N/A
+        Atomic Caps Inbound                            : N/A
+    Fan Speed                                          : GPU requires reset
+    Performance State                                  : GPU requires reset
+    Clocks Event Reasons                               : N/A
+    Clocks Event Reasons Counters
+        SW Power Capping                               : GPU requires reset
+        Sync Boost                                     : GPU requires reset
+        SW Thermal Slowdown                            : GPU requires reset
+        HW Thermal Slowdown                            : GPU requires reset
+        HW Power Braking                               : GPU requires reset
+    Sparse Operation Mode                              : GPU requires reset
+    FB Memory Usage
+        Total                                          : 32607 MiB
+        Reserved                                       : 498 MiB
+        Used                                           : 2 MiB
+        Free                                           : 32109 MiB
+    BAR1 Memory Usage
+        Total                                          : N/A
+        Used                                           : N/A
+        Free                                           : N/A
+    Conf Compute Protected Memory Usage
+        Total                                          : 0 MiB
+        Used                                           : 0 MiB
+        Free                                           : 0 MiB
+    Compute Mode                                       : Default
+    Utilization
+        GPU                                            : N/A
+        Memory                                         : N/A
+        Encoder                                        : N/A
+        Decoder                                        : N/A
+        JPEG                                           : N/A
+        OFA                                            : N/A
+    Encoder Stats
+        Active Sessions                                : N/A
+        Average FPS                                    : N/A
+        Average Latency                                : N/A
+    FBC Stats
+        Active Sessions                                : N/A
+        Average FPS                                    : N/A
+        Average Latency                                : N/A
+    DRAM Encryption Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Errors
+        Volatile
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+        Aggregate
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+            SRAM Threshold Exceeded                    : N/A
+        Aggregate Uncorrectable SRAM Sources
+            SRAM L2                                    : N/A
+            SRAM SM                                    : N/A
+            SRAM Microcontroller                       : N/A
+            SRAM PCIE                                  : N/A
+            SRAM Other                                 : N/A
+        Channel Repair Pending                         : GPU requires reset
+        TPC Repair Pending                             : GPU requires reset
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows                                      : GPU requires reset
+    Temperature
+        GPU Current Temp                               : GPU requires reset
+        GPU T.Limit Temp                               : GPU requires reset
+        GPU Shutdown T.Limit Temp                      : GPU requires reset
+        GPU Slowdown T.Limit Temp                      : GPU requires reset
+        GPU Max Operating T.Limit Temp                 : 0 C
+        GPU Target Temperature                         : N/A
+        Memory Current Temp                            : N/A
+        Memory Max Operating T.Limit Temp              : GPU requires reset
+    GPU Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : GPU requires reset
+        Current Power Limit                            : GPU requires reset
+        Requested Power Limit                          : GPU requires reset
+        Default Power Limit                            : GPU requires reset
+        Min Power Limit                                : GPU requires reset
+        Max Power Limit                                : GPU requires reset
+    GPU Memory Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : GPU requires reset
+        Instantaneous Power Draw                       : GPU requires reset
+        Current Power Limit                            : GPU requires reset
+        Requested Power Limit                          : GPU requires reset
+        Default Power Limit                            : GPU requires reset
+        Min Power Limit                                : GPU requires reset
+        Max Power Limit                                : GPU requires reset
+    Power Smoothing                                    : GPU requires reset
+    Workload Power Profiles
+        Requested Profiles                             : GPU requires reset
+        Enforced Profiles                              : GPU requires reset
+    Clocks
+        Graphics                                       : N/A
+        SM                                             : N/A
+        Memory                                         : N/A
+        Video                                          : N/A
+    Applications Clocks
+        Graphics                                       : GPU requires reset
+        Memory                                         : GPU requires reset
+    Default Applications Clocks
+        Graphics                                       : GPU requires reset
+        Memory                                         : GPU requires reset
+    Deferred Clocks
+        Memory                                         : GPU requires reset
+    Max Clocks
+        Graphics                                       : N/A
+        SM                                             : N/A
+        Memory                                         : N/A
+        Video                                          : N/A
+    Max Customer Boost Clocks
+        Graphics                                       : GPU requires reset
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+    Fabric
+        State                                          : N/A
+        Status                                         : N/A
+        CliqueId                                       : N/A
+        ClusterUUID                                    : N/A
+        Health
+            Summary                                    : N/A
+            Bandwidth                                  : N/A
+            Route Recovery in progress                 : N/A
+            Route Unhealthy                            : N/A
+            Access Timeout Recovery                    : N/A
+            Incorrect Configuration                    : N/A
+            Partition Assigned                         : N/A
+    Processes                                          : None
+    Capabilities
+        EGM                                            : N/A

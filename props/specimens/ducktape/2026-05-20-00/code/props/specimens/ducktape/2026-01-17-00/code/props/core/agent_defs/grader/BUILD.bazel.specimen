@@ -1,0 +1,36 @@
+"""Grader agent OCI image built with Bazel.
+
+Build targets:
+    bazel run //props/core/agent_defs/grader:load  -- Load into local Docker
+    bazel run //props/core/agent_defs/grader:push  -- Push to local registry (localhost:5050)
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/init"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        "//props/core/cli:app_tar",
+        "//props/core/agent_defs:grader_agent_init_tar",
+    ],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["grader-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/grader",
+)

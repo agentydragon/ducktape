@@ -1,0 +1,25 @@
+rationale: |
+  The optimizer module defines module-level mutable singletons: score_tracker
+  and cost_tracker. These accumulate state across invocations, making the
+  module non-reentrant. Running the optimizer twice in the same process
+  accumulates costs/scores incorrectly. Tests importing this module share
+  state (test pollution risk). Multi-threaded usage is unsafe. These should
+  be refactored into a stateful class or passed as parameters to functions
+  that need them, rather than relying on global mutable state.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/engine/optimizer.py:
+        - [90, 90]
+        - [127, 127]
+    note: >-
+      score_tracker = ScoreEvolutionTracker() and cost_tracker = CostTracker()
+      are module-level mutable singletons. Should be instance variables on a
+      class or passed explicitly to avoid shared mutable state.
+    critic_scopes_expected_to_recall:
+      - - inop/engine/optimizer.py
+    match_file_restriction:
+      - inop/engine/optimizer.py

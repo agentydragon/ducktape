@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-pat-ghcr-read
+  namespace: flux-system
+  annotations:
+    description: Fine-grained GitHub PAT with `read:packages` on agentydragon's GHCR namespace. Consumed by the gaffer-private-ghcr-pull Terraform module to mint dockerconfigjson Secrets in flux-system and augur namespaces.
+type: Opaque
+stringData:
+  token: ENC[AES256_GCM,data:Z+7y5520NpngMvb1hH+ZJ2B3r+23zxgdrVW4LNmHwXv2FPmcOH6Tjw==,iv:yfQwXN4mySUuu7dLieqlrmFRMCirZ373+p50SuPdlFQ=,tag:HBAfIwEgWumHIgUrJOb3Gg==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAwYktQWDhXRGVFR0JvaE5K
+        cE5reXp0aXJjZzVCQ1lHUUVnMm9XZldOR1NVCjVHeUx1M0tpdnh1UjBjK1dnS01T
+        d0t1MmVKNUN5cHRxMmhJQ3V1UHV6dmcKLS0tIFp2VHNqSDdVYXJCR05saVdmOXZE
+        WVVuS0xhSDVjQk1NZXdTNHpraFhlRlUK2QElgqkgZ5bkFGQ6Q8+6YI9oJdYJXSiB
+        p1d2wcnKO3epUksQ8whSw7jC0xsvc7XybitQuob3zrVRwUh2kELYWg==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0d25OdHdZemswRFYwVkk5
+        VE1UQ3BsMUI3S2oxTlVvU1F3Ui9qQjU3ajFnCnpDa2JqOWNmSTJPMkd1NUlhNTNr
+        QlZuWFM2WGxldHNZKzY0MHlXZzZDSmMKLS0tIGNidklJcHFMdERodmRGL2N6bkdI
+        MWpHS0lNTW1yaW9ackQ5dmlPVURWT1EK8C3r4V3PFTm8T1YLllLo2qIvGivFzFKV
+        M4g4sg4VIeUf8AXIh05ROHUv1WVxhdiS7/dGlh68D7pH9SUUzgIhHQ==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-29T00:02:52Z"
+  mac: ENC[AES256_GCM,data:bTarsPWjQ0HLUruPx6zplCaKi/WUqbSyL0Zsd+iOs17Mq12FYXGB4FaYf4/NpZG/lthBuZg276Yg7+Osdsjxf/nZdOuNK+MB6i323kGzcXrJLdIYqouIRsZVFcV8ooXRfkyQVkWxVGLF/Y7nbyoEFYda9tdeesENijWEQJZCmXE=,iv:WrOGHRnyIwPlmb+QEl4zesYGA2npRpNYadlPbY8gNVk=,tag:C5ZabvbY1zgdT0VILlVfQQ==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

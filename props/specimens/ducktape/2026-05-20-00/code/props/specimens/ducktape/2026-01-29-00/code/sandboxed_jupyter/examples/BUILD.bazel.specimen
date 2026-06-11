@@ -1,0 +1,15 @@
+# gazelle:ignore
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_workflow",
+    srcs = ["test_workflow.py"],
+    # Test requires macOS sandbox (seatbelt) and jupyter/jupyter-mcp-server on PATH
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "//mcp_infra:prefix",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

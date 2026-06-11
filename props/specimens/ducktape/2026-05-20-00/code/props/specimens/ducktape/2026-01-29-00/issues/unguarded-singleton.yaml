@@ -1,0 +1,29 @@
+rationale: |
+  Several call sites use `next(iter(collection))` to extract a value from a collection
+  that is semantically expected to contain exactly one item. This silently discards any
+  extra items instead of raising on unexpected cardinality. Use `more_itertools.one()` to
+  enforce the single-item invariant (raises ValueError if zero or multiple items).
+  The repo has a custom `unwrap_singleton` in `inventree_utils/beautifier/iter_util.py`
+  that could be promoted to a repo-level helper as an alternative.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/wt_client.py:
+        - [321, 321]
+    note: "Requests status for a single worktree ID; response dict should have exactly one entry"
+
+  - occurrence_id: occ-1
+    files:
+      wt/client/handlers.py:
+        - [104, 104]
+    note: "Same pattern: requests status for a single worktree ID via get_status([info.wtid])"
+
+  - occurrence_id: occ-2
+    files:
+      wt/server/handlers/test_status_handler.py:
+        - [58, 58]
+        - [76, 76]
+    note: "Test code: both tests assert len==1 then next(iter(...)); one() replaces both lines"
+    critic_scopes_expected_to_recall:
+      - [wt/server/handlers/test_status_handler.py]

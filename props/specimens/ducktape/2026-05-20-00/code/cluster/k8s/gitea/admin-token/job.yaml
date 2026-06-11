@@ -1,0 +1,155 @@
+---
+# TODO: Remove this job and its kustomization entirely - admin token not used
+# Kubernetes Job to generate Gitea admin API token for Terraform
+# This job creates a token via Gitea API using BasicAuth with admin password
+# Token is stored in gitea-admin-token secret for Terraform consumption
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-admin-token-generator
+  namespace: gitea
+  annotations:
+    # Flux dependency annotation - run after HelmRelease is ready
+    kustomize.toolkit.fluxcd.io/prune: "false"
+spec:
+  # Don't keep completed jobs around forever
+  ttlSecondsAfterFinished: 86400 # 24 hours
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: gitea-admin-token-generator
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: gitea-token-creator
+      containers:
+        - name: token-generator
+          image: alpine/k8s:1.35.3
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+
+              # Check if secret already exists
+              if kubectl get secret gitea-admin-token -n gitea > /dev/null 2>&1; then
+                echo "Secret gitea-admin-token already exists, job completed successfully (idempotent)."
+                exit 0
+              fi
+
+              echo "Waiting for Gitea to be ready..."
+              until curl -sf http://gitea-http:3000/api/v1/version > /dev/null; do
+                echo "Gitea not ready, waiting..."
+                sleep 5
+              done
+              echo "Gitea is ready!"
+
+              echo "Creating admin token via Gitea API..."
+
+              # Call Gitea API to create token
+              # Returns: {"id":1, "name":"...", "sha1":"actual_token", "token_last_eight":"..."}
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                -H "Content-Type: application/json" \
+                -d '{"name":"terraform-admin-token","scopes":["write:admin","write:repository","write:user","write:organization"]}' \
+                -u "${GITEA_ADMIN_USERNAME}:${GITEA_ADMIN_PASSWORD}" \
+                "http://gitea-http:3000/api/v1/users/${GITEA_ADMIN_USERNAME}/tokens")
+
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              BODY=$(echo "$RESPONSE" | head -n-1)
+
+              echo "HTTP Response Code: $HTTP_CODE"
+
+              if [ "$HTTP_CODE" = "201" ]; then
+                echo "Token created successfully!"
+
+                # Extract token from JSON response
+                # Looking for: "sha1":"<token_value>"
+                TOKEN=$(echo "$BODY" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
+
+                if [ -z "$TOKEN" ]; then
+                  echo "ERROR: Could not extract token from response"
+                  echo "Response body: $BODY"
+                  exit 1
+                fi
+
+                echo "Token extracted (first 8 chars): ${TOKEN:0:8}..."
+
+                # Create Kubernetes secret with token
+                cat <<EOF | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gitea-admin-token
+                namespace: gitea
+                labels:
+                  app.kubernetes.io/name: gitea
+                  app.kubernetes.io/component: token
+              type: Opaque
+              stringData:
+                token: "$TOKEN"
+              EOF
+
+                echo "Secret gitea-admin-token created/updated successfully!"
+
+              elif [ "$HTTP_CODE" = "500" ]; then
+                # Token with this name already exists
+                echo "Token already exists (HTTP 500), checking if secret exists..."
+
+                if kubectl get secret gitea-admin-token -n gitea > /dev/null 2>&1; then
+                  echo "Secret already exists, job completed successfully (idempotent)."
+                  exit 0
+                else
+                  echo "ERROR: Token exists but secret is missing. Manual intervention required."
+                  echo "Response: $BODY"
+                  exit 1
+                fi
+
+              else
+                echo "ERROR: Failed to create token"
+                echo "HTTP Code: $HTTP_CODE"
+                echo "Response: $BODY"
+                exit 1
+              fi
+          env:
+            - name: GITEA_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-password
+                  key: username
+            - name: GITEA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-password
+                  key: password
+---
+# ServiceAccount for the job with permission to create secrets
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-token-creator
+  namespace: gitea
+---
+# Role to allow creating/updating secrets in gitea namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitea-token-creator
+  namespace: gitea
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+# RoleBinding to grant ServiceAccount the role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitea-token-creator
+  namespace: gitea
+subjects:
+  - kind: ServiceAccount
+    name: gitea-token-creator
+    namespace: gitea
+roleRef:
+  kind: Role
+  name: gitea-token-creator
+  apiGroup: rbac.authorization.k8s.io

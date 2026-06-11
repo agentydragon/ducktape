@@ -1,0 +1,83 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# All skill tars combined into one archive for web deployment.
+# Extract with: tar xf skills.tar -C ~/.claude/skills/
+pkg_tar(
+    name = "all_skills_tar",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_tar",
+        "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_tar",
+        "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_tar",
+        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_tar",
+        "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_tar",
+        "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_tar",
+        "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_tar",
+        "//skills/backtrace:backtrace_tar",
+        "//skills/branch_splitter:branch_splitter_tar",
+        "//skills/buildbuddy_api:buildbuddy_api_tar",
+        "//skills/cihealth:cihealth_tar",
+        "//skills/cluster_health:cluster_health_tar",
+        "//skills/cnpg_region_switch:cnpg_region_switch_tar",
+        "//skills/cpap:cpap_tar",
+        "//skills/followups:followups_tar",
+        "//skills/forensic_surgeon:forensic_surgeon_tar",
+        "//skills/freecad:freecad_tar",
+        "//skills/ground_skill:ground_skill_tar",
+        "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",
+        "//skills/info_gathering:info_gathering_tar",
+        "//skills/later:later_tar",
+        "//skills/lint_audit:lint_audit_tar",
+        "//skills/mcp_design:mcp_design_tar",
+        "//skills/pave:pave_tar",
+        "//skills/proxmox_vm:proxmox_vm_tar",
+        "//skills/readback:readback_tar",
+        "//skills/reverse_engineer:reverse_engineer_tar",
+        "//skills/session_logs:session_logs_tar",
+        "//skills/superforecaster:superforecaster_tar",
+        "//skills/update_deps:update_deps_tar",
+        "//skills/verify_docs:verify_docs_tar",
+        "//skills/web_selfcheck:web_selfcheck_tar",
+    ],
+)
+
+py_library(
+    name = "skill_spec",
+    srcs = ["skill_spec.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "frontmatter_validation",
+    srcs = ["frontmatter_validation.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "frontmatter_validation_bin",
+    main_module = "skills.frontmatter_validation",
+    visibility = ["//visibility:public"],
+    deps = [":frontmatter_validation"],
+)
+
+py_library(
+    name = "skill_frontmatter_test_lib",
+    srcs = ["skill_frontmatter_test.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":frontmatter_validation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_frontmatter",
+    srcs = ["test_frontmatter.py"],
+    deps = [
+        ":frontmatter_validation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,35 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: forgejo-db
+  namespace: forgejo
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  # OVH-HA profile (cnpg_conventions R2): two instances on separate OVH
+  # kimsufi nodes, co-located with the seaweedfs-ovh-backed Forgejo app.
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 10Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: forgejo
+      owner: forgejo
+      # CNPG auto-generates credentials in secret forgejo-db-app

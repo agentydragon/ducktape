@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:exclude material_test.py
 # gazelle:exclude test_material_test.py
@@ -6,7 +6,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "material_test_lib",
     srcs = ["material_test.py"],
-    imports = ["../.."],
     deps = [
         "//laser/lightburn:lbrn2_writer",
         "//laser/ruida:rd_writer",
@@ -16,7 +15,6 @@ py_library(
 
 py_binary(
     name = "material_test",
-    imports = ["../.."],
     main_module = "laser.material_test.material_test",
     deps = [":material_test_lib"],
 )
@@ -28,7 +26,6 @@ py_test(
         "example_config.toml",
         "example_config_3d.toml",
     ],
-    imports = ["../.."],
     deps = [
         ":material_test_lib",
         "//laser/lightburn:lbrn2_writer",

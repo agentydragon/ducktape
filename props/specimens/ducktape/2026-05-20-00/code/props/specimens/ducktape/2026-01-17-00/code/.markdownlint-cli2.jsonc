@@ -1,0 +1,18 @@
+{
+  // Only lint cluster/ and website/ for now - extend gradually or migrate to remark-lint
+  // TODO: Extend markdownlint coverage to more directories, or migrate to
+  // remark-lint via eslint-plugin-mdx for glob-based rule overrides
+  "globs": ["cluster/**/*.md", "website/**/*.md"],
+  "ignores": [
+    // Vendored terraform providers
+    "**/.terraform/**"
+  ],
+  // Base rule configuration
+  "config": {
+    // Extend Prettier config to disable formatting-related rules (including MD013 line-length)
+    "extends": "markdownlint/style/prettier",
+    // AGENTS.md and CLAUDE.md start with @-transclusion, not a heading
+    "MD041": false
+  }
+  // Note: website/ has its own .markdownlint-cli2.jsonc with relaxed rules for blog posts
+}

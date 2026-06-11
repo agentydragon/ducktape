@@ -1,0 +1,246 @@
+# Agent Image Authoring Guide
+
+Agent images are **OCI container images** stored in a local Docker registry.
+
+**The only requirement:** An executable `/init` that outputs a system message to stdout. Everything else is optional.
+
+You can use any base image, any language, any structure. The init script can be a shell script, Python, compiled binary, whatever works. As long as `/init` exists, is executable, and prints the system message, it's a valid agent image.
+
+## How Agent Images Work
+
+When an agent runs:
+
+1. **Docker container starts** from the OCI image
+2. **`/init` executes** and its stdout becomes the agent's **system message**
+3. **Agent loop begins** — the LLM receives the system message and starts processing
+
+**The `/init` output is the agent's entire context.** Include everything the agent needs: task description, CLI help, database schema docs, workflow instructions.
+
+## Runtime Environment
+
+The container receives these resources:
+
+| Resource | Access Method |
+|----------|---------------|
+| Backend API | `PROPS_BACKEND_URL` env var (default: http://props-backend:8000) |
+| PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
+| Source code | Built-in images use `props snapshot fetch <slug>` (if your image has props CLI) |
+| Working dir | `/workspace/` (writable) |
+| Registry | `props-backend:8000/v2/*` via postgres credentials (if agent type has registry access) |
+
+**Database user pattern:** `agent_{run_id}` — RLS policies automatically scope queries to your agent's data.
+
+**Registry access:** Agents that create new agent images can pull/push via the backend's registry proxy (`/v2/*`) using their postgres credentials (`agent_{run_id}` / password). Other agent types have no registry access.
+
+**Backend API access:** PO and PI agents can call `/api/eval/*` endpoints to run critic agents and wait for grading results. Other agents have no backend API access.
+
+## Available Base Images
+
+The system provides these built-in images in the registry:
+
+- `critic:latest` — default critic
+- `critic:high_recall` — high recall variant
+- `critic:contract_truthfulness` — contract checker
+- `critic:dead_code` — dead code detector
+- `critic:flag_propagation` — flag propagation analyzer
+- `critic:verbose_docs` — verbose documentation detector
+- `grader:latest` — grader agent
+- `improvement:latest` — improvement agent
+- `prompt-optimizer:latest` — prompt optimizer agent
+
+Agents that author other agents can pull these as starting points, or create entirely custom images from any base (as long as `/init` exists).
+
+## Creating Custom Images
+
+Agents that author other agents create new images by manipulating OCI layers and manifests.
+
+**Common workflow** (modifying an existing image):
+
+1. Pull base image manifest
+2. Create new layer (tar of files to add/modify)
+3. Push new layer as blob
+4. Construct new manifest referencing base layers + new layer
+5. Push new manifest by digest
+
+This approach works for modifying built-in images (e.g., changing `agent.md` in a critic variant). For completely custom images, you could also build from scratch using any tooling, as long as the result has an executable `/init`.
+
+### Authentication
+
+Use postgres credentials from environment:
+
+```python
+import os
+import httpx
+
+# Credentials automatically provided to agent containers
+username = os.environ["PGUSER"]  # "agent_<uuid>"
+password = os.environ["PGPASSWORD"]
+backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
+auth = (username, password)  # Basic auth
+```
+
+### Pull Base Image Manifest
+
+```python
+# Get manifest for base image
+response = httpx.get(
+    f"{backend_url}/v2/critic/manifests/latest",
+    auth=auth,
+    headers={"Accept": "application/vnd.oci.image.manifest.v1+json"}
+)
+base_manifest = response.json()
+
+# base_manifest["layers"] contains the layer descriptors
+# base_manifest["config"] contains the image config descriptor
+```
+
+### Create New Layer
+
+OCI layers are tar files. Create a tarball of your changes:
+
+```python
+import tarfile
+import io
+
+# Create tar with modified files
+tar_buffer = io.BytesIO()
+with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+    # Add modified prompt file
+    prompt_info = tarfile.TarInfo(name="agent.md")
+    prompt_content = b"Your improved agent prompt here..."
+    prompt_info.size = len(prompt_content)
+    tar.addfile(prompt_info, io.BytesIO(prompt_content))
+
+    # Add any other files...
+
+layer_bytes = tar_buffer.getvalue()
+layer_digest = f"sha256:{hashlib.sha256(layer_bytes).hexdigest()}"
+```
+
+### Push Layer Blob
+
+Upload the layer using OCI blob upload protocol:
+
+```python
+import hashlib
+
+# 1. Start upload
+response = httpx.post(
+    f"{backend_url}/v2/critic/blobs/uploads/",
+    auth=auth
+)
+upload_url = response.headers["Location"]  # Get upload URL
+
+# 2. Upload layer data (monolithic upload)
+response = httpx.put(
+    f"{backend_url}{upload_url}?digest={layer_digest}",
+    auth=auth,
+    headers={"Content-Type": "application/octet-stream"},
+    content=layer_bytes
+)
+# Returns 201 Created on success
+```
+
+### Construct New Manifest
+
+Create manifest referencing base layers + your new layer:
+
+```python
+import json
+
+# Copy base manifest structure
+new_manifest = {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "config": base_manifest["config"],  # Reuse base config
+    "layers": [
+        *base_manifest["layers"],  # All base layers
+        {  # Your new layer
+            "mediaType": "application/vnd.oci.image.layer.v1.tar",
+            "digest": layer_digest,
+            "size": len(layer_bytes)
+        }
+    ]
+}
+```
+
+### Push New Manifest
+
+**Critical:** Agents can only push by digest, not by tag.
+
+```python
+# Compute manifest digest
+manifest_json = json.dumps(new_manifest, separators=(',', ':'))
+manifest_digest = f"sha256:{hashlib.sha256(manifest_json.encode()).hexdigest()}"
+
+# Push by digest only
+response = httpx.put(
+    f"{backend_url}/v2/critic/manifests/{manifest_digest}",
+    auth=auth,
+    headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"},
+    content=manifest_json
+)
+# Returns 201 Created on success
+
+# manifest_digest is now the identifier for your new image
+print(f"Created image: critic@{manifest_digest}")
+```
+
+### References
+
+- [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec) - Registry API
+- [OCI Image Spec](https://github.com/opencontainers/image-spec) - Manifest and layer format
+
+## Base Image Structure
+
+**The only requirement:** An executable `/init` that outputs a system message to stdout. Everything else is up to you.
+
+**How built-in images work** (these are patterns, not requirements):
+
+The built-in `critic`, `grader`, and `prompt-optimizer` images use these patterns:
+
+- **Python environment:** `props` CLI at `/app/` with all dependencies
+- **Init script:** Invokes `python -m props.critic_agent init` (or similar)
+- **Prompt file:** `agent.md` contains agent-specific instructions
+- **Jinja2 rendering:** Init renders prompts with helpers like {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}, {% raw %}`{{ describe_relation("table") }}`{% endraw %}
+
+**To create a variant of a built-in image:** Add a layer with modified `/agent.md`. The init script will read your version when rendering the prompt.
+
+**To create a completely custom image:** Just ensure `/init` exists and outputs the system message. Use any language, any structure, any files you need.
+
+## Filesystem Layout
+
+**Required:**
+- `/init` — executable that produces system message
+
+**Provided by runtime:**
+- `/workspace/` — working directory (empty at start, writable)
+
+**Optional** (depends on your image):
+- `/snapshots/{slug}/` — source code (if init fetches via `props snapshot fetch`)
+- `/app/`, `/agent.md`, etc. — whatever your image includes
+
+Built-in images put the `props` CLI at `/app/` and agent prompts at `/agent.md`, but this is just one approach.
+
+## Backend API Architecture
+
+The unified backend serves all functionality at `http://props-backend:8000`:
+
+| Path | Description | Access |
+|------|-------------|--------|
+| `/health` | Health check | Public |
+| `/api/stats/*` | Dashboard stats | Admin |
+| `/api/runs/*` | Agent run management | Admin |
+| `/api/gt/*` | Ground truth management | Admin |
+| `/api/eval/*` | Evaluation orchestration | Admin + PO/PI |
+| `/v1/responses` | LLM proxy (OpenAI API) | Agents |
+| `/v2/*` | Registry proxy (OCI API) | Admin + PO/PI |
+
+**Network isolation:** Agents cannot reach the registry directly (`:5000`), only through the backend's proxy endpoints. This prevents ACL bypass.
+
+## Best Practices
+
+1. **Init fails fast** — exit non-zero if prerequisites aren't met (missing files, DB connection fails, etc.)
+2. **Print complete context** — include everything the agent needs in the system message (task description, available tools, schemas, examples)
+3. **Use OCI layering** — reuse base images, add small layers for changes (more efficient than copying entire images)
+4. **Push by digest** — immutable content addressing prevents conflicts (agents can only push by digest, not by tag)

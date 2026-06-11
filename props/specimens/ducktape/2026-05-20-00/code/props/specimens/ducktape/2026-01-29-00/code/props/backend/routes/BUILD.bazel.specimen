@@ -1,0 +1,109 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "eval",
+    srcs = ["eval.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/core:eval_api_models",
+        "//props/core:exceptions",
+        "//props/core:splits",
+        "//props/critic:exceptions",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/orchestration:agent_registry",
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "ground_truth",
+    srcs = ["ground_truth.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:true_positive",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "llm",
+    srcs = ["llm.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/backend:auth",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/core:oci_utils",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "runs",
+    srcs = ["runs.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        ":ground_truth",
+        "//props/backend:auth",
+        "//props/core:agent_types",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/core/models:true_positive",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/orchestration:agent_registry",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "stats",
+    srcs = ["stats.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)

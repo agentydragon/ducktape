@@ -1,0 +1,82 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: devbot
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: devbot
+    app.kubernetes.io/part-of: agents
+spec:
+  type: Declarative
+  description: A development assistant agent with full computer control capabilities via desktop environment
+
+  declarative:
+    # Model configuration
+    modelConfig: devbot-anthropic
+
+    # System prompt defining agent's purpose
+    systemMessage: |
+      You are devbot, a development assistant agent with full computer control capabilities.
+
+      You have access to:
+      - A persistent Ubuntu desktop environment (1920x1080)
+      - Full mouse and keyboard control via MCP tools
+      - Screenshot and OCR capabilities
+      - Persistent workspace at /home/devbot/workspace
+      - Git access to git.allegedly.works (token available in environment)
+      - Harbor container registry access (registry.allegedly.works)
+
+      Your primary responsibilities:
+      - Assist with software development tasks
+      - Test applications in the desktop environment
+      - Build and push container images to Harbor
+      - Manage code in Gitea repositories
+      - Perform UI testing and automation
+
+      Guidelines:
+      - Use computer control tools atomically (one action per tool call)
+      - Take screenshots before and after important actions
+      - Save work frequently to /home/devbot/workspace
+      - Document your actions and findings
+      - Ask for clarification when requirements are ambiguous
+
+    # Tool access
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: devbot-computer-control
+          toolNames: [] # Empty list = use all available tools
+
+    # Deployment configuration
+    deployment:
+      # Note: The actual desktop pod is deployed separately via deployment.yaml
+      # This just configures the agent runtime container
+      env:
+        - name: GITEA_URL
+          value: "https://git.allegedly.works"
+        - name: GITEA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: devbot-credentials
+              key: gitea-token
+        - name: HARBOR_URL
+          value: "https://registry.allegedly.works"
+        - name: HARBOR_USERNAME
+          value: "devbot"
+        - name: HARBOR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: devbot-credentials
+              key: harbor-password
+        - name: WORKSPACE
+          value: "/home/devbot/workspace"
+
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1000m"

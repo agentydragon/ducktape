@@ -20,18 +20,19 @@ spec:
     spec:
       serviceAccountName: props-executor
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      imagePullSecrets:
-        - name: harbor-pull-robot
+        topology.kubernetes.io/zone: hil-ovh
+      # Props main image is on GHCR (public, no pull secret needed).
+      # Agent images live in Forgejo's registry (git.allegedly.works/props/*),
+      # reached through the standalone props-registry-proxy service.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260401040602-df942a4 # {"$imagepolicy": "flux-system:props-backend"}
+          image: ghcr.io/agentydragon/props-backend:devel-20260610075336-2c51610 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260401040602-df942a4 # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260610075336-2c51610 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
@@ -55,33 +56,51 @@ spec:
             - name: OLLAMA_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ollama-api-key
+                  name: litellm-master-key
+                  key: api-key
+            # Auth for the in-cluster LiteLLM upstream (config.toml [upstreams.litellm]).
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
                   key: api-key
             - name: PROPS_EVALUATOR_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: props-evaluator-credentials
                   key: password
-            - name: PROPS_REGISTRY_UPSTREAM_URL
-              value: http://harbor.harbor:80
-            - name: PROPS_REGISTRY_UPSTREAM_USERNAME
+            # Authentik SSO for browser users (props/backend/oidc.py). The
+            # props-oidc-config secret is created by tf/gitops/sso-providers and
+            # reflected from the authentik namespace into props.
+            - name: PROPS_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/props/
+            - name: PROPS_OIDC_PUBLIC_BASE_URL
+              value: https://props.allegedly.works
+            - name: PROPS_OIDC_ADMIN_EMAILS
+              value: agentydragon@gmail.com
+            - name: PROPS_OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-robot
-                  key: username
-            - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
+                  name: props-oidc-config
+                  key: client-id
+            - name: PROPS_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-robot
-                  key: password
+                  name: props-oidc-config
+                  key: client-secret
+            - name: PROPS_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: props-oidc-config
+                  key: session-secret
             - name: PROPS_REGISTRY_UPSTREAM_PROJECT
               value: props
             - name: PROPS_REGISTRY_HOST
-              value: props
+              value: props-registry-proxy
             - name: PROPS_REGISTRY_PORT
               value: "8000"
             - name: PROPS_REGISTRY_PULL_HOST
-              value: registry.allegedly.works
+              value: props-registry.allegedly.works
           volumeMounts:
             - name: config
               mountPath: /etc/props
@@ -92,18 +111,32 @@ spec:
             limits:
               cpu: 1000m
               memory: 1Gi
+          # Startup work (alembic migrations + specimen sync + executor build)
+          # runs in a background task on the event loop; meanwhile /health
+          # responds immediately so kubelet doesn't kill the pod. /readyz
+          # only flips to 200 once that background task completes.
+          # startupProbe gives 10min for the slow path before liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
       volumes:
         - name: config
           configMap:

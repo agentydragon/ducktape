@@ -1,0 +1,270 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "actions",
+    srcs = ["actions.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":events",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "games",
+    srcs = ["games.py"],
+    visibility = ["//visibility:public"],
+    deps = [":rng"],
+)
+
+py_library(
+    name = "rng",
+    srcs = ["rng.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "stats",
+    srcs = ["stats.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    data = glob(["migrations/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":actions",
+        ":events",
+        ":games",
+        ":models",
+        ":rng",
+        ":state",
+        ":stats",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    # The bundle is a runtime asset, not a build-time dependency of the
+    # library. Putting it on `:app` would create a cycle: `:export_schema_lib`
+    # imports `:app` to scrape OpenAPI, and the bundle transitively depends on
+    # `:schema_zod` (via the generated zod imports in sync.js), which depends
+    # back on `:export_schema_bin`. The bundle is carried on `:server` /
+    # `:server_bin` instead, the targets that actually run the FastAPI app.
+    visibility = ["//visibility:public"],
+    deps = [
+        ":actions",
+        ":auth",
+        ":config",
+        ":events",
+        ":games",
+        ":models",
+        ":rng",
+        ":state",
+        ":stats",
+        ":store",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "export_schema_lib",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":state",
+        ":store",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "x.auragon_study_casino.export_schema",
+    visibility = ["//visibility:public"],
+    deps = [":export_schema_lib"],
+)
+
+py_binary(
+    name = "server",
+    data = ["//x/auragon_study_casino/frontend:bundle"],
+    main_module = "x.auragon_study_casino.app",
+    visibility = ["//visibility:public"],
+    deps = [":app"],
+)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_games",
+    srcs = ["test_games.py"],
+    deps = [
+        ":games",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_rng",
+    srcs = ["test_rng.py"],
+    deps = [
+        ":games",
+        ":rng",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    requires_docker = True,
+    deps = [
+        ":actions",
+        ":conftest",
+        ":models",
+        ":state",
+        ":stats",
+        ":store",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":conftest",
+        ":games",
+        ":models",
+        ":rng",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# ── OCI image ─────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    data = ["//x/auragon_study_casino/frontend:bundle"],
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["study-casino:latest"],
+)

@@ -1,0 +1,15 @@
+# Allow the openclaw gateway SA to create/manage pods in openclaw-sandbox
+# if needed (e.g. future operator features that spawn pods here).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openclaw-sandbox-admin-openclaw
+  namespace: openclaw-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openclaw-sandbox-admin
+subjects:
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw-gateway

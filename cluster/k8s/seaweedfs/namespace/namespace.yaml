@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seaweedfs
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  annotations:
+    description: |
+      SeaweedFS trial deployment. Object store on the OVH Kimsufi workers,
+      backed by the /dev/sdb XFS partition declared via Talos UserVolumeConfig.
+      Replication strategy "001" (one copy on a different node, same rack).
+      See cluster/docs/kimsufi_provisioning.md and the trial plan at
+      ~/.claude/plans/ns103656-ip-147-135-39-us-...md

@@ -1,0 +1,21 @@
+rationale: |
+  The policy eval runner parses the final container log line as JSON on line 77,
+  then catches `Exception` on lines 78-79 to wrap malformed output as
+  `RuntimeError("invalid JSON from policy eval: ...")`.
+
+  That handler is specifically for JSON decoding failures. Catching `Exception`
+  can also hide unrelated programming errors raised while preparing the input to
+  `json.loads`, making them look like malformed policy-eval output. Narrow the
+  handler to `json.JSONDecodeError` so real non-JSON failures surface with their
+  original exception type and stack context.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/policy_eval/runner.py:
+        - - 77
+          - 79
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/runner.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policy_eval/runner.py

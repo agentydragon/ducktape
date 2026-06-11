@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: firecrawl
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    vpa.doitintl.com/enabled: "true"

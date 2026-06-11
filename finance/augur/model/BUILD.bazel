@@ -1,0 +1,519 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "schemas",
+    srcs = ["schemas.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conditioning",
+    srcs = ["conditioning.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "exogenous",
+    srcs = ["exogenous.py"],
+    deps = [
+        ":private_equity_bundle",
+        ":series",
+        "//finance/augur:frames",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "series",
+    srcs = ["series.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "level_series_groups",
+    srcs = ["level_series_groups.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "level_series_groups_test",
+    srcs = ["level_series_groups_test.py"],
+    deps = [
+        ":conftest",
+        ":level_series_groups",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "state_space_factor",
+    srcs = ["state_space_factor.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "state_space_factor_test",
+    srcs = ["state_space_factor_test.py"],
+    deps = [
+        ":conftest",
+        ":series",
+        ":state_space_factor",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "private_equity_protocol",
+    srcs = ["private_equity_protocol.py"],
+    deps = [
+        ":private_equity_bundle",
+        ":series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "private_equity_risk",
+    srcs = ["private_equity_risk.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_bundle",
+        ":schemas",
+        ":series",
+        ":series_model",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "series_test",
+    srcs = ["series_test.py"],
+    deps = [
+        ":conftest",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "deterministic",
+    srcs = ["deterministic.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "gbm",
+    srcs = ["gbm.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "poisson_events",
+    srcs = ["poisson_events.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "series_model",
+    srcs = ["series_model.py"],
+    deps = [
+        ":deterministic",
+        ":exogenous",
+        ":gbm",
+        ":level_series_groups",
+        ":poisson_events",
+        ":series",
+        "//finance/augur:frames",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "independent",
+    srcs = ["independent.py"],
+    deps = [
+        ":deterministic",
+        ":exogenous",
+        ":gbm",
+        ":level_series_groups",
+        ":series",
+        ":series_model",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state_space",
+    srcs = ["state_space.py"],
+    deps = [
+        ":conditioning",
+        ":exogenous",
+        ":private_equity_bundle",
+        ":private_equity_protocol",
+        ":provenance",
+        ":schemas",
+        ":series",
+        ":series_model",
+        ":state_space_factor",
+        ":trained_private_equity",
+        "//finance/augur:dates",
+        "//finance/augur/model/path_models:scenarios",
+        "//finance/augur/product:asset_key",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "vecm",
+    srcs = ["vecm.py"],
+    data = ["//finance/augur/fit/calibrated:trained_vecm_blob"],
+    deps = [
+        ":exogenous",
+        ":provenance",
+        ":schemas",
+        ":series",
+        "//finance/augur/model/path_models:scenarios",
+        "//util/bazel:runfiles",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "vecm_test",
+    size = "large",
+    srcs = ["vecm_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":series",
+        ":vecm",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "state_space_test",
+    srcs = ["state_space_test.py"],
+    deps = [
+        ":conditioning",
+        ":conftest",
+        ":exogenous",
+        ":series",
+        ":state_space",
+        ":trained_private_equity",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/product:asset_key",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "provider_config",
+    srcs = ["provider_config.py"],
+    deps = [
+        ":composite",
+        ":independent",
+        ":mirroring",
+        ":private_equity_risk",
+        ":schemas",
+        ":state_space",
+        ":trained_private_equity",
+        ":vecm",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sample_sanity",
+    srcs = ["sample_sanity.py"],
+    deps = [
+        ":exogenous",
+        ":schemas",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "sample_sanity_test",
+    srcs = ["sample_sanity_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":sample_sanity",
+        ":series",
+        ":testing",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_bundle",
+        ":series",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "series_model_test",
+    srcs = ["series_model_test.py"],
+    deps = [
+        ":conftest",
+        ":deterministic",
+        ":exogenous",
+        ":gbm",
+        ":level_series_groups",
+        ":series",
+        ":series_model",
+        ":testing",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "independent_test",
+    srcs = ["independent_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":independent",
+        ":provider_config",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "trained_private_equity",
+    srcs = ["trained_private_equity.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_protocol",
+        ":schemas",
+        ":series",
+        ":series_model",
+        "//finance/augur:dates",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "private_equity_risk_test",
+    srcs = ["private_equity_risk_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":private_equity_bundle",
+        ":private_equity_risk",
+        ":provider_config",
+        ":series",
+        ":series_model",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "composite",
+    srcs = ["composite.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_bundle",
+        ":series",
+    ],
+)
+
+py_library(
+    name = "mirroring",
+    srcs = ["mirroring.py"],
+    deps = [
+        ":exogenous",
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "mirroring_test",
+    srcs = ["mirroring_test.py"],
+    deps = [
+        ":exogenous",
+        ":mirroring",
+        ":series",
+        ":testing",
+        "//:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "composite_test",
+    srcs = ["composite_test.py"],
+    deps = [
+        ":composite",
+        ":conftest",
+        ":exogenous",
+        ":private_equity_bundle",
+        ":private_equity_protocol",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "private_equity_trajectories",
+    srcs = ["private_equity_trajectories.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_bundle",
+        ":private_equity_protocol",
+        ":series",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "private_equity_trajectories_test",
+    srcs = ["private_equity_trajectories_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":private_equity_trajectories",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//util/testing:jsonl",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "private_equity_bundle",
+    srcs = ["private_equity_bundle.py"],
+    deps = [
+        ":series",
+        "//finance/augur:frames",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "gbm_test",
+    srcs = ["gbm_test.py"],
+    deps = [
+        ":conftest",
+        ":gbm",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "provenance",
+    srcs = ["provenance.py"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+)

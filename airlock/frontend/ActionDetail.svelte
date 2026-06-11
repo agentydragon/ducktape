@@ -2,7 +2,7 @@
   import { getApiClient } from "./api.ts";
   import type { Action, DoneState, RejectedState } from "./types.ts";
 
-  let { action }: { action: Action } = $props();
+  const { action }: { action: Action } = $props();
   let rejectReason = $state("");
   let approving = $state(false);
   let rejecting = $state(false);
@@ -34,16 +34,6 @@
     }
   }
 </script>
-
-<header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
-  <h1 class="text-lg font-semibold m-0" style="color: var(--color-header-text);">
-    <a href="#/" class="app-header-link">Airlock</a>
-    <span class="font-normal" style="color: var(--color-header-text-dim);"> / </span>
-    <span class="text-sm font-normal" style="color: var(--color-header-link);"
-      >Action {action.key.session_key}/{action.key.action_seq}</span
-    >
-  </h1>
-</header>
 
 <main class="max-w-4xl mx-auto px-4 py-6 space-y-4">
   <div class="card rounded-lg shadow-sm p-5">

@@ -1,0 +1,38 @@
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+  annotations:
+    description: KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers.
+spec:
+  certificateRotateStrategy: {}
+  configuration:
+    developerConfiguration:
+      featureGates: []
+    imagePullPolicy: IfNotPresent
+    smbios:
+      manufacturer: Talos Virtualization
+      product: allegedly-works-kubevirt
+      sku: allegedly-works
+      version: v0.1.0
+  customizeComponents: {}
+  imagePullPolicy: IfNotPresent
+  infra:
+    nodePlacement:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+  workloads:
+    nodePlacement:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: In
+                    values:
+                      - hil
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+  workloadUpdateStrategy: {}

@@ -1,8 +1,0 @@
-apiVersion: image.toolkit.fluxcd.io/v1beta2
-kind: ImageRepository
-metadata:
-  name: claude-token-rotation
-  namespace: flux-system
-spec:
-  image: ghcr.io/agentydragon/claude-token-rotation
-  interval: 5m

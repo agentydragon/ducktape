@@ -1,0 +1,23 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "github": "integrations/github:~>6.6.0",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "github",
+    data = [
+        "//ssh_keys:atlas-github.pub",
+        "//ssh_keys:iguana-default.pub",
+        "//ssh_keys:iguana-github.pub",
+        "//ssh_keys:rugged-github.pub",
+    ],
+    providers = [
+        "github",
+    ],
+    providers_versions = ":providers",
+)

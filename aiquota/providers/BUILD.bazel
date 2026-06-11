@@ -1,0 +1,76 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["//aiquota:models"],
+)
+
+py_library(
+    name = "claude_lib",
+    srcs = ["claude.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [
+        ":base",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "codex_lib",
+    srcs = ["codex.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [
+        ":base",
+        "//aiquota:models",
+        "@pypi//atomicwrites",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "zai_lib",
+    srcs = ["zai.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [
+        ":base",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_claude",
+    srcs = ["test_claude.py"],
+    imports = ["../.."],
+    deps = [
+        ":claude_lib",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_codex",
+    srcs = ["test_codex.py"],
+    imports = ["../.."],
+    deps = [
+        ":codex_lib",
+        "//:conftest",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)

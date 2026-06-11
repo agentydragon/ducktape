@@ -72,7 +72,7 @@ async def test_sandbox_exec_echo_roundtrip(seatbelt_session) -> None:
     res = await stub.sandbox_exec(
         SandboxExecArgs(
             policy=make_default_restrictive_policy(trace=False),
-            argv=["/bin/echo", "HELLO_MINIMAL"],
+            cmd=["/bin/echo", "HELLO_MINIMAL"],
             max_bytes=100000,
             timeout_ms=10_000,
             trace=False,
@@ -100,7 +100,7 @@ async def test_sandbox_exec_write_denied(seatbelt_session) -> None:
     res = await stub.sandbox_exec(
         SandboxExecArgs(
             policy=make_default_restrictive_policy(trace=True),
-            argv=["/bin/sh", "-lc", f"echo DENIED > {out_path}"],
+            cmd=["/bin/sh", "-lc", f"echo DENIED > {out_path}"],
             max_bytes=100000,
             timeout_ms=5_000,
             trace=True,
@@ -125,9 +125,7 @@ async def test_sandbox_exec_timeout(seatbelt_session) -> None:
     policy = make_default_restrictive_policy()
     stub = SeatbeltExecServerStub.from_server(_server, session)
     res = await stub.sandbox_exec(
-        SandboxExecArgs(
-            policy=policy, argv=["/bin/sh", "-lc", "sleep 2"], max_bytes=100000, timeout_ms=500, trace=False
-        )
+        SandboxExecArgs(policy=policy, cmd=["/bin/sh", "-lc", "sleep 2"], max_bytes=100000, timeout_ms=500, trace=False)
     )
     assert isinstance(res.exit, TimedOut)
     assert isinstance(res.duration_ms, int)
@@ -142,7 +140,7 @@ async def test_sandbox_exec_cwd_and_env(tmp_path: Path, seatbelt_session) -> Non
     res = await stub.sandbox_exec(
         SandboxExecArgs(
             policy=policy,
-            argv=["/bin/sh", "-lc", "pwd; echo $FOO"],
+            cmd=["/bin/sh", "-lc", "pwd; echo $FOO"],
             cwd=str(tmp_path),
             env={"FOO": "BAR"},
             max_bytes=100000,

@@ -1,10 +1,20 @@
 common --enable_bzlmod
 common --experimental_isolated_extension_usages
+# Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
+common --repo_env=DO_NOT_TRACK=1
 
 # Strict action env: actions get a fixed PATH (/bin:/usr/bin:/usr/local/bin)
 # instead of inheriting the client's PATH. Prevents NixOS /nix/store paths
 # from leaking to RBE workers. Default in Bazel 9 but not Bazel 8.
 build --incompatible_strict_action_env
+
+# Suppress -Wdeprecated-declarations from protobuf's own internal usage of its
+# deprecated APIs (FieldOptions::weak(), RepeatedPtrField(Arena*), etc.).
+# All warnings are within external/protobuf+/ — protobuf using APIs that it
+# itself deprecated, not fixable from this repo.
+# Applied to both target and exec (host) configs since protoc runs in exec.
+build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
+build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
@@ -31,12 +41,20 @@ build --@rules_python//python/config_settings:python_version=3.13
 build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
+# Make ruff + ESLint findings HARD-FAIL the build instead of only populating the
+# rules_lint_report output group. This puts the rules_lint aspects on equal
+# footing with mypy/clippy/rustfmt (whose aspect actions already fail the build
+# directly): code that doesn't lint clean no longer bazel-builds. --config=nolint
+# still bypasses — it drops the rules_lint_report output group, so the
+# report-generating action that enforces this flag is never requested.
+build --@aspect_rules_lint//lint:fail_on_violation
+
 # Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
 # output groups prevents the aspect actions from running.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
 
 # Remote Build Execution (BuildBuddy)
-# Auth: ~/.config/bazel/buildbuddy.bazelrc (setup_buildbuddy.sh or bazelrc.mako)
+# Auth and RBE-safe shell normalization: ~/.config/bazel/buildbuddy.bazelrc
 # Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
 build:rbe --remote_executor=grpcs://remote.buildbuddy.io
 build:rbe --extra_execution_platforms=//:rbe_linux_x64
@@ -56,9 +74,10 @@ build:rbe --experimental_profile_include_primary_output
 # Formatting: use bazel run //devinfra/format (fix) or //devinfra/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
-# Stamping - embeds build metadata (commit hash, etc.) into build artifacts
-# Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
-build --stamp --workspace_status_command=devinfra/stamp.sh
+# Workspace status command populates volatile metadata (repo URL, branch, user)
+# for BuildBuddy UI. Stamping is off by default for hermeticity; release builds
+# opt in with --stamp to embed commit/content info via expand_template rules.
+build --workspace_status_command=devinfra/stamp.sh
 
 # Use shell-based bootstrap instead of system_python.  The default
 # (system_python) starts with `#!/usr/bin/env python3` which picks up whatever
@@ -70,6 +89,12 @@ build --stamp --workspace_status_command=devinfra/stamp.sh
 # Subprocess-spawning code uses bazel_subprocess.py to propagate PYTHONPATH.
 common --@rules_python//python/config_settings:bootstrap_impl=script
 
+# Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace
+# packages (google.*) and FreeCAD conda C extension shadowing repo-wide.
+# Must use the native flag, not the Starlark @rules_python//... config setting
+# (which is ignored in Bazel 8 — see debug/legacy-create-init-investigation.md).
+common --incompatible_default_to_explicit_init_py
+
 # Quiet output mode — reduces progress spam for non-interactive contexts.
 # --curses=no: disable curses UI
 # --show_progress_rate_limit=30: at most one progress update every 30 seconds
@@ -79,4 +104,5 @@ common:quiet --show_progress_rate_limit=30
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
+test:ci --test_tag_filters=-live_openai_api
 common:ai_agent --config=quiet

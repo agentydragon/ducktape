@@ -1,0 +1,80 @@
+# Example Ansible tasks to enable memory ballooning on Proxmox VMs
+# Add this to ansible/atlas.yaml or create a new role
+
+---
+# Option 1: Enable ballooning on specific VMs
+- name: Enable memory ballooning on specific VMs
+  ansible.builtin.command:
+    cmd: "qm set {{ item }} --balloon 0"
+  loop:
+    - 100 # wyrm
+    - 1500 # talos-controlplane0
+    - 1501 # talos-controlplane1
+    - 1502 # talos-controlplane2
+    - 2000 # talos-worker0
+    - 2001 # talos-worker1
+    - 2002 # talos-worker2
+  register: balloon_result
+  changed_when: balloon_result.rc == 0
+  tags: [proxmox, memory, ballooning]
+
+# Option 2: Enable ballooning on ALL VMs (more dynamic)
+- name: Get list of all VM IDs
+  ansible.builtin.shell:
+    cmd: "qm list | awk 'NR>1 {print $1}'"
+  register: vm_ids
+  changed_when: false
+  tags: [proxmox, memory, ballooning]
+
+- name: Check current balloon setting for each VM
+  ansible.builtin.shell:
+    cmd: "qm config {{ item }} | grep '^balloon:' | cut -d: -f2 | xargs || echo 'not set'"
+  loop: "{{ vm_ids.stdout_lines }}"
+  register: current_balloon
+  changed_when: false
+  tags: [proxmox, memory, ballooning]
+
+- name: Enable ballooning on VMs where not set to 0
+  ansible.builtin.command:
+    cmd: "qm set {{ item.item }} --balloon 0"
+  loop: "{{ current_balloon.results }}"
+  when: item.stdout != "0"
+  register: balloon_update
+  changed_when: balloon_update.rc == 0
+  tags: [proxmox, memory, ballooning]
+
+- name: Show VMs that need restart for ballooning to take effect
+  ansible.builtin.debug:
+    msg: "VM {{ item.item }} updated to balloon: 0. Restart required."
+  loop: "{{ current_balloon.results }}"
+  when: item.stdout != "0"
+  tags: [proxmox, memory, ballooning]
+
+# Option 3: Create a fact file to track balloon state
+- name: Ensure ballooning facts directory exists
+  ansible.builtin.file:
+    path: /etc/ansible/facts.d
+    state: directory
+    mode: "0755"
+  tags: [proxmox, memory, ballooning]
+
+- name: Create balloon state fact script
+  ansible.builtin.copy:
+    dest: /etc/ansible/facts.d/proxmox_balloon.fact
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      echo "{"
+      qm list | awk 'NR>1 {print $1}' | while read vmid; do
+        balloon=$(qm config $vmid | grep '^balloon:' | cut -d: -f2 | xargs || echo "not set")
+        echo "  \"vm_${vmid}_balloon\": \"$balloon\","
+      done | sed '$ s/,$//'
+      echo "}"
+  tags: [proxmox, memory, ballooning]
+# Then you can use this in future playbook runs:
+# - debug:
+#     var: ansible_local.proxmox_balloon
+
+# NOTE: After enabling ballooning, VMs must be restarted for changes to take effect
+# This is NOT done automatically to avoid unexpected downtime
+# Manual restart: qm shutdown <vmid> && qm start <vmid>

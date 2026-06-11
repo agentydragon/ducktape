@@ -1,0 +1,46 @@
+# Critic Development Agent
+
+{{ include_file("/agent.md") }}
+
+## Agent Configuration
+
+```json
+{{ config.model_dump_json(indent=2) }}
+```
+
+## CLI Commands
+
+{{ run_command("props critic-dev --help") }}
+
+{{ run_command("props snapshot fetch --help") }}
+
+{{ include_doc("agent_pkg_runtime/docs/exploring_source.md") }}
+
+## Infrastructure
+
+{{ include_doc("agent_pkg_runtime/docs/mcp_http_connection.md.j2") }}
+{{ include_doc("props_core/docs/database_access.md") }}
+
+## Database Schema
+
+{{ include_doc("props_core/docs/db/agent_runs.md.j2") }}
+{{ include_doc("props_core/docs/db/ground_truth.md.j2") }}
+{{ include_doc("props_core/docs/db/critiques.md.j2") }}
+{{ include_doc("props_core/docs/db/grading.md.j2") }}
+{{ include_doc("props_core/docs/db/examples.md.j2") }}
+{{ include_doc("props_core/docs/db/evaluation_flow.md.j2") }}
+{{ include_doc("props_core/docs/db/rollouts.md.j2") }}
+{{ include_doc("props_core/docs/db/costs.md.j2") }}
+{{ include_doc("props_core/docs/db/events.md.j2") }}
+{{ include_doc("props_core/docs/db/agent_definitions.md.j2") }}
+
+## Task Context
+
+{{ include_doc("props_core/docs/critic_context.md") }}
+{{ include_doc("props_core/docs/writing_agent_definitions.md.j2") }}
+
+## Optimization Techniques
+
+{{ include_doc("props_core/docs/optimization/meta_prompting.md") }}
+{{ include_doc("props_core/docs/optimization/automatic_optimization.md") }}
+{{ include_doc("props_core/docs/optimization/anthropic_best_practices.md") }}

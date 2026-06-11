@@ -83,8 +83,6 @@ if (p := child_env.get(key)):
 
 ### Example 2: None check (good candidate)
 
-**File**: `mcp_infra/compositor/server.py:196`
-
 ```python
 # Before
 entry = per_name.get(nm)
@@ -99,8 +97,6 @@ if (entry := per_name.get(nm)) is None:
 **Benefits**: Saves one line, clearer that entry is only used in condition.
 
 ### Example 3: Class/type check (good candidate)
-
-**File**: `claude/claude_hooks/claude_hooks/inputs.py:67`
 
 ```python
 # Before
@@ -179,8 +175,6 @@ configs = [cfg for p in paths if (cfg := parse_config(p)) is not None]
 **Benefits**: Avoids duplicate parse_config calls, much more efficient for expensive transforms.
 
 ### Example 4: Multi-use variable (skip)
-
-**File**: `rspcache/models.py:56`
 
 ```python
 # Keep as-is - variable used in multiple branches

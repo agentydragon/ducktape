@@ -1,0 +1,27 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: sandbox-sa-token
+  namespace: openclaw-gateway
+  annotations:
+    description: K8s SA token from openclaw-sandbox namespace, lets OpenClaw gateway manage pods/exec in the sandbox
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-openclaw-sandbox-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: sandbox-sa-token
+  data:
+    - secretKey: token
+      remoteRef:
+        key: sandbox-sa-token
+        property: token
+    - secretKey: ca.crt
+      remoteRef:
+        key: sandbox-sa-token
+        property: ca.crt
+    - secretKey: namespace
+      remoteRef:
+        key: sandbox-sa-token
+        property: namespace

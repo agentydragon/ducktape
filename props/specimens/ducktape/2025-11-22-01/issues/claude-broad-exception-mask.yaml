@@ -1,0 +1,29 @@
+rationale: |
+  `TaskClaude.query()` validates that the Docker container is running inside a
+  broad `try` block. The block covers both Docker API calls (`_container_or_raise`,
+  `reload`, `logs`) and the semantic status check that raises
+  `RuntimeError(f"Container {c.id} is not running, status: {c.status}")`.
+
+  Because the handler catches `Exception`, the intentionally raised non-running
+  status error is immediately caught and rewrapped as
+  `RuntimeError("Container ... check failed: ...")`. This conflates Docker probe
+  failures with the expected "container exists but is not running" state, and it
+  makes the status error flow through two exception handlers for no benefit.
+
+  One good fix is to split the control flow: catch concrete Docker API failures
+  only around `reload()` or log retrieval, then perform the `status != "running"`
+  check outside that handler and raise the status `RuntimeError` directly. If log
+  collection can fail, put that in a small helper that catches
+  `docker.errors.APIError` / `docker.errors.NotFound` and returns a diagnostic
+  placeholder.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/inop/runners/containerized_claude.py:
+        - - 210
+          - 219
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/inop/runners/containerized_claude.py
+    match_file_restriction:
+      - adgn/src/adgn/inop/runners/containerized_claude.py

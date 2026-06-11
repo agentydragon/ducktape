@@ -1,0 +1,33 @@
+rationale: |
+  `StreamingContext.proxy_stream()` is the streaming implementation used by
+  `responses_endpoint()` when it returns a `StreamingResponse`. The same module
+  also defines a standalone `_proxy_stream()` function with nearly identical
+  chunk decoding, SSE/NDJSON frame extraction, response-state updates,
+  `append_frame()` calls, trailing-frame handling, `finalize_response()`, and
+  `resp.aclose()` cleanup.
+
+  The standalone `_proxy_stream()` is not called by the module. Keeping it beside
+  the live `StreamingContext.proxy_stream()` path creates dead duplicate logic
+  that can drift from the implementation actually used in production.
+
+  The clean fix is to keep exactly one streaming implementation. Given the
+  current call site already uses `StreamingContext.proxy_stream()`, delete the
+  unused standalone `_proxy_stream()` function. If the standalone helper is
+  preferred instead, make it the single implementation and have
+  `StreamingContext.proxy_stream()` delegate to it rather than maintaining two
+  copies.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/rspcache/__init__.py:
+        - - 53
+          - 106
+        - - 225
+          - 282
+        - - 370
+          - 373
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/rspcache/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/rspcache/__init__.py

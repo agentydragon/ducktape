@@ -1,0 +1,54 @@
+# Test-only web-style profile used by the container E2E test.
+#
+# Exercises the real web session-start flow end-to-end:
+#   - startup_env_script = real devinfra/secrets/web_env.sh
+#       → decrypts test-encrypted secrets at /project/secrets/*.yaml
+#   - kubeconfig bg command runs the standalone kubeconfig.py script,
+#     which decrypts /project/secrets/claude-web-k8s-jwt.yaml via sops
+#
+# Stripped (vs real web profile):
+#   - setup_tmpfs / setup_docker  (needs mount/privileges)
+#   - bazel_bes_proxy             Can't exercise BES with a fake
+#                                 BUILDBUDDY_API_KEY: the daemon's BES
+#                                 interceptor forwards build events to
+#                                 remote.buildbuddy.io:443, which rejects
+#                                 the fake key. Bazel treats BES upload
+#                                 failures as fatal (the
+#                                 `--bes_upload_mode=best_effort` flag
+#                                 that used to allow ignoring them was
+#                                 removed — see bazelbuild/bazel#25756).
+#   - network-heavy bg commands   (apt-get, pre-commit install, fork remote)
+#   - context_template            (keep output minimal for test assertions)
+#
+# The real web profile is at devinfra/claude/hook_daemon/profiles/web/profile.yaml.
+
+startup_env_script: devinfra/secrets/web_env.sh
+
+idle_watchdog: false
+
+# Exercise the full git_shim surface in the container E2E matrix.
+# pre-commit (which invokes git stash internally) is not run in this test,
+# so block_stash=true here is safe. CLI profile leaves block_stash=false for
+# this reason — see profiles/cli/profile.yaml.
+git_shim:
+  block_add_all: true
+  block_stash: true
+  block_amend: true
+
+env_exports: |
+  export E2E_TEST_MARKER=1
+
+background_commands:
+  - name: kubeconfig
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
+    timeout: 30
+    after_env: true
+  - name: bazelisk warmup (query //...)
+    command: |
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
+    timeout: 300
+    after_env: true

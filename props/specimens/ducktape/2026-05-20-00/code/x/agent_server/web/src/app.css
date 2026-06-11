@@ -1,0 +1,127 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  /* Theme variables */
+  --bg: #ffffff;
+  --text: #213547;
+  --surface: #ffffff;
+  --surface-2: #f6f6f6;
+  --surface-3: #eeeeee;
+  --border: #e0e0e0;
+  --muted: #666666;
+  --button-bg: #f9f9f9;
+  --button-text: #213547;
+  --accent: #646cff;
+
+  color: var(--text);
+  background-color: var(--bg);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+.card {
+  padding: 2em;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  border-color: var(--border);
+  background-color: var(--surface-3);
+  color: var(--muted);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --text: #213547;
+    --surface: #ffffff;
+    --surface-2: #f6f6f6;
+    --surface-3: #eeeeee;
+    --border: #e0e0e0;
+    --muted: #666666;
+    --button-bg: #f9f9f9;
+    --button-text: #213547;
+    --accent: #747bff;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #242424;
+    --text: rgba(255, 255, 255, 0.87);
+    --surface: #2a2a2a;
+    --surface-2: #333333;
+    --surface-3: #3a3a3a;
+    --border: #444444;
+    --muted: #aaaaaa;
+    --button-bg: #1a1a1a;
+    --button-text: rgba(255, 255, 255, 0.9);
+    --accent: #535bf2;
+  }
+}
+
+/* Global styles for dynamic content inserted at runtime */
+.text.md :where(pre, code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.pre {
+  background: var(--surface-2);
+  padding: 0.5rem;
+  overflow: auto;
+  max-height: 12rem;
+}

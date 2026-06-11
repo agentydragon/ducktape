@@ -1,0 +1,22 @@
+=== ACPI path of the modem ===
+\_SB_.PC00.RP02.PXSX
+
+=== status ===
+cat: '/sys/bus/pci/devices/0000:71:00.0/firmware_node/status': No such file or directory
+
+=== power_state ===
+D0
+
+=== real_power_state ===
+cat: '/sys/bus/pci/devices/0000:71:00.0/firmware_node/real_power_state': No such file or directory
+
+=== ACPI dir contents ===
+Permissions Size User Date Modified Name
+lrwxrwxrwx     - root 14 May 12:43  physical_node -> ../../../../../pci0000:00/0000:00:1c.0/0000:71:00.0
+drwxr-xr-x     - root 14 May 12:43  power
+lrwxrwxrwx     - root 14 May 12:43  subsystem -> ../../../../../../bus/acpi
+drwxr-xr-x     - root 14 May 12:43  wakeup
+.r--r--r--  4.1k root 14 May 12:43  adr
+.r--r--r--  4.1k root 14 May 12:43  path
+.r--r--r--  4.1k root 14 May 12:43  power_state
+.rw-r--r--  4.1k root 14 May 12:43  uevent

@@ -27,7 +27,8 @@ type PollerInterface interface {
 type Orchestrator struct {
 	// Field layout (reconstructed from NewOrchestrator at 0xae19a0):
 	// Offset 0x00: poller PollerInterface (interface pair, 16 bytes)
-	// Offset 0x10: unknown interface/string pair (16 bytes) — possibly sessionID or config
+	// Offset 0x10: timeoutHook *Hook (8 bytes) — checked at offset 0x10 in handleLoopTimeout
+	// Offset 0x18: unknown (padding or sessionID start)
 	// Offset 0x20: pollTimeout time.Duration (defaults to 5min)
 	// Offset 0x28: loopTimeout time.Duration (defaults to 5min)
 	// Offset 0x30: maxPollFailures int (0 = infinite)
@@ -37,8 +38,15 @@ type Orchestrator struct {
 	// NOTE: The execute-hook command is NOT stored in this struct. When
 	// --execute-hook is set, cmd_orchestrator wraps it inside a PollHook
 	// (which implements PollerInterface) before passing to NewOrchestrator.
+	//
+	// The timeout hook IS stored in this struct (offset 0x10). It is
+	// configured via the --timeout-hook flag in cmd_orchestrator.go and
+	// executed by handleLoopTimeout when the poll interval is exceeded
+	// (idle period between sessions). Used for maintenance tasks like
+	// monorepo updates.
 	Poller          PollerInterface
-	SessionID       string // field at offset 0x10, exact semantics TBD
+	TimeoutHook     *Hook  // offset 0x10 — executed during idle periods by handleLoopTimeout
+	SessionID       string // field at offset 0x18 or later, exact semantics TBD
 	PollInterval    time.Duration
 	LoopTimeout     time.Duration
 	MaxPollFailures int
@@ -229,11 +237,20 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 }
 
-// handleLoopTimeout manages backoff timing between poll iterations.
-// It calculates elapsed time since the last poll, determines if a timeout
-// condition exists, and if so logs it and increments the timeout counter.
-// If a timeout hook is configured, it executes it. Returns the current
-// time and remaining sleep duration.
+// handleLoopTimeout manages backoff timing between poll iterations and
+// executes a "timeout hook" during idle periods between sessions.
+//
+// When the orchestrator is polling for work and no sessions are available,
+// the poll interval timer tracks how long since the last successful poll.
+// When the interval is exceeded, this function:
+//   - Logs the timeout event
+//   - Increments the o11y timeout counter
+//   - Executes the timeout hook if one is configured
+//
+// The timeout hook runs during idle periods — it is NOT a session hook.
+// It can be used for maintenance tasks, health checks, or cleanup between
+// sessions. The hook is stored at offset 0x10 in the Orchestrator struct
+// and is a *Hook (same type as session hooks). If nil, no hook executes.
 //
 // Binary: 0xa8c9c0 - (*Orchestrator).handleLoopTimeout
 // Source: orchestrator/orchestrator.go
@@ -265,10 +282,18 @@ func (o *Orchestrator) handleLoopTimeout(
 	o.Logger.Info("poll interval exceeded, resetting timer")
 	o11y.Increment(ctx, o11y.OrchestratorTimeoutCounter, nil)
 
-	// Execute timeout hook if configured.
-	// Binary: 0xa8caa2-0xa8cb85 checks offset 0x10 (hook pointer)
-	// and calls Hook.Execute if non-nil
-	// On error: logs at Error level with "timeout hook failed" + "error" attr
+	// Execute timeout hook if configured (--timeout-hook flag).
+	// Binary: 0xa8caa2-0xa8cb85 checks offset 0x10 (TimeoutHook pointer)
+	// and calls Hook.Execute if non-nil.
+	// This runs during idle periods between sessions for maintenance tasks
+	// (e.g., monorepo updates, health checks).
+	if o.TimeoutHook != nil {
+		if err := o.TimeoutHook.Execute(ctx); err != nil {
+			// Binary: log at Error level (0x08)
+			// "timeout hook failed" (0x13=19 chars) with 1 attr "error"
+			o.Logger.Error("timeout hook failed", "error", err)
+		}
+	}
 
 	return time.Now(), 0, o.PollInterval
 }

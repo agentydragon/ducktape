@@ -1,0 +1,25 @@
+# Deb packages for the claude-jwt-rotation CronJob image.
+# curl + jq + git + bash for client_credentials exchange and git commit on
+# debian:trixie-slim. (coreutils — including `base64` used by rotate.sh's
+# JWT-payload sanity check — comes from the debian-trixie-slim base image
+# and doesn't need to be listed here.)
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_jwt_rotation//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "bash"
+  - "ca-certificates"
+  - "curl"
+  - "git"
+  - "jq"

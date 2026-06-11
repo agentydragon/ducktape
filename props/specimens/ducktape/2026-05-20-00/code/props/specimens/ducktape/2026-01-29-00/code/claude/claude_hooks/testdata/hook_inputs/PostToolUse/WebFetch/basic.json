@@ -1,0 +1,19 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "WebFetch",
+  "tool_input": {
+    "url": "https://httpbin.org/json",
+    "prompt": "Parse JSON"
+  },
+  "tool_response": {
+    "bytes": 429,
+    "code": 200,
+    "codeText": "OK",
+    "result": "This JSON response describes a slideshow with the following details:\n- Title: \"Sample Slide Show\"\n- ...",
+    "durationMs": 3489,
+    "url": "https://httpbin.org/json"
+  }
+}

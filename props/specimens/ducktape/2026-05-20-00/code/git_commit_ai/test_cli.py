@@ -1,0 +1,107 @@
+"""Tests for git_commit_ai CLI utilities."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pygit2
+import pytest_bazel
+
+from git_commit_ai.cli import build_cache_key, stage_tracked_changes
+from git_commit_ai.testing.git_repo_utils import RepoHelper
+
+
+def test_cache_key_includes_amend_status():
+    """Cache key differentiates between new and amend commits."""
+    model_name = "sonnet"
+    head_oid = pygit2.Oid(hex="abc123def456abc123def456abc123def456abc1")
+    diff = "test diff content"
+
+    key_new = build_cache_key(
+        model_name, include_all=False, previous_message=None, head_oid=head_oid, diff=diff, user_context=None
+    )
+    key_amend = build_cache_key(
+        model_name, include_all=False, previous_message="some msg", head_oid=head_oid, diff=diff, user_context=None
+    )
+
+    assert key_new != key_amend
+    assert ":new:" in key_new
+    assert ":amend:" in key_amend
+
+
+def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:
+    """Modified tracked files should be staged."""
+    temp_repo.write("file.txt", "initial")
+    temp_repo.stage("file.txt")
+    temp_repo.commit("initial")
+
+    temp_repo.write("file.txt", "modified")
+
+    stage_tracked_changes(temp_repo.repo)
+
+    status = temp_repo.repo.status()
+    assert "file.txt" in status
+    assert status["file.txt"] & pygit2.GIT_STATUS_INDEX_MODIFIED
+
+
+def test_stage_all_includes_deleted_files(temp_repo: RepoHelper) -> None:
+    """Deleted tracked files should be staged for removal."""
+    temp_repo.write("file.txt", "content")
+    temp_repo.stage("file.txt")
+    temp_repo.commit("initial")
+
+    (Path(temp_repo.repo.workdir) / "file.txt").unlink()
+
+    stage_tracked_changes(temp_repo.repo)
+
+    status = temp_repo.repo.status()
+    assert "file.txt" in status
+    assert status["file.txt"] & pygit2.GIT_STATUS_INDEX_DELETED
+
+
+def test_stage_all_excludes_untracked_files(temp_repo: RepoHelper) -> None:
+    """New untracked files should NOT be staged (matches git commit -a)."""
+    temp_repo.write("tracked.txt", "content")
+    temp_repo.stage("tracked.txt")
+    temp_repo.commit("initial")
+
+    temp_repo.write("untracked.txt", "new file")
+
+    stage_tracked_changes(temp_repo.repo)
+
+    status = temp_repo.repo.status()
+    assert "untracked.txt" in status
+    # Should still be WT_NEW (untracked), not INDEX_NEW (staged)
+    assert status["untracked.txt"] & pygit2.GIT_STATUS_WT_NEW
+    assert not (status["untracked.txt"] & pygit2.GIT_STATUS_INDEX_NEW)
+
+
+def test_stage_all_handles_mixed_changes(temp_repo: RepoHelper) -> None:
+    """Mix of modified, deleted, and untracked files."""
+    temp_repo.write("modify.txt", "initial")
+    temp_repo.write("delete.txt", "to delete")
+    temp_repo.stage("modify.txt")
+    temp_repo.stage("delete.txt")
+    temp_repo.commit("initial")
+
+    temp_repo.write("modify.txt", "changed")
+    (Path(temp_repo.repo.workdir) / "delete.txt").unlink()
+    temp_repo.write("untracked.txt", "new")
+
+    stage_tracked_changes(temp_repo.repo)
+
+    status = temp_repo.repo.status()
+
+    # Modified file should be staged
+    assert status["modify.txt"] & pygit2.GIT_STATUS_INDEX_MODIFIED
+
+    # Deleted file should be staged for removal
+    assert status["delete.txt"] & pygit2.GIT_STATUS_INDEX_DELETED
+
+    # Untracked file should remain untracked
+    assert status["untracked.txt"] & pygit2.GIT_STATUS_WT_NEW
+    assert not (status["untracked.txt"] & pygit2.GIT_STATUS_INDEX_NEW)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

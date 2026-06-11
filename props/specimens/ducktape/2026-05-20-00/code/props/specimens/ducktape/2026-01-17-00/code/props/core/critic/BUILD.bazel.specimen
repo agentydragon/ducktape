@@ -1,0 +1,130 @@
+"""Critic module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "submit_server",
+    srcs = ["submit_server.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "//props/core/models:examples",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "critic",
+    srcs = ["critic.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":submit_server",
+        "//mcp_infra",
+        "//props/core:agent_setup",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core/db:config",
+        "//props/core/models:examples",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+_POSTGRES_TEST_ENV = {
+    "PGHOST": "127.0.0.1",
+    "PGPORT": "5433",
+}
+
+_POSTGRES_TEST_TAGS = [
+    "requires_postgres",
+]
+
+py_test(
+    name = "test_critic_sql_integration",
+    srcs = [
+        "conftest.py",
+        "test_critic_sql_integration.py",
+    ],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":critic",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_reported_issues_constraints",
+    srcs = ["test_reported_issues_constraints.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":critic",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        ":critic",
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

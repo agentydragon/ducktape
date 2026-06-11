@@ -1,0 +1,44 @@
+# Test-only web-style profile used by the container E2E test.
+#
+# Exercises the real web session-start flow end-to-end:
+#   - startup_env_script = real devinfra/secrets/web_env.sh
+#       → decrypts test-encrypted secrets at /project/secrets/*.yaml
+#   - kubeconfig bg command runs the standalone kubeconfig.py script,
+#     which decrypts /project/secrets/claude-web-k8s-jwt.yaml via sops
+#
+# Stripped (vs real web profile):
+#   - network-heavy bg commands   (apt-get, pre-commit install, fork remote)
+#   - context_template            (keep output minimal for test assertions)
+#
+# (The real web profile's vestigial Python-daemon keys — otel, setup_tmpfs,
+# setup_docker, bazel_bes_proxy — were removed 2026-05-30; the Rust daemon
+# ignores unknown fields, so they never affected this fixture either.)
+#
+# The real web profile is at devinfra/claude/claude_hook/profiles/web/profile.yaml.
+
+startup_env_script: devinfra/secrets/web_env.sh
+
+idle_watchdog: false
+
+# Exercise the full git_shim surface in the container E2E matrix.
+# pre-commit (which invokes git stash internally) is not run in this test,
+# so block_stash=true here is safe. CLI profile leaves block_stash=false for
+# this reason — see profiles/cli/profile.yaml.
+git_shim:
+  block_add_all: true
+  block_stash: true
+  block_amend: true
+
+env_exports: |
+  export E2E_TEST_MARKER=1
+
+background_commands:
+  - name: kubeconfig
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
+    timeout: 30
+    after_env: true
+  # No bazelisk warmup in the e2e fixture: with `startup --noblock_for_lock`
+  # in the session bazelrc, a concurrent warmup would make the test's own
+  # `bazelisk build //:hello` fail fast on output-base lock contention. The
+  # real CLI/web profiles still run the warmup -- the fail-fast behavior is
+  # by design for agents.

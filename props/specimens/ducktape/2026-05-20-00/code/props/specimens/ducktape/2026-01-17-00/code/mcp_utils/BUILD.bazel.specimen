@@ -1,0 +1,22 @@
+"""MCP utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "mcp_utils",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mcp",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":mcp_utils"],
+)

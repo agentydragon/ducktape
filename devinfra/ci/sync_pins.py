@@ -1,11 +1,11 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "requests>=2.32"]
+# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27", "more-itertools>=10.0"]
 # ///
-"""Sync npins/sources.json with the latest GitHub Release for each package.
+"""Sync nix/artifact-pins.json with the latest GitHub Release for each package.
 
 For each pinned package, finds the latest release tag, compares the URL
-against the current pin, and updates npins/sources.json if the pin is stale.
+against the current pin, and updates nix/artifact-pins.json if the pin is stale.
 
 Expects: GH_TOKEN env var.
 """
@@ -20,6 +20,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from github import Auth, Github
+from more_itertools import first
 
 from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
 
@@ -31,17 +32,20 @@ def main() -> None:
     gh_token = os.environ["GH_TOKEN"]
     repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
 
-    all_tags = [r.tag_name for r in repo.get_releases() if not r.draft and not r.prerelease][:200]
+    # Sort newest-first — GitHub's REST API does not guarantee chronological order.
+    releases = sorted(
+        (r for r in repo.get_releases() if not r.draft and not r.prerelease), key=lambda r: r.created_at, reverse=True
+    )[:200]
 
     sources = Sources.model_validate_json(sources_path().read_text())
 
     updated = []
     for artifact in ARTIFACTS:
-        tag = next((t for t in all_tags if is_tag_for_pkg(t, artifact.pkg)), None)
-        if not tag:
+        release = first((r for r in releases if is_tag_for_pkg(r.tag_name, artifact.release_tag_prefix)), default=None)
+        if not release:
             print(f"{artifact.pkg}: no release found, skipping")
             continue
-
+        tag = release.tag_name
         url = f"{BASE}/{tag}/{artifact.filename}"
         pin = sources.pins.get(artifact.pkg)
         if pin and url == pin.url:
@@ -64,6 +68,11 @@ def main() -> None:
 
     sources_path().write_text(sources.model_dump_json(indent=2) + "\n")
     print(f"Updated: {' '.join(updated)}")
+
+    # Write updated package names for use in commit message
+    updated_file = Path(os.environ.get("GITHUB_OUTPUT", "/dev/null"))
+    with updated_file.open("a") as f:
+        f.write(f"updated={', '.join(updated)}\n")
 
 
 if __name__ == "__main__":

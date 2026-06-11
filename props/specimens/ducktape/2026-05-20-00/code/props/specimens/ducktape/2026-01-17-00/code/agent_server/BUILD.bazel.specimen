@@ -1,0 +1,286 @@
+"""Agent server package - root modules, binaries, and OCI image."""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+# Root-level modules that don't belong in subdirectories
+# Split to break circular dependency: persist needs agent_types, presets needs persist
+
+py_library(
+    name = "agent_types",
+    srcs = ["agent_types.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "root_modules",
+    srcs = [
+        "approvals.py",
+        "logging_config.py",
+        "presets.py",
+    ],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":agent_types",
+        "//agent_core",
+        "//agent_server/persist",
+        "@pypi//pydantic",
+    ],
+)
+
+# --- Binaries ---
+# Each binary depends only on what it actually uses
+
+py_binary(
+    name = "adgn-agent-serve",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [
+        "//agent_server/mcp_bridge",
+        "//agent_server/server",
+        "//cli_util",
+        "//mcp_infra",
+        "//net_util",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "agent-server-matrix-bot",
+    srcs = ["matrix_bot.py"],
+    main = "matrix_bot.py",
+    deps = [
+        ":root_modules",
+        "//agent_core",
+        "//agent_server/server:handlers",
+        "//agent_server/server:types",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//mautrix",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "agent-server-generate-frontend-code",
+    srcs = ["scripts/generate_frontend_code.py"],
+    main = "scripts/generate_frontend_code.py",
+    deps = [
+        ":root_modules",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/server:types",
+        "@pypi//pydantic",
+    ],
+)
+
+# --- Root-level Tests ---
+
+_TEST_DEPS = [
+    ":root_modules",
+    "//adgn",
+    "//agent_server/mcp",
+    "//agent_server/mcp_bridge",
+    "//agent_server/persist",
+    "//agent_server/policies",
+    "//agent_server/policy_eval",
+    "//agent_server/runtime",
+    "//agent_server/server",
+    "//agent_server/testing",
+    "@pypi//docker",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+    "@pypi//pytest_timeout",
+    "@pypi//syrupy",
+]
+
+_TEST_SUPPORT = [
+    "conftest.py",
+    "ui_asserts.py",
+]
+
+# Tests requiring Docker (need docker-in-docker CI)
+py_test(
+    name = "test_approval_integration",
+    srcs = _TEST_SUPPORT + ["test_approval_integration.py"],
+    imports = [".."],
+    tags = [
+        "requires_docker",
+        "requires_runtime_image",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_default_approval_policy",
+    srcs = _TEST_SUPPORT + ["test_default_approval_policy.py"],
+    imports = [".."],
+    tags = [
+        "requires_docker",
+        "requires_runtime_image",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_exec_roundtrip",
+    srcs = _TEST_SUPPORT + ["test_exec_roundtrip.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = _TEST_SUPPORT + ["test_mcp_integration.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_notifications_flow",
+    srcs = _TEST_SUPPORT + ["test_mcp_notifications_flow.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_resources_flow",
+    srcs = _TEST_SUPPORT + ["test_mcp_resources_flow.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_policy_eval_abort_on_error",
+    srcs = _TEST_SUPPORT + ["test_policy_eval_abort_on_error.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_runtime_timeout",
+    srcs = _TEST_SUPPORT + ["test_runtime_timeout.py"],
+    imports = [".."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS,
+)
+
+# Tests NOT requiring Docker (run in regular bazel-test)
+py_test(
+    name = "test_notifications_handler",
+    srcs = _TEST_SUPPORT + ["test_notifications_handler.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_rendering_instructions",
+    srcs = _TEST_SUPPORT + ["test_rendering_instructions.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+# E2E tests (manual, require Playwright)
+py_test(
+    name = "test_agent_server_e2e",
+    srcs = [
+        "conftest.py",
+        "e2e/conftest.py",
+        "e2e/pytest_runner_e2e.py",
+        "e2e/test_abort.py",
+        "e2e/test_approvals.py",
+        "e2e/test_notifications_handler.py",
+        "e2e/test_proposals_reject.py",
+        "e2e/test_ui.py",
+    ],
+    imports = [".."],
+    main = "e2e/pytest_runner_e2e.py",
+    tags = ["manual"],
+    deps = _TEST_DEPS + ["@pypi//playwright"],
+)
+
+# --- Linting ---
+
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":agent_types",
+        ":root_modules",
+    ],
+)
+
+# --- OCI Runtime Image ---
+
+_RUNTIME_DEPS = [
+    ":root_modules",
+    "//adgn",
+    "//agent_core",
+    "//agent_pkg/runtime",
+    "//agent_server/mcp",
+    "//agent_server/mcp_bridge",
+    "//agent_server/models",
+    "//agent_server/notifications",
+    "//agent_server/persist",
+    "//agent_server/policies",
+    "//agent_server/policy_eval",
+    "//agent_server/runtime",
+    "//agent_server/server",
+    "//cli_util",
+    "//mcp_infra",
+    "//net_util",
+    "//openai_utils",
+]
+
+py_binary(
+    name = "runtime_image",
+    srcs = ["runtime_image.py"],
+    deps = _RUNTIME_DEPS,
+)
+
+pkg_tar(
+    name = "runtime_image_tar",
+    srcs = [
+        ":runtime_image",
+        "//agent_server/policy_eval:shim",
+    ],
+    include_runfiles = True,
+    package_dir = "/opt/adgn",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/opt/adgn/runtime_image"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":runtime_image_tar"],
+    workdir = "/opt/adgn",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["adgn-runtime:latest"],
+)

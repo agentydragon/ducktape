@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - networkpolicy.yaml
+# External access handled by Authentik proxy outpost (native blueprint in k8s/authentik/app/blueprints/).
+# Traffic flows: Gateway → ak-outpost-hubble-outpost (auth) → hubble-ui backend.
+# For direct access: kubectl port-forward -n kube-system svc/hubble-ui 8080:80

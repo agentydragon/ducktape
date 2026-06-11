@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-langfuse-reader
+  namespace: langfuse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: langfuse-log-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: claude-sandbox
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io

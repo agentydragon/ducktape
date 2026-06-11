@@ -1,0 +1,178 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "compile",
+    srcs = ["compile.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":model"],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compile",
+        ":model",
+    ],
+)
+
+py_library(
+    name = "validate",
+    srcs = ["validate.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":model"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_allow_all",
+    srcs = ["test_allow_all.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_allow_root_deny_users",
+    srcs = ["test_allow_root_deny_users.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_basic_env_and_python",
+    srcs = ["test_basic_env_and_python.py"],
+    deps = [
+        ":conftest",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compile_allow_all",
+    srcs = ["test_compile_allow_all.py"],
+    deps = [
+        ":compile",
+        ":conftest",
+        ":model",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_default_deny_validate_and_abort",
+    srcs = ["test_default_deny_validate_and_abort.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        ":validate",
+        "//mcp_infra:_markers",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_default_deny_widening",
+    srcs = ["test_default_deny_widening.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_minimal_true",
+    srcs = ["test_minimal_true.py"],
+    deps = [
+        ":conftest",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_basic",
+    srcs = ["test_python_basic.py"],
+    deps = [
+        ":conftest",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_restrict_echo",
+    srcs = ["test_restrict_echo.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runner_async",
+    srcs = ["test_runner_async.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_trivial_yes_hello",
+    srcs = ["test_trivial_yes_hello.py"],
+    deps = [
+        ":conftest",
+        ":runner",
+        "//mcp_infra:_markers",
+        "@pypi//pytest_bazel",
+    ],
+)

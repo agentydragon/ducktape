@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grocy-config-ovh-verify-20260520
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: verifier
+          image: lscr.io/linuxserver/grocy:v4.6.0-ls318
+          command: ["/bin/sh", "-ceu"]
+          args:
+            - |
+              test -f /config/data/grocy.db
+              php -r '$db=new PDO("sqlite:/config/data/grocy.db"); echo $db->query("PRAGMA integrity_check")->fetchColumn(), "\n";' | grep -Fx ok
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: grocy-config-ovh

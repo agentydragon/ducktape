@@ -1,0 +1,282 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "admin",
+    srcs = ["admin.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:snapshots",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "meta_server",
+    srcs = ["meta_server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "mount",
+    srcs = ["mount.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "notifications_buffer",
+    srcs = ["notifications_buffer.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/notifications:types",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "rendering",
+    srcs = ["rendering.py"],
+    data = ["templates/compositor_instructions.md.j2"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "@pypi//jinja2",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "resources_server",
+    srcs = ["resources_server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:urls",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/resources:types",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mount",
+        ":rendering",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:tool_schemas",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//mcp_infra:__subpackages__"],
+    deps = [
+        "//mcp_infra/testing:fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_admin",
+    srcs = [
+        "conftest.py",
+        "test_admin.py",
+    ],
+    deps = [
+        ":admin",
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "//mcp_infra/testing:stdio_app",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_admin_client",
+    srcs = [
+        "conftest.py",
+        "test_admin_client.py",
+    ],
+    deps = [
+        ":admin",
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inproc_server_storage",
+    srcs = [
+        "conftest.py",
+        "test_inproc_server_storage.py",
+    ],
+    deps = [
+        ":admin",
+        ":compositor",
+        ":conftest",
+        ":mount",
+        "//mcp_infra:conftest",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_lifecycle",
+    srcs = [
+        "conftest.py",
+        "test_lifecycle.py",
+    ],
+    deps = [
+        ":admin",
+        ":compositor",
+        ":conftest",
+        ":mount",
+        ":server",
+        "//mcp_infra:conftest",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_meta_basic",
+    srcs = ["test_meta_basic.py"],
+    deps = [
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_meta_inproc_proxies",
+    srcs = ["test_meta_inproc_proxies.py"],
+    deps = [
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pinned_unmount",
+    srcs = ["test_pinned_unmount.py"],
+    deps = [
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:prefix",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "compositor",
+    srcs = ["compositor.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":meta_server",
+        ":resources_server",
+        ":server",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+    ],
+)

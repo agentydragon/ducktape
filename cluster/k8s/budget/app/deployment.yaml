@@ -1,0 +1,140 @@
+# Fava serves the budget Beancount ledger that the exporter CronJob commits to the
+# Forgejo budget-ledger repo. A ledger-sync sidecar keeps /ledger an in-place git
+# working tree (see sync/sync.sh for why in-place rather than git-sync); Fava reads
+# /ledger/main.beancount and auto-reloads when the file changes. Access is gated by
+# authentik (agentydragon-only) via the proxy outpost -- Fava has no native auth.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fava
+  namespace: budget
+  labels:
+    app.kubernetes.io/name: fava
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fava
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fava
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65533 # git-sync's default uid; Fava runs as the same uid to read the checkout
+        runAsGroup: 65533
+        fsGroup: 65533
+      initContainers:
+        # One-time clone so /ledger/main.beancount exists before Fava starts.
+        - name: ledger-sync-init
+          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          command: ["sh", "/scripts/sync.sh", "once"]
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: budget-ledger-git-creds
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: budget-ledger-git-creds
+                  key: password
+          volumeMounts:
+            - name: ledger
+              mountPath: /ledger
+            - name: tmp # git writes its global config under $HOME (/tmp); rootfs is read-only
+              mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: ledger-sync
+          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          command: ["sh", "/scripts/sync.sh"]
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: budget-ledger-git-creds
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: budget-ledger-git-creds
+                  key: password
+            - name: SYNC_PERIOD
+              value: "300"
+          volumeMounts:
+            - name: ledger
+              mountPath: /ledger
+            - name: tmp # git writes its global config under $HOME (/tmp); rootfs is read-only
+              mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: fava
+          image: docker.io/yegle/fava:latest
+          command:
+            - fava
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5000"
+            - /ledger/main.beancount
+          ports:
+            - name: http
+              containerPort: 5000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: ledger
+              mountPath: /ledger
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: ledger
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: budget-ledger-sync

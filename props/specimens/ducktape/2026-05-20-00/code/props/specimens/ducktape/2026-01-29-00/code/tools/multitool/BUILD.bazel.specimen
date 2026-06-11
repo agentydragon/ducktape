@@ -1,0 +1,2 @@
+# Multitool lockfile for linters
+exports_files(["lockfile.json"])

@@ -1,0 +1,21 @@
+name: Set Habit Status (No Value)
+request:
+  method: PUT
+  url: https://api.habitify.me/status/-Lo9NTLRX3aCxg-PjN25
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  body:
+    status: completed
+    target_date: "2025-05-09T00:00:00+00:00"
+    note: Completed via API reference collector (no value)
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data: null
+    version: v1.2
+    status: true
+    errors: []

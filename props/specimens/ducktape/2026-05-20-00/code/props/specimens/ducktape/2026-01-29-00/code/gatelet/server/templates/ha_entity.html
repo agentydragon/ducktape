@@ -1,0 +1,17 @@
+{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html" %} {% block title %}{{
+header }}{% endblock %} {% block nav %}
+<nav>
+  <a href="{{ auth.create_url('') }}">Home</a>
+  <a href="{{ auth.create_url('ha') }}">Entities</a>
+</nav>
+{% endblock %} {% block content %}
+<h2>{{ header }}</h2>
+{% if state %}
+<p>{{ state.entity_id }} {% if state.friendly_name != state.entity_id %} ({{ state.friendly_name }}){% endif %}</p>
+<p>State: {{ state.state }}</p>
+<p>Last changed: {{ state.last_changed.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+{% if is_human %}
+<p><a href="{{ ha_history_url(state.entity_id) }}" target="_blank">Open in Home Assistant</a></p>
+{% endif %} {% include "ha_history_table.html" %} {% else %}
+<p>No data found.</p>
+{% endif %} {% endblock %}

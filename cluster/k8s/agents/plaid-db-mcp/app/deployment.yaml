@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plaid-db-mcp
+  namespace: plaid-mcp
+  labels:
+    app.kubernetes.io/name: plaid-db-mcp
+  annotations:
+    description: "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-db-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-db-mcp
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres-mcp
+          image: enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04
+          imagePullPolicy: IfNotPresent
+          args:
+            - --access-mode=restricted
+            - --transport=streamable-http
+            - --streamable-http-host=0.0.0.0
+            - --streamable-http-port=8000
+          ports:
+            - name: upstream
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: AIRMAN_MCP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: DATABASE_URL
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsGroup: 1000
+            runAsUser: 1000
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+        - name: facade
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260610075322-2c51610 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: plaid-db-mcp-config
+          env:
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-db-mcp-oidc
+                  key: client_id
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-db-mcp-oidc
+                  key: client_secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsGroup: 1000
+            runAsUser: 1000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 20
+            periodSeconds: 20

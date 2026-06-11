@@ -1,0 +1,11 @@
+# Example configuration snippet for indoor air quality aggregation from given set of sensors.
+
+indoor_aqi:
+  monitors:
+    - name: "Rai's room AQI"
+      unique_id: "rais_room_aqi"
+      sensors:
+        co2: sensor.rai_s_room_carbon_dioxide
+        pm25: sensor.dangered_s_starkvind_air_purifier_pm25
+        voc: sensor.rai_s_room_vocs
+  # stale_time: "1:00:00"

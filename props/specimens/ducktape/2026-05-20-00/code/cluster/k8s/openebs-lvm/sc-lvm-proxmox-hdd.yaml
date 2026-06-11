@@ -1,0 +1,14 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: lvm-proxmox-hdd
+provisioner: local.csi.openebs.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+# Same topology caveat as lvm-proxmox-ssd — see that SC's comment.
+parameters:
+  storage: "lvm"
+  volgroup: "openebs-proxmox-hdd"
+  fstype: "ext4"
+  thinProvision: "yes"

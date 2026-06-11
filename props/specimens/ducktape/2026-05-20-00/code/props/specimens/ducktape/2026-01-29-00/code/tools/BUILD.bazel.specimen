@@ -1,0 +1,101 @@
+# gazelle:exclude ci
+# CI scripts run via uv, not Bazel; they use relative imports
+
+load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@pypi//:requirements.bzl", "all_whl_requirements")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
+load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
+load("//:filter_wheels.bzl", "filter_system_packages")
+load(":build_info.bzl", "build_info")
+
+# Copy workspace status file for Python to parse at runtime
+# Stamping is enabled globally in .bazelrc
+build_info(
+    name = "build_info_gen",
+)
+
+# Build information parsed from Bazel workspace status
+py_library(
+    name = "build_info",
+    srcs = ["build_info.py"],
+    data = [":build_info_gen"],
+    visibility = ["//visibility:public"],
+)
+
+# Shared utilities for environment variable handling
+py_library(
+    name = "env_utils",
+    srcs = ["env_utils.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Library for checking pytest_bazel.main() calls (importable)
+py_library(
+    name = "check_pytest_main",
+    srcs = ["check_pytest_main.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//:bazel_util"],
+)
+
+# Guard against missing pytest_bazel.main() calls in test files
+py_binary(
+    name = "run_check_pytest_main",
+    srcs = ["check_pytest_main.py"],
+    main = "check_pytest_main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":check_pytest_main",
+        "//:bazel_util",
+    ],
+)
+
+# Validate all test files in repository
+py_test(
+    name = "validate_pytest_main",
+    srcs = ["check_pytest_main.py"],
+    args = ["--all"],
+    data = glob(
+        [
+            "**/*.py",
+            "**/BUILD.bazel",
+        ],
+        exclude = ["bazel-*/**"],
+    ),
+    main = "check_pytest_main.py",
+    tags = [
+        "lint",
+        "manual",  # Run explicitly, not in wildcard test patterns
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["//:bazel_util"],
+)
+
+# === Gazelle (Python BUILD file generator) ===
+
+# Extract import metadata from wheels for Gazelle's Python import resolution
+modules_mapping(
+    name = "modules_map",
+    wheels = filter_system_packages(all_whl_requirements),
+)
+
+# Generate gazelle_python.yaml manifest for Gazelle to resolve PyPI imports.
+# Run `bazel run //tools:gazelle_python_manifest.update` to regenerate.
+# The .test target verifies the manifest is up-to-date.
+gazelle_python_manifest(
+    name = "gazelle_python_manifest",
+    modules_mapping = ":modules_map",
+    pip_repository_name = "pypi",
+    requirements = "//:requirements_bazel.txt",
+)
+
+gazelle_binary(
+    name = "gazelle_python_binary",
+    languages = ["@rules_python_gazelle_plugin//python"],
+)
+
+gazelle(
+    name = "gazelle",
+    data = [":gazelle_python_manifest"],
+    gazelle = ":gazelle_python_binary",
+)

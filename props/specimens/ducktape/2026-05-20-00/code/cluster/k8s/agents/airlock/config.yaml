@@ -1,0 +1,71 @@
+backends:
+  kubeapi_admin:
+    url: http://kubeapi-admin-exec-mcp.airlock.svc.cluster.local:8766/mcp
+  google_workspace_mcp:
+    url: http://google-workspace-mcp.google-workspace-mcp.svc.cluster.local:8000/mcp
+
+public_base_url: "https://airlock.allegedly.works"
+oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
+oidc_client_id: "airlock-operator"
+predicate_path: "/etc/airlock/predicate.py"
+port: 8765
+default_wait_mode:
+  mode: yield_after_ms
+  timeout_ms: 30000
+
+oauth:
+  target_namespace: airlock
+  managed_by: airlock
+  providers:
+    - name: oura
+      provider_type: oauth2
+      display_name: Oura Ring
+      authorize_url: https://cloud.ouraring.com/oauth/authorize
+      token_url: https://api.ouraring.com/oauth/token
+      scopes:
+        - email
+        - personal
+        - daily
+        - heartrate
+        - workout
+        - tag
+        - session
+        - spo2
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/oura
+      refresh_secret:
+        name: oura-tokens
+      access_secret:
+        name: oura-access-token
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+      refresh_margin_seconds: 3600
+    - name: google
+      provider_type: oauth2
+      display_name: Google
+      authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/gmail.readonly
+        - https://www.googleapis.com/auth/drive.readonly
+        - https://www.googleapis.com/auth/calendar.readonly
+        - https://www.googleapis.com/auth/contacts.readonly
+        - https://www.googleapis.com/auth/documents.readonly
+        - https://www.googleapis.com/auth/spreadsheets.readonly
+        - https://www.googleapis.com/auth/youtube.readonly
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
+      refresh_secret:
+        name: google-tokens
+      access_secret:
+        name: google-access-token
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+      refresh_margin_seconds: 300
+      extra_auth_params:
+        access_type: offline
+        prompt: consent

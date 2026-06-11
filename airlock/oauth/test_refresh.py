@@ -14,7 +14,7 @@ from airlock.oauth.provider import (
     TokenData,
     TokenSecretConfig,
 )
-from airlock.oauth.refresh import token_refresh_loop
+from airlock.oauth.refresh import check_scope_drift, token_refresh_loop
 
 
 @pytest.fixture
@@ -75,10 +75,8 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
         await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_store.read_token.assert_called_with("test-tokens", "test-ns")
-    mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token, annotations=None)
-    mock_store.write_token.assert_any_call(
-        "test-access-token", "test-ns", refreshed_token, annotations=None, fields=ACCESS_TOKEN_FIELDS
-    )
+    mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token)
+    mock_store.write_token.assert_any_call("test-access-token", "test-ns", refreshed_token, fields=ACCESS_TOKEN_FIELDS)
 
 
 async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -> None:
@@ -132,6 +130,57 @@ async def test_refresh_loop_deletes_orphaned_secrets(provider: GenericOAuth2Prov
     await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_store.delete_orphaned_secrets.assert_called_with("test-ns", frozenset({"test-tokens", "test-access-token"}))
+
+
+def test_scope_drift_no_drift_no_warning(caplog: pytest.LogCaptureFixture) -> None:
+    warned: set[tuple[str, str]] = set()
+    with caplog.at_level("WARNING"):
+        check_scope_drift("bsc", ["openid", "interop"], "interop openid", warned)
+    assert caplog.records == []
+    assert warned == set()
+
+
+def test_scope_drift_warns_once_per_granted(caplog: pytest.LogCaptureFixture) -> None:
+    warned: set[tuple[str, str]] = set()
+    with caplog.at_level("WARNING"):
+        check_scope_drift("bsc", ["openid", "interop", "PatientEOB"], "interop openid", warned)
+        check_scope_drift("bsc", ["openid", "interop", "PatientEOB"], "interop openid", warned)
+        check_scope_drift("bsc", ["openid", "interop", "PatientEOB"], "interop openid", warned)
+    assert len(caplog.records) == 1
+    msg = caplog.records[0].message
+    assert "bsc" in msg
+    assert "PatientEOB" in msg  # missing
+    assert "Re-authorize at /oauth/authorize/bsc" in msg
+
+
+def test_scope_drift_re_warns_when_granted_changes(caplog: pytest.LogCaptureFixture) -> None:
+    warned: set[tuple[str, str]] = set()
+    with caplog.at_level("WARNING"):
+        check_scope_drift("bsc", ["openid", "interop"], "interop", warned)
+        check_scope_drift("bsc", ["openid", "interop"], "openid", warned)  # different grant string
+    assert len(caplog.records) == 2
+
+
+async def test_refresh_loop_warns_on_scope_drift(
+    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Token granted just "daily" but config requests two scopes — config has drifted.
+    drifted_token = TokenData(
+        access_token="a",
+        refresh_token="r",
+        expires_at=datetime.now(UTC) + timedelta(days=30),  # not expiring → no refresh
+        scope="daily",
+    )
+    provider.config.scopes = ["daily", "extra"]
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = drifted_token
+
+    with caplog.at_level("WARNING"):
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+
+    drift_warnings = [r for r in caplog.records if "Scope drift" in r.message]
+    assert len(drift_warnings) == 1
+    assert "extra" in drift_warnings[0].message
 
 
 if __name__ == "__main__":

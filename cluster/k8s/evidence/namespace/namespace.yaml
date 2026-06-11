@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: evidence
+  annotations:
+    description: >-
+      Shared evidence-scraping config (the market mirror roster; consumed by augur
+      calibration and loom). Staged here and reflected into consumer namespaces.

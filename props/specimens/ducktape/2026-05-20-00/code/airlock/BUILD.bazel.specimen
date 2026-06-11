@@ -1,0 +1,367 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "airlock.export_schema",
+    visibility = [
+        "//airlock:__subpackages__",
+        "//airlock/openclaw:__pkg__",
+    ],
+    deps = [":export_schema"],
+)
+
+py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+    data = glob(["migrations/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//alembic",
+        "@pypi//asyncpg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "kv_store",
+    srcs = ["kv_store.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "predicates",
+    srcs = ["predicates.py"],
+    visibility = ["//visibility:public"],
+    deps = [],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "proxy_server",
+    srcs = ["proxy_server.py"],
+    data = ["instructions.mako"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        ":predicates",
+        ":storage",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:urls",
+        "//mcp_infra/enhanced:server",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mako",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    data = ["//airlock/frontend:bundle"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":kv_store",
+        ":models",
+        ":predicates",
+        ":proxy_server",
+        "//airlock/oauth:k8s_client",
+        "//airlock/oauth:provider",
+        "//airlock/oauth:refresh",
+        "//airlock/oauth:routes",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "airlock.app",
+    visibility = ["//visibility:public"],
+    deps = [":app"],
+)
+
+# ── OCI Image ─────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["airlock:latest"],
+    visibility = ["//visibility:public"],
+)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+        ":predicates",
+        ":proxy_server",
+        ":storage",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_utils",
+        "//third_party/containers:rlocations",
+        "//util:net",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//anyio",
+        "@pypi//asyncpg",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+        "@pypi//testcontainers",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    deps = [
+        ":models",
+        "@pypi//mcp",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_storage",
+    size = "medium",
+    srcs = ["test_storage.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        ":storage",
+        "@pypi//asyncpg",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_predicates",
+    srcs = ["test_predicates.py"],
+    deps = [
+        ":predicates",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy_server",
+    srcs = ["test_proxy_server.py"],
+    deps = [
+        ":proxy_server",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_operator_auth",
+    size = "medium",
+    srcs = ["test_operator_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        ":predicates",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_reconnect",
+    size = "medium",
+    srcs = ["test_reconnect.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "//mcp_infra:resource_utils",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_app_integration",
+    size = "medium",
+    srcs = ["test_app_integration.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_backend_resilience",
+    size = "medium",
+    srcs = ["test_backend_resilience.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":models",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_oauth_flow",
+    size = "medium",
+    srcs = ["test_oauth_flow.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//cryptography",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

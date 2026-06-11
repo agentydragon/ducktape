@@ -1,0 +1,86 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "upstream_probe",
+    srcs = ["upstream_probe.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":proxy",
+        "@pypi//fastmcp",
+        "@pypi//prometheus_client",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":proxy",
+        ":upstream_probe",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//fastmcp",
+        "@pypi//prometheus_client",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    deps = [
+        ":config",
+        ":proxy",
+        "//airlock:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_upstream_probe",
+    srcs = ["test_upstream_probe.py"],
+    deps = [
+        ":config",
+        ":upstream_probe",
+        "//airlock:conftest",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)

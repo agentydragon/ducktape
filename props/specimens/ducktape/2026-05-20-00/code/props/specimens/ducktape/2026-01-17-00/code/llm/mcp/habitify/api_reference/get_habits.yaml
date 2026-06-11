@@ -1,0 +1,910 @@
+name: Get Habits
+request:
+  method: GET
+  url: https://api.habitify.me/habits
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      - id: -Lo9NTLRX3aCxg-PjN25
+        name: R***********t
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - morning
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY;INTERVAL=7"
+        remind:
+          - "7:0"
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 6.338253001141147e+29
+      - id: -Lo9Nix1qj4i4q5uOal6
+        name: M********************g
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - morning
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 1.5845632502852868e+29
+      - id: -Lo9Nnnt86Zg7fJZ0qCK
+        name: M***********s
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 3.1691265005705735e+29
+      - id: -Lo9OKCuBbRsvUBaY-wy
+        name: C*******************t
+        is_archived: true
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:20"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 1.5474250491067253e+26
+      - id: -Lo9RZNWmRg1TsqkmkVl
+        name: R***************y
+        is_archived: true
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "20:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 2.4758800785707605e+27
+      - id: -Lo9RjTQPqlILDw1hvaA
+        name: E********************g
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "22:0"
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 1.5111572745182865e+23
+      - id: -Lo9TSy-rtmRtp3mmFhB
+        name: "R********************* "
+        is_archived: true
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "21:30"
+        area: null
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 3.961408125713217e+28
+      - id: -Lo9TaO0fZXWVgtWxsKt
+        name: E**********s
+        is_archived: false
+        start_date: "2019-09-07T06:19:17.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T061917Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "21:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-07T06:19:17.000Z"
+        priority: 7.555786372591432e+22
+      - id: -Lo9VJKlqEzrhEr7T6Qd
+        name: M******e
+        is_archived: true
+        start_date: "2019-09-07T06:54:45.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190907T065445Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2019-09-07T06:54:45.000Z"
+        priority: 6.189700196426902e+26
+      - id: -LoG-xWKbLzdLoLACs4g
+        name: L*****************0
+        is_archived: true
+        start_date: "2019-09-08T22:00:00.000Z"
+        time_of_day:
+          - afternoon
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190908T220000Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+        remind:
+          - "16:0"
+        area: null
+        created_date: "2019-09-08T22:00:00.000Z"
+        priority: 6.044629098073146e+23
+      - id: -LoGDm7OdxLnC42LOpNo
+        name: I*************0
+        is_archived: true
+        start_date: "2019-09-08T13:14:37.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190908T131437Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "22:30"
+        area: null
+        created_date: "2019-09-08T13:14:37.000Z"
+        priority: 3.022314549036573e+23
+      - id: -LoTu2T0XxmVQYcXgPye
+        name: M****************************e
+        is_archived: true
+        start_date: "2019-09-10T22:00:00.000Z"
+        time_of_day:
+          - morning
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190910T220000Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-10T22:00:00.000Z"
+        priority: 2.3611832414348226e+21
+      - id: -LoTuGEwvTsRJXxr5peT
+        name: M*************************e
+        is_archived: true
+        start_date: "2019-09-10T22:00:00.000Z"
+        time_of_day:
+          - afternoon
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190910T220000Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "11:30"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-10T22:00:00.000Z"
+        priority: 590295810358705700000
+      - id: -LoTuMB8rtzM0bJIfNPz
+        name: M****************************e
+        is_archived: true
+        start_date: "2019-09-10T22:00:00.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20190910T220000Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "20:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2019-09-10T22:00:00.000Z"
+        priority: 147573952589676410000
+      - id: -LrYmJWtdL5IMjxwjTlb
+        name: M************************c
+        is_archived: true
+        start_date: "2019-10-19T11:27:14.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20191019T112714Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-19T11:27:14.000Z"
+        priority: 9.671406556917033e+24
+      - id: -LrYmR7sy-VMAXKdSpOg
+        name: M***************c
+        is_archived: true
+        start_date: "2019-10-19T11:27:14.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20191019T112714Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-19T11:27:14.000Z"
+        priority: 3.8685626227668134e+25
+      - id: -LrZEeYj8jQFdr_dPG0t
+        name: R*******************t
+        is_archived: true
+        start_date: "2019-10-19T13:11:39.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20191019T131139Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-19T13:11:39.000Z"
+        priority: 1.2089258196146292e+24
+      - id: -LrZH-ItysdpzQ2V_OhO
+        name: M********************y
+        is_archived: true
+        start_date: "2019-10-19T13:11:39.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20191019T131139Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-19T13:11:39.000Z"
+        priority: 2.4178516392292583e+24
+      - id: -LrZHw2OZrJuQsnY0qsi
+        name: R****************k
+        is_archived: true
+        start_date: "2019-10-26T22:00:00.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: manual
+        recurrence: "DTSTART:20191026T220000Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=SU"
+        remind:
+          - "15:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-26T22:00:00.000Z"
+        priority: 9.44473296573929e+21
+      - id: -LsJ8QKPe3v7Z5r3H8Wv
+        name: P****************k
+        is_archived: true
+        start_date: "2019-10-26T22:00:00.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: manual
+        recurrence: "DTSTART:20191026T220000Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=SU"
+        remind:
+          - "15:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-10-26T22:00:00.000Z"
+        priority: 1.888946593147858e+22
+      - id: -Lt6hi-yZem7JMoWfJms
+        name: P***************y
+        is_archived: true
+        start_date: "2019-11-07T21:00:18.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20191107T210018Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "21:0"
+        area:
+          id: -LrYmfO8jwLw3QdAyBMk
+          name: S****************e
+          priority: U
+        created_date: "2019-11-07T21:00:18.000Z"
+        priority: 1.9807040628566084e+28
+      - id: -M-KXQvjoIH8uBGaErxG
+        name: N**********r
+        is_archived: true
+        start_date: "2020-02-05T11:00:00.000Z"
+        time_of_day:
+          - any_time
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20200205T110000Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:15"
+        area: null
+        created_date: "2020-02-05T11:00:00.000Z"
+        priority: 4.722366482869645e+21
+      - id: -MHuH9xj0KbdROd7CmY8
+        name: M**************n
+        is_archived: true
+        start_date: "2020-09-23T09:25:37.000Z"
+        time_of_day:
+          - morning
+        goal: null
+        goal_history_items: []
+        log_method: ""
+        recurrence: "DTSTART:20200923T092537Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2020-09-23T09:25:37.000Z"
+        priority: 73786976294838210000
+      - id: -MHuHH9ZfIEKUDUYATlH
+        name: A****************n
+        is_archived: true
+        start_date: "2020-09-23T09:26:02.000Z"
+        time_of_day:
+          - afternoon
+        goal: null
+        goal_history_items: []
+        log_method: manual
+        recurrence: "DTSTART:20200923T092602Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "13:15"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2020-09-23T09:26:02.000Z"
+        priority: 295147905179352830000
+      - id: -MHuHYwuFO2dyrRqcFJL
+        name: E**************n
+        is_archived: true
+        start_date: "2020-09-23T09:27:25.000Z"
+        time_of_day:
+          - evening
+        goal: null
+        goal_history_items: []
+        log_method: manual
+        recurrence: "DTSTART:20200923T092725Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "21:0"
+        area:
+          id: -LrYlUBnzjyceYei_k5Z
+          name: H****h
+          priority: B
+        created_date: "2020-09-23T09:27:25.000Z"
+        priority: 1.1805916207174113e+21
+      - id: -MTSnGiJEimc_VAXXf6K
+        name: I************n
+        is_archived: true
+        start_date: "2021-02-13T23:49:21.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20210213T234921Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "13:0"
+          - "17:0"
+          - "9:0"
+        area: null
+        created_date: "2021-02-13T23:49:21.000Z"
+        priority: 3.094850098213451e+26
+      - id: -MV2mJpdwcG2tb1dC6DQ
+        name: D***************************n
+        is_archived: true
+        start_date: "2021-03-05T19:06:34.000Z"
+        time_of_day:
+          - afternoon
+          - evening
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20210305T190634Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "18:0"
+          - "20:0"
+        area: null
+        created_date: "2021-03-05T19:06:34.000Z"
+        priority: 36893488147419103000
+      - id: -MguGfpOpFN5h77pxuIk
+        name: S*****a
+        is_archived: true
+        start_date: "2021-08-12T12:11:52.000Z"
+        time_of_day:
+          - afternoon
+          - evening
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20210812T121152Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "7:20"
+        area: null
+        created_date: "2021-08-12T12:11:52.000Z"
+        priority: 3.777893186295716e+22
+      - id: -Ml_zC5sZIcaKjNi5_YT
+        name: A************t
+        is_archived: true
+        start_date: "2021-10-09T16:56:13.252Z"
+        time_of_day:
+          - afternoon
+          - evening
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20211009T165613Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area: null
+        created_date: "2021-10-09T16:56:13.252Z"
+        priority: 4.951760157141521e+27
+      - id: -Mo85ZFLq7bB1gkbHtqs
+        name: G******k
+        is_archived: true
+        start_date: "2021-11-10T09:06:56.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20211110T090656Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "13:0"
+        area: null
+        created_date: "2021-11-10T09:06:56.000Z"
+        priority: 1.2379400392853803e+27
+      - id: -Mo85rG9o7d1V9gH2rvy
+        name: F***s
+        is_archived: false
+        start_date: "2021-11-10T09:08:20.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20211110T090820Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2021-11-10T09:08:20.000Z"
+        priority: 7.922816251426434e+28
+      - id: -Mo8x511oe4NiHdEuXAp
+        name: W****************************k
+        is_archived: true
+        start_date: "2021-11-10T13:05:09.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20211110T130509Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "9:0"
+        area: null
+        created_date: "2021-11-10T13:05:09.000Z"
+        priority: 9.903520314283042e+27
+      - id: -Mo8xxLCXgpv1VsAJ6Cs
+        name: W****************************e
+        is_archived: true
+        start_date: "2021-11-10T13:08:43.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20211110T130843Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=SA"
+        remind:
+          - "13:0"
+        area: null
+        created_date: "2021-11-10T13:08:43.000Z"
+        priority: 7.737125245533627e+25
+      - id: -Mo8yEXuBf6z3MwVkcOU
+        name: H*********************************d
+        is_archived: true
+        start_date: "2021-11-10T13:10:28.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20211110T131028Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=SA"
+        remind:
+          - "9:0"
+        area: null
+        created_date: "2021-11-10T13:10:28.000Z"
+        priority: 1.9342813113834067e+25
+      - id: -Mo8yLhswcn9qDfBpUSH
+        name: W**********************r
+        is_archived: false
+        start_date: "2021-11-10T13:11:02.171Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: monthly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: monthly
+        log_method: manual
+        recurrence: "DTSTART:20211110T131102Z
+
+          RRULE:FREQ=MONTHLY;BYMONTHDAY=1"
+        remind:
+          - "9:0"
+        area: null
+        created_date: "2021-11-10T13:11:02.171Z"
+        priority: 4.835703278458517e+24
+      - id: -N5msbOt-zRsMKkz2Vau
+        name: M*******************t
+        is_archived: true
+        start_date: "2022-06-30T04:32:46.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 2
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 2
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20220630T043246Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "19:0"
+          - "7:40"
+        area: null
+        created_date: "2022-06-30T04:32:46.000Z"
+        priority: 18446744073709552000
+      - id: -N5msgmJE-7xQ37PiRys
+        name: S*********e
+        is_archived: true
+        start_date: "2022-06-30T04:33:18.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 2
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 2
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20220630T043318Z
+
+          RRULE:FREQ=DAILY"
+        remind: []
+        area: null
+        created_date: "2022-06-30T04:33:18.000Z"
+        priority: 9223372036854776000
+      - id: -N5s6oMNPekQGjV_76y-
+        name: F************e
+        is_archived: true
+        start_date: "2022-07-01T04:57:16.000Z"
+        time_of_day:
+          - evening
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20220701T045716Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "20:0"
+        area: null
+        created_date: "2022-07-01T04:57:16.000Z"
+        priority: 4611686018427388000
+      - id: -NIf1UQRDVQrLFrky1Cq
+        name: L******************T
+        is_archived: true
+        start_date: "2022-12-07T05:22:54.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20221207T052254Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "23:30"
+        area: null
+        created_date: "2022-12-07T05:22:54.000Z"
+        priority: 2305843009213694000
+      - id: -NO69QB2qpPyv0a9JIpk
+        name: S****************y
+        is_archived: true
+        start_date: "2023-02-17T19:45:43.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: weekly
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: weekly
+        log_method: manual
+        recurrence: "DTSTART:20230217T194543Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=FR"
+        remind:
+          - "9:0"
+        area: null
+        created_date: "2023-02-17T19:45:43.000Z"
+        priority: 1152921504606847000
+      - id: -NUkKgoh3d6l1QWzswZ5
+        name: D************************s
+        is_archived: true
+        start_date: "2023-05-06T09:13:52.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: min
+          value: 30
+          periodicity: daily
+        goal_history_items:
+          - unit_type: min
+            value: 30
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20230506T091352Z
+
+          RRULE:FREQ=DAILY"
+        remind:
+          - "11:0"
+        area: null
+        created_date: "2023-05-06T09:13:52.000Z"
+        priority: 576460752303423500
+      - id: -NqEWsNxNhLgiQ4UtRly
+        name: Z**************y
+        is_archived: false
+        start_date: "2024-02-09T20:20:30.000Z"
+        time_of_day:
+          - any_time
+        goal:
+          unit_type: rep
+          value: 1
+          periodicity: daily
+        goal_history_items:
+          - unit_type: rep
+            value: 1
+            periodicity: daily
+        log_method: manual
+        recurrence: "DTSTART:20240209T202030Z
+
+          RRULE:FREQ=WEEKLY;BYDAY=TU"
+        remind:
+          - "7:0"
+        area: null
+        created_date: "2024-02-09T20:20:30.000Z"
+        priority: 288230376151711740
+    version: v1.2
+    status: true
+    errors: []

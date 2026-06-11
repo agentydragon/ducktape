@@ -1,0 +1,170 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 30m
+  timeout: 10m # Prometheus stack upgrades can be slow
+  install:
+    # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
+    # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
+    # for all pods to be ready, causing timeout. disableWait is a blunt
+    # workaround — need a general solution for every HelmRelease with a
+    # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
+    # that should run there, or use nodeAffinity to exclude roaming entirely.
+    disableWait: true
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "82.3.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 12h
+  values:
+    # Shorten resource names: "kube-prometheus-stack-*" → "monitoring-*"
+    fullnameOverride: monitoring
+    # Remove redundant "-prometheus"/"-alertmanager" suffix from CR names
+    # (avoids e.g. "prometheus-monitoring-prometheus" → "prometheus-monitoring")
+    cleanPrometheusOperatorObjectNames: true
+
+    # Global settings
+    defaultRules:
+      create: true
+      rules:
+        alertmanager: true
+        etcd: false # Talos doesn't expose etcd metrics
+        configReloaders: true
+        general: true
+        k8s: true
+        kubeApiserverAvailability: true
+        kubeApiserverSlos: true
+        kubelet: true
+        kubeProxy: true
+        kubePrometheusGeneral: true
+        kubePrometheusNodeRecording: true
+        kubernetesApps: true
+        kubernetesResources: true
+        kubernetesStorage: true
+        kubernetesSystem: true
+        kubeScheduler: true
+        kubeStateMetrics: true
+        network: true
+        node: true
+        nodeExporterAlerting: true
+        nodeExporterRecording: true
+        prometheus: false # Prometheus disabled; Mimir Ruler evaluates rules
+        prometheusOperator: true
+
+    # Alertmanager configuration
+    alertmanager:
+      enabled: true
+      ingress:
+        enabled: false
+      alertmanagerSpec:
+        replicas: 2
+        storage:
+          volumeClaimTemplate:
+            metadata:
+              name: db
+            spec:
+              storageClassName: local-path-hetzner
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 1Gi
+        # Chart auto-generates podAntiAffinity when replicas > 1
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        nodeSelector:
+          topology.kubernetes.io/region: hil
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        retention: 120h
+
+    # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+    # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
+    # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
+    grafana:
+      enabled: false
+
+    # Prometheus Operator configuration
+    prometheusOperator:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+      # Admission webhook resource limits
+      admissionWebhooks:
+        patch:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+    # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
+    # Mimir Ruler evaluates alerting/recording rules.
+    # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
+    prometheus:
+      enabled: false
+
+    # Node exporter configuration
+    prometheus-node-exporter:
+      fullnameOverride: prometheus-node-exporter
+    nodeExporter:
+      enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
+    # Kube-state-metrics configuration
+    kube-state-metrics:
+      fullnameOverride: kube-state-metrics
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+    # Disable components we don't need
+    kubeApiServer:
+      enabled: true
+    kubelet:
+      enabled: true
+    kubeControllerManager:
+      enabled: true
+    coreDns:
+      enabled: true
+    kubeEtcd:
+      enabled: false # Talos doesn't expose etcd metrics
+    kubeScheduler:
+      enabled: true
+    kubeProxy:
+      enabled: true

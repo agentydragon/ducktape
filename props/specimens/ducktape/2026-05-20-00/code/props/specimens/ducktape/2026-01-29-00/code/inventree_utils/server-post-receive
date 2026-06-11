@@ -1,0 +1,61 @@
+#!/bin/bash
+set -e
+
+###
+REPO="/srv/git/inventree-utils.git" # The bare repo path
+BRANCH="main"
+SUBDIR="rai_plugin"
+DEPLOY_TO="/srv/inventree/data/plugins/rai_plugin"
+
+NEW_REV=""
+
+# 1) Parse all pushed refs; pick final newrev for the BRANCH we're interested in
+while read oldrev newrev ref; do
+	if [ "$ref" = "refs/heads/$BRANCH" ]; then
+		NEW_REV="$newrev"
+	fi
+done
+
+# If no new commit for BRANCH, exit
+if [ -z "$NEW_REV" ]; then
+	exit 0
+fi
+
+# If the branch was deleted (all zeros), skip
+if [ "$NEW_REV" = "0000000000000000000000000000000000000000" ]; then
+	echo "Branch '$BRANCH' deleted, skipping deploy."
+	exit 0
+fi
+
+echo "Deploying '$BRANCH' at commit $NEW_REV"
+
+# 2) Make a temp dir for the shallow sparse clone
+TMPDIR="$(mktemp -d)"
+trap "rm -rf \"$TMPDIR\"" EXIT
+
+cd "$TMPDIR"
+unset GIT_DIR
+unset GIT_WORK_TREE
+
+# Initialize (quietly) a blank repo in the temp folder
+git init -q "$TMPDIR"
+
+# Add the bare repo as 'origin'
+git remote add origin "$REPO"
+
+git config extensions.partialClone true
+
+# Use sparse-checkout to only get SUBDIR
+# (sparse-checkout doesn't have a proper --quiet; we redirect extraneous output)
+git sparse-checkout init --cone >/dev/null 2>&1
+git sparse-checkout set "$SUBDIR" >/dev/null 2>&1 || true
+
+# 6) Shallow fetch only the commit (quietly)
+git fetch -q --depth=1 --filter=blob:none origin "$NEW_REV"
+# 7) Checkout that commit quietly, disabling the detached-HEAD advice
+git -c advice.detachedHead=false checkout -f -q FETCH_HEAD
+
+# Rsync the subdir to the final location
+rsync -a --delete "$TMPDIR/$SUBDIR/" "$DEPLOY_TO/"
+
+echo "✅ Deployed."

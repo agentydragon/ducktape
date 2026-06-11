@@ -1,7 +1,0 @@
-# Helm Repository Definitions
-# Apply with: helm repo add <name> <url>
-
-repositories:
-  - name: grafana
-    url: https://grafana.github.io/helm-charts
-    description: Official Grafana Helm charts including Grafana Operator

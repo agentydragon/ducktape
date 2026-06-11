@@ -1,0 +1,13 @@
+rationale: |
+  Lines 66 and 93 raise `ValueError` for unsupported value types.
+  `TypeError` is more appropriate since the issue is the type of the
+  argument, not its value.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [66, 66]
+        - [93, 93]

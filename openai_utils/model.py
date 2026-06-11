@@ -14,7 +14,7 @@ from openai.types.responses import (
     ResponseOutputText,
     response_usage as sdk_usage_types,
 )
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+from openai.types.responses.response_reasoning_item import Content as SdkReasoningContent, ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field
 
 from openai_utils.errors import translate_context_length
@@ -142,10 +142,38 @@ class ReasoningSummaryItem(BaseModel):
 
 
 class ReasoningContentItem(BaseModel):
-    """Content item within a reasoning block (contains actual reasoning text)."""
+    """Content item within a reasoning block (OpenAI-standard reasoning text)."""
 
     text: str
     type: Literal["reasoning_text"] = "reasoning_text"
+
+
+class ReasoningOutputTextItem(BaseModel):
+    """Reasoning-block content that the z.ai GLM stack tags "output_text".
+
+    z.ai's GLM models (e.g. glm-4.6) return the chain-of-thought in chat
+    `reasoning_content`; our in-cluster LiteLLM chat->Responses bridge
+    (`use_chat_completions_api`) maps it to a reasoning output item but tags the
+    content parts "output_text" instead of the OpenAI-standard "reasoning_text".
+    It is still reasoning — verified against the live stack, the actual answer
+    and tool calls arrive as separate `message` / `function_call` items. We keep
+    this as a distinct type (rather than widening ReasoningContentItem) so the
+    OpenAI-standard model stays strict.
+
+    TODO: this is a workaround for a LiteLLM bridge mislabel. Prefer a real fix:
+    a LiteLLM config/version that emits "reasoning_text", or have props speak
+    chat/completions directly (it is currently Responses-API-only, see
+    props/backend/routes/llm.py) so reasoning doesn't round-trip through the
+    lossy Responses bridge at all. Track in props/TODO.md.
+    """
+
+    text: str
+    type: Literal["output_text"] = "output_text"
+
+
+# A reasoning item's content is normally "reasoning_text"; the z.ai GLM stack
+# mislabels it "output_text" (see ReasoningOutputTextItem).
+ReasoningContent = ReasoningContentItem | ReasoningOutputTextItem
 
 
 class ReasoningItem(BaseModel):
@@ -158,7 +186,7 @@ class ReasoningItem(BaseModel):
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
     summary: list[ReasoningSummaryItem] = Field(default_factory=list)
-    content: list[ReasoningContentItem] = Field(default_factory=list)
+    content: list[ReasoningContent] = Field(default_factory=list)
     # Don't serialize status for input - use Field(exclude=True) or model_dump(exclude={'status'})
     model_config = ConfigDict(extra="allow")
 
@@ -308,6 +336,19 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
     return AssistantMessageOut(content=parts, id=message.id)
 
 
+def _reasoning_content_from_sdk(content: SdkReasoningContent) -> ReasoningContent:
+    """Map an SDK reasoning content part to our typed item.
+
+    The z.ai GLM stack tags reasoning content "output_text" (see
+    ReasoningOutputTextItem); everything else is OpenAI-standard "reasoning_text".
+    """
+    # The SDK declares content.type as Literal["reasoning_text"], but the GLM
+    # stack sends "output_text" at runtime; compare as str to dodge that lie.
+    if cast(str, content.type) == "output_text":
+        return ReasoningOutputTextItem(text=content.text)
+    return ReasoningContentItem(text=content.text)
+
+
 class ResponsesResult(BaseModel):
     id: str
     usage: ResponseUsage | None = None
@@ -326,9 +367,7 @@ class ResponsesResult(BaseModel):
                         summary=[ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
                         if item.summary
                         else [],
-                        content=[ReasoningContentItem(text=c.text, type=c.type) for c in item.content]
-                        if item.content
-                        else [],
+                        content=[_reasoning_content_from_sdk(c) for c in item.content] if item.content else [],
                         # Don't include status - it causes "Unknown parameter" error when sent back as input
                     )
                 )

@@ -1,0 +1,18 @@
+rationale: |
+  `agentStatusError` store is declared (agents/stores.ts line 11) and read
+  in RightSidebar.svelte (lines 96-98), but nothing ever calls `.set()` or
+  `.update()` on it. The store is permanently `null`, so the `{#if}` guard
+  in the sidebar never fires. Remove the store and its UI branch.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/web/src/features/agents/stores.ts:
+        - [11, 11] # declaration: never written to
+      agent_server/web/src/components/RightSidebar.svelte:
+        - [8, 8] # import
+        - [96, 98] # dead {#if} branch
+    critic_scopes_expected_to_recall:
+      - [agent_server/web/src/features/agents/stores.ts, agent_server/web/src/components/RightSidebar.svelte]

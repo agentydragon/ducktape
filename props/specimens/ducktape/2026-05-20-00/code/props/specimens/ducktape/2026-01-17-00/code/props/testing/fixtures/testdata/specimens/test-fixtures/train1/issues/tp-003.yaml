@@ -1,0 +1,13 @@
+rationale: "Missing type annotation on return value.
+
+  The multiply function should have explicit return type annotation for clarity.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-1
+    files:
+      multiply.py:
+        - [4, 6]
+    critic_scopes_expected_to_recall:
+      - - multiply.py

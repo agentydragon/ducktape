@@ -1,0 +1,233 @@
+"""Database module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Leaf modules (no db/ deps)
+# =============================================================================
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    # Note: TempUserCredentials import is TYPE_CHECKING only - no runtime dep needed
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+# =============================================================================
+# Core models (depend on config, snapshots, external modules)
+# =============================================================================
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        ":snapshots",
+        "//agent_core",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/core/models:snapshot",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    data = ["//props/core/db/migrations"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+        "@pypi//alembic",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "examples",
+    srcs = ["examples.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Higher-level modules (depend on models, session)
+# =============================================================================
+
+py_library(
+    name = "agent_definition_ids",
+    srcs = ["agent_definition_ids.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "query_builders",
+    srcs = ["query_builders.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":examples",
+        ":models",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "temp_user_manager",
+    srcs = ["temp_user_manager.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    data = ["//props/core/db/migrations"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":session",
+        "@pypi//alembic",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+# Static analysis test - no postgres needed
+py_test(
+    name = "test_layer_isolation",
+    srcs = ["test_layer_isolation.py"],
+    imports = ["../../.."],
+    deps = ["@pypi//pytest"],
+)
+
+# Integration tests - require postgres
+_POSTGRES_TEST_ENV = {
+    "PGHOST": "127.0.0.1",
+    "PGPORT": "5433",
+}
+
+_POSTGRES_TEST_TAGS = [
+    "requires_postgres",
+]
+
+py_test(
+    name = "test_agent_queries",
+    srcs = ["test_agent_queries.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":models",
+        ":query_builders",
+        ":session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_failed_critic_runs_as_zero_recall",
+    srcs = ["test_failed_critic_runs_as_zero_recall.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":models",
+        ":session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_pydantic_column_null",
+    srcs = ["test_pydantic_column_null.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":models",
+        ":session",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_split_based_rls",
+    srcs = ["test_split_based_rls.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":models",
+        ":session",
+        ":temp_user_manager",
+        "//agent_core",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_view_extracts_grade_fields",
+    srcs = ["test_view_extracts_grade_fields.py"],
+    env = _POSTGRES_TEST_ENV,
+    imports = ["../../.."],
+    tags = _POSTGRES_TEST_TAGS,
+    deps = [
+        ":models",
+        ":session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)

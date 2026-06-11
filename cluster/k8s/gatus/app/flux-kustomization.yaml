@@ -20,7 +20,6 @@ spec:
       namespace: gatus
   dependsOn:
     - name: gatus-namespace
-    - name: gatus-secrets
+    - name: gatus-db
+    - name: gatus-sso-tf
     - name: gateway
-    - name: local-path-provisioner
-    - name: monitoring-stack

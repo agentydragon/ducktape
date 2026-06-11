@@ -1,0 +1,34 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: grafana-db
+  namespace: monitoring
+spec:
+  instances: 2
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-hetzner
+    size: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: grafana
+      owner: grafana
+      # CNPG auto-generates credentials in secret grafana-db-app

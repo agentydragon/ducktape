@@ -31,7 +31,7 @@ spec:
     # Global configuration
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-secrets,authentik-sso-client-secrets"
+        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-secrets,authentik-user-password"
         configmap.reloader.stakater.com/reload: "authentik-sso-blueprints"
 
     # Mount SSO blueprint ConfigMap into worker for native blueprint processing
@@ -48,9 +48,9 @@ spec:
       error_reporting:
         enabled: false
 
-      # PostgreSQL configuration — external CNPG cluster (authentik-db)
+      # PostgreSQL configuration — external CNPG cluster (authentik-db-ovh)
       postgresql:
-        host: "authentik-db-rw"
+        host: "authentik-db-ovh-rw"
         name: "authentik"
         user: "authentik"
         password: "" # Loaded via env var (AUTHENTIK_POSTGRESQL__PASSWORD from CNPG secret)
@@ -68,10 +68,10 @@ spec:
 
       # Secrets now loaded per-component via server.envFrom and worker.envFrom
 
-    # Server deployment — 2 replicas spread across VPS nodes
+    # Server deployment — single replica (OVH memory too tight for 2+ with current requests)
     server:
       name: server
-      replicas: 2
+      replicas: 1
 
       # Preferred (not required) anti-affinity allows a surge pod to land on
       # an occupied node while still spreading replicas across nodes when possible.
@@ -80,9 +80,6 @@ spec:
         rollingUpdate:
           maxSurge: 1
           maxUnavailable: 0
-
-      nodeSelector:
-        topology.kubernetes.io/region: hil
 
       affinity:
         podAntiAffinity:
@@ -103,7 +100,7 @@ spec:
         periodSeconds: 10
 
       # Default 3s timeout is too tight — outpost API calls regularly take
-      # 1s+ even with VPS-local PostgreSQL. Give enough headroom.
+      # 1s+ even with OVH-local PostgreSQL. Give enough headroom.
       livenessProbe:
         timeoutSeconds: 10
       readinessProbe:
@@ -120,7 +117,7 @@ spec:
         - secretRef:
             name: authentik-secret-key
         - secretRef:
-            name: authentik-sso-client-secrets
+            name: authentik-user-password
 
       env:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
@@ -148,19 +145,16 @@ spec:
           cpu: 500m
           memory: 1Gi
 
-    # Worker deployment — 2 replicas spread across VPS nodes
+    # Worker deployment — single replica
     worker:
       name: worker
-      replicas: 2
+      replicas: 1
 
       deploymentStrategy:
         type: RollingUpdate
         rollingUpdate:
           maxSurge: 1
           maxUnavailable: 0
-
-      nodeSelector:
-        topology.kubernetes.io/region: hil
 
       affinity:
         podAntiAffinity:
@@ -184,7 +178,7 @@ spec:
         - secretRef:
             name: authentik-secret-key
         - secretRef:
-            name: authentik-sso-client-secrets
+            name: authentik-user-password
 
       env:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
@@ -205,12 +199,12 @@ spec:
     postgresql:
       enabled: false
 
-    # Redis (required for worker message queue) — pinned to VPS
+    # TODO: replace this chart-bundled Redis with an operator-managed
+    # RedisReplication (redis.redis.opstreelabs.in/v1beta2) like grocy/tana-mcp/
+    # manifold-mcp use. Then set redis.enabled: false and point Authentik at the
+    # operator-managed Valkey via AUTHENTIK_REDIS__HOST / AUTHENTIK_REDIS__PASSWORD.
     redis:
       enabled: true
-      master:
-        nodeSelector:
-          topology.kubernetes.io/region: hil
 
     # Service account
     serviceAccount:

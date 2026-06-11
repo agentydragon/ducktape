@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = [
+        "asserts.py",
+        "config_factory.py",
+        "conftest.py",
+        "constants.py",
+        "data.py",
+        "git_helpers.py",
+        "helpers.py",
+        "mock_factory.py",
+        "repo_factory.py",
+        "utils.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//pygit2",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_mock",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@pypi//typer",
+        "@pypi//types_pyyaml",
+    ],
+)

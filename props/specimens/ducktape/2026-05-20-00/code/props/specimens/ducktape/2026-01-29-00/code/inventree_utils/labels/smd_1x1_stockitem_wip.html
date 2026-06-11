@@ -1,0 +1,257 @@
+{% extends "label/label_base.html" %}
+{# Stickers for 1x1 SMD box. Width: 14 mm, height: 18 mm. #}
+
+{# custom_tags: Rai custom tags #}
+{% load l10n i18n barcode report inventree_extras custom_tags %}
+
+{# TODO: screw terminals -- there name is not important - e.g. RSI83 #}
+
+{% comment %}
+TODO: can use:
+{% define "hello_world" as hello %}
+{% mydict|keyvalue:mykey %}
+
+when looking at stickers:
+part number is important where it's not a super generic thing like
+resistor, LED or cap
+
+on super generic parts the super important thing instead is the *nominal
+value* (and color on leds)
+
+then for any part, *packag* is important.
+
+for diodes:
+(name)
+(package) (type) (... other params ...)
+
+for resistors:
+(package: SMD or D4xL5.4mm)(resistance)(tolerance)
+for capacitors:
+(package)(material)(capacitance)(tolerance)
+(voltage rating)
+
+for BJTs:
+(name)
+(package) (type: NPN/PNP) (... todo other parameters ...)
+
+
+available vars:
+- barcode_data
+- barcode_hash
+- stock_item (shadow of 'item')
+- ipn
+- name (of part)
+- part
+- qr_data
+- qr_url
+- (batch, child_items, installed_items, result_list, results, serial, tests, test_keys, test_template_list, test_templates)
+{% endcomment %}
+
+
+
+{% block style %}
+{# https://docs.inventree.org/en/stable/report/weasyprint/#localization-issues #}
+{% localize off %}
+
+.quantity {
+	padding-top: 0.3mm;
+	margin-top: 0.3mm;
+	text-align: center;
+}
+
+img.qrcode {
+	width: 70%;
+	height: 70%;
+}
+
+code.qrdata {
+	font-family: "Ubuntu Mono", monospace;
+	text-align: center;
+	display: block;
+	font-size: 5pt;
+	text-align: center;
+	margin-top: 0.3mm;
+	margin-bottom: 0.3mm;
+}
+
+img.barcode {
+	width: 100%;
+	object-fit: contain;
+}
+
+/* circle, to be filled with color parameter */
+.color {
+	width: 1em;
+	height: 1em;
+	display: inline-block;
+	vertical-align: middle;
+	border-radius: 50%;
+	border: 0.3pt solid black;
+}
+
+main {
+	/* Deliberately allow breaking lines *anywhere*. Allows fitting more data
+	into the label's very limited size. */
+	overflow-wrap: anywhere;
+	word-break: break-all;
+	/* server-side rendering was saying word-wrap: break-all; was invalid. */
+	word-wrap: break-word;
+	hyphens: auto;
+
+	display: block;
+	width: {{ width }}mm;
+	height: {{ height }}mm;
+	font-family: "Ubuntu Mono", monospace;
+	/* border: 0.3pt solid #ccc; */
+	line-height: 1.0;
+	overflow: hidden;
+	font-size: 4.5pt;
+}
+
+h1, h2 {
+	margin: 0;
+	padding: 0;
+}
+
+h1 {
+	display: block;
+	font-weight: bold;
+	font-size: 5pt;
+	text-align: center;
+}
+
+h2 {
+	font-weight: normal;
+	font-size: 4.5pt;
+	text-align: center;
+}
+
+.other {
+	/* misc params for this part */
+	font-size: 4pt;
+	font-style: italic;
+}
+
+sub {
+	vertical-align: -0.1em;
+	font-size: 80%;
+}
+
+ul {
+	display: inline;
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+ul li {
+	display: inline;
+}
+
+ul li + li::before {
+	/* ⋅ Dot Operator, • Bullet, · Middle Dot, ─ Box Drawing Line */
+	content: "⋅";
+}
+
+{% endlocalize %}
+{% endblock style %}
+
+{% block content %}
+{# Configuration: can be: "qr", "barcode", "none" #}
+{% define "qr" as code_type %}
+
+
+{# https://docs.inventree.org/en/stable/report/weasyprint/#localization-issues #}
+{% localize off %}
+<main lang='en'>
+	{% comment %}
+	barcode_data | stringformat:'r'
+
+	2025-02-16: this qr code and this linear code both work:
+		qrcode qr_data border=0 error_correction="L"
+		barcode qr_data margin_top=0 margin_bottom=0 module_height=4 quiet_zone=0
+
+	qr_data -- string, something like "RSI100"
+
+	debugging barcode options, trying to hide the text:
+	font_size <= 0 not supported at the version i have
+	background="transparent" -- won't work, ugh -- not known by PIL ImageColor
+	text="" seems to make the code disappear entirely?
+	background=(0,0,0,0) -> totally refuses to parse, ugh
+	font_size=0.1 => complains font size must be >=0, there's something rounding to whole number :(
+	quiet_zone=0 works -- changes left/right empty
+
+	working barcode:
+	<img class='barcode' src='{% barcode qr_data margin_top=0 margin_bottom=0 module_height=4 quiet_zone=0 text_distance=1 %}'>
+
+	part.default_supplier is SupplierPart
+
+	https://docs.inventree.org/en/stable/report/barcodes/#qr-code
+	back_color: no worky
+
+	datamatrix exists -- and can support tiny codes -- but not yet
+	supported by my version
+
+	working QR code:
+
+	barcode default font_size is 10: https://github.com/WhyNotHugo/python-barcode/blob/2f96373fb25939b8fa98e1a9537a0ecfe26eb708/barcode/writer.py#L130
+
+	def part_parameter(part: Part, parameter_name: str) -> str: """Return PartParameter object for given part and parameter name.
+	... other params ...
+	{% endcomment %}
+	{% spaceless %}
+
+    {% parameters_processor as pp %}
+
+    {% if pp.is_ldo %}
+        <h1>{{ pp.heading }}</h1>
+
+        {{ pp.package }}
+        LDO&rarr;{{ pp.output_voltage }}
+        {% if pp.input_voltage_range %}{{ pp.input_voltage_range }}{% endif %}
+        {{ pp.max_output_current }}
+
+    {% elif pp.is_bjt %}
+        <h1>{{ pp.heading }}</h1>
+        {{ pp.package }}
+        {{ pp.bjt_type }}
+        {{ pp.collector_emitter_voltage }}
+        {{ pp.power_dissipation }}
+    {% elif pp.is_ic %}
+        <h1>{{ pp.heading }}</h1>
+        {{ pp.package }}
+        {{ pp.function }}
+    {% elif pp.is_resistor_network %}
+        {# TODO: same with power, voltage, ... #}
+        <h1>RN {{ pp.package }} {{ pp.show_value }}</h1>
+        {{ pp.show_power_rating }}
+    {% elif pp.is_resistor %}
+        <h1>R {{ pp.package }} {{ pp.show_value }}</h1>
+        {{ pp.show_power_rating }}
+        {# TODO: also might have: Voltage rating #}
+    {% elif pp.is_diode %}
+        <h1>{{ pp.heading }}</h1>
+        {{ pp.package }}
+        {{ pp.reverse_voltage }}
+        {{ pp.forward_voltage_at_current }}
+        {{ pp.average_rectified_forward_current }}
+    {% else %}
+        unhandled
+        <h1> {{ pp.heading }}</h1>
+        part.pk={{ part.pk }}
+    {% endif %}
+
+    {% if pp.any_remaining %}
+        <hr>
+        <ul>
+        {% for v in pp.remaining_items %}
+            <li>{{ v }}</li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+
+	{% endspaceless %}
+</main>
+
+{% endlocalize %}
+{% endblock content %}

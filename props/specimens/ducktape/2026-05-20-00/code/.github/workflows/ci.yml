@@ -1,0 +1,45 @@
+# Main CI pipeline — dependency chain for Bazel builds, releases, and image pushes.
+#
+# Container images (rbe-worker, freecad-test) are built by container-images.yml
+# independently. CI uses the pinned image from image_pins.json.
+#
+# Independent workflows (pre-commit, ansible-lint, nix-attic-push, openclaw-image,
+# container-images) have their own triggers and run separately.
+name: CI
+
+on:
+  push:
+    branches: [main, devel]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  bazel-ci:
+    uses: ./.github/workflows/bazel-ci.yml
+    secrets: inherit
+
+  release:
+    needs: [bazel-ci]
+    if: always() && !cancelled() && github.event_name == 'push'
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+
+  push-images:
+    needs: [bazel-ci]
+    if: always() && !cancelled() && github.event_name == 'push'
+    uses: ./.github/workflows/push-images.yml
+    secrets: inherit
+
+  props-images:
+    needs: [bazel-ci]
+    if: always() && !cancelled() && !failure() && github.event_name == 'push'
+    uses: ./.github/workflows/props-images.yml
+    secrets: inherit

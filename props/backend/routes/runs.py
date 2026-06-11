@@ -11,7 +11,7 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import case, func
 
-from openai_utils.model import ResponsesRequest, ResponsesResult
+from openai_utils.api_shape import LLMApiShape
 from props.backend.auth import (
     AgentRole,
     AuthenticatedIdentity,
@@ -30,6 +30,7 @@ from props.backend.auth import (
     require_evaluator_or_admin_access,
 )
 from props.backend.deps import AdminDb
+from props.backend.loki import fetch_run_logs, run_log_window
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
@@ -241,10 +242,6 @@ class AgentRunDetail(BaseModel):
     llm_call_count: int
     child_runs: list[ChildRunInfo]
 
-    # Container output (captured after container exits)
-    container_stdout: str | None
-    container_stderr: str | None
-
     # LLM costs aggregated for this run
     llm_costs: LLMCostSummary | None
 
@@ -299,16 +296,16 @@ class LLMRequestInfo(BaseModel):
     """LLM request information for API response.
 
     Directly mirrors LLMRequest ORM model fields. When the upstream returned
-    an error (4xx/5xx), the raw error JSON is in response_error_body instead
-    of response_body so it doesn't fail ResponsesResult validation.
+    an error (4xx/5xx), the raw error JSON is in response_error_body.
     """
 
     model_config = {"from_attributes": True}
 
     id: int
     model: str
-    request_body: ResponsesRequest
-    response_body: ResponsesResult | None
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES
+    request_body: dict[str, Any]
+    response_body: dict[str, Any] | None
     response_error_body: dict[str, Any] | None = None
     error: str | None
     latency_ms: int | None
@@ -317,14 +314,14 @@ class LLMRequestInfo(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _split_error_response_body(cls, data: Any) -> Any:
-        """Move error response bodies to response_error_body to avoid ResponsesResult validation failure."""
-        if hasattr(data, "response_body"):
-            # ORM object path (from_attributes)
-            response_body = getattr(data, "response_body", None)
+        """Move error response bodies to response_error_body."""
+        if isinstance(data, LLMRequest):
+            response_body = data.response_body
             if isinstance(response_body, dict) and "id" not in response_body:
                 return {
                     "id": data.id,
                     "model": data.model,
+                    "api_shape": data.api_shape,
                     "request_body": data.request_body,
                     "response_body": None,
                     "response_error_body": response_body,
@@ -376,7 +373,12 @@ _jobs: dict[UUID, ValidationJob] = {}
 
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
-    return request.app.state.registry  # type: ignore[no-any-return]
+    registry = request.app.state.registry
+    if registry is None:
+        raise HTTPException(
+            status_code=503, detail="Agent registry is still initializing; retry after /readyz returns 200."
+        )
+    return registry  # type: ignore[no-any-return]
 
 
 # --- Helper functions ---
@@ -667,7 +669,7 @@ async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> Op
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
     image = await registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
-    run_id = await registry.run_critic_dev_optimize(
+    run_id = await registry.start_critic_dev_optimize(
         image=image,
         budget=body.budget_usd,
         optimizer_model=body.optimizer_model,
@@ -790,7 +792,7 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
             allowed_examples = [ex for ex, _ in sorted_examples[: body.n_examples]]
 
     image = await registry.resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
-    run_id = await registry.run_critic_dev_improve(
+    run_id = await registry.start_critic_dev_improve(
         image=image,
         examples=allowed_examples,
         baseline_image_digests=body.baseline_image_digests or [definition_id],
@@ -1008,8 +1010,6 @@ def get_run(run_id: UUID, caller_db: CallerDb) -> AgentRunDetail:
             type_config=run.type_config,
             llm_call_count=llm_call_count,
             child_runs=child_runs,
-            container_stdout=run.container_stdout,
-            container_stderr=run.container_stderr,
             llm_costs=llm_costs,
             details=details,
         )
@@ -1031,6 +1031,33 @@ def get_run_llm_requests(run_id: UUID, caller_db: CallerDb) -> LLMRequestsRespon
         )
 
         return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
+
+
+class RunLogsResponse(BaseModel):
+    run_id: UUID
+    logs: str
+
+
+@router.get("/{run_id}/logs")
+async def get_run_logs(run_id: UUID, caller_db: CallerDb) -> RunLogsResponse:
+    """Container logs for an agent run, fetched from Loki.
+
+    RLS-scoped: an agent (e.g. critic_dev) sees only runs it launched (its
+    descendants); admin/evaluator see all. Container logs are not persisted to
+    the DB — only the run's status is — so this reads them back from Loki by the
+    run's pod label. (The LLM transcript is read separately from /llm_requests.)
+    """
+    with caller_db.session() as session:
+        run = session.get(AgentRun, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
+        start, end = run_log_window(
+            created_at=run.created_at,
+            last_status_change=run.updated_at,
+            is_in_progress=run.status == AgentRunStatus.IN_PROGRESS,
+            now=datetime.now(UTC),
+        )
+    return RunLogsResponse(run_id=run_id, logs=await fetch_run_logs(run_id, start=start, end=end))
 
 
 def _build_run_info(

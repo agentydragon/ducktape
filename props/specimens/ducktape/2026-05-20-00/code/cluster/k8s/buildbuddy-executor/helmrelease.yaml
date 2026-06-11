@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: buildbuddy-executor
+  labels:
+    # TODO: check if privileged PSA is actually necessary for buildbuddy executor.
+    # Chart defaults to enable_oci=true which uses crun to create child containers
+    # for build isolation. This needs privileged mode. The only non-privileged
+    # option (bare runner) provides zero isolation and no container image support,
+    # which breaks our RBE platform.
+    pod-security.kubernetes.io/enforce: privileged
+
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: buildbuddy
+  namespace: buildbuddy-executor
+spec:
+  interval: 24h
+  url: https://helm.buildbuddy.io
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: buildbuddy-executor
+  namespace: buildbuddy-executor
+spec:
+  interval: 15m
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: buildbuddy-executor
+      sourceRef:
+        kind: HelmRepository
+        name: buildbuddy
+        namespace: buildbuddy-executor
+  valuesFrom:
+    - kind: Secret
+      name: buildbuddy-api-key
+      valuesKey: api-key
+      targetPath: config.executor.api_key
+  # Chart template uses `{{ .Values.replicas | default 1 }}` — Go template
+  # treats 0 as falsy, so replicas=0 renders as 1. Use postRenderers to force 0.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: buildbuddy-executor
+            patch: |
+              - op: replace
+                path: /spec/replicas
+                value: 0
+  values:
+    replicas: 0
+    resources:
+      requests:
+        cpu: 1
+        memory: 4Gi
+      limits:
+        cpu: 2
+        memory: 8Gi
+    nodeSelector:
+      topology.kubernetes.io/region: "proxmox"
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
+    config:
+      executor:
+        app_target: "grpcs://remote.buildbuddy.io:443"

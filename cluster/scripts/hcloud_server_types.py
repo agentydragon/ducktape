@@ -1,4 +1,4 @@
-"""List Hetzner Cloud server types available in a given location."""
+"""List Hetzner Cloud server types for price comparisons."""
 
 import argparse
 import json

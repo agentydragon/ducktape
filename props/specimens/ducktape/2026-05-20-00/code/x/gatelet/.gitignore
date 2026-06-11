@@ -1,0 +1,6 @@
+gatelet.egg-info
+
+.venv
+
+# Local setup
+gatelet.toml

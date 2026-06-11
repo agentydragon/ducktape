@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ultrafeeder
+  namespace: sdr
+  annotations:
+    description: >-
+      ADS-B decoder + tar1090 map UI + ADS-B Exchange feeder.
+      Requires direct USB access to the RTL-SDR (readsb doesn't support rtl_tcp
+      as a network source). Conflicts with rtl-tcp pod — only one can hold the
+      USB device at a time. Scale down rtl-tcp first, then scale this up.
+      TODO: Buy a second RTL-SDR stick for dedicated 24/7 ADS-B. Then change
+      replicas to 1 and both can run simultaneously.
+spec:
+  # Scaled to 0: RTL-SDR is currently used by rtl-tcp + OpenWebRX+.
+  # To use Ultrafeeder instead:
+  #   kubectl -n sdr scale deploy/rtl-tcp --replicas=0
+  #   kubectl -n sdr scale deploy/ultrafeeder --replicas=1
+  # To switch back:
+  #   kubectl -n sdr scale deploy/ultrafeeder --replicas=0
+  #   kubectl -n sdr scale deploy/rtl-tcp --replicas=1
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ultrafeeder
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ultrafeeder
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      containers:
+        - name: ultrafeeder
+          image: ghcr.io/sdr-enthusiasts/docker-adsb-ultrafeeder:latest
+          ports:
+            - containerPort: 80
+              name: http
+            - containerPort: 9273
+              name: metrics
+          env:
+            # Direct RTL-SDR USB access (readsb has no rtl_tcp client mode).
+            - name: READSB_DEVICE_TYPE
+              value: "rtlsdr"
+            - name: READSB_GAIN
+              value: "autogain"
+            # Receiver location (San Francisco, approximate).
+            - name: READSB_LAT
+              value: "37.7926"
+            - name: READSB_LON
+              value: "-122.4199"
+            - name: FEEDER_ALT_M
+              value: "30"
+            # ADS-B Exchange feeder.
+            - name: ADSBX_UUID
+              value: "144ae52d-df97-4bc7-a4c1-14fc20051f6a"
+            # tar1090 UI settings.
+            - name: UPDATE_TAR1090
+              value: "true"
+            - name: TAR1090_DEFAULTCENTERLAT
+              value: "37.7926"
+            - name: TAR1090_DEFAULTCENTERLON
+              value: "-122.4199"
+            - name: TAR1090_MESSAGERATEINTITLE
+              value: "true"
+            - name: TAR1090_PAGETITLE
+              value: "ADS-B"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+            - name: data
+              mountPath: /run/readsb
+              subPath: readsb
+            - name: data
+              mountPath: /var/globe_history
+              subPath: globe_history
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: data
+          persistentVolumeClaim:
+            claimName: ultrafeeder-data

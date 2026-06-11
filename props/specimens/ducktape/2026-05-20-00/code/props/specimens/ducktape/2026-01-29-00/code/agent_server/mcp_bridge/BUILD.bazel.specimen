@@ -1,0 +1,92 @@
+"""MCP Bridge - two-compositor architecture for agent-MCP integration."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_test(
+    name = "test_agents_server",
+    srcs = ["test_agents_server.py"],
+    imports = ["../.."],
+    deps = [
+        ":agents",
+        "//agent_server/persist:types",
+        "//mcp_infra:resource_utils",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":agents",
+        ":auth",
+        ":registry",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "agents",
+    srcs = ["agents.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":registry",
+        "//agent_server:presets",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server:agent_types",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "compositor_factory",
+    srcs = ["compositor_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agents",
+        ":registry",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server:agent_types",
+        "//agent_server:presets",
+        "//agent_server/persist:sqlite",
+        "//agent_server/runtime:container",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//openai_utils:model",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

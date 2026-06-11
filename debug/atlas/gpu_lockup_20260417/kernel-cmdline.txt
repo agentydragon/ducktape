@@ -1,0 +1,1 @@
+initrd=\EFI\nixos\pqy0wxbwmf4swgg310an382rv6z3a30q-initrd-linux-6.12.80-initrd.efi init=/nix/store/9mdmrhb67j7d0ck81ijj6x7grcqccnq2-nixos-system-wyrm2-25.11.20260407.4e92bbc/init nvidia.NVreg_OpenRmEnableUnsupportedGpus=1 nvidia-drm.modeset=0 loglevel=4 lsm=landlock,yama,bpf nvidia-drm.modeset=1 nvidia-drm.fbdev=1 nvidia.NVreg_OpenRmEnableUnsupportedGpus=1

@@ -1,0 +1,9 @@
+rationale: "False positive: tool flags subtract even when correct."
+should_flag: false
+occurrences:
+  - occurrence_id: fp-occ-1
+    files:
+      subtract.py:
+        - - 5
+          - 5
+    # Single-occurrence FP; relevant_files auto-inferred from files keys

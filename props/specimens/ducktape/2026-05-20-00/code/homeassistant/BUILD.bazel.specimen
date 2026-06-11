@@ -1,0 +1,45 @@
+# gazelle:ignore
+# Home Assistant deps use separate @pypi_homeassistant hub, not @pypi
+
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
+load("@rules_python//python/uv:lock.bzl", "lock")
+
+exports_files([
+    "requirements.in",
+    "requirements.override.txt",
+    "requirements.txt",
+])
+
+# Generate requirements.txt from requirements.in.
+# Run: bazel run //homeassistant:requirements.update
+#
+# requirements.override.txt forces lru-dict>=1.4.1 (pre-built Python 3.13
+# manylinux wheels) over the lru-dict==1.3.0 exact pin from homeassistant.
+# Pass it as both a src (so it's available in the action) and via --override.
+#
+# dockerNetwork=bridge gives the RBE action outbound internet access.
+lock(
+    name = "requirements",
+    srcs = [
+        "requirements.in",
+        "requirements.override.txt",
+    ],
+    out = "requirements.txt",
+    args = [
+        "--override",
+        "homeassistant/requirements.override.txt",
+    ],
+    exec_properties = {"dockerNetwork": "bridge"},
+    python_version = "3.13",
+)
+
+# Test that requirements.txt is up to date.
+# Run: bazel test //homeassistant:requirements_test
+native_test(
+    name = "requirements_test",
+    src = ":requirements.update",
+    tags = [
+        "no-cache",
+        "requires-network",
+    ],
+)

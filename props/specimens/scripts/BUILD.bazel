@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "generate_pending_match_file_restriction_lib",
     srcs = ["generate_pending_match_file_restriction.py"],
-    imports = ["../../.."],
     deps = [
         "//props/core/models:true_positive",
         "//props/db/sync:yaml_loader",
@@ -14,7 +13,6 @@ py_library(
 
 py_binary(
     name = "generate_pending_match_file_restriction",
-    imports = ["../../.."],
     main_module = "props.specimens.scripts.generate_pending_match_file_restriction",
     deps = [":generate_pending_match_file_restriction_lib"],
 )

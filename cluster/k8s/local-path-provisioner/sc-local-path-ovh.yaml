@@ -1,0 +1,18 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# TODO(2026-05-28): Decide whether to split OVH local storage into separate
+# HDD-backed KS-5 and SSD/NVMe-backed KS-GAME storage classes. For now,
+# local-path-ovh means "OVH HIL node-local data disk" regardless of media.
+# zone (not region): keep this tied to OVH nodes even if other HIL capacity
+# appears later. The user volume at /var/mnt/seaweedfs-data is declared via
+# Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh

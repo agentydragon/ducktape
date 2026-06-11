@@ -7,6 +7,7 @@ In-container architecture:
 - Container runs its own agent loop (CMD entrypoint)
 - Container talks to LLM proxy (OPENAI_BASE_URL env var)
 - Container connects to backend REST API for eval operations (PROPS_BACKEND_URL env var)
+- Critic-dev containers push/pull agent images via registry proxy (PROPS_REGISTRY_URL env var)
 - Container exits 0 on success, non-zero on failure
 - Host scaffold: creates temp DB user, starts container, waits for exit
 
@@ -20,6 +21,7 @@ Usage:
         backend_url="http://props-backend:8000",
         agent_base_env=config.agent_env,
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
+        agent_registry_url="http://props-registry-proxy:8000",
     )
     async with registry:
         image = await registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
@@ -38,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -64,9 +67,19 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, TimedOut
+from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, PodPhase, TimedOut
 
 logger = logging.getLogger(__name__)
+
+# Pod metadata keys. The supervisor reconciles graders by listing pods with
+# these labels, so it survives backend restarts (no in-memory source of truth).
+LABEL_PROJECT = "adgn.project"
+LABEL_AGENT_RUN_ID = "adgn.agent_run_id"
+LABEL_AGENT_TYPE = "adgn.agent_type"
+LABEL_SNAPSHOT = "adgn.snapshot"  # sanitized slug (label-safe); for kubectl filtering
+# Exact slug — kept in an annotation because a slug ("repo/version") is not a
+# valid k8s label value. (Docker folds annotations into labels; see DockerExecutor.)
+ANNOTATION_SNAPSHOT_SLUG = "adgn.snapshot_slug"
 
 
 # --- Exceptions ---
@@ -81,12 +94,18 @@ class ImageResolutionError(Exception):
 
 
 def _slug_to_container_segment(slug: str) -> str:
-    """Normalize a snapshot slug for use in a Docker container name.
+    """Normalize a snapshot slug for use in a container/pod name segment.
 
-    Replaces '/' with '-' and truncates to 28 characters to keep names manageable.
+    Kubernetes pod names are stricter than Docker container names: they must be
+    lowercase RFC 1123 names, so underscores and any other punctuation need to
+    collapse to dashes. Truncate after normalization and trim trailing dashes so
+    the segment remains valid when followed by ``-{run_id_prefix}``.
+
     Example: 'ducktape/2025-09-03-00' → 'ducktape-2025-09-03-00'
     """
-    return slug.replace("/", "-")[:28]
+    segment = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
+    segment = segment[:28].rstrip("-")
+    return segment or "snapshot"
 
 
 # --- Agent Run Handle ---
@@ -139,6 +158,17 @@ class ResolvedImage:
     oci_ref: str
 
 
+@dataclass(frozen=True)
+class GraderPodInfo:
+    """A grader pod as observed from the runtime (via labels), for reconciliation."""
+
+    name: str
+    agent_run_id: UUID
+    snapshot_slug: SnapshotSlug
+    image_ref: str
+    phase: PodPhase
+
+
 # --- Agent Run View ---
 
 
@@ -178,16 +208,23 @@ class AgentRegistry:
         backend_url: str,
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
+        llm_base_url: str,
+        agent_registry_url: str | None = None,
         model_parallelism_limits: dict[str, int] | None = None,
     ) -> None:
         self._executor = executor
         self._db = db
         self._db_config = db_config
         self._backend_url = backend_url
+        # Base URL agents use for the LLM proxy: OPENAI_BASE_URL = <this>/v1. This is
+        # the standalone props/llm_proxy service (the backend dropped its own /v1
+        # mount in #1894); it must point at the proxy, never the backend.
+        self._llm_base_url = llm_base_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
-        # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
-        self._running_critics: dict[UUID, asyncio.Task[None]] = {}
+        self._agent_registry_url = agent_registry_url or registry_config.proxy_url
+        # Track running background agent tasks by agent_run_id to prevent GC and allow lookup
+        self._running_agents: dict[UUID, asyncio.Task[None]] = {}
         self._model_semaphores: dict[str, asyncio.Semaphore] = {
             model: asyncio.Semaphore(limit) for model, limit in (model_parallelism_limits or {}).items()
         }
@@ -288,7 +325,15 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def _create_container(self, agent_run_id: UUID, *, image: str, name: str) -> ContainerHandle:
+    async def _create_container(
+        self,
+        agent_run_id: UUID,
+        *,
+        image: str,
+        name: str,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
+    ) -> ContainerHandle:
         """Ensure image, create DB role, create and start an agent container."""
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
@@ -304,7 +349,8 @@ class AgentRegistry:
             "PGUSER": creds.username,
             "PGPASSWORD": creds.password,
             "PROPS_BACKEND_URL": self._backend_url,
-            "OPENAI_BASE_URL": f"{self._backend_url}/v1",
+            "PROPS_REGISTRY_URL": self._agent_registry_url,
+            "OPENAI_BASE_URL": f"{self._llm_base_url}/v1",
             "OPENAI_API_KEY": api_key,
         }
 
@@ -312,7 +358,8 @@ class AgentRegistry:
             name=name,
             image_id=image_id,
             env=env,
-            labels={"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+            labels={LABEL_PROJECT: "props", LABEL_AGENT_RUN_ID: str(agent_run_id), **(extra_labels or {})},
+            annotations=annotations,
         )
 
     async def _collect_run(
@@ -321,6 +368,15 @@ class AgentRegistry:
         """Wait for container exit, capture logs, update DB status, return final status."""
         try:
             result: ContainerResult = await handle.wait(timeout_seconds=timeout_seconds)
+        except asyncio.CancelledError:
+            # The run's host task was cancelled (e.g. GraderSupervisor replacing
+            # this grader during reconcile, or shutdown). The `finally` below still
+            # deletes the pod; record a terminal CANCELLED status so the run does
+            # not leak as IN_PROGRESS — the pod is gone and nothing else will
+            # finalize it. The DB write is synchronous, so it completes even while
+            # the task is being cancelled.
+            self._persist_run_result(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
+            raise
         finally:
             try:
                 await handle.kill_and_delete()
@@ -341,19 +397,39 @@ class AgentRegistry:
             status = AgentRunStatus.EXITED
             container_exit_code = exit.exit_code
 
+        self._persist_run_result(agent_run_id, status=status, container_exit_code=container_exit_code)
+        return status
+
+    def _persist_run_result(
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
+    ) -> None:
+        """Write an agent run's terminal status + exit code to the DB.
+
+        Container logs are not persisted here — they live in Loki and are served
+        by GET /api/runs/{id}/logs.
+        """
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status != AgentRunStatus.IN_PROGRESS:
+                if found_run.status == status:
+                    logger.info("Run %s already finalized as %s", agent_run_id, status)
+                    return
                 raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
             session.commit()
-            logger.info(f"Updated {agent_run_id} status to {status}")
-        return status
+            logger.info("Updated %s status to %s", agent_run_id, status)
 
     async def _start_agent(
-        self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None, name: str
+        self,
+        agent_run_id: UUID,
+        *,
+        image: str,
+        timeout_seconds: int | None = None,
+        name: str,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
         """Create and start agent container, returning a handle that manages its lifecycle.
 
@@ -361,7 +437,9 @@ class AgentRegistry:
         and updates DB status. Await the returned handle to block until completion;
         call kill_and_delete() to stop early.
         """
-        handle = await self._create_container(agent_run_id, image=image, name=name)
+        handle = await self._create_container(
+            agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
+        )
         task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds))
         return AgentRunHandle(task, handle.name, agent_run_id)
 
@@ -429,6 +507,8 @@ class AgentRegistry:
         verify_snapshot: SnapshotSlug | None = None,
         container_name: str,
         timeout_seconds: int | None = None,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
         """Create DB record and start container, returning a handle."""
         self._create_run(
@@ -440,7 +520,14 @@ class AgentRegistry:
             parent_run_id=parent_run_id,
             verify_snapshot=verify_snapshot,
         )
-        return await self._start_agent(agent_run_id, image=image.oci_ref, name=container_name)
+        return await self._start_agent(
+            agent_run_id,
+            image=image.oci_ref,
+            name=container_name,
+            timeout_seconds=timeout_seconds,
+            extra_labels=extra_labels,
+            annotations=annotations,
+        )
 
     async def run_critic(
         self,
@@ -505,21 +592,47 @@ class AgentRegistry:
             parent_run_id=parent_run_id,
             verify_snapshot=example.snapshot_slug,
         )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
+        return agent_run_id
+
+    def _spawn_background_run(
+        self, agent_run_id: UUID, *, image_ref: str, model: str, container_name: str, timeout_seconds: int
+    ) -> None:
+        """Start an already-created agent run in a background task and return immediately.
+
+        The task holds a model parallelism slot for the run's whole duration and finalizes
+        the run as CANCELLED on cancellation/error. The run row must already exist (via
+        _create_run). Lets HTTP handlers return the agent_run_id without blocking until the
+        container exits. The task is stashed in _running_agents to prevent GC.
+        """
 
         async def _run() -> None:
             try:
                 async with self._model_slot(model):
                     handle = await self._start_agent(
-                        agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
+                        agent_run_id, image=image_ref, timeout_seconds=timeout_seconds, name=container_name
                     )
                     await handle
+            except asyncio.CancelledError:
+                self._finalize_run_if_in_progress(
+                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                )
+                raise
             except Exception:
-                logger.exception("Unhandled error in background critic run %s", agent_run_id)
+                logger.exception("Unhandled error in background agent run %s", agent_run_id)
+                self._finalize_run_if_in_progress(
+                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                )
 
-        task = asyncio.create_task(_run(), name=f"critic-{agent_run_id}")
-        self._running_critics[agent_run_id] = task
-        task.add_done_callback(lambda _: self._running_critics.pop(agent_run_id, None))
-        return agent_run_id
+        task = asyncio.create_task(_run(), name=container_name)
+        self._running_agents[agent_run_id] = task
+        task.add_done_callback(lambda _: self._running_agents.pop(agent_run_id, None))
 
     async def run_critic_dev_optimize(
         self,
@@ -596,6 +709,83 @@ class AgentRegistry:
             await handle
         return agent_run_id
 
+    async def start_critic_dev_optimize(
+        self,
+        *,
+        image: ResolvedImage,
+        budget: float,
+        optimizer_model: str,
+        critic_model: str,
+        target_metric: TargetMetric,
+        timeout_seconds: int,
+    ) -> UUID:
+        """Start a critic-dev optimizer in the background. Returns agent_run_id immediately.
+
+        The container runs asynchronously; poll /api/runs/{agent_run_id} for status. The
+        optimizer holds an optimizer-model parallelism slot for its whole run.
+        """
+        agent_run_id = uuid4()
+        container_name = f"critic-dev-opt-{str(agent_run_id)[:8]}"
+        self._create_run(
+            agent_run_id,
+            image=image,
+            model=optimizer_model,
+            type_config=CriticDevOptimizeTypeConfig(
+                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
+            ),
+            budget_usd=budget,
+        )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=optimizer_model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
+        return agent_run_id
+
+    async def start_critic_dev_improve(
+        self,
+        *,
+        image: ResolvedImage,
+        examples: list[ExampleSpec],
+        baseline_image_digests: list[str],
+        budget_usd: float,
+        improvement_model: str,
+        critic_model: str,
+        timeout_seconds: int,
+    ) -> UUID:
+        """Start a critic-dev improve agent in the background. Returns agent_run_id immediately.
+
+        The container runs asynchronously; poll /api/runs/{agent_run_id} for status.
+        """
+        if not examples:
+            raise ValueError("examples must not be empty")
+        # Resolve baseline refs to digests (tags → sha256:...)
+        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
+        agent_run_id = uuid4()
+        container_name = f"critic-dev-imp-{str(agent_run_id)[:8]}"
+        self._create_run(
+            agent_run_id,
+            image=image,
+            model=improvement_model,
+            type_config=CriticDevImproveTypeConfig(
+                baseline_image_digests=resolved_baselines,
+                allowed_examples=examples,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+            ),
+            budget_usd=budget_usd,
+        )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=improvement_model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
+        return agent_run_id
+
     # --- State Tracking ---
 
     def get(self, run_id: UUID) -> AgentRunView | None:
@@ -630,4 +820,68 @@ class AgentRegistry:
             budget_usd=10_000.0,
             verify_snapshot=snapshot_slug,
             container_name=container_name,
+            extra_labels={LABEL_AGENT_TYPE: str(AgentType.GRADER), LABEL_SNAPSHOT: slug_seg},
+            annotations={ANNOTATION_SNAPSHOT_SLUG: str(snapshot_slug)},
         )
+
+    # --- Grader pod reconciliation (used by GraderSupervisor) ---
+
+    async def list_grader_pods(self) -> list[GraderPodInfo]:
+        """List grader pods currently known to the runtime, by label.
+
+        This is the supervisor's source of truth for actual state — it reflects
+        graders started by any backend instance, not just this process.
+        """
+        pods = await self._executor.list_pods({LABEL_PROJECT: "props", LABEL_AGENT_TYPE: str(AgentType.GRADER)})
+        graders: list[GraderPodInfo] = []
+        for p in pods:
+            run_id = p.labels.get(LABEL_AGENT_RUN_ID)
+            # k8s keeps the exact slug in an annotation; Docker folds it into labels.
+            slug = p.annotations.get(ANNOTATION_SNAPSHOT_SLUG) or p.labels.get(ANNOTATION_SNAPSHOT_SLUG)
+            if run_id is None or slug is None:
+                logger.warning("Grader pod %s missing run-id/slug metadata; ignoring", p.name)
+                continue
+            graders.append(
+                GraderPodInfo(
+                    name=p.name,
+                    agent_run_id=UUID(run_id),
+                    snapshot_slug=SnapshotSlug(slug),
+                    image_ref=p.image,
+                    phase=p.phase,
+                )
+            )
+        return graders
+
+    def adopt_grader_pod(self, pod: GraderPodInfo) -> AgentRunHandle:
+        """Resume ownership of an already-running grader pod (e.g. one started by
+        a previous backend instance): attach a collector task that captures logs
+        and finalizes the run when the pod exits or is killed."""
+        handle = self._executor.handle_for(pod.name)
+        task = asyncio.create_task(self._collect_run(pod.agent_run_id, handle, None))
+        logger.info("Adopted grader pod %s for %s", pod.name, pod.snapshot_slug)
+        return AgentRunHandle(task, pod.name, pod.agent_run_id)
+
+    async def reap_grader_pod(self, pod: GraderPodInfo, *, reason: str) -> None:
+        """Delete an unwanted grader pod (duplicate, orphan, removed snapshot, or
+        wrong image) and finalize its run as CANCELLED if it's still in progress."""
+        logger.info("Reaping grader pod %s (snapshot=%s, reason=%s)", pod.name, pod.snapshot_slug, reason)
+        self._finalize_run_if_in_progress(pod.agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
+        await self._executor.handle_for(pod.name).kill_and_delete()
+
+    def _finalize_run_if_in_progress(
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
+    ) -> None:
+        """Set an agent run's terminal status + exit code, but only if it's still
+        IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
+        another path may already have finalized."""
+        with self._db.session() as session:
+            run = session.get(AgentRun, agent_run_id)
+            if run is None:
+                logger.warning("Agent run %s not found while finalizing; deleting pod anyway", agent_run_id)
+                return
+            if run.status != AgentRunStatus.IN_PROGRESS:
+                return
+            run.status = status
+            run.container_exit_code = container_exit_code
+            session.commit()
+            logger.info("Finalized agent run %s -> %s", agent_run_id, status)

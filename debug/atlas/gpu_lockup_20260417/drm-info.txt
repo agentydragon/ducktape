@@ -1,0 +1,32 @@
+=== card0 ===
+0x10de
+0x2b85
+../../../../bus/pci/drivers/nvidia
+
+=== card0-DP-1 ===
+
+=== card0-DP-2 ===
+
+=== card0-DP-3 ===
+
+=== card0-HDMI-A-1 ===
+
+=== card1 ===
+0x1af4
+0x1050
+../../../bus/pci/drivers/virtio-pci
+
+=== card1-Virtual-1 ===
+
+=== card2 ===
+0x10de
+0x2b85
+../../../../bus/pci/drivers/nvidia
+
+=== card2-DP-4 ===
+
+=== card2-DP-5 ===
+
+=== card2-DP-6 ===
+
+=== card2-HDMI-A-2 ===

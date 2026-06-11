@@ -1,0 +1,17 @@
+rationale: |
+  TokenAuthMiddleware.dispatch and UITokenAuthMiddleware.dispatch contain identical
+  Authorization-header parsing: read the header, raise 401 when missing, split on
+  whitespace, and reject anything that isn't `Bearer <token>`. Extract the shared parsing
+  into a helper so the validation lives in one place.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/auth.py:
+        - [75, 89]
+        - [135, 149]
+    note: identical Bearer-token Authorization parsing in both middleware dispatch methods
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/auth.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/auth.py

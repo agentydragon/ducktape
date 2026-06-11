@@ -9,8 +9,6 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-
 # Signal exit codes for process termination
 SIGNAL_EXIT_OFFSET: Final[int] = 128
 
@@ -40,7 +38,7 @@ async def async_timer() -> AsyncGenerator[Callable[[], int]]:
 EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
 EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
 
-# Cap for stdout/stderr/stdin bytes in exec-like servers
+# Cap for stdout/stderr bytes in exec-like servers
 MAX_BYTES_CAP = 150_000
 
 # Cap for execution timeout across exec-like servers (milliseconds)
@@ -51,19 +49,25 @@ MAX_EXEC_TIMEOUT_MS = 300_000
 TimeoutMs = Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]
 
 
+CMD_DESCRIPTION: Final[str] = (
+    "Argv vector executed directly via execve — NOT a shell. cmd[0] is the program "
+    "(resolved on PATH); the rest are its literal arguments. No shell processing happens: "
+    "pipes, redirects (|, >, <), globs (*), &&/;, quotes, and $VAR expansion are NOT "
+    'interpreted. Pass a single token list like ["rg", "-n", "foo", "src/"]. To use shell '
+    'features, invoke a shell explicitly: ["bash", "-lc", "cat a.txt | grep foo"].'
+)
+
+
 class ExecArgsBase(BaseModel):
-    """Shared fields for all exec args models (direct, bwrap, seatbelt).
+    """Shared fields for all exec args models (direct, bwrap, seatbelt)."""
 
-    Subclasses add the command field (currently ``cmd`` or ``argv`` — TODO: unify naming).
-    """
-
+    cmd: list[str] = Field(min_length=1, description=CMD_DESCRIPTION)
     max_bytes: int = Field(
         ..., ge=0, le=100_000, description="Max bytes to capture from stdout and stderr. 0 means both will be empty."
     )
     # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
     cwd: str | None = None
     timeout_ms: TimeoutMs
-    stdin_text: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -136,57 +140,26 @@ EnvVar = Annotated[
 ]
 
 
-class ExecInput(OpenAIStrictModeBaseModel):
-    """Typed payload for container exec tool.
+@dataclass(frozen=True)
+class ResolvedExecInput:
+    """Resolved execution parameters for docker container exec (internal).
 
-    Note: TTY is not allocated for processes to ensure stdout/stderr separation.
+    Constructed by the server handler after applying CwdPolicy and field gating.
+    Not the tool's input schema — the LLM-facing schema is dynamically generated
+    by ``_make_exec_input_model`` in ``mcp_infra.exec.docker.server``.
     """
 
-    cmd: list[str] = Field(
-        description="Command array passed directly to Docker exec API (no shell). "
-        "DO NOT include shell quotes around arguments - array elements are passed as-is. "
-        "WRONG: ['sed', '-n', \"'1,10p'\", 'file'] (quotes in string). "
-        "RIGHT: ['sed', '-n', '1,10p', 'file'] (no quotes). "
-        "For shell features (pipes, globs), use: ['sh', '-c', 'sed -n 1,10p file | head']"
-    )
-    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
-    cwd: str | None = Field(description="Working directory inside container (None = container default)")
-    env: list[EnvVar] | None = Field(
-        description="Environment variables as ['NAME=value', ...] (None = inherit container env)"
-    )
-    user: str | None = Field(description="Username inside container (None = container default)")
-    timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)")
+    cmd: list[str]
+    cwd: str | None
+    env: list[str] | None
+    user: str | None
+    timeout_ms: int
 
     def env_dict(self) -> dict[str, str]:
-        """Convert env list to dict for internal use."""
+        """Convert env list to dict for docker exec API."""
         if not self.env:
             return {}
-        result = {}
-        for env_str in self.env:
-            name, value = env_str.split("=", 1)
-            result[name] = value
-        return result
-
-
-def make_exec_input(
-    cmd: list[str],
-    *,
-    timeout_ms: int = 10_000,
-    cwd: str | None = None,
-    env: list[str] | None = None,
-    user: str | None = None,
-) -> ExecInput:
-    """Convenience helper for constructing ExecInput with sensible defaults.
-
-    Mirrors the pattern from tests/conftest.py:make_exec_input() and
-    bootstrap.docker_exec_call() but for production code. Use this to avoid
-    repeating the full 5-field constructor when most fields are None.
-
-    Example:
-        exec_input = make_exec_input(["echo", "hello"])
-        exec_input_with_timeout = make_exec_input(["sleep", "5"], timeout_ms=6_000)
-    """
-    return ExecInput(cmd=cmd, cwd=cwd, env=env, user=user, timeout_ms=timeout_ms)
+        return {k: v for s in self.env for k, _, v in [s.partition("=")]}
 
 
 class BaseExecResult(BaseModel):

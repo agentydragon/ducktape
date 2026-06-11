@@ -1,0 +1,30 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: sso-providers
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  refreshBeforeApply: true
+  path: ./tf/gitops/sso-providers
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "sso_providers"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+  vars: []

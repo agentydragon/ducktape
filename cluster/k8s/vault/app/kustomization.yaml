@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  # Bank-Vaults Vault instance (operator deployed separately)
-  - rbac.yaml
-  - internal-tls-certificate.yaml
-  - instance.yaml
-# Note: Vault uses cluster-internal-ca (from cluster-ca kustomization) instead of vault-specific CA
-# Note: ingress.yaml and certificate.yaml in separate vault-ingress kustomization

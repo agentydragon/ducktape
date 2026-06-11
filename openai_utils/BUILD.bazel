@@ -1,14 +1,18 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_live_api.py
 # gazelle:exclude test_pydantic_strict_mode.py
 
 py_library(
+    name = "api_shape",
+    srcs = ["api_shape.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "types",
     srcs = ["types.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//typing_extensions"],
 )
@@ -16,7 +20,6 @@ py_library(
 py_library(
     name = "errors",
     srcs = ["errors.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//openai"],
 )
@@ -25,7 +28,6 @@ py_library(
     name = "model_metadata",
     srcs = ["model_metadata.py"],
     data = ["model_metadata.yaml"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pydantic",
@@ -36,7 +38,6 @@ py_library(
 py_library(
     name = "json_schema",
     srcs = ["json_schema.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pydantic",
@@ -47,7 +48,6 @@ py_library(
 py_library(
     name = "model",
     srcs = ["model.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":errors",
@@ -60,7 +60,6 @@ py_library(
 py_library(
     name = "builders",
     srcs = ["builders.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":model",
@@ -72,7 +71,6 @@ py_library(
 py_library(
     name = "http_logging",
     srcs = ["http_logging.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//httpx",
@@ -83,7 +81,6 @@ py_library(
 py_library(
     name = "pydantic_strict_mode",
     srcs = ["pydantic_strict_mode.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":json_schema",
@@ -94,7 +91,6 @@ py_library(
 py_library(
     name = "retry",
     srcs = ["retry.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":errors",
@@ -108,7 +104,6 @@ py_library(
 py_library(
     name = "client_factory",
     srcs = ["client_factory.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":http_logging",
@@ -122,7 +117,6 @@ py_library(
 py_library(
     name = "text_extraction",
     srcs = ["text_extraction.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [":model"],
 )
@@ -131,7 +125,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
     visibility = ["//openai_utils:__subpackages__"],
     deps = [
         "//openai_utils/testing:fixtures",
@@ -143,7 +136,6 @@ py_library(
 py_test(
     name = "test_errors",
     srcs = ["test_errors.py"],
-    imports = [".."],
     deps = [
         ":conftest",
         ":model",
@@ -156,9 +148,21 @@ py_test(
 )
 
 py_test(
+    name = "test_model",
+    srcs = ["test_model.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_json_schema",
     srcs = ["test_json_schema.py"],
-    imports = [".."],
     deps = [
         ":conftest",
         ":json_schema",
@@ -172,7 +176,6 @@ py_test(
 live_openai_py_test(
     name = "test_pydantic_strict_mode",
     srcs = ["test_pydantic_strict_mode.py"],
-    imports = [".."],
     deps = [
         ":client_factory",
         ":conftest",
@@ -191,7 +194,6 @@ live_openai_py_test(
 live_openai_py_test(
     name = "test_live_api",
     srcs = ["test_live_api.py"],
-    imports = [".."],
     deps = [
         ":client_factory",
         ":conftest",

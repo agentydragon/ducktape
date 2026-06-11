@@ -1,0 +1,16 @@
+rationale: |
+  test_chat_notifications.py duplicates test_chat_head_notifications_other_participant
+  from test_chat_server.py. The test_chat_server.py version uses proper typed stubs
+  (ChatServerStub, ResourceUpdatedCapture) while test_chat_notifications.py hand-rolls
+  an inline _Capture class and uses raw call_tool. The entire file should be deleted.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/mcp/test_chat_notifications.py:
+        - [1, 42]
+      agent_server/mcp/test_chat_server.py:
+        - [104, 130]
+    critic_scopes_expected_to_recall:
+      - [agent_server/mcp/test_chat_notifications.py]
+      - [agent_server/mcp/test_chat_server.py]

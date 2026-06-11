@@ -1,0 +1,48 @@
+rationale: |
+  Stub *_main.py entry points that just import and call a function from
+  another module should be replaced with Bazel's `main_module` on the
+  `py_binary`. `main_module` lets the binary reuse the library's srcs
+  directly, eliminating the wrapper file and its duplicated deps.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tools/yamllint/yamllint_main.py:
+        - [1, 6]
+      tools/yamllint/BUILD.bazel:
+        - [7, 13]
+    note: yamllint wrapper — replace with main_module = "yamllint.cli"
+    critic_scopes_expected_to_recall:
+      - [tools/yamllint/yamllint_main.py]
+      - [tools/yamllint/BUILD.bazel]
+  - occurrence_id: occ-1
+    files:
+      gatelet/reporter_main.py:
+        - [1, 6]
+      gatelet/BUILD.bazel:
+        - [21, 31]
+    note: reporter wrapper — replace with main_module = "gatelet.reporter"
+    critic_scopes_expected_to_recall:
+      - [gatelet/reporter_main.py]
+      - [gatelet/BUILD.bazel]
+  - occurrence_id: occ-2
+    files:
+      gatelet/manage_main.py:
+        - [1, 6]
+      gatelet/BUILD.bazel:
+        - [48, 58]
+    note: manage wrapper — replace with main_module = "gatelet.manage"
+    critic_scopes_expected_to_recall:
+      - [gatelet/manage_main.py]
+      - [gatelet/BUILD.bazel]
+  - occurrence_id: occ-3
+    files:
+      ember/ember_python_main.py:
+        - [1, 8]
+      ember/BUILD.bazel:
+        - [38, 43]
+        - [219, 224]
+    note: ember-python wrapper — replace with main_module = "ember.python_session"
+    critic_scopes_expected_to_recall:
+      - [ember/ember_python_main.py]
+      - [ember/BUILD.bazel]

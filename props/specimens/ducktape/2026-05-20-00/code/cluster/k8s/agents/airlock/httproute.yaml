@@ -1,0 +1,22 @@
+# HTTPRoute for Airlock. Traffic flows directly: Gateway → backend.
+# Auth is handled by the SPA's native OIDC integration (no proxy outpost).
+# Agent MCP traffic uses OAuth2 JWTs (client_credentials grant) with JWTVerifier.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: airlock
+  namespace: airlock
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "airlock.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: airlock
+          port: 8765
+      timeouts:
+        request: "120s"
+        backendRequest: "120s"

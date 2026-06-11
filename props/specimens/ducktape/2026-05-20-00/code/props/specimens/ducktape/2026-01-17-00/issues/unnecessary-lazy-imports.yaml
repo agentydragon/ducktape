@@ -1,0 +1,76 @@
+rationale: |
+  Imports inside functions that don't save any meaningful startup cost. These modules
+  are either stdlib, already imported elsewhere, or cheap to import. Move to module top.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      props/core/registry/images.py:
+        - [15, 15]
+    note: "aiodocker imported inside function - already used throughout module, move to top"
+    critic_scopes_expected_to_recall:
+      - - props/core/registry/images.py
+    match_file_restriction:
+      - props/core/registry/images.py
+
+  - occurrence_id: occ-1
+    files:
+      props/core/agent_setup.py:
+        - [61, 61]
+    note: "aiodocker imported inside function - already used throughout module, move to top"
+    critic_scopes_expected_to_recall:
+      - - props/core/agent_setup.py
+    match_file_restriction:
+      - props/core/agent_setup.py
+
+  - occurrence_id: occ-2
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_hook.py:
+        - [12, 12]
+    note: "pydantic.BaseModel imported inside function - pydantic is cheap and ubiquitous, move to top"
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/ducktape_llm_common/claude_hook.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_hook.py
+
+  - occurrence_id: occ-3
+    files:
+      mcp_infra/compositor/server.py:
+        - [48, 48]
+    note: "pydantic.BaseModel imported inside function - pydantic is cheap and ubiquitous, move to top"
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/compositor/server.py
+    match_file_restriction:
+      - mcp_infra/compositor/server.py
+
+  - occurrence_id: occ-4
+    files:
+      mcp_infra/compositor/conftest.py:
+        - [16, 16]
+    note: "collections.abc.Awaitable imported inside function - stdlib, move to top"
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/compositor/conftest.py
+    match_file_restriction:
+      - mcp_infra/compositor/conftest.py
+
+  - occurrence_id: occ-5
+    files:
+      props/backend/app.py:
+        - [28, 28]
+    note: "collections.abc.AsyncIterator imported inside function - stdlib, move to top"
+    critic_scopes_expected_to_recall:
+      - - props/backend/app.py
+    match_file_restriction:
+      - props/backend/app.py
+
+  - occurrence_id: occ-6
+    files:
+      llm/ducktape_llm_common/scripts/notification_test_manual.py:
+        - [75, 75]
+    note: "traceback imported inside function - stdlib, move to top"
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/scripts/notification_test_manual.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/scripts/notification_test_manual.py

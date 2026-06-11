@@ -1,0 +1,127 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "flat_mixin",
+    srcs = ["flat_mixin.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:flat_tool",
+        "//openai_utils:json_schema",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "oob_notify_mixin",
+    srcs = ["oob_notify_mixin.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:urls",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "openai_strict_mixin",
+    srcs = ["openai_strict_mixin.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":flat_mixin",
+        ":oob_notify_mixin",
+        ":openai_strict_mixin",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "simple",
+    srcs = ["simple.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":flat_mixin",
+        ":openai_strict_mixin",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_test(
+    name = "test_flat_decorator",
+    srcs = ["test_flat_decorator.py"],
+    deps = [
+        ":server",
+        "//mcp_infra/stubs:typed_stubs",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_flat_helper",
+    srcs = ["test_flat_helper.py"],
+    deps = [
+        ":server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_oob_broadcast",
+    srcs = ["test_oob_broadcast.py"],
+    deps = [
+        ":server",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_oob_session_capturing",
+    srcs = ["test_oob_session_capturing.py"],
+    deps = [
+        ":server",
+        "//mcp_infra:urls",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_openai_strict_validation",
+    srcs = ["test_openai_strict_validation.py"],
+    deps = [
+        ":server",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,29 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: plaid-mcp-db-readonly-provisioner-egress
+  namespace: plaid-mcp
+  annotations:
+    description: "Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary."
+spec:
+  endpointSelector:
+    matchLabels:
+      app: plaid-mcp-db-readonly-provisioner
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: plaid-mcp-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

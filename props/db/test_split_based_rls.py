@@ -46,6 +46,7 @@ from props.db.models import (
     AgentRunStatus,
     FalsePositive,
     LLMRequest,
+    ModelMetadata,
     OccurrenceRangeORM,
     Snapshot,
     TruePositive,
@@ -106,6 +107,14 @@ async def test_critic_dev_optimize_can_see_all_snapshots_metadata(
     assert "train" in splits
     assert "valid" in splits
     assert "test" in splits
+
+
+async def test_critic_dev_optimize_can_read_model_metadata(synced_db: Database, critic_dev_optimize_session: Session):
+    """Agent roles can read model metadata needed to pick the LLM API shape."""
+    metadata = critic_dev_optimize_session.get(ModelMetadata, DEFAULT_TEST_MODEL)
+
+    assert metadata is not None
+    assert metadata.model_id == DEFAULT_TEST_MODEL
 
 
 async def test_critic_dev_optimize_can_see_train_split_snapshots(

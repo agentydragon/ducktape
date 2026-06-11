@@ -1,0 +1,15 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_integration",
+    srcs = [
+        "test_integration_cli_daemon.py",
+        "test_integration_cli_output_format.py",
+        "test_integration_shell.py",
+    ],
+    main = "test_integration_cli_daemon.py",
+    deps = [
+        "//wt/testing",
+        "@pypi//pytest",
+    ],
+)

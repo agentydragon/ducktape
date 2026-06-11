@@ -1,0 +1,28 @@
+"""Policy evaluation package - container-based policy execution."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "policy_eval",
+    srcs = [
+        "constants.py",
+        "container.py",
+        "runner.py",
+        "shim.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/policies",
+        "//agent_server/runtime:images",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_binary(
+    name = "shim",
+    srcs = ["shim.py"],
+    main = "shim.py",
+    visibility = ["//visibility:public"],
+    deps = [":policy_eval"],
+)

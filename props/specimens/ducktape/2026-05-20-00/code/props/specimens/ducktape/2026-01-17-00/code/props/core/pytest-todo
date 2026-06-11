@@ -1,0 +1,7 @@
+property:
+in pytest, changeing os.environ must use monkeypatch;
+in pytest, temporary dirs must use standard pytest tmp_path or tmpdir fixtures unless some overriding reason exists (e.g.: needing to test outside of /tmp because of some compatibility reason)
+
+- Markdown: 'mini-headings' should not be plain text - bold or subheadings or something. here 'Purpose' and 'Core concepts':
+
+- no backcompat shims (e.g. in renames)

@@ -1,0 +1,34 @@
+# English strings
+LANGUAGE	DEFAULT=en_US:en
+LANG	DEFAULT=en_US.UTF-8
+
+# TODO: would be nice to have space thousands separator & decimal dot...
+# cs_CZ does 1 234,56. en_US does 1,234.56
+LC_NUMERIC	DEFAULT=cs_CZ.UTF-8
+
+# en_DK does 24 hour time, YYYY-MM-DD date, English weekday & month names.
+# Happens to be convenient.
+LC_TIME	DEFAULT=en_DK.UTF-8
+
+# $1,234.56. Would be nice to have space thousands separator & decimal dot. Alas.
+LC_MONETARY	DEFAULT=en_US.UTF-8
+
+# Unfortunately US formatted paper...
+LC_PAPER	DEFAULT=en_US.UTF-8
+
+# Just how the locale identifies itself..
+LC_IDENTIFICATION	DEFAULT=en_US.UTF-8
+
+# How names are formatted (e.g. Mr. John Smith capitalization etc.)
+LC_NAME	DEFAULT=en_US.UTF-8
+
+# US-formatted addresses
+LC_ADDRESS	DEFAULT=en_US.UTF-8
+
+# US-formatted telephone numbers
+LC_TELEPHONE	DEFAULT=en_US.UTF-8
+
+# Metric system
+LC_MEASUREMENT	DEFAULT=cs_CZ.UTF-8
+
+PAPERSIZE	DEFAULT=letter

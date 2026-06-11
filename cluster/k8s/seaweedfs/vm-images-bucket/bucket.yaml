@@ -1,0 +1,16 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: vm-images
+  namespace: seaweedfs
+spec:
+  name: vm-images
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: vm-images-ci-writer
+      actions: [Read, Write, List, Tagging]
+    - user: vm-images-cdi-reader
+      actions: [Read, List]

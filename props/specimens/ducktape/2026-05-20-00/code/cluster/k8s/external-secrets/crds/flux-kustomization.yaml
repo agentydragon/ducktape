@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: external-secrets-crds
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 1h
+  # CRDs from the external-secrets repository
+  sourceRef:
+    kind: GitRepository
+    name: external-secrets-source
+    namespace: flux-system
+  path: ./deploy/crds
+  prune: false # Don't delete CRDs on uninstall (safety)
+  wait: true
+  timeout: 2m

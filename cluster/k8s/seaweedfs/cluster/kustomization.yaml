@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - seaweed.yaml
+
+# Inject filer.toml into the Seaweed CR's spec.filer.config string field.
+# The intermediate ConfigMap exists only to carry the file content into a
+# kustomize replacement; the operator re-emits the string as its own
+# `seaweedfs-filer` ConfigMap that the filer pod mounts.
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: seaweedfs-filer-toml-source
+    files:
+      - filer.toml
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: seaweedfs-filer-toml-source
+      fieldPath: data.filer\.toml
+    targets:
+      - select:
+          kind: Seaweed
+          name: seaweedfs
+        fieldPaths:
+          - spec.filer.config
+
+# The intermediate ConfigMap is consumed by the replacement above; don't
+# emit it to the cluster.
+patches:
+  - target:
+      kind: ConfigMap
+      name: seaweedfs-filer-toml-source
+    patch: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: seaweedfs-filer-toml-source
+        annotations:
+          config.kubernetes.io/local-config: "true"

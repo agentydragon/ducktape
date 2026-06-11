@@ -1,0 +1,53 @@
+rationale: |
+  hasattr() circumvents type safety. Replace with isinstance checks,
+  direct attribute access on typed models, or typing.get_origin() for
+  generic type introspection.
+
+should_flag: true
+
+occurrences:
+  # Also in: ducktape/2026-01-29-00
+  - occurrence_id: occ-0
+    files:
+      llm/mcp/habitify/cli.py:
+        - [268, 268]
+        - [271, 271]
+    note: >-
+      hasattr(status, "value") and hasattr(status, "note") on Pydantic HabitStatus
+      which defines value: float | None and note: str | None — use direct access
+
+  # Also in: ducktape/2026-01-29-00
+  - occurrence_id: occ-1
+    files:
+      prompts/scans/scan_comments.py:
+        - [73, 76]
+    note: >-
+      hasattr(node, "lineno") after isinstance narrowing to FunctionDef |
+      AsyncFunctionDef | ClassDef — all have lineno, the check is dead code
+
+  # Also in: ducktape/2026-01-29-00
+  - occurrence_id: occ-2
+    files:
+      prompts/scans/scan_single_line_functions.py:
+        - [105, 105]
+    note: >-
+      hasattr(stmt, "lineno") and hasattr(stmt, "end_lineno") on ast.stmt —
+      all ast.stmt subclasses have these attributes
+
+  # Also in: ducktape/2026-01-29-00
+  - occurrence_id: occ-3
+    files:
+      inventree_utils/samplebooks_import/samplebooks_parts_data.py:
+        - [227, 229]
+    note: >-
+      hasattr(p, "tolerance/voltage_rating/dielectric") on BasePart/Capacitor
+      dataclass hierarchy — tolerance is on BasePart (always present), voltage_rating
+      and dielectric are on Capacitor (use isinstance(p, Capacitor))
+
+  # Also in: ducktape/2026-01-29-00, ducktape/2026-03-04-00
+  - occurrence_id: occ-4
+    files:
+      mcp_infra/display/event_renderer.py:
+        - [98, 98]
+    note: >-
+      hasattr(input_type, "__origin__") — use typing.get_origin(input_type) is not None

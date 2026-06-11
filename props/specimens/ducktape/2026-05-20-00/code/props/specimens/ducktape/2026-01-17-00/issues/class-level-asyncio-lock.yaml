@@ -1,0 +1,27 @@
+rationale: |
+  _daemon_start_lock is defined as a class-level asyncio.Lock(), creating a false
+  sense of assurance. This does not actually prevent multiple daemon starts because:
+  1. The lock only works within a single event loop - different processes or event
+     loops will have independent locks
+  2. The lock is created at module import time, potentially before any event loop
+  3. All WtClient instances share the same lock object, which is unexpected
+
+  Actual daemon start coordination requires OS-level mechanisms like file locks
+  (fcntl.flock) or PID file checks with atomic operations. The current lock only
+  prevents concurrent _start_daemon_if_needed calls within the same process/loop,
+  not actual daemon process races.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/wt_client.py:
+        - [106, 106]
+    note: >-
+      Class-level asyncio.Lock() provides false assurance of preventing multiple
+      daemon starts. Needs OS-level coordination (flock, atomic PID file) instead.
+    critic_scopes_expected_to_recall:
+      - - wt/client/wt_client.py
+    match_file_restriction:
+      - wt/client/wt_client.py

@@ -1,0 +1,14 @@
+load("@rules_conda//conda/environment:defs.bzl", "run_binary")
+
+exports_files(["pixi.lock"])
+
+# FreeCAD CLI from the conda environment. Used as a data dep to pull the
+# conda env into test runfiles. conftest.py resolves the conda env root
+# from this binary's runfiles path and invokes bin/freecad or bin/freecadcmd
+# directly.
+run_binary(
+    name = "freecadcmd",
+    environment = "@freecad_conda//:default",
+    path = "bin/freecadcmd",
+    visibility = ["//skills/freecad:__subpackages__"],
+)

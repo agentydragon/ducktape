@@ -1,11 +1,10 @@
 """Gatelet server migrations."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "env",
     srcs = ["env.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:models",

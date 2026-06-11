@@ -1,0 +1,133 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = [".."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "pace",
+    srcs = ["pace.py"],
+    imports = [".."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [":models"],
+)
+
+py_library(
+    name = "cache",
+    srcs = ["cache.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":models",
+        "//aiquota/providers:base",
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    deps = [
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "cli_lib",
+    srcs = ["cli.py"],
+    imports = [".."],
+    deps = [
+        ":cache",
+        ":models",
+        "//aiquota/render:human_lib",
+        "//aiquota/render:tmux_lib",
+        "//aiquota/render:view_model_lib",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "aiquota",
+    imports = [".."],
+    main_module = "aiquota.cli",
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [
+        ":cli_lib",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    imports = [".."],
+    deps = [
+        ":models",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pace",
+    srcs = ["test_pace.py"],
+    imports = [".."],
+    deps = [
+        ":models",
+        ":pace",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_cache",
+    srcs = ["test_cache.py"],
+    imports = [".."],
+    deps = [
+        ":cache",
+        ":models",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_package(
+    name = "aiquota_pkg",
+    packages = ["aiquota"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli_lib",
+    ],
+)
+
+py_wheel(
+    name = "aiquota_wheel",
+    distribution = "aiquota",
+    entry_points = {
+        "console_scripts": [
+            "aiquota = aiquota.cli:app",
+        ],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        "atomicwrites>=1.4.1",
+        "httpx>=0.27",
+        "platformdirs>=3.0",
+        "pydantic>=2.0",
+        "typer>=0.9",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":aiquota_pkg"],
+)

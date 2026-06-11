@@ -453,6 +453,86 @@ class FileContentResponse(BaseModel):
     line_count: int
 
 
+class FileContentsRequest(BaseModel):
+    """Request for multiple file contents from one snapshot."""
+
+    paths: list[str] = Field(..., min_length=1, max_length=200)
+
+
+class FileContentsResponse(BaseModel):
+    """Multiple file contents from a snapshot.
+
+    Missing files are returned separately so one stale/bad issue location does
+    not prevent the UI from showing the rest of the files.
+    """
+
+    files: list[FileContentResponse]
+    missing: list[str]
+
+
+def _read_snapshot_files(
+    snapshot_slug: SnapshotSlug,
+    snapshot_content: bytes,
+    snapshot_files_by_path: dict[str, SnapshotFile],
+    file_paths: list[str],
+) -> FileContentsResponse:
+    """Read multiple files from the stored snapshot tar with one archive open."""
+    buffer = io.BytesIO(snapshot_content)
+    files: list[FileContentResponse] = []
+    missing: list[str] = []
+
+    try:
+        with tarfile.open(fileobj=buffer, mode="r") as tar:
+            for file_path in file_paths:
+                snapshot_file = snapshot_files_by_path.get(file_path)
+                if snapshot_file is None:
+                    missing.append(file_path)
+                    continue
+
+                try:
+                    member = tar.getmember(file_path)
+                    file_obj = tar.extractfile(member)
+                    if file_obj is None:
+                        missing.append(file_path)
+                        continue
+
+                    content_bytes = file_obj.read()
+                    content = content_bytes.decode("utf-8", errors="replace")
+                    files.append(
+                        FileContentResponse(path=file_path, content=content, line_count=snapshot_file.line_count)
+                    )
+                except KeyError:
+                    missing.append(file_path)
+    except tarfile.TarError as e:
+        raise HTTPException(status_code=500, detail=f"Error reading tar archive for {snapshot_slug}: {e}") from e
+
+    return FileContentsResponse(files=files, missing=missing)
+
+
+@router.post("/snapshots/{org}/{snapshot_date}/files")
+def get_snapshot_files(
+    org: str, snapshot_date: str, body: FileContentsRequest, caller_db: CallerDb
+) -> FileContentsResponse:
+    """Get multiple file contents from a snapshot tar archive."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
+    # Preserve caller order while avoiding duplicate extraction work.
+    file_paths = list(dict.fromkeys(body.paths))
+
+    with caller_db.session() as session:
+        snapshot = get_snapshot_or_404(session, snapshot_slug)
+
+        if not snapshot.content:
+            raise HTTPException(status_code=404, detail=f"Snapshot has no content: {snapshot_slug}")
+
+        snapshot_files = (
+            session.query(SnapshotFile)
+            .filter(SnapshotFile.snapshot_slug == snapshot_slug, SnapshotFile.file_path.in_(file_paths))
+            .all()
+        )
+        snapshot_files_by_path = {snapshot_file.file_path: snapshot_file for snapshot_file in snapshot_files}
+        return _read_snapshot_files(snapshot_slug, snapshot.content, snapshot_files_by_path, file_paths)
+
+
 @router.get("/snapshots/{org}/{snapshot_date}/files/{file_path:path}")
 def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: CallerDb) -> FileContentResponse:
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
@@ -468,25 +548,10 @@ def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: C
         if not snapshot_file:
             raise HTTPException(status_code=404, detail=f"File not found in snapshot: {file_path}")
 
-        # Extract file from tar
-        buffer = io.BytesIO(snapshot.content)
-        try:
-            with tarfile.open(fileobj=buffer, mode="r") as tar:
-                try:
-                    member = tar.getmember(file_path)
-                    file_obj = tar.extractfile(member)
-                    if file_obj is None:
-                        raise HTTPException(status_code=400, detail=f"Cannot extract file: {file_path}")
-
-                    content_bytes = file_obj.read()
-                    # Decode as UTF-8, replace invalid chars
-                    content = content_bytes.decode("utf-8", errors="replace")
-
-                    return FileContentResponse(path=file_path, content=content, line_count=snapshot_file.line_count)
-                except KeyError:
-                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}") from None
-        except tarfile.TarError as e:
-            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}") from e
+        response = _read_snapshot_files(snapshot_slug, snapshot.content, {file_path: snapshot_file}, [file_path])
+        if response.files:
+            return response.files[0]
+        raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
 
 
 # --- Cluster Endpoints ---

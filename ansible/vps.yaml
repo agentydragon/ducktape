@@ -124,11 +124,6 @@
           - "adgn.link"
           - "www.adgn.link"
 
-    - name: Uninstall legacy VPN services
-      ansible.builtin.import_role:
-        name: legacy_vpn_uninstall
-      tags: [wireguard, tailscale]
-
     - name: Copy nginx.conf
       ansible.builtin.copy:
         src: nginx.conf

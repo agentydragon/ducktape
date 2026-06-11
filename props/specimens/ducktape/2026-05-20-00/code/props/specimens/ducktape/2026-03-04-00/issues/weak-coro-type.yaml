@@ -1,0 +1,12 @@
+rationale: |
+  `_spawn` types its coroutine parameter as `Any` (line 26). The same
+  pattern in `agent_server/server/runtime.py` properly uses
+  `Coroutine[Any, Any, None]`. Use the precise type.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/persist/handler.py:
+        - [26, 26]

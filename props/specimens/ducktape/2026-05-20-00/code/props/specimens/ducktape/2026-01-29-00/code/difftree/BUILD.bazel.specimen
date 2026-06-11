@@ -1,0 +1,218 @@
+# gazelle:python_library_naming_convention $package_name$_lib
+# gazelle:resolve py difftree.__main__ //difftree:__main__
+# gazelle:resolve py difftree.__main__.main //difftree:__main__
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# NOTE: No aggregator target - use specific per-file targets like :config, :parser, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+# =============================================================================
+# Library targets (per-file)
+# =============================================================================
+
+py_library(
+    name = "progress_bar",
+    srcs = ["progress_bar.py"],
+    imports = [".."],
+    deps = ["@pypi//rich"],
+)
+
+py_library(
+    name = "parser",
+    srcs = ["parser.py"],
+    imports = [".."],
+    deps = ["@pypi//unidiff"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    deps = [":progress_bar"],
+)
+
+py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":parser",
+    ],
+)
+
+py_library(
+    name = "diff_tree",
+    srcs = ["diff_tree.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":progress_bar",
+        ":tree",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":diff_tree",
+        ":parser",
+        ":tree",
+        "@pypi//click",
+        "@pypi//rich",
+    ],
+)
+
+py_binary(
+    name = "difftree",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    main = "__main__.py",
+    deps = [
+        ":config",
+        ":diff_tree",
+        ":parser",
+        ":tree",
+        "@pypi//click",
+        "@pypi//rich",
+    ],
+)
+
+# =============================================================================
+# Test support
+# =============================================================================
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":diff_tree",
+        ":parser",
+        ":progress_bar",
+        ":tree",
+        "@pypi//pytest",
+        "@pypi//rich",
+    ],
+)
+
+# =============================================================================
+# Tests (per-file)
+# =============================================================================
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    imports = [".."],
+    deps = [
+        ":__main__",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff_tree",
+    srcs = ["test_diff_tree.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":conftest",
+        ":diff_tree",
+        ":parser",
+        ":progress_bar",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":conftest",
+        ":parser",
+        ":tree",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_parser",
+    srcs = ["test_parser.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":parser",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_progress_bar",
+    srcs = ["test_progress_bar.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":progress_bar",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_snapshots",
+    srcs = ["test_snapshots.py"],
+    data = ["__snapshots__/test_snapshots.ambr"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":conftest",
+        ":parser",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_tree",
+    srcs = ["test_tree.py"],
+    imports = [".."],
+    deps = [
+        ":config",
+        ":conftest",
+        ":parser",
+        ":tree",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Lint
+# =============================================================================

@@ -1,6 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/deps:check.bzl", "assert_no_deps")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # =============================================================================
 # Library targets
@@ -9,7 +8,6 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "yaml_loader",
     srcs = ["yaml_loader.py"],
-    imports = ["../../.."],
     visibility = [
         "//props/db:__subpackages__",
         "//props/specimens/scripts:__pkg__",
@@ -26,7 +24,6 @@ py_library(
 py_library(
     name = "export",
     srcs = ["export.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -39,17 +36,16 @@ py_library(
 py_library(
     name = "stats",
     srcs = ["stats.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
 )
 
 py_library(
     name = "model_metadata",
     srcs = ["model_metadata.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":stats",
+        "//openai_utils:api_shape",
         "//openai_utils:model_metadata",
         "//props:config",
         "//props/db:models",
@@ -60,7 +56,6 @@ py_library(
 py_library(
     name = "sync",
     srcs = ["sync.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":stats",
@@ -97,7 +92,6 @@ assert_no_deps(
 py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         "//props:conftest",
@@ -116,7 +110,6 @@ py_test(
     name = "test_sync_occurrence_update",
     size = "medium",
     srcs = ["test_sync_occurrence_update.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":sync",
@@ -135,7 +128,6 @@ py_test(
 py_test(
     name = "test_model_metadata_sync",
     srcs = ["test_model_metadata_sync.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":model_metadata",
@@ -152,7 +144,6 @@ py_test(
 py_test(
     name = "test_sync_snapshot_files",
     srcs = ["test_sync_snapshot_files.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":sync",

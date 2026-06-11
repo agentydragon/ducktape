@@ -1,0 +1,39 @@
+# Critiques: Reported Issues
+
+This document describes how critic output is stored in the database.
+
+{{ describe_relation("reported_issues") }}
+{{ describe_relation("reported_issue_occurrences") }}
+
+## Writing Issues
+
+**SQL workflow:**
+```sql
+-- 1. Insert the issue
+INSERT INTO reported_issues (critic_run_id, issue_id, rationale)
+VALUES (current_agent_run_id(), 'dead-code-1', 'Function never called');
+
+-- 2. Insert occurrences (note: file_path is RELATIVE)
+INSERT INTO reported_issue_occurrences
+  (critic_run_id, issue_id, occurrence_id, file_path, start_line, end_line)
+VALUES
+  (current_agent_run_id(), 'dead-code-1', 1, 'src/utils.py', 45, 52);
+```
+
+## RLS Scoping
+
+Critics can only write to their own run:
+- `current_agent_run_id()` extracts your run ID from username
+- RLS policies enforce `agent_run_id = current_agent_run_id()` on INSERT
+
+See `docs/rls_mechanism.md` for details.
+
+## Reading Critiques
+
+**Via SQL:**
+```sql
+SELECT ri.issue_id, ri.rationale, rio.file_path, rio.start_line, rio.end_line
+FROM reported_issues ri
+JOIN reported_issue_occurrences rio USING (critic_run_id, issue_id)
+WHERE ri.critic_run_id = '<run_id>';
+```

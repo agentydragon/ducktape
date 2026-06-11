@@ -1,0 +1,46 @@
+"""Standalone codebase scanning scripts (stdlib only)."""
+
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_binary(
+    name = "scan_comments",
+    srcs = ["scan_comments.py"],
+)
+
+py_binary(
+    name = "scan_dataclass_candidates",
+    srcs = ["scan_dataclass_candidates.py"],
+)
+
+py_binary(
+    name = "scan_error_handling",
+    srcs = ["scan_error_handling.py"],
+)
+
+py_binary(
+    name = "scan_manual_serde",
+    srcs = ["scan_manual_serde.py"],
+)
+
+py_binary(
+    name = "scan_single_line_functions",
+    srcs = ["scan_single_line_functions.py"],
+)
+
+py_binary(
+    name = "scan_string_literals",
+    srcs = ["scan_string_literals.py"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":scan_comments",
+        ":scan_dataclass_candidates",
+        ":scan_error_handling",
+        ":scan_manual_serde",
+        ":scan_single_line_functions",
+        ":scan_string_literals",
+    ],
+)

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tana-mcp-facade-config
+  namespace: tana-mcp
+data:
+  MCP_FACADE_AUTH__OIDC_ISSUER: "https://auth.allegedly.works/application/o/tana-mcp-facade/"
+  MCP_FACADE_AUTH__PUBLIC_BASE_URL: "https://tana-mcp-facade.allegedly.works"
+  MCP_FACADE_FACADE_NAME: "Tana MCP Facade"
+  MCP_FACADE_UPSTREAM__KIND: "http"
+  MCP_FACADE_UPSTREAM__URL: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
+  MCP_FACADE_PERSISTENCE__KIND: "valkey"
+  MCP_FACADE_PERSISTENCE__HOST: "mcp-valkey-ovh-master.tana-mcp.svc.cluster.local"
+  MCP_FACADE_PERSISTENCE__DB: "0"

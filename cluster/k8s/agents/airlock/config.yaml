@@ -7,7 +7,6 @@ backends:
 public_base_url: "https://airlock.allegedly.works"
 oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
 oidc_client_id: "airlock-operator"
-db_path: "/data/airlock.db"
 predicate_path: "/etc/airlock/predicate.py"
 port: 8765
 default_wait_mode:
@@ -37,11 +36,6 @@ oauth:
         name: oura-tokens
       access_secret:
         name: oura-access-token
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
       refresh_margin_seconds: 3600
     - name: google
       provider_type: oauth2
@@ -61,12 +55,30 @@ oauth:
         name: google-tokens
       access_secret:
         name: google-access-token
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
       refresh_margin_seconds: 300
       extra_auth_params:
         access_type: offline
         prompt: consent
+    - name: bsc
+      provider_type: oauth2
+      display_name: Blue Shield of California (FHIR sandbox)
+      authorize_url: https://dev-ext.blueshieldca.com/as/authorization.oauth2
+      token_url: https://dev-ext.blueshieldca.com/as/token.oauth2/
+      use_pkce: true
+      aud: https://api-dev.blueshieldca.com/bsc/fhir-sandbox/fhir-server/api/v4/cloud/
+      # Scopes per https://dev-ext.blueshieldca.com/.well-known/openid-configuration:
+      # PatientEOB (claims/reimbursements), PatientRead (everything else), interop
+      # (catch-all per CMS rule), openid (ID token / fhirUser context).
+      # BSC's PingFederate doesn't expose `offline_access` as a scope, but the
+      # refresh_token grant is configured per-client and may still issue one.
+      scopes:
+        - openid
+        - interop
+        - PatientEOB
+        - PatientRead
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/bsc
+      refresh_secret:
+        name: bsc-tokens
+      access_secret:
+        name: bsc-access-token
+      refresh_margin_seconds: 300

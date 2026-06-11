@@ -1,0 +1,89 @@
+# ClusterPolicy: Require GitOps for workload resources
+# Blocks direct kubectl apply for Deployments/StatefulSets/DaemonSets
+# Allows: Flux controllers, operators that create child workloads from GitOps-managed CRs,
+# and Stakater Reloader (rolling restarts on secret changes)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-gitops
+  annotations:
+    policies.kyverno.io/title: Require GitOps
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/description: >-
+      Enforces that workload resources (Deployments, StatefulSets, DaemonSets)
+      can only be created or modified by Flux GitOps controllers.
+      Direct kubectl apply/create/patch is blocked.
+spec:
+  # Start in Audit mode - change to Enforce after validation
+  validationFailureAction: Audit
+  # background: false because this policy uses subjects for exclusions,
+  # which requires admission context (request.userInfo) not available in background scans
+  background: false
+  rules:
+    - name: block-direct-workload-changes
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      exclude:
+        any:
+          # Allow Flux kustomize-controller
+          - subjects:
+              - kind: ServiceAccount
+                name: kustomize-controller
+                namespace: flux-system
+          # Allow Flux helm-controller
+          - subjects:
+              - kind: ServiceAccount
+                name: helm-controller
+                namespace: flux-system
+          # Allow Flux source-controller (for CRD updates)
+          - subjects:
+              - kind: ServiceAccount
+                name: source-controller
+                namespace: flux-system
+          # Allow Kyverno itself (for admission webhooks)
+          - subjects:
+              - kind: ServiceAccount
+                name: kyverno-admission-controller
+                namespace: kyverno
+          # Allow operators that create child workloads from CRs deployed via GitOps
+          - subjects:
+              - kind: ServiceAccount
+                name: openclaw-operator
+                namespace: openclaw-operator
+          - subjects:
+              - kind: ServiceAccount
+                name: monitoring-operator
+                namespace: monitoring
+          # Allow Authentik (creates outpost Deployments from provider CRs)
+          - subjects:
+              - kind: ServiceAccount
+                name: authentik
+                namespace: authentik
+          # Allow Stakater Reloader (triggers rolling restarts on secret changes)
+          - subjects:
+              - kind: ServiceAccount
+                name: reloader-reloader
+                namespace: kube-system
+          # Allow system namespaces
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+      validate:
+        message: >-
+          Direct resource creation/modification blocked.
+          All changes must go through GitOps (commit to git repository).
+          Resource: {{request.object.kind}}/{{request.object.metadata.name}}
+          User: {{request.userInfo.username}}
+        deny: {}

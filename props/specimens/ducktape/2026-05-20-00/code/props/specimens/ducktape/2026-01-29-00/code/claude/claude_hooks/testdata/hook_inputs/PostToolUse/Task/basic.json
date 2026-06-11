@@ -1,0 +1,29 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Task",
+  "tool_input": {
+    "description": "Test task",
+    "prompt": "Return 42"
+  },
+  "tool_response": {
+    "content": [
+      {
+        "type": "text",
+        "text": "42"
+      }
+    ],
+    "totalDurationMs": 3643,
+    "totalTokens": 40228,
+    "totalToolUseCount": 0,
+    "usage": {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 40219,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 5
+    },
+    "wasInterrupted": false
+  }
+}

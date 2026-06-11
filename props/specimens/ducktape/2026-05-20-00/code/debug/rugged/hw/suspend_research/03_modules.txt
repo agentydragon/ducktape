@@ -1,0 +1,9 @@
+Module                  Size  Used by
+mhi_wwan_mbim          24576  0
+mhi_pci_generic        45056  0
+mhi                   155648  2 mhi_wwan_mbim,mhi_pci_generic
+cdc_mbim               20480  0
+cdc_wdm                36864  1 cdc_mbim
+cdc_ncm                53248  1 cdc_mbim
+usbnet                 65536  3 cdc_mbim,cdc_ncm,cdc_ether
+wwan                   32768  1 mhi_wwan_mbim

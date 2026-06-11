@@ -1,0 +1,35 @@
+rationale: |
+  Using AttributeError as a proxy for None check. The code catches AttributeError
+  from calling .decode() on None, when an explicit `if content is not None:` check
+  would be clearer.
+
+  Additional issues:
+  - decode() is called twice: once in outer try, once in fallback (which also fails
+    if content is None, caught by inner except)
+  - Nested try/except is convoluted control flow
+
+  Clean version:
+  ```python
+  if exception.content is not None:
+      try:
+          debug_info["body"] = json.loads(exception.content.decode("utf-8"))
+      except (json.JSONDecodeError, UnicodeDecodeError):
+          debug_info["body"] = exception.content.decode("utf-8", errors="replace")[:500]
+  else:
+      debug_info["body"] = None
+  ```
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [50, 57]
+    note: >-
+      AttributeError catch used as None check for exception.content. Should use explicit
+      None check. Also decode() called twice unnecessarily.
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py

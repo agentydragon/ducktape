@@ -1,0 +1,77 @@
+# gazelle:exclude **/bad
+# gazelle:exclude **/ok
+
+"""Detector rules — each py_detector() generates a library + fixture test."""
+
+load(":defs.bzl", "py_detector")
+
+py_detector(
+    name = "broad_except_order",
+    srcs = ["rule.py"],
+    deps = ["//py_detectors:utils"],
+)
+
+py_detector(
+    name = "dynamic_attr_probe",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "flatten_nested_guards",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "import_aliasing",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "imports_inside_def",
+    srcs = ["rule.py"],
+    deps = [
+        "//py_detectors:import_graph",
+        "//py_detectors:utils",
+    ],
+)
+
+py_detector(
+    name = "magic_tuple_indices",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "optional_string_simplify",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "pathlike_str_casts",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "pydantic_v1_shims",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "swallow_errors",
+    srcs = ["rule.py"],
+    deps = ["//py_detectors:utils"],
+)
+
+py_detector(
+    name = "trivial_alias",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "trivial_passthrough",
+    srcs = ["rule.py"],
+)
+
+py_detector(
+    name = "walrus_suggest",
+    srcs = ["rule.py"],
+)

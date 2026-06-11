@@ -13,6 +13,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from props.core.agent_types import AgentType
 
@@ -26,13 +27,14 @@ BUILTIN_TAG = "latest"
 class RegistryProxyConfig:
     """Registry proxy configuration for image resolution and OCI references.
 
-    The registry proxy is part of the props backend - it proxies OCI API requests
-    to an upstream registry and records agent_definitions on push.
+    The registry proxy is a standalone data-plane service. It proxies OCI API
+    requests to an upstream registry and records agent_definitions on push.
 
     host/port: How the backend reaches the registry proxy (HTTP tag resolution).
     pull_host/pull_port: How the container runtime (kubelet/Docker) pulls images.
       Defaults to host/port when not set. Needed in k8s where the backend resolves
-      the service name (e.g. "props") via cluster DNS, but the kubelet can't.
+      the service name (e.g. "props-registry-proxy") via cluster DNS, but the
+      kubelet can't.
     project: Optional upstream registry project prefix (e.g. "props" for Harbor).
       When set, OCI references include it: registry.allegedly.works/props/critic@...
     """
@@ -113,10 +115,39 @@ class UpstreamRegistryConfig:
         return None
 
     def rewrite_path(self, path: str) -> str:
-        """Prepend project to path: /v2/critic/... → /v2/props/critic/..."""
+        """Prepend project to path: /v2/critic/... → /v2/props/critic/...
+
+        Idempotent: a path already under /v2/{project}/ is returned unchanged so
+        it can't be double-prefixed (/v2/props/props/critic/...). No agent repo
+        is named after the project, so this never collides with a real repo.
+        """
         if self.project and path.startswith("/v2/") and path != "/v2/":
+            if path == f"/v2/{self.project}" or path.startswith(f"/v2/{self.project}/"):
+                return path
             return f"/v2/{self.project}/{path[4:]}"
         return path
+
+    def rewrite_location(self, value: str) -> str:
+        """Map an upstream Location/Content-Location back to the client namespace.
+
+        Inverse of rewrite_path. Strips any upstream scheme+host (the upstream
+        may return an absolute URL) and the injected /{project} segment, yielding
+        a relative path the client resolves against the proxy. Preserves the
+        query string — chunked blob uploads carry a ?_state=... cursor.
+
+        Without this, the upstream's blob-upload Location (/v2/{project}/<repo>/
+        blobs/uploads/<uuid>) leaks the project prefix to the client, which then
+        pushes blobs to the wrong namespace and the manifest can't find them
+        (BLOB_UNKNOWN).
+        """
+        if not value:
+            return value
+        parts = urlsplit(value)
+        path = parts.path
+        prefix = f"/v2/{self.project}/"
+        if self.project and path.startswith(prefix):
+            path = "/v2/" + path[len(prefix) :]
+        return f"{path}?{parts.query}" if parts.query else path
 
     def repo_path(self, repo: str) -> str:
         """Prefix repo with project if configured: 'critic' → 'props/critic'."""

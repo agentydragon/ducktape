@@ -4,6 +4,7 @@ metadata:
   name: harbor
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 10m
@@ -24,6 +25,5 @@ spec:
     - name: harbor-db
     - name: gateway
     - name: harbor-secrets
-    - name: monitoring-stack
     # Phase 1: Deploy without Authentik dependency
     # Phase 2: Add harbor-sso after Harbor is running

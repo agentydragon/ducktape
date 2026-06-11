@@ -1,0 +1,42 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+  annotations:
+    description: "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped financial data."
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  managed:
+    roles:
+      - name: plaid_ro
+        ensure: present
+        login: true
+        passwordSecret:
+          name: plaid-mcp-db-readonly
+        comment: "Read-only SQL access for the Plaid Postgres MCP facade."
+
+  bootstrap:
+    initdb:
+      database: plaidmcp
+      owner: plaidmcp
+      # CNPG auto-generates credentials in secret plaid-mcp-db-app.

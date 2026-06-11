@@ -1,0 +1,30 @@
+# The sandbox is ephemeral by contract: agents get full CRUD and a shared
+# quota (8 CPU / 16Gi / 20 pods), and nothing here is GitOps-managed, so
+# forgotten experiments otherwise linger and pin the quota forever. Reap
+# anything older than 7 days. CronJob is included deliberately — an orphaned
+# CronJob is self-renewing litter that keeps spawning fresh Jobs. Owned
+# children (ReplicaSets, Job pods) go via cascade when their parent is
+# reaped. Delete RBAC comes from the two aggregated ClusterRoles in
+# kyverno/policies/ (cleanup-controller-{jobs,workloads}).
+apiVersion: kyverno.io/v2
+kind: CleanupPolicy
+metadata:
+  name: sandbox-janitor
+  namespace: claude-sandbox
+spec:
+  schedule: "20 * * * *"
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Deployment
+            - StatefulSet
+            - Job
+            - CronJob
+            - Service
+  conditions:
+    all:
+      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
+        operator: GreaterThan
+        value: 168h

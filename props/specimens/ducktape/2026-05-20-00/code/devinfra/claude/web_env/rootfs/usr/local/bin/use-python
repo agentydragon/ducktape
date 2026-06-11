@@ -1,0 +1,26 @@
+#!/bin/bash
+if [ -z "$1" ]; then
+    echo "Usage: use-python <version>"
+    echo "Available versions:"
+    for v in /usr/bin/python3.*; do
+        if [ -x "$v" ] && [[ "$v" =~ python3\.[0-9]+ ]]; then
+            echo "  - $(basename $v | sed 's/python//')"
+        fi
+    done
+    exit 1
+fi
+
+VERSION=$1
+if [ ! -x "/usr/bin/python${VERSION}" ]; then
+    echo "Error: Python ${VERSION} not found"
+    exit 1
+fi
+
+update-alternatives --set python "/usr/bin/python${VERSION}" 2>/dev/null || \
+    update-alternatives --install /usr/bin/python python "/usr/bin/python${VERSION}" 1
+
+update-alternatives --set python3 "/usr/bin/python${VERSION}" 2>/dev/null || \
+    update-alternatives --install /usr/bin/python3 python3 "/usr/bin/python${VERSION}" 1
+
+echo "Switched to Python ${VERSION}"
+python --version

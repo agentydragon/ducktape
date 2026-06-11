@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: tana-firebase-refresh-token
+    namespace: tana-mcp
+    annotations:
+        description: |
+            Long-lived Firebase refresh token for the agentydragon@gmail.com Tana
+            account. To re-bootstrap, see cluster/docs/plans/tana_mcp_sane_signin.md
+            (option B "Bootstrap (no browser required)").
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: litellm
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: litellm
+type: Opaque
+stringData:
+    refresh_token: ENC[AES256_GCM,data:MNHY8Y+TzSaMRKV6DBnhAbNJfYW9I9rekt1OxS3LLD05pWU5hbKDnt938ExjlCMLFCbppRRck/X2q+dC/kj3dCDs6AyIS2B/xmN4lF2dpHiWq6pP727eNW3aI7DttNXHM4qvkIc1Q40dqXAy0y6jtzPgFbxcFekFtmJS7XLs3UGvtdWbyDXDk+EJ4Hz3jV09IRY+3i1rOxIuJuph0Zn7te23saEVVRTBogaYl9JE2w10DtsUNGVF,iv:PhoggK6BMxo3/iaxe5Zk4/3jCaqqys7dADMCUuPXbCA=,tag:WkZff5Yw9EfvMJFbiD2rVw==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYRTF3K1Q5MFo1N2hWMXYw
+            M0d3cENqSlRLbXdYb0k0NFNJN24zWUdObTMwCkRHbWd6VVJibzlpZGgxbnk4clkz
+            R1pSNW1FUHlsQUtWMTRvYzFmWFBXT1UKLS0tIHJOdVFiNWh5NTJRN0s3WWhHM0Ru
+            ZSs5RVNKVW5VVUI2OTRaLzY4T2Z5eWcKo5csGYioFVHrRm2Wh8IxeVh3YmU3EAn3
+            c7A2bZmR0z1YthNunGTHdyObjRl1V4ei6fegermPUtKcjCJkkOAOig==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCVys4TnM5UzZHd3B0Qnkr
+            NFRUY0pPUXprbDZ3bldWaHM5MUtRRkErRUNjCjhFRkc4dk9vTFkzaU9jU0l3UWIy
+            VG5QT3hjbHR2UlQvSUZxeXE0by9nZ0EKLS0tIEdPcUdKdDNNM2krRktDZ05YN2F3
+            QlFra2ZveVdJVzd3UG5MTHlnOW95UzgKykKSWZDbEJLW5s4Lx6CPBOzL20X9mTEU
+            qLkBiVjPYwhgO5ePtGDWECUkTKcCRkb5QVSHbUzAV6D4tldGPlg0KA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-03T12:34:57Z"
+    mac: ENC[AES256_GCM,data:blE5N6JCgJewO4CPjSytUcfnndDJht1NJ62aJTJGmtMvExHrd5XTXqxrpld01rY8b4OyLTCQmqeCqIS8OkUdFuZSnKerNXkpU9Eku6G6q0W3qjlP20Drs3qlNwfZg7cbKyQ3aVToNidtUPBDOBl6VsRd42oCSO+amCdyooXzroM=,iv:0QFx3v7vCC76orBwnhqHYZQdppdqMsBlc8A5OKC7pCw=,tag:H0IFYmKt/984FMGUE9vccA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

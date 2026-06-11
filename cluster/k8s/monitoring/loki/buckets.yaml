@@ -1,0 +1,16 @@
+# Single bucket "loki" carrying chunks, ruler, and admin sub-paths
+# (Loki splits them internally by key prefix). See helmrelease.yaml
+# `storage.bucketNames` — all three point at the same bucket.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  name: loki
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  access:
+    - user: loki
+      actions: [Read, Write, List, Tagging]

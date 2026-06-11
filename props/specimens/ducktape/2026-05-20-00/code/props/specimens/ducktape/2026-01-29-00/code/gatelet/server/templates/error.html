@@ -1,0 +1,8 @@
+{# Audience: any (error display) #} {% extends "base.html" %} {% block title %}Gatelet - Error{% endblock %} {% block
+content %}
+<section class="error">
+  <h2>Error {{ status_code }}</h2>
+  <p>{{ detail }}</p>
+  <p><a href="/">Return to Home</a></p>
+</section>
+{% endblock %}

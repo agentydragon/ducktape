@@ -1,0 +1,166 @@
+# Ruff configuration for the entire repository
+# Centralized here (not in pyproject.toml) for clean separation:
+# - Root pyproject.toml: uv overrides and tool config only
+# - ruff.toml: All ruff formatting and linting rules
+# - Bazel's aspect_rules_lint reads this file via Label("//:ruff.toml")
+
+# Prefer one-line formatting when code fits
+line-length = 120
+# Target Python 3.13+ consistently
+target-version = "py313"
+
+# Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
+# .gitattributes is the source of truth; this list must stay in sync.
+# Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# See README.md "Lint/Format Exclusions" section for details.
+exclude = [
+    "tana/export/references",
+    "props/testing/fixtures/testdata",
+    "py_detectors/rules/**/bad/**",
+    "py_detectors/rules/**/ok/**",
+    "x/sandboxed_jupyter/testdata",
+    "sysrw/testdata",
+    "tana/testdata",
+    "props/specimens/*/*/code",
+    "x/orcaslicer_config",
+]
+
+[format]
+# Ignore trailing commas when deciding whether to collapse to one line
+# (Google-style formatting: pack code densely when it fits)
+skip-magic-trailing-comma = true
+
+[lint]
+select = [
+    # Base
+    "E", "F",
+    # Pylint families
+    "PLC",   # convention
+    "PLE",   # errors
+    "PLR",   # refactor
+    "PLW",   # warnings
+    # Modernization / quality
+    "UP",    # pyupgrade
+    "FA",    # future annotations
+    "FURB",  # refurb
+    "I",     # Imports (isort replacement)
+    # Extras
+    "YTT",
+    "ASYNC",
+    "B",     # bugbear
+    "COM",   # commas
+    "C4",    # comprehensions
+    "LOG",   # logging
+    "PIE",
+    "PT",    # pytest
+    "RSE",
+    "RET",   # returns
+    "SIM",   # simplify
+    "SLOT",
+    "PTH",   # pathlib
+    "NPY",   # NumPy 2.0 deprecation guardrail
+    "PD",    # pandas
+    "N",     # naming
+    "PERF",  # perflint
+    "FAST",  # FastAPI best practices
+    "A006",  # lambda argument shadowing builtins
+    "PGH",   # pygrep-hooks (bare type: ignore / noqa without codes)
+    # TRY004 disabled: isinstance() checks are used for state validation (e.g.,
+    # "mount not active", "app resources not initialized"), not just type narrowing.
+    # TRY004 blindly converts these to TypeError, which is semantically wrong —
+    # a mount being in the wrong lifecycle state is a RuntimeError, not a type error.
+    "EXE",   # shebang/executable consistency
+    "TRY002", # raise vanilla Exception — use specific exception types
+    "TRY401", # redundant exception object in logging.exception
+    "TRY203", # useless try-except (just re-raises)
+    "TRY400", # logging.error in except → logging.exception
+    "DTZ003", # datetime.utcnow() deprecated since Python 3.12
+    "RUF"    # ruff-specific
+]
+# Keep these off globally; handled case-by-case or via constants
+ignore = [
+    "PLR2004",  # magic value comparisons
+    "PLR0912",  # too many branches
+    "PLR0915",  # too many statements
+    "PLR0911",  # too many returns
+    "PLR0913",  # too many arguments - often leads to unhelpful refactors
+    "B904",     # raise from e
+    "E501"      # line length (formatter handles wrapping)
+]
+
+# Avoid conflicts between ruff-format and trailing-comma rules
+extend-ignore = ["COM812"]
+
+# Rules evaluated and intentionally not enabled:
+# FIX  — TODOs shouldn't block commits; they're for future work
+# T20  — many CLIs use print() legitimately
+# TD   — single-author repo; requiring author/issue link on every TODO is overhead
+# EM   — extracting exception messages to variables adds boilerplate without sufficient value
+# ISC  — implicit string concat is fine; explicit + is sometimes clearer
+# FLY  — 2-element join is fine and consistent with longer joins
+# Q    — conflicts with ruff-format's quote handling and would cause unnecessary formatter/linter churn
+# TC006 — quoting cast() type expressions to avoid runtime eval is not worth the readability cost
+
+# Allow mathematical symbols in strings
+allowed-confusables = ["σ", "α", "β", "γ", "ε", "×"]
+
+# Enforce modern typing
+[lint.pyupgrade]
+# Target Python 3.12+ - no runtime typing imports needed
+keep-runtime-typing = false
+
+[lint.isort]
+# Don't treat same-package imports specially (no local-folder section)
+detect-same-package = false
+# Unknown packages default to third-party (no heuristics)
+default-section = "third-party"
+# Force third-party for packages that have same-named directories in repo
+known-third-party = ["ansible", "docker"]
+# First-party = our workspace packages (ruff uses heuristics otherwise)
+# TODO: Auto-generate this list from Bazel once bazelized
+known-first-party = [
+    "devinfra",
+    "util",
+    "agent_core",
+    "agent_pkg",
+    "x",
+    "props",
+    "difftree",
+    "ducktape_llm_common",
+    "editor_agent",
+    "ember",
+    "finance",
+    "git_commit_ai",
+    "gmail_archiver",
+    "gnome",
+    "habitify",
+    "homeassistant",
+    "inop",
+    "inventree_utils",
+    "laser",
+    "llm",
+    "mcp_infra",
+    "mcp_utils",
+    "openai_utils",
+    "py_detectors",
+    "sysrw",
+    "tana",
+    "tests",  # test packages (until colocated under main packages)
+    "wt",
+]
+combine-as-imports = true
+# Compatible with format.skip-magic-trailing-comma
+split-on-trailing-comma = false
+
+[lint.per-file-ignores]
+# Project-specific ignores (consolidated from individual pyproject.toml files)
+"x/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+# Test fixtures are intentionally bad code for detector testing
+"py_detectors/tests/fixtures/**" = ["ALL"]
+# sys.path manipulation must happen before imports in uv run scripts and pytest
+"devinfra/ci/check_release.py" = ["E402"]
+"devinfra/ci/ci_decide.py" = ["E402"]
+"devinfra/ci/sync_pins.py" = ["E402"]
+# conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
+# and fixture parameters naturally shadow the imported fixture names (F811)
+"**/conftest.py" = ["F401", "F811"]

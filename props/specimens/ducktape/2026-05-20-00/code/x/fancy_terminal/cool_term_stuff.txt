@@ -1,0 +1,34 @@
+starship
+zsh-autosuggestions
+zsh-syntax-highlighting
+lazygit
+
+Git and diffs
+- lazygit — TUI for git workflows (lazygit)
+- delta — syntax-highlighted pager for diffs/log (git-delta)
+- difftastic — structural diff (difftastic)
+
+File viewing, listing, disk
+- bat — cat with syntax highlighting (bat)
+- eza — modern ls with icons/git (eza)
+- dust — intuitive du (dust)
+- duf — friendly df (duf)
+- gdu or ncdu — fast TUI disk usage (gdu, ncdu)
+- procs — modern ps (procs)
+
+Data wrangling and CLIs
+- yq — YAML processing (yq)
+- xsv / miller — CSV/TSV wrangling (xsv, miller)
+- jc — convert many CLI outputs to JSON (jc)
+- sd — ergonomic sed alternative (sd)
+- glow — Markdown TUI viewer (glow)
+- entr or watchexec — rerun on file change (entr, watchexec)
+
+Networking and web
+- httpie or curlie — human-friendly HTTP clients (httpie, curlie)
+- dog — modern dig (dog)
+- mtr — ping+traceroute (mtr)
+
+Cheats and docs
+- tldr — community examples for commands (tldr)
+- navi — interactive cheatsheet runner (navi)

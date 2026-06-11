@@ -1,0 +1,52 @@
+{
+    "fan_cooling_layer_time": [
+        "7"
+    ],
+    "fan_max_speed": [
+        "20"
+    ],
+    "fan_min_speed": [
+        "20"
+    ],
+    "filament_density": [
+        "1.21"
+    ],
+    "filament_max_volumetric_speed": [
+        "20"
+    ],
+    "filament_retraction_length": [
+        "0.8"
+    ],
+    "filament_retraction_speed": [
+        "20"
+    ],
+    "filament_settings_id": [
+        "TPU 95A - 1mm (ChatGPT o3)"
+    ],
+    "filament_wipe": [
+        "1"
+    ],
+    "filament_wipe_distance": [
+        "0.5"
+    ],
+    "from": "User",
+    "hot_plate_temp": [
+        "55"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "55"
+    ],
+    "inherits": "Generic TPU @System",
+    "is_custom_defined": "0",
+    "name": "TPU 95A - 1mm (ChatGPT o3)",
+    "nozzle_temperature": [
+        "230"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "235"
+    ],
+    "nozzle_temperature_range_low": [
+        "225"
+    ],
+    "version": "2.3.0.0"
+}

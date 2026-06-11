@@ -13,7 +13,6 @@ spec:
   timeout: 5m
   dependsOn:
     - name: claude-rbac
-    - name: openclaw-sandbox
   decryption:
     provider: sops
     secretRef:

@@ -11,7 +11,7 @@
   interface Props {
     data: ExampleDetailResponse;
   }
-  let { data }: Props = $props();
+  const { data }: Props = $props();
 
   function formatStatusCounts(counts: Record<string, number>): string {
     const parts: string[] = [];

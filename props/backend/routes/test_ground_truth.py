@@ -170,5 +170,19 @@ def test_admin_snapshot_detail_with_file_set_scope(
     assert body["slug"] == str(subtract_file_example.snapshot_slug)
 
 
+def test_admin_can_fetch_snapshot_files_in_batch(synced_db: Database) -> None:
+    """Batch file-content endpoint returns multiple files and non-fatal missing paths."""
+    resp = make_gt_client(synced_db).post(
+        "/api/gt/snapshots/test-fixtures/train1/files", json={"paths": ["add.py", "subtract.py", "missing.py"]}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    files_by_path = {file["path"]: file for file in body["files"]}
+    assert set(files_by_path) == {"add.py", "subtract.py"}
+    assert body["missing"] == ["missing.py"]
+    assert "def add" in files_by_path["add.py"]["content"]
+    assert "def subtract" in files_by_path["subtract.py"]["content"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

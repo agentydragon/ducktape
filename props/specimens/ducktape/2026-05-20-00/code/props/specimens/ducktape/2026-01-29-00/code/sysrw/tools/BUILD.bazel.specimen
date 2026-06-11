@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+# Gazelle will create per-file py_library targets
+
+py_binary(
+    name = "show_rewritten_crush",
+    srcs = ["show_rewritten_crush.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sysrw:extract_common",
+        "//sysrw:openai_typing",
+    ],
+)

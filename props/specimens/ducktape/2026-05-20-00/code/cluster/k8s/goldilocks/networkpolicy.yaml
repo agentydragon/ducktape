@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: goldilocks-dashboard-ingress
+  namespace: goldilocks
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: goldilocks
+      app.kubernetes.io/component: dashboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 8080
+          protocol: TCP

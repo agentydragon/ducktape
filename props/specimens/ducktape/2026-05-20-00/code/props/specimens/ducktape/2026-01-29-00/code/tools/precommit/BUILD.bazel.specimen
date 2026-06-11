@@ -1,0 +1,106 @@
+# Unified pre-commit tool: format + validate in single Bazel invocation
+#
+# Combines formatting and validation to avoid Bazel client lock contention.
+# When pre-commit runs multiple Bazel hooks concurrently, they serialize on
+# the Bazel client lock (~55s each). This single binary runs both sequentially
+# within one invocation (~20s total).
+#
+# Usage:
+#   bazel run //tools/precommit -- [files...]
+#   bazel run //tools/precommit  # format and validate all tracked files
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "check_terraform_centralization",
+    srcs = ["check_terraform_centralization.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "run_check_terraform_centralization",
+    srcs = ["check_terraform_centralization.py"],
+    main = "check_terraform_centralization.py",
+    visibility = ["//visibility:public"],
+    deps = [":check_terraform_centralization"],
+)
+
+# Unified precommit: format + validate in one Bazel invocation
+py_binary(
+    name = "precommit",
+    srcs = ["precommit.py"],
+    data = [
+        # Formatters
+        "//tools/lint:prettier",
+        "@aspect_rules_lint//format:ruff",
+        "@aspect_rules_lint//format:shfmt",
+        "@buildifier_prebuilt//buildifier",
+        # Validators
+        "//cluster/scripts:validate_dependencies",
+        "//cluster/scripts:validate_flux_build",
+        "//cluster/scripts:validate_helm_templates",
+        "//cluster/scripts:validate_kustomizations",
+        "//cluster/scripts:validate_sealed_secrets",
+        # Terraform tools
+        "@multitool//tools/tflint",
+        "@multitool//tools/tofu",
+    ],
+    env = {
+        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
+        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
+        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
+        "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
+        "TFLINT_BIN": "$(rlocationpath @multitool//tools/tflint)",
+        "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        ":check_terraform_centralization",
+        "//tools:check_pytest_main",
+        "//tools:env_utils",
+        "@pypi//checkov",
+        "@pypi//pygit2",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Check-only mode - same script with FMT_CHECK=1
+py_binary(
+    name = "precommit.check",
+    srcs = ["precommit.py"],
+    data = [
+        # Formatters
+        "//tools/lint:prettier",
+        "@aspect_rules_lint//format:ruff",
+        "@aspect_rules_lint//format:shfmt",
+        "@buildifier_prebuilt//buildifier",
+        # Validators
+        "//cluster/scripts:validate_dependencies",
+        "//cluster/scripts:validate_flux_build",
+        "//cluster/scripts:validate_helm_templates",
+        "//cluster/scripts:validate_kustomizations",
+        "//cluster/scripts:validate_sealed_secrets",
+        # Terraform tools
+        "@multitool//tools/tflint",
+        "@multitool//tools/tofu",
+    ],
+    env = {
+        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
+        "FMT_CHECK": "1",
+        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
+        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
+        "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
+        "TFLINT_BIN": "$(rlocationpath @multitool//tools/tflint)",
+        "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
+    },
+    main = "precommit.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":check_terraform_centralization",
+        "//tools:check_pytest_main",
+        "//tools:env_utils",
+        "@pypi//checkov",
+        "@pypi//pygit2",
+        "@rules_python//python/runfiles",
+    ],
+)

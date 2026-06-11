@@ -1,0 +1,25 @@
+rationale: |
+  Catches bare Exception when accessing GitHub repo, which includes programming
+  errors like TypeError and AttributeError that should propagate. PyGithub has
+  a well-defined exception hierarchy: GithubException (base for API errors with
+  subclasses for 401/403/404/rate-limit), BadAttributeException (type errors),
+  and network errors via requests.RequestException. At most, should catch
+  (github.GithubException, github.BadAttributeException, requests.RequestException).
+  Whether to catch all three or a subset is a judgment call, but catching bare
+  Exception is too broad and will swallow programming errors.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/github_client.py:
+        - [54, 60]
+    note: >-
+      except Exception catches all errors including programming bugs. At most,
+      should catch (github.GithubException, github.BadAttributeException,
+      requests.RequestException) - not bare Exception.
+    critic_scopes_expected_to_recall:
+      - - wt/server/github_client.py
+    match_file_restriction:
+      - wt/server/github_client.py

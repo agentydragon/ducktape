@@ -1,0 +1,30 @@
+# Shared bearer token between the Airlock server and the
+# kubeapi-admin-exec-mcp backend.  Generated once by ESO Password
+# generator; Stakater Reloader restarts both pods on rotation.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: exec-backend-token-generator
+  namespace: airlock
+spec:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: exec-backend-token
+  namespace: airlock
+spec:
+  refreshInterval: 8760h
+  target:
+    name: exec-backend-token
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: exec-backend-token-generator

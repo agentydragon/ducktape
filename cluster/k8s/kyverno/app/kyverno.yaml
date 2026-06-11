@@ -35,6 +35,12 @@ spec:
         name: kyverno
         namespace: flux-system
   values:
+    # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable
+    # and already mirrored through Harbor (ghcr-proxy).
+    global:
+      image:
+        registry: ghcr.io
+
     # Admission controller configuration
     # HA: one replica per control-plane node (3 nodes = 3 replicas).
     # Ensures the webhook is reachable from every API server without
@@ -50,7 +56,7 @@ spec:
       # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
       # Replaces topologySpreadConstraints whose labelSelector didn't match
       # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
-      # all 3 replicas to stack on talos-vps-cp-1.
+      # all 3 replicas to stack on a single control-plane node.
       # The chart default uses preferredDuringScheduling with the correct labels.
       antiAffinity:
         enabled: true

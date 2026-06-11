@@ -1,0 +1,84 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "rspcache",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "admin_ui/**",
+            "docker/**",
+        ],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//asyncpg",
+        "@pypi//canonicaljson",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "rspcache_cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    deps = [":rspcache"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":rspcache"],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "cli_tar",
+    srcs = [":rspcache_cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = [
+        "run",
+        "--app",
+        "proxy",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ],
+    entrypoint = ["/app/rspcache_cli"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = [
+        "8000/tcp",
+        "8100/tcp",
+    ],
+    tars = [":cli_tar"],
+    workdir = "/opt/adgn",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["rspcache:latest"],
+)

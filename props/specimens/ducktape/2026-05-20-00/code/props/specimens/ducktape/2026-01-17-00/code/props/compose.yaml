@@ -1,0 +1,76 @@
+# Props infrastructure services
+# Run: docker compose up -d
+# Stop: docker compose down
+
+networks:
+  # Internal network for registry/proxy/postgres communication
+  # Agents cannot access this network directly
+  props-internal:
+    name: props-internal
+    internal: true
+  # Network for agent containers to reach proxy and postgres
+  props-agents:
+    name: props-agents
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: props-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: eval_results
+    command: ["-c", "max_connections=200"]
+    volumes:
+      - props_eval_results_data:/var/lib/postgresql/data
+    networks:
+      - props-internal
+      - props-agents
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  registry:
+    image: registry:2
+    container_name: props-registry
+    ports:
+      - "5050:5000"
+    volumes:
+      - props_registry_data:/var/lib/registry
+    networks:
+      - props-internal
+      - default # For host port publishing (internal network blocks it)
+
+  registry-proxy:
+    image: props-registry-proxy:latest
+    container_name: props-registry-proxy
+    ports:
+      - "5051:5051"
+    environment:
+      PROPS_REGISTRY_UPSTREAM_URL: http://props-registry:5000
+      PGHOST: props-postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: eval_results
+    networks:
+      - props-internal
+      - props-agents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      registry:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5051/v2/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  props_eval_results_data:
+  props_registry_data:

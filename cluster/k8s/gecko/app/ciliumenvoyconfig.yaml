@@ -1,0 +1,55 @@
+# Public SSH for gecko via a manual CiliumEnvoyConfig.
+#
+# Cilium 1.19's Gateway API controller does not implement TCPRoute (verified
+# against <https://docs.cilium.io/en/v1.19/network/servicemesh/gateway-api/gateway-api/>
+# and the live ciliumenvoyconfig for cluster-gateway, which carries only
+# :80 and :443). To get raw TCP to gecko-ssh:22, we declare an Envoy listener
+# directly via a CEC. The cilium-envoy DaemonSet on hil nodes is already
+# hostNetwork=true (gatewayAPI.hostNetwork.enabled), so a 0.0.0.0:22 listener
+# binds straight on the host port. Wildcard `*.allegedly.works` already
+# resolves to the hil gateway IPs, so:
+#
+#     ssh agentydragon@gecko.allegedly.works
+#
+# Just works for any key in nix/nixos/hosts/bootstrap/default.nix.
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  name: gecko-ssh
+  namespace: gecko
+  annotations:
+    cec.cilium.io/use-original-source-address: "false"
+spec:
+  # Bind on the same nodes that the cluster-gateway does. Talos doesn't run
+  # an in-cluster sshd, so :22 is free on each.
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: hil
+  # Tell the operator to populate endpoints for gecko-ssh:22.
+  backendServices:
+    - name: gecko-ssh
+      namespace: gecko
+      number:
+        - "22"
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      name: gecko-ssh
+      address:
+        socketAddress:
+          address: 0.0.0.0
+          portValue: 22
+      filterChains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typedConfig:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                statPrefix: gecko-ssh
+                cluster: gecko:gecko-ssh:22
+                idleTimeout: 3600s
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      name: gecko:gecko-ssh:22
+      type: EDS
+      edsClusterConfig:
+        serviceName: gecko/gecko-ssh:22
+      outlierDetection:
+        splitExternalLocalOriginErrors: true

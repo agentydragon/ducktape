@@ -1,0 +1,36 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: snapshot-controller
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: external-snapshotter-source
+    namespace: flux-system
+  path: ./deploy/kubernetes/snapshot-controller
+  prune: true
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - name: snapshot-controller-crds
+  images:
+    - name: registry.k8s.io/sig-storage/snapshot-controller
+      newTag: v8.4.0
+  patches:
+    - target:
+        kind: Deployment
+        name: snapshot-controller
+        namespace: kube-system
+      patch: |-
+        - op: add
+          path: /spec/template/spec/nodeSelector
+          value:
+            topology.kubernetes.io/zone: hil-ovh
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: snapshot-controller
+      namespace: kube-system

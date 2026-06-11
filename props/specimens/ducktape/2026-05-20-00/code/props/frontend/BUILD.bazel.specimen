@@ -1,0 +1,216 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+
+# Link npm packages for this workspace member
+npm_link_all_packages(name = "node_modules")
+
+# Export config files
+exports_files([
+    ".prettierrc",
+    "tsconfig.json",
+])
+
+exports_files(
+    ["index.html"],
+    visibility = ["//props/backend:__pkg__"],
+)
+
+# ============================================================
+# App entry point (transitive deps pull in all sources)
+# ============================================================
+
+js_library(
+    name = "app",
+    srcs = [
+        "src/App.svelte",
+        "src/app.css",
+        "src/main.ts",
+    ],
+    deps = [
+        "//props/frontend/src/components:RunTriggerModal",
+        "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:token",
+        "//props/frontend/src/lib:types",
+        "//props/frontend/src/pages:DefinitionDetailPage",
+        "//props/frontend/src/pages:ExamplesPage",
+        "//props/frontend/src/pages:OverviewPage",
+        "//props/frontend/src/pages:RunDetailPage",
+        "//props/frontend/src/pages:RunsPage",
+        "//props/frontend/src/pages:SnapshotDetailPage",
+        "//props/frontend/src/pages:SnapshotsPage",
+    ],
+)
+
+# ============================================================
+# Development server
+# ============================================================
+
+# Run: bazel run //props/frontend:dev
+js_binary(
+    name = "dev",
+    chdir = package_name(),
+    data = [
+        "dev.mjs",
+        "index.html",
+        "svelte.config.js",
+        "tsconfig.json",
+        ":app",
+        ":node_modules",
+        "//props/backend:backend_cli",
+        "//props/frontend/src/lib:schema",
+    ],
+    entry_point = "dev.mjs",
+    no_copy_to_bin = ["//props/backend:backend_cli"],
+)
+
+# ============================================================
+# Production bundle
+# ============================================================
+
+js_binary(
+    name = "build_bundle",
+    data = [
+        "esbuild.config.mjs",
+        "index.html",
+        "svelte.config.js",
+        "tsconfig.json",
+        ":app",
+        ":node_modules",
+        "//props/frontend/src/lib:schema",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+# Run: bazel build //props/frontend:bundle
+js_run_binary(
+    name = "bundle",
+    srcs = [
+        "esbuild.config.mjs",
+        "index.html",
+        "svelte.config.js",
+        "tsconfig.json",
+        ":app",
+        "//props/frontend/src/lib:schema",
+    ],
+    outs = [
+        "dist/main.css",
+        "dist/main.js",
+    ],
+    args = ["dist"],
+    chdir = package_name(),
+    tool = ":build_bundle",
+    visibility = ["//props/backend:__pkg__"],
+)
+
+# ============================================================
+# Type checking
+# ============================================================
+
+# Run: bazel test //props/frontend:svelte_check_test
+svelte_check_bin.svelte_check_test(
+    name = "svelte_check_test",
+    args = [
+        "--tsconfig",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "svelte.config.js",
+        "tsconfig.json",
+        ":app",
+        ":node_modules",
+        "//props/frontend/src/lib:schema",
+    ],
+    tags = ["lint"],
+)
+
+# ============================================================
+# Test harness (visual regression scaffold)
+# ============================================================
+
+js_library(
+    name = "harness_lib",
+    srcs = [
+        "tests/harness/harness.ts",
+        "tests/harness/index.html",
+    ],
+    tags = ["no-lint"],
+    deps = [":app"],
+)
+
+js_binary(
+    name = "build_harness",
+    data = [
+        "tests/harness/esbuild.config.mjs",
+        ":harness_lib",
+        ":node_modules",
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "harness_bundle",
+    srcs = [
+        "tests/harness/esbuild.config.mjs",
+        ":harness_lib",
+    ],
+    outs = [
+        "tests/harness/dist/harness.css",
+        "tests/harness/dist/harness.js",
+    ],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_harness",
+    visibility = ["//props/frontend/src:__subpackages__"],
+)
+
+filegroup(
+    name = "harness_js",
+    srcs = ["tests/harness/dist/harness.js"],
+    visibility = ["//props/frontend/src:__subpackages__"],
+)
+
+# ============================================================
+# Tests
+# ============================================================
+
+js_test(
+    name = "router_test",
+    data = [":node_modules"],
+    entry_point = "tests/router.test.mjs",
+)
+
+# ============================================================
+# Visual regression tests
+#
+# Each scenario lives in the sub-package next to its component.
+# Shared infrastructure (Puppeteer, baselines, harness) is here.
+#
+# Run all:  bazel test //props/frontend:visual_tests
+# Run one:  bazel test //props/frontend/src/components:visual_DefinitionDetail
+# ============================================================
+
+filegroup(
+    name = "visual_test_assets",
+    srcs = ["tests/harness/index.html"],
+    visibility = ["//props/frontend/src:__subpackages__"],
+)
+
+test_suite(
+    name = "visual_tests",
+    tests = [
+        "//props/frontend/src/components:visual_DefinitionDetail",
+        "//props/frontend/src/components:visual_FileViewerAnnotated",
+        "//props/frontend/src/components:visual_FileViewerGroundTruth",
+        "//props/frontend/src/components:visual_LLMRequests",
+        "//props/frontend/src/components:visual_LLMRequestsToolCall",
+        "//props/frontend/src/components:visual_RunDetailCritic",
+        "//props/frontend/src/components:visual_RunsBrowser",
+        "//props/frontend/src/components/stats:visual_CoverageHeatmap",
+        "//props/frontend/src/components/stats:visual_DistributionChartRecall",
+        "//props/frontend/src/components/stats:visual_DistributionChartTP",
+        "//props/frontend/src/components/stats:visual_OccurrenceStatsTable",
+        "//props/frontend/src/pages:visual_SnapshotDetail",
+    ],
+)

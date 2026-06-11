@@ -1,0 +1,46 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "z4jWAtVs16HS",
+      "props": {
+        "created": 1749757072051,
+        "name": "Date: <span data-inlineref-date=\"{&quot;dateTimeString&quot;:&quot;2025-06-12&quot;,&quot;timezone&quot;:&quot;America/Los_Angeles&quot;}\"></span>",
+        "_ownerId": "2Ap-6LC3fVuq"
+      },
+      "touchCounts": [30, 0],
+      "modifiedTs": [1749768148630, 0]
+    },
+    {
+      "id": "RSFNedUJrARu",
+      "props": {
+        "created": 1749757078825,
+        "name": "Datetime: <span data-inlineref-date=\"{&quot;dateTimeString&quot;:&quot;2025-06-12T12:38:03&quot;,&quot;timezone&quot;:&quot;America/Los_Angeles&quot;}\"></span>",
+        "_ownerId": "2Ap-6LC3fVuq"
+      },
+      "touchCounts": [38, 0],
+      "modifiedTs": [1749768148630, 0]
+    },
+    {
+      "id": "Cjp4_t0u2aUS",
+      "props": {
+        "created": 1749757084930,
+        "name": "Datetime range: <span data-inlineref-date=\"{&quot;dateTimeString&quot;:&quot;2025-06-12T12:38:11/2025-06-12T13:38:12&quot;,&quot;timezone&quot;:&quot;America/Los_Angeles&quot;}\"></span>",
+        "_ownerId": "2Ap-6LC3fVuq"
+      },
+      "touchCounts": [51, 0],
+      "modifiedTs": [1749768148630, 0]
+    },
+    {
+      "id": "2Ap-6LC3fVuq",
+      "props": {
+        "created": 1749768144780,
+        "name": "Datetime (test reference 2Ap-6LC3fVuq)",
+        "_ownerId": "vbbsJ3M6tPKc"
+      },
+      "touchCounts": [27, 0],
+      "modifiedTs": [1749780071142, 0],
+      "children": ["z4jWAtVs16HS", "RSFNedUJrARu", "Cjp4_t0u2aUS"]
+    }
+  ]
+}

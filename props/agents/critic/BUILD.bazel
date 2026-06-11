@@ -15,8 +15,7 @@ The container runs an agent loop that:
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
 
 exports_files(
@@ -42,32 +41,25 @@ py_library(
         "//props/agents/docs:source_inspection.md.mako",
         "//props/agents/docs:system_access.md",
     ],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core:agent",
-        "//agent_core:direct_provider",
-        "//agent_core:handler",
-        "//agent_core:logging_handler",
-        "//agent_core:loop_control",
-        "//mcp_infra/exec:direct",
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
-        "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
         "//props/agents:runtime",
+        "//props/agents/af:exec_tool",
+        "//props/agents/af:loop",
+        "//props/agents/af:middleware",
+        "//props/agents/af:tools",
         "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
-        "@pypi//openai",
+        "@pypi//agent_framework_core",
         "@pypi//pydantic",
     ],
 )
 
 py_binary(
     name = "critic",
-    imports = ["../../.."],
     main_module = "props.agents.critic.main",
     visibility = ["//visibility:public"],
     deps = [
@@ -78,7 +70,6 @@ py_binary(
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
     name = "critic_bin",
-    imports = ["../../.."],
     main = "main.py",
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -109,7 +100,6 @@ py_test(
     name = "test_critic_sql_integration",
     size = "medium",
     srcs = ["test_critic_sql_integration.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -130,7 +120,6 @@ py_test(
 py_test(
     name = "test_reported_issues_constraints",
     srcs = ["test_reported_issues_constraints.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -157,7 +146,6 @@ py_test(
         ":image",
         "//props/agents/grader:image",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",

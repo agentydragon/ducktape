@@ -1,0 +1,19 @@
+name: Get Habit Status (Invalid Date Format)
+request:
+  method: GET
+  url: https://api.habitify.me/status/-Lo9NTLRX3aCxg-PjN25
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+  params:
+    target_date: "2020-01-01"
+response:
+  status_code: 500
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: "Only accept the format of target_date is YYYY-MM-DDThh:mm:ss\xB1hh:mm"
+    data: null
+    version: v1.2
+    status: false
+    errors: []

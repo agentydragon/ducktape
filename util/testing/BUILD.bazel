@@ -1,13 +1,18 @@
 """Testing utility libraries."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "undeclared_outputs",
     testonly = True,
     srcs = ["undeclared_outputs.py"],
-    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "jsonl",
+    testonly = True,
+    srcs = ["jsonl.py"],
     visibility = ["//visibility:public"],
 )
 
@@ -15,13 +20,50 @@ py_library(
     name = "otel_tracing",
     testonly = True,
     srcs = ["otel_tracing.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",
+        "//util:otel",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "bazel_snapshot_extension",
+    testonly = True,
+    srcs = ["bazel_snapshot_extension.py"],
+    visibility = ["//visibility:public"],
+    deps = [
         "@pypi//pytest",
+        "@pypi//syrupy",
+    ],
+)
+
+py_library(
+    name = "docker_mtls",
+    testonly = True,
+    srcs = ["docker_mtls.py"],
+    data = [
+        "//cluster/k8s/docker-ci/certs:ca.pem",
+        "//cluster/k8s/docker-ci/certs:client-cert.pem",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "postgres",
+    testonly = True,
+    srcs = ["postgres.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -29,11 +71,29 @@ py_library(
     name = "container_logs",
     testonly = True,
     srcs = ["container_logs.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",
         "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "png_diff",
+    testonly = True,
+    srcs = ["png_diff.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pillow"],
+)
+
+py_library(
+    name = "frontend_visual",
+    testonly = True,
+    srcs = ["frontend_visual.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
     ],
 )
 

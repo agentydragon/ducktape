@@ -1,0 +1,25 @@
+# Scrape Prometheus metrics from every Flux controller in flux-system.
+# Each controller (kustomize-controller, source-controller, helm-controller,
+# notification-controller, image-{automation,reflector}-controller) carries
+# the shared label `app.kubernetes.io/part-of: flux` (per gotk-components.yaml)
+# and exposes /metrics on the `http-prom` named port (8080).
+#
+# Without this PodMonitor the gotk_reconcile_duration_seconds series is not
+# ingested, which leaves the flux_reconcile_audit skill partly blind. Flux CR
+# Ready-condition metrics come from kube-state-metrics customResourceState in
+# cluster/k8s/monitoring/stack/helmrelease.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux-system
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: flux
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux
+  podMetricsEndpoints:
+    - port: http-prom
+      path: /metrics
+      interval: 30s

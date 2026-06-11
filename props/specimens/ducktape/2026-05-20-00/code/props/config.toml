@@ -1,0 +1,16 @@
+# Props configuration.
+# Pointed to by PROPS_CONFIG_FILE env var.
+
+# Backend URL used by host-side code (CLI, backend) and injected into containers.
+# OPENAI_BASE_URL is derived from this (+ "/v1").
+backend_url = "http://props-backend:8000"
+
+# Model for snapshot graders. If unset, grader supervisor is disabled.
+grader_model = "gpt-5.1-codex-mini"
+
+# Environment variables injected into every agent container.
+# Backend copies these verbatim, then appends per-run PGUSER/PGPASSWORD/OPENAI_API_KEY.
+[agent_env]
+PGHOST = "props-postgres"
+PGPORT = "5432"
+PGDATABASE = "eval_results"

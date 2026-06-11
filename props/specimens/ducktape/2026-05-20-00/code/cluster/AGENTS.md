@@ -1,0 +1,151 @@
+@README.md
+
+## Talos Linux Documentation
+
+Use `https://docs.siderolabs.com/llms.txt` as the entrypoint for Talos Linux
+documentation. Fetch it with WebFetch to discover available doc pages.
+
+# Agent Instructions
+
+## CRITICAL: Bootstrap Terminology
+
+"Bootstrap/tear down/recreate the cluster" means:
+
+- **Default scope**: `bazel run //cluster:bootstrap` (single TF root at `terraform/main/`, uses targeted applies)
+- **Persistent-auth resources** (keypairs, CSI tokens, signing keys) have `lifecycle { prevent_destroy = true }` in the merged root and are preserved across bootstrap cycles
+- Only destroy persistent-auth resources when user explicitly says "including persistent auth" or "from scratch" (requires removing `prevent_destroy` lifecycle rules first)
+
+## CRITICAL: Persistent Auth Protection
+
+**NEVER remove `prevent_destroy` lifecycle rules on persistent-auth resources without explicit user authorization.**
+
+## CRITICAL: Commit Before Reconcile
+
+**NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
+the git remote, not your local filesystem.
+
+## CRITICAL: Authentik Teardown -- Remaining TF State
+
+`tf/gitops/sso-providers/` owns the Authentik OAuth2 providers (grafana, gitea, harbor,
+headlamp, inventree, kagent, matrix, openclaw, study-casino). State lives in the
+`tfstate-default-sso-providers` k8s secret in `flux-system`. Wiping the Authentik DB
+without also wiping that state secret triggers the cascading desync described in
+<docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
+
+## CRITICAL: VPS-Only Resilience
+
+DNS and website MUST work with VPS only (without Proxmox). No `proxmox-csi-retain` storage
+or Proxmox-pinned nodes. See <docs/plan.md> "VPS-Only Resilience Invariants".
+
+## Primary Directive: Declarative Turnkey Bootstrap
+
+**Goal**: `bazel run //cluster:bootstrap` from committed repo state produces a working cluster.
+
+1. NO imperative patches -- all fixes must be committed configuration
+2. Dev loop: `bazel run //cluster:bootstrap` -> verify (single TF root with targeted applies)
+3. Debug freely, but solutions MUST be declarative
+4. Done = bootstrap->verify passes
+5. SSO required for all in-scope applications
+
+### Debugging Broken Bootstrap
+
+Investigate root cause (events, describe, flux kustomization status) and fix declarative config.
+Common patterns: missing `dependsOn`, CRD not installed before instance, secret not deployed
+before consumer.
+
+## Bootstrap Script
+
+**Only supported method**: `bazel run //cluster:bootstrap`
+
+Handles preflight validation, targeted applies against `terraform/main/` (persistent-auth ->
+infrastructure -> full apply), SOPS age key deployment. Requires `dangerouslyDisableSandbox: true`
+and `timeout: 600000` (10 min). Takes ~15-20 min.
+
+## Testing
+
+Includes validation scripts, Helm lint, Terraform format/lint/validate. When adding new
+Terraform modules, create BUILD.bazel targets for format, lint, and validate.
+
+## Task Delegation
+
+Delegate complex diagnostics and independent workstreams to subagents via the Task tool.
+
+## Operational Context
+
+- **SSH**: `root@atlas` (Proxmox host, key auth). Fallback from wyrm2: `root@10.2.0.2` if nebula DNS isn't up yet.
+- **Talos CLI**: Run from cluster directory (direnv provides tools + config)
+- **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
+
+## Key Files
+
+All in `terraform/main/`:
+
+| File                       | Purpose                                        |
+| -------------------------- | ---------------------------------------------- |
+| `hetzner-nodes.tf`         | VPS definitions                                |
+| `proxmox-nodes.tf`         | Proxmox VM definitions                         |
+| `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
+| `cilium.tf`                | CNI configuration                              |
+| `main.tf`                  | Providers, firewall, Talos bootstrap           |
+| `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
+
+## SSO
+
+See <docs/sso.md> for secret flow, proxy NetworkPolicy template, blueprint tombstone rules.
+
+## Secrets
+
+See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key management.
+
+**Keep <docs/bootstrap_dependencies.md> up to date** when adding/removing/changing secrets,
+SOPS files, tofu resources, or external credential requirements.
+
+### Description Annotations
+
+Add `metadata.annotations.description` to any resource where name + namespace doesn't
+make the purpose obvious. Skip for obvious cases.
+
+## Container Images
+
+See <docs/container-images.md> for build/push/tag guide and Flux image automation.
+
+## Agent RBAC Architecture
+
+Agent RBAC is split into three independent layers so that missing/suspended service
+namespaces don't block unrelated RBAC from applying.
+
+**`claude-rbac`** (lightweight base): Sandbox namespace + ClusterRoles only. Depends on
+`kyverno-policies`. Must never depend on service or database kustomizations.
+
+**`shared-rbac`**: Cluster-scoped ClusterRoleBindings + `flux-system` RoleBinding only.
+Depends on `claude-rbac`.
+
+**`<service>/agent-rbac/`**: Per-service namespace-scoped RoleBindings. Each is its own
+Flux kustomization depending on `[service namespace kustomization]` + `claude-rbac`.
+Service namespaces have zero coupling to agent infrastructure.
+
+When adding agent read access to a new service namespace, create a new `agent-rbac/`
+directory — don't add RoleBindings to `claude-rbac` or `shared-rbac`. See
+<k8s/agents/claude-rbac/README.md> for the full convention.
+
+## Flux Kustomization Layering
+
+**Never mix HelmReleases with CRD instances in the same Kustomization.**
+
+Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease).
+Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
+Violations detected by pre-commit (`validate_kustomizations.py`).
+
+- Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
+- Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
+
+## Reference Documentation
+
+Read these on demand when the task requires them:
+
+- <docs/plan.md> — cluster roadmap, TODO list, suspended services, future directions
+- <docs/secrets.md> — SOPS procedures, adding/rotating secrets, age key management
+- <docs/bootstrap_dependencies.md> — full dependency graph for bootstrap recovery
+- <docs/cnpg_conventions.md> — CloudNativePG rules (2 profiles, storage, region pinning)
+- <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, secrets, DNS
+- <docs/lessons_learned/> — past incident postmortems (ESO desync, MTU, hostname loss, etc.)

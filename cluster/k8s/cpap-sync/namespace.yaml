@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cpap-sync
+  labels:
+    name: cpap-sync
+    pod-security.kubernetes.io/enforce: privileged
+    goldilocks.fairwinds.com/enabled: "false"

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: openclaw-quota
+  namespace: openclaw-gateway
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    pods: "10"
+    services: "5"
+    configmaps: "20"
+    persistentvolumeclaims: "5"
+    requests.storage: 21Gi

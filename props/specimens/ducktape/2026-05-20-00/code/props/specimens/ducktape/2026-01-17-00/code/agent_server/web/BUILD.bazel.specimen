@@ -1,0 +1,108 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_run_devserver")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+
+# Link npm packages for this workspace member
+npm_link_all_packages(name = "node_modules")
+
+# Export config files
+exports_files([
+    "tsconfig.json",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
+])
+
+# Source files for the agent_server web frontend
+_SRCS = glob([
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.css",
+    "src/**/*.html",
+    "static/**",
+]) + [
+    "svelte.config.js",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tsconfig.json",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
+]
+
+# Svelte-check (type checking)
+# Run: bazel test //agent_server/src/agent_server/web:svelte_check_test
+svelte_check_bin.svelte_check_test(
+    name = "svelte_check_test",
+    args = [
+        "--tsconfig",
+        "tsconfig.app.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "svelte.config.js",
+        "tsconfig.app.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        ":node_modules",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+    ]),
+    tags = ["lint"],
+)
+
+# Vitest unit tests
+# Run: bazel test //agent_server/src/agent_server/web:vitest_test
+# Tests: src/features/mcp/schema.test.ts, src/shared/prefs.test.ts, src/shared/router.test.ts
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "tsconfig.app.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "vitest.config.ts",
+        ":node_modules",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.test.ts",
+    ]),
+)
+
+# esbuild binary for production bundle
+js_binary(
+    name = "build_bundle",
+    data = _SRCS + [
+        "esbuild.config.mjs",
+        ":node_modules",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+# Production bundle using esbuild
+# Run: bazel build //agent_server/src/agent_server/web:bundle
+# Output: bazel-bin/agent_server/src/agent_server/web/dist/
+js_run_binary(
+    name = "bundle",
+    srcs = _SRCS + ["esbuild.config.mjs"],
+    outs = ["dist/main.js"],
+    args = ["dist"],
+    chdir = package_name(),
+    tool = ":build_bundle",
+)
+
+# Vite dev server
+# Run: bazel run //agent_server/src/agent_server/web:dev
+js_run_devserver(
+    name = "dev",
+    args = ["dev"],
+    chdir = package_name(),
+    data = _SRCS + [":node_modules"],
+    tool = "//tools/frontend:vite",
+)
+
+# ESLint linting is handled via workspace-level aspect
+# Run: bazel build --config=eslint //agent_server/...

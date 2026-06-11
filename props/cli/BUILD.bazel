@@ -1,6 +1,6 @@
 # Props has complex inter-package dependencies that are manually configured
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================
 # Subcommand modules
@@ -9,7 +9,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "cmd_db",
     srcs = ["cmd_db.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
@@ -25,7 +24,6 @@ py_library(
 py_library(
     name = "cmd_gepa",
     srcs = ["cmd_gepa.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//openai_utils:client_factory",
@@ -44,7 +42,6 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cmd_db",

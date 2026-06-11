@@ -1,0 +1,56 @@
+"""MCP Bridge - two-compositor architecture for agent-MCP integration."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "mcp_bridge",
+    srcs = [
+        "agents.py",
+        "auth.py",
+        "compositor_factory.py",
+        "registry.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/persist",
+        "//agent_server/runtime",
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+_TEST_DEPS = [
+    ":mcp_bridge",
+    "//agent_server/persist",
+    "//agent_server/testing",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+py_test(
+    name = "test_agents_server",
+    srcs = ["test_agents_server.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = _TEST_DEPS + [
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//starlette",
+    ],
+)

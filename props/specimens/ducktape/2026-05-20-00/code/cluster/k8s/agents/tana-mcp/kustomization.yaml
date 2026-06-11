@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - pvc.yaml
+  - tana-agentydragon-gmail-com-account-pat.sops.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: tana-mcp-nginx-config
+    namespace: tana-mcp
+    files:
+      - default.conf=nginx-auth-proxy.conf

@@ -1,0 +1,42 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "enhanced",
+    srcs = [
+        "__init__.py",
+        "flat_mixin.py",
+        "oob_notify_mixin.py",
+        "openai_strict_mixin.py",
+        "server.py",
+        "simple.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_enhanced",
+    srcs = [
+        "test_flat_decorator.py",
+        "test_flat_helper.py",
+        "test_oob_broadcast.py",
+        "test_oob_session_capturing.py",
+        "test_openai_strict_validation.py",
+    ],
+    main = "test_flat_decorator.py",
+    deps = [
+        ":enhanced",
+        "//mcp_infra:test_support",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
+    ],
+)

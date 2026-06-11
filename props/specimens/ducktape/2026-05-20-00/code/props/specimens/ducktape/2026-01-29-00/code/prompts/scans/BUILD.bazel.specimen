@@ -1,0 +1,39 @@
+"""Standalone codebase scanning scripts (stdlib only)."""
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "scan_comments",
+    srcs = ["scan_comments.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "scan_dataclass_candidates",
+    srcs = ["scan_dataclass_candidates.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "scan_error_handling",
+    srcs = ["scan_error_handling.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "scan_manual_serde",
+    srcs = ["scan_manual_serde.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "scan_single_line_functions",
+    srcs = ["scan_single_line_functions.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "scan_string_literals",
+    srcs = ["scan_string_literals.py"],
+    visibility = ["//:__subpackages__"],
+)

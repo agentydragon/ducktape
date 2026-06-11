@@ -1,0 +1,32 @@
+# mcporter-bundle: bundles the mcporter CLI into a single CJS file for use in
+# container images that only have the Node.js binary (no node_modules).
+
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+npm_link_all_packages(name = "node_modules")
+
+js_binary(
+    name = "bundle_mcporter_bin",
+    data = [":node_modules"],
+    entry_point = "bundle_mcporter.mjs",
+)
+
+js_run_binary(
+    name = "mcporter_bundle",
+    srcs = ["bundle_mcporter.mjs"],
+    outs = ["mcporter"],
+    # chdir sets CWD to the output directory; write output relative to that.
+    args = ["mcporter"],
+    chdir = package_name(),
+    tool = ":bundle_mcporter_bin",
+)
+
+pkg_tar(
+    name = "mcporter_layer",
+    srcs = [":mcporter_bundle"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    visibility = ["//visibility:public"],
+)

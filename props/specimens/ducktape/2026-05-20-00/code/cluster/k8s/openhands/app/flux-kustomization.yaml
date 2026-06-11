@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openhands
+  namespace: flux-system
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/openhands/app
+  prune: true
+  wait: true
+  dependsOn:
+    - name: openhands-namespace
+    - name: openhands-secrets
+    - name: openhands-sandboxes
+    - name: gateway
+    - name: authentik
+    - name: external-secrets-operator

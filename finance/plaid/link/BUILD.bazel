@@ -1,0 +1,76 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Plaid Link-UI web app (FastAPI). Not an MCP server; serves the account-linking
+# UI + link-management API. The cron sync process is //finance/plaid/sync.
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        "//finance/plaid/db:client",
+        "//finance/plaid/db:config",
+        "//finance/plaid/db:link_profiles",
+        "//finance/plaid/db:link_store",
+        "//finance/plaid/db:secret_store",
+        "//finance/plaid/db:sync",
+        "@pypi//fastapi",
+        "@pypi//plaid_python",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "app_cli",
+    main_module = "finance.plaid.link.app",
+    deps = [":app"],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "server_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "server_load",
+    image = ":server_image",
+    repo_tags = ["plaid-mcp-server:latest"],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":app",
+        "//finance/plaid/db:client",
+        "//finance/plaid/db:config",
+        "//finance/plaid/db:link_profiles",
+        "//finance/plaid/db:link_store",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//plaid_python",
+        "@pypi//pytest_bazel",
+    ],
+)

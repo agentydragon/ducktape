@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "dbus_fast_example",
+    srcs = [
+        "client.py",
+        "dbus_service.py",
+        "service_manager.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//dbus_fast",
+    ],
+)
+
+py_test(
+    name = "test_example",
+    srcs = ["test_example.py"],
+    imports = ["."],
+    deps = [
+        ":dbus_fast_example",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":dbus_fast_example"],
+)

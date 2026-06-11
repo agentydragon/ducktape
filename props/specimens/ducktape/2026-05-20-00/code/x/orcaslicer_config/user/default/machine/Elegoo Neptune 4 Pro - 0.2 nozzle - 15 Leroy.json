@@ -1,0 +1,10 @@
+{
+    "from": "User",
+    "inherits": "Elegoo Neptune 4 Pro (0.2 nozzle)",
+    "is_custom_defined": "0",
+    "name": "Elegoo Neptune 4 Pro - 0.2 nozzle - 15 Leroy",
+    "nozzle_type": "brass",
+    "print_host": "10.0.0.26",
+    "printer_settings_id": "Elegoo Neptune 4 Pro - 0.2 nozzle - 15 Leroy",
+    "version": "2.1.1.0"
+}

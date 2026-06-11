@@ -1,0 +1,95 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "openai_utils",
+    srcs = [
+        "builders.py",
+        "client_factory.py",
+        "errors.py",
+        "http_logging.py",
+        "json_schema.py",
+        "model.py",
+        "model_metadata.py",
+        "pydantic_strict_mode.py",
+        "retry.py",
+        "text_extraction.py",
+        "types.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_json_schema",
+    srcs = ["test_json_schema.py"],
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_pydantic_strict_mode",
+    srcs = ["test_pydantic_strict_mode.py"],
+    deps = [
+        ":openai_utils",
+        "//openai_utils/testing",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_pydantic_strict_mode_live",
+    srcs = ["test_pydantic_strict_mode_live.py"],
+    tags = ["live_openai_api"],
+    deps = [
+        ":openai_utils",
+        "//openai_utils/testing",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_context_length_live",
+    srcs = ["test_context_length_live.py"],
+    tags = ["live_openai_api"],
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_responses_api_live",
+    srcs = ["test_responses_api_live.py"],
+    tags = ["live_openai_api"],
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":openai_utils"],
+)

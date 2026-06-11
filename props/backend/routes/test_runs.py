@@ -201,6 +201,28 @@ def test_run_critic_image_resolution_error_returns_422(run_critic_client) -> Non
     assert "Image not found" in response.json()["detail"]
 
 
+def test_run_critic_registry_initializing_returns_503(run_critic_client) -> None:
+    """POST /api/runs/critic returns 503 while backend slow-startup is initializing registry."""
+    client, mock_registry = run_critic_client
+    client.app.state.registry = None
+
+    response = client.post(
+        "/api/runs/critic",
+        json={
+            "definition_id": FAKE_CRITIC_DIGEST,
+            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
+            "critic_model": BUDGET_TEST_MODEL,
+            "timeout_seconds": 60,
+            "budget_usd": 1.0,
+        },
+    )
+
+    assert response.status_code == 503
+    assert "initializing" in response.json()["detail"]
+    mock_registry.resolve_image.assert_not_called()
+    mock_registry.start_critic.assert_not_called()
+
+
 def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     """POST /api/runs/critic returns 404 when snapshot doesn't exist."""
     client, mock_registry = run_critic_client

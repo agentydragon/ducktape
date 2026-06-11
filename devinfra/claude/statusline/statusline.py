@@ -7,6 +7,7 @@ and subscription quota utilization.
 
 import logging
 import os
+import socket
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,7 +17,7 @@ from rich.text import Text
 
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.hook_daemon.client import check_health
+from devinfra.claude.claude_api.usage import ExtraUsage
 from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 from devinfra.claude.statusline.usage_cache import CachedUsage, UsageCache
 
@@ -39,6 +40,13 @@ def _format_delta(delta: timedelta) -> str:
     if total_seconds >= 60:
         return f"{total_seconds // 60}m"
     return f"{total_seconds}s"
+
+
+def _format_extra_usage(extra: ExtraUsage) -> str:
+    used = extra.used_credits / 100
+    limit = extra.monthly_limit / 100
+    pct = extra.utilization
+    return f"extra ${used:.0f}/${limit:.0f} ({pct:.0f}%)"
 
 
 def _format_quota(cached: CachedUsage | None, now: datetime) -> Text | None:
@@ -65,6 +73,8 @@ def _format_quota(cached: CachedUsage | None, now: datetime) -> Text | None:
                         if time_to_exhaust < remaining:
                             part += f" dry {_format_delta(time_to_exhaust)}"
         parts.append(part)
+    if usage.extra_usage is not None and usage.extra_usage.is_enabled:
+        parts.append(_format_extra_usage(usage.extra_usage))
     if parts:
         age = now - cached.fetched_at
         if age > _STALE_THRESHOLD:
@@ -91,6 +101,19 @@ def _format_daemon(healthy: bool) -> Text:
     if healthy:
         return Text("daemon ✓", style="green")
     return Text("daemon ✗", style="red")
+
+
+def _daemon_healthy(sock_path: Path, timeout: float = 0.5) -> bool:
+    """Check the Rust hook daemon health endpoint without importing daemon code."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect(str(sock_path))
+            sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            status_line = sock.recv(128).split(b"\r\n", 1)[0]
+            return status_line.startswith((b"HTTP/1.1 200", b"HTTP/1.0 200"))
+    except OSError:
+        return False
 
 
 def render(
@@ -166,7 +189,7 @@ def main() -> None:
         cached_usage=usage_cache.get(access_token),
         home=Path(home_env) if home_env else None,
         now=datetime.now(UTC),
-        daemon_healthy=check_health(hook_daemon_sock(data.session_id)),
+        daemon_healthy=_daemon_healthy(hook_daemon_sock(data.session_id)),
     )
     sys.stdout.write(output)
 

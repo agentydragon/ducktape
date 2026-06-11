@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -22,6 +23,7 @@ type client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	groupID string
 }
 
 func newClient() (*client, error) {
@@ -67,6 +69,29 @@ func (c *client) call(method string, req proto.Message, resp proto.Message) erro
 		return fmt.Errorf("unmarshal response: %w", err)
 	}
 	return nil
+}
+
+// resolveGroupID fetches the group_id by searching for a recent invocation
+// and extracting it from the ACL. Many RPCs require request_context.group_id.
+func (c *client) resolveGroupID(repo string) (string, error) {
+	if c.groupID != "" {
+		return c.groupID, nil
+	}
+	req := &invocationpb.SearchInvocationRequest{
+		Query: &invocationpb.InvocationQuery{RepoUrl: repo},
+		Count: 1,
+	}
+	resp := &invocationpb.SearchInvocationResponse{}
+	if err := c.call("SearchInvocation", req, resp); err != nil {
+		return "", fmt.Errorf("resolve group_id: %w", err)
+	}
+	for _, inv := range resp.GetInvocation() {
+		if gid := inv.GetAcl().GetGroupId(); gid != "" {
+			c.groupID = gid
+			return gid, nil
+		}
+	}
+	return "", fmt.Errorf("no invocations found for repo %s; cannot determine group_id", repo)
 }
 
 // fetchURL does a GET with the API key header, returning raw bytes.

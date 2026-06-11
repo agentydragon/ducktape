@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tofu-controller
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m0s
+  path: ./cluster/k8s/tofu-controller
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m0s
+  wait: true
+  dependsOn:
+    - name: cert-manager
+    - name: kyverno
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: tofu-controller
+      namespace: flux-system
+    - apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      name: terraforms.infra.contrib.fluxcd.io
+      namespace: ""

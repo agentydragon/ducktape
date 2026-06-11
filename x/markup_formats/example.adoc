@@ -1,0 +1,110 @@
+= AsciiDoc Example
+:toc:
+:icons: font
+:source-highlighter: highlight.js
+
+== Text Formatting
+
+This is *bold* and this is _italic_. You can also do [.line-through]#strikethrough#.
+
+Superscript: E=mc^2^ and subscript: H~2~O
+
+== Lists
+
+* Unordered item
+* Another item
+** Nested item
+
+. First
+. Second
+
+== Definition Lists
+
+Term 1:: Definition of term 1
+Term 2:: Definition of term 2
+
+== Links and Images
+
+https://example.com[Link text]
+
+image::image.png[Alt text, 300, 200]
+
+.Image with caption
+image::diagram.png[A diagram]
+
+== Code
+
+Inline `code` and blocks:
+
+[source,python]
+----
+def hello():
+    print("Hello, world!")
+----
+
+== Tables
+
+[cols="1,1", options="header"]
+|===
+| Name  | Value
+| Alpha | 1
+| Beta  | 2
+|===
+
+.Table with caption and column spans
+[cols="2*", options="header"]
+|===
+| Column A | Column B
+2+| This cell spans both columns
+| A1 | B1
+|===
+
+== Admonitions
+
+NOTE: This is a note.
+
+TIP: This is a tip.
+
+WARNING: This is a warning.
+
+CAUTION: Be careful here.
+
+IMPORTANT: Don't forget this.
+
+== Cross-references
+
+See <<_tables>> for table examples.
+
+[[custom-anchor]]
+=== Custom Anchor Section
+
+Reference it with <<custom-anchor>>.
+
+== Includes
+
+// Include another file (commented out since file doesn't exist)
+// include::other-file.adoc[]
+
+== Variables/Attributes
+
+:project-name: MyProject
+
+The project is called {project-name}.
+
+== Footnotes
+
+Here's a sentence with a footnote.footnote:[This is the footnote content.]
+
+== Blockquotes
+
+[quote, Albert Einstein]
+____
+Imagination is more important than knowledge.
+____
+
+== Sidebar
+
+.Optional Title
+****
+This is a sidebar block.
+****

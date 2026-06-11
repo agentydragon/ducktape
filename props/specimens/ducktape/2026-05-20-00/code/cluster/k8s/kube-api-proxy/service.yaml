@@ -1,0 +1,114 @@
+# nginx reverse proxy that bridges HTTP → HTTPS to the Kubernetes API.
+#
+# Cilium Gateway API doesn't support backend TLS re-encryption
+# (no BackendTLSPolicy, no appProtocol: https). This nginx pod accepts
+# plain HTTP from the gateway (after TLS termination) and proxies to
+# the apiserver over HTTPS, preserving the Authorization header.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubeapi-proxy-config
+  namespace: default
+data:
+  nginx.conf: |
+    pid /tmp/nginx.pid;
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    events { worker_connections 128; }
+    http {
+      access_log /dev/stderr;
+      server {
+        listen 8080;
+        location / {
+          proxy_pass https://kubernetes.default.svc:443;
+          proxy_ssl_verify on;
+          proxy_ssl_trusted_certificate /var/run/secrets/kubernetes.io/serviceaccount/ca.crt;
+          proxy_ssl_server_name on;
+          proxy_ssl_name kubernetes.default.svc;
+          proxy_set_header Host $host;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          # Pass through all headers including Authorization
+          proxy_pass_request_headers on;
+          proxy_read_timeout 300s;
+          proxy_send_timeout 300s;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeapi-proxy
+  namespace: default
+  annotations:
+    description: |
+      nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.
+      Bridges the gap between Cilium Gateway (TLS terminate) and the
+      apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kubeapi-proxy
+  template:
+    metadata:
+      labels:
+        app: kubeapi-proxy
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: kubeapi-proxy-config
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeapi-proxy
+  namespace: default
+spec:
+  selector:
+    app: kubeapi-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

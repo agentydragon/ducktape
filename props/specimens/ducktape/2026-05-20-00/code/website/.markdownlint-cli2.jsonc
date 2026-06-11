@@ -1,0 +1,19 @@
+{
+  // Website posts use inline HTML for styling (images, embeds, figures, iframes)
+  // and have multiple H1 headings for sections (blog post style)
+  "config": {
+    "extends": "markdownlint/style/prettier",
+    // Allow inline HTML (images, videos, figures, iframes)
+    "MD033": false,
+    // Allow multiple top-level headings (blog post sections)
+    "MD025": false,
+    // Allow indented code blocks (legacy posts)
+    "MD046": false,
+    // Allow code blocks without language (legacy posts)
+    "MD040": false,
+    // Allow images without alt text (legacy posts)
+    "MD045": false,
+    // AGENTS.md and CLAUDE.md start with @-transclusion
+    "MD041": false
+  }
+}

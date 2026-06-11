@@ -1,0 +1,291 @@
+"""Tests for LLM proxy upstream routing.
+
+Tests that _get_upstream_route correctly resolves:
+- OpenAI models (upstream_name=NULL) → default OpenAI upstream
+- Custom models → configured upstreams with model name rewriting
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+from uuid import UUID
+
+import pytest
+import pytest_bazel
+from fastapi import HTTPException
+
+from openai_utils.api_shape import LLMApiShape
+from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
+from props.db.database import Database
+from props.db.models import ModelMetadata
+from props.llm_proxy.routes import (
+    LLMAccess,
+    _extract_usage,
+    _get_upstream_route,
+    _merge_props_metadata,
+    _resolve_upstream_url,
+    _upstream_auth_headers,
+)
+
+
+@pytest.fixture
+def sample_config() -> PropsConfig:
+    """Config with multiple upstreams."""
+    return PropsConfig(
+        backend_url="http://localhost:8000",
+        agent_env={},
+        upstreams={
+            "local": UpstreamConfig(url="http://localhost:11434/v1", api_key_env="LOCAL_API_KEY"),
+            "azure": UpstreamConfig(url_env="AZURE_OPENAI_URL", api_key_env="AZURE_API_KEY"),
+        },
+        models=[
+            CustomModelConfig(
+                name="local:llama-70b",
+                upstream="local",
+                upstream_model="llama3.3:70b",
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=128000,
+                max_output_tokens=4096,
+            )
+        ],
+    )
+
+
+def test_resolve_upstream_url_static() -> None:
+    """Static URL is returned directly."""
+    config = UpstreamConfig(url="http://localhost:11434/v1", api_key_env="KEY")
+    assert _resolve_upstream_url(config) == "http://localhost:11434/v1"
+
+
+def test_resolve_upstream_url_from_env() -> None:
+    """URL from env var is resolved."""
+    config = UpstreamConfig(url_env="MY_URL_VAR", api_key_env="KEY")
+    with patch.dict("os.environ", {"MY_URL_VAR": "http://test.example.com/v1"}):
+        assert _resolve_upstream_url(config) == "http://test.example.com/v1"
+
+
+def test_resolve_upstream_url_default_for_missing_env() -> None:
+    """Missing env var falls back to OpenAI default."""
+    config = UpstreamConfig(url_env="MISSING_VAR", api_key_env="KEY")
+    with patch.dict("os.environ", {}, clear=True):
+        assert _resolve_upstream_url(config) == "https://api.openai.com/v1"
+
+
+def test_openai_model_uses_default_upstream(synced_db: Database, sample_config: PropsConfig) -> None:
+    """OpenAI model (upstream_name=NULL) routes to default OpenAI upstream."""
+    # Insert a model with no upstream info (simulating OpenAI model)
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id="gpt-4o",
+                input_usd_per_1m_tokens=2.50,
+                cached_input_usd_per_1m_tokens=1.25,
+                output_usd_per_1m_tokens=10.00,
+                context_window_tokens=128000,
+                max_output_tokens=16384,
+                upstream_name=None,
+                upstream_model=None,
+            )
+        )
+        session.commit()
+
+    with synced_db.session() as session:
+        with patch.dict("os.environ", {"OPENAI_BASE_URL": "https://api.openai.com/v1", "OPENAI_API_KEY": "sk-test"}):
+            route = _get_upstream_route("gpt-4o", session, sample_config, LLMApiShape.RESPONSES)
+        assert route.url == "https://api.openai.com/v1"
+        assert route.api_key == "sk-test"
+        assert route.model_name == "gpt-4o"
+
+
+def test_custom_model_routes_to_configured_upstream(synced_db: Database, sample_config: PropsConfig) -> None:
+    """Custom model routes to its configured upstream with model rewriting."""
+    # Insert a custom model pointing to "local" upstream
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id="local:llama-70b",
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=128000,
+                max_output_tokens=4096,
+                upstream_name="local",
+                upstream_model="llama3.3:70b",
+            )
+        )
+        session.commit()
+
+    with synced_db.session() as session:
+        with patch.dict("os.environ", {"LOCAL_API_KEY": "local-key"}):
+            route = _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
+        assert route.url == "http://localhost:11434/v1"
+        assert route.api_key == "local-key"
+        assert route.model_name == "llama3.3:70b"
+
+
+def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
+    """Unknown model ID raises HTTPException(400)."""
+    with synced_db.session() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
+        assert exc_info.value.status_code == 400
+        assert "Unknown model" in exc_info.value.detail
+
+
+def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
+    """Model referencing unknown upstream raises HTTPException(500)."""
+    # Insert a model pointing to nonexistent upstream
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id="broken-model",
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=8192,
+                max_output_tokens=2048,
+                upstream_name="nonexistent-upstream",
+                upstream_model="model-name",
+            )
+        )
+        session.commit()
+
+    with synced_db.session() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
+        assert exc_info.value.status_code == 500
+        assert "unknown upstream" in exc_info.value.detail
+
+
+def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
+    """A chat-shaped model cannot be routed through the Responses endpoint."""
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id="chat-model",
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=8192,
+                max_output_tokens=2048,
+                upstream_name="local",
+                upstream_model="chat-upstream",
+                api_shape=LLMApiShape.CHAT_COMPLETIONS,
+            )
+        )
+        session.commit()
+
+    with synced_db.session() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)
+        assert exc_info.value.status_code == 400
+        assert "api_shape" in exc_info.value.detail
+
+
+def test_chat_usage_extraction() -> None:
+    usage = _extract_usage(
+        LLMApiShape.CHAT_COMPLETIONS,
+        {
+            "usage": {
+                "prompt_tokens": 17,
+                "prompt_tokens_details": {"cached_tokens": 5},
+                "completion_tokens": 23,
+                "total_tokens": 40,
+            }
+        },
+    )
+    assert usage.input_tokens == 17
+    assert usage.cached_input_tokens == 5
+    assert usage.output_tokens == 23
+
+
+def test_anthropic_usage_extraction() -> None:
+    # Anthropic reports input_tokens excluding cache; the stored input_tokens must be the
+    # full prompt total (cache_read + cache_creation added back) so the cost view prices it.
+    usage = _extract_usage(
+        LLMApiShape.ANTHROPIC,
+        {
+            "usage": {
+                "input_tokens": 100,
+                "cache_read_input_tokens": 40,
+                "cache_creation_input_tokens": 10,
+                "output_tokens": 23,
+            }
+        },
+    )
+    assert usage.input_tokens == 150
+    assert usage.cached_input_tokens == 40
+    assert usage.output_tokens == 23
+
+
+def test_upstream_auth_headers_anthropic_uses_x_api_key() -> None:
+    headers = _upstream_auth_headers(LLMApiShape.ANTHROPIC, "zai-key")
+    assert headers["x-api-key"] == "zai-key"
+    assert headers["anthropic-version"] == "2023-06-01"
+    assert "Authorization" not in headers
+
+
+def test_upstream_auth_headers_openai_uses_bearer() -> None:
+    headers = _upstream_auth_headers(LLMApiShape.CHAT_COMPLETIONS, "sk-test")
+    assert headers["Authorization"] == "Bearer sk-test"
+    assert "x-api-key" not in headers
+
+
+def test_props_metadata_anthropic_uses_litellm_metadata() -> None:
+    # Anthropic's `metadata` only allows `user_id`, so props correlation goes under
+    # `litellm_metadata` (LiteLLM consumes it and strips it before forwarding to z.ai).
+    body: dict = {}
+    _merge_props_metadata(
+        body,
+        access=LLMAccess(
+            agent_run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            allowed_model="glm-4.6",
+            budget_usd=1.0,
+            parent_agent_run_id=None,
+            agent_type="critic",
+        ),
+        api_shape=LLMApiShape.ANTHROPIC,
+        logical_model="glm-4.6",
+        upstream_model="glm-4.6-anthropic",
+    )
+    assert "metadata" not in body
+    assert body["litellm_metadata"] == {
+        "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
+        "props.agent_type": "critic",
+        "props.api_shape": "anthropic",
+        "props.logical_model": "glm-4.6",
+        "props.upstream_model": "glm-4.6-anthropic",
+    }
+
+
+def test_props_metadata_is_merged_for_langfuse_correlation() -> None:
+    body = {"metadata": {"client.run_id": "external"}}
+    _merge_props_metadata(
+        body,
+        access=LLMAccess(
+            agent_run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            allowed_model="glm-4.6",
+            budget_usd=1.0,
+            parent_agent_run_id=UUID("00000000-0000-0000-0000-000000000002"),
+            agent_type="critic",
+        ),
+        api_shape=LLMApiShape.CHAT_COMPLETIONS,
+        logical_model="glm-4.6",
+        upstream_model="glm-4.6",
+    )
+
+    assert body["metadata"] == {
+        "client.run_id": "external",
+        "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
+        "props.parent_agent_run_id": "00000000-0000-0000-0000-000000000002",
+        "props.agent_type": "critic",
+        "props.api_shape": "chat_completions",
+        "props.logical_model": "glm-4.6",
+        "props.upstream_model": "glm-4.6",
+    }
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

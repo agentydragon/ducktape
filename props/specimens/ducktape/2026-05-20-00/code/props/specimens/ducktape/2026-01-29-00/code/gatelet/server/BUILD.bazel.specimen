@@ -1,0 +1,202 @@
+"""Gatelet server package."""
+
+# NOTE: No aggregator target - use specific per-file targets like :app, :config, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "server",
+    srcs = ["__main__.py"],
+    imports = ["../.."],
+    main = "__main__.py",
+    visibility = ["//gatelet:__pkg__"],
+    deps = [
+        ":app",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [":app"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    data = glob([
+        "**/*.css",
+        "**/*.html",
+        "**/*.jinja2",
+    ]),
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":database",
+        ":lifespan",
+        ":models",
+        "//gatelet/server/auth:handlers",
+        "//gatelet/server/auth:webhook_auth",
+        "//gatelet/server/endpoints:admin",
+        "//gatelet/server/endpoints:challenge",
+        "//gatelet/server/endpoints:homeassistant",
+        "//gatelet/server/endpoints:webhook_receive",
+        "//gatelet/server/endpoints:webhook_view",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "lifespan",
+    srcs = ["lifespan.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":database",
+        "//gatelet/server/auth:dependencies",
+        "//gatelet/server/endpoints:activitywatch",
+        "//gatelet/server/endpoints:homeassistant",
+        "//gatelet/server/endpoints:webhook_view",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+    ],
+)
+
+py_library(
+    name = "security",
+    srcs = ["security.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//passlib"],
+)
+
+py_library(
+    name = "shared",
+    srcs = ["shared.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [":config"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":app",
+        ":config",
+        ":database",
+        ":models",
+        "//gatelet/server/endpoints:webhook_view",
+        "//gatelet/server/tests:utils",
+        "@pypi//asgi_lifespan",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "pytest_runner",
+    srcs = ["pytest_runner.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_admin_webhook_e2e",
+    srcs = ["test_admin_webhook_e2e.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:manage",
+        "//gatelet:manage_lib",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_report_battery",
+    srcs = ["test_report_battery.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:reporter",
+        "//gatelet:reporter_lib",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_report_event",
+    srcs = ["test_report_event.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:reporter",
+        "//gatelet:reporter_lib",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

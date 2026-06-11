@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plaid-mcp-config
+  namespace: plaid-mcp
+data:
+  PLAID_MCP_PLAID_ENV: "production"
+  PLAID_MCP_PUBLIC_BASE_URL: "https://plaid-mcp.allegedly.works"
+  PLAID_MCP_TRANSACTION_DAYS: "730"
+  PLAID_MCP_INVESTMENT_TRANSACTION_DAYS: "730"

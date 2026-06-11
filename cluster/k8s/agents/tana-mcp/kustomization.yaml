@@ -4,8 +4,9 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
-  - pvc.yaml
-  - rbac.yaml
+  - tana-agentydragon-gmail-com-account-pat.sops.yaml
+  - tana-firebase-refresh-token.sops.yaml
+  - firebase-resigner-rbac.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

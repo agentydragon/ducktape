@@ -8,8 +8,7 @@ ${describe_relation("agent_definitions")}
 ## Creating Custom Agent Definitions
 
 Critic-dev agents create custom definitions by layering onto the base critic
-image with `crane` and pushing to the backend's registry proxy. The registry
-address is the host:port from `PROPS_BACKEND_URL`. Pushing automatically creates
-an `agent_definitions` row.
+image with `crane` and pushing to the registry proxy. The registry address is
+`PROPS_REGISTRY_URL`. Pushing automatically creates an `agent_definitions` row.
 
 See the critic-dev system prompt for full `crane append` / `crane mutate` workflows.

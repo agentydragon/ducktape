@@ -1,0 +1,228 @@
+"""Gatelet server endpoints."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "activitywatch",
+    srcs = ["activitywatch.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:config",
+        "@pypi//aw_client",
+    ],
+)
+
+py_library(
+    name = "admin",
+    srcs = ["admin.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":activitywatch",
+        ":homeassistant",
+        ":webhook_view",
+        "//gatelet/server:config",
+        "//gatelet/server:database",
+        "//gatelet/server:models",
+        "//gatelet/server:security",
+        "//gatelet/server/auth:dependencies",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//python_multipart",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "challenge",
+    srcs = ["challenge.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:config",
+        "//gatelet/server:database",
+        "//gatelet/server:models",
+        "//gatelet/server/auth:handlers",
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "homeassistant",
+    srcs = ["homeassistant.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:config",
+        "//gatelet/server:shared",
+        "//gatelet/server/auth:dependencies",
+        "@pypi//fastapi",
+        "@pypi//homeassistant_api",
+    ],
+)
+
+py_library(
+    name = "webhook_receive",
+    srcs = ["webhook_receive.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:database",
+        "//gatelet/server:models",
+        "//gatelet/server/auth:webhook_auth",
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "webhook_view",
+    srcs = ["webhook_view.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:config",
+        "//gatelet/server:database",
+        "//gatelet/server:models",
+        "//gatelet/server/auth:dependencies",
+        "//gatelet/server/auth:handlers",
+        "@pypi//compact_json",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_activitywatch",
+    srcs = ["test_activitywatch.py"],
+    deps = [
+        ":activitywatch",
+        "//gatelet/server:config",
+        "//gatelet/server/tests:activitywatch_sample",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_admin_cr_sessions",
+    srcs = ["test_admin_cr_sessions.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_admin_keys",
+    srcs = ["test_admin_keys.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_admin_login",
+    srcs = ["test_admin_login.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_admin_logs",
+    srcs = ["test_admin_logs.py"],
+    deps = [
+        "//gatelet/server:config",
+        "//gatelet/server:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_admin_sessions",
+    srcs = ["test_admin_sessions.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_challenge",
+    srcs = ["test_challenge.py"],
+    deps = [
+        ":challenge",
+        "//gatelet/server:config",
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_compute_correct_option",
+    srcs = ["test_compute_correct_option.py"],
+    deps = [
+        ":challenge",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_homeassistant",
+    srcs = ["test_homeassistant.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_webhook_receive",
+    srcs = ["test_webhook_receive.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_webhook_view",
+    srcs = ["test_webhook_view.py"],
+    deps = [
+        "//gatelet/server:conftest",
+        "//gatelet/server:models",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

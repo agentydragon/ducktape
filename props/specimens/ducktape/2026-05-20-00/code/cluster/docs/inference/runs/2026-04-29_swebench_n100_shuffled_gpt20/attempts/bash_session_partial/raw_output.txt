@@ -1,0 +1,128 @@
+Installed 127 packages in 877ms
+docker login ghcr.io: Login Succeeded
+$ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/bin/inspect eval inspect_evals/swe_bench --model openai/gpt-oss:20b --limit 100 --message-limit 50 --sandbox docker --max-connections 2 --display plain --sample-shuffle 42 --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-29_swebench_n100_shuffled_gpt20/eval_logs
+Loading dataset princeton-nlp/SWE-bench_Verified from Hugging Face...
+Saving the dataset (0/1 shards):   0%|          | 0/500 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 12089.07 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 11880.67 examples/s]
+ default Pulling
+ default Pulled
+
+---------------------------------------------------------
+swe_bench (100 samples): openai/gpt-oss:20b
+max_connections: 2, sample_shuffle: 42, message_limit: 50, dataset:
+princeton-nlp/SWE-bench_Verified
+---------------------------------------------------------
+
+Steps:   1/100   1% | Samples:   1/100 | mean:  n/a | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 0
+Steps:   2/100   2% | Samples:   2/100 | mean: 0.00 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 0
+Steps:   3/100   3% | Samples:   3/100 | mean: 0.00 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 0
+Steps:   4/100   4% | Samples:   4/100 | mean: 0.00 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 1
+Steps:   5/100   5% | Samples:   5/100 | mean: 0.00 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 1
+Steps:   6/100   6% | Samples:   6/100 | mean: 0.00 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 1
+Steps:   7/100   7% | Samples:   7/100 | mean: 0.17 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 3
+Steps:   8/100   8% | Samples:   8/100 | mean: 0.14 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 5
+Steps:   9/100   9% | Samples:   9/100 | mean: 0.12 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 5
+Steps:  10/100  10% | Samples:  10/100 | mean: 0.11 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 6
+Steps:  11/100  11% | Samples:  11/100 | mean: 0.10 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 6
+Steps:  12/100  12% | Samples:  12/100 | mean: 0.09 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 6
+Steps:  13/100  13% | Samples:  13/100 | mean: 0.08 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 6
+Steps:  14/100  14% | Samples:  14/100 | mean: 0.08 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 7
+Steps:  15/100  15% | Samples:  15/100 | mean: 0.07 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 8
+Steps:  16/100  16% | Samples:  16/100 | mean: 0.07 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 8
+Steps:  17/100  17% | Samples:  17/100 | mean: 0.06 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 15
+Steps:  18/100  18% | Samples:  18/100 | mean: 0.06 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 17
+Steps:  19/100  19% | Samples:  19/100 | mean: 0.06 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 17
+Steps:  20/100  20% | Samples:  20/100 | mean: 0.05 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 18
+Steps:  21/100  21% | Samples:  21/100 | mean: 0.10 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  22/100  22% | Samples:  22/100 | mean: 0.09 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  23/100  23% | Samples:  23/100 | mean: 0.09 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  24/100  24% | Samples:  24/100 | mean: 0.08 | subprocesses:  2/32, docker:  2/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  25/100  25% | Samples:  25/100 | mean: 0.08 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  26/100  26% | Samples:  26/100 | mean: 0.08 | subprocesses:  2/32, docker:  2/64, openai:  0/ 2 | HTTP retries: 20
+Steps:  27/100  27% | Samples:  27/100 | mean: 0.08 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 21
+Steps:  28/100  28% | Samples:  28/100 | mean: 0.07 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 21
+Steps:  29/100  28% | Samples:  29/100 | mean: 0.11 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 23
+Steps:  30/100  30% | Samples:  30/100 | mean: 0.14 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 23
+Steps:  31/100  31% | Samples:  31/100 | mean: 0.13 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 23
+Steps:  32/100  32% | Samples:  32/100 | mean: 0.13 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 23
+Steps:  33/100  33% | Samples:  33/100 | mean: 0.12 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 23
+Steps:  34/100  34% | Samples:  34/100 | mean: 0.12 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 23
+Steps:  35/100  35% | Samples:  35/100 | mean: 0.12 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 23
+Steps:  36/100  36% | Samples:  36/100 | mean: 0.11 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 25
+Steps:  37/100  37% | Samples:  37/100 | mean: 0.11 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 26
+Steps:  38/100  38% | Samples:  38/100 | mean: 0.11 | subprocesses:  1/32, docker:  1/64, openai:  0/ 2 | HTTP retries: 26
+Steps:  39/100  39% | Samples:  39/100 | mean: 0.10 | subprocesses:  1/32, docker:  2/64, openai:  1/ 2 | HTTP retries: 26
+Steps:  40/100  40% | Samples:  40/100 | mean: 0.10 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 26
+Steps:  41/100  41% | Samples:  40/100 | mean: 0.10 | subprocesses:  0/32, docker:  0/64, openai:  0/ 2 | HTTP retries: 26
+
+---------------------------------------------------------
+swe_bench (100 samples): openai/gpt-oss:20b
+
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in task_run                                                                  │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in tg_collect                                                                │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in run_task                                                                  │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in run_sample                                                                │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in task_run_sample                                                           │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in task_run_sample                                                           │
+│                                                                              │
+│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/… │
+│ in scorer                                                                    │
+│                                                                              │
+│    63 │   │   )                                                              │
+│    64 │   │                                                                  │
+│    65 │   │   if not eval_output.success:                                    │
+│ ❱  66 │   │   │   raise RuntimeError(                                        │
+│    67 │   │   │   │   f"Test run failed. \n\nStderr: \n\n{eval_output.stderr │
+│    68 │   │   │   )                                                          │
+│    69                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+RuntimeError: Test run failed.
+
+Stderr:
+
+
+
+Stdout:
+
+
+Task interrupted (40 of 100 total samples logged before interruption). Resume
+task with:
+
+inspect eval-retry
+eval_logs/2026-04-30T05-24-57-00-00_swe-bench_6c9NbZXNzwr7qxbjRYeVz8.eval
+Log: eval_logs/2026-04-30T05-24-57-00-00_swe-bench_6c9NbZXNzwr7qxbjRYeVz8.eval
+---------------------------------------------------------
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Cleaning up Docker environments (please do not interrupt this operation!):   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Container inspect-swe_bench-ivn5xde-default-1  Stopping
+ Container inspect-swe_bench-ivn5xde-default-1  Stopped
+ Container inspect-swe_bench-ivn5xde-default-1  Removing
+ Container inspect-swe_bench-ivn5xde-default-1  Removed
+
+=== DONE ===
+{
+  "config": {
+    "model": "gpt-oss:20b",
+    "limit": 100,
+    "dataset": "verified",
+    "dataset_hf_id": "princeton-nlp/SWE-bench_Verified",
+    "message_limit": 50,
+    "max_workers": 2,
+    "sandbox": "docker",
+    "base_url": "https://ollama.allegedly.works/v1"
+  },
+  "exit_code": 0
+}

@@ -1,13 +1,11 @@
 <script lang="ts">
   import { getApiClient } from "./api.ts";
-  import { getAccessToken } from "./auth.ts";
   import type { OAuthProviderStatus } from "./types.ts";
   import { onMount } from "svelte";
 
   let providers = $state<OAuthProviderStatus[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let plaidLoading = $state<string | null>(null);
 
   onMount(async () => {
     try {
@@ -25,50 +23,12 @@
     return new Date(iso).toLocaleString();
   }
 
-  async function connectPlaid(providerName: string): Promise<void> {
-    plaidLoading = providerName;
-    try {
-      const token = await getAccessToken();
-      const resp = await fetch(`/oauth/authorize/${providerName}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) throw new Error(`Failed to get link token: ${resp.status}`);
-      const data = await resp.json();
-
-      // Load Plaid Link SDK if not already loaded
-      if (!(window as any).Plaid) {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error("Failed to load Plaid SDK"));
-          document.head.appendChild(script);
-        });
-      }
-
-      const handler = (window as any).Plaid.create({
-        token: data.link_token,
-        receivedRedirectUri: data.received_redirect_uri ?? undefined,
-        onSuccess: async (publicToken: string) => {
-          await fetch(`/oauth/callback/${providerName}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ public_token: publicToken }),
-          });
-          // Refresh provider list
-          const api = await getApiClient();
-          providers = await api.listOAuthProviders();
-        },
-        onExit: (err: any) => {
-          if (err) error = `Plaid Link error: ${JSON.stringify(err)}`;
-        },
-      });
-      handler.open();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      plaidLoading = null;
-    }
+  function scopeDiff(requested: string[], granted: string): { missing: string[]; extra: string[]; drift: boolean } {
+    const grantedSet = new Set(granted ? granted.split(/\s+/).filter(Boolean) : []);
+    const requestedSet = new Set(requested);
+    const missing = [...requestedSet].filter((s) => !grantedSet.has(s)).sort();
+    const extra = [...grantedSet].filter((s) => !requestedSet.has(s)).sort();
+    return { missing, extra, drift: missing.length + extra.length > 0 };
   }
 </script>
 
@@ -92,38 +52,44 @@
               <dd class="m-0"><code class="code-tag text-xs rounded px-1.5 py-0.5">{provider.provider_type}</code></dd>
               <dt class="section-heading font-semibold">Status</dt>
               <dd class="m-0">
-                {#if provider.connected}
+                {#if provider.status.state === "connected"}
                   <span class="status-pill status-pill-done">Connected</span>
                 {:else}
                   <span class="status-pill status-pill-pending">Not connected</span>
                 {/if}
               </dd>
-              {#if provider.connected}
+              <dt class="section-heading font-semibold">Requested</dt>
+              <dd class="m-0" style="color: var(--color-text-muted);">
+                {provider.requested_scopes.join(" ") || "(none)"}
+              </dd>
+              {#if provider.status.state === "connected"}
                 <dt class="section-heading font-semibold">Expires</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.expires_at)}</dd>
-              {/if}
-              {#if provider.scope}
-                <dt class="section-heading font-semibold">Scopes</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{provider.scope}</dd>
+                <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.status.expires_at)}</dd>
+                <dt class="section-heading font-semibold">Granted</dt>
+                <dd class="m-0" style="color: var(--color-text-muted);">{provider.status.scope || "(none)"}</dd>
+                {@const diff = scopeDiff(provider.requested_scopes, provider.status.scope)}
+                {#if diff.drift}
+                  <dt class="section-heading font-semibold">Drift</dt>
+                  <dd class="m-0" style="color: var(--color-warning, #b45309);">
+                    {#if diff.missing.length > 0}missing: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{diff.missing.join(" ")}</code
+                      >{/if}
+                    {#if diff.missing.length > 0 && diff.extra.length > 0}<span>; </span>{/if}
+                    {#if diff.extra.length > 0}extra: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{diff.extra.join(" ")}</code
+                      >{/if}
+                    — re-authorize to fix
+                  </dd>
+                {/if}
               {/if}
             </dl>
           </div>
-          {#if provider.provider_type === "plaid"}
-            <button
-              onclick={() => connectPlaid(provider.name)}
-              disabled={plaidLoading === provider.name}
-              class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm"
-            >
-              {plaidLoading === provider.name ? "Loading…" : provider.connected ? "Reconnect" : "Connect"}
-            </button>
-          {:else}
-            <a
-              href="/oauth/authorize/{provider.name}"
-              class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
-            >
-              {provider.connected ? "Reconnect" : "Connect"}
-            </a>
-          {/if}
+          <a
+            href="/oauth/authorize/{provider.name}"
+            class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
+          >
+            {provider.status.state === "connected" ? "Reconnect" : "Connect"}
+          </a>
         </div>
       </div>
     {/each}

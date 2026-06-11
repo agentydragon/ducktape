@@ -1,0 +1,57 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":token_counter",
+        ":token_scheme",
+        "@pypi//fastapi",
+        "@pypi//jinja2",
+        "@pypi//markdown",
+        "@pypi//markdownify",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "token_counter",
+    srcs = ["token_counter.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//tiktoken"],
+)
+
+py_library(
+    name = "token_scheme",
+    srcs = ["token_scheme.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_test(
+    name = "test_html_rendering",
+    srcs = ["test_html_rendering.py"],
+    imports = ["../../.."],
+    deps = [
+        ":server",
+        ":token_scheme",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_token",
+    srcs = ["test_token.py"],
+    imports = ["../../.."],
+    deps = [
+        ":server",
+        ":token_scheme",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

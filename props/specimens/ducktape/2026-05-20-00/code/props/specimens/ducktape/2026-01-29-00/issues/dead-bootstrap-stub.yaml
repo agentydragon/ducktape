@@ -1,0 +1,13 @@
+rationale: |
+  `adgn/testing/bootstrap.py` was gutted to a single comment
+  ("This module has been cleaned up - all code was dead"). The file,
+  its BUILD target, and the empty `adgn/testing/` package should be
+  deleted entirely rather than leaving a placeholder comment.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/testing/bootstrap.py:
+        - [1, 1]
+    match_file_restriction:
+      - adgn/testing/bootstrap.py

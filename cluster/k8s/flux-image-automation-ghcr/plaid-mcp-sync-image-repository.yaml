@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: plaid-mcp-sync
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/plaid-mcp-sync
+  interval: 5m

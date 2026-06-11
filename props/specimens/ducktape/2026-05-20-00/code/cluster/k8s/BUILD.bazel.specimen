@@ -1,0 +1,21 @@
+filegroup(
+    name = "cluster_yaml_files",
+    srcs = glob(
+        ["**/*.yaml"],
+        exclude = ["flux-system/**"],
+    ),
+    visibility = ["//cluster:__subpackages__"],
+)
+
+filegroup(
+    name = "cluster_all_files",
+    srcs = glob(
+        ["**"],
+        exclude = ["flux-system/**"],
+    ) + [
+        "//cluster/k8s/docker-ci/certs:ca.pem",
+        "//cluster/k8s/docker-ci/certs:client-cert.pem",
+        "//cluster/k8s/docker-ci/certs:server-cert.pem",
+    ],
+    visibility = ["//cluster:__subpackages__"],
+)

@@ -1,0 +1,189 @@
+"""Shared test helpers for session_start hook e2e tests.
+
+Provides isolated directory setup, environment configuration, and hook execution
+utilities used by the session_start e2e tests.
+"""
+
+import asyncio
+import contextlib
+import os
+import signal
+import subprocess
+import time
+from collections.abc import Generator
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+from devinfra.claude import settings
+from devinfra.claude.claude_api.hooks.common import PermissionMode
+from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
+from devinfra.claude.hook_daemon.session_start.tmpfs import unmount_tmpfs_under
+from devinfra.claude.session_paths import SessionPaths
+from devinfra.claude.testing import shell_helpers
+from util.bazel.runfiles import get_required_path
+from util.net import pick_free_port
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+TEST_SESSION_ID = "test-session-123"
+
+
+@dataclass
+class IsolatedDirs:
+    """Isolated directories for e2e tests."""
+
+    home: Path
+    project: Path
+    cache: Path
+    config: Path
+    runtime: Path
+    session_dir: Path
+    env_file: Path
+
+
+@pytest.fixture
+def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
+    """Create isolated directories for the test."""
+    home = tmp_path / "home"
+    # Mirror real Claude Code layout: ~/.claude/session-env/<session_id>/
+    session_dir = home / ".claude" / "session-env" / TEST_SESSION_ID
+    dirs = IsolatedDirs(
+        home=home,
+        project=tmp_path / "project",
+        cache=tmp_path / "cache",
+        config=tmp_path / "config",
+        runtime=tmp_path / "runtime",
+        session_dir=session_dir,
+        env_file=session_dir / "sessionstart-hook-0.sh",
+    )
+    dirs.home.mkdir()
+    dirs.session_dir.mkdir(parents=True)
+    dirs.project.mkdir()
+    dirs.cache.mkdir()
+    dirs.config.mkdir()
+    dirs.runtime.mkdir()
+    (dirs.project / ".git").mkdir()
+    return dirs
+
+
+def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs) -> None:
+    """Set up environment variables for running session start hook via monkeypatch."""
+    supervisor_port = pick_free_port()
+
+    # Required by CallerContext.from_env()
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(isolated_dirs.project))
+    monkeypatch.setenv("CLAUDE_ENV_FILE", str(isolated_dirs.env_file))
+
+    # Isolated directories
+    monkeypatch.setenv("HOME", str(isolated_dirs.home))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(isolated_dirs.cache))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_dirs.config))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(isolated_dirs.runtime))
+
+    # Isolated port (avoid conflicts between tests)
+    monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
+
+
+def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
+    """Create JSON input that Claude Code would send to the hook."""
+    return SessionStartHookInput(
+        session_id=TEST_SESSION_ID,
+        cwd=project_dir,
+        transcript_path=Path("/tmp/transcript.json"),
+        permission_mode=PermissionMode.DEFAULT,
+        source=source,
+        model="claude-sonnet-4-6",
+    ).model_dump_json()
+
+
+def _kill_by_pidfile(pidfile: Path) -> None:
+    """Kill a process using its pidfile. Ignores errors."""
+    if not pidfile.exists():
+        return
+    try:
+        pid = int(pidfile.read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(20):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    except (ValueError, ProcessLookupError, OSError):
+        pass
+    with contextlib.suppress(OSError):
+        pidfile.unlink()
+
+
+def cleanup_supervisor(config_dir: Path) -> None:
+    """Kill any lingering supervisor processes."""
+    _kill_by_pidfile(config_dir / "supervisor" / "supervisord.pid")
+
+
+def cleanup_hook_daemon(session_dir: Path) -> None:
+    """Kill any lingering hook daemon process and remove its socket.
+
+    The daemon shares a socket path based on session_id, so killing it between
+    tests ensures each test gets a fresh daemon with its own isolated port config.
+    """
+    home = session_dir.parent.parent.parent  # session_dir = home/.claude/session-env/<id>
+    paths = SessionPaths.from_env(session_dir.name, {"HOME": str(home)})
+    _kill_by_pidfile(paths.hook_daemon_pidfile)
+    with contextlib.suppress(OSError):
+        paths.hook_daemon_sock.unlink()
+
+
+def write_output_log(name: str, content: str) -> Path:
+    """Write content to a log file in the outputs directory."""
+    log_path = undeclared_outputs_dir() / name
+    log_path.write_text(content)
+    return log_path
+
+
+async def run_session_start_hook(
+    project_dir: Path, source: HookSource = HookSource.STARTUP
+) -> subprocess.CompletedProcess[str]:
+    """Run the session start hook as an async subprocess.
+
+    Runs via the hook_dispatch binary from Bazel runfiles.
+    Hook output is written to log files in TEST_UNDECLARED_OUTPUTS_DIR for debugging.
+    """
+    hook_input = make_hook_input(project_dir, source)
+
+    cmd: Path = get_required_path(shell_helpers.HOOK_DISPATCH)
+
+    proc = await asyncio.create_subprocess_exec(
+        cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(input=hook_input.encode()), timeout=300)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise subprocess.TimeoutExpired(cmd=[cmd], timeout=300)
+    result = subprocess.CompletedProcess(
+        args=[cmd],
+        returncode=proc.returncode or 0,
+        stdout=stdout_bytes.decode() if stdout_bytes else "",
+        stderr=stderr_bytes.decode() if stderr_bytes else "",
+    )
+
+    # Write hook output to log files for debugging (collected as CI artifacts)
+    stdout_log = write_output_log("hook-stdout.log", result.stdout)
+    stderr_log = write_output_log("hook-stderr.log", result.stderr)
+    print(f"Hook output written to: {stdout_log}, {stderr_log}")
+
+    return result
+
+
+@pytest.fixture(autouse=True)
+def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
+    """Cleanup supervisor, hook daemon, and tmpfs mounts after each test."""
+    yield
+    unmount_tmpfs_under(isolated_dirs.session_dir)
+    cleanup_supervisor(isolated_dirs.session_dir)
+    cleanup_hook_daemon(isolated_dirs.session_dir)

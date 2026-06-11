@@ -1,0 +1,14 @@
+{# Audience: human admin (via session) #} {% extends "base.html" %} {% block title %}Create Key{% endblock %} {% block
+nav %}
+<nav>
+  <a href="/admin/">Admin Home</a>
+  <a href="/admin/keys/">Keys</a>
+</nav>
+{% endblock %} {% block content %}
+<h2>Create New Key</h2>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <label>Description: <input type="text" name="description" /></label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

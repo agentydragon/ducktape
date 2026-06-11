@@ -1,0 +1,225 @@
+{
+  "packages": [
+    {
+      "arch": "amd64",
+      "dependencies": [
+        {
+          "key": "libedit2_3.1-20221030-2_amd64",
+          "name": "libedit2",
+          "version": "3.1-20221030-2"
+        },
+        {
+          "key": "libtinfo6_6.4-4_amd64",
+          "name": "libtinfo6",
+          "version": "6.4-4"
+        },
+        {
+          "key": "libc6_2.36-9-p-deb12u13_amd64",
+          "name": "libc6",
+          "version": "2.36-9+deb12u13"
+        },
+        {
+          "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+          "name": "libgcc-s1",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+          "name": "gcc-12-base",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "libbsd0_0.11.7-2_amd64",
+          "name": "libbsd0",
+          "version": "0.11.7-2"
+        },
+        {
+          "key": "libmd0_1.0.4-2_amd64",
+          "name": "libmd0",
+          "version": "1.0.4-2"
+        },
+        {
+          "key": "libnftables1_1.0.6-2-p-deb12u2_amd64",
+          "name": "libnftables1",
+          "version": "1.0.6-2+deb12u2"
+        },
+        {
+          "key": "libxtables12_1.8.9-2_amd64",
+          "name": "libxtables12",
+          "version": "1.8.9-2"
+        },
+        {
+          "key": "libnftnl11_1.2.4-2_amd64",
+          "name": "libnftnl11",
+          "version": "1.2.4-2"
+        },
+        {
+          "key": "libmnl0_1.0.4-3_amd64",
+          "name": "libmnl0",
+          "version": "1.0.4-3"
+        },
+        {
+          "key": "libjansson4_2.14-2_amd64",
+          "name": "libjansson4",
+          "version": "2.14-2"
+        },
+        {
+          "key": "libgmp10_2-6.2.1-p-dfsg1-1.1_amd64",
+          "name": "libgmp10",
+          "version": "2:6.2.1+dfsg1-1.1"
+        }
+      ],
+      "key": "nftables_1.0.6-2-p-deb12u2_amd64",
+      "name": "nftables",
+      "sha256": "966ff20ce58c17163a771c02ddbca264291408f94c512bd85dd18da0ebdbe88c",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/n/nftables/nftables_1.0.6-2+deb12u2_amd64.deb"
+      ],
+      "version": "1.0.6-2+deb12u2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libedit2_3.1-20221030-2_amd64",
+      "name": "libedit2",
+      "sha256": "1cf14abf2716d3279db12d0657a5737cf70074a1e71d3bdf73206625e3c89ce6",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libe/libedit/libedit2_3.1-20221030-2_amd64.deb"
+      ],
+      "version": "3.1-20221030-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libtinfo6_6.4-4_amd64",
+      "name": "libtinfo6",
+      "sha256": "072d908f38f51090ca28ca5afa3b46b2957dc61fe35094c0b851426859a49a51",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/n/ncurses/libtinfo6_6.4-4_amd64.deb"
+      ],
+      "version": "6.4-4"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libc6_2.36-9-p-deb12u13_amd64",
+      "name": "libc6",
+      "sha256": "3d8072c73b017e907bbf44b7db870687888a991961d74f1ecbba6b9458f32a2c",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/glibc/libc6_2.36-9+deb12u13_amd64.deb"
+      ],
+      "version": "2.36-9+deb12u13"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+      "name": "libgcc-s1",
+      "sha256": "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+      "name": "gcc-12-base",
+      "sha256": "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libbsd0_0.11.7-2_amd64",
+      "name": "libbsd0",
+      "sha256": "bb31cc8b40f962a85b2cec970f7f79cc704a1ae4bad24257a822055404b2c60b",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libb/libbsd/libbsd0_0.11.7-2_amd64.deb"
+      ],
+      "version": "0.11.7-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libmd0_1.0.4-2_amd64",
+      "name": "libmd0",
+      "sha256": "03539fd30c509e27101d13a56e52eda9062bdf1aefe337c07ab56def25a13eab",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libm/libmd/libmd0_1.0.4-2_amd64.deb"
+      ],
+      "version": "1.0.4-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libnftables1_1.0.6-2-p-deb12u2_amd64",
+      "name": "libnftables1",
+      "sha256": "3a8223f9bfba99d97bf25296ac83de307ab036e1df63e5965f88809266851947",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/n/nftables/libnftables1_1.0.6-2+deb12u2_amd64.deb"
+      ],
+      "version": "1.0.6-2+deb12u2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libxtables12_1.8.9-2_amd64",
+      "name": "libxtables12",
+      "sha256": "cb841d66950a43af4a398625313d2f3da9065299c9738538de6c2c3495857040",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/i/iptables/libxtables12_1.8.9-2_amd64.deb"
+      ],
+      "version": "1.8.9-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libnftnl11_1.2.4-2_amd64",
+      "name": "libnftnl11",
+      "sha256": "9e619e1470a1915264e906020f3bfc046fd8458043b1342686d997b5078213af",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libn/libnftnl/libnftnl11_1.2.4-2_amd64.deb"
+      ],
+      "version": "1.2.4-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libmnl0_1.0.4-3_amd64",
+      "name": "libmnl0",
+      "sha256": "4581f42e3373cb72f9ea4e88163b17873afca614a6c6f54637e95aa75983ea7c",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libm/libmnl/libmnl0_1.0.4-3_amd64.deb"
+      ],
+      "version": "1.0.4-3"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libjansson4_2.14-2_amd64",
+      "name": "libjansson4",
+      "sha256": "3fc9742f9f1a37bcb9931df6074b4d1483419ef832ad5349f47323e75fc27864",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/j/jansson/libjansson4_2.14-2_amd64.deb"
+      ],
+      "version": "2.14-2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libgmp10_2-6.2.1-p-dfsg1-1.1_amd64",
+      "name": "libgmp10",
+      "sha256": "187aedef2ed763f425c1e523753b9719677633c7eede660401739e9c893482bd",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gmp/libgmp10_6.2.1+dfsg1-1.1_amd64.deb"
+      ],
+      "version": "2:6.2.1+dfsg1-1.1"
+    }
+  ],
+  "version": 1
+}

@@ -13,9 +13,8 @@
 # API server access: haproxy on 127.0.0.1:7445 load-balances across all control
 # plane Nebula IPs with TCP health checks (replaces kubeprism).
 #
-# Credential placement: sops-nix decrypts CA cert + bootstrap token at activation
-# time. The module generates the bootstrap kubeconfig from these components with
-# the local haproxy as the server endpoint.
+# Credential placement: sops-nix decrypts the bootstrap token and renders the
+# bootstrap kubeconfig via sops.templates. The local haproxy is the API endpoint.
 #
 # Manual step after boot:
 #   Approve the CSR on the cluster:
@@ -29,6 +28,22 @@
 }:
 let
   cfg = config.ducktape.k8sWorker;
+  secretsDir = ../../../secrets;
+  nebulaDir = secretsDir + "/nebula";
+  k8sWorkerFile = secretsDir + "/k8s-worker.yaml";
+  hostname = config.networking.hostName;
+
+  # Extract the Nebula IP from the host certificate at build time.
+  certInfo = lib.head (
+    builtins.fromJSON (
+      builtins.readFile (
+        pkgs.runCommand "nebula-cert-info" { } ''
+          ${pkgs.nebula}/bin/nebula-cert print -path ${nebulaDir}/${hostname}.crt -json > $out
+        ''
+      )
+    )
+  );
+  nodeIp = lib.head (lib.splitString "/" (lib.head certInfo.details.networks));
 
   kubeletDeps = with pkgs; [
     kubernetes
@@ -39,7 +54,7 @@ let
     nftables
     tcpdump
     iproute2
-    openiscsi # Longhorn requires iscsiadm on the host
+    openiscsi # Longhorn requires iscsiadm on the host. TODO(2026-06-09): Longhorn-only — remove once the Longhorn disks are gone (see cluster/terraform/main/proxmox-vms.tf + wyrm2 /var/mnt/longhorn).
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
@@ -81,64 +96,12 @@ let
     }
   );
 
-  # Resolve kubelet node IP from the Nebula mesh interface.
-  # TODO: Consider a more robust approach — e.g. a nodeIP option with subnet
-  # matching (like Talos's validSubnets), or reading the IP from the Nebula cert.
-  # Currently we just grab whatever IPv4 is on nebula1.
-  resolveNodeIp = pkgs.writeShellScript "resolve-node-ip" ''
-    ${pkgs.iproute2}/bin/ip -4 addr show nebula1 \
-      | ${pkgs.gnugrep}/bin/grep -oP 'inet \K[^/]+' > /run/kubelet-node-ip
-    if [ ! -s /run/kubelet-node-ip ]; then
-      echo "Failed to read IPv4 from nebula1 interface" >&2
-      exit 1
-    fi
-  '';
-
-  # Generate bootstrap kubeconfig from components (CA cert + token + local haproxy).
-  # Runs as ExecStartPre because sops secrets are only available at runtime.
-  # Bootstrap kubeconfig template — everything except the token (runtime secret).
-  # builtins.toJSON produces valid YAML (JSON is a YAML subset).
-  bootstrapKubeconfigTemplate = pkgs.writeText "bootstrap-kubeconfig-template.json" (
-    builtins.toJSON {
-      apiVersion = "v1";
-      kind = "Config";
-      clusters = [
-        {
-          cluster = {
-            certificate-authority = cfg.caCertPath;
-            server = "https://127.0.0.1:7445";
-          };
-          name = "default";
-        }
-      ];
-      contexts = [
-        {
-          context = {
-            cluster = "default";
-            user = "kubelet-bootstrap";
-          };
-          name = "default";
-        }
-      ];
-      current-context = "default";
-      users = [
-        {
-          name = "kubelet-bootstrap";
-          user = {
-            token = "__BOOTSTRAP_TOKEN__";
-          };
-        }
-      ];
-    }
+  # Derive haproxy backends from the mesh SSOT (hosts with role=control-plane).
+  # See cluster/docs/mesh_membership.md.
+  meshConfig = builtins.fromJSON (builtins.readFile ../../../nebula-mesh.json);
+  meshControlPlaneEndpoints = map (h: "${h.nebula_ip}:6443") (
+    lib.filter (h: h.role == "control-plane") (lib.attrValues meshConfig.hosts)
   );
-
-  # Substitute the sops-decrypted token into the template at runtime.
-  generateBootstrapKubeconfig = pkgs.writeShellScript "generate-bootstrap-kubeconfig" ''
-    TOKEN=$(<"${cfg.bootstrapTokenPath}")
-    ${pkgs.gnused}/bin/sed "s/__BOOTSTRAP_TOKEN__/$TOKEN/" \
-      ${bootstrapKubeconfigTemplate} > /run/kubelet-bootstrap-kubeconfig
-    ${pkgs.coreutils}/bin/chmod 600 /run/kubelet-bootstrap-kubeconfig
-  '';
 
   haproxyServerLines = lib.concatStringsSep "\n    " (
     lib.imap1 (
@@ -147,7 +110,7 @@ let
   );
 in
 {
-  imports = [ ./nebula-mesh.nix ];
+  imports = [ ./nebula.nix ];
 
   options.ducktape.k8sWorker = {
     enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via Nebula mesh)";
@@ -162,11 +125,6 @@ in
       type = lib.types.str;
       default = "/etc/kubernetes/pki/ca.crt";
       description = "Path to the cluster CA certificate";
-    };
-
-    bootstrapTokenPath = lib.mkOption {
-      type = lib.types.str;
-      description = "Path to the bootstrap token file (sops secret). The module generates the kubeconfig.";
     };
 
     nodeLabels = lib.mkOption {
@@ -190,17 +148,70 @@ in
 
     controlPlaneEndpoints = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "10.42.0.1:6443" # talos-vps-cp-0
-        "10.42.0.2:6443" # talos-vps-cp-1
-        "10.42.0.10:6443" # talos-pve-cp-0
-      ];
-      description = "Control plane API server endpoints (IP:port) for the local haproxy load balancer";
+      default = meshControlPlaneEndpoints;
+      description = "Control plane API server endpoints (IP:port) for the local haproxy load balancer. Default derived from nebula-mesh.json hosts with role=control-plane.";
     };
 
   };
 
   config = lib.mkIf cfg.enable {
+    # Plaintext nebula certs deployed via /etc/nebula/
+    environment.etc."nebula/ca.crt".text = builtins.readFile (nebulaDir + "/ca.crt");
+    environment.etc."nebula/host.crt".text = builtins.readFile (nebulaDir + "/${hostname}.crt");
+
+    # Only the private key needs SOPS decryption (binary format)
+    sops.secrets.nebula_host_key = {
+      sopsFile = nebulaDir + "/${hostname}.sops.key";
+      format = "binary";
+    };
+
+    # K8s CA cert is public — deploy via environment.etc
+    environment.etc."kubernetes/pki/ca.crt".text = builtins.readFile (secretsDir + "/k8s-ca.crt");
+
+    # Bootstrap token is the only secret in k8s-worker.yaml
+    sops.secrets.k8s_bootstrap_token.sopsFile = k8sWorkerFile;
+
+    # Bootstrap kubeconfig rendered by sops-nix with the decrypted token
+    sops.templates.bootstrapKubeconfig = {
+      content = builtins.toJSON {
+        apiVersion = "v1";
+        kind = "Config";
+        clusters = [
+          {
+            cluster = {
+              certificate-authority = cfg.caCertPath;
+              server = "https://127.0.0.1:7445";
+            };
+            name = "default";
+          }
+        ];
+        contexts = [
+          {
+            context = {
+              cluster = "default";
+              user = "kubelet-bootstrap";
+            };
+            name = "default";
+          }
+        ];
+        current-context = "default";
+        users = [
+          {
+            name = "kubelet-bootstrap";
+            user = {
+              token = config.sops.placeholder.k8s_bootstrap_token;
+            };
+          }
+        ];
+      };
+    };
+
+    ducktape.nebulaMesh = {
+      caCertPath = "/etc/nebula/ca.crt";
+      hostCertPath = "/etc/nebula/host.crt";
+      hostKeyPath = config.sops.secrets.nebula_host_key.path;
+    };
+
     # Hide Longhorn iSCSI CSI volumes from UDisks2 so it doesn't offer
     # to manage them. Note: this alone does NOT fix the
     # gvfs-udisks2-volume-monitor CPU burn (~18% on wyrm2). The real
@@ -241,28 +252,28 @@ in
     };
 
     # Disable iptables rpfilter (nixos-fw-rpfilter chain in mangle/
-    # PREROUTING). nebula-mesh.nix sets "loose", but even loose rpfilter
+    # PREROUTING). nebula.nix sets "loose", but even loose rpfilter
     # drops pod-to-node hairpin traffic. Talos has no iptables rpfilter.
     # See: https://github.com/NixOS/nixpkgs/issues/298165
     networking.firewall.checkReversePath = lib.mkForce false;
 
     # Containerd
-    # CLEANUP(2026-03-23): Remove override once nixpkgs bumps containerd to ≥2.2.2.
+    # CLEANUP(2026-05-15): Remove override once nixos-25.11 ships containerd ≥2.2.3.
     #   containerd 2.2.1 (current in nixos-25.11) is built with Go 1.24, which
-    #   introduced a stricter os.Root API that rejects absolute symlinks inside
-    #   container image layers. NixOS-based images (e.g., ghcr.io/zhaofengli/attic)
-    #   use absolute symlinks for /etc/passwd → /nix/store/..., causing
-    #   "CreateContainerError: path escapes from parent". Fixed in containerd 2.2.2
-    #   via PR #12732.
+    #   rejects absolute symlinks inside container image layers. NixOS-based images
+    #   (e.g., ghcr.io/zhaofengli/attic) use absolute symlinks for /etc/passwd and
+    #   /etc/group → /nix/store/..., causing "path escapes from parent". The fix
+    #   (PRs #12732 + /etc/group follow-up) shipped in 2.2.3, not 2.2.2 — v2.2.2
+    #   was tagged before the cherry-pick landed on release/2.2.
     nixpkgs.overlays = [
       (final: prev: {
         containerd = prev.containerd.overrideAttrs (old: rec {
-          version = "2.2.2";
+          version = "2.2.3";
           src = final.fetchFromGitHub {
             owner = "containerd";
             repo = "containerd";
             rev = "v${version}";
-            hash = "sha256-1jYiyNHR1sXBwXdS33KWE+IB1tOZbiJyUxhsVeXwSrc=";
+            hash = "sha256-jaOLZf246kmvBHHrwgvqrhxuh+n1HE6NDqckZK4tvnM=";
           };
         });
       })
@@ -382,25 +393,21 @@ in
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
-        ExecStartPre = [
-          resolveNodeIp
-          generateBootstrapKubeconfig
-        ];
-        ExecStart = pkgs.writeShellScript "kubelet-start" ''
-          NODE_IP=$(</run/kubelet-node-ip)
-          exec ${pkgs.kubernetes}/bin/kubelet \
-            --bootstrap-kubeconfig=/run/kubelet-bootstrap-kubeconfig \
-            --kubeconfig=/var/lib/kubelet/kubelet.conf \
-            --config=/etc/kubernetes/kubelet-config.yaml \
-            --node-ip="$NODE_IP" \
-            ${
-              lib.optionalString (cfg.nodeLabels != { })
-                "--node-labels=${lib.concatStringsSep "," (lib.mapAttrsToList (k: v: "${k}=${v}") cfg.nodeLabels)}"
-            } \
-            ${lib.optionalString (
-              cfg.nodeTaints != [ ]
-            ) "--register-with-taints=${lib.concatStringsSep "," cfg.nodeTaints}"}
-        '';
+        ExecStart = lib.concatStringsSep " " (
+          [
+            "${pkgs.kubernetes}/bin/kubelet"
+            "--bootstrap-kubeconfig=${config.sops.templates.bootstrapKubeconfig.path}"
+            "--kubeconfig=/var/lib/kubelet/kubelet.conf"
+            "--config=/etc/kubernetes/kubelet-config.yaml"
+            "--node-ip=${nodeIp}"
+          ]
+          ++
+            lib.optional (cfg.nodeLabels != { })
+              "--node-labels=${lib.concatStringsSep "," (lib.mapAttrsToList (k: v: "${k}=${v}") cfg.nodeLabels)}"
+          ++ lib.optional (
+            cfg.nodeTaints != [ ]
+          ) "--register-with-taints=${lib.concatStringsSep "," cfg.nodeTaints}"
+        );
         Restart = "always";
         RestartSec = "10";
       };

@@ -1,0 +1,24 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-providers-tf
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/authentik/sso-providers-tf
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: sso-providers
+      namespace: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: authentik
+    - name: authentik-sso-secrets

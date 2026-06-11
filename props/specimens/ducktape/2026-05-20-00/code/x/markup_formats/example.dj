@@ -1,0 +1,123 @@
+# Djot Example
+
+## Text Formatting
+
+This is *bold* and this is _italic_. You can also do ~~strikethrough~~.
+
+Superscript: E=mc^2^ and subscript: H~2~O
+
+{=highlighted text=}
+
+## Lists
+
+- Unordered item
+- Another item
+  - Nested item
+
+1. First
+2. Second
+
+: Term 1
+  Definition of term 1
+
+: Term 2
+  Definition of term 2
+
+## Links and Images
+
+[Link text](https://example.com)
+
+![Alt text](image.png)
+
+![Image with caption](diagram.png "Caption text")
+
+## Code
+
+Inline `code` and blocks:
+
+``` python
+def hello():
+    print("Hello, world!")
+```
+
+## Tables
+
+| Name  | Value |
+|-------|-------|
+| Alpha | 1     |
+| Beta  | 2     |
+
+## Task Lists
+
+- [x] Completed task
+- [ ] Pending task
+
+## Cross-references
+
+See [the section on code](#code) for examples.
+
+{#custom-anchor}
+### Custom Anchor Section
+
+Reference with [custom anchor](#custom-anchor).
+
+## Footnotes
+
+Here's a sentence with a footnote[^note].
+
+[^note]: This is the footnote content.
+
+## Blockquotes
+
+> This is a quote.
+> It can span multiple lines.
+
+## Math
+
+Inline: $E = mc^2$
+
+Block:
+
+$$
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+
+## Attributes
+
+{.warning}
+This paragraph has a class.
+
+{#my-id .class1 .class2 key="value"}
+This paragraph has multiple attributes.
+
+## Djot-specific Features
+
+### Spans and Divs
+
+This has [some inline content]{.highlight} with attributes.
+
+::: warning
+This is a div with a class.
+:::
+
+### Raw Content
+
+```{=html}
+<div class="special">Raw HTML</div>
+```
+
+### Smart Punctuation
+
+"Quotes" and 'apostrophes' -- dashes --- and ellipses...
+
+### Unambiguous Syntax
+
+Unlike Markdown, Djot has:
+
+- Consistent emphasis rules (no edge cases)
+- Clear nesting semantics
+- Predictable parsing
+
+_This is italic even_right_next to other text.
+
+*This is bold even*right*next to other text.

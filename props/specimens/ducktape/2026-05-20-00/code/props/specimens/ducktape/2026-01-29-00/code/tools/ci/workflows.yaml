@@ -1,0 +1,98 @@
+# Workflow trigger definitions - single source of truth
+#
+# This file defines all CI workflows and their triggers. The generator script
+# (generate_ci.py) reads this to produce .github/workflows/ci.yml.
+#
+# Trigger types (discriminated by trigger.kind):
+#   always: Always run this workflow
+#   bazel: Bazel target pattern (uses bazel query intersection)
+#   path: Regex pattern for changed files
+#
+# Job options:
+#   targets: Pass affected targets to the workflow (default: false)
+#   secrets: List of secrets to pass (default: [BUILDBUDDY_API_KEY])
+#   inputs: Additional inputs to pass to the workflow
+#
+# Workflow file changes automatically trigger their workflow.
+
+workflows:
+  # Core Bazel workflows
+  bazel-build:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    secrets: [BUILDBUDDY_API_KEY]
+
+  bazel-test:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    secrets: [BUILDBUDDY_API_KEY]
+
+  bazel-lint:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
+
+  bazel-typecheck:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
+
+  # Rust-specific (only finance/ has Rust code)
+  bazel-rust-lint:
+    trigger: { kind: bazel, pattern: "//finance/..." }
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
+
+  # Frontend visual regression
+  visual-regression:
+    trigger: { kind: bazel, pattern: "//props/frontend/..." }
+    secrets: [BUILDBUDDY_API_KEY]
+
+  # Path-based workflows (non-Bazel)
+  nix-flake-check:
+    trigger: { kind: path, pattern: "^nix/" }
+
+  ansible-lint:
+    trigger: { kind: path, pattern: "^ansible/" }
+
+  # Always-run workflows
+  pre-commit:
+    trigger: { kind: always }
+
+# Release workflow definitions
+#
+# Each entry generates a <name>-release.yml workflow with:
+#   1. A "check" job using check-release-needed action
+#   2. A "release" job calling python-wheel-release.yml
+#
+# The entry key is used as package_name and package_prefix.
+# wheel_name and wheel_path are derived from bazel_target.
+# claude-hooks-release.yml is hand-written (has custom test jobs).
+releases:
+  ducktape:
+    bazel_target: //:wheel
+    release_body: |
+      ducktape wheel containing:
+      - `git-commit-ai` - AI-powered commit message generator
+      - `difftree` - Tree-style visualization of diffs
+      - `gmail-archiver` - Gmail email auto-archiving tool
+
+  headscale-cleanup:
+    bazel_target: //headscale_cleanup:wheel
+    release_body: |
+      headscale-cleanup wheel.
+
+      CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
+
+  gnome-terminal-profile-switcher:
+    bazel_target: //gnome_terminal_profile_switcher:wheel
+    apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
+    release_body: |
+      gnome-terminal-profile-switcher wheel.
+
+      **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).

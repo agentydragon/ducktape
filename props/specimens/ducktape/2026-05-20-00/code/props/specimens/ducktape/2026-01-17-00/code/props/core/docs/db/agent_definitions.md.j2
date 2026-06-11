@@ -1,0 +1,17 @@
+# Agent Definitions Table
+
+The `agent_definitions` table stores agent package archives (Docker build contexts).
+
+{{ describe_relation("agent_definitions") }}
+
+## CLI Commands
+
+Use the CLI to fetch and create packages:
+
+```bash
+# Fetch existing package to a directory
+props agent-pkg fetch <pkg_id> /workspace/my_pkg/
+
+# Create new package from a directory
+props agent-pkg create /workspace/my_pkg/
+```

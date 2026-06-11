@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubectl-passthrough-mcp-public
+  namespace: kubectl-passthrough-mcp
+data:
+  00-public.toml: |
+    require_oauth = true
+    authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
+    oauth_audience = "kubectl-passthrough-mcp"
+    # Passthrough forwards the caller's JWT as-is to kube-apiserver. No STS
+    # credentials needed because there's no token exchange on this server.
+    cluster_auth_mode = "passthrough"
+    cluster_provider_strategy = "in-cluster"
+    server_url = "https://kubectl-passthrough-mcp.allegedly.works"
+    port = "8080"

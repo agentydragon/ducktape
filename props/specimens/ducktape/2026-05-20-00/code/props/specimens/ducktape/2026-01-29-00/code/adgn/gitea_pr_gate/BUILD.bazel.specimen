@@ -1,0 +1,22 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "policy_common",
+    srcs = ["policy_common.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "policy_server_fastapi",
+    srcs = ["policy_server_fastapi.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":policy_common",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//structlog",
+    ],
+)

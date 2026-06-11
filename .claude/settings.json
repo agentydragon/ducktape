@@ -1,6 +1,17 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "Setup": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash devinfra/claude/web_setup_hook.sh"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
@@ -177,28 +188,6 @@
         ]
       }
     ],
-    "WorktreeCreate": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-hook"
-          }
-        ]
-      }
-    ],
-    "WorktreeRemove": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-hook"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "matcher": "",
@@ -241,32 +230,41 @@
       "Bash(bazel query:*)",
       "Bash(bazel run @bazel_gazelle//cmd/gazelle:*)",
       "Bash(bazel test:*)",
-      "Bash(dconf dump:*)",
-      "Bash(dconf read:*)",
+      "Bash(bb build:*)",
+      "Bash(bb query:*)",
+      "Bash(bb remote:*)",
+      "Bash(bb test:*)",
+      "Bash(bbapi artifact:*)",
+      "Bash(bbapi invocation:*)",
+      "Bash(bbapi target:*)",
+      "Bash(bbr:*)",
       "Bash(flux reconcile:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(gh search:*)",
-      "Bash(gnome-extensions list:*)",
-      "Bash(gsettings get:*)",
-      "Bash(gsettings list-recursively:*)",
-      "Bash(gsettings list-schemas:*)",
-      "Bash(kubectl describe:*)",
+      "Bash(git log:*)",
+      "Bash(kubectl get gitrepository:*)",
+      "Bash(kubectl get grafanadatasource:*)",
+      "Bash(kubectl get helmrelease:*)",
+      "Bash(kubectl get imagerepository:*)",
       "Bash(kubectl get job:*)",
+      "Bash(kubectl get kustomization:*)",
+      "Bash(kubectl get networkpolicy:*)",
+      "Bash(kubectl get ns:*)",
       "Bash(kubectl get pod:*)",
       "Bash(kubectl get pods:*)",
+      "Bash(kubectl get receiver:*)",
+      "Bash(kubectl get svc:*)",
       "Bash(kubectl get terraform:*)",
-      "Bash(kubectl logs:*)",
       "Bash(kubectl rollout restart:*)",
       "Bash(kubectl top:*)",
-      "Bash(modinfo:*)",
-      "Bash(nix search:*)",
-      "Bash(ping:*)",
       "Bash(pre-commit run:*)",
+      "Skill(followups)",
       "WebFetch(domain:docs.attic.rs)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__kubectl-local__*"
     ]
   }
 }

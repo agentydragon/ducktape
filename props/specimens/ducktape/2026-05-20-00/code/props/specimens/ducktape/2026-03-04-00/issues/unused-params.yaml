@@ -1,0 +1,12 @@
+rationale: |
+  `test_notifications_handler_in_container_inserts_system_message` accepts
+  `docker_client` and `monkeypatch` fixtures but never uses either in the
+  function body. Remove them.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/e2e/test_notifications_handler.py:
+        - [40, 40]

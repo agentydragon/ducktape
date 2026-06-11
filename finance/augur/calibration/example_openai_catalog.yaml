@@ -1,0 +1,504 @@
+# Example prediction-market catalog: hand-curated Manifold markets about exogenous
+# OpenAI trajectories, used to compare an augur exogenous model against market-implied
+# probabilities. A real deployment supplies its own catalog (and chooses the issuer +
+# model); this file ships as a worked example.
+#
+# DATA ONLY and read-only with respect to any model. calibration.py resolves the
+# cleanly-mappable (`exact`) markets per rollout and surfaces the rest. Each exact market's
+# typed `mapping` is the resolver's contract.
+#
+# NOTE: market title/question and verbatim resolution criteria are NOT parsed data -- they are
+# fetched LIVE from the platform at scoring time (Market.title / Market.rules) so they can never
+# drift from the source. The `# question:` lines below are human-readable comments only; this
+# file carries stable IDs, mappings, and `notes` as data.
+
+metadata:
+  source: manifold
+  as_of: "2026-05-29"
+  # Model anchor date: month indices for `resolution_deadline`s are measured from here.
+  augur_model_as_of: "2026-05-27"
+  augur_sim_horizon_months: 120 # from as_of -> ~2036-05; later-resolving markets flagged
+
+  # No `anchors` / `inflation_history` block: each macro level series is anchored to its real spot
+  # at model_anchor_date (and the pre-anchor CPI history for near-term inflation_yoy markets is
+  # taken) from the vendored evidence in augur/data/ -- the single source of truth shared with the
+  # model fit (see augur/calibration/macro_anchors.py). A catalog MAY still pin explicit
+  # `anchors:` / `inflation_history:` here to override the derived values.
+
+  # `mappability` -- how the market relates to a modeled augur quantity:
+  #   exact      A resolver scores it apples-to-apples from per-rollout output
+  #              (an exact market carries a typed `mapping` discriminated on `kind`).
+  #   correlate  augur lacks the exact concept but has a RELATED signal worth surfacing
+  #              next to the market price (`correlate_of`); NOT scored. Caveat in `reason`.
+  #   unmappable no meaningfully related augur signal; see `reason`.
+  #
+  # `mapping.kind` (exact markets only) -> the fields that variant carries:
+  mapping_kinds:
+    ipo_by_date: "{ by_date } -- a PUBLIC_MARKET_OPEN event occurs by date D (per-issuer)"
+    pre_ipo_failure: "{} -- an absorbing COLLAPSED/ACQUIRED exit before any PUBLIC_MARKET_OPEN"
+    valuation_by_date: "{ threshold_usd, by_date } -- company valuation >= X by D (opt-in M2 channel)"
+    level_at_date: "{ series, threshold, direction, at_date } -- level value AT a date vs threshold"
+    level_by_date: "{ series, threshold, direction, by_date } -- level EVER reaches threshold by a date (touch)"
+    inflation_yoy: "{ series, threshold, direction, at_date[, window_months] } -- trailing YoY vs threshold"
+  #
+  # `correlate_of` (correlate markets only) -- the augur signal to surface, one of:
+  #   ipo_by_date              P(a PUBLIC_MARKET_OPEN event by date D)
+  #   mark_per_unit_trajectory the per-UNIT mark path (augur models NO company valuation)
+  #   legal_event              P(a LEGAL_IMPAIRMENT event by date D)
+
+  # The structured model emits, per (rollout, month in 0..120 from as_of):
+  #   event_kind_code   NONE/TENDER/ADMIN_MARK_UPDATE/PUBLIC_MARKET_OPEN/
+  #                     ACQUISITION_CASHOUT/LEGAL_IMPAIRMENT/FORCED_RECOVERY/COLLAPSE
+  #   regime_code       PRIVATE_OPERATING/PUBLIC_MARKET/ACQUIRED/COLLAPSED (absorbing)
+  #   mark_usd_per_unit per-UNIT value (GBM + student-t shocks)
+  # IPO == first PUBLIC_MARKET_OPEN (regime -> PUBLIC_MARKET): flat
+  # annual_public_market_probability=0.07 hazard, absorbing, 6-month lockup. Monthly
+  # granularity; deadlines round to month index.
+  valuation_caveat: >
+    augur does NOT model company valuation: the structured model emits a per-UNIT mark
+    with no shares or market-cap concept (the only market-cap value lives in the
+    separate trained artifact's scale_prior, used internally as a soft-cap penalty, not
+    exposed). Valuation markets are therefore SURFACED, not scored. A constant-shares
+    eyeball proxy market_cap ~= mark * (current_market_cap_usd / current_mark_usd) ~=
+    mark * 5.213e8 exists but dilution is unmodeled, so it is not an apples-to-apples metric.
+
+  field_semantics: >
+    resolution_deadline = the date the YES condition must occur by (the model maps it to a month
+    index for the IPO-correlate context). The market's title/question, verbatim resolution
+    criterion, outcome_type, close_date, and live price are NOT stored here -- all are fetched live
+    from the platform at scoring time (Market.title / .rules / .probability), so they can never
+    drift. This catalog carries stable IDs, mappings, resolution_deadline, and notes only.
+
+markets:
+  # ============================================================================
+  # EXACT -- ipo_by_date  (first PUBLIC_MARKET_OPEN by the deadline)
+  # ============================================================================
+  - manifold_id: NII0slqg2N
+    # question: "OpenAI IPO before 2027?"
+    resolution_deadline: "2027-01-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
+    # exact event match. NB the model's IPO hazard is a flat ~7%/yr Bernoulli vs the
+    # market's ~0.75 -- the headline calibration gap, computed exactly.
+    notes: "Highest-signal IPO market (vol ~27k, 82 bettors). Resolves on the actual IPO, not announcement."
+
+  - manifold_id: RPNylZcpZg
+    # question: "OpenAI IPO before 2028?"
+    resolution_deadline: "2028-01-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2028-01-01" }
+    # exact; with the 2027/2029 siblings this samples the model's IPO survival curve
+    # against the market term structure.
+    notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2028."
+
+  - manifold_id: U5d5lNQLqR
+    # question: "OpenAI IPO before 2029?"
+    resolution_deadline: "2029-01-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2029-01-01" }
+    # exact; third point on the IPO survival curve.
+    notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2029."
+
+  - manifold_id: 0nIGd2HdusAb3id9SqzH
+    # question: "Will OpenAI IPO by 2030?"
+    resolution_deadline: "2030-01-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2030-01-01" }
+    # exact (within 120-month horizon).
+    notes: "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended semantics."
+
+  - manifold_id: Csgc56pdZc
+    # question: "Will OpenAI go public in 2026?"
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
+    # exact; criterion ('completes an IPO and begins trading') matches the
+    # PUBLIC_MARKET regime.
+
+  - manifold_id: NjpljpCCdCFW6aAG3SUa
+    # question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of Halloween 2026?"
+    resolution_deadline: "2026-10-31"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-31" }
+    notes: "Empty description; classified from title (IPO + publicly traded in the US by 2026-10-31)."
+
+  - manifold_id: 4EmLfjixbVhMfJzPc4C1
+    # question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of April Fools 2027?"
+    resolution_deadline: "2027-04-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-04-01" }
+    notes: "Empty description; classified from title (IPO + publicly traded in the US by 2027-04-01)."
+
+  # ============================================================================
+  # EXACT -- ipo_by_date  (Kalshi: monthly OpenAI IPO series)
+  # ============================================================================
+  # Granular monthly IPO-by-date markets from Kalshi (ticker KXIPOOPENAI series).
+  # High open interest, monthly resolution_deadlines. Same mapping_kind as the
+  # Manifold IPO series above. Kalshi read-only API requires no auth.
+  - platform: kalshi
+    kalshi_id: KXIPOOPENAI-26SEP01
+    # question: "OpenAI IPO before Sep 1, 2026? (Kalshi)"
+    resolution_deadline: "2026-09-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-01" }
+    # exact. Kalshi resolves YES if SEC declares S-1 effective OR IPO is priced OR
+    # exchange assigns a ticker.
+    notes: "Kalshi KXIPOOPENAI series. OI ~42K, last_price 0.16."
+
+  - platform: kalshi
+    kalshi_id: KXIPOOPENAI-26OCT01
+    # question: "OpenAI IPO before Oct 1, 2026? (Kalshi)"
+    resolution_deadline: "2026-10-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-01" }
+    notes: "Kalshi KXIPOOPENAI series. OI ~17K, last_price 0.50."
+
+  - platform: kalshi
+    kalshi_id: KXIPOOPENAI-26NOV01
+    # question: "OpenAI IPO before Nov 1, 2026? (Kalshi)"
+    resolution_deadline: "2026-11-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-11-01" }
+    notes: "Kalshi KXIPOOPENAI series. OI ~19K, last_price 0.76."
+
+  - platform: kalshi
+    kalshi_id: KXIPOOPENAI-26DEC01
+    # question: "OpenAI IPO before Dec 1, 2026? (Kalshi)"
+    resolution_deadline: "2026-12-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-01" }
+    notes: "Kalshi KXIPOOPENAI series. OI ~18K, last_price 0.74."
+
+  - platform: kalshi
+    kalshi_id: KXIPOOPENAI-27JAN01
+    # question: "OpenAI IPO before Jan 1, 2027? (Kalshi)"
+    resolution_deadline: "2027-01-01"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
+    notes: "Kalshi KXIPOOPENAI series. OI ~26K, last_price 0.86. Overlaps Manifold 'before 2027' market."
+
+  # ============================================================================
+  # EXACT -- ipo_by_date  (Polymarket: OpenAI IPO series)
+  # ============================================================================
+  # Polymarket OpenAI IPO-by-date markets (condition_id keyed). Coarser than
+  # Kalshi (quarterly not monthly) but independent price source for cross-platform
+  # validation. No auth needed for read-only.
+  - platform: polymarket
+    polymarket_id: "0x753e6031044632c083fede2715235b69bb2596e37d34f6f19d2b6635d2d4dd58"
+    # question: "OpenAI IPO by June 30, 2026? (Polymarket)"
+    resolution_deadline: "2026-06-30"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-06-30" }
+    notes: "Polymarket OpenAI IPO series. YES price ~0.9%."
+
+  - platform: polymarket
+    polymarket_id: "0x23e52206ff8a49e4f097ac3b7f32826d930a0b6c76b7902a7858cf2183383c63"
+    # question: "OpenAI IPO by September 30, 2026? (Polymarket)"
+    resolution_deadline: "2026-09-30"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-30" }
+    notes: "Polymarket OpenAI IPO series. YES price ~43%."
+
+  - platform: polymarket
+    polymarket_id: "0x66f5b8203ee1c36b993af623fd7f9ef7271dd87b3aebf6df508048ad4b563432"
+    # question: "OpenAI IPO by December 31, 2026? (Polymarket)"
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
+    notes: "Polymarket OpenAI IPO series. YES price ~70.5%."
+
+  # ============================================================================
+  # CORRELATE -- cross-platform IPO-before-2027 binary markets
+  # ============================================================================
+  # These markets resolve on whether the company IPOs before 2027 (binary YES/NO).
+  # They overlap the Manifold/Kalshi ipo_by_date markets but provide cross-platform
+  # price signals. Surfaced as correlates since the exact ipo_by_date markets above
+  # already cover this deadline with finer granularity.
+
+  - platform: kalshi
+    kalshi_id: KXIPO-26-OPENAI
+    # question: "OpenAI IPO before 2027? (Kalshi)"
+    resolution_deadline: "2027-01-01"
+    mappability: correlate
+    correlate_of: ipo_by_date
+    issuer: openai
+    correlate_strength: strong
+    reason: >
+      Binary IPO-before-2027 market; overlaps the exact Kalshi monthly series and
+      Manifold ipo_by_date markets for the same deadline. Surfaced for cross-platform
+      price comparison, not scored (the exact monthly markets are scored instead).
+    notes: "OI ~77K, last_price 0.85. Highest-volume Kalshi IPO market."
+
+  - platform: polymarket
+    polymarket_id: "0x7844ad013088564a11d5d4d3b1766c57ad936a"
+    # question: "OpenAI IPO before 2027? (Polymarket)"
+    resolution_deadline: "2026-12-31"
+    mappability: correlate
+    correlate_of: ipo_by_date
+    issuer: openai
+    correlate_strength: strong
+    reason: >
+      Polymarket binary IPO-before-2027. Same rationale as the Kalshi correlate:
+      surfaced for cross-platform price comparison, not scored.
+    notes: "Polymarket IPOs before 2027 series. YES price ~73%."
+
+  # ============================================================================
+  # Other Kalshi IPO-before-2027 tickers (for future catalogs / other issuers):
+  #   KXIPO-26-ANTHROPIC  KXIPO-26-DATABRICKS  KXIPO-26-DISCORD
+  #   KXIPO-26-KRAKEN     KXIPO-26-STRIPE      KXIPO-26-XAI
+  #   KXIPO-26-ANDURIL    KXIPO-26-GLEAN       KXIPO-26-RIPPLING
+  #   KXIPO-26-RAMP       KXIPO-26-DEEL        KXIPO-26-PLAID
+  #   KXIPO-26-SKIMS      KXIPO-26-SHEIN       KXIPO-26-MISTRAL
+  #   KXIPO-26-RIPPLE     KXIPO-26-VANTA       KXIPO-26-CEREBRAS
+  # Other Polymarket IPO-before-2027 condition_ids:
+  #   Discord:      0x48fcbf6bb8eceff817ba48b56211e4f8a4cf6896570d847d8d115e63c3abf36a
+  #   Anthropic:    0x6522024c060166830e53a48b0db1cab9296601
+  #   Databricks:   0xfa0166f81f49ec29802bec6eabd71bd73aa24e
+  #   Stripe:       0x3189b7975e272f59100a897047aca6ee5548d2
+  #   xAI:          0x570b4ad4562404728eefc2876a930f5a1aa79e
+  #   Anduril:      0xce76a9d7a778beb2907c288a2df477e68abc43
+  #   Databricks:   0xfa0166f81f49ec29802bec6eabd71bd73aa24e
+  # ============================================================================
+  # EXACT -- pre_ipo_failure  (absorbing COLLAPSED/ACQUIRED before any IPO)
+  # ============================================================================
+  - manifold_id: SlSdQOIU0l
+    # question: "OpenAI collapses or gets acquired before IPO?"
+    resolution_deadline: null
+    mappability: exact
+    mapping: { kind: pre_ipo_failure, issuer: openai }
+    # near-exact: the sim races these absorbing regimes (collapse ~0.3%/yr +
+    # acquisition ~1%/yr vs IPO ~7%/yr). Only the 'files for IPO then withdrawn ->
+    # YES' edge is unmodeled (negligible). Many rollouts stay private within 120mo ->
+    # UNRESOLVED.
+
+  # ============================================================================
+  # SURFACED (valuation) -- augur does NOT model company valuation; not scored.
+  # ============================================================================
+  - manifold_id: dy9AO5nLNq
+    # question: "Will OpenAi have a valuation of $1 trillion by the end of 2027?"
+    resolution_deadline: "2027-01-01"
+    mappability: correlate
+    correlate_of: mark_per_unit_trajectory
+    correlate_strength: strong
+    reason: >
+      augur does not model company valuation -- only a per-UNIT mark, with no shares or
+      market-cap concept. A constant-shares proxy (mark * external shares) maps mark to
+      a cap, but dilution is unmodeled, so this is surfaced for the reader, not scored.
+    # not scored: augur does not model company valuation.
+    notes: "Criterion evaluates valuation ON Jan 1, 2027 (title says 'end of 2027')."
+
+  - manifold_id: hdy0nPpEsA
+    # question: "OpenAI completes an IPO in 2026 and has a market cap of $1 trillion+?"
+    resolution_deadline: "2026-12-31"
+    mappability: correlate
+    correlate_of: ipo_by_date
+    issuer: openai
+    correlate_strength: strong
+    reason: >
+      The IPO-by-2026 leg is exactly modeled (PUBLIC_MARKET_OPEN), but the >=$1T
+      market-cap conjunct needs a valuation augur does not model. Surfaced, not scored;
+      calibration shows P(IPO by 2026) as the related clean signal (augur_context).
+    # IPO-timing leg is exact; the valuation conjunct is not scored.
+
+  # ============================================================================
+  # CORRELATE -- augur has a related signal for context; not scored.
+  # ============================================================================
+  - manifold_id: y2R55l60OA
+    # question: "[ACX 2026] Will OpenAI file for an IPO during 2026?"
+    resolution_deadline: "2027-01-01"
+    mappability: correlate
+    correlate_of: ipo_by_date
+    issuer: openai
+    correlate_strength: strong
+    reason: >
+      Resolves on a SEC Form S-1 FILING, not a completed IPO. The sim has no filing
+      event; P(PUBLIC_MARKET_OPEN by D) is a lower-bound leading-correlate.
+    # approx: filing vs completion gap; no distinct filing event in the sim.
+    notes: "High liquidity (5100), strong signal -- valuable correlate even though not exact."
+
+  - manifold_id: 95POzZAIhg
+    # question: "Will OpenAI go public NOT via an IPO?"
+    resolution_deadline: "2026-12-31"
+    mappability: correlate
+    correlate_of: ipo_by_date
+    issuer: openai
+    correlate_strength: moderate
+    reason: >
+      Resolution hinges on the going-public MECHANISM (direct listing / SPAC / merger,
+      EXCLUDING a traditional S-1 IPO). PUBLIC_MARKET_OPEN is mechanism-agnostic, so it
+      relates to but does not equal this market (the non-IPO slice).
+    # approx: sim cannot split IPO vs non-IPO mechanism.
+
+  - manifold_id: ugRnhOtcqN
+    # question: "OpenAI reaches $100B revenue in 2028?"
+    resolution_deadline: "2028-12-31"
+    mappability: correlate
+    correlate_of: mark_per_unit_trajectory
+    correlate_strength: weak
+    reason: >
+      Revenue threshold. The sim has no revenue channel; the per-unit mark path is at
+      best a loose growth proxy. Surfaced for context, not scored.
+    # weak/indirect: augur models neither revenue nor valuation.
+
+  - manifold_id: mQB5gkPdsaqoQdaAlMoL
+    # question: "Will OpenAI have >$10 billion in revenue by 2030?"
+    resolution_deadline: "2030-01-01"
+    mappability: correlate
+    correlate_of: mark_per_unit_trajectory
+    correlate_strength: weak
+    reason: "Revenue threshold; augur models neither revenue nor valuation. Near-certain (~0.99) so low information anyway."
+    # weak/indirect; market near-certain, low information.
+    notes: "Empty description; classified from title."
+
+  - manifold_id: HrMP25RvBmOw3FfGVOup
+    # question: "OpenAI will be nationalized or have the Defense Production Act applied to it by mid 2030"
+    resolution_deadline: "2030-07-01"
+    mappability: correlate
+    correlate_of: legal_event
+    correlate_strength: weak
+    reason: >
+      Government nationalization / control. The sim's LEGAL_IMPAIRMENT event (severe
+      legal, ~0.05%/yr) is the nearest signal but is not nationalization. Weak correlate.
+    # weak: LEGAL_IMPAIRMENT is rare legal-severity, not nationalization specifically.
+
+  - manifold_id: x7ZzkewbkjWtnz3eGFg1
+    # question: "Will OpenAI be more valuable than Microsoft before 2040?"
+    resolution_deadline: "2040-01-01"
+    mappability: correlate
+    correlate_of: mark_per_unit_trajectory
+    correlate_strength: moderate
+    reason: >
+      Relative valuation (OpenAI vs Microsoft). augur models neither a company valuation
+      for OpenAI (only a per-unit mark) nor Microsoft's cap, and 2040 exceeds the
+      120-month horizon (~2036). Surfaced, not scored.
+    # not scored: no valuation, no comparator, beyond horizon.
+
+  # ============================================================================
+  # UNMAPPABLE -- no meaningfully related augur signal.
+  # ============================================================================
+  - manifold_id: 7f4WjccHH6yD42cot2Ep
+    # question: "Will Sam Altman still be CEO of OpenAI at the end of 2026?"
+    resolution_deadline: "2026-12-31"
+    mappability: unmappable
+    reason: >
+      Governance / leadership (CEO tenure). The sim models marks and
+      liquidity/legal/collapse events -- nothing about leadership.
+    # not computable; no governance state in the sim.
+    notes: "Empty description; classified from title."
+
+  # ============================================================================
+  # EXACT -- macro level markets (whole-model calibration). Scored against the
+  # model's sp500 / inflation LEVEL channels, not the OpenAI PE bundle, anchored
+  # to metadata.anchors. See augur/plans/whole_model_calibration.md.
+  # ============================================================================
+  - manifold_id: hISQySnLnu
+    # question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping: { kind: level_at_date, series: sp500, threshold: 7500, direction: above, at_date: "2026-12-31" }
+    notes: "Point-in-time threshold on the sp500 channel; p_model = share of rollouts with anchored sp500 >= 7500 at 2026-12-31."
+
+  # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
+  # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date looks back
+  # past as_of -- the look-back is served from the pre-anchor CPI history derived from vendored
+  # evidence (see macro_anchors.py), so the market scores instead of resolving UNRESOLVED.
+  - platform: kalshi
+    kalshi_id: KXCPIYOY-26JUL-T3.0
+    # question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
+    resolution_deadline: "2026-08-15"
+    mappability: exact
+    mapping: { kind: inflation_yoy, series: inflation, threshold: 0.03, direction: above, at_date: "2026-07-31" }
+    notes: "Trailing-12mo window looks back past as_of; the denominator is the vendored pre-anchor CPI-U."
+
+  # ============================================================================
+  # EXACT -- crypto markets (scored against the model's crypto:btc level channel).
+  # ============================================================================
+  - manifold_id: 2q2qZNLRlE
+    # question: "Will Bitcoin be higher than $88,888 at the end of 2026?"
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping: { kind: level_at_date, series: "crypto:btc", threshold: 88888, direction: above, at_date: "2026-12-31" }
+    notes: "Point-in-time threshold on the crypto:btc channel."
+
+  - manifold_id: 9PuIhuRZEc
+    # question: "Bitcoin $100k before end of June 2026?"
+    resolution_deadline: "2026-06-30"
+    mappability: exact
+    mapping: { kind: level_by_date, series: "crypto:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
+    notes: "Ever-by-date (touch) on crypto:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
+
+# Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series
+# at a single date, scored as one multinomial D_KL(market ‖ model).
+bucket_families:
+  # Kalshi S&P 500 year-end range market (KXINXY): tiling [low, high) buckets on the sp500
+  # close at 2026-12-31. Each bucket is a separately-priced Kalshi binary market.
+  - family_id: sp500_eoy_2026
+    question: "S&P 500 closing level on 2026-12-31 (Kalshi KXINXY range)"
+    platform: kalshi
+    series: sp500
+    at_date: "2026-12-31"
+    buckets:
+      - { market_id: KXINXY-26DEC31H1600-T4000, label: "3,999.99 or below", low: null, high: 4000 }
+      - { market_id: KXINXY-26DEC31H1600-B4100, label: "4,000 to 4,199.99", low: 4000, high: 4200 }
+      - { market_id: KXINXY-26DEC31H1600-B4300, label: "4,200 to 4,399.99", low: 4200, high: 4400 }
+      - { market_id: KXINXY-26DEC31H1600-B4500, label: "4,400 to 4,599.99", low: 4400, high: 4600 }
+      - { market_id: KXINXY-26DEC31H1600-B4700, label: "4,600 to 4,799.99", low: 4600, high: 4800 }
+      - { market_id: KXINXY-26DEC31H1600-B4900, label: "4,800 to 4,999.99", low: 4800, high: 5000 }
+      - { market_id: KXINXY-26DEC31H1600-B5100, label: "5,000 to 5,199.99", low: 5000, high: 5200 }
+      - { market_id: KXINXY-26DEC31H1600-B5300, label: "5,200 to 5,399.99", low: 5200, high: 5400 }
+      - { market_id: KXINXY-26DEC31H1600-B5500, label: "5,400 to 5,599.99", low: 5400, high: 5600 }
+      - { market_id: KXINXY-26DEC31H1600-B5700, label: "5,600 to 5,799.99", low: 5600, high: 5800 }
+      - { market_id: KXINXY-26DEC31H1600-B5900, label: "5,800 to 5,999.99", low: 5800, high: 6000 }
+      - { market_id: KXINXY-26DEC31H1600-B6100, label: "6,000 to 6,199.99", low: 6000, high: 6200 }
+      - { market_id: KXINXY-26DEC31H1600-B6300, label: "6,200 to 6,399.99", low: 6200, high: 6400 }
+      - { market_id: KXINXY-26DEC31H1600-B6500, label: "6,400 to 6,599.99", low: 6400, high: 6600 }
+      - { market_id: KXINXY-26DEC31H1600-B6700, label: "6,600 to 6,799.99", low: 6600, high: 6800 }
+      - { market_id: KXINXY-26DEC31H1600-B6900, label: "6,800 to 6,999.99", low: 6800, high: 7000 }
+      - { market_id: KXINXY-26DEC31H1600-B7100, label: "7,000 to 7,199.99", low: 7000, high: 7200 }
+      - { market_id: KXINXY-26DEC31H1600-B7300, label: "7,200 to 7,399.99", low: 7200, high: 7400 }
+      - { market_id: KXINXY-26DEC31H1600-B7500, label: "7,400 to 7,599.99", low: 7400, high: 7600 }
+      - { market_id: KXINXY-26DEC31H1600-B7700, label: "7,600 to 7,799.99", low: 7600, high: 7800 }
+      - { market_id: KXINXY-26DEC31H1600-B7900, label: "7,800 to 7,999.99", low: 7800, high: 8000 }
+      - { market_id: KXINXY-26DEC31H1600-B8100, label: "8,000 to 8,199.99", low: 8000, high: 8200 }
+      - { market_id: KXINXY-26DEC31H1600-B8300, label: "8,200 to 8,399.99", low: 8200, high: 8400 }
+      - { market_id: KXINXY-26DEC31H1600-B8500, label: "8,400 to 8,599.99", low: 8400, high: 8600 }
+      - { market_id: KXINXY-26DEC31H1600-B8700, label: "8,600 to 8,799.99", low: 8600, high: 8800 }
+      - { market_id: KXINXY-26DEC31H1600-B8900, label: "8,800 to 9,000", low: 8800, high: 9000 }
+      - { market_id: KXINXY-26DEC31H1600-T9000, label: "9,000.01 or above", low: 9000, high: null }
+
+  # Kalshi BTC year-end range market (KXBTCY): tiling [low, high) buckets on the crypto:btc
+  # close at year-end 2026 (resolves 2027-01-01), scored as one multinomial.
+  - family_id: btc_eoy_2026
+    question: "Bitcoin closing level at year-end 2026 (Kalshi KXBTCY range)"
+    platform: kalshi
+    series: "crypto:btc"
+    at_date: "2027-01-01"
+    buckets:
+      - { market_id: KXBTCY-27JAN0100-T20000.00, label: "19,999.99 or below", low: null, high: 20000 }
+      - { market_id: KXBTCY-27JAN0100-B22500, label: "20,000 to 24,999.99", low: 20000, high: 25000 }
+      - { market_id: KXBTCY-27JAN0100-B27500, label: "25,000 to 29,999.99", low: 25000, high: 30000 }
+      - { market_id: KXBTCY-27JAN0100-B32500, label: "30,000 to 34,999.99", low: 30000, high: 35000 }
+      - { market_id: KXBTCY-27JAN0100-B37500, label: "35,000 to 39,999.99", low: 35000, high: 40000 }
+      - { market_id: KXBTCY-27JAN0100-B42500, label: "40,000 to 44,999.99", low: 40000, high: 45000 }
+      - { market_id: KXBTCY-27JAN0100-B47500, label: "45,000 to 49,999.99", low: 45000, high: 50000 }
+      - { market_id: KXBTCY-27JAN0100-B52500, label: "50,000 to 54,999.99", low: 50000, high: 55000 }
+      - { market_id: KXBTCY-27JAN0100-B57500, label: "55,000 to 59,999.99", low: 55000, high: 60000 }
+      - { market_id: KXBTCY-27JAN0100-B62500, label: "60,000 to 64,999.99", low: 60000, high: 65000 }
+      - { market_id: KXBTCY-27JAN0100-B67500, label: "65,000 to 69,999.99", low: 65000, high: 70000 }
+      - { market_id: KXBTCY-27JAN0100-B72500, label: "70,000 to 74,999.99", low: 70000, high: 75000 }
+      - { market_id: KXBTCY-27JAN0100-B77500, label: "75,000 to 79,999.99", low: 75000, high: 80000 }
+      - { market_id: KXBTCY-27JAN0100-B82500, label: "80,000 to 84,999.99", low: 80000, high: 85000 }
+      - { market_id: KXBTCY-27JAN0100-B87500, label: "85,000 to 89,999.99", low: 85000, high: 90000 }
+      - { market_id: KXBTCY-27JAN0100-B92500, label: "90,000 to 94,999.99", low: 90000, high: 95000 }
+      - { market_id: KXBTCY-27JAN0100-B97500, label: "95,000 to 99,999.99", low: 95000, high: 100000 }
+      - { market_id: KXBTCY-27JAN0100-B102500, label: "100,000 to 104,999.99", low: 100000, high: 105000 }
+      - { market_id: KXBTCY-27JAN0100-B107500, label: "105,000 to 109,999.99", low: 105000, high: 110000 }
+      - { market_id: KXBTCY-27JAN0100-B112500, label: "110,000 to 114,999.99", low: 110000, high: 115000 }
+      - { market_id: KXBTCY-27JAN0100-B117500, label: "115,000 to 119,999.99", low: 115000, high: 120000 }
+      - { market_id: KXBTCY-27JAN0100-B122500, label: "120,000 to 124,999.99", low: 120000, high: 125000 }
+      - { market_id: KXBTCY-27JAN0100-B127500, label: "125,000 to 129,999.99", low: 125000, high: 130000 }
+      - { market_id: KXBTCY-27JAN0100-B132500, label: "130,000 to 134,999.99", low: 130000, high: 135000 }
+      - { market_id: KXBTCY-27JAN0100-B137500, label: "135,000 to 139,999.99", low: 135000, high: 140000 }
+      - { market_id: KXBTCY-27JAN0100-B142500, label: "140,000 to 144,999.99", low: 140000, high: 145000 }
+      - { market_id: KXBTCY-27JAN0100-B147500, label: "145,000 to 149,999.99", low: 145000, high: 150000 }
+      - { market_id: KXBTCY-27JAN0100-T149999.99, label: "150,000 or above", low: 150000, high: null }

@@ -1,0 +1,21 @@
+rationale: |
+  `extract_single_text_content` (lines 17-29) takes two passes over `res` and
+  includes two dead guards. The input type is
+  `list[TextResourceContents | BlobResourceContents]` — only two variants.
+
+  1. Filtering to text_parts (line 23) then separately scanning for blobs (line 24)
+     is redundant: `one(res)` enforces exactly one element, and the isinstance
+     check distinguishes the two variants.
+  2. `TextResourceContents.text` is typed `str` (not optional), so the
+     `str | None` annotation on line 26 is wrong and the None guard on lines
+     27-28 is dead code.
+
+  Simplify to: `one(res)`, isinstance check, return `.text`.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_utils/resources.py:
+        - [17, 29]

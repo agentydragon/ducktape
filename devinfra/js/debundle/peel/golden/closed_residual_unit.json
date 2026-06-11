@@ -1,0 +1,53 @@
+{
+  "proposals": [
+    {
+      "proposed_module_id": "auto_partition_0000",
+      "owner_ids": [
+        "owner:a",
+        "owner:b"
+      ],
+      "binding_ids": [
+        "BindingA",
+        "BindingB"
+      ],
+      "size_lines_estimate": 20,
+      "source_line_range": [
+        100,
+        209
+      ],
+      "ordinal_span": 1,
+      "internal_edges": 1,
+      "edges_to_other_residual_cells": 0,
+      "other_residual_cells_referenced": [],
+      "edges_to_active_modules": 0,
+      "active_modules_referenced": [],
+      "status": "peelable_now",
+      "landable_today": true,
+      "extension_owner_ids": []
+    }
+  ],
+  "diagnostics": [],
+  "size_cap_lines": 10000,
+  "residual_owner_count": 2,
+  "active_claimed_binding_count": 0,
+  "status_counts": {
+    "peelable_now": 1
+  },
+  "diagnostic_counts": {},
+  "size_distributions": {
+    "by_members": [
+      {
+        "bucket": "2",
+        "count": 1,
+        "landable_count": 1
+      }
+    ],
+    "by_lines": [
+      {
+        "bucket": "11-20",
+        "count": 1,
+        "landable_count": 1
+      }
+    ]
+  }
+}

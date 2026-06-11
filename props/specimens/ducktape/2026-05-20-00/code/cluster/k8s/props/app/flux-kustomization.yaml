@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: props
+  namespace: flux-system
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/props/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: props-namespace
+    - name: props-secrets
+    - name: props-db
+    - name: gateway
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: props
+      namespace: props

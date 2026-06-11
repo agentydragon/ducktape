@@ -1,0 +1,19 @@
+# Deb packages layered on debian:bookworm-slim for the CPAP sync container.
+# Only need nmcli to talk to host NetworkManager over dbus (the cronjob mounts
+# /run/dbus and /var/run/NetworkManager from the host).
+#
+# Regenerate the lock file after any change:
+#   bazel run @bookworm_cpap_sync//:lock
+version: 1
+
+sources:
+  - channel: bookworm main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: bookworm-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "network-manager"

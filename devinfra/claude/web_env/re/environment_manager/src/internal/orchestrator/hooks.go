@@ -1,6 +1,22 @@
 // Reconstructed from binary: environment-manager (Build ID 495ea204)
 // Source: internal/orchestrator/hooks.go
 // Package: github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator
+//
+// Hook is used in two contexts:
+//  1. Session hooks: Execute/ExecuteWithStdin is called when a new session
+//     is received, to run the --execute-hook command with session JSON on stdin.
+//  2. Timeout hooks: Orchestrator.handleLoopTimeout checks if a Hook is
+//     configured at offset 0x10 of the Orchestrator struct. When the poll
+//     interval is exceeded (idle period between sessions), it calls
+//     Hook.Execute on this "timeout hook". This allows running cleanup or
+//     maintenance commands during idle periods.
+//
+// The timeout hook is NOT configured via a separate CLI flag in the current
+// binary — there is no --timeout-hook flag visible in the string table.
+// The hook is stored directly in the Orchestrator struct and may be
+// configured programmatically by the cmd_orchestrator.go setup code.
+// TODO(RE): Verify how the timeout hook is configured — it may use the
+// same Hook struct as the execute hook or be a separate configuration.
 
 package orchestrator
 

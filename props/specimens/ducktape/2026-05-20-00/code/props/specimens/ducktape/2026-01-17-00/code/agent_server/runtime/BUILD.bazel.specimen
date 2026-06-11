@@ -1,0 +1,56 @@
+"""Runtime package - container lifecycle and agent registry."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Utility modules with minimal dependencies - can be imported by persist
+py_library(
+    name = "images",
+    srcs = ["images.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+)
+
+py_library(
+    name = "auto_attach",
+    srcs = ["auto_attach.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = ["@pypi//fastmcp"],
+)
+
+# Full runtime package - depends on many agent_server subpackages
+py_library(
+    name = "runtime",
+    srcs = [
+        "container.py",
+        "handlers.py",
+        "registry.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":auto_attach",
+        ":images",
+        "//agent_core",
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/mcp/chat",
+        "//agent_server/mcp/loop",
+        "//agent_server/mcp/runtime:mcp_runtime",
+        "//agent_server/mcp/ui",
+        "//agent_server/notifications",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/server:handlers",
+        "//agent_server/server:runtime_types",
+        "//agent_server/server:types",
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

@@ -1,0 +1,1 @@
+GIT_COMMIT: str = "{{GIT_COMMIT}}"

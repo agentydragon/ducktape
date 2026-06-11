@@ -1,0 +1,163 @@
+# Kyverno - Kubernetes Native Policy Management
+# Used to enforce GitOps-only deployments and other security policies
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://kyverno.github.io/kyverno/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  targetNamespace: kyverno
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: kyverno
+      version: "3.7.1"
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+        namespace: flux-system
+  values:
+    # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable
+    # and already mirrored through Harbor (ghcr-proxy).
+    global:
+      image:
+        registry: ghcr.io
+
+    # Admission controller configuration
+    # HA: one replica per control-plane node (3 nodes = 3 replicas).
+    # Ensures the webhook is reachable from every API server without
+    # cross-node hops that can fail during early bootstrap.
+    admissionController:
+      replicas: 3
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
+      # Replaces topologySpreadConstraints whose labelSelector didn't match
+      # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
+      # all 3 replicas to stack on talos-vps-cp-1.
+      # The chart default uses preferredDuringScheduling with the correct labels.
+      antiAffinity:
+        enabled: true
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+      # Use kyverno's INTERNAL cert management, not external cert-manager.
+      #
+      # WHY: Kyverno's startup sequence (cmd/kyverno/main.go:922-934) is:
+      #   1. server.Run()      — HTTPS server starts on :9443
+      #   2. le.Run()          — leader election
+      #   3. certmanager ctrl  — creates CA + TLS secrets (leader controller, line 304)
+      #   4. webhook ctrl      — creates VWC with caBundle (leader controller, line 305)
+      #
+      # With internal certs (enabled=false):
+      #   The webhook-controller (pkg/controllers/webhook/controller.go:621-634)
+      #   creates the VWC dynamically by reading the CA secret and calling
+      #   vwcClient.Create(). This only happens AFTER the certmanager controller
+      #   creates certs in step 3. So VWC existence = webhook ready to serve.
+      #   The readiness probe (pkg/utils/runtime/utils.go:52) validates TLS
+      #   certs against CA — returns 200 only when certs are valid.
+      #   The TLS server uses GetCertificate callback (pkg/webhooks/server.go:277)
+      #   reading from informer cache — auto-refreshes, no static files.
+      #
+      # With cert-manager (enabled=true):
+      #   The Helm chart creates cert-manager Certificate resources as static
+      #   templates (templates/admission-controller/cert-manager-certificates.yaml).
+      #   cert-manager must issue certs before kyverno can serve TLS, adding a
+      #   dependency on cert-manager. But the VWC is still created dynamically
+      #   by the webhook-controller — the problem is that the Deployment readiness
+      #   probe passes as soon as cert-manager provisions the TLS secret, BEFORE
+      #   the webhook-controller has created the VWC. This causes a window where
+      #   Flux marks kyverno as Ready (Deployment available) but the VWC doesn't
+      #   exist yet — then the VWC appears moments later and the API server
+      #   starts routing admission requests while downstream HelmReleases are
+      #   already being installed, causing webhook timeouts.
+      #
+      # Trust model: Only the API server calls webhooks. The VWC contains the
+      # caBundle field — the API server uses it to verify kyverno's self-signed
+      # TLS cert. No cluster-wide trust or cert-manager needed.
+      #
+      # Refs:
+      #   Source: github.com/kyverno/kyverno (cloned at /code/github.com/kyverno/kyverno)
+      #   Flux kstatus treats VWC as "unknown"=pass: https://github.com/fluxcd/flux2/issues/4346
+      #   Kyverno webhook timeouts blocking workloads: https://github.com/kyverno/kyverno/issues/1950
+      certManager:
+        enabled: false
+
+    # Background controller for policy reports
+    backgroundController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+    # Cleanup controller
+    cleanupController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
+    # Reports controller
+    reportsController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
+    # CRD installation
+    crds:
+      install: true
+
+    # Feature flags
+    features:
+      logging:
+        format: text
+      admissionReports:
+        enabled: true
+      policyReports:
+        enabled: true
+
+    # Exclude system namespaces from policy enforcement
+    config:
+      excludeKyvernoNamespace: true

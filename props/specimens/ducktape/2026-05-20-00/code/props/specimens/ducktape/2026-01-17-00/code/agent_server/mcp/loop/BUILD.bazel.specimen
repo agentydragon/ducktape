@@ -1,0 +1,17 @@
+"""MCP Loop server - loop control tools."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "loop",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

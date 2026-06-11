@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import importlib.resources
 import logging
-import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from mako.template import Template
-from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from mako_utils.preprocessor import markdown_heading_preprocessor
-from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
-from openai_utils.retry import RetryingOpenAIModel
 from props.agents.schema import describe_table
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
@@ -134,18 +130,3 @@ def render_template_string(content: str, db: Database, helpers: dict[str, Any] |
     ctx = _make_template_context(db, helpers)
     result: str = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
     return result
-
-
-def create_bound_model_from_env(db: Database) -> OpenAIModelProto:
-    """Create a retrying OpenAI model using environment variables.
-
-    Gets model from current agent run. Uses OPENAI_BASE_URL and OPENAI_API_KEY.
-    Wraps in RetryingOpenAIModel for automatic retries on transient errors (500,
-    rate limits, connection errors).
-    """
-    with db.session() as session:
-        agent_run = get_current_agent_run(session)
-        model = agent_run.model
-
-    client = AsyncOpenAI(base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"])
-    return RetryingOpenAIModel(base=BoundOpenAIModel(client=client, model=model))

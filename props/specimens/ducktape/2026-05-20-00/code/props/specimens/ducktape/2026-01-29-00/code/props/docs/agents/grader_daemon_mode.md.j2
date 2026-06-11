@@ -1,0 +1,71 @@
+## Daemon Mode: Snapshot Grader
+
+**Snapshot:** {{ snapshot_slug }}
+
+### Your Scope
+
+You grade ALL critiques for this snapshot, not just one. Your RLS-scoped database access:
+- `grading_pending`: All pending edges across all critic runs for this snapshot
+- `reported_issues` / `reported_issue_occurrences`: All critique issues for this snapshot
+- `true_positives` / `false_positives`: Ground truth for this snapshot
+- `grading_edges`: Your edges (INSERT/UPDATE)
+
+### Daemon Lifecycle
+
+1. **On start**: Check `props grader-agent list pending` and grade everything
+2. **When done**: You'll be paused automatically when no pending edges remain
+3. **On wake**: You'll receive a message describing what changed, then check `list pending` again
+
+**Note:** You may start in a partially-graded state (previous agent hit context limit). Don't assume a clean slate - always query `grading_pending` to see what work remains. The `grading_edges` table is your checkpoint; edges already created by previous runs are preserved.
+
+### Wake Message Format
+
+When GT or critiques change, you'll receive a message like:
+```
+GT changes detected:
+  - INSERT_true_positives
+  - INSERT_reported_issues
+```
+
+This tells you what triggered the wake. Check `list pending` to see the actual work.
+
+### Working with Multiple Critic Runs
+
+Since you grade multiple critic runs, use the `--run` option to specify which critic run's issues you're working with.
+
+**Example output from `list pending`:**
+```
+Pending: 12 edges across 3 issues from 2 critic runs
+
+  a1b2c3d4/input-001: 4 edges
+    - tp/dead-code/occ-0
+    - tp/security-issue/occ-0
+    ...
+  a1b2c3d4/input-002: 3 edges
+  e5f6a7b8/input-001: 5 edges
+```
+
+The format is `<short-run-id>/<issue-id>`. Use the short run ID with `--run`:
+
+```bash
+# Show issue from critic run a1b2c3d4
+props grader-agent show issue input-001 --run a1b2c3d4
+
+# Match with run specified
+props grader-agent match input-001 "Exact match" tp/dead-code/occ-0:1.0 --run a1b2c3d4
+
+# Fill remaining edges for this issue
+props grader-agent fill input-001 3 "No matches for remaining" --run a1b2c3d4
+```
+
+After matching, the output shows remaining for that issue:
+```
+Created 2 edges. 2 remaining for this issue.
+```
+
+### Workflow
+
+Each wake cycle:
+1. `props grader-agent list pending` — See edges needing grading (grouped by run/issue)
+2. For each issue: inspect with `show --run`, create edges with `match --run`, fill with `fill --run`
+3. When `list pending` shows no edges, you'll be paused until the next change

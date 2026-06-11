@@ -1,0 +1,147 @@
+#+TITLE: Org Mode Example
+#+AUTHOR: Author Name
+#+OPTIONS: toc:2
+
+* Text Formatting
+
+This is *bold* and this is /italic/. You can also do +strikethrough+.
+
+Superscript: E=mc^2 and subscript: H_2O
+
+=verbatim= and ~code~
+
+* Lists
+
+- Unordered item
+- Another item
+  - Nested item
+
+1. First
+2. Second
+
+** Definition Lists
+
+- Term 1 :: Definition of term 1
+- Term 2 :: Definition of term 2
+
+* Links and Images
+
+[[https://example.com][Link text]]
+
+[[file:image.png]]
+
+#+CAPTION: Image with caption
+[[file:diagram.png]]
+
+* Code
+
+Inline ~code~ and blocks:
+
+#+BEGIN_SRC python
+def hello():
+    print("Hello, world!")
+#+END_SRC
+
+* Tables
+
+| Name  | Value |
+|-------+-------|
+| Alpha |     1 |
+| Beta  |     2 |
+
+Org tables have spreadsheet-like formulas:
+
+| Item  | Price | Qty | Total |
+|-------+-------+-----+-------|
+| Apple |  1.00 |   3 |  3.00 |
+| Bread |  2.50 |   2 |  5.00 |
+|-------+-------+-----+-------|
+| Total |       |     |  8.00 |
+#+TBLFM: $4=$2*$3::@4$4=vsum(@2$4..@3$4)
+
+* Task Lists (TODO items)
+
+** TODO Pending task
+** DONE Completed task
+   CLOSED: [2024-01-15 Mon 10:30]
+
+* Admonitions (via special blocks)
+
+#+BEGIN_NOTE
+This is a note.
+#+END_NOTE
+
+#+BEGIN_WARNING
+This is a warning.
+#+END_WARNING
+
+* Cross-references
+
+See [[*Tables][the Tables section]] for examples.
+
+<<custom-anchor>>
+** Custom Anchor Section
+
+Reference with [[custom-anchor]].
+
+* Includes
+
+#+INCLUDE: "other-file.org"
+
+* Properties and Metadata
+
+** Section with properties
+   :PROPERTIES:
+   :CUSTOM_ID: my-section
+   :CATEGORY: examples
+   :END:
+
+* Footnotes
+
+Here's a sentence with a footnote[fn:1].
+
+[fn:1] This is the footnote content.
+
+* Blockquotes
+
+#+BEGIN_QUOTE
+This is a quote.
+It can span multiple lines.
+
+-- Attribution
+#+END_QUOTE
+
+* Math (LaTeX)
+
+Inline: $E = mc^2$
+
+Block:
+
+\begin{equation}
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+\end{equation}
+
+* Org-specific Features
+
+** Agenda and Scheduling
+
+*** TODO Project deadline
+    DEADLINE: <2024-03-01 Fri>
+
+*** Meeting
+    SCHEDULED: <2024-02-15 Thu 14:00-15:00>
+
+** Time Tracking
+
+*** Task with time
+    :LOGBOOK:
+    CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:30] =>  1:30
+    :END:
+
+** Tags                                                        :tag1:tag2:
+
+** Drawers
+
+   :NOTES:
+   Private notes go in drawers.
+   :END:

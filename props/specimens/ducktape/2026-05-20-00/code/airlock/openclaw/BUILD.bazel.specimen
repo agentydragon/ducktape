@@ -1,0 +1,72 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/js:json_schema.bzl", "js_json_schema")
+
+npm_link_all_packages(name = "node_modules")
+
+js_json_schema(
+    name = "types",
+    out = "types.d.ts",
+    generator = "//airlock:export_schema_bin",
+)
+
+js_library(
+    name = "util",
+    srcs = ["util.ts"],
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "reconnecting-mcp-client",
+    srcs = ["reconnecting-mcp-client.ts"],
+    deps = [
+        ":node_modules",
+        ":util",
+    ],
+)
+
+js_library(
+    name = "airlock-connection",
+    srcs = ["airlock-connection.ts"],
+    deps = [
+        ":node_modules",
+        ":reconnecting-mcp-client",
+        ":types",
+        ":util",
+    ],
+)
+
+js_library(
+    name = "index",
+    srcs = ["index.ts"],
+    deps = [
+        ":airlock-connection",
+        ":node_modules",
+        ":reconnecting-mcp-client",
+        ":types",
+        ":util",
+    ],
+)
+
+# ── Plugin packaging for Docker ──────────────────────────────────────────────
+
+pkg_files(
+    name = "plugin_files",
+    srcs = [
+        "airlock-connection.ts",
+        "index.ts",
+        "openclaw.plugin.json",
+        "package.json",
+        "reconnecting-mcp-client.ts",
+        "util.ts",
+    ],
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_tar(
+    name = "plugin_tar",
+    srcs = [":plugin_files"],
+    visibility = ["//visibility:public"],
+)

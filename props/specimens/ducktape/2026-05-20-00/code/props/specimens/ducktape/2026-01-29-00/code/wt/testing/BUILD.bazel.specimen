@@ -1,0 +1,102 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//wt:__subpackages__"])
+
+py_library(
+    name = "asserts",
+    srcs = ["asserts.py"],
+    deps = ["@pypi//pyhamcrest"],
+)
+
+py_library(
+    name = "config_factory",
+    srcs = ["config_factory.py"],
+    deps = [
+        ":data",
+        "//wt/shared:config_file",
+        "//wt/shared:configuration",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+)
+
+py_library(
+    name = "data",
+    srcs = ["data.py"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "git_helpers",
+    srcs = ["git_helpers.py"],
+    deps = [
+        ":data",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+)
+
+py_library(
+    name = "mock_factory",
+    srcs = ["mock_factory.py"],
+    deps = [
+        ":data",
+        "//wt/client:view_formatter",
+        "//wt/client:wt_client",
+        "//wt/server:git_manager",
+        "//wt/server:github_client",
+        "//wt/server:worktree_service",
+        "//wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "repo_factory",
+    srcs = ["repo_factory.py"],
+    deps = [
+        ":data",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":config_factory",
+        ":data",
+        ":mock_factory",
+        ":repo_factory",
+        ":utils",
+        "//wt/server:git_manager",
+        "//wt/server:github_client",
+        "//wt/server:gitstatusd_listener",
+        "//wt/server:worktree_service",
+        "//wt/shared:config_file",
+        "//wt/shared:configuration",
+        "//wt/shared:fixtures",
+        "//wt/shared:protocol",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//typer_slim",
+    ],
+)

@@ -40,7 +40,7 @@ result from before the FileLock changes. The resulting wheel was uploaded with s
 
 **Why `--ref "$FULL_SHA"` made it worse:**
 `gh workflow run release.yml --ref "$FULL_SHA"` (bare SHA) is rejected by GitHub API, so
-`release.yml` never ran to update `npins/sources.json`. Fixed in `eec3614` (`--ref devel
+`release.yml` never ran to update `nix/artifact-pins.json`. Fixed in `eec3614` (`--ref devel
 --field sha=...`).
 
 ## Daemon Startup Time Profile

@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: postscanmail-mcp-api-key
+    namespace: postscanmail-mcp
+    annotations:
+        description: PostScan Mail Developer API key. The python sidecar reads it from env at startup.
+type: Opaque
+stringData:
+    POSTSCANMAIL_API_KEY: ENC[AES256_GCM,data:OCq9hboUVxB1y0NviraJX3eHXPfbtxrctJ620+T8rCZH6w3yLoZjXX58TnZR3b8ATH+XXw0Kekk1pWVOVjH8ntphswxT/lDGKBqmtrV/iVecHX2NlAC2C8ukPPPJYYkKPMPzRTAd+QnO/l9w/9qpfg==,iv:Ys+DF24rmaa1JVFe6QBlX9EFA6Vga8guW+L3lktyf5M=,tag:n+mGSM6EU89zOlgb0D+4CA==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTYlVxdmZhZ05BODIwYUlr
+            Smg5WnJVbzdSNWJJZFQ1WFB4d1BnZWdwQ2dzCmpDUmh6NEgwamwwTG4wcUhWMW52
+            VTdBVGpoTllURng0SkFiMWpxektWU1EKLS0tIHB6R3dLeGFYbFZtSEJ5OUw2dStK
+            aXVyeDA3LzN4c05XNDRtZUl0OHd3aFUK1QB908fKmxCKjVzgAHswIw6QYSetUwg1
+            le3m7yleBPXWZcVvKzdOpxuTwzxF0hjGi1OMVkQsfs4PaKnYnMp5tA==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTNTRYV2RuamJGUmV6eTBy
+            SkpFZUdIQ29EajFwbzY1SUZCaFl5Mkprd3pjCkpFY2RrSUpFWlY2UmRzUUcya1JH
+            R0VSUjBlcTFBczlUMmNMOWhuWThkM2sKLS0tIHMzTURRTmxsUjhNdldtdlh4YVRZ
+            eUF2dHZnK0tOMGM5VzJ3NzhBMndZR0UKg6QAILXU0vxxV27IINKKrNrdrhajIieX
+            gVrwwGkNF3XiX5VdKu9k/6mMXTfYdseB3fCtrwf8Vkrvo2y4P6Zvyg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-05-29T18:54:14Z"
+    mac: ENC[AES256_GCM,data:1EV59MuWOPVYsGJulMUfiMeVzqVl+Dbh96duKO/1DYPIMMjTEPkF/vjkj1fbkTEI/k+l4DKXL+jF3MQn36J2sG0M/B3lJSmVm3if0EA3YxFR60OnIdLzLGkZxbw5dCmVpfYgOT72WC8/rNYP9lZ9zzNsrs9YsyBngqS4rNUuHWM=,iv:hi/cVKMzPj6VUIBemHKLPsKcU5F9TSWT0F0PGIU/aRU=,tag:yStWzoFEUUxT5aDOpl7fPA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

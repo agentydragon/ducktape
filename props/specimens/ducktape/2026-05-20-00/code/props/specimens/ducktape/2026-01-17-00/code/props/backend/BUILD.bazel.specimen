@@ -1,0 +1,71 @@
+"""Props backend - FastAPI dashboard server."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "backend",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cli_util",
+        "//mcp_infra",
+        "//mcp_utils",
+        "//openai_utils",
+        # props.core modules
+        "//props/core:agent_registry",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/cli:resources",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/grader:daemon_manager",
+        "//props/core/models:examples",
+        "//props/core/models:true_positive",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//mcp",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "backend_cli",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//props/frontend:__pkg__"],
+    deps = [":backend"],
+)
+
+py_binary(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    main = "export_schema.py",
+    deps = [":backend"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema) > $@",
+    tools = [":export_schema"],
+    visibility = ["//props/frontend:__pkg__"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":backend"],
+)

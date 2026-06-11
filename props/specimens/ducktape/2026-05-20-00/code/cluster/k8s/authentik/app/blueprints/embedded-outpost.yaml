@@ -1,0 +1,38 @@
+version: 1
+metadata:
+  name: SSO - Embedded Outpost
+  labels:
+    blueprints.goauthentik.io/description: "Embedded proxy outpost for all proxy-mode SSO providers"
+
+entries:
+  # Assign all proxy providers to the embedded outpost.
+  # The embedded outpost runs inside authentik-server pods and stores sessions
+  # in PostgreSQL, enabling HA across the 2-replica authentik-server deployment.
+  #
+  # The embedded outpost does NOT support authentik_host_browser (only standalone
+  # proxy outposts do). It uses authentik_host for both internal communication
+  # and browser-facing redirects. Internal connectivity uses localhost implicitly
+  # since the outpost runs in the server process.
+  - model: authentik_outposts.outpost
+    state: present
+    identifiers:
+      managed: goauthentik.io/outposts/embedded
+    attrs:
+      config:
+        authentik_host: "https://auth.allegedly.works"
+      providers:
+        - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, longhorn]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-sf]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-vallejo]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, agents-mitmproxy]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, authentik-mcp-poc-backend]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, openhands]]

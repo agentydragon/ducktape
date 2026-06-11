@@ -1,0 +1,12 @@
+# The kagent repo only ships Chart-template.yaml in helm/{kagent,kagent-crds}/,
+# so the charts can't be pulled directly from the git tree. Upstream publishes
+# them as OCI artifacts under ghcr.io/kagent-dev/kagent/helm/.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kagent
+  namespace: kagent
+spec:
+  type: oci
+  url: oci://ghcr.io/kagent-dev/kagent/helm
+  interval: 10m

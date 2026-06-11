@@ -1,0 +1,56 @@
+{
+  "pins": {
+    "bbr": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-62d5929da0cf/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "YtWSnaDPTXmwVQu4KZeGkDZ4dp9w+foVYxPhXiOfGzk="
+    },
+    "bb": {
+      "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.339/bazel-5.0.339-linux-x86_64",
+      "sha256": "TgfSB1u2oIO519Ew320bvQGBBurJ9hp8xmdyM7QEXCE="
+    },
+    "bbapi": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-87e12077f4fd/bbapi",
+      "sha256": "h+Egd/T9GBCp8utErSiz4DC8egPAf5oalyz1+fsHGN4="
+    },
+    "claude-hooks": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-63160da7ec48/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "FQvmYUjk5F5kVEVqr5KlDQKyrQqgb/siMMi6CM8+hI8="
+    },
+    "ducktape-git-hooks": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-745a61b7ba4b/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "dFpht7pL6nvhL9VfmZlAqVAwBEAWu2En23DCW0JLGvM="
+    },
+    "ducktape-util": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-c9eb2c31ba5c/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "yessMbpcfkmzR6f0xU1R8zXIniw+c9ED+klbwI9mBW4="
+    },
+    "ducktape": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-c7598a3ec30c/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "x1mKPsMMmpiV5wkfDqNRMec0OWm6pe08Co1/JRZa/FY="
+    },
+    "gterm-theme": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
+      "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
+    },
+    "skills": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-bf96a7663d2b/all_skills_tar.tar",
+      "sha256": "v5anZj0r14SsHsFTlsvKwsZs3eUfPCAzruo1cNLwPIs="
+    },
+    "claude-hook-rs": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3d97dc62b6c3/claude_hook",
+      "sha256": "PZfcYrbDzv5g0bXn/an2QudoKmsFlfuMFh5ggiHxvUQ="
+    },
+    "aiquota-extension": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-11302b6d9184/aiquota.zip",
+      "sha256": "Zw13sn/4Y2RatylQug883g4nmJYzym0CaJHyA+RAH1c="
+    },
+    "aiquota": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-11302b6d9184/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "ETArbZGE6lfrxaTuJlzlHe7OSaXfh3K/1/nA0S86yf0="
+    },
+    "debundle": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-cdfedf46565e/debundle",
+      "sha256": "zf7fRlZeNfSOj3uFneyrR1BtCWQXhEMjQfuQ4z7QV3Y="
+    }
+  }
+}

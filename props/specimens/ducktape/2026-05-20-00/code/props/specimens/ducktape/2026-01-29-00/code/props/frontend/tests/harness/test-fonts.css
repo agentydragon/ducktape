@@ -1,0 +1,37 @@
+/*
+ * Visual regression test stabilization styles
+ *
+ * This file ensures consistent rendering between CI and local environments by:
+ * 1. Using a hermetic font (Inter) bundled with the test harness
+ * 2. Disabling all CSS animations and transitions
+ * 3. Forcing consistent font rendering settings
+ */
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+
+/* Force hermetic font everywhere - overrides app.css system-ui stack */
+:root,
+body,
+* {
+  font-family: "Inter", sans-serif !important;
+  /* Force no antialiasing for maximum consistency */
+  -webkit-font-smoothing: none !important;
+  -moz-osx-font-smoothing: unset !important;
+  font-smooth: never !important;
+  text-rendering: geometricPrecision !important;
+}
+
+/* Disable all animations and transitions for deterministic screenshots */
+*,
+*::before,
+*::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}

@@ -1,0 +1,213 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mimir
+  namespace: monitoring
+spec:
+  interval: 30m
+  timeout: 10m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: mimir-distributed
+      version: "6.x"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 12h
+  values:
+    global:
+      extraEnvFrom:
+        - secretRef:
+            name: mimir-s3-credentials
+
+    minio:
+      enabled: false
+    kafka:
+      enabled: false
+
+    # S3 storage configuration via structuredConfig overrides.
+    # Credentials injected via global.extraEnvFrom; expanded by -config.expand-env=true.
+    mimir:
+      structuredConfig:
+        common:
+          storage:
+            backend: s3
+            s3:
+              endpoint: seaweedfs-s3.seaweedfs.svc:8333
+              bucket_name: mimir-blocks
+              region: us-east-1
+              insecure: true
+              access_key_id: ${AWS_ACCESS_KEY_ID}
+              secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+        blocks_storage:
+          s3:
+            bucket_name: mimir-blocks
+
+        # Chart 6.x defaults to Kafka ingest storage. Disable — single
+        # ingester, no benefit from decoupled write path.
+        ingest_storage:
+          enabled: false
+        ingester:
+          push_grpc_method_enabled: true
+          # We run a single ingester (replicas=1 in the chart values below);
+          # the distributor's default replication_factor=3 makes writes fail
+          # with "at least 2 live replicas required" (HTTP 500 to Alloy
+          # remote_write). Force RF=1 so quorum = 1.
+          ring:
+            replication_factor: 1
+
+        multitenancy_enabled: false
+
+        ruler:
+          alertmanager_url: http://monitoring-alertmanager.monitoring.svc.cluster.local:9093
+          rule_path: /data/rules
+
+        ruler_storage:
+          backend: s3
+          s3:
+            endpoint: seaweedfs-s3.seaweedfs.svc:8333
+            bucket_name: mimir-ruler
+            region: us-east-1
+            insecure: true
+            access_key_id: ${AWS_ACCESS_KEY_ID}
+            secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+        limits:
+          compactor_blocks_retention_period: 365d
+          out_of_order_time_window: 30m
+          max_global_series_per_user: 0
+          ingestion_rate: 100000
+          ingestion_burst_size: 500000
+
+    # --- Component replicas (minimal for small cluster) ---
+    # All pinned to Hetzner VPS workers. No CP tolerations — workers only.
+    # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
+
+    distributor:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    ingester:
+      replicas: 1
+      persistentVolume:
+        storageClass: local-path-hetzner
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      zoneAwareReplication:
+        enabled: false
+
+    querier:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    query_frontend:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    query_scheduler:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    compactor:
+      replicas: 1
+      persistentVolume:
+        storageClass: local-path-hetzner
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    store_gateway:
+      replicas: 1
+      persistentVolume:
+        storageClass: local-path-hetzner
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      zoneAwareReplication:
+        enabled: false
+
+    gateway:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    # --- Disabled components ---
+
+    ruler:
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+    alertmanager:
+      enabled: false
+
+    chunks-cache:
+      enabled: false
+    index-cache:
+      enabled: false
+    metadata-cache:
+      enabled: false
+    results-cache:
+      enabled: false
+
+    metaMonitoring:
+      serviceMonitor:
+        enabled: true
+      dashboards:
+        enabled: false
+      grafanaAgent:
+        enabled: false
+
+    rollout_operator:
+      enabled: false
+    overrides_exporter:
+      enabled: false
+    continuous_test:
+      enabled: false

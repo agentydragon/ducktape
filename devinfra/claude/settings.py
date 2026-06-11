@@ -10,8 +10,6 @@ Environment Variables (in priority order):
 """
 
 import importlib.resources
-import os
-from enum import StrEnum
 from importlib.resources.abc import Traversable
 
 from pydantic import Field
@@ -32,21 +30,7 @@ def _env_name(field: str) -> str:
 
 # Environment variable names (used by tests and env_file.py)
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
-ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
-ENV_SETUP_DOCKER = _env_name("setup_docker")
 ENV_SESSION_DIR = _env_name("session_dir")
-
-
-def is_web_mode() -> bool:
-    """Check if running in Claude Code web mode (CLAUDE_CODE_REMOTE=true)."""
-    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
-
-
-class ProxyMode(StrEnum):
-    """Bazel proxy routing mode."""
-
-    UDS = "uds"
-    TCP = "tcp"
 
 
 class HookSettings(BaseSettings):
@@ -60,34 +44,9 @@ class HookSettings(BaseSettings):
 
     # Port overrides (used by tests for free-port isolation)
     supervisor_port: int = Field(default=19001, description="Supervisor TCP port")
-    auth_proxy_port: int = Field(default=18081, description="Auth proxy port")
 
-    # Feature flags (enable/disable installations)
-    install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
-    install_apt_packages: bool = True
-    setup_docker: bool = Field(default=True, description="Set up Docker daemon under supervisor")
-
-    k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
-    age_key: str | None = Field(
-        default=None,
-        description="Age private key (AGE-SECRET-KEY-...) for SOPS decryption. "
-        "Used by Claude agent in Claude Code web to decrypt repo secrets locally.",
-    )
-
-    warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
-
-    proxy_mode: ProxyMode = Field(
-        default=ProxyMode.UDS,
-        description=(
-            "Bazel proxy mode. 'uds': route gRPC via --remote_proxy/--bes_proxy UDS, "
-            "BCR uses native JAVA_TOOL_OPTIONS proxy. 'tcp': route all Bazel traffic "
-            "through localhost TCP HTTP CONNECT proxy (legacy)."
-        ),
-    )
-    remote_proxy_target: str = Field(
-        default="remote.buildbuddy.io:443",
-        description="host:port for UDS remote proxy CONNECT tunnel (Bazel --remote_proxy destination)",
-    )
+    # Profile YAML file path (repo-relative, e.g. devinfra/claude/claude_hook/profiles/cli/profile.yaml)
+    profile: str | None = Field(default=None, description="Profile YAML file path (repo-relative)")
 
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.

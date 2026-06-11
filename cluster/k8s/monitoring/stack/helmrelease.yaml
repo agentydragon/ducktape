@@ -7,8 +7,17 @@ spec:
   interval: 30m
   timeout: 10m # Prometheus stack upgrades can be slow
   install:
+    # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
+    # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
+    # for all pods to be ready, causing timeout. disableWait is a blunt
+    # workaround — need a general solution for every HelmRelease with a
+    # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
+    # that should run there, or use nodeAffinity to exclude roaming entirely.
+    disableWait: true
     remediation:
       retries: 3
+  upgrade:
+    disableWait: true
   chart:
     spec:
       chart: kube-prometheus-stack
@@ -18,13 +27,6 @@ spec:
         name: prometheus-community
         namespace: flux-system
       interval: 12h
-  valuesFrom:
-    # Inject complete OIDC configuration from Vault (via ExternalSecret)
-    # Terraform writes the full config to Vault, eliminating duplication
-    # Secret structured with full nesting to avoid targetPath escaping issues
-    - kind: Secret
-      name: grafana-oidc-config
-      valuesKey: values.yaml
   values:
     # Shorten resource names: "kube-prometheus-stack-*" → "monitoring-*"
     fullnameOverride: monitoring
@@ -37,7 +39,9 @@ spec:
       create: true
       rules:
         alertmanager: true
-        etcd: false # Talos doesn't expose etcd metrics
+        # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+        # chart's stock etcd rule bundle disabled until the scrape is verified.
+        etcd: false
         configReloaders: true
         general: true
         k8s: true
@@ -57,26 +61,79 @@ spec:
         node: true
         nodeExporterAlerting: true
         nodeExporterRecording: true
-        prometheus: true
+        prometheus: false # Prometheus disabled; Mimir Ruler evaluates rules
         prometheusOperator: true
 
     # Alertmanager configuration
     alertmanager:
       enabled: true
+      config:
+        global:
+          resolve_timeout: 5m
+        inhibit_rules:
+          - source_matchers:
+              - severity = critical
+            target_matchers:
+              - severity =~ warning|info
+            equal:
+              - namespace
+              - alertname
+          - source_matchers:
+              - severity = warning
+            target_matchers:
+              - severity = info
+            equal:
+              - namespace
+              - alertname
+          - source_matchers:
+              - alertname = InfoInhibitor
+            target_matchers:
+              - severity = info
+            equal:
+              - namespace
+          - target_matchers:
+              - alertname = InfoInhibitor
+        route:
+          group_by: ["namespace"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          receiver: "null"
+          routes:
+            - receiver: "null"
+              matchers:
+                - alertname = "Watchdog"
+            - receiver: ntfy
+              matchers:
+                - alertname =~ "FluxKustomizationNotReady|FluxHelmReleaseNotReady|FluxGitRepositoryNotReady|FluxMainGitRepositoryArtifactLarge|ControlPlaneSystemDiskBusy|ControlPlanePodSystemDiskWriterHigh|ControlPlaneLeasePutLatencyHigh|ControlPlaneLeasePutLatencyCritical"
+              repeat_interval: 2h
+        receivers:
+          - name: "null"
+          - name: ntfy
+            webhook_configs:
+              - send_resolved: true
+                url_file: /etc/alertmanager/secrets/alertmanager-ntfy-webhook/address
+        templates:
+          - /etc/alertmanager/config/*.tmpl
       ingress:
-        enabled: false # Can enable later with authentication
+        enabled: false
       alertmanagerSpec:
+        replicas: 2
+        secrets:
+          - alertmanager-ntfy-webhook
         storage:
           volumeClaimTemplate:
             metadata:
               name: db
             spec:
-              # CLEANUP(2026-04-02): Migrate to local-path-hetzner (small, rebuildable)
-              storageClassName: longhorn
+              storageClassName: local-path-ovh
               accessModes: ["ReadWriteOnce"]
               resources:
                 requests:
                   storage: 1Gi
+        # Chart auto-generates podAntiAffinity when replicas > 1
+        nodeSelector:
+          topology.kubernetes.io/zone: hil-ovh
         resources:
           requests:
             cpu: 10m
@@ -86,127 +143,11 @@ spec:
             memory: 128Mi
         retention: 120h
 
-    # Grafana configuration
+    # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+    # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
+    # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
     grafana:
-      fullnameOverride: grafana
-      enabled: true
-      # Reloader: auto-restart pods when secrets change
-      podAnnotations:
-        reloader.stakater.com/auto: "true"
-      # Admin password managed via ExternalSecret
-      admin:
-        existingSecret: grafana-admin-password
-        passwordKey: admin-password
-      defaultDashboardsEnabled: true
-      defaultDashboardsTimezone: UTC
-
-      # Dashboards pulled from grafana.com on pod startup
-      dashboards:
-        default:
-          flux-cluster:
-            gnetId: 16714 # Flux Cluster Stats
-            revision: 1
-            datasource: Prometheus
-          flux-control-plane:
-            gnetId: 16715 # Flux Control Plane
-            revision: 1
-            datasource: Prometheus
-          harbor:
-            gnetId: 14075 # Harbor
-            revision: 2
-            datasource: Prometheus
-          cert-manager:
-            gnetId: 20842 # cert-manager certificates overview
-            revision: 3
-            datasource: Prometheus
-          authentik:
-            gnetId: 14837 # Authentik
-            revision: 2
-            datasource: Prometheus
-          vault:
-            gnetId: 12904 # HashiCorp Vault
-            revision: 2
-            datasource: Prometheus
-          cloudnative-pg:
-            gnetId: 20417 # CloudNativePG
-            revision: 3
-            datasource: Prometheus
-          longhorn:
-            gnetId: 16888 # Longhorn storage
-            revision: 9
-            datasource: Prometheus
-          cilium-agent:
-            gnetId: 16611 # Cilium agent metrics
-            revision: 1
-            datasource: Prometheus
-          etcd:
-            gnetId: 3070 # etcd by Prometheus
-            revision: 5
-            datasource: Prometheus
-
-      # CRITICAL: Use Recreate strategy for RWO volumes
-      # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
-      # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.
-      # Init:Error pods hold RWO volumes, preventing new pods from attaching.
-      # This has caused production deadlocks requiring manual intervention (3rd occurrence).
-      # See docs/RWO_VOLUME_DEPLOYMENT_STRATEGY.md for complete explanation.
-      # Brief downtime during updates is acceptable vs manual deadlock recovery.
-      deploymentStrategy:
-        type: Recreate
-
-      persistence:
-        enabled: true
-        # CLEANUP(2026-04-02): Migrate to local-path-hetzner (rebuildable, stateless-ish)
-        storageClassName: longhorn
-        accessModes:
-          - ReadWriteOnce
-        size: 2Gi
-
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
-
-      # Enable useful plugins (no Angular plugins)
-      plugins:
-        - grafana-clock-panel
-
-      # Datasources - use default Prometheus datasource from chart
-      # Add Loki datasource for log aggregation, Tempo for tracing
-      additionalDataSources:
-        - name: Loki
-          type: loki
-          access: proxy
-          url: http://loki.loki.svc.cluster.local:3100
-          jsonData:
-            maxLines: 1000
-          isDefault: false
-          editable: true
-        - name: Tempo
-          type: tempo
-          access: proxy
-          url: http://tempo.monitoring.svc.cluster.local:3100
-          jsonData:
-            httpMethod: GET
-            # Link traces to Loki logs by trace/span ID.
-            tracesToLogsV2:
-              datasourceUid: loki
-              spanStartTimeShift: "-1h"
-              spanEndTimeShift: "1h"
-              filterByTraceID: true
-              filterBySpanID: false
-          isDefault: false
-          editable: true
-
-      # Authentik SSO configuration injected via valuesFrom from grafana-oidc-config secret
-      # Complete config stored in Vault by Terraform (single source of truth)
-      grafana.ini:
-        server:
-          root_url: https://grafana.allegedly.works
-        # auth.generic_oauth populated automatically via valuesFrom
+      enabled: false
 
     # Prometheus Operator configuration
     prometheusOperator:
@@ -230,70 +171,11 @@ spec:
               cpu: 100m
               memory: 64Mi
 
-    # Prometheus configuration
+    # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
+    # Mimir Ruler evaluates alerting/recording rules.
+    # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
     prometheus:
-      enabled: true
-      ingress:
-        enabled: false # Can enable later with authentication
-
-      prometheusSpec:
-        # Accept OTLP metric pushes from Grafana Alloy (see cluster/k8s/monitoring/alloy/).
-        enableRemoteWriteReceiver: true
-
-        # Retention settings
-        retention: 7d
-        retentionSize: "15GB"
-
-        # Storage configuration
-        storageSpec:
-          volumeClaimTemplate:
-            metadata:
-              name: db
-            spec:
-              # CLEANUP(2026-04-02): Replace with VictoriaMetrics (built-in replication)
-              storageClassName: longhorn
-              accessModes: ["ReadWriteOnce"]
-              resources:
-                requests:
-                  storage: 20Gi
-
-        # TODO(2026-03-17): Temporarily pinned to wyrm2 to recover from OOM kill
-        # cascade on VPS nodes (7.5GiB CPX31 too small for Prometheus + 33 other
-        # pods). Prometheus was using 1686Mi and getting OOM-killed every ~49min
-        # during WAL replay. wyrm2 has 96GiB RAM.
-        # Fix properly: add PriorityClasses, rebalance pods across nodes, consider
-        # CPX41 upgrade, then remove this pin.
-        # See cluster/debug/2026-03-17-cluster-down/observations.md
-        nodeSelector:
-          kubernetes.io/hostname: wyrm2
-
-        # TODO(2026-03-17): Temporarily bumped from 2Gi to 6Gi for WAL replay
-        # recovery. Prometheus OOM-killed 8 times in 49min at 2Gi limit.
-        # Investigate: which scrape targets / metrics are driving memory growth,
-        # whether retentionSize 15GB causes excessive WAL, and right-size after.
-        # Revert to a tighter limit once root cause is addressed.
-        resources:
-          requests:
-            cpu: 200m
-            memory: 1Gi
-          limits:
-            cpu: 1000m
-            memory: 6Gi
-
-        # Scrape interval
-        scrapeInterval: 30s
-        evaluationInterval: 30s
-
-        # Service monitor selector - select all service monitors
-        serviceMonitorSelectorNilUsesHelmValues: false
-        podMonitorSelectorNilUsesHelmValues: false
-        ruleSelectorNilUsesHelmValues: false
-
-        # Security context
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          fsGroup: 2000
+      enabled: false
 
     # Node exporter configuration
     prometheus-node-exporter:
@@ -311,13 +193,88 @@ spec:
     # Kube-state-metrics configuration
     kube-state-metrics:
       fullnameOverride: kube-state-metrics
+      rbac:
+        extraRules:
+          - apiGroups: ["apiextensions.k8s.io"]
+            resources: ["customresourcedefinitions"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+            resources: ["kustomizations"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["helm.toolkit.fluxcd.io"]
+            resources: ["helmreleases"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["source.toolkit.fluxcd.io"]
+            resources: ["gitrepositories"]
+            verbs: ["list", "watch"]
+      customResourceState:
+        enabled: true
+        config:
+          kind: CustomResourceStateMetrics
+          spec:
+            resources:
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_kustomization_ready
+                    help: Flux Kustomization Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_helmrelease_ready
+                    help: Flux HelmRelease Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: GitRepository
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_gitrepository_ready
+                    help: Flux GitRepository Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+                  - name: flux_gitrepository_artifact_size_bytes
+                    help: Flux GitRepository artifact size in bytes.
+                    each:
+                      type: Gauge
+                      gauge:
+                        path: [status, artifact]
+                        valueFrom: [size]
       resources:
         requests:
           cpu: 10m
-          memory: 64Mi
+          memory: 128Mi
         limits:
           cpu: 100m
-          memory: 128Mi
+          memory: 512Mi
 
     # Disable components we don't need
     kubeApiServer:
@@ -329,7 +286,8 @@ spec:
     coreDns:
       enabled: true
     kubeEtcd:
-      enabled: false # Talos doesn't expose etcd metrics
+      # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
+      enabled: false
     kubeScheduler:
       enabled: true
     kubeProxy:

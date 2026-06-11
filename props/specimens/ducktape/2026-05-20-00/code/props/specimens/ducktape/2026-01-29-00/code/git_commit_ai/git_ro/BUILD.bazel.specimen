@@ -1,0 +1,99 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "formatting",
+    srcs = ["formatting.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":formatting",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:simple",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_cat_file",
+    srcs = ["test_cat_file.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff",
+    srcs = ["test_diff.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_show",
+    srcs = ["test_show.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stat_counts",
+    srcs = ["test_stat_counts.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_status_log",
+    srcs = ["test_status_log.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)

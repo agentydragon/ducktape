@@ -1,0 +1,253 @@
+---
+title: 2015
+---
+
+Time to reflect.
+
+<h2>2015 abridged</h2>
+I started this year celebrating a very cloudy New Year's Eve home with my
+parents. That was vacation for me: I took a few weeks off my internship at
+Google Paris to fly back home for the holidays. I was very happy to be back
+for a few weeks - it was lonely in Paris.
+
+When the time to return to work came, my thoughts were "oh well, we signed up
+for this, let's just get this over with" and I counted weeks. The project
+I worked on was probably the most interesting thing I did so far, but I was
+pretty bad at making friends outside work: I'm shy and didn't learn nearly
+enough French to socialize with random French. (I decided that's a mistake
+I never want to make again in my life.) I read books, [worked on my
+bachelor's thesis](/posts/2015-05-22-thesis.html) and I played the old Starcraft.
+(I still didn't quite manage to finish the Zerg campaign in Brood War - man,
+games used to be really hard...)
+I met a lot of interesting people at Google. My supervisor and team leader,
+Rich, was great, and today he is the exact image I have in my head when
+I hear "senior software engineer" - a highly experienced and competent leader
+by example with an impressive knowledge of the wider context of the project.
+From my team, I most fondly remember chatting with Clement, Julien, Aurélien,
+Wiktor, Amaury, Philo, Nohemi and James. In dilligent code reviews, Mathias
+taught me how little I know about C++ and what it means to be deeply ashamed
+of your code :)
+
+My manager at Google kindly let me explore Google's offices in Bay Area for
+a week at the company's expense. That was one of the final weeks of my
+internship. I flew with Aurélien, the PM on my team. I stayed in San Francisco
+near Civic Centre. I spent two days shadowing Aurélien on meetings with
+our allied teams at YouTube's HQ in San Bruno, two days hanging out with
+the research side of my team at the Googleplex in Mountain View and a day
+just walking around SF.
+
+After I returned home, I moved to Prague again. I rented a random free spot at
+the Charles uni dorm with a random guy. We didn't have much in common or talk
+much, but he wasn't the worst roommate I ever had.
+I spent most of my days working on my bachelor's thesis next to my advisor,
+[MJ](http://mj.ucw.cz), at the Faculty of Applied Mathematics. It was fun and
+I learned a lot of interesting things about data structures.
+I was elated not only because I managed to finish the thesis at all, but
+also because both MJ and my opponent were impressed by the quality.
+
+Between March and July, I intentionally didn't take any work on the side.
+I attended some lectures, but mostly for the fun of it. I went to a lot
+of Charlie (my uni's LGBT club) meetups. This part of the year was
+very relaxing. At one point (after I finished my thesis and my bachelor's exam),
+I actually finished my near-time TODO list, which was an amazing feeling.
+My only worry was not to get arrested before my summer internship.
+
+I also studied a lot for my bachelor's final exam, mostly with Petr Hudeček,
+Verča Slívová and Filip Šedivý. We spent several days just procrastinating
+in the park over 5 kilos of paper, mocking our own imminent death at the exam,
+and it was glorious. Once D-day came, we finished with straight A's.
+The exam was soooo eaaasyyy!
+
+I spent the summer in San Francisco working at Dropbox on the iOS team.
+I had a good time with a lot of great people. Among interns, there was Ian,
+Gellert the crazy Hungarian, Karel (whom I knew a little bit from before),
+of course Marin and the other Croatians. Zrinka, who understood me the most.
+The Eastern-European gang. Tianlin. Brian. The Americans.
+Others. Dropbox is full of inspiring heroes. Yufei. Michael. Rich the Chanimal.
+Haoyi, the patron saint of Scala. Jukka. James. Jack.
+And lots of heroes I didn't get to know nearly as well as I'd like to.
+There was also a ton of fun events: rafting, cycling, and everything else
+we thought of.
+
+Work was interesting, but I think working on iOS was not a very good fit for
+me. I mostly did a data-science kind of thing, and I felt some tension
+between what I worked on and what was important for the company to do.
+I'm also kind of a perfectionist, and that clashed with the need to get things
+moving fast. I'm glad I know today that perfectionism can be a flaw, and not in
+the humblebrag sense. And computer science is about humans.
+
+On the Google and Dropbox internships, I wanted to figure out a few important
+questions.
+First, do I like working more than studying? Would I want to study for a PhD?
+Second, if I decide to start working, do I want to stay home in Czech Republic?
+Would I want to live in Silicon Valley?
+
+I like both work and studying new things. I would like to study more and to
+get a PhD, but I don't think I have enough commitment for it and it carries
+a high opportunity cost. Regarding home/abroad: I want both.
+
+I didn't get many new answers. Even worse, I gained a much bigger sense of
+urgency.
+
+In San Francisco, I also interviewed at a few companies, which was a
+learning, if exhausting experience. I discovered not only my unknown strengths,
+but also my unknown weaknesses. For example, I sometimes come off as arrogant
+and dismissive. By the way, if you're looking for a job at a startup, you
+should totally try [Triplebyte](http://triplebyte.com).
+
+I have been continuing my sluggish ascent towards financial independence, and
+thanks to very competitive compensation in Silicon Valley (and, to a lesser
+extent, in Paris), I crossed several financial milestones this year.
+In my current conservative model, I'm at most 7 years of software engineering
+away from financial independence. It's a very comfortable feeling to know it
+would take several major mishaps for me to get in financial trouble today.
+I also feel much less guilty with spending money when it makes sense; after
+all, it's just money.
+
+I came back in October. I enrolled in a ton of subjects, but slightly fewer
+than was usual in my first and second year. If I execute this right, I should
+be done with all I need for my degree (aside from the thesis and final exam)
+by the end of February.
+
+For better or worse, over this year, I became acutely aware of the limited
+duration of my life and of the need to take action to use it well.
+
+I decided to contribute to [KSP](http://ksp.mff.cuni.cz) a bit more once again.
+(That's a thing my uni does for high-schoolers interested in CS.) In December,
+we had a nice weekend retreat with lectures to be had for everyone interested.
+It was a great success: my voice box was sore for days. I'm trying to get
+us organizers to hang out a bit more: it's kind of stupid that all these great
+people mostly argue through the medium of the mailing list.
+
+I took a little bit of work on the side. I'm hacking for
+[Factorify](http://factorify.me/), which is a very small and early company
+working on smart enterprise systems for factories. So far, my work was
+interesting (I'm applying my knowledge of planning and scheduling and I'm
+finally trying Java in prod), but realities of enterprise work are somewhat
+disappointing. Luckily, I work whenever I want and as much or little as I want,
+which is unusually nice.
+
+I started playing DnD with a few folks from my school. It's something I wanted
+to try for many years, but I never did, probably due to a mix of not knowing
+other players and due to the air of hard-core nerdiness around it. Turns out
+it's pretty fun, and there's no reason to care about what anyone thinks about
+nerdiness.
+
+Speaking about guilty pleasures, I also installed Windows the first time
+in several years (borking my hard drive twice in the process...) and bought
+about as many games as I bought in the preceding 10 years.
+
+I gradually learned about transhumanism. It's not just a bunch of sci-fi-crazy
+fat people who want to be really smart robots. It's a bunch of sci-fi-crazy
+people who believe we can enhance the human condition, as we already have
+before. I haven't yet internalized all the related ideas (especially cryonics,
+and I'm not quite convinced we will have strong AI in our lifetimes), but
+even without all the crazy ideas, there is a simple core truth: We are
+in control of our actions. Through our actions, we can change the universe to
+our preference.
+
+<h2>Books I read in 2015</h2>
+* The first two books of the Hyperion series by Dan Simmons:
+  *Hyperion* and *The Fall of Hyperion*. I highly recommend both.
+* *Steppenwolf* by Hermann Hesse. My brother gave me a copy of this book
+  for my birthday about 7 +- 2 years ago when I was an unappreciative youth
+  full of myself. Unfortunately, it sat on my shelves collecting dust until 2015.
+* *Narcissus and Goldmund* by Hermann Hesse. My friend Jarda Bican recommended
+  this one to me after I enjoyed Steppenwolf.
+* *Snow Crash* and *Anathem* by Neal Stephenson.
+* *The Atrocity Archives* by Charles Stross. I liked his book Accelerando,
+  which is a collection of tales before, during and after the Singularity.
+  Atrocity Archives, his earlier piece, is a slightly different genre:
+  it's about summoning Cthulhu's minions by running a weird program.
+  It's a "haha-funny" kind of sci-fi with a lot of running around and shooting
+  death rays. It's entertaining, but I liked it less than other "deep sci-fi"
+  books - I mostly got tired of all the action followed by more action.
+* *Little Brother* by Cory Doctorow.
+  It's pretty good light reading about today's world gone slightly worse than
+  it is. Adventure, fighting the Big Bad Man, and hacking current tech for good
+  and bad. I also read *Homeland*, but I didn't find it nearly as good.
+* *Harry Potter and the Methods of Rationality* by Eliezer Yudkowsky,
+  independently recommended to me by [Petr Hudeček](http://hudecekpetr.cz/) and
+  Ondra Vadinský. This is the most epic fan-fiction I ever read.
+  Eliezer Yudkowsky is a researcher working on artificial intelligence and
+  rationality and he runs a rationalist community called
+  [LessWrong](http://lesswrong.com/) (look out, it's a really deep
+  rabbit-hole).
+  HPMOR retells the story of Harry Potter in a universe where Harry is
+  a child prodigy of science.
+* *Software and Mind: The Mechanistic Myth and Its Consequences* by Andrei
+  Sorin. I highly recommend this book. The subject is the relationship
+  between complex systems, like the human mind or the real world, and their
+  models in software. I don't agree with the author on all the details
+  (e.g., eschewing higher-level database languages), but he has a very valid
+  point: you can't fit the world in a box. If you try to shape everything
+  according to your favorite paradigm (like OOP), either you will have to
+  weaken your paradigm so much it will lose its original purpose, or
+  your model of the world under this paradigm will be practically useless.
+  The craft of good software is not about models pretending
+  to be universal (UML, structured programming or relational databases):
+  to make good software, you must simply develop skills through years
+  of practice, and these skills cannot be reduced to a simple description.
+  Unfortunately, the book is about twice as thrice as long as it needs to be,
+  due to long exposition and lots of detailed examples.
+* *This Changes Everything: Capitalism vs. The Climate* by Naomi Klein.
+  About two years ago, reading her book The Shock Doctrine highly influenced
+  my political ideas - most importantly, my belief that our current system
+  protects the interests of the wealthy a tad too much and that we should
+  apply more global optimization. I wanted to understand humanity's impact
+  on the environment a bit better and I hoped to hear some arguments of
+  the environmentalist side from this book.
+  I learned some depressing things about Big Oil and other actors profiting
+  from climate change and about the interesting times we can expect if we stay
+  on our current course for another 50 years.
+  However, the author rambled in ~the last third about how we can save our
+  Mother Earth through the power of spiritual healing, which was
+  disappointing.
+* *How to Win Friends and Influence People* by Dale Carnegie.
+  Be interested. Appreciate people. Don't use people as instruments,
+  instead align your wants with their wants. Be friendly and sympathetic.
+  People usually rate it very high, but I didn't find many new things in
+  there.
+
+<h2>Some music I found in 2015</h2>
+* *Arvo Pärt* is the first composer of classical music I now listen to
+  regularly. [Listen to this.](https://www.youtube.com/watch?v=2DJUN2M3D-E)
+* [Little Talks](https://www.youtube.com/watch?v=ghb6eDopW8I) by
+  Of Monsters and Men
+* [Counting Stars](https://www.youtube.com/watch?v=hT_nvWreIhg) reminds me
+  of how I felt at Google. Striving to be better and boldly facing
+  challenges. Everything that kills me makes me feel alive.
+* *Katy Perry*. I expected her to be just another shitty pop-artist
+  for me to ignore, but turns out her tunes are pretty catchy. (Yeah, I know,
+  2014 called or whatever.)
+* Lights Out Asia is good music for programming.
+
+Thanks to Víťa Slíva, who shares a similar taste in music with me but
+spends much more time procrastinating over music, I had a neverending supply
+of hipster artists to explore.
+
+- _Pinback_ and _Built to Spill_.
+  [Fortress](https://www.youtube.com/watch?v=59cQWw9ctOA) is really good,
+  as is [Off by 50](https://www.youtube.com/watch?v=3wTVnjvUVZQ).
+- _Cymbals Eat Guitars_. Listen to
+  [Warning](https://www.youtube.com/watch?v=4lftu-d4480) or [And the Hazy
+  Sea](https://www.youtube.com/watch?v=EuP4y0Dfyyk).
+- _The Drift_ (kind of hard to Google). Maybe [Gardening, Not
+  Architecture](https://www.youtube.com/watch?v=SI22gshi3h0)?
+- [To Die in LA](https://www.youtube.com/watch?v=a2iSVHh_Wn8) by Lower Dens
+
+<h2>Other stuff</h2>
+* *Rick and Morty* is a glorious show, especially when high; it also has
+  an unusual rewatch value.
+  I think [S02E02 Mortynight Run](http://www.adultswim.com/videos/rick-and-morty/mortynight-run/)
+  is the best. "The worlds can be one together, cosmos without hatred..."
+* South Park season 19 was pretty good. I laughed out loud while
+  watching *The City Part of Town* from our intern apartment just south
+  of China Basin - SoDoSoPa really hit home.
+* I learned a bunch about software they don't teach in schools, especially
+  "soft stuff" like releases, dependencies, code quality, building big systems.
+  I became competent in Python and Go.
+* [I pruned down the complexity of my "personal infrastructure".](/posts/2015-11-20-it-just-works.html)
+  My mail is now Google Inbox and my calendar is Google Calendar.
+* Silicon Valley is a crazy and great place.
+* [The Fable of the Dragon Tyrant](http://www.nickbostrom.com/fable/dragon.html)

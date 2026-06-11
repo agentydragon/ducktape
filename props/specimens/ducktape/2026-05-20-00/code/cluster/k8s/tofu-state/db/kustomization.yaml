@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# IMPORTANT: credentials.sops.yaml MUST be listed before postgres-cluster.yaml.
+# CNPG reads initdb.secret at cluster creation time. If the Secret doesn't
+# exist yet, CNPG auto-generates a password and ignores the Secret when it
+# arrives later. Kustomize applies resources in list order, so the Secret
+# is created first.
+resources:
+  - credentials.sops.yaml
+  - postgres-cluster.yaml

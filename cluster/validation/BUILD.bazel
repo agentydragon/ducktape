@@ -1,7 +1,6 @@
 # gazelle:ignore
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
@@ -11,7 +10,6 @@ package(default_visibility = [
 py_library(
     name = "k8s",
     srcs = ["k8s.py"],
-    imports = ["../.."],
     deps = [
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -19,11 +17,18 @@ py_library(
 )
 
 py_library(
+    name = "tool_resolve",
+    srcs = ["tool_resolve.py"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
     name = "kustomize",
     srcs = ["kustomize.py"],
-    imports = ["../.."],
+    data = ["@multitool//tools/kustomize"],
     deps = [
         ":k8s",
+        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -32,8 +37,10 @@ py_library(
 py_library(
     name = "flux",
     srcs = ["flux.py"],
-    imports = ["../.."],
+    data = ["@multitool//tools/flux"],
     deps = [
+        ":k8s",
+        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -42,13 +49,13 @@ py_library(
 py_library(
     name = "cluster",
     srcs = ["cluster.py"],
-    imports = ["../.."],
     deps = [
         ":flux",
         ":k8s",
         ":kustomize",
         "@pypi//networkx",
         "@pypi//numpy",
+        "@pypi//pygit2",
         "@pypi//types_networkx",
     ],
 )
@@ -56,7 +63,6 @@ py_library(
 py_library(
     name = "dependencies",
     srcs = ["dependencies.py"],
-    imports = ["../.."],
     deps = [
         ":cluster",
         ":crd_layering",
@@ -69,28 +75,66 @@ py_library(
 py_library(
     name = "health_checks",
     srcs = ["health_checks.py"],
-    imports = ["../.."],
     deps = [":cluster"],
 )
 
 py_library(
     name = "crd_layering",
     srcs = ["crd_layering.py"],
-    imports = ["../.."],
     deps = [":kustomize"],
+)
+
+py_library(
+    name = "checks",
+    srcs = ["checks.py"],
+    deps = [
+        ":cluster",
+        ":kustomize",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(
     name = "helm_templates",
     srcs = ["helm_templates.py"],
-    imports = ["../.."],
-    deps = ["//util/bazel:runfiles"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":tool_resolve",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "image_automation",
+    srcs = ["image_automation.py"],
+    deps = [
+        ":cluster",
+        ":k8s",
+    ],
+)
+
+py_library(
+    name = "validate_all",
+    srcs = ["validate_all.py"],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":crd_layering",
+        ":dependencies",
+        ":flux",
+        ":health_checks",
+        ":helm_templates",
+        ":image_automation",
+        ":kustomize",
+    ],
 )
 
 py_library(
     name = "kustomize_build_all_lib",
     srcs = ["kustomize_build_all.py"],
-    imports = ["../.."],
     deps = [
         ":cluster",
         ":k8s",
@@ -104,7 +148,6 @@ py_library(
 py_binary(
     name = "kustomize_build_all",
     data = ["@multitool//tools/kustomize"],
-    imports = ["../.."],
     main_module = "cluster.validation.kustomize_build_all",
     deps = [":kustomize_build_all_lib"],
 )
@@ -112,7 +155,6 @@ py_binary(
 py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
-    imports = ["../.."],
     deps = [
         ":k8s",
         "@pypi//pytest",
@@ -124,7 +166,6 @@ py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
     data = glob(["testdata/**"]),
-    imports = ["../.."],
     deps = [
         ":cluster",
         ":dependencies",
@@ -138,7 +179,6 @@ py_test(
 py_test(
     name = "test_dependencies",
     srcs = ["test_dependencies.py"],
-    imports = ["../.."],
     deps = [
         ":cluster",
         ":dependencies",
@@ -153,7 +193,6 @@ py_test(
 py_test(
     name = "test_health_checks",
     srcs = ["test_health_checks.py"],
-    imports = ["../.."],
     deps = [
         ":cluster",
         ":flux",
@@ -169,7 +208,6 @@ py_test(
     name = "test_crd_layering",
     srcs = ["test_crd_layering.py"],
     data = glob(["testdata/crd_layering/**"]),
-    imports = ["../.."],
     deps = [
         ":crd_layering",
         ":k8s",
@@ -181,11 +219,27 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_helm_templates",
+    srcs = ["test_helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":helm_templates",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "kyverno",
     srcs = ["kyverno.py"],
-    imports = ["../.."],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_test(
@@ -194,13 +248,35 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "@multitool//tools/kyverno",
-    ] + glob(["testdata/kyverno/**"]),
-    imports = ["../.."],
+    ] + glob([
+        "testdata/kyverno/**",
+        "__snapshots__/*.ambr",
+    ]),
+    uses_syrupy = True,
     deps = [
         ":kyverno",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_nebula_mesh",
+    srcs = ["test_nebula_mesh.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/terraform/main:ovh-nodes.tf",
+    ],
+    deps = [
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -211,17 +287,28 @@ py_test(
         "//cluster/k8s:cluster_all_files",
         "@multitool//tools/kustomize",
     ],
-    imports = ["../.."],
     deps = [
+        ":checks",
         ":cluster",
         ":dependencies",
         ":health_checks",
+        ":image_automation",
         ":kustomize",
-        "//cluster/scripts/validate_cluster:checks",
-        "//cluster/scripts/validate_cluster:kustomize",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_image_automation",
+    srcs = ["test_image_automation.py"],
+    deps = [
+        ":cluster",
+        ":image_automation",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest_bazel",
     ],
 )

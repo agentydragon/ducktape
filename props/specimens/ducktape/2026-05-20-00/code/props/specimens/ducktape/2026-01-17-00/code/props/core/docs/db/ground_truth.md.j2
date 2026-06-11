@@ -1,0 +1,71 @@
+# Ground Truth: Labels for Training
+
+This document describes the ground truth data used for training and evaluation.
+
+## Critical Context: Subjective Dataset
+
+**This dataset reflects ONE person's subjective code review preferences.**
+
+The ground truth issues (true positives and false positives) were hand-labeled by a single individual based on their personal taste - NOT generic best practices, industry standards, or automated tool output. This is behavior-cloning training data.
+
+**What this means:**
+- The "right answer" is whatever this person would flag in their code review
+- Their preferences may differ from your prior beliefs about code quality
+- You must read the training data to understand their specific standards
+- Query `true_positives` and `false_positives` tables to learn what they care about
+
+**Learning strategy:** Don't assume you know what "good code" means. Study the labeled examples, read the rationales, internalize the subjective standards. The goal is to replicate THIS person's judgment, not to apply generic rules.
+
+**Sparse labeling:** The ground truth is a SUBSET of real issues in the codebase. When the grader marks a reported issue as "novel" (no matching TP), it means:
+- The issue wasn't in the labeled set
+- It might still be a legitimate finding the labeler would agree with
+- OR it might be something the labeler doesn't care about
+
+"Novel" findings don't contribute to recall - only matching labeled TPs counts. Your goal is to find the issues the labeler DID label (without hitting labeled FPs), not to discover new ones.
+
+{{ describe_relation("true_positives") }}
+{{ describe_relation("true_positive_occurrences") }}
+{{ describe_relation("false_positives") }}
+{{ describe_relation("false_positive_occurrences") }}
+
+## Expected Recall vs Grader Matching
+
+**Two distinct fields control different aspects of grading:**
+
+### critic_scopes_expected_to_recall (Recall Denominator)
+
+Determines the **recall denominator** for metrics. "From which file scopes do we EXPECT a diligent critic to find this issue?"
+
+- Stored in `critic_scopes_expected_to_recall` M:N table (multiple alternative scopes per occurrence)
+- Used by `is_tp_in_expected_recall_scope()` to compute `recall_denominator` in the `examples` VIEW
+- **SOFT EXPECTATION:** Critics CAN find issues outside expected scopes - recall >100% is possible!
+
+### graders_match_only_if_reported_on (Hard Constraint)
+
+**HARD CONSTRAINT** on graders. "Where is the issue actually located? Where must it be validly reported?"
+
+- Stored as `graders_match_only_if_reported_on` column on occurrence tables (FK to file_sets)
+- Enforced by `grading_pending` view - only shows (issue, occurrence) pairs with file overlap
+- If set, graders **cannot** give credit unless the critique flagged overlapping files
+
+### Why Two Fields?
+
+**Example:** `file.py` contains wrapper functions that call APIs in `bar.py`. `bar.py` has obvious dangerous code.
+
+- The TP occurrence has `graders_match_only_if_reported_on` = `[bar.py]` (the issue IS in bar.py)
+- The occurrence has `critic_scopes_expected_to_recall` entries for BOTH `[file.py]` and `[bar.py]` (we expect a diligent critic reviewing file.py to investigate bar.py)
+
+**Result:**
+- A critic reviewing `file.py` that flags `bar.py` → gets credit (good diligence!)
+- A critic reviewing `file.py` that only complains about `file.py` → zero credit (didn't find the real issue)
+- This occurrence counts toward recall denominator when reviewing either `file.py` or `bar.py`
+
+## Query Examples
+
+```sql
+-- Get all TPs for a snapshot
+SELECT tp_id, rationale FROM true_positives WHERE snapshot_slug = '<snapshot>';
+
+-- Get FPs
+SELECT fp_id, rationale FROM false_positives WHERE snapshot_slug = '<snapshot>';
+```

@@ -1,0 +1,48 @@
+# Restrict Prometheus API (port 9090) to authorized consumers.
+# Prometheus has no authentication; unrestricted access exposes full cluster
+# topology, node IPs, resource usage, and secret cardinality to any pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-ingress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    # Grafana: datasource queries for dashboards
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 9090
+          protocol: TCP
+    # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - port: 9090
+          protocol: TCP
+    # Gatus: health check probes
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 9090
+          protocol: TCP

@@ -1,0 +1,24 @@
+# California state income tax — 2024 tax-year brackets.
+#
+# Single filer only. CA taxes long-term capital gains at ordinary
+# income rates (no separate LTCG bracket), so `ltcg_brackets` is
+# omitted here — the tax layer will fall through to the ordinary
+# bracket when no LTCG-specific brackets are configured.
+#
+# The 1% mental-health surcharge on income above $1M is deferred.
+jurisdiction_id: california
+
+ordinary_income_brackets:
+  single:
+    - { upper_usd: 10412.0, rate: 0.010 }
+    - { upper_usd: 24684.0, rate: 0.020 }
+    - { upper_usd: 38959.0, rate: 0.040 }
+    - { upper_usd: 54081.0, rate: 0.060 }
+    - { upper_usd: 68350.0, rate: 0.080 }
+    - { upper_usd: 349137.0, rate: 0.093 }
+    - { upper_usd: 418961.0, rate: 0.103 }
+    - { upper_usd: 698271.0, rate: 0.113 }
+    - { upper_usd: .inf, rate: 0.123 }
+
+standard_deduction:
+  single: 5363.0

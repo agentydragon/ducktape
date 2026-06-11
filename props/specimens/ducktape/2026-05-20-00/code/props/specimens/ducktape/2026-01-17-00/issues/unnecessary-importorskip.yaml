@@ -1,0 +1,51 @@
+rationale: |
+  pytest.importorskip is unnecessary when Bazel guarantees the dependency is available.
+
+  The e2e test target has `deps = _TEST_DEPS + ["@pypi//playwright"]`, so playwright
+  is always available when tests run via Bazel. The importorskip pattern adds noise
+  and suggests the dep is optional when it's not.
+
+  Replace with direct import at module top.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/e2e/conftest.py:
+        - [36, 36]
+    note: "pytest.importorskip('playwright.sync_api') unnecessary - Bazel dep guarantees availability"
+    critic_scopes_expected_to_recall:
+      - - agent_server/e2e/conftest.py
+    match_file_restriction:
+      - agent_server/e2e/conftest.py
+
+  - occurrence_id: occ-1
+    files:
+      agent_server/e2e/test_abort.py:
+        - [13, 13]
+    note: "pytest.importorskip('playwright.sync_api') unnecessary - Bazel dep guarantees availability"
+    critic_scopes_expected_to_recall:
+      - - agent_server/e2e/test_abort.py
+    match_file_restriction:
+      - agent_server/e2e/test_abort.py
+
+  - occurrence_id: occ-2
+    files:
+      agent_server/e2e/test_approvals.py:
+        - [12, 12]
+    note: "pytest.importorskip('playwright.sync_api') unnecessary - Bazel dep guarantees availability"
+    critic_scopes_expected_to_recall:
+      - - agent_server/e2e/test_approvals.py
+    match_file_restriction:
+      - agent_server/e2e/test_approvals.py
+
+  - occurrence_id: occ-3
+    files:
+      agent_server/e2e/test_proposals_reject.py:
+        - [14, 14]
+    note: "pytest.importorskip('playwright.sync_api') unnecessary - Bazel dep guarantees availability"
+    critic_scopes_expected_to_recall:
+      - - agent_server/e2e/test_proposals_reject.py
+    match_file_restriction:
+      - agent_server/e2e/test_proposals_reject.py

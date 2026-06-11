@@ -1,0 +1,8 @@
+71:00.0 Unassigned class [ff00]: Foxconn International, Inc. Device e11d
+	Subsystem: Foxconn International, Inc. Device e11d
+	Control: I/O- Mem+ BusMaster- SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
+	Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+	IOMMU group: 22
+	Region 0: Memory at 78480000 (64-bit, non-prefetchable) [size=4K]
+	Capabilities: <access denied>
+	Kernel modules: mhi_pci_generic

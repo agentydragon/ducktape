@@ -1,0 +1,8 @@
+# Pin PHP 8.4 to specific version to match live container
+Package: php8.4*
+Pin: version 8.4.15-1+ubuntu24.04.1+deb.sury.org+1
+Pin-Priority: 1001
+
+Package: php-common
+Pin: version 2:95+ubuntu24.04.1+deb.sury.org+1
+Pin-Priority: 1001

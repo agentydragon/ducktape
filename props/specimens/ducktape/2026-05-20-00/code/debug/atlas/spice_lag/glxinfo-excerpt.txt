@@ -1,0 +1,100 @@
+name of display: :1
+display: :1  screen: 0
+direct rendering: Yes
+server glx vendor string: SGI
+server glx version string: 1.4
+server glx extensions:
+    GLX_ARB_context_flush_control, GLX_ARB_create_context,
+    GLX_ARB_create_context_no_error, GLX_ARB_create_context_profile,
+    GLX_ARB_fbconfig_float, GLX_ARB_framebuffer_sRGB, GLX_ARB_multisample,
+    GLX_EXT_create_context_es2_profile, GLX_EXT_create_context_es_profile,
+    GLX_EXT_fbconfig_packed_float, GLX_EXT_framebuffer_sRGB,
+    GLX_EXT_get_drawable_type, GLX_EXT_libglvnd, GLX_EXT_no_config_context,
+    GLX_EXT_texture_from_pixmap, GLX_EXT_visual_info, GLX_EXT_visual_rating,
+    GLX_MESA_copy_sub_buffer, GLX_OML_swap_method, GLX_SGIS_multisample,
+    GLX_SGIX_fbconfig, GLX_SGIX_pbuffer, GLX_SGIX_visual_select_group,
+    GLX_SGI_make_current_read
+client glx vendor string: Mesa Project and SGI
+client glx version string: 1.4
+client glx extensions:
+    GLX_ARB_context_flush_control, GLX_ARB_create_context,
+    GLX_ARB_create_context_no_error, GLX_ARB_create_context_profile,
+    GLX_ARB_create_context_robustness, GLX_ARB_fbconfig_float,
+    GLX_ARB_framebuffer_sRGB, GLX_ARB_get_proc_address, GLX_ARB_multisample,
+    GLX_ATI_pixel_format_float, GLX_EXT_buffer_age,
+    GLX_EXT_create_context_es2_profile, GLX_EXT_create_context_es_profile,
+    GLX_EXT_fbconfig_packed_float, GLX_EXT_framebuffer_sRGB,
+    GLX_EXT_import_context, GLX_EXT_no_config_context, GLX_EXT_swap_control,
+    GLX_EXT_swap_control_tear, GLX_EXT_texture_from_pixmap,
+    GLX_EXT_visual_info, GLX_EXT_visual_rating, GLX_INTEL_swap_event,
+    GLX_MESA_copy_sub_buffer, GLX_MESA_gl_interop, GLX_MESA_query_renderer,
+    GLX_MESA_swap_control, GLX_NV_float_buffer, GLX_OML_sync_control,
+    GLX_SGIS_multisample, GLX_SGIX_fbconfig, GLX_SGIX_pbuffer,
+    GLX_SGIX_visual_select_group, GLX_SGI_make_current_read,
+    GLX_SGI_swap_control, GLX_SGI_video_sync
+GLX version: 1.4
+GLX extensions:
+    GLX_ARB_context_flush_control, GLX_ARB_create_context,
+    GLX_ARB_create_context_no_error, GLX_ARB_create_context_profile,
+    GLX_ARB_fbconfig_float, GLX_ARB_framebuffer_sRGB,
+    GLX_ARB_get_proc_address, GLX_ARB_multisample,
+    GLX_EXT_create_context_es2_profile, GLX_EXT_create_context_es_profile,
+    GLX_EXT_fbconfig_packed_float, GLX_EXT_framebuffer_sRGB,
+    GLX_EXT_no_config_context, GLX_EXT_texture_from_pixmap,
+    GLX_EXT_visual_info, GLX_EXT_visual_rating, GLX_MESA_copy_sub_buffer,
+    GLX_MESA_gl_interop, GLX_MESA_query_renderer, GLX_SGIS_multisample,
+    GLX_SGIX_fbconfig, GLX_SGIX_pbuffer, GLX_SGIX_visual_select_group,
+    GLX_SGI_make_current_read
+Extended renderer info (GLX_MESA_query_renderer):
+    Vendor: Mesa (0xffffffff)
+    Device: llvmpipe (LLVM 15.0.7, 256 bits) (0xffffffff)
+    Version: 25.1.5
+    Accelerated: no
+    Video memory: 54762MB
+    Unified memory: yes
+    Preferred profile: core (0x1)
+    Max core profile version: 4.5
+    Max compat profile version: 4.5
+    Max GLES1 profile version: 1.1
+    Max GLES[23] profile version: 3.2
+Memory info (GL_ATI_meminfo):
+    VBO free memory - total: 0 MB, largest block: 0 MB
+    VBO free aux. memory - total: 39445 MB, largest block: 39445 MB
+    Texture free memory - total: 0 MB, largest block: 0 MB
+    Texture free aux. memory - total: 39445 MB, largest block: 39445 MB
+    Renderbuffer free memory - total: 0 MB, largest block: 0 MB
+    Renderbuffer free aux. memory - total: 39445 MB, largest block: 39445 MB
+Memory info (GL_NVX_gpu_memory_info):
+    Dedicated video memory: 0 MB
+    Total available memory: 54762 MB
+    Currently available dedicated video memory: 0 MB
+OpenGL vendor string: Mesa
+OpenGL renderer string: llvmpipe (LLVM 15.0.7, 256 bits)
+OpenGL core profile version string: 4.5 (Core Profile) Mesa 25.1.5-1pop0~1756399231~22.04~b84bab8
+OpenGL core profile shading language version string: 4.50
+OpenGL core profile context flags: (none)
+OpenGL core profile profile mask: core profile
+OpenGL core profile extensions:
+    GL_3DFX_texture_compression_FXT1, GL_AMD_conservative_depth,
+    GL_AMD_draw_buffers_blend, GL_AMD_gpu_shader_int64,
+    GL_AMD_multi_draw_indirect, GL_AMD_pinned_memory,
+    GL_AMD_query_buffer_object, GL_AMD_seamless_cubemap_per_texture,
+    GL_AMD_shader_stencil_export, GL_AMD_shader_trinary_minmax,
+    GL_AMD_texture_texture4, GL_AMD_vertex_shader_layer,
+    GL_AMD_vertex_shader_viewport_index, GL_ANGLE_texture_compression_dxt3,
+    GL_ANGLE_texture_compression_dxt5, GL_ARB_ES2_compatibility,
+    GL_ARB_ES3_1_compatibility, GL_ARB_ES3_2_compatibility,
+    GL_ARB_ES3_compatibility, GL_ARB_arrays_of_arrays, GL_ARB_base_instance,
+    GL_ARB_blend_func_extended, GL_ARB_buffer_storage,
+    GL_ARB_clear_buffer_object, GL_ARB_clear_texture, GL_ARB_clip_control,
+    GL_ARB_compressed_texture_pixel_storage, GL_ARB_compute_shader,
+    GL_ARB_conditional_render_inverted, GL_ARB_conservative_depth,
+    GL_ARB_copy_buffer, GL_ARB_copy_image, GL_ARB_cull_distance,
+    GL_ARB_debug_output, GL_ARB_depth_buffer_float, GL_ARB_depth_clamp,
+    GL_ARB_derivative_control, GL_ARB_direct_state_access,
+    GL_ARB_draw_buffers, GL_ARB_draw_buffers_blend,
+    GL_ARB_draw_elements_base_vertex, GL_ARB_draw_indirect,
+    GL_ARB_draw_instanced, GL_ARB_enhanced_layouts,
+    GL_ARB_explicit_attrib_location, GL_ARB_explicit_uniform_location,
+    GL_ARB_fragment_coord_conventions, GL_ARB_fragment_layer_viewport,
+    GL_ARB_fragment_shader, GL_ARB_framebuffer_no_attachments,

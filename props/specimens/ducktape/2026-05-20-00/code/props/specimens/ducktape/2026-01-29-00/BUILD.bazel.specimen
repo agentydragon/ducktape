@@ -1,0 +1,12 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+# Snapshot of ducktape at d1ab8dd7.
+# Excluded: py_detectors/, website/, ansible/, cluster/, k8s-old/, terraform/,
+#   infra/, dotfiles/, nonrcm-dotfiles/, nix/, investigations/,
+#   props/db_backups/, gmail_archiver/inbox/, gmail_archiver/to_filter_emails/
+specimen_targets(
+    name = "specimen",
+    code_srcs = glob(["code/**/*"]),
+    slug = "ducktape/2026-01-29-00",
+    split = "train",
+)

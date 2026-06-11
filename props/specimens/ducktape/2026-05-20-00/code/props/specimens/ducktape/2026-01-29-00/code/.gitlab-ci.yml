@@ -1,0 +1,200 @@
+workflow:
+  rules:
+    # run a merged result CI pipeline if MR is open, otherwise a branch pipeline.
+    # https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+variables:
+  # https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+
+  # shallow clone is the default.
+  # https://docs.gitlab.com/ee/ci/large_repositories/#shallow-cloning
+  # this checks out some recent history to make ansible-lint --progressive work.
+  GIT_DEPTH: 10
+
+stages:
+  - build_ci_image
+  - build
+  - test
+  - deploy
+
+# Runs manually as part of CI on every commit.
+build_ci_image:
+  stage: build_ci_image
+  needs: []
+  interruptible: true
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - IMAGE=$CI_REGISTRY_IMAGE/cirunner
+    # Cache from both last master build, and from last build on this branch.
+    - echo "docker pull $IMAGE:latest ↓"
+    - docker pull $IMAGE:latest || true
+    # If we are building for a merge request, also use that merge request as
+    # cache source.
+    - echo "docker pull $IMAGE:mr-$CI_MERGE_REQUEST_ID ↓"
+    - docker pull $IMAGE:mr-$CI_MERGE_REQUEST_ID || true
+    - docker build --cache-from $IMAGE:latest --cache-from $IMAGE:mr-$CI_MERGE_REQUEST_ID --tag $IMAGE:$CI_COMMIT_SHA ci
+    - docker push $IMAGE:$CI_COMMIT_SHA
+
+# Tags and pushes latest CI image for this merge request.
+tag_latest_branch:
+  stage: deploy
+  needs:
+    - job: build_ci_image
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+  interruptible: true
+  image: docker:latest
+
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - IMAGE=$CI_REGISTRY_IMAGE/cirunner
+    - docker pull $IMAGE:$CI_COMMIT_SHA
+    - docker tag $IMAGE:$CI_COMMIT_SHA $IMAGE:mr-$CI_MERGE_REQUEST_ID
+    - docker push $IMAGE:mr-$CI_MERGE_REQUEST_ID
+
+# Tags and pushes CI image. Only runs on default branch.
+tag_latest_master:
+  stage: deploy
+  needs:
+    - job: build_ci_image
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  interruptible: true
+  image: docker:latest
+
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - IMAGE=$CI_REGISTRY_IMAGE/cirunner
+    - docker pull $IMAGE:$CI_COMMIT_SHA
+    - docker tag $IMAGE:$CI_COMMIT_SHA $IMAGE:latest
+    - docker push $IMAGE:latest
+
+build:
+  stage: build
+  needs:
+    - job: build_ci_image
+  when: always
+  interruptible: true
+  image:
+    # See src/ci/README.md
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  before_script:
+    # TODO: this setup script is duplicated with another place in this file
+    - |
+      cache_host="bazel-cache.agentydragon.com:9090"
+      if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+        echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+        echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
+      else
+        echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+        echo "build --remote_cache=https://${cache_host}" >> .bazelrc
+        echo "build --remote_upload_local_results=false" >> .bazelrc
+      fi
+  script:
+    - bazel version
+    - python --version
+    - bazel build ...
+
+  after_script:
+    - mkdir binaries
+    # store site binary if the build was successful; after_script also runs
+    # on unsuccessful builds, so we shouldn't fail, so that caching still works
+    - test -e bazel-bin/website/site && cp bazel-bin/website/site binaries
+  artifacts:
+    paths:
+      - binaries
+
+pages:
+  image:
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  needs:
+    - job: build
+  dependencies: # TODO: is this needed if we already have a 'needs'?
+    - build
+  interruptible: true
+  script:
+    - cd website
+    - ../binaries/site build
+    - cd ..
+    - mv website/_site public
+  artifacts:
+    paths:
+      - public
+  cache:
+    - paths:
+        - website/_cache
+
+      # TODO
+
+# TODO(agentydragon): should run after build_tag_push_ci_image on master.
+test:
+  stage: test
+  needs:
+    - job: build
+  interruptible: true
+  image:
+    # See src/ci/README.md
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  before_script:
+    # TODO: this setup script is duplicated with another place in this file
+    - |
+      cache_host="bazel-cache.agentydragon.com:9090"
+      if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+        echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+        echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
+      else
+        echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+        echo "build --remote_cache=https://${cache_host}" >> .bazelrc
+        echo "build --remote_upload_local_results=false" >> .bazelrc
+      fi
+  script:
+    - bazel test ...
+
+  after_script:
+    # after_script is executed after both successful and failed runs, so it
+    # will always upload the testlogs.
+    - mkdir testlogs
+    - cp -R bazel-testlogs/* testlogs
+  artifacts:
+    paths:
+      - testlogs
+      - bazel-testlogs
+    when: always
+
+ansible_lint:
+  stage: test
+  needs:
+    - job: build_ci_image
+  interruptible: true
+  script:
+    - ansible-galaxy role install -r ansible/requirements.yaml
+    - ansible-galaxy collection install -r ansible/requirements.yaml
+    - ansible-lint --progressive ansible | tee ansible-lint-output.txt
+  image:
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  artifacts:
+    when: always
+    paths:
+      - ansible-lint-output.txt
+
+# Scan for secrets
+include:
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+secret_detection:
+  variables:
+    SECRET_DETECTION_HISTORIC_SCAN: "true"

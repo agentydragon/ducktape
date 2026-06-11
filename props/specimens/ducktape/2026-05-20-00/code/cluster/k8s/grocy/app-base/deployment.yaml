@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grocy
+  labels:
+    app.kubernetes.io/name: grocy
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grocy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grocy
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      containers:
+        - name: grocy
+          image: lscr.io/linuxserver/grocy:v4.6.0-ls318
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "UTC"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: settingoverrides
+              mountPath: /config/data/settingoverrides
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: grocy-config-ovh
+        - name: settingoverrides
+          configMap:
+            name: grocy-settingoverrides

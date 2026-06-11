@@ -1,0 +1,17 @@
+rationale: |
+  agent_server/test_runtime_timeout.py duplicates
+  mcp_infra/exec/test_docker_unit.py:test_persession_exec_timeout_then_next_ok.
+  Both test the same scenario: force a container exec timeout, then verify the
+  next call succeeds after container restart. The mcp_infra version is canonical
+  (colocated with the code under test); the agent_server copy should be deleted.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/test_runtime_timeout.py:
+        - [21, 47]
+      mcp_infra/exec/test_docker_unit.py:
+        - [41, 49]
+    critic_scopes_expected_to_recall:
+      - [agent_server/test_runtime_timeout.py]
+      - [mcp_infra/exec/test_docker_unit.py]

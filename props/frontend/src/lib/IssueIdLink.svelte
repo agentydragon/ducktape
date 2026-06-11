@@ -12,7 +12,7 @@
     displayText?: string; // Override default issueId display
   }
 
-  let { snapshotSlug, issueId, kind, displayText }: Props = $props();
+  const { snapshotSlug, issueId, kind, displayText }: Props = $props();
 
   const text = $derived(displayText ?? issueId);
 </script>

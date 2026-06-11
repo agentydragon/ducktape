@@ -4,7 +4,6 @@
 
   import { resolve } from "$lib/router";
   import { SvelteURLSearchParams } from "svelte/reactivity";
-  import { formatSnapshotSlug } from "./formatters";
   import type { WholeSnapshotExample, SingleFileSetExample } from "./api/client";
 
   type Example = WholeSnapshotExample | SingleFileSetExample;
@@ -13,12 +12,12 @@
     example: Example;
   }
 
-  let { example }: Props = $props();
+  const { example }: Props = $props();
 
   const displayText = $derived(
     example.kind === "whole_snapshot"
-      ? `whole@${formatSnapshotSlug(example.snapshot_slug)}`
-      : `files@${formatSnapshotSlug(example.snapshot_slug)}/${example.files_hash.slice(0, 6)}`
+      ? `whole@${example.snapshot_slug}`
+      : `files@${example.snapshot_slug}/${example.files_hash.slice(0, 6)}`
   );
 
   const queryString = $derived.by(() => {

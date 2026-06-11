@@ -1,7 +1,16 @@
 """Tests for the function learning game loop.
 
-Uses ReplayChatCompletionClient for scripted LLM responses, but runs real
-Docker-based program evaluation (no mocking of evaluate_program).
+Uses ReplayChatClient for scripted LLM responses, but runs real
+Docker-based program evaluation (no mocking of evaluate_program) and a
+real `scratch_exec_mcp_tool()` exec tool — the replay scripts don't
+call exec, but wiring it up to the real MCP launcher means the test
+fails loud if that surface breaks.
+
+Loads `python:3.13-slim` into the Docker daemon up-front via
+`load_oci_image` (matches the pattern in
+`skills/info_gathering/evals/docker_scratch.py`) so neither the test's
+scoring container nor the launcher subprocess hits a 404 on a worker
+without the image cached.
 """
 
 import json
@@ -10,61 +19,58 @@ from pathlib import Path
 
 import aiodocker
 import pytest_bazel
-from autogen_core import FunctionCall
-from autogen_core.models import CreateResult, RequestUsage
-from autogen_core.tools import FunctionTool
-from autogen_ext.models.replay import ReplayChatCompletionClient
+from agent_framework import ChatResponse, Content, Message
 
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
+from skills.eval_infra.eval_sandbox import eval_sandbox
+from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import run_game
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
+from skills.info_gathering.evals.replay_client import ReplayChatClient
+from third_party.containers.rlocations import PYTHON_3_13_SLIM
+from util.oci import load_oci_image
 
-_ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 _TEST_TURNS = 3
 
 
-def _dummy_exec_tool() -> FunctionTool:
-    """Exec tool that is never called — replay client only issues play_turn calls."""
-
-    async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
-        raise RuntimeError("exec should not be called in replay tests")
-
-    return FunctionTool(exec, name="exec", description="dummy")
-
-
-def _play_turn_call(query: int, program: str) -> CreateResult:
-    return CreateResult(
-        finish_reason="function_calls",
-        content=[
-            FunctionCall(id="call_1", name="play_turn", arguments=json.dumps({"query": query, "program": program}))
+def _play_turn_call(query: int, program: str) -> ChatResponse:
+    return ChatResponse(
+        messages=[
+            Message(
+                "assistant",
+                [
+                    Content.from_function_call(
+                        "call_1", "play_turn", arguments=json.dumps({"query": query, "program": program})
+                    )
+                ],
+            )
         ],
-        usage=_ZERO_USAGE,
-        cached=False,
+        finish_reason="tool_calls",
     )
 
 
 async def _run_with_replay(
     *,
-    completions: list[CreateResult],
+    completions: list[ChatResponse],
     tmp_path: Path,
     function_name: str = "parity_groups",
     hint: bool = True,
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
-    client = ReplayChatCompletionClient(
-        chat_completions=completions,
-        model_info={
-            "vision": False,
-            "function_calling": True,
-            "json_output": False,
-            "family": "unknown",
-            "structured_output": False,
-        },
-    )
+    client = ReplayChatClient(responses=completions)
+    image_tag = load_oci_image(PYTHON_3_13_SLIM)
 
-    async with aiodocker.Docker() as docker:
+    # Stage the empty skill so the sandbox shape matches production: prompt
+    # claims `SKILL_PATH` is mounted, and it really is.
+    staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
+
+    async with (
+        eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool,
+        aiodocker.Docker() as docker,
+    ):
         container = await docker.containers.run(
-            config={"Image": "python:3.13-slim", "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
+            config={"Image": image_tag, "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
         )
         try:
             return await run_game(
@@ -73,9 +79,10 @@ async def _run_with_replay(
                 model="test-model",
                 api="openai",
                 output_dir=tmp_path,
-                exec_tool=_dummy_exec_tool(),
+                exec_tool=exec_tool,
                 model_client=client,
                 scoring_container=container,
+                skill_md=staged.md_text,
                 turn_limit=turn_limit,
             )
         finally:
@@ -169,7 +176,7 @@ def _check_output_files(tmp_path: Path) -> None:
     assert len(summary_files) == 1
 
     summary_data = json.loads(summary_files[0].read_text())
-    assert summary_data["framework"] == "autogen"
+    assert summary_data["framework"] == "agent_framework"
     assert summary_data["result"]["kind"] == "completed"
 
 

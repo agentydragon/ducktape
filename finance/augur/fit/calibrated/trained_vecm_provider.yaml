@@ -1,0 +1,131 @@
+current_mortgage30_rate_pct: 6.23
+latest_observations:
+  btc_close_latest:
+    date: 2026-05
+    source: ../../data/yahoo_btc_chart_adjusted.json
+    value: 76803.421875
+  case_shiller_sf_latest:
+    date: 2026-02
+    source: ../../data/fred_sfxrsa.csv
+    value: 361.615883051038
+  cpi_latest:
+    date: 2026-03
+    source: ../../data/fred_cpi_us.csv
+    value: 330.293
+  eth_close_latest:
+    date: 2026-05
+    source: ../../data/yahoo_eth_chart_adjusted.json
+    value: 2094.830078125
+  housing_return_sources:
+    case_shiller_sf_metro:
+      first_return_month: 1987-02
+      last_return_month: 2026-02
+      max_duration_months: 1.0
+      min_duration_months: 1.0
+      return_count: 469
+      source: ../../data/fred_sfxrsa.csv
+      used_as_marginal_evidence: false
+    fhfa_sf_oakland_berkeley:
+      first_return_month: 1975-10
+      last_return_month: 2025-10
+      max_duration_months: 3.0
+      min_duration_months: 3.0
+      return_count: 201
+      source: ../../data/fred_fhfa_sf_oakland_berkeley.csv
+      used_as_marginal_evidence: false
+    zillow_city_zhvi_by_factor:
+      home_value:san_francisco_ca:
+        first_return_month: 2000-02
+        last_return_month: 2026-03
+        max_duration_months: 1.0
+        min_duration_months: 1.0
+        region_name: San Francisco
+        return_count: 314
+        source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+        state: CA
+        used_as_marginal_evidence: true
+      home_value:vallejo_ca:
+        first_return_month: 2000-02
+        last_return_month: 2026-03
+        max_duration_months: 1.0
+        min_duration_months: 1.0
+        region_name: Vallejo
+        return_count: 314
+        source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+        state: CA
+        used_as_marginal_evidence: true
+  mortgage30_latest:
+    date: "2026-04-23"
+    source: ../../data/fred_mortgage30.csv
+    value: 6.23
+  series_path_prior_calibration:
+    crypto:btc:
+      monthly_log_mu: 0.03902884375748238
+      monthly_log_mu_sigma: 0.016405309545132564
+      monthly_log_vol_sigma: 0.19341574702374892
+      observation_count: 139
+      observed_months: 139.0
+    crypto:eth:
+      monthly_log_mu: 0.01473879993989527
+      monthly_log_mu_sigma: 0.026449994675222438
+      monthly_log_vol_sigma: 0.2671318518420597
+      observation_count: 102
+      observed_months: 102.0
+    home_value:san_francisco_ca:
+      monthly_log_mu: 0.0037593351653740195
+      monthly_log_mu_sigma: 0.0005031491514452045
+      monthly_log_vol_sigma: 0.008915825679117398
+      observation_count: 314
+      observed_months: 314.0
+    home_value:vallejo_ca:
+      monthly_log_mu: 0.0036785500123664547
+      monthly_log_mu_sigma: 0.0008752071873486141
+      monthly_log_vol_sigma: 0.01550871087250694
+      observation_count: 314
+      observed_months: 314.0
+    inflation:
+      monthly_log_mu: 0.0028766924943963456
+      monthly_log_mu_sigma: 0.0004166666666666667
+      monthly_log_vol_sigma: 0.003394502665681366
+      observation_count: 949
+      observed_months: 950.0
+    rent:san_francisco_ca:
+      monthly_log_mu: 0.0026146482262607747
+      monthly_log_mu_sigma: 0.0004166666666666667
+      monthly_log_vol_sigma: 0.005470560597749138
+      observation_count: 758
+      observed_months: 1335.0
+    sp500:
+      monthly_log_mu: 0.008476573751313684
+      monthly_log_mu_sigma: 0.002146197427330773
+      monthly_log_vol_sigma: 0.04287026003461386
+      observation_count: 399
+      observed_months: 399.0
+  sf_rent_cpi_latest:
+    date: 2026-03
+    source: ../../data/fred_sf_rent_cpi.csv
+    value: 528.147
+  sp500_price_latest:
+    date: 2026-04
+    source: ../../data/fred_sp500.csv
+    value: 7138.8
+  spy_adjusted_close_latest:
+    date: 2026-04
+    source: ../../data/yahoo_spy_chart_adjusted.json
+    value: 711.5800170898438
+  spy_adjusted_close_monthly_return_count: 399
+  zillow_home_value_latest_by_factor:
+    home_value:san_francisco_ca:
+      date: 2026-03
+      region_name: San Francisco
+      source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+      state: CA
+      value: 1356661.6050197445
+    home_value:vallejo_ca:
+      date: 2026-03
+      region_name: Vallejo
+      source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+      state: CA
+      value: 520969.8257389618
+trained_blob: /home/agentydragon/code/ducktape/augur/fit/calibrated/trained_vecm.npz
+type: vecm

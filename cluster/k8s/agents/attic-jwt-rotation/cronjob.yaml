@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: attic-jwt-rotation
+  namespace: nix-cache
+  annotations:
+    description: >-
+      Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.json. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.sh.
+spec:
+  schedule: "30 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: attic-jwt-rotator
+          restartPolicy: OnFailure
+          volumes:
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: rotate-script
+              configMap:
+                name: attic-jwt-rotation-script
+            - name: rotators-config
+              configMap:
+                name: attic-rotators-config
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260504011152-2b39247 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              command: ["/usr/bin/bash", "/scripts/rotate.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: rotate-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: rotators-config
+                  mountPath: /config
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi

@@ -1,0 +1,274 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = [
+    "//cluster:__subpackages__",
+    "//devinfra/precommit:__pkg__",
+])
+
+py_library(
+    name = "k8s",
+    srcs = ["k8s.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "tool_resolve",
+    srcs = ["tool_resolve.py"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
+    name = "kustomize",
+    srcs = ["kustomize.py"],
+    data = ["@multitool//tools/kustomize"],
+    deps = [
+        ":k8s",
+        ":tool_resolve",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "flux",
+    srcs = ["flux.py"],
+    data = ["@multitool//tools/flux"],
+    deps = [
+        ":k8s",
+        ":tool_resolve",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "cluster",
+    srcs = ["cluster.py"],
+    deps = [
+        ":flux",
+        ":k8s",
+        ":kustomize",
+        "@pypi//networkx",
+        "@pypi//numpy",
+        "@pypi//pygit2",
+        "@pypi//types_networkx",
+    ],
+)
+
+py_library(
+    name = "dependencies",
+    srcs = ["dependencies.py"],
+    deps = [
+        ":cluster",
+        ":crd_layering",
+        "@pypi//networkx",
+        "@pypi//numpy",
+        "@pypi//types_networkx",
+    ],
+)
+
+py_library(
+    name = "health_checks",
+    srcs = ["health_checks.py"],
+    deps = [":cluster"],
+)
+
+py_library(
+    name = "crd_layering",
+    srcs = ["crd_layering.py"],
+    deps = [":kustomize"],
+)
+
+py_library(
+    name = "checks",
+    srcs = ["checks.py"],
+    deps = [
+        ":cluster",
+        ":kustomize",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "helm_templates",
+    srcs = ["helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":tool_resolve",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "validate_all",
+    srcs = ["validate_all.py"],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":crd_layering",
+        ":dependencies",
+        ":flux",
+        ":health_checks",
+        ":helm_templates",
+        ":kustomize",
+    ],
+)
+
+py_library(
+    name = "kustomize_build_all_lib",
+    srcs = ["kustomize_build_all.py"],
+    deps = [
+        ":cluster",
+        ":k8s",
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "kustomize_build_all",
+    data = ["@multitool//tools/kustomize"],
+    main_module = "cluster.validation.kustomize_build_all",
+    deps = [":kustomize_build_all_lib"],
+)
+
+py_test(
+    name = "test_k8s",
+    srcs = ["test_k8s.py"],
+    deps = [
+        ":k8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_flux",
+    srcs = ["test_flux.py"],
+    data = glob(["testdata/**"]),
+    deps = [
+        ":cluster",
+        ":dependencies",
+        ":flux",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dependencies",
+    srcs = ["test_dependencies.py"],
+    deps = [
+        ":cluster",
+        ":dependencies",
+        ":flux",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_health_checks",
+    srcs = ["test_health_checks.py"],
+    deps = [
+        ":cluster",
+        ":flux",
+        ":health_checks",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_crd_layering",
+    srcs = ["test_crd_layering.py"],
+    data = glob(["testdata/crd_layering/**"]),
+    deps = [
+        ":crd_layering",
+        ":k8s",
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_helm_templates",
+    srcs = ["test_helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":helm_templates",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "kyverno",
+    srcs = ["kyverno.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_kyverno_policies",
+    srcs = ["test_kyverno_policies.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "@multitool//tools/kyverno",
+    ] + glob([
+        "testdata/kyverno/**",
+        "__snapshots__/*.ambr",
+    ]),
+    uses_syrupy = True,
+    deps = [
+        ":kyverno",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_cluster_integration",
+    srcs = ["test_cluster_integration.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "@multitool//tools/kustomize",
+    ],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":dependencies",
+        ":health_checks",
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

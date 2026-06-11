@@ -1,0 +1,56 @@
+# EXAMPLE Gatelet Configuration
+# Make a copy, rename to gatelet.toml, and customize with your own values.
+
+[database]
+dsn = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
+
+[server]
+host = "0.0.0.0"
+port = 8000
+log_level = "INFO"
+log_file = "gatelet.log"
+
+[auth.key_in_url]
+enabled = true
+key_valid_days = 365
+
+[auth.challenge_response]
+enabled = true
+num_options = 16
+session_extension_seconds = 300  # 5 minutes
+session_max_duration_seconds = 3600  # 1 hour
+nonce_validity_seconds = 300  # 5 minutes
+
+[home_assistant]
+api_url = "http://homeassistant.local:8123"
+api_token = "replace_with_your_actual_token"
+entities = [
+    "binary_sensor.front_door",
+    "binary_sensor.motion_sensor_living_room",
+    "sensor.temperature_bedroom",
+    "sensor.humidity_bedroom",
+    "climate.living_room"
+]
+
+[activitywatch]
+enabled = false
+server_url = "http://127.0.0.1:5600"
+
+[webhook.integrations.home-assistant]
+enabled = true
+
+[webhook.integrations.home-assistant.auth_config]
+type = "bearer"
+token = "replace_with_your_webhook_secret"
+
+[webhook.integrations.activity-watch]
+enabled = true
+
+[webhook.integrations.activity-watch.auth_config]
+type = "none"
+
+[admin]
+password_hash = "$argon2id$v=19$m=65536,t=3,p=4$QGhN6d1bi1EKQUhJqfUe4w$lRUJ6+taip7yBS6Q652QLcP14eqE3ehX95tBTTkypiU"
+
+[security]
+csrf_secret = "change_me"

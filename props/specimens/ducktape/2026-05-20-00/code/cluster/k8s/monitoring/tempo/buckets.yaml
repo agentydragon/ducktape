@@ -1,0 +1,13 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: tempo
+  namespace: seaweedfs
+spec:
+  name: tempo
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  access:
+    - user: tempo
+      actions: [Read, Write, List, Tagging]

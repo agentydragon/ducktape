@@ -6,14 +6,20 @@ The `llm_requests` table stores LLM API request/response payloads logged by the 
 
 ${describe_relation("llm_requests")}
 
-Each row captures a single OpenAI Responses API call made by an agent through the LLM proxy.
+Each row captures one LLM proxy call made by an agent. Use `api_shape` to read
+the raw JSON correctly:
+
+- `responses`: OpenAI Responses API payloads (`request_body->'input'`,
+  `response_body->'output'`)
+- `chat_completions`: OpenAI Chat Completions payloads
+  (`request_body->'messages'`, `response_body->'choices'`)
 
 ### Queries
 
 All LLM requests for a specific agent run:
 
 ```sql
-SELECT model, latency_ms, error, created_at
+SELECT model, api_shape, latency_ms, error, created_at
 FROM llm_requests
 WHERE agent_run_id = '<uuid>'
 ORDER BY created_at;
@@ -22,7 +28,7 @@ ORDER BY created_at;
 Full request/response payloads for debugging:
 
 ```sql
-SELECT request_body, response_body, error
+SELECT api_shape, request_body, response_body, error
 FROM llm_requests
 WHERE agent_run_id = '<uuid>'
 ORDER BY created_at;

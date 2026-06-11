@@ -6,11 +6,9 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    - role: legacy_cli
     - role: gui
     - role: legacy_gui
     - role: laptop
-    - role: legacy_vpn_uninstall
       tags: [wireguard, tailscale]
 
   tasks:

@@ -1,0 +1,114 @@
+"""Standalone registry proxy — the OCI image data plane."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/backend:deps",
+        "//props/core:oci_utils",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:notifications",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":routes",
+        "//props/db:config",
+        "//props/db:database",
+        "//util:logging",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":app",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":app",
+        ":cli",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_routes",
+    srcs = ["test_routes.py"],
+    requires_docker = True,
+    deps = [
+        ":routes",
+        "//props:conftest",
+        "//props/core:agent_types",
+        "//props/core:oci_utils",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+# =============================================================================
+# OCI Image
+# =============================================================================
+
+aspect_py_binary(
+    name = "registry_proxy_bin",
+    main = "cli.py",
+    visibility = ["//props:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":registry_proxy_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("registry_proxy_bin") + [
+        "serve",
+        "--host",
+        "0.0.0.0",
+    ],
+    env = py_image_env(),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-registry-proxy:latest"],
+)

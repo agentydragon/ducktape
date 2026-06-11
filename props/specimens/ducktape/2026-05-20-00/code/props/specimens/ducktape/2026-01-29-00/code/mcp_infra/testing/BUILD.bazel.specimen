@@ -1,0 +1,110 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# Load python_slim base image into local Docker daemon for tests
+# Tests that need this should add data = ["//mcp_infra/testing:python_slim_load"]
+oci_load(
+    name = "python_slim_load",
+    image = "@python_slim_linux_amd64",
+    repo_tags = ["python-slim:test"],
+    visibility = ["//visibility:public"],
+)
+
+# Docker fixtures that depend on python-slim OCI image
+# Only include in tests that actually need Docker execution
+py_library(
+    name = "docker_fixtures",
+    testonly = True,
+    srcs = ["docker_fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fixtures",
+        "//mcp_infra/exec:docker",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "exec_stubs",
+    srcs = ["exec_stubs.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:bwrap",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:seatbelt",
+        "//mcp_infra/exec:subprocess",
+        "//mcp_infra/stubs:server_stubs",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":notifications",
+        ":simple_servers",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/stubs:resources_stub",
+        "//mcp_infra/stubs:typed_stubs",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "simple_servers",
+    srcs = ["simple_servers.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "stdio_app",
+    srcs = ["stdio_app.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":simple_servers",
+        "@pypi//anyio",
+    ],
+)
+
+py_binary(
+    name = "stdio_notifier",
+    srcs = ["stdio_notifier.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/enhanced:server",
+        "@pypi//anyio",
+    ],
+)

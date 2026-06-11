@@ -30,17 +30,18 @@ The orchestrator injects these environment variables into every agent container:
 | `OPENAI_BASE_URL` | LLM proxy (OpenAI-compatible) |
 | `OPENAI_API_KEY` | Auth token — base64-encoded `PGUSER:PGPASSWORD` |
 | `PROPS_BACKEND_URL` | Backend HTTP API |
+| `PROPS_REGISTRY_URL` | OCI registry proxy for agent images |
 
 **Database credentials** are deterministic — the same `agent_run_id` always produces the same username and password, allowing reconnection.
 
-The backend's LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY` and logs all LLM requests to the `llm_requests` table.
+The LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY` and logs all LLM requests to the `llm_requests` table.
 
 **Access by agent type:**
 
 | Capability | Critic | Grader | Critic developer (you) |
 |------------|--------|--------|------------------------|
 | PostgreSQL (RLS-scoped) | Yes | Yes | Yes |
-| LLM proxy (`/v1/responses`) | Yes | Yes | Yes |
+| LLM proxy (`/v1/responses`, `/v1/chat/completions`) | Yes | Yes | Yes |
 | Runs API (`/api/runs/critic`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
@@ -65,7 +66,7 @@ Pull these as starting points, inspect their internals, and repackage with modif
 ### Inspect a base image
 
 ```bash
-REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\?://||')
+REGISTRY=$(printf "%s" "$PROPS_REGISTRY_URL" | sed -E "s#^https?://##")
 
 # View image config (entrypoint, ENV)
 crane config $REGISTRY/critic:latest --insecure | python3 -m json.tool
@@ -153,20 +154,21 @@ FROM examples WHERE split = 'train' ORDER BY n_recall_denominator;
 
 Read `props.core.models.examples` for the `ExampleSpec` discriminated union (whole_snapshot vs file_set).
 
-## Backend API
+## Backend And Proxy APIs
 
-The unified backend at `PROPS_BACKEND_URL` serves all functionality:
+The backend at `PROPS_BACKEND_URL` serves orchestration APIs. Data-plane
+proxies use their own environment variables:
 
 | Path | Description | Your access |
 |------|-------------|-------------|
 | `POST /api/runs/critic` | Run a critic agent on an example | Yes |
-| `/v2/*` | Registry proxy (OCI API) | Yes |
-| `/v1/responses` | LLM proxy (OpenAI API) | Yes |
 | `/api/stats/*` | Dashboard stats | No (admin) |
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |
 
-The backend serves as your OCI registry — use `PROPS_BACKEND_URL` as the registry host for all `crane` and `/v2/` operations.
+Use `OPENAI_BASE_URL` for LLM calls (`/v1/responses`, `/v1/chat/completions`).
+Use `PROPS_REGISTRY_URL` as the registry host for all `crane` and `/v2/`
+operations. Do not derive the registry from `PROPS_BACKEND_URL`.
 
 ### OpenAPI Introspection
 

@@ -1,0 +1,22 @@
+rationale: |
+  FileCollector.collect_files() catches ValueError and OSError when reading
+  files but silently continues without any logging or warning. If a file
+  exists but cannot be read due to permissions, corruption, or transient
+  errors, the user has no indication anything went wrong. Per STYLE.md:
+  "Real errors must surface." At minimum, these errors should be logged
+  so users can diagnose issues with their file collection.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/io/file_utils.py:
+        - [148, 155]
+    note: >-
+      except (ValueError, OSError): continue silently ignores file read errors.
+      Should log at warning level to surface the problem.
+    critic_scopes_expected_to_recall:
+      - - inop/io/file_utils.py
+    match_file_restriction:
+      - inop/io/file_utils.py

@@ -1,0 +1,456 @@
+{% comment %}
+
+    Stickers for 1x1 SMD box. Width: 14 mm, height: 18 mm.
+
+
+    TODO:
+        - use "Jellybean P/N" -- part name in Inventree is some kind of display string combining various parameters
+
+{% endcomment %}
+
+{% extends "label/label_base.html" %}
+{% load l10n i18n barcode report inventree_extras %}
+
+
+{# TODO: screw terminals -- there name is not important - e.g. RSI83 #}
+
+{% comment %}
+TODO: can use:
+{% define "hello_world" as hello %}
+{% mydict|keyvalue:mykey %}
+also inventree settings accessors
+
+when looking at stickers:
+part number is important where it's not a super generic thing like
+resistor, LED or cap
+
+on super generic parts the super important thing instead is the *nominal
+value* (and color on leds)
+
+then for any part, *packag* is important.
+
+for diodes:
+(name)
+(package) (type) (... other params ...)
+
+for resistors:
+(package: SMD or D4xL5.4mm)(resistance)(tolerance)
+for capacitors:
+(package)(material)(capacitance)(tolerance)
+(voltage rating)
+
+for BJTs:
+(name)
+(package) (type: NPN/PNP) (... todo other parameters ...)
+
+
+available vars:
+- barcode_data
+- barcode_hash
+- stock_item (shadow of 'item')
+- ipn
+- name (of part)
+- part
+- qr_data
+- qr_url
+- (batch, child_items, installed_items, result_list, results, serial, tests, test_keys, test_template_list, test_templates)
+{% endcomment %}
+
+
+
+{% block style %}
+{# https://docs.inventree.org/en/stable/report/weasyprint/#localization-issues #}
+{% localize off %}
+
+.quantity {
+	padding-top: 0.3mm;
+	margin-top: 0.3mm;
+	text-align: center;
+}
+
+img.qrcode {
+	width: 70%;
+	height: 70%;
+}
+
+code.qrdata {
+	font-family: "Ubuntu Mono", monospace;
+	text-align: center;
+	display: block;
+	font-size: 5pt;
+	text-align: center;
+	margin-top: 0.3mm;
+	margin-bottom: 0.3mm;
+}
+
+img.barcode {
+	width: 100%;
+	object-fit: contain;
+}
+
+/* circle, to be filled with color parameter */
+.color {
+	width: 1em;
+	height: 1em;
+	display: inline-block;
+	vertical-align: middle;
+	border-radius: 50%;
+	border: 0.3pt solid black;
+}
+
+main {
+	/* Deliberately allow breaking lines *anywhere*. Allows fitting more data
+	into the label's very limited size. */
+	overflow-wrap: anywhere;
+	word-break: break-all;
+	/* server-side rendering was saying word-wrap: break-all; was invalid. */
+	word-wrap: break-word;
+	hyphens: auto;
+
+	display: block;
+	width: {{ width }}mm;
+	height: {{ height }}mm;
+	font-family: "Ubuntu Mono", monospace;
+	/* border: 0.3pt solid #ccc; */
+	line-height: 1.0;
+	overflow: hidden;
+	font-size: 4.5pt;
+}
+
+h1, h2 {
+	margin: 0;
+	padding: 0;
+}
+
+h1 {
+	display: block;
+	font-weight: bold;
+	font-size: 5pt;
+	text-align: center;
+}
+
+h2 {
+	font-weight: normal;
+	font-size: 4.5pt;
+	text-align: center;
+}
+
+.other {
+	/* misc params for this part */
+	font-size: 4pt;
+	font-style: italic;
+}
+
+sub {
+	vertical-align: -0.1em;
+	font-size: 80%;
+}
+
+ul {
+	display: inline;
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+ul li {
+	display: inline;
+}
+
+ul li + li::before {
+	/* ⋅ Dot Operator, • Bullet, · Middle Dot, ─ Box Drawing Line */
+	content: "⋅";
+}
+
+{% endlocalize %}
+{% endblock style %}
+
+{% block content %}
+{# Configuration: can be: "qr", "barcode", "none" #}
+{% define "qr" as code_type %}
+
+
+{# https://docs.inventree.org/en/stable/report/weasyprint/#localization-issues #}
+{% localize off %}
+<main lang='en'>
+	{% comment %}
+	barcode_data | stringformat:'r'
+
+	2025-02-16: this qr code and this linear code both work:
+		qrcode qr_data border=0 error_correction="L"
+		barcode qr_data margin_top=0 margin_bottom=0 module_height=4 quiet_zone=0
+
+	qr_data -- string, something like "RSI100"
+
+	debugging barcode options, trying to hide the text:
+	font_size <= 0 not supported at the version i have
+	background="transparent" -- won't work, ugh -- not known by PIL ImageColor
+	text="" seems to make the code disappear entirely?
+	background=(0,0,0,0) -> totally refuses to parse, ugh
+	font_size=0.1 => complains font size must be >=0, there's something rounding to whole number :(
+	quiet_zone=0 works -- changes left/right empty
+
+	working barcode:
+	<img class='barcode' src='{% barcode qr_data margin_top=0 margin_bottom=0 module_height=4 quiet_zone=0 text_distance=1 %}'>
+
+	part.default_supplier is SupplierPart
+
+	https://docs.inventree.org/en/stable/report/barcodes/#qr-code
+	back_color: no worky
+
+	datamatrix exists -- and can support tiny codes -- but not yet
+	supported by my version
+
+	working QR code:
+
+	barcode default font_size is 10: https://github.com/WhyNotHugo/python-barcode/blob/2f96373fb25939b8fa98e1a9537a0ecfe26eb708/barcode/writer.py#L130
+
+	def part_parameter(part: Part, parameter_name: str) -> str: """Return PartParameter object for given part and parameter name.
+	... other params ...
+	{% endcomment %}
+	{% spaceless %}
+	{% if code_type == "qr" %}
+		<div style="text-align: center;">
+			<img class="qrcode" src="{% qrcode qr_data border=0 %}">
+		</div>
+		{# <code class="qrdata">{{ qr_data }}</code> #}
+	{% elif code_type == "barcode" %}
+		<img class="barcode" src="{% barcode qr_data margin_top=0 margin_bottom=0 module_height=8 quiet_zone=4 text_distance=4 font_size=7 %}">
+	{% endif %}
+	{# <b>{{ code_type }}</b> #}
+	{# <code>{{ qr_data }} code_type={{ code_type }}</code> #}
+
+	{% define part.category.name as c %}
+	{% define "|" as done %}
+	{% define parameters as p %}
+
+	{% define "Package" as PKG %}
+	{% define p|keyvalue:PKG as package %}
+	{% if package %}
+	{# D4xL5.4mm -> D4xL5.4 #}
+	{% define package|cut:"SMD "|cut:"mm" as package %}
+	{% endif %}
+
+	{% define "Voltage rating" as V_MAX %}
+	{% define p|keyvalue:V_MAX as v_max %}
+	{% define "Current rating" as I_MAX %}
+	{% define p|keyvalue:I_MAX as i_max %}
+	{% define "Forward voltage @ current" as VI_FWD %}
+	{% define p|keyvalue:VI_FWD as vi_fwd %}
+	{% define "Reverse voltage" as V_R %}
+	{% define p|keyvalue:V_R as v_r %}
+	{% define "Pin configuration" as PIN_CFG %}
+	{% define p|keyvalue:PIN_CFG as pin_cfg %}
+	{% define "BJT type" as BJT_TYPE %}
+	{% define p|keyvalue:BJT_TYPE as bjt_type %}
+
+	{% define "Maximum input voltage" as V_IN_MAX %}
+	{% define "Maximum output current" as I_OUT_MAX %}
+	{% define p|keyvalue:V_IN_MAX as v_in_max %}
+	{% define p|keyvalue:I_OUT_MAX as i_out_max %}
+	{% define "Output voltage" as V_OUT %}
+	{% define p|keyvalue:V_OUT as v_out %}
+	{% define "Pin profile" as P_PROF %}
+	{% define p|keyvalue:P_PROF as p_prof %}
+	{% define "Pin pitch" as PIN_P %}
+	{% define p|keyvalue:PIN_P as pin_p %}
+	{% define "Gender" as GDR %}
+	{% define p|keyvalue:GDR as gdr %}
+	{% define "Color" as CLR %}
+	{% define p|keyvalue:CLR as clr %}
+
+	{% define "Minimum supply voltage" as VCC_MIN %}
+	{% define p|keyvalue:VCC_MIN as vcc_min %}
+	{% define "Maximum supply voltage" as VCC_MAX %}
+	{% define p|keyvalue:VCC_MAX as vcc_max %}
+
+	{% if c == "Linear LDO voltage regulators" %}
+	{% comment %}
+	for LDO's:
+	(name)
+	(package)
+	(input voltage range) -> (output voltage) (current rating)
+	{% endcomment %}
+	<h1>{{ name }}</h1>
+
+	{# TODO: align nicely next to each other #}
+	<h2>
+		{{ package }}
+		LDO{% if v_out %}&rarr;{{ v_out|cut:" " }}{% endif %}
+		{% define done|add:PKG|add:"|"|add:V_OUT|add:"|" as done %}
+	</h2>
+
+	<ul>
+		{% if v_in_max %}<li>V<sub>in</sub>&leq;{{ v_in_max|cut:" "}}</li>{% endif %}
+		{% if i_out_max %}<li>I<sub>out</sub>&leq;{{ i_out_max|cut:" " }}</li>{% endif %}
+		{% define done|add:V_IN_MAX|add:"|"|add:I_OUT_MAX|add:"|" as done %}
+	</ul>
+
+	{% elif "|"|add:c|add:"|" in "|Resistors|Capacitors|Crystals|LEDs, displays|" %}
+	{% comment %}
+	Components that are very generic, where we don't care about name and wnat to mainly surface a couple of primary defining parameters
+
+	for LEDs:
+	<h1>LED (color) (package or diameter)</h1>
+	(forward voltage) (current)
+	{% endcomment %}
+	<h1>
+		{% if c == "Capacitors" %}
+		C
+		{% elif c == "Resistors" %}
+		R
+		{% elif c == "Crystals" %}
+		Y
+		{% elif c == "LEDs, displays" %}
+		LED
+		{% else %}
+		{# ... todo ... #}
+		{{ c }}
+		{% endif %}
+
+		{% if clr %}
+		<span class="color" style="background: {{ clr }};"></span>
+		{# would be nice to check if value is a valid CSS color code and if not then show it as text #}
+		{% endif %}
+
+		{% define 'Resistance|Capacitance|Frequency' as RCF %}
+		{% for key, value in p.items %}
+		{% if key in RCF %}{{ value|cut:" " }}{% endif %}
+		{% endfor %}
+		{% define done|add:RCF|add:"|" as done %}
+
+		{# tolerance is for R, C, relative in % #}
+		{% if 'Tolerance' in p %}±{{ p.Tolerance|cut:"±" }}{% endif %}
+
+		{% if package %}{{ package }}{% endif %}
+
+		{% if 'Diameter' in p %}D={{ p.Diameter|cut:" "|cut:"mm" }}{% endif %}
+		{% define done|add:CLR|add:"|Tolerance|"|add:PKG|add:"|Diameter|" as done %}
+	</h1>
+	<ul>
+		{% if 'Dielectric' in p %}
+		<li>
+			{% if p.Dielectric == "Aluminium electrolytic" %}
+			{# shorten 'aluminium dielectric' to Al2O3 #}
+			Al<sub>2</sub>O<sub>3</sub>
+			{% else %}
+			{{ p.Dielectric }}
+			{% endif %}
+		</li>
+		{% endif %}
+		{% if vi_fwd %}<li>V<sub>F</sub>@I<sub>F</sub>: {{ vi_fwd }}</li>{% endif %}
+		{% if v_max %}<li>V&leq;{{ v_max|cut:" " }}</li>{% endif %}
+
+		{% define done|add:"Dielectric|"|add:VI_FWD|add:"|"|add:V_MAX|add:"|" as done %}
+
+		<li class="other">{{ name }}</li>
+	</ul>
+	{% else %}
+	<h1>{{ name }}</h1>
+
+	{% comment %}
+	{{ p | stringformat:'r' }}
+	{{ stock_item | stringformat:'r'}} <StockItem: 5 x AMS1117CD-5.0>
+	{{ part | stringformat:'r'}} <Part: AMS1117-3.3 regulator ...>
+
+	{% if stock_item.supplier_part %}
+	<span class="supplier">
+		{{ stock_item.supplier_part.supplier.name }} {{ stock_item.supplier_part.SKU }}
+	</span>
+	{% endif %}
+	{% endcomment %}
+
+	<h2>
+		{% if 'Function' in p %}
+		{{ p.Function }}
+		{% define done|add:"Function|" as done %}
+		{% elif bjt_type %}
+		{{ bjt_type }}
+		{% define done|add:BJT_TYPE|add:"|" as done %}
+		{% elif c == "Diodes" %}
+		D
+		{# Schottky, Zener: OK #}
+		{% elif c == "Transistors" %}
+		Q
+		{% elif c == "Buttons, switches" %}
+		SW
+		{% elif c == "Ferrite beads" %}
+		FB
+		{% comment %}
+		can fully spec with: package, impedance@target, R_DC,
+		rated current, (... impedance@DC bias, self-resonant frequency)
+
+		https://chatgpt.com/c/67badd2f-9b4c-8011-8fdf-c9972d6d46b8
+		{% endcomment %}
+		{% elif c == "Housings" %}
+		CONN
+		{% elif c == "Microcontrollers" %}
+		MCU
+		{% elif c == "Integrated circuits" %}
+		IC
+		{% else %}
+		{# ... todo ... #}
+		{{ c }}
+		{% endif %}
+
+		{% if package %}{{ package }}{% endif %}
+		{% define done|add:PKG|add:"|" as done %}
+	</h2>
+
+	<ul>
+		{% comment %}
+		no need, will not go into any of the 1x1 boxes:
+		Batteries
+		Board, breakouts, modules
+		Finished assemblies
+		Circuit protections, fuses
+		Housings
+
+		guess we could assign internal part numbers or something?
+		would be nice to do this automatically...
+
+		skipping: special rendering for Color, Diameter
+		{% endcomment %}
+
+		{% if pin_cfg or pin_p or gdr or p_prof %}
+		<li>
+			{% if pin_cfg %}{{ pin_cfg }}{% endif %}
+			{% if pin_p %}P={{ p|keyvalue:PIN_P|cut:"mm"|cut:" " }}{% endif %}
+			{% if gdr == 'Male' %}♂{% elif gdr == 'Female' %}♀{% elif gdr %}{{ gdr }}{% endif %}
+			{% if p_prof %}
+			shape:{% if p_prof == "round" %}◯{% elif p_prof == "square" %}□{% else %}{{ p_prof }}{% endif %}
+			{% endif %}
+			{% define done|add:PIN_CFG|add:"|"|add:PIN_P|add:"|"|add:GDR|add:"|"|add:P_PROF|add:"|" as done %}
+		</li>
+		{% endif %}
+
+		{% if vi_fwd %}<li>V<sub>F</sub>@I<sub>F</sub>={{ vi_fwd }}</li>{% endif %}
+		{% if v_r %}<li>V<sub>R</sub>={{ v_r }}</li>{% endif %}
+
+		{% if vcc_min or vcc_max %}<li>{% if vcc_min %}{{ vcc_min|cut:" " }}&leq;{% endif %}Vcc{% if vcc_max %}&leq;{{ vcc_max|cut:" " }}{% endif %}</li>{% endif %}
+		{% if v_max %}<li>V&leq;{{ v_max|cut:" " }}</li>{% endif %}
+		{% if i_max %}<li>I&leq;{{ i_max|cut:" " }}</li>{% endif %}
+
+		{% define done|add:VI_FWD|add:"|"|add:V_R|add:"|"|add:V_MAX|add:"|"|add:I_MAX|add:"|"|add:VCC_MAX|add:"|"|add:VCC_MIN|add:"|" as done %}
+	</ul>
+	{% endif %}
+	<ul class="other">
+		{% for key, value in p.items %}
+		{% if "|"|add:key|add:"|" not in done %}
+		{% comment %}
+		theoretically could do: .p.other::before { content: attr(data-key); }
+		todo: do some special formatting... like in other type of parts
+		e.g.: strip spaces for kvp's: forward voltage @ current, reverse voltage
+		{% endcomment %}
+		<li class="other">{{ key }}={{ value }}</li>
+		{% endif %}
+		{% endfor %}
+	</ul>
+	<div class="quantity">
+		{{ quantity }}@{{ stock_item.updated|date:'Y-m-d' }}
+	</div>
+	{% endspaceless %}
+</main>
+
+{% endlocalize %}
+{% endblock content %}

@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+:root {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color: #213547;
+  background-color: #ffffff;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+#app {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem 0;
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+th,
+td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+th {
+  font-weight: 600;
+  background: #f5f5f5;
+  position: sticky;
+  top: 0;
+}
+
+tr:hover {
+  background: #f9f9f9;
+}
+
+/* Numeric columns */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status colors */
+.recall-high {
+  color: #22863a;
+}
+.recall-mid {
+  color: #b08800;
+}
+.recall-low {
+  color: #cb2431;
+}
+
+/* Column group headers */
+.col-group {
+  font-size: 0.75rem;
+  text-align: center;
+  border-bottom: 2px solid #ddd;
+}
+
+.col-group-valid {
+  background: #e6f7ff;
+}
+.col-group-train-w {
+  background: #fffbe6;
+}
+.col-group-train-p {
+  background: #fff0f6;
+}
+
+/* Dim for missing data */
+.dim {
+  color: #999;
+}

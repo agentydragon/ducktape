@@ -1,0 +1,46 @@
+{# Audience: human admin (via session) #} {% extends "base.html" %} {% block title %}Admin - Keys{% endblock %} {% block
+nav %}
+<nav>
+  <a href="/admin/">Admin Home</a>
+</nav>
+{% endblock %} {% block content %}
+<section>
+  <h2>Authentication Keys</h2>
+  <p><a href="/admin/keys/new">Create New Key</a></p>
+  {% if keys %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Key</th>
+        <th>Description</th>
+        <th>Created</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for key in keys %}
+      <tr>
+        <td>{{ key.id }}</td>
+        <td>{{ key.key_value }}</td>
+        <td>{{ key.description or '' }}</td>
+        <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{% if key.revoked_at %}Revoked{% else %}Active{% endif %}</td>
+        <td>
+          {% if not key.revoked_at %}
+          <form method="post" action="/admin/keys/{{ key.id }}/revoke">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit">Revoke</button>
+          </form>
+          {% else %}-{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No keys defined.</p>
+  {% endif %}
+</section>
+{% endblock %}

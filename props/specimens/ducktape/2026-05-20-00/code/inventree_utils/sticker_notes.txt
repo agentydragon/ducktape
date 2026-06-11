@@ -1,0 +1,26 @@
+# QR codes
+
+library: QRCode
+
+qrcode helper options:
+    version=[...]
+    error_correction=L/M/Q/H = 7%/15%(default)/25%/30%
+    box_size (in pixels) - doesn't matter
+    border: 0 (pixels)
+
+# Barcodes
+
+helper source: https://github.com/inventree/InvenTree/blob/7362305296146e98c8f528b6e40c43f4757d3941/src/backend/InvenTree/report/templatetags/barcode.py#L98
+
+all kwargs to helper go into writer_opts of the barcode module, used here:
+	https://github.com/WhyNotHugo/python-barcode/blob/main/barcode/writer.py
+
+some kwargs:
+	barcode_class: default "code128"
+	format (str): Image format (default = 'PNG')
+	fill_color (str): Foreground color (default = 'black')
+	back_color (str): Background color (default = 'white')
+	scale (float): Scaling factor (default = 1)
+
+this works:
+    {% barcode qr_data margin_top=0 margin_bottom=0 module_height=2 %}

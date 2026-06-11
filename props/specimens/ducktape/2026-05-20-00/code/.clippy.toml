@@ -1,0 +1,5 @@
+# Clippy configuration
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Warn on code complexity
+cognitive-complexity-threshold = 25

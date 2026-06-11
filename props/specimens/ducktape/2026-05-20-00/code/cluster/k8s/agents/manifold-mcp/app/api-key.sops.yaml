@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: manifold-mcp-api-key
+  namespace: manifold-mcp
+  annotations:
+    description: Manifold Markets API key. The Node MCP server reads it from the env at startup.
+stringData:
+  MANIFOLD_API_KEY: ENC[AES256_GCM,data:zA0hTqlxFsHfaMKOK1RVuu5VB2erfZ9Jd6ggoZHE0pG0Unj2,iv:dt5joIj0KQMrMgbx4ZZx39GGj6jnS4inWnZA6qX90cg=,tag:Le/UA5C1f4cAfIaU8aDyHQ==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvRU1ZazZ4c3U0Ny9ubDUy
+        KzdKeUY2UENLM1lXcVREMkxqclh2NzhaY1dzCmtFckl6RTh0Tit4dUt3MCsxbmMv
+        eWlFQU5Uc3R0TWtaQm5Hc1pLZktINTgKLS0tIEdpRnhFbmszNWd4NndVNUZXbHI2
+        WGdtMW5zODlqdXpuSHREZ2MraDd0QzgK2VPS6WKfa0kPsTQcgjFzRVKIPtIivydw
+        1HywGZ76GqybHg3+NMIp+DZPehWgKlmTvgN9qOdtwUzF88Wezb9IqA==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6QmhGcXZXeEFaS1NxcEN1
+        MGNWVkI0cTdlTDBkMjNmbDY0NlhXa3JzMlNvCkxhcFEyRVZBY0dsaXBBcjAxU1lC
+        NWVxckRQcWJ3T3RmaHYyOFVudFROUFUKLS0tIE50SmVKZFhyNzJVc05wS2J1cUUw
+        T0ZaYjhIdjFOcHZKZjhXQ0Rmem1ML2MKRlpemftffCIo1NY6FJlMWXMVaPLbBmlT
+        DX2SdvfAGrL+ObZ1Elzl75ncU2Hpga8TRIdJnY4XiHBjeZlejzcLPw==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-29T22:21:04Z"
+  mac: ENC[AES256_GCM,data:9FluM7gZ596+ZpRksKPEnWGanOx3OU+rwoXNvd77l5cmg5pHhzBf6zjl5BeELsIJl0eoSrizOzjKi1SAUbRrsIvxOeWOM27GlPkq+RY/jC04ihHftnzr9ulo68izkDPOn2VBelz75Bqgt4f7vio5wc6SmZohplEP0r7J0JJgB24=,iv:2mlsBye4avRZd0hv0uZz98kQFkHCZ4TqgwXYX7IXpAE=,tag:WIUdxUXVrcPMhdJdzMyKIQ==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

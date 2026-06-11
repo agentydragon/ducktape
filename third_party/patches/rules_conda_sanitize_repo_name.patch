@@ -1,0 +1,12 @@
+--- a/conda/extensions.bzl
++++ b/conda/extensions.bzl
+@@ -39,7 +39,8 @@
+
+ def _package_repo_name(filename, subdir):
+     "Create a valid repository name for a conda package"
+-    return subdir + "-" + filename
++    raw = subdir + "-" + filename
++    return raw.replace("!", "_epoch_")
+
+ def _auth(rctx, url):
+     if "NETRC" in rctx.os.environ:

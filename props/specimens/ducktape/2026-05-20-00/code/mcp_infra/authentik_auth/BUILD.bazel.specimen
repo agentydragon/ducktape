@@ -1,0 +1,47 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//py_key_value_aio",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_auth",
+    srcs = ["test_auth.py"],
+    deps = [
+        ":auth",
+        ":conftest",
+        "@pypi//authlib",
+        "@pypi//py_key_value_aio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

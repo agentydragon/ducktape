@@ -104,7 +104,7 @@ def capture_live_manifest() -> dict[str, Entry]:
     return entries
 
 
-def capture_built_manifest(work_dir: Path) -> dict[str, Entry]:
+def capture_built_manifest() -> dict[str, Entry]:
     logger.info("Capturing built manifest...")
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], check=False, capture_output=True)
     run(["docker", "create", "--name", CONTAINER_NAME, IMAGE_NAME, "/bin/true"])
@@ -178,7 +178,7 @@ def main() -> int:
     logger.info("Version snapshot saved to %s", versions_file.name)
 
     live = capture_live_manifest()
-    built = capture_built_manifest(work_dir)
+    built = capture_built_manifest()
     generate_diff_report(work_dir, live, built)
 
     logger.info("Done! Review diff_report.md and commit if changes are expected.")

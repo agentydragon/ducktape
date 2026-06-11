@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubectl-sandbox-mcp-public
+  namespace: kubectl-sandbox-mcp
+data:
+  00-public.toml: |
+    require_oauth = true
+    authorization_url = "https://auth.allegedly.works/application/o/kubectl-sandbox-mcp/"
+    oauth_audience = "kubectl-sandbox-mcp"
+
+    # Plain passthrough — no token exchange. The Authentik OAuth2 provider
+    # hardcodes the `groups` claim to ["kubectl-sandbox-users"] via a custom
+    # scope mapping, so the caller's token is already sandbox-scoped at issue
+    # time. Forwarding it directly to kube-apiserver gives sandbox-only access
+    # even when the user authenticates as a cluster admin.
+    cluster_auth_mode = "passthrough"
+    cluster_provider_strategy = "in-cluster"
+
+    server_url = "https://kubectl-sandbox-mcp.allegedly.works"
+    port = "8080"

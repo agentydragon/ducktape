@@ -1,0 +1,21 @@
+rationale: |
+  ClaudeRunner.cleanup() uses print() for error output instead of the
+  self.logger that is available from the base class AgentRunner. This is
+  inconsistent with the rest of the codebase which uses structured logging.
+  The message will not appear in structured logs and lacks the context
+  (runner_id, task info) that the logger would provide.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/runners/claude_runner.py:
+        - [214, 216]
+    note: >-
+      print(f"Error cleaning up workspace: {e}") should use self.logger.error()
+      with structured extra fields.
+    critic_scopes_expected_to_recall:
+      - - inop/runners/claude_runner.py
+    match_file_restriction:
+      - inop/runners/claude_runner.py

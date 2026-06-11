@@ -1,0 +1,47 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "file_utils",
+    srcs = ["file_utils.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "jsonl_logger",
+    srcs = ["jsonl_logger.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "logging_utils",
+    srcs = ["logging_utils.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//structlog"],
+)
+
+py_library(
+    name = "task_loader",
+    srcs = ["task_loader.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "yaml_loader",
+    srcs = ["yaml_loader.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":logging_utils",
+        "//inop/engine:models",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)

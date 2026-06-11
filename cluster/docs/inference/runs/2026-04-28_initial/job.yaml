@@ -1,0 +1,56 @@
+# Throughput smoke benchmark against cluster Ollama.
+# Apply with: ./run.sh   (creates the bench.py ConfigMap and the Job, tails logs).
+# The ConfigMap `ollama-bench-initial` is rendered from bench.py at apply time
+# (see run.sh) — it is NOT in this manifest because checking in a giant inline
+# Python blob is uglier than just sourcing the file.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-bench-initial
+  namespace: claude-sandbox
+  labels:
+    purpose: inference-benchmark
+    run: 2026-04-28_initial
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        purpose: inference-benchmark
+        run: 2026-04-28_initial
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bench
+          image: python:3.13-slim
+          command: ["python", "/bench/bench.py"]
+          env:
+            - name: OLLAMA_URL
+              value: http://ollama.ollama:11434/v1
+            - name: MODELS
+              value: gpt-oss:20b,gpt-oss:120b,gemma4:31b-it-q8_0
+            - name: INPUT_LENS
+              value: "1024,8192"
+            - name: OUTPUT_LEN
+              value: "256"
+            - name: N_TRIALS
+              value: "5"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: bench
+              mountPath: /bench
+      volumes:
+        - name: bench
+          configMap:
+            name: ollama-bench-initial
+            items:
+              - key: bench.py
+                path: bench.py

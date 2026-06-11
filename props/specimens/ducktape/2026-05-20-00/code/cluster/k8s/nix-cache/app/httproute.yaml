@@ -1,0 +1,15 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: nix-cache
+  namespace: nix-cache
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "cache.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: attic
+          port: 8080

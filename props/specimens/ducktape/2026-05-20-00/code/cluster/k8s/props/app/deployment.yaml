@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: props
+  namespace: props
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: props
+      app.kubernetes.io/name: props
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/instance: props
+        app.kubernetes.io/name: props
+    spec:
+      serviceAccountName: props-executor
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      # Props main image is on GHCR (public, no pull secret needed).
+      # Props still uses Harbor internally for agent images via props-harbor-upstream-creds.
+      containers:
+        - name: props
+          image: ghcr.io/agentydragon/props-backend:devel-20260430040339-fe4a162 # {"$imagepolicy": "flux-system:props-backend"}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PROPS_IMAGE_TAG
+              value: devel-20260430040339-fe4a162 # {"$imagepolicy": "flux-system:props-backend:tag"}
+            - name: PROPS_CONFIG_FILE
+              value: /etc/props/config.toml
+            - name: PGHOST
+              value: props-db-rw
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: eval_results
+            - name: PGUSER
+              value: props
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-db-app
+                  key: password
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: props-openai-api-key
+                  key: api-key
+            - name: OLLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+            - name: PROPS_EVALUATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-evaluator-credentials
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_URL
+              value: http://harbor.harbor:80
+            - name: PROPS_REGISTRY_UPSTREAM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: props-harbor-upstream-creds
+                  key: username
+            - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-harbor-upstream-creds
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_PROJECT
+              value: props
+            - name: PROPS_REGISTRY_HOST
+              value: props
+            - name: PROPS_REGISTRY_PORT
+              value: "8000"
+            - name: PROPS_REGISTRY_PULL_HOST
+              value: registry.allegedly.works
+          volumeMounts:
+            - name: config
+              mountPath: /etc/props
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: props-config

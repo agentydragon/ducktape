@@ -1,0 +1,284 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# NOTE: No aggregator target - use specific per-file targets like :checker, :cli, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "check_python",
+    srcs = ["check_python.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":pattern_matcher",
+        "//llm/claude_linter_v2/config:clean_models",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/linters:python_ast",
+        "//llm/claude_linter_v2/linters:python_ruff",
+    ],
+)
+
+py_library(
+    name = "checker",
+    srcs = ["checker.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2/config:loader",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/linters:python_ast",
+        "//llm/claude_linter_v2/linters:python_formatter",
+        "//llm/claude_linter_v2/linters:python_ruff",
+    ],
+)
+
+py_library(
+    name = "checkers_v2",
+    srcs = ["checkers_v2.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":rule_registry",
+        "//llm/claude_linter_v2/config:clean_models",
+        "//llm/claude_linter_v2/config:models",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":checker",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:exceptions",
+        "//llm/claude_linter_v2/hooks:handler",
+        "//llm/claude_linter_v2/session:manager",
+        "@pypi//click",
+        "@pypi//humanize",
+        "@pypi//pytimeparse",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":types",
+        "//llm:claude_code_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "llm_analyzer",
+    srcs = ["llm_analyzer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "pattern_matcher",
+    srcs = ["pattern_matcher.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:models"],
+)
+
+py_library(
+    name = "rule_registry",
+    srcs = ["rule_registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:models"],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//llm:claude_code_api"],
+)
+
+py_binary(
+    name = "claude-linter-v2",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [
+        ":checker",
+        ":cli",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:exceptions",
+        "//llm/claude_linter_v2/hooks:handler",
+        "//llm/claude_linter_v2/session:manager",
+        "@pypi//click",
+        "@pypi//humanize",
+    ],
+)
+
+py_test(
+    name = "test_cl2_check",
+    srcs = ["test_cl2_check.py"],
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff_intelligence",
+    srcs = ["test_diff_intelligence.py"],
+    deps = [
+        ":conftest",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/diff:categorizer",
+        "//llm/claude_linter_v2/diff:intelligence",
+        "//llm/claude_linter_v2/diff:parser",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff_intelligence_edge_cases",
+    srcs = ["test_diff_intelligence_edge_cases.py"],
+    deps = [
+        ":conftest",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/diff:categorizer",
+        "//llm/claude_linter_v2/diff:intelligence",
+        "//llm/claude_linter_v2/diff:parser",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    deps = [
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_tools",
+    srcs = ["test_mcp_tools.py"],
+    deps = [
+        ":conftest",
+        ":types",
+        "//llm:claude_code_api",
+        "//llm:claude_outcomes",
+        "//llm/claude_linter_v2/config:clean_models",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:handler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_modular_config",
+    srcs = ["test_modular_config.py"],
+    deps = [
+        ":conftest",
+        ":rule_registry",
+        "//llm/claude_linter_v2/config:clean_models",
+        "//llm/claude_linter_v2/config:loader",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_multiline_predicates",
+    srcs = ["test_multiline_predicates.py"],
+    deps = [
+        ":conftest",
+        ":types",
+        "//llm/claude_linter_v2/access:context",
+        "//llm/claude_linter_v2/access:evaluator",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_ast",
+    srcs = ["test_python_ast.py"],
+    deps = [
+        ":conftest",
+        "//llm/claude_linter_v2/linters:python_ast",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_formatter",
+    srcs = ["test_python_formatter.py"],
+    deps = [
+        ":conftest",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/linters:python_formatter",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_ruff",
+    srcs = ["test_python_ruff.py"],
+    deps = [
+        ":conftest",
+        "//llm/claude_linter_v2/linters:python_ruff",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_fresh_scan",
+    srcs = ["test_stop_hook_fresh_scan.py"],
+    deps = [
+        ":conftest",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:handler",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_gitignore",
+    srcs = ["test_stop_hook_gitignore.py"],
+    deps = [
+        ":conftest",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:handler",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_quality_gate",
+    srcs = ["test_stop_hook_quality_gate.py"],
+    deps = [
+        ":conftest",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:handler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,102 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# NOTE: No aggregator target - use specific per-file targets like :cli, :constants
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    data = glob(["docs/**/*.md"]),
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "editor_submit",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    main = "cli.py",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "@pypi//typer_slim",
+    ],
+)
+
+# --- OCI Image ---
+
+# Package the py_binary and its runfiles into /app
+pkg_tar(
+    name = "editor_submit_tar",
+    srcs = [":editor_submit"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+# Wrapper script to put editor-submit on PATH
+pkg_tar(
+    name = "editor_submit_wrapper_tar",
+    srcs = ["editor-submit"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+# Package the /init script
+pkg_tar(
+    name = "init_tar",
+    srcs = ["//editor_agent/host:init_script"],
+    mode = "0755",
+    package_dir = "/",
+)
+
+# OCI image combining base + Python app + init script
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["sleep infinity"],
+    entrypoint = [
+        "/bin/sh",
+        "-c",
+    ],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        ":editor_submit_tar",
+        ":editor_submit_wrapper_tar",
+        ":init_tar",
+    ],
+    workdir = "/workspace",
+)
+
+# Load image into local Docker daemon
+# Run: bazel run //editor_agent/runtime:load
+# For tarball: bazel build //editor_agent/runtime:load --output_groups=+tarball
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["adgn-editor:latest"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)

@@ -1,0 +1,15 @@
+# This kustomization depends on 'b', creating a cycle: a -> b -> a
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cycle-a
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./k8s/cycle/a
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: cycle-b

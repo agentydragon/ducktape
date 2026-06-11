@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: study-casino
+  labels:
+    name: study-casino
+    # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+    goldilocks.fairwinds.com/enabled: "false"

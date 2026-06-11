@@ -1,0 +1,123 @@
+# Claude Linter v2 Configuration - New Format
+version = "2.0"
+
+# Display settings
+max_errors_to_show = 3
+
+# Path-based access control
+[[access_control]]
+paths = ["production/**", "*.prod.py"]
+tools = ["Write", "Edit", "MultiEdit"]
+action = "deny"
+message = "Production files are read-only"
+
+# Python tools configuration
+[python_tools]
+ruff = { enabled = true }
+mypy = { enabled = true }
+
+# Rule configurations
+[rules]
+# Python AST checks
+[rules."python.bare_except"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.hasattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.getattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.setattr"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."python.barrel_init"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+# Ruff checks
+[rules."ruff.E722"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.BLE001"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B009"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+[rules."ruff.B010"]
+enabled = true
+blocks_pre_hook = true
+blocks_stop_hook = true
+
+# Hook configurations
+[hooks.pre]
+enabled = true
+
+[hooks.post]
+enabled = true
+auto_fix = true
+autofix_categories = ["formatting"]
+inject_permissions = true
+
+[hooks.stop]
+enabled = true
+quality_gate = true
+max_files_to_show = 5
+max_violations_per_file = 3
+
+[hooks.notification]
+enabled = true
+send_to_dbus = true
+urgency = "normal"
+
+# Pattern-based rules
+[[pattern_rules]]
+name = "test_files"
+patterns = ["**/test_*.py", "**/*_test.py", "**/tests/**/*.py"]
+relaxed_checks = ["python.bare_except", "ruff.E722"]
+enabled = true
+
+# Task profiles
+[[profiles]]
+name = "refactoring"
+description = "Python refactoring with git and tests"
+predicate = '''
+def check_refactoring(ctx):
+    """Allow Python editing, git commands, and pytest."""
+    if ctx.tool == "Edit" and ctx.path and ctx.path.endswith(".py"):
+        return True
+    if ctx.tool == "Bash" and ctx.command:
+        return ctx.command.startswith(("git", "pytest"))
+    return False
+'''
+duration = "4h"
+
+[[profiles]]
+name = "debugging"
+description = "Full read access, limited write"
+predicate = '''
+def check_debugging(ctx):
+    """Allow reading all files, editing only debug files."""
+    if ctx.tool == "Read":
+        return True
+    if ctx.tool == "Edit" and ctx.path:
+        return ctx.path.startswith("debug/")
+    return False
+'''
+duration = "2h"

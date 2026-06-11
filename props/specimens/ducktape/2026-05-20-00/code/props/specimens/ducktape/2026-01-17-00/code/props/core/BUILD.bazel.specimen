@@ -1,0 +1,342 @@
+"""Props core package - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+# =============================================================================
+# Leaf modules (no props.core deps)
+# =============================================================================
+
+py_library(
+    name = "ids",
+    srcs = ["ids.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "splits",
+    srcs = ["splits.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Second-tier modules (depend on leaf modules or db/)
+# =============================================================================
+
+py_library(
+    name = "display",
+    srcs = ["display.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/db:models",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "oci_utils",
+    srcs = ["oci_utils.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_types",
+        "//props/core/registry:images",
+        "@pypi//aiodocker",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
+    name = "docker_env",
+    srcs = ["docker_env.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec",
+        "//props/core/db:config",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "agent_types",
+    srcs = ["agent_types.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ids",
+        "//props/core/models:examples",
+        "//props/core/models:snapshot",
+        "//props/core/prompt_optimize:target_metric",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [":agent_types"],
+)
+
+py_library(
+    name = "agent_workspace",
+    srcs = ["agent_workspace.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":docker_env",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "agent_handle",
+    srcs = ["agent_handle.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_types",
+        ":db_event_handler",
+        ":docker_env",
+        "//agent_core",
+        "//agent_pkg/host",
+        "//mcp_infra",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "agent_setup",
+    srcs = ["agent_setup.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_handle",
+        ":agent_types",
+        ":agent_workspace",
+        ":db_event_handler",
+        ":docker_env",
+        ":oci_utils",
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/display",
+        "//net_util",
+        "//props/core/cli:common_options",
+        "//props/core/db:config",
+        "//props/core/db:temp_user_manager",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "agent_registry",
+    srcs = ["agent_registry.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_handle",
+        ":agent_types",
+        ":agent_workspace",
+        ":display",
+        ":exceptions",
+        ":ids",
+        ":oci_utils",
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/display",
+        "//openai_utils",
+        "//props/core/cli:common_options",
+        "//props/core/critic",
+        "//props/core/critic:exceptions",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:config",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/grader",
+        "//props/core/grader:daemon",
+        "//props/core/grader:drift_handler",
+        "//props/core/grader:persistence",
+        "//props/core/grader:snapshot_grader_env",
+        "//props/core/models:examples",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "agent_helpers",
+    srcs = ["agent_helpers.py"],
+    data = glob([
+        "docs/**/*.md",
+        "docs/**/*.j2",
+    ]),
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":agent_registry",
+        ":ids",
+        "//props/core/cli:cmd_snapshot",
+        "//props/core/db:config",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//jinja2",
+        "@pypi//psycopg2_binary",
+    ],
+)
+
+py_library(
+    name = "agent_pkg_utils",
+    srcs = ["agent_pkg_utils.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_pkg/host",
+        "//agent_pkg/runtime",
+        "@pypi//canonicaljson",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runs_context",
+    srcs = ["runs_context.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "db_event_handler",
+    srcs = ["db_event_handler.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_rationale",
+    srcs = ["test_rationale.py"],
+    imports = ["../.."],
+    deps = [
+        "//agent_core_testing",
+        "//props/core/models:types",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_agent_types",
+    srcs = ["test_agent_types.py"],
+    imports = ["../.."],
+    deps = [
+        ":agent_types",
+        ":ids",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_agent_workspace",
+    srcs = ["test_agent_workspace.py"],
+    imports = ["../.."],
+    deps = [
+        ":agent_workspace",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_production_specimens",
+    srcs = ["test_production_specimens.py"],
+    imports = ["../.."],
+    tags = [
+        "integration",
+        "requires_postgres",
+        "requires_production_specimens",
+    ],
+    deps = [
+        "//agent_core_testing",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:setup",
+        "//props/core/db/sync",
+        "//props/core/db/sync:loader",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_agent_pkg_e2e",
+    srcs = ["test_agent_pkg_e2e.py"],
+    imports = ["../.."],
+    tags = [
+        "integration",
+        "requires_docker",
+        "requires_postgres",
+        "slow",
+    ],
+    deps = [
+        ":agent_pkg_utils",
+        ":agent_registry",
+        "//agent_core_testing",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+    ],
+)
+
+# Collect all library targets for ruff
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":agent_handle",
+        ":agent_helpers",
+        ":agent_pkg_utils",
+        ":agent_registry",
+        ":agent_setup",
+        ":agent_types",
+        ":agent_workspace",
+        ":db_event_handler",
+        ":display",
+        ":docker_env",
+        ":exceptions",
+        ":ids",
+        ":oci_utils",
+        ":runs_context",
+        ":splits",
+    ],
+)

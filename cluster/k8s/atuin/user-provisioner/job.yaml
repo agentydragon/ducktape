@@ -7,8 +7,8 @@ data:
   provision.py: |
     """Provision the agentydragon user in Atuin's PostgreSQL database.
 
-    Idempotent: creates user if missing, updates password if Vault SSOT changed,
-    no-op if password already matches.
+    Idempotent: creates user if missing, updates password if the SOPS source
+    changed, no-op if password already matches.
     """
 
     import os
@@ -89,7 +89,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: provisioner
           image: python:3.13-alpine

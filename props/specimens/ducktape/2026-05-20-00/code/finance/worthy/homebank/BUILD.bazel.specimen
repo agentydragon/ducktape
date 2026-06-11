@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "homebank",
+    srcs = ["homebank.go"],
+    importpath = "github.com/agentydragon/worthy/homebank",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "homebank_test",
+    srcs = ["homebank_test.go"],
+    embed = [":homebank"],
+)

@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-mcp-poc-tf
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/agents/authentik-mcp-poc/tf
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-mcp-poc
+      namespace: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: authentik
+    # TF writes the OIDC client-credentials secret into the authentik-mcp-poc
+    # namespace, so the namespace Kustomization must run first.
+    - name: authentik-mcp-poc-namespace

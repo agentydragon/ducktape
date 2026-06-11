@@ -1,0 +1,41 @@
+{# Audience: human admin (via session) #} {% extends "base.html" %} {% block title %}Admin - {{ session_type|capitalize
+}} Sessions{% endblock %} {% block nav %}
+<nav>
+  <a href="/admin/">Admin Home</a>
+</nav>
+{% endblock %} {% block content %}
+<section>
+  <h2>Active {{ session_type|capitalize }} Sessions</h2>
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Token</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.session_token }}</td>
+        <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ s.expires_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>
+          <form method="post" action="/admin/{{ session_type }}-sessions/{{ s.id }}/invalidate">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit">Invalidate</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No active sessions.</p>
+  {% endif %}
+</section>
+{% endblock %}

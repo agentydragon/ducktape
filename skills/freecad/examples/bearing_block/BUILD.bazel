@@ -1,0 +1,86 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files(
+    [
+        "back_left.png",
+        "build.py",
+        "build_techdraw.py",
+        "debug_edges.png",
+        "debug_faces.png",
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+        "front_right.png",
+    ],
+    visibility = ["//skills/freecad:__subpackages__"],
+)
+
+py_library(
+    name = "build",
+    srcs = ["build.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_library(
+    name = "build_techdraw",
+    srcs = ["build_techdraw.py"],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "//skills/freecad/examples:freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_test(
+    name = "test_bearing_block",
+    size = "medium",
+    srcs = ["test_bearing_block.py"],
+    data = [
+        "back_left.png",
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+        "front_right.png",
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    deps = [
+        ":build",
+        ":build_techdraw",
+        "//skills/freecad:conftest",
+        "//skills/freecad/examples:export_page",
+        "//skills/freecad/examples:render_multi_angle",
+        "//skills/freecad/examples:verify_fcstd_load",
+        "//skills/freecad/testing:compare",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_debug_renderers",
+    size = "medium",
+    srcs = ["test_debug_renderers.py"],
+    data = [
+        "debug_edges.png",
+        "debug_faces.png",
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    deps = [
+        ":build",
+        ":build_techdraw",
+        "//skills/freecad:conftest",
+        "//skills/freecad/examples:render_debug_edges",
+        "//skills/freecad/examples:render_debug_faces",
+        "//skills/freecad/testing:compare",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,8 @@
+filename:       /run/booted-system/kernel-modules/lib/modules/6.19.14/kernel/drivers/bus/mhi/host/mhi.ko.xz
+description:    Modem Host Interface
+license:        GPL v2
+depends:
+intree:         Y
+name:           mhi
+retpoline:      Y
+vermagic:       6.19.14 SMP preempt mod_unload

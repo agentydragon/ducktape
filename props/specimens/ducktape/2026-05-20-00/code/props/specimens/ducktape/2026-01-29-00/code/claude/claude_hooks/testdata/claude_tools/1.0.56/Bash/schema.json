@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "The command to execute",
+      "type": "string"
+    },
+    "description": {
+      "description": " Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+      "type": "string"
+    },
+    "timeout": {
+      "description": "Optional timeout in milliseconds (max 600000)",
+      "type": "number"
+    }
+  },
+  "required": ["command"],
+  "type": "object"
+}

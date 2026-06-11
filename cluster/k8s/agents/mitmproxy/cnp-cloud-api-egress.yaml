@@ -1,0 +1,46 @@
+# Allow egress to cloud LLM API providers.
+# Additive with the operator's default-deny NetworkPolicy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloud-api-egress
+  namespace: agents-mitmproxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mitmproxy
+  egress:
+    - toFQDNs:
+        - matchName: generativelanguage.googleapis.com
+        - matchName: api.openai.com
+        - matchName: api.anthropic.com
+        - matchName: api.telegram.org
+        - matchPattern: "*.telegram.org"
+        - matchName: github.com
+        - matchName: gdcdyn.interactivebrokers.com
+        - matchName: ndcdyn.interactivebrokers.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Allow forwarding to any in-cluster Service. Sandbox bench Jobs and
+    # other workloads keep mitmproxy in-path even when targeting cluster
+    # endpoints (e.g. `ollama.ollama:11434`); without this rule mitmproxy
+    # was the bottleneck because it couldn't reach the in-cluster
+    # destination. NO_PROXY in the inject policy still permits explicit
+    # bypass for Service FQDNs that already match (`*.svc.cluster.local`
+    # and `10.0.0.0/8`).
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "11434"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP

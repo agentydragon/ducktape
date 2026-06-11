@@ -1,0 +1,20 @@
+{# Audience: unauthenticated LLM (challenge) #} {% extends "base.html" %} {% block title %}Gatelet - Challenge{%
+endblock %} {% block content %}
+<section>
+  <h2>Authentication Challenge</h2>
+  {% if message %}
+  <p>{{ message }}</p>
+  {% endif %}
+  <p>The following Python code computes the correct option using your secret key.</p>
+  <pre>
+{{ compute_source }}
+print(compute_correct_option(key, "{{ nonce_value }}", {{ num_options }}))</pre
+  >
+  <p>Nonce: <code>{{ nonce_value }}</code></p>
+  <ul>
+    {% for opt in options %}
+    <li><a href="/cr/{{ key_id }}/{{ nonce_value }}/{{ opt }}">{{ opt }}</a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "dev",
+    data = [
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+        "//augur/frontend:bundle_base",
+    ],
+    env = {
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
+        "AUGUR_CONFIG_PATH": "$(location //augur/api:public_fixture_config)",
+    },
+    main_module = "augur.api.server",
+    deps = ["//augur/api:server_lib"],
+)
+
+py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)

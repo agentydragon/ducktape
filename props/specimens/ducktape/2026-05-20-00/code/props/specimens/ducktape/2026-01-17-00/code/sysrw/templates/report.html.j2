@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Eval Report</title>
+  <style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;line-height:1.35;margin:24px;}
+  section{margin-bottom:40px;}
+  h2{margin-top:28px;}
+  pre{background:#f6f8fa;padding:12px;overflow:auto;border-radius:6px;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;}
+  /* Wrap long JSON and rationale lines */
+  pre code.json, pre code { white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; }
+  .meta{color:#555}
+  .score{font-weight:bold}
+  </style>
+</head>
+<body>
+{% macro render_messages(msgs) %}
+  {% for m in msgs %}
+    {% set role = m.role if m.role is defined else m.get('role') %}
+    {% set content = m.content if m.content is defined else m.get('content') %}
+    <div style="margin-bottom:8px">
+      <div class="meta"><strong>{{ role }}</strong></div>
+      {% if content is string %}
+        <details>
+          <summary><code>{{ (content or '')[:120] ~ ('…' if (content|length > 120) else '') }}</code></summary>
+          <pre><code>{{ content }}</code></pre>
+        </details>
+      {% else %}
+        {% set j = content | tojson(indent=2) %}
+        <details>
+          <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+          <pre><code class="json">{{ j }}</code></pre>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro render_alternative(alt) %}
+  {% if alt is mapping and (alt.tool_calls or alt.get('tool_calls')) %}
+    {% set tcs = alt.tool_calls if alt.tool_calls is defined else alt.get('tool_calls') %}
+    {% if alt.content is string and alt.content %}
+      <div class="meta"><strong>assistant</strong></div>
+      <details>
+        <summary><code>{{ (alt.content or '')[:120] ~ ('…' if (alt.content|length > 120) else '') }}</code></summary>
+        <pre><code>{{ alt.content }}</code></pre>
+      </details>
+    {% endif %}
+    <div class="meta"><strong>tool_calls</strong></div>
+    {% for tc in tcs %}
+      {% set fn = (tc.function.name if tc.function is defined else (tc.get('function') or {}).get('name')) %}
+      {% set args = (tc.function.arguments if tc.function is defined else (tc.get('function') or {}).get('arguments')) %}
+      <div style="margin-bottom:8px">
+        <div class="meta">function: {{ fn }}</div>
+        {% set args_text = args if args is string else (args | string) %}
+        <details>
+          <summary><code class="json">{{ (args_text or '')[:120] ~ ('…' if (args_text|length > 120) else '') }}</code></summary>
+          <pre><code class="json">{{ args_text }}</code></pre>
+        </details>
+      </div>
+    {% endfor %}
+  {% elif alt is mapping and (alt.responses_input or alt.get('responses_input')) %}
+    {% set j = alt | tojson(indent=2) %}
+    <details>
+      <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+      <pre><code class="json">{{ j }}</code></pre>
+    </details>
+  {% else %}
+    {% set j = alt | tojson(indent=2) %}
+    <details>
+      <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+      <pre><code class="json">{{ j }}</code></pre>
+    </details>
+  {% endif %}
+{% endmacro %}
+<section>
+  <h1>Evaluation Summary</h1>
+  <div class="meta">
+    n={{ summary.n or 0 }}; mean={{ (summary.mean or 0) | round(3) }}; ci95={{ (summary.ci95.lcb or 0) | round(3) }}..{{ (summary.ci95.ucb or 0) | round(3) }};
+    with_tools_pct={{ (((summary.tooling or {}).with_tools_pct) or 0) * 100 | round(1) }}%
+  </div>
+  {% set tooling = summary.tooling or {} %}
+  {% if tooling.function_counts %}
+  <details>
+    <summary><strong>Tool usage by function</strong></summary>
+    <table cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+      <tr>
+        <th style="text-align:left">Function</th>
+        <th style="text-align:right">Count</th>
+        <th style="text-align:right">Share</th>
+      </tr>
+      {% set fn_counts = tooling.function_counts or {} %}
+      {% set fn_pct = tooling.function_pct or {} %}
+      {% for name, count in fn_counts | dictsort(by='value', reverse=True) %}
+      <tr>
+        <td>{{ name }}</td>
+        <td style="text-align:right">{{ count }}</td>
+        <td style="text-align:right">{{ ((fn_pct.get(name) or 0) * 100) | round(1) }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</section>
+{% for r in rows %}
+<section>
+  <h2>Sample {{ r.correlation_id }}</h2>
+  {% if r.timestamp %}<div class="meta">ts: {{ r.timestamp }}</div>{% endif %}
+    <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <tr>
+      <th style="text-align:left;width:50%">System A (original)</th>
+      <th style="text-align:left;width:50%">System B (rewritten)</th>
+    </tr>
+    <tr>
+      <td valign="top">
+        <details>
+          <summary><code>{{ (r.orig_system or '')[:120] ~ ('…' if (r.orig_system|length > 120) else '') }}</code></summary>
+          <pre><code>{{ r.orig_system }}</code></pre>
+        </details>
+      </td>
+      <td valign="top">
+        <details>
+          <summary><code>{{ (r.rewritten_system or '')[:120] ~ ('…' if (r.rewritten_system|length > 120) else '') }}</code></summary>
+          <pre><code>{{ r.rewritten_system }}</code></pre>
+        </details>
+      </td>
+    </tr>
+  </table>
+
+  <h3>Shared prefix</h3>
+  {{ render_messages(r.shared_prefix) }}
+
+    <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <tr>
+      <th style="text-align:left;width:50%">Original bad branch</th>
+      <th style="text-align:left;width:50%">Alternative (new assistant)</th>
+    </tr>
+    <tr>
+      <td valign="top">
+        {{ render_messages(r.bad_branch) }}
+      </td>
+      <td valign="top">
+        {{ render_alternative(r.alternative) }}
+      </td>
+    </tr>
+  </table>
+
+  <h3>Grader</h3>
+  <div class="score">Score: {{ (r.grade.score if r.grade else none) }}</div>
+  {% if r.grade and r.grade.rationale is not none %}
+  <pre><code style="white-space:pre-wrap;word-wrap:break-word">{{ r.grade.rationale }}</code></pre>
+  {% endif %}
+</section>
+{% endfor %}
+</body>
+</html>

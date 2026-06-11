@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: website-content
+  namespace: website
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>agentydragon.com</title>
+        <style>
+            :root {
+                --bg: #1a1a2e;
+                --text: #eaeaea;
+                --accent: #e94560;
+                --secondary: #16213e;
+            }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem;
+            }
+            .container {
+                max-width: 600px;
+                text-align: center;
+            }
+            .dragon {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+            }
+            h1 {
+                font-size: 2.5rem;
+                margin-bottom: 0.5rem;
+                color: var(--accent);
+            }
+            .tagline {
+                color: #888;
+                margin-bottom: 2rem;
+                font-style: italic;
+            }
+            .status {
+                background: var(--secondary);
+                padding: 1.5rem;
+                border-radius: 8px;
+                margin-bottom: 2rem;
+            }
+            .status h2 {
+                color: var(--accent);
+                margin-bottom: 0.5rem;
+                font-size: 1rem;
+            }
+            .status p {
+                color: #aaa;
+                font-size: 0.9rem;
+            }
+            .links {
+                display: flex;
+                gap: 1rem;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            .links a {
+                color: var(--accent);
+                text-decoration: none;
+                padding: 0.5rem 1rem;
+                border: 1px solid var(--accent);
+                border-radius: 4px;
+                transition: all 0.2s;
+            }
+            .links a:hover {
+                background: var(--accent);
+                color: var(--bg);
+            }
+            footer {
+                margin-top: 3rem;
+                color: #555;
+                font-size: 0.8rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="dragon">🐉</div>
+            <h1>agentydragon.com</h1>
+            <p class="tagline">Infrastructure under construction</p>
+
+            <div class="status">
+                <h2>Migration in Progress</h2>
+                <p>This site is being migrated to a new Kubernetes cluster.</p>
+                <p>The real content will return soon.</p>
+            </div>
+
+            <div class="links">
+                <a href="https://github.com/agentydragon">GitHub</a>
+                <a href="https://gitlab.com/agentydragon">GitLab</a>
+            </div>
+        </div>
+        <footer>
+            Served from Talos Kubernetes cluster
+        </footer>
+    </body>
+    </html>

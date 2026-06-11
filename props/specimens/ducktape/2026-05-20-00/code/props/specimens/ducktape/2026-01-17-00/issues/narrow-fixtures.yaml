@@ -1,0 +1,91 @@
+rationale: |
+  Several pytest fixtures are defined in shared conftest/fixture files but
+  have only one consumer. Move them closer to their single user.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core/conftest.py:
+        - [25, 25]
+    note: "`text_content` — only used by `test_tool_execution.py`"
+    critic_scopes_expected_to_recall:
+      - [agent_core/conftest.py]
+      - [agent_core/test_tool_execution.py]
+    match_file_restriction:
+      - agent_core/conftest.py
+      - agent_core/test_tool_execution.py
+  - occurrence_id: occ-1
+    files:
+      agent_core/conftest.py:
+        - [31, 31]
+    note: "`noop_agent` — only used by `test_message_processing.py`"
+    critic_scopes_expected_to_recall:
+      - [agent_core/conftest.py]
+      - [agent_core/test_message_processing.py]
+    match_file_restriction:
+      - agent_core/conftest.py
+      - agent_core/test_message_processing.py
+  - occurrence_id: occ-2
+    files:
+      agent_server/conftest.py:
+        - [462, 462]
+    note: >-
+      `fresh_ui_state` is a trivial wrapper (`return new_state()`), only used
+      by test_reducer.py. Other tests (e.g. test_end_turn_ui_integration.py)
+      call `new_state()` directly. Delete the fixture and replace its 6 uses
+      in test_reducer.py with direct `new_state()` calls.
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+      - [agent_server/server/test_reducer.py]
+    match_file_restriction:
+      - agent_server/conftest.py
+      - agent_server/server/test_reducer.py
+  - occurrence_id: occ-3
+    files:
+      agent_server/conftest.py:
+        - [530, 583]
+    note: >-
+      `event_ts`, `make_event_record`,
+      `make_user_text_event`, `make_tool_call_event`,
+      `make_function_output_event` — entire chain only
+      used by `test_history_fold_typed.py`
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+      - [agent_server/server/test_history_fold_typed.py]
+    match_file_restriction:
+      - agent_server/conftest.py
+      - agent_server/server/test_history_fold_typed.py
+  - occurrence_id: occ-4
+    files:
+      agent_server/conftest.py:
+        - [102, 102]
+    note: "`mcp_client_box` — only used by `test_exec_roundtrip.py`"
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]
+      - [agent_server/test_exec_roundtrip.py]
+    match_file_restriction:
+      - agent_server/conftest.py
+      - agent_server/test_exec_roundtrip.py
+  - occurrence_id: occ-5
+    files:
+      mcp_infra/compositor/conftest.py:
+        - [22, 22]
+        - [36, 36]
+    note: "`mounted_compositor_admin` + `compositor_admin_tool` — chain only used by `test_admin_client.py`"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/compositor/conftest.py]
+      - [mcp_infra/compositor/test_admin_client.py]
+    match_file_restriction:
+      - mcp_infra/compositor/conftest.py
+      - mcp_infra/compositor/test_admin_client.py
+  - occurrence_id: occ-6
+    files:
+      mcp_infra/conftest.py:
+        - [46, 46]
+    note: "`typed_docker_client` — only used by `exec/test_docker.py`"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/conftest.py]
+      - [mcp_infra/exec/test_docker.py]
+    match_file_restriction:
+      - mcp_infra/conftest.py
+      - mcp_infra/exec/test_docker.py

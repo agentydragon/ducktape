@@ -1,0 +1,12 @@
+%%tana%%
+- Links (test reference KhlJy8yJ37KN)
+  - Basic link
+    - https://www.google.com/
+      - URL:: https://www.google.com/
+  - Inline link: [[https://www.reddit.com/^_VJcNPQVghEd]]
+  - Inline link with different text: [[here^G3mhwksxY0VD]]
+  - Link with embedded additional content:
+    - https://xkcd.com/
+      - URL:: https://xkcd.com/
+      - content 1
+      - content 2

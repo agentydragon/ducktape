@@ -1,0 +1,20 @@
+#!/usr/bin/python3
+
+import datetime
+import sqlite3
+import sys
+
+conn = sqlite3.connect("/home/prvak/.Skype/mp.cnx/main.db")
+c = conn.cursor()
+
+if len(sys.argv) == 1:
+    for row in c.execute("SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;"):
+        timestamp = row[2]
+        timestamp = datetime.datetime.fromtimestamp(timestamp)
+        print(f"{row[1]} {timestamp}: {row[3]}")
+
+else:
+    person = sys.argv[1]
+    for row in c.execute("SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;"):
+        if person in row[1]:
+            print(f"{row[3]}")

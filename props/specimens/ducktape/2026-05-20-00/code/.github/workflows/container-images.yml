@@ -1,0 +1,217 @@
+# Build and push container images to GHCR in parallel, then pin digests atomically.
+#
+# Images:
+#   rbe-worker    — BuildBuddy RBE worker (devinfra/rbe_image/Dockerfile)
+#   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
+#   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
+#                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
+#
+# (cpap-sync is built via Bazel — see //x/cpap_sync:image and the
+# push-images.yml matrix.)
+#
+# Independent of CI — bazel-ci uses the pinned image from image_pins.json.
+# When a Dockerfile changes, this workflow builds, pins, and the next CI run
+# picks up the new digest.
+name: Container Images
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "devinfra/rbe_image/**"
+      - "skills/freecad/Dockerfile.test"
+      - "third_party/kubernetes-mcp-server-pin.txt"
+      - "x/rtl_tcp/Dockerfile"
+      - ".github/workflows/container-images.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: container-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  RBE_IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-worker
+  FREECAD_IMAGE: ghcr.io/${{ github.repository_owner }}/freecad-test
+  # CLEANUP: remove K8S_MCP_IMAGE block when upstream releases the
+  # /.well-known/oauth-authorization-server 404 fallback (post-v0.0.60).
+  # See third_party/kubernetes-mcp-server-pin.txt.
+  K8S_MCP_IMAGE: ghcr.io/${{ github.repository_owner }}/kubernetes-mcp-server
+
+jobs:
+  rbe-image:
+    name: RBE Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pin_tag: ${{ steps.build.outputs.pin_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/ghcr-build-push
+        id: build
+        with:
+          image: ${{ env.RBE_IMAGE }}
+          context: .
+          file: devinfra/rbe_image/Dockerfile
+          cache_from: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache,mode=max
+
+  freecad-image:
+    name: FreeCAD Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pin_tag: ${{ steps.build.outputs.pin_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/ghcr-build-push
+        id: build
+        with:
+          image: ${{ env.FREECAD_IMAGE }}
+          context: skills/freecad
+          file: skills/freecad/Dockerfile.test
+          cache_from: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache,mode=max
+
+  # CLEANUP: delete this job when upstream releases a kubernetes-mcp-server version
+  # with the /.well-known/oauth-authorization-server 404 fallback (currently on main,
+  # post-v0.0.60 but unreleased). See third_party/kubernetes-mcp-server-pin.txt.
+  kubernetes-mcp-server-image:
+    name: Kubernetes MCP Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pin_tag: ${{ steps.build.outputs.pin_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Fetch upstream source at pinned commit
+        run: |
+          COMMIT=$(grep -v '^#' third_party/kubernetes-mcp-server-pin.txt | tr -d '[:space:]')
+          echo "Fetching containers/kubernetes-mcp-server at $COMMIT"
+          git clone --filter=tree:0 https://github.com/containers/kubernetes-mcp-server.git /tmp/k8s-mcp-server
+          git -C /tmp/k8s-mcp-server checkout "$COMMIT"
+
+      - uses: ./.github/actions/ghcr-build-push
+        id: build
+        with:
+          image: ${{ env.K8S_MCP_IMAGE }}
+          context: /tmp/k8s-mcp-server
+          file: /tmp/k8s-mcp-server/Dockerfile
+          cache_from: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache,mode=max
+
+  rtl-tcp-image:
+    name: RTL-TCP
+    # Only push from devel — Flux ImagePolicy filters on devel-* tags.
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/rtl-tcp
+          context: x/rtl_tcp
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache,mode=max
+
+  # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
+  # bypasses the main-protection ruleset (github-actions can't bypass on
+  # personal-account repos). The GHCR docker login below stays on github.token
+  # — registry auth is unaffected by branch protection.
+  pin-digests:
+    name: Pin Digests
+    needs: [rbe-image, freecad-image]
+    if: always() && !cancelled() && (needs.rbe-image.result == 'success' || needs.freecad-image.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/mint-automation-token
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: prettier
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pin rbe_worker
+        if: needs.rbe-image.result == 'success'
+        run: |
+          DIGEST=$(docker manifest inspect "$RBE_IMAGE:${{ needs.rbe-image.outputs.pin_tag }}" --verbose | \
+            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
+          python3 devinfra/update_image_pin.py rbe_worker --digest "$DIGEST"
+
+      - name: Pin freecad_test
+        if: needs.freecad-image.result == 'success'
+        run: |
+          DIGEST=$(docker manifest inspect "$FREECAD_IMAGE:${{ needs.freecad-image.outputs.pin_tag }}" --verbose | \
+            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
+          python3 devinfra/update_image_pin.py freecad_test --digest "$DIGEST"
+
+      - name: Commit and push
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          git add devinfra/image_pins.json devinfra/bbr.json
+
+          if git diff --cached --quiet; then
+            echo "Image pins already up to date"
+            exit 0
+          fi
+
+          MSG="chore: pin"
+          if [[ "${{ needs.rbe-image.result }}" == "success" ]]; then
+            MSG="$MSG rbe_worker"
+          fi
+          if [[ "${{ needs.freecad-image.result }}" == "success" ]]; then
+            MSG="$MSG freecad_test"
+          fi
+          MSG="$MSG image digest(s) [skip ci]"
+
+          git commit -m "$MSG"
+
+          BRANCH="${GITHUB_REF_NAME}"
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+
+          # Push as the ducktape-automation App via URL-embedded HTTP Basic
+          # auth — see the corresponding comment in sync-pins.yml for why the
+          # extraheader-replacement approach didn't work.
+          set +x
+          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
+            git config --local --unset-all "$key"
+          done
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"

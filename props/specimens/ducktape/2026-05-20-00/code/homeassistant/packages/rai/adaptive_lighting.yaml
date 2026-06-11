@@ -1,0 +1,24 @@
+adaptive_lighting:
+  - name: Rai room lights
+    lights:
+      - light.rai_s_room_ceiling_lights
+    min_brightness: 1
+    max_brightness: 100
+    min_color_temp: 2700
+    max_color_temp: 6500
+    initial_transition: 1.0
+    interval: 90
+    transition: 45.0
+    sunrise_time: "10:00:00" # wake-up time; ramp starts at 9:40 AM
+    brightness_mode: tanh
+    brightness_mode_time_dark: 1200 # 20 min = ramp up 9:40→10:00
+    brightness_mode_time_light: 1200 # 20 min = reach max 10:00→10:20
+    sleep_brightness: 1
+    sleep_color_temp: 1000
+    sleep_rgb_color: [255, 56, 0]
+    sleep_rgb_or_color_temp: rgb_color
+    sleep_transition: 1.0
+    take_over_control: true
+    intercept: true
+    multi_light_intercept: true
+    include_config_in_attributes: true

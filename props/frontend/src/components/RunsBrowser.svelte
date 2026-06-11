@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
-  import { DataTable } from "@careswitch/svelte-data-table";
   import BackButton from "./BackButton.svelte";
   import {
     fetchRuns,
@@ -31,7 +30,7 @@
     initialRuns?: RunInfo[];
     initialTotalCount?: number;
   }
-  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
+  const { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
     $props();
 
   // State
@@ -97,23 +96,40 @@
     }
   }
 
-  // Sort state tracked outside DataTable so it survives data changes
+  // Sort the current server-loaded page without applying client-side pagination.
   let sortColumn = $state("created_at");
   let sortDirection: "asc" | "desc" = $state("desc");
 
-  const table = $derived(
-    new DataTable({
-      data: runs,
-      columns: [
-        { id: "agent_run_id", key: "agent_run_id", name: "ID", sortable: true },
-        { id: "image_digest", key: "image_digest", name: "Definition", sortable: true },
-        { id: "split", key: "split", name: "Split", sortable: true },
-        { id: "model", key: "model", name: "Model", sortable: true },
-        { id: "status", key: "status", name: "Status", sortable: true },
-        { id: "created_at", key: "created_at", name: "Created", sortable: true },
-      ],
-      initialSort: sortColumn,
-      initialSortDirection: sortDirection,
+  function getSortValue(run: RunInfo, columnId: string): number | string {
+    switch (columnId) {
+      case "agent_run_id":
+        return run.agent_run_id;
+      case "image_digest":
+        return run.image_digest;
+      case "split":
+        return run.split ?? "";
+      case "model":
+        return run.model;
+      case "status":
+        return run.status;
+      case "created_at":
+        return Date.parse(run.created_at);
+      default:
+        return "";
+    }
+  }
+
+  const sortedRuns = $derived(
+    [...runs].sort((a, b) => {
+      const aValue = getSortValue(a, sortColumn);
+      const bValue = getSortValue(b, sortColumn);
+      let result: number;
+      if (typeof aValue === "number" && typeof bValue === "number") {
+        result = aValue - bValue;
+      } else {
+        result = String(aValue).localeCompare(String(bValue));
+      }
+      return sortDirection === "asc" ? result : -result;
     })
   );
 
@@ -260,7 +276,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each table.rows as run (run.agent_run_id)}
+          {#each sortedRuns as run (run.agent_run_id)}
             <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
               <td class="px-3 py-2 text-xs">
                 <RunIdLink id={run.agent_run_id} />

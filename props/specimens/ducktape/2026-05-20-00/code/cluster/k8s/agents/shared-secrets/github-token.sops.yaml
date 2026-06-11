@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-token
+  namespace: claude-sandbox
+  annotations:
+    description: GitHub PAT for agentydragon-agent machine user
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-gateway
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-gateway
+type: Opaque
+stringData:
+  token: ENC[AES256_GCM,data:6ljIyszHdThYcaThq/hsN/ROe8evW+yLH1ENZAh1bY+gM5U+XdJGXw==,iv:+ve9MMAdtL1ByHgEVGckERH88wfoiVx3gWCvuMfE3ZI=,tag:seAlV3igculuyzk4jR4jTw==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDZ2ZjR0hseEVXR2Z3WGFK
+        cklrTjFWQ2RSMjc4S0NwQjdDc0srWkNoc3dzCnh4dlBjdzc0OVNaNzVBeW1XbURW
+        SWlrY1pibFJhQzlEUHJyeWtRMWwvV2cKLS0tIDNwVkxXai9oSHVaSEZFZ2NhbXZB
+        dHNvZkJxd0E0T3FZMllOc3lwMUZJK1kK9o1HHoLqAq6SU7/mecLnFc2t67yJcdRH
+        n9WJwQFLHM1IJaHsgMlXj5Apk+0EMntcPZrpb+nLJVU2UEaesSXHPA==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBUSFhMR3RJWEtBVlZhZ2xt
+        TkZFTlFGb0ZPZklyS2dUMmVzdFNqTkFLNEhBCnhLUjBXNnBCUndtWk9jcVlyY1J4
+        bUZzZ3VXZ004OUtTbWZyY29FMlJ6WGsKLS0tIFgyaWFxMzd6NlM3RUJORXlNK1dN
+        LzZwOVE2c0dCaEZtdlpuajEwMDB4SEEKHUpyfaoN/nFSb+uw0IQ24vA1BbT7aRAH
+        VNI9mOb0F8EhoGD0WLKUjOAu8+bsn3r6IiRgaiXz/zkgFOaVw/3qaw==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-05T19:50:18Z"
+  mac: ENC[AES256_GCM,data:vRauRn7q8ZTS4uUovJoUQ8fhB+slOUqUUg3FkcPVU+3Q4dgl3F6f8aq/0489HFul4ugMBMm3Bjrq919b3H1HFQQ78ledNlmV3DWuHf961101nHPoPu3cBjicuHOlnq60jm82MwqIQgZb0uLsdTUBMC2x36c5UqmJJerHOrtbhpM=,iv:1XfRsY68zZPbAu7BrY6IAKo66Qut82cRlXxWAvou7Qk=,tag:Sydhg3n8sMvAim/AATSluA==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

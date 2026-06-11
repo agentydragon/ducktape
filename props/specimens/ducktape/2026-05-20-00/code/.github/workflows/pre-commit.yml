@@ -1,0 +1,83 @@
+# Pre-commit checks reusable workflow
+#
+# Runs safety checks + Bazel aspects (lint, typecheck, format)
+name: Pre-commit checks
+
+on:
+  push:
+    branches: [main, devel]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      # ============================================================================
+      # ENVIRONMENT SETUP
+      # ============================================================================
+
+      - uses: ./.github/actions/setup-nix-devtools
+
+      - uses: ./.github/actions/setup-bazel
+        id: bazel-cache
+
+      # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-roles-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+
+      # Roles ARE needed for syntax checking - ansible-playbook --syntax-check resolves
+      # role dependencies from meta/main.yml files (e.g., legacy_gui depends on
+      # petermosmans.customize-gnome)
+      - name: Install Ansible Galaxy roles
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+
+      - name: Restore pre-commit cache
+        id: cache-precommit-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      # ============================================================================
+      # PRE-COMMIT RUN
+      # ============================================================================
+
+      - name: Run pre-commit
+        run: |
+          # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
+          # isolated node environments (markdownlint-cli2 hook uses npm)
+          unset NODE_OPTIONS
+          pre-commit run --all-files --show-diff-on-failure
+
+      # ============================================================================
+      # CACHE SAVES
+      # ============================================================================
+
+      - name: Save pre-commit cache
+        if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
+
+      - name: Save Ansible Galaxy roles cache
+        if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.ansible/roles
+          key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}

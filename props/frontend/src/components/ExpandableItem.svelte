@@ -8,7 +8,7 @@
     alignItems?: string;
     children: Snippet<[]>;
   }
-  let { item, alignItems, children }: Props = $props();
+  const { item, alignItems, children }: Props = $props();
 </script>
 
 <div class="space-y-1">

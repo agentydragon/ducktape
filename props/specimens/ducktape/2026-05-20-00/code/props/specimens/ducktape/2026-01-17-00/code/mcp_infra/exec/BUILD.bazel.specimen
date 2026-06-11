@@ -1,0 +1,53 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "exec",
+    srcs = [
+        "__init__.py",
+        "bwrap.py",
+        "container_session.py",
+        "direct.py",
+        "docker/__init__.py",
+        "docker/launcher.py",
+        "docker/server.py",
+        "models.py",
+        "read_image.py",
+        "seatbelt.py",
+        "subprocess.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cli_util",
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/seatbelt",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//typer_di",
+    ],
+)
+
+py_test(
+    name = "test_exec",
+    srcs = [
+        "test_bwrap.py",
+        "test_direct.py",
+        "test_docker.py",
+        "test_docker_unit.py",
+        "test_seatbelt.py",
+    ],
+    main = "test_direct.py",
+    deps = [
+        ":exec",
+        "//mcp_infra:test_support",
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//types_docker",
+    ],
+)

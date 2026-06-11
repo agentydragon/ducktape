@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import http.cookiejar
 import json
 import subprocess
@@ -37,8 +38,7 @@ def get_password_from_k8s(namespace: str, secret_name: str, secret_key: str) -> 
     b64_value = result.stdout.strip()
     if not b64_value:
         raise RuntimeError(f"Empty value for {namespace}/{secret_name}:{secret_key}")
-    decoded = subprocess.run(["base64", "-d"], input=b64_value, capture_output=True, text=True, check=True)
-    return decoded.stdout
+    return base64.b64decode(b64_value).decode()
 
 
 def start_port_forward(namespace: str, service: str, local_port: int, remote_port: int) -> subprocess.Popen:

@@ -1,0 +1,370 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# keep
+py_binary(
+    name = "compare_eval_runs",
+    main_module = "loom.gym.compare_runs",
+    deps = [":compare_runs"],
+)
+
+py_library(
+    name = "analyze_baselines",
+    srcs = ["analyze_baselines.py"],
+    deps = [
+        ":market_seed_tasks",
+        ":scoring",
+        "@pypi//inspect_ai",
+        "@pypi//matplotlib",
+    ],
+)
+
+py_binary(
+    name = "analyze_baselines_bin",
+    main_module = "loom.gym.analyze_baselines",
+    deps = [":analyze_baselines"],
+)
+
+# keep
+py_binary(
+    name = "agent_eval_bin",
+    main_module = "loom.gym.agent_eval",
+    deps = [":agent_eval"],
+)
+
+py_library(
+    name = "agent_eval",
+    srcs = ["agent_eval.py"],
+    deps = [
+        ":inspect_harness",
+        ":monthly_series",
+        ":panel",
+        ":series_tasks",
+        "//finance/evidence:checkout",
+        "@pypi//anthropic",  # inspect_ai's anthropic provider imports it lazily
+        "@pypi//inspect_ai",
+    ],
+)
+
+py_library(
+    name = "compare_runs",
+    srcs = ["compare_runs.py"],
+    deps = [
+        ":monthly_series",
+        ":scoring",
+        ":series_tasks",
+        "//finance/evidence:checkout",
+    ],
+)
+
+py_library(
+    name = "baseline_llm",
+    srcs = ["baseline_llm.py"],
+    deps = [
+        ":scoring",
+        ":task",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "monthly_series",
+    srcs = ["monthly_series.py"],
+    deps = [
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+    ],
+)
+
+py_library(
+    name = "bundle_tasks",
+    srcs = ["bundle_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":task",
+    ],
+)
+
+py_library(
+    name = "comparison_tasks",
+    srcs = ["comparison_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":task",
+    ],
+)
+
+py_library(
+    name = "path_tasks",
+    srcs = ["path_tasks.py"],
+    deps = [
+        ":bundle_tasks",
+        ":monthly_series",
+        ":task",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "market_seed_tasks",
+    srcs = ["market_seed_tasks.py"],
+    deps = [":task"],
+)
+
+py_library(
+    name = "series_tasks",
+    srcs = ["series_tasks.py"],
+    deps = [
+        ":bundle_tasks",
+        ":comparison_tasks",
+        ":market_seed_tasks",
+        ":model_cutoffs",
+        ":monthly_series",
+        ":path_tasks",
+        ":seed_tasks",
+        ":task",
+    ],
+)
+
+py_library(
+    name = "dossier",
+    srcs = ["dossier.py"],
+    deps = [":monthly_series"],
+)
+
+py_library(
+    name = "inspect_harness",
+    srcs = ["inspect_harness.py"],
+    deps = [
+        ":baseline_llm",
+        ":dossier",
+        ":scoring",
+        ":task",
+        "@pypi//inspect_ai",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "panel",
+    srcs = ["panel.py"],
+    deps = [":task"],
+)
+
+py_library(
+    name = "scoring",
+    srcs = ["scoring.py"],
+    deps = [
+        ":task",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "seed_tasks",
+    srcs = ["seed_tasks.py"],
+    deps = [":task"],
+)
+
+py_library(
+    name = "task",
+    srcs = ["task.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_baseline_llm",
+    srcs = ["test_baseline_llm.py"],
+    deps = [
+        ":baseline_llm",
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_market_seed_tasks",
+    srcs = ["test_market_seed_tasks.py"],
+    data = ["//cluster/k8s:market_roster_yaml"],
+    deps = [
+        ":market_seed_tasks",
+        ":model_cutoffs",
+        ":seed_tasks",
+        ":task",
+        "//:conftest",
+        "//finance/evidence:markets",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_model_cutoffs",
+    srcs = ["test_model_cutoffs.py"],
+    deps = [
+        ":model_cutoffs",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_scoring",
+    srcs = ["test_scoring.py"],
+    deps = [
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_task",
+    srcs = ["test_task.py"],
+    deps = [
+        ":seed_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "model_cutoffs",
+    srcs = ["model_cutoffs.py"],
+)
+
+py_test(
+    name = "test_series_tasks",
+    srcs = ["test_series_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":series_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_panel",
+    srcs = ["test_panel.py"],
+    deps = [
+        ":monthly_series",
+        ":panel",
+        ":seed_tasks",
+        ":series_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dossier",
+    srcs = ["test_dossier.py"],
+    deps = [
+        ":dossier",
+        ":monthly_series",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bundle_tasks",
+    srcs = ["test_bundle_tasks.py"],
+    deps = [
+        ":bundle_tasks",
+        ":monthly_series",
+        ":task",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_comparison_tasks",
+    srcs = ["test_comparison_tasks.py"],
+    deps = [
+        ":comparison_tasks",
+        ":monthly_series",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_path_tasks",
+    srcs = ["test_path_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":path_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compare_runs",
+    srcs = ["test_compare_runs.py"],
+    deps = [
+        ":compare_runs",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_monthly_series",
+    srcs = ["test_monthly_series.py"],
+    deps = [
+        ":monthly_series",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inspect_harness",
+    size = "large",
+    srcs = ["test_inspect_harness.py"],
+    data = [
+        "//loom/wayback_proxy:image_info",
+        "//third_party/containers:python_3_13_slim",
+    ],
+    requires_docker = True,
+    deps = [
+        ":dossier",
+        ":inspect_harness",
+        ":monthly_series",
+        ":series_tasks",
+        ":task",
+        "//:conftest",
+        "//loom/wayback_proxy:fake_ia",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
+        "@pypi//inspect_ai",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openwebrx-data
+  namespace: sdr
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-proxmox
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,21 @@
+# Recurring across snapshots; same issue in ducktape/2025-11-22-00,
+# ducktape/2025-11-22-01 (fixed in ducktape/2025-11-26-00, which writes the store).
+rationale: |
+  The agentStatusError store (stores.ts) is exported and read in RightSidebar.svelte (the
+  `{#if $agentStatusErrorStore}` error banner), but nothing ever writes it — no code calls
+  `agentStatusError.set(...)`. The store is permanently null, so the error banner is dead UI.
+  Either populate the store on status-fetch errors or remove the store and its consumer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/web/src/features/agents/stores.ts:
+        - [9, 9]
+      adgn/src/adgn/agent/web/src/components/RightSidebar.svelte:
+        - [64, 68]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/features/agents/stores.ts
+      - - adgn/src/adgn/agent/web/src/components/RightSidebar.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/features/agents/stores.ts
+      - adgn/src/adgn/agent/web/src/components/RightSidebar.svelte

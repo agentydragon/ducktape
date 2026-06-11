@@ -1,0 +1,56 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: study-casino-db
+  namespace: study-casino
+  annotations:
+    description: "CNPG Postgres for study-casino state."
+spec:
+  # 3 instances spread across 3 OVH nodes via the topologyKey=hostname
+  # anti-affinity below. Tolerates 1-node loss without read-quorum or
+  # primary-availability impact.
+  instances: 3
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # One PostgreSQL instance per HIL node for real HA.
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 1Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
+  # reconcile and keeps the password in sync with study-casino-db-readonly.
+  # Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT PRIVILEGES)
+  # are applied by the provisioner Job running as the `studycasino` owner —
+  # `managed.roles` only covers role attributes, not object permissions.
+  managed:
+    roles:
+      - name: study_casino_ro
+        ensure: present
+        login: true
+        passwordSecret:
+          name: study-casino-db-readonly
+        comment: "Read-only access for sandbox agents (see cluster/k8s/study-casino/db/readonly-role.sql)"
+
+  bootstrap:
+    initdb:
+      database: studycasino
+      owner: studycasino
+      # CNPG auto-generates credentials in secret study-casino-db-app

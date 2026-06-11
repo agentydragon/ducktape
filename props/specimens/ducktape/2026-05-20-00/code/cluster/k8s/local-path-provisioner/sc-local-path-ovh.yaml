@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# zone (not region): region=hil includes Hetzner VPS too, but the user volume
+# at /var/mnt/seaweedfs-data only exists on the OVH Kimsufi workers
+# (declared via Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf).
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh

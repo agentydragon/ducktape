@@ -1,0 +1,8 @@
+%%tana%%
+- Code (test reference YbPcBamWZFGV)
+  - Inline code: <code>foo = "bar"</code>
+  - Code block, Python:
+```Python
+#!/usr/bin/python
+print("hello world")
+```

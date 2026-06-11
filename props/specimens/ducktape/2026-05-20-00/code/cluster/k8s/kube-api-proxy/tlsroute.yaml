@@ -1,0 +1,22 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: kube-api-passthrough
+  namespace: default
+  annotations:
+    description: |
+      TLS passthrough route for the Kubernetes API at api.allegedly.works.
+      The Cilium Gateway forwards the raw TLS stream without terminating it,
+      so the API server handles its own TLS and sees client certificates.
+      This enables client certificate authentication (x509 with O= group mapping).
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: kube-api-passthrough
+  hostnames:
+    - "api.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: kubernetes
+          port: 443

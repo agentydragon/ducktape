@@ -1,0 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# NOTE: No aggregator target - use specific per-file targets like :docker, :net
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "docker",
+    srcs = ["docker.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "net",
+    srcs = ["net.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//tenacity"],
+)

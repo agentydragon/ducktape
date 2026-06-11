@@ -1,0 +1,16 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Glob",
+  "tool_input": {
+    "pattern": "*.md"
+  },
+  "tool_response": {
+    "filenames": ["/Users/user/test/README.md", "/Users/user/test/CLAUDE.md"],
+    "durationMs": 7,
+    "numFiles": 2,
+    "truncated": false
+  }
+}

@@ -1,0 +1,8 @@
+# Synthetic public-fixture location (paired with augur/api/testdata/config.yaml).
+location_id: location_a
+display_name: "Location A"
+jurisdiction_ids:
+  - federal_us
+  - california
+annual_property_tax_rate: 0.01
+annual_special_assessment_usd: 0.0

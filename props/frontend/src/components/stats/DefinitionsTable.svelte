@@ -17,7 +17,7 @@
     onCellClick?: (_: CellClickInfo) => void;
   }
 
-  let { definitions, exampleCounts, onCellClick }: Props = $props();
+  const { definitions, exampleCounts, onCellClick }: Props = $props();
 
   function getStats(def: DefinitionRow, split: Split, kind: ExampleKind): SplitScopeStats | undefined {
     return def.stats[split]?.[kind];

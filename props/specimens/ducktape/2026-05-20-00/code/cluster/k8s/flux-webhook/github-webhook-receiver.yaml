@@ -1,0 +1,97 @@
+---
+# Flux Receiver: GitHub webhooks → immediate reconciliation
+#
+# Handles two event types on a single URL (webhookPath is stable across events):
+#   push            → reconcile flux-system GitRepository (eliminates 1-min poll lag)
+#   registry_package → reconcile all GHCR ImageRepositories (eliminates 5-min poll lag)
+#
+# Both event types trigger reconciliation of all listed resources, which is harmless:
+# an ImageRepository scan on a git push is a no-op, and a GitRepository reconciliation
+# on an image push is a no-op.
+#
+# The GitHub webhook is auto-configured by terraform/gitops/flux-webhook-token
+# (github_repository_webhook with events = ["push", "registry_package"]).
+#
+# Requirement for registry_package: each GHCR package must be linked to the
+# ducktape repo in GitHub for the event to fire on this repo-level webhook.
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: github
+  namespace: flux-system
+spec:
+  type: github
+  events:
+    - push
+    - registry_package
+  secretRef:
+    name: github-webhook-token
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: flux-system
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: activitywatch
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: airlock
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: auth-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: claude-jwt-rotation
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: attic-jwt-rotation
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: grocy-mcp-oidc-server
+    # CLEANUP: remove when upstream releases the well-known 404 fallback.
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: kubernetes-mcp-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: homeassistant-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-matrix
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-exec
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: props-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: manifold-mcp-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: mcp-oauth-facade
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-mcp
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: study-casino
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-token-broker
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: token-provisioner
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: cpap-sync
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: rtl-tcp

@@ -1,0 +1,38 @@
+rationale: |
+  Broad exception catching around docker image inspection silently swallows all errors.
+
+  The current code catches bare `Exception` when checking if an image exists locally:
+  ```python
+  try:
+      image = await docker.images.inspect(full_ref)
+      ...
+  except Exception:
+      pass  # Image not found locally, need to pull
+  ```
+
+  This swallows network errors, Docker daemon issues, permission problems, and other
+  real failures that should surface.
+
+  When an image doesn't exist, aiodocker raises `aiodocker.DockerError` with `status == 404`.
+  The codebase already uses the correct pattern in `agent_pkg/host/builder.py:86`:
+  ```python
+  except aiodocker.DockerError as e:
+      if e.status != 404:
+          raise
+  ```
+
+  Should catch `aiodocker.DockerError` specifically and only suppress 404 (not found),
+  re-raising other errors.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      props/core/registry/images.py:
+        - [49, 50]
+    note: "except Exception: pass swallows all errors; should catch aiodocker.DockerError and only suppress status 404"
+    critic_scopes_expected_to_recall:
+      - - props/core/registry/images.py
+    match_file_restriction:
+      - props/core/registry/images.py

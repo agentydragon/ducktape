@@ -1,0 +1,40 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "seatbelt",
+    srcs = [
+        "compile.py",
+        "model.py",
+        "runner.py",
+        "validate.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_seatbelt",
+    srcs = [
+        "conftest.py",
+        "test_allow_all.py",
+        "test_allow_root_deny_users.py",
+        "test_basic_env_and_python.py",
+        "test_compile_allow_all.py",
+        "test_default_deny_validate_and_abort.py",
+        "test_default_deny_widening.py",
+        "test_minimal_true.py",
+        "test_python_basic.py",
+        "test_restrict_echo.py",
+        "test_runner_async.py",
+        "test_trivial_yes_hello.py",
+    ],
+    main = "test_allow_all.py",
+    deps = [
+        ":seatbelt",
+        "//mcp_infra:test_support",
+        "@pypi//pytest",  # test files import pytest directly
+    ],
+)

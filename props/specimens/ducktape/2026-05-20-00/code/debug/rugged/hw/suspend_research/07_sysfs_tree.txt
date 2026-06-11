@@ -1,0 +1,79 @@
+Permissions Size User Date Modified Name
+lrwxrwxrwx     - root 14 May 12:37  firmware_node -> ../../../LNXSYSTM:00/LNXSYBUS:00/PNP0A08:00/device:47/device:48
+lrwxrwxrwx     - root 14 May 12:37  iommu -> ../../../virtual/iommu/dmar2
+lrwxrwxrwx     - root 14 May 12:37  iommu_group -> ../../../../kernel/iommu_groups/22
+drwxr-xr-x     - root 14 May 12:37  link
+drwxr-xr-x     - root 14 May 12:37  power
+lrwxrwxrwx     - root 14 May 12:37  subsystem -> ../../../../bus/pci
+.r--r--r--  4.1k root 14 May 12:37  ari_enabled
+.rw-r--r--  4.1k root 14 May 12:37  broken_parity_status
+.r--r--r--  4.1k root 14 May 12:37  class
+.rw-r--r--  4.1k root 14 May 12:37  config
+.r--r--r--  4.1k root 14 May 12:37  consistent_dma_mask_bits
+.r--r--r--  4.1k root 14 May 12:37  current_link_speed
+.r--r--r--  4.1k root 14 May 12:37  current_link_width
+.rw-r--r--  4.1k root 14 May 12:37  d3cold_allowed
+.r--r--r--  4.1k root 14 May 12:37  device
+.r--r--r--  4.1k root 14 May 12:37  devspec
+.r--r--r--  4.1k root 14 May 12:37  dma_mask_bits
+.rw-r--r--  4.1k root 14 May 12:37  driver_override
+.rw-r--r--  4.1k root 14 May 12:37  enable
+.r--r--r--  4.1k root 14 May 12:37  irq
+.r--r--r--  4.1k root 14 May 12:37  local_cpulist
+.r--r--r--  4.1k root 14 May 12:37  local_cpus
+.r--r--r--  4.1k root 14 May 12:37  max_link_speed
+.r--r--r--  4.1k root 14 May 12:37  max_link_width
+.r--r--r--  4.1k root 14 May 12:37  modalias
+.rw-r--r--  4.1k root 14 May 12:37  msi_bus
+.rw-r--r--  4.1k root 14 May 12:37  numa_node
+.r--r--r--  4.1k root 14 May 12:37  power_state
+.-w--w----  4.1k root 14 May 12:37  remove
+.-w-------  4.1k root 14 May 12:37  rescan
+.-w-------  4.1k root 14 May 12:37  reset
+.rw-r--r--  4.1k root 14 May 12:37  reset_method
+.r--r--r--  4.1k root 14 May 12:37  resource
+.rw-------  4.1k root 14 May 12:37  resource0
+.r--r--r--  4.1k root 14 May 12:37  revision
+.rw-r--r--  4.1k root 14 May 12:37  sriov_drivers_autoprobe
+.rw-r--r--  4.1k root 14 May 12:37  sriov_numvfs
+.r--r--r--  4.1k root 14 May 12:37  sriov_offset
+.r--r--r--  4.1k root 14 May 12:37  sriov_stride
+.r--r--r--  4.1k root 14 May 12:37  sriov_totalvfs
+.r--r--r--  4.1k root 14 May 12:37  sriov_vf_device
+.r--r--r--  4.1k root 14 May 12:37  sriov_vf_total_msix
+.r--r--r--  4.1k root 14 May 12:37  subsystem_device
+.r--r--r--  4.1k root 14 May 12:37  subsystem_vendor
+.rw-r--r--  4.1k root 14 May 12:37  uevent
+.r--r--r--  4.1k root 14 May 12:37  vendor
+.r--r--r--  4.1k root 14 May 12:37  waiting_for_supplier
+
+/sys/bus/pci/devices/0000:71:00.0/link:
+Permissions Size User Date Modified Name
+.rw-r--r--  4.1k root 14 May 12:37  clkpm
+.rw-r--r--  4.1k root 14 May 12:37  l0s_aspm
+.rw-r--r--  4.1k root 14 May 12:37  l1_1_aspm
+.rw-r--r--  4.1k root 14 May 12:37  l1_1_pcipm
+.rw-r--r--  4.1k root 14 May 12:37  l1_2_aspm
+.rw-r--r--  4.1k root 14 May 12:37  l1_2_pcipm
+.rw-r--r--  4.1k root 14 May 12:37  l1_aspm
+
+/sys/bus/pci/devices/0000:71:00.0/power:
+Permissions Size User Date Modified Name
+.rw-r--r--  4.1k root 14 May 12:37  async
+.rw-r--r--  4.1k root 14 May 12:37  autosuspend_delay_ms
+.rw-r--r--  4.1k root 14 May 12:37  control
+.r--r--r--  4.1k root 14 May 12:37  runtime_active_kids
+.r--r--r--  4.1k root 14 May 12:37  runtime_active_time
+.r--r--r--  4.1k root 14 May 12:37  runtime_enabled
+.r--r--r--  4.1k root 14 May 12:37  runtime_status
+.r--r--r--  4.1k root 14 May 12:37  runtime_suspended_time
+.r--r--r--  4.1k root 14 May 12:37  runtime_usage
+.rw-r--r--  4.1k root 14 May 12:37  wakeup
+.r--r--r--  4.1k root 14 May 12:37  wakeup_abort_count
+.r--r--r--  4.1k root 14 May 12:37  wakeup_active
+.r--r--r--  4.1k root 14 May 12:37  wakeup_active_count
+.r--r--r--  4.1k root 14 May 12:37  wakeup_count
+.r--r--r--  4.1k root 14 May 12:37  wakeup_expire_count
+.r--r--r--  4.1k root 14 May 12:37  wakeup_last_time_ms
+.r--r--r--  4.1k root 14 May 12:37  wakeup_max_time_ms
+.r--r--r--  4.1k root 14 May 12:37  wakeup_total_time_ms

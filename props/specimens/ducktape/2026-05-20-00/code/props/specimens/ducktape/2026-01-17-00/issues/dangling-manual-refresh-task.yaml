@@ -1,0 +1,23 @@
+rationale: |
+  GitHubWatcher.trigger_refresh() creates a task and stores it in
+  _manual_refresh_task, but this task is never cleaned up in stop().
+  The stop() method only cancels _periodic_task, leaving _manual_refresh_task
+  to run unsupervised. If the task raises an exception, it will be silently
+  lost. Should either add done callback for error logging, or cancel/await
+  in stop() alongside the periodic task.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/github_watcher.py:
+        - [157, 157]
+        - [71, 80]
+    note: >-
+      _manual_refresh_task is created but not cancelled in stop() (lines 71-80
+      only handle _periodic_task). Task errors are silently lost.
+    critic_scopes_expected_to_recall:
+      - - wt/server/github_watcher.py
+    match_file_restriction:
+      - wt/server/github_watcher.py

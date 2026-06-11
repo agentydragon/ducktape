@@ -1,0 +1,29 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: loki
+  namespace: loki
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: loki
+  updatePolicy:
+    # Auto: VPA evicts and recreates loki-0 when the recommendation changes.
+    # Safe for a single-replica StatefulSet that already tolerates restarts.
+    # The initial-only mode caused OOMKill loops: loki-0 was sized at 100Mi
+    # at creation time, grew beyond that as it ingested logs, and kubelet
+    # in-place container restarts never trigger the VPA admission webhook.
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+      - containerName: loki
+        minAllowed:
+          memory: 256Mi
+        maxAllowed:
+          memory: 1Gi
+      - containerName: loki-sc-rules
+        minAllowed:
+          memory: 100Mi
+        maxAllowed:
+          memory: 256Mi

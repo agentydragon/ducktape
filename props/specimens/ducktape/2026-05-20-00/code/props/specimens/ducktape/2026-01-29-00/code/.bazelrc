@@ -1,0 +1,75 @@
+common --enable_bzlmod
+
+# Disable MODULE.bazel.lock to avoid churn between environments.
+# The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
+# has platform-specific resolution that causes the lockfile to differ between local
+# dev machines and CI/cloud environments. Since we pin versions explicitly in
+# MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
+common --lockfile_mode=off
+
+# Lint configuration (Python ruff + JS/TS eslint)
+# Run with: bazel build --config=lint //...
+build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
+build:lint --output_groups=+rules_lint_report
+
+# Type checking configuration
+# Run with: bazel build --config=typecheck //...
+# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
+build:typecheck --@rules_python//python/config_settings:python_version=3.13
+build:typecheck --aspects=//tools/lint:linters.bzl%mypy_aspect
+build:typecheck --output_groups=+mypy
+
+# Combined lint + typecheck
+# Run with: bazel build --config=check //...
+# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
+build:check --@rules_python//python/config_settings:python_version=3.13
+build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect
+build:check --output_groups=+rules_lint_report,+mypy
+
+# Rust linting (clippy)
+# Run with: bazel build --config=clippy //finance/worthy:all
+build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build:clippy --output_groups=+clippy_checks
+
+# Rust formatting check
+# Run with: bazel build --config=rustfmt //finance/worthy:all
+build:rustfmt --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rustfmt --output_groups=+rustfmt_checks
+
+# Combined Rust lint + format
+# Run with: bazel build --config=rust-check //finance/worthy:all
+build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
+
+# ESLint only (for JS/TS without Python)
+# Run with: bazel build --config=eslint //props/frontend:all
+build:eslint --aspects=//tools/lint:linters.bzl%eslint
+build:eslint --output_groups=+rules_lint_report
+
+# Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
+# Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
+
+# CI profiling - captures performance data for every build
+# Run with: bazel build --config=ci-profile //...
+# Produces: bazel-profile.gz (Chrome tracing format), execution-log.json (action-level timing)
+build:ci-profile --profile=bazel-profile.gz
+build:ci-profile --execution_log_json_file=execution-log.json
+
+# Stamping - embeds build metadata (commit hash, etc.) into build artifacts
+# Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
+build --stamp --workspace_status_command=tools/stamp.sh
+
+# Props e2e test environment passthrough
+# These only pass through when the vars are set in the environment
+# For props e2e tests: set up infrastructure, export vars, then run bazel test
+test --test_env=PGHOST
+test --test_env=PGPORT
+test --test_env=PGUSER
+test --test_env=PGPASSWORD
+test --test_env=PGDATABASE
+test --test_env=AGENT_PGHOST
+test --test_env=PROPS_REGISTRY_PROXY_HOST
+test --test_env=PROPS_REGISTRY_PROXY_PORT
+test --test_env=PROPS_DOCKER_NETWORK
+test --test_env=PROPS_E2E_HOST_HOSTNAME
+test --test_env=DOCKER_HOST

@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: plaid-mcp-db-readonly-provisioner
+  namespace: plaid-mcp
+  annotations:
+    description: "Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role."
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: plaid-mcp-db-readonly-provisioner
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -x
+              exec psql \
+                --set=ON_ERROR_STOP=1 \
+                -f /sql/readonly-role.sql
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-app
+                  key: password
+            - name: PGHOST
+              value: plaid-mcp-db-rw.plaid-mcp.svc
+            - name: PGDATABASE
+              value: plaidmcp
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: plaid-mcp-db-readonly-sql

@@ -1,0 +1,38 @@
+# SeaweedFS filer config (postgres2 backend).
+#
+# Loaded into the Seaweed CR's filer.config via kustomize configMapGenerator
+# + replacements; the operator then re-emits this string as the
+# `seaweedfs-filer` ConfigMap that the filer pod mounts at /etc/seaweedfs.
+#
+# Postgres credentials are NOT here — they're injected as env vars
+# WEED_POSTGRES2_USERNAME / WEED_POSTGRES2_PASSWORD in the Seaweed CR
+# (sourced from CNPG's auto-generated seaweedfs-filer-db-app Secret).
+# viper's `WEED_` env prefix with dot→underscore replacement
+# (seaweedfs/weed/util/config.go) maps env vars onto these TOML keys.
+
+[postgres2]
+enabled = true
+createTable = """
+  CREATE TABLE IF NOT EXISTS "%s" (
+    dirhash   BIGINT,
+    name      VARCHAR(65535),
+    directory VARCHAR(65535),
+    meta      bytea,
+    PRIMARY KEY (dirhash, name)
+  );
+"""
+hostname = "seaweedfs-filer-db-rw.seaweedfs.svc"
+port = 5432
+database = "seaweedfs"
+sslmode = "disable"
+connection_max_idle = 100
+connection_max_open = 100
+connection_max_lifetime_seconds = 0
+enableUpsert = true
+upsertQuery = """
+  INSERT INTO "%[1]s" (dirhash, name, directory, meta)
+    VALUES($1, $2, $3, $4)
+    ON CONFLICT (dirhash, name) DO UPDATE SET
+      directory=EXCLUDED.directory,
+      meta=EXCLUDED.meta
+"""

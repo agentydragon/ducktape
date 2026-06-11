@@ -1,0 +1,24 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "runtime",
+    srcs = [
+        "examples/mcp_discover.py",
+        "mcp.py",
+        "output.py",
+    ],
+    data = glob(["**/*.md"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":runtime"],
+)

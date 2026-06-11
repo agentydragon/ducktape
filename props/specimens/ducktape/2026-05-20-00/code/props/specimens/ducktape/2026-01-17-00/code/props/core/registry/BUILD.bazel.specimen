@@ -1,0 +1,11 @@
+"""Registry module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "images",
+    srcs = ["images.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//aiodocker"],
+)

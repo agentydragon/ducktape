@@ -1,0 +1,312 @@
+module(
+    name = "ducktape",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "rules_python", version = "1.4.1")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.4.1")
+bazel_dep(name = "gazelle", version = "0.34.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
+bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
+bazel_dep(name = "aspect_rules_lint", version = "2.0.0-rc0")
+bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
+bazel_dep(name = "rules_multitool", version = "1.3.0")
+bazel_dep(name = "rules_mypy", version = "0.40.0")
+
+# Fork with two fixes for CI disk exhaustion during mypy type-checking:
+# 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
+#    get their own .mypy_cache outputs that downstream targets can symlink to
+#    (upstream skips external deps, causing each internal target to re-cache them)
+# 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
+#    upstream caches, reducing disk usage from O(n²) to O(n)
+# TODO: Propose these changes upstream and switch back to BCR version if accepted
+git_override(
+    module_name = "rules_mypy",
+    commit = "2417b972cbde24a66d6c5b10fab5737dcb1d9858",
+    remote = "https://github.com/agentydragon/rules_mypy.git",
+)
+
+# Terraform/OpenTofu validation (cluster/)
+bazel_dep(name = "rules_tf", version = "0.0.10")
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+tf.download(
+    # Mirror for provider downloads (empty dict uses defaults)
+    mirror = {},
+    tfdoc_version = "0.19.0",
+    tflint_version = "0.53.0",
+    use_tofu = True,
+    version = "1.11.2",  # OpenTofu version (latest as of 2025-12)
+)
+use_repo(tf, "tf_toolchains")
+
+register_toolchains("@tf_toolchains//:all")
+
+# Container images (rules_oci)
+bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "python_slim",
+    digest = "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
+    image = "docker.io/library/python",
+    platforms = ["linux/amd64"],
+    tag = "3.13-slim",
+)
+use_repo(oci, "python_slim", "python_slim_linux_amd64")
+
+# JavaScript/TypeScript (Node.js frontends)
+bazel_dep(name = "aspect_rules_js", version = "2.4.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.0")
+bazel_dep(name = "rules_nodejs", version = "6.5.2")
+
+# Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
+bazel_dep(name = "rules_playwright", version = "0.5.3")
+
+playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright")
+playwright.repo(
+    name = "playwright_browsers",
+    # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
+    playwright_version = "1.50.1",
+)
+use_repo(playwright, "playwright_browsers")
+
+# Node.js toolchain
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+
+# Workspace-level npm packages (pnpm workspace)
+# All JS/TS projects share a single lockfile and node_modules
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm.npm_translate_lock(
+    name = "npm_ducktape",
+    # Generate bin entries for dev tools from workspace root
+    bins = {
+        "eslint": ["eslint=./bin/eslint.js"],
+        "prettier": ["prettier=./bin/prettier.cjs"],
+        "svelte-check": ["svelte-check=./bin/svelte-check"],
+        "@sveltejs/kit": ["svelte-kit=./svelte-kit.js"],
+        "vite": ["vite=./bin/vite.js"],
+        "storybook": ["storybook=./index.cjs"],
+        "http-server": ["http-server=./bin/http-server"],
+    },
+    # Track package.json and workspace files for auto-update
+    data = [
+        "//:agent_server/web/package.json",
+        "//:package.json",
+        "//:pnpm-workspace.yaml",
+        "//:props/frontend/package.json",
+        "//:rspcache/admin_ui/package.json",
+    ],
+    # Disable postinstall for unrs-resolver - it tries to download native bindings from npm registry
+    # which fails in Bazel's sandboxed build (network blocked). Safe to skip since @storybook/test-runner
+    # (the only consumer via jest-resolve) isn't executed during bazel build - only used for manual testing.
+    lifecycle_hooks_exclude = ["unrs-resolver"],
+    npmrc = "@@//:.npmrc",
+    # Root pnpm-lock.yaml with workspace packages
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # Hoist ESLint plugins for runtime discovery
+    public_hoist_packages = {
+        "@eslint/js": [""],
+        "@typescript-eslint/eslint-plugin": [""],
+        "@typescript-eslint/parser": [""],
+        "eslint-plugin-svelte": [""],
+        "eslint-plugin-import": [""],
+        "eslint-plugin-react": [""],
+        "eslint-plugin-react-hooks": [""],
+        "svelte-eslint-parser": [""],
+        "globals@16.5.0": [""],
+    },
+    # Auto-regenerate pnpm-lock.yaml when package.json changes
+    update_pnpm_lock = True,
+)
+use_repo(npm, "npm_ducktape")
+
+# Proxy configuration for Claude Code web vs local development
+# Generates @proxy_config//:proxy_env.bzl with PROXY_ENV dict
+proxy_config = use_extension("//tools/claude_hooks/auth_proxy:proxy_config_defs.bzl", "proxy_config")
+use_repo(proxy_config, "proxy_config")
+
+# Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool.hub(lockfile = "//tools/multitool:lockfile.json")
+use_repo(multitool, "multitool")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+# Proxy env for pip downloads is injected via .bazelrc --action_env by the
+# session-start hook on Claude Code web. No hardcoded proxy here - this file
+# should work both on local dev machines and on CC web.
+
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    requirements_lock = "//:requirements_bazel.txt",
+)
+
+# Separate pip hub for homeassistant - requires Python 3.13.2+
+# Using "3.13" for Bazel toolchain (actual runtime is 3.13.x)
+pip.parse(
+    hub_name = "pypi_homeassistant",
+    python_version = "3.13",
+    requirements_lock = "//homeassistant:requirements.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant")
+
+# Type stubs for mypy - extracts types-* and *-stubs packages from requirements
+# and provides them to the mypy aspect for per-target stub inclusion.
+types = use_extension("@rules_mypy//mypy:types.bzl", "types")
+types.requirements(
+    name = "pip_types",
+    # Exclusions:
+    # - sqlalchemy-stubs, types-sqlalchemy: SQLAlchemy 2.0+ has inline types via
+    #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
+    # - types-paramiko: transitive dep but paramiko isn't in pypi hub
+    # - types-psycopg2: we use psycopg2-binary, not psycopg2
+    # - types-toml: we use tomli, not toml
+    # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
+    exclude_requirements = [
+        "sqlalchemy-stubs",
+        "types-jinja2",
+        "types-paramiko",
+        "types-psycopg2",
+        "types-sqlalchemy",
+        "types-toml",
+    ],
+    pip_requirements = "@pypi//:requirements.bzl",
+    requirements_txt = "//:requirements_bazel.txt",
+)
+use_repo(types, "pip_types")
+
+# uv toolchain for requirements locking
+uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
+uv.configure(version = "0.6.2")
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming
+
+# — rust toolchains —
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# ─ Rust crates (crate_universe) ─────────────────────────────────────────────
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+
+# If your workspace has Cargo.toml at the root:
+crate.from_cargo(
+    name = "crates",  # this becomes the repo name
+    cargo_lockfile = "//:Cargo.lock",
+    manifests = ["//:Cargo.toml"],
+)
+
+# expose the generated repo (↑ name="crates")
+use_repo(crate, "crates")
+
+# ─ core deps ────────────────────────────────────────────────────────────────
+bazel_dep(name = "rules_haskell", version = "1.0")  # Bazel 7-ready
+
+# ─ GHC toolchain (binary bindist) ───────────────────────────────────────────
+haskell_toolchains = use_extension(
+    "@rules_haskell//extensions:haskell_toolchains.bzl",
+    "haskell_toolchains",
+)
+haskell_toolchains.bindists(version = "9.0.2")
+
+# ─ third-party Hackage packages via Stackage snapshot ───────────────────────
+stack = use_extension(
+    "@rules_haskell//extensions:stack_snapshot.bzl",
+    "stack_snapshot",
+)
+
+# Define the Stackage snapshot
+stack.snapshot(
+    name = "lts-19.17",  # This is the snapshot name
+)
+
+# Declare the packages we need
+stack.package(
+    name = "base",
+)
+stack.package(
+    name = "hakyll",
+)
+
+# Add required dependency packages for xml-conduit
+# Configure attoparsec with its internal components
+stack.package(
+    name = "attoparsec",
+    components = [
+        "lib:attoparsec",
+        "lib:attoparsec-internal",
+    ],
+    components_dependencies = {"lib:attoparsec": ["lib:attoparsec-internal"]},
+)
+stack.package(
+    name = "blaze-html",
+)
+stack.package(
+    name = "blaze-markup",
+)
+stack.package(
+    name = "conduit",
+)
+stack.package(
+    name = "conduit-extra",
+)
+stack.package(
+    name = "data-default-class",
+)
+stack.package(
+    name = "resourcet",
+)
+stack.package(
+    name = "xml-types",
+)
+
+# Set up xml-conduit override
+stack.package(
+    name = "xml-conduit",
+    vendored = "@xml_conduit//:xml-conduit",
+)
+
+# expose the repos the two extensions create
+use_repo(
+    haskell_toolchains,
+    "all_bindist_toolchains",
+)
+
+register_toolchains("@all_bindist_toolchains//:all")  # makes the toolchain visible
+
+use_repo(
+    stack,
+    "stackage",  # The repository for the pinned snapshot
+)
+
+# ─ one-off override for xml-conduit ─────────────────────────────────────────
+extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
+use_repo(extra_deps, "xml_conduit")
+
+# ─ External binaries via http_archive ────────────────────────────────────────
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# gitstatusd - Git status daemon for wt tests
+# Build target: //third_party/gitstatusd
+http_archive(
+    name = "gitstatusd",
+    build_file_content = 'exports_files(["gitstatusd-linux-x86_64"])',
+    sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
+    urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
+)

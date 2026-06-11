@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "bootstrap",
+    srcs = [
+        "__init__.py",
+        "bootstrap.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/exec",
+        "//mcp_infra/resources",
+        "//mcp_infra/stubs",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)

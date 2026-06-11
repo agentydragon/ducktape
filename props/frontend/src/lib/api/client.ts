@@ -2,10 +2,13 @@ import createClient from "openapi-fetch";
 import type { paths, components } from "./schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
-// Create typed API client (types from Bazel: //props/frontend/src/lib:schema)
-export const api = createClient<paths>({ baseUrl: "" });
+// Create typed API client (types from Bazel: //props/frontend/src/lib:schema).
+// `credentials: "include"` sends the Authentik SSO session cookie (props_session)
+// so browser users authenticated via /auth/login don't need a token.
+export const api = createClient<paths>({ baseUrl: "", credentials: "include" });
 
-// Attach admin token as Bearer header to every request
+// Attach the admin token as a Bearer header when one is stored (token fallback).
+// Without a token, the session cookie above carries authentication.
 api.use({
   async onRequest({ request }) {
     const token = getToken();
@@ -24,10 +27,16 @@ api.use({
 
 // Authenticated fetch for endpoints with slash-containing path params (snapshot slugs).
 // openapi-fetch encodes '/' in path params, breaking FastAPI's {slug:path} routes.
-async function authedFetch<T>(url: string): Promise<T> {
+async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const resp = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    ...init,
+    credentials: "include",
+    headers,
   });
   if (resp.status === 401) onAuthFailed();
   if (!resp.ok) {
@@ -222,6 +231,9 @@ export type LocationAnchor = components["schemas"]["LocationAnchor"];
 export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];
 export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
 
+// Container logs (from Loki)
+export type RunLogsResponse = components["schemas"]["RunLogsResponse"];
+
 export async function fetchSnapshots() {
   const { data, error } = await api.GET("/api/gt/snapshots");
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
@@ -244,6 +256,10 @@ export async function fetchSnapshotDetail(
 export type FileTreeNode = components["schemas"]["FileTreeNode"];
 export type FileTreeResponse = components["schemas"]["FileTreeResponse"];
 export type FileContentResponse = components["schemas"]["FileContentResponse"];
+export type FileContentsResponse = {
+  files: FileContentResponse[];
+  missing: string[];
+};
 
 // Fetch snapshot file tree
 export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeResponse> {
@@ -255,12 +271,30 @@ export async function fetchSnapshotFile(snapshotSlug: string, filePath: string):
   return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`);
 }
 
+// Fetch multiple file contents from a snapshot with one backend tar read.
+export async function fetchSnapshotFiles(snapshotSlug: string, paths: string[]): Promise<FileContentsResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths }),
+  });
+}
+
 // Fetch LLM requests for an agent run
 export async function fetchLLMRequests(runId: string) {
   const { data, error } = await api.GET("/api/runs/{run_id}/llm_requests", {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
+  return data;
+}
+
+// Fetch container logs (from Loki) for an agent run
+export async function fetchRunLogs(runId: string) {
+  const { data, error } = await api.GET("/api/runs/{run_id}/logs", {
+    params: { path: { run_id: runId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch logs"));
   return data;
 }
 

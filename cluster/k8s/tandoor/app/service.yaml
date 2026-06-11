@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # Named `tandoor-web` instead of `tandoor` to avoid K8s auto-injected env var
+  # collision: a Service named `tandoor` in namespace `tandoor` creates
+  # `TANDOOR_PORT=tcp://...` which the Tandoor app misinterprets as a port number.
+  name: tandoor-web
+  namespace: tandoor
+spec:
+  selector:
+    app.kubernetes.io/name: tandoor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+  type: ClusterIP

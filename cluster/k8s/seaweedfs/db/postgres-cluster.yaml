@@ -1,0 +1,48 @@
+# Filer metadata store for SeaweedFS, hosting the postgres2 backend.
+#
+# Filer's previous leveldb2 setup lived in the pod's ephemeral writable
+# layer (no PVC) — the 3.93 → 4.29 upgrade rolled the filer pod and
+# wiped every bucket's filer metadata, orphaning .dat data in the
+# volume servers. CNPG fixes this with persistent storage + WAL backups +
+# replication, and removes the leveldb2 single-instance constraint so the
+# filer can be HA later.
+#
+# Profile: OVH-HA per cluster/docs/cnpg_conventions.md (two instances on
+# separate kimsufi nodes, co-located with the SeaweedFS volume servers).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: seaweedfs-filer-db
+  namespace: seaweedfs
+spec:
+  instances: 2
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    # One PostgreSQL instance per OVH kimsufi node for real HA.
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: seaweedfs
+      owner: seaweedfs
+      # CNPG auto-generates credentials in Secret seaweedfs-filer-db-app
+      # (keys: host, port, username, password, dbname, uri, jdbc-uri).
+      # The filer reads username + password from env vars
+      # WEED_POSTGRES2_USERNAME / WEED_POSTGRES2_PASSWORD wired in the
+      # Seaweed CR. hostname/port/database are static in filer.config.

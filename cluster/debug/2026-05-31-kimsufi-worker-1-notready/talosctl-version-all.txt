@@ -1,0 +1,54 @@
+=== talosctl version node=147.135.37.175 endpoint=147.135.39.162 ===
+Client:
+Talos v1.12.6
+Server:
+	NODE:        147.135.37.175
+	Tag:         v1.12.3
+	SHA:         6d6471f6
+	Built:
+	Go version:  go1.25.7
+	OS/Arch:     linux/amd64
+	Enabled:     RBAC
+
+=== talosctl version node=147.135.39.162 endpoint=147.135.39.162 ===
+Client:
+Talos v1.12.6
+Server:
+	NODE:        147.135.39.162
+	Tag:         v1.12.3
+	SHA:         6d6471f6
+	Built:
+	Go version:  go1.25.7
+	OS/Arch:     linux/amd64
+	Enabled:     RBAC
+
+=== talosctl version node=147.135.104.5 endpoint=147.135.39.162 ===
+Client:
+Talos v1.12.6
+Server:
+	NODE:        147.135.104.5
+	Tag:         v1.12.3
+	SHA:         6d6471f6
+	Built:
+	Go version:  go1.25.7
+	OS/Arch:     linux/amd64
+	Enabled:     RBAC
+
+=== talosctl version node=147.135.104.16 endpoint=147.135.39.162 ===
+Client:
+Talos v1.12.6
+Server:
+	NODE:        147.135.104.16
+	Tag:         v1.12.3
+	SHA:         6d6471f6
+	Built:
+	Go version:  go1.25.7
+	OS/Arch:     linux/amd64
+	Enabled:     RBAC
+
+=== talosctl version node=147.135.39.176 endpoint=147.135.39.162 ===
+Client:
+Talos v1.12.6
+Server:
+error getting version: 1 error occurred:
+	* 147.135.39.176: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: read unix @->/system/run/machined/machine.sock: use of closed network connection"

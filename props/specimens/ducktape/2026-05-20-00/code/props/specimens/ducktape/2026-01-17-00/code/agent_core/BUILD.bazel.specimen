@@ -1,0 +1,90 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "agent_core",
+    srcs = [
+        "agent.py",
+        "compaction.py",
+        "events.py",
+        "handler.py",
+        "logging_utils.py",
+        "loop_control.py",
+        "progress.py",
+        "transcript_handler.py",
+        "turn_limit.py",
+    ],
+    data = ["compaction_prompt.md"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//rich",
+        "@pypi//structlog",
+    ],
+)
+
+_TEST_DEPS = [
+    ":agent_core",
+    "//agent_core_testing",
+    "//mcp_infra/bootstrap",
+    "@pypi//fastmcp",
+    "@pypi//mcp",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = [
+        "conftest.py",
+        "test_mcp_integration.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_tool_execution",
+    srcs = [
+        "conftest.py",
+        "test_tool_execution.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_message_processing",
+    srcs = [
+        "conftest.py",
+        "test_message_processing.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_handlers",
+    srcs = [
+        "conftest.py",
+        "test_handlers.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_testing_infrastructure",
+    srcs = [
+        "conftest.py",
+        "test_testing_infrastructure.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":agent_core"],
+)

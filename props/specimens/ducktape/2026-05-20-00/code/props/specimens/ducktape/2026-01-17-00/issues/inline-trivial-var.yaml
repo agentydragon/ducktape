@@ -1,0 +1,12 @@
+rationale: |
+  `worktree_id` is assigned and used exactly once. Inline it:
+  `wtid=make_worktree_id(worktree_name)`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/handlers/worktree_handler.py:
+        - [44, 44]
+        - [47, 47]
+    critic_scopes_expected_to_recall:
+      - [wt/server/handlers/worktree_handler.py]

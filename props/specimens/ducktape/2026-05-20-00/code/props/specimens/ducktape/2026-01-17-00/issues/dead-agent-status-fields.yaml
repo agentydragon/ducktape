@@ -1,0 +1,26 @@
+rationale: |
+  `AgentStatus` in `types.ts` declares 8 optional fields beyond `id` and `live`,
+  but the store is only ever set with `{ id, live }` (chat/stores.ts lines 46, 61).
+  The fields `lifecycle`, `policy`, `mcp`, `container`, `ui`, `run_phase`,
+  `pending_approvals`, and `last_event_at` are never populated.
+  `RightSidebar.svelte` reads `policy`, `mcp`, and `container` behind `{#if}`
+  guards that never fire. Removing them also makes these types dead:
+  `UiStateLite`, `ContainerState`, `PolicyState`, `McpState`, and
+  `McpServerState` — each only used as a field type of `AgentStatus` or
+  transitively through those fields.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/web/src/shared/types.ts:
+        - [14, 18] # McpServerState, McpState, PolicyState, UiStateLite, ContainerState
+        - [23, 30] # dead optional fields on AgentStatus
+      agent_server/web/src/features/chat/stores.ts:
+        - [46, 46] # only write site: { id, live: true }
+        - [61, 61] # only write site: { id, live: false }
+      agent_server/web/src/components/RightSidebar.svelte:
+        - [63, 81] # dead {#if} branches reading policy, mcp, container
+    critic_scopes_expected_to_recall:
+      - [agent_server/web/src/shared/types.ts, agent_server/web/src/features/chat/stores.ts]

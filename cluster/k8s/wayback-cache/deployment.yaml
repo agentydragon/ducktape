@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wayback-cache
+  namespace: wayback-cache
+  labels:
+    app.kubernetes.io/name: wayback-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wayback-cache
+  strategy:
+    type: Recreate # RWO PVC; restart also re-resolves web.archive.org DNS
+  template:
+    metadata:
+      annotations:
+        reloader.stakater.com/auto: "true"
+      labels:
+        app.kubernetes.io/name: wayback-cache
+    spec:
+      nodeSelector:
+        # Same zone pinning as other seaweedfs-ovh consumers (forgejo): the
+        # cache lives on always-on OVH nodes, independent of home Proxmox.
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        # nginx:alpine workers run as uid/gid 101; make the PVC writable.
+        fsGroup: 101
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:alpine
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8090
+              name: authed
+          env:
+            # nginx:alpine entrypoint renders templates/*.template with
+            # envsubst, substituting only WAYBACK_CACHE_TOKEN (the filter) so
+            # nginx's own $variables survive. Output overwrites nginx.conf.
+            - name: WAYBACK_CACHE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: wayback-cache-token
+                  key: token
+            - name: NGINX_ENVSUBST_FILTER
+              value: WAYBACK_CACHE_TOKEN
+            - name: NGINX_ENVSUBST_OUTPUT_DIR
+              value: /etc/nginx
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/templates/nginx.conf.template
+              subPath: nginx.conf
+              readOnly: true
+            - name: cache
+              mountPath: /cache
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # Probes hit tier 1, which serves cache hits without touching the
+          # IA rate limiter — limit_req delays cannot fail probes.
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: wayback-cache-config
+        - name: cache
+          persistentVolumeClaim:
+            claimName: wayback-cache-data-ovh

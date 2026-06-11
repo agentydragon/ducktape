@@ -1,0 +1,23 @@
+name: Get Areas
+request:
+  method: GET
+  url: https://api.habitify.me/areas
+  headers:
+    Authorization: API_KEY_MASKED
+    Content-Type: application/json
+response:
+  status_code: 200
+  headers:
+    content-type: application/json; charset=utf-8
+  json:
+    message: Success
+    data:
+      - id: -LrYlUBnzjyceYei_k5Z
+        name: H****h
+        priority: B
+      - id: -LrYmfO8jwLw3QdAyBMk
+        name: S****************e
+        priority: U
+    version: v1.2
+    status: true
+    errors: []

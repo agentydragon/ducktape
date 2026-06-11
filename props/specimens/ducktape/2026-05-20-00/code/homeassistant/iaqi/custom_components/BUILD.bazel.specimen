@@ -1,0 +1,2 @@
+# NOTE: No __init__.py in this directory - Bazel auto-generates init stubs.
+# The indoor_aqi subdirectory has the actual custom component code.

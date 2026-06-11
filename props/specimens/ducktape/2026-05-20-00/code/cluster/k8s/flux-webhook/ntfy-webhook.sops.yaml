@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ntfy-webhook
+  namespace: flux-system
+  annotations:
+    description: ntfy.sh webhook for Flux failure notifications
+type: Opaque
+stringData:
+  address: ENC[AES256_GCM,data:Z5OLbPAlqQyXKuoEK2EO6Wlzaa/nM2w1snGALehetojVnnu26S26Q7Fokt/eFQ==,iv:t9356AlFxPjCCAUWn/4wTXvVJAVFAPxvNsvsNqGJtWw=,tag:HYqa6FqQK8WeXUydGqSXlA==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmOEJNQnM1ZGxEY3BPa1FK
+        Wk5rNVM5c0U2KzBKRzcwVWszMUZJZXdQbzJzCkhBZkFCWmJLWXFycU5kUThWa1Za
+        d2tMT25xNVZjSUpDRHdRQ1hOaDRnSUUKLS0tIFJzNXRvMHloM2h0bmRvaHNib002
+        a0VvQ1BwLzdvUVJOWER1UDhiYldlMHcKTkjHz9CnCve7TXwhIfPHMG/IDVErpxD8
+        T8WpQUQpmGIvMZG9iy0G4qOEmgG6h2RgUxVmym6TWP0oF6RUS8fsTA==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB1YTBJL3BUSGJUd2RTQTlm
+        OHdibkZJNkZBd21kOUVXRjVuLytveXQxNFhVCnd6ejIvcS9oWlBrREJ5SHJlYWc2
+        RHpWa2hMcy9XNFBTYU9sMGg5dnllUDQKLS0tIFpGNk5Fd2R6Q29GQkllTlRicDg1
+        WmxXSjJsMGFlcUNzVDQ0cGI4YTJqUXMKZiC3DqmRgx94pXvUwWczFhSvhZ2VQRwB
+        AtgDLzC1kNAhSiSGB6A1P4b2tZkzWgiJhqtxTn4PBTuy3IrWNUYM6A==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-05T19:50:18Z"
+  mac: ENC[AES256_GCM,data:r1V0/KgvuHbLioibOxCnbpWqybeJQIpDRhZhqrha5GuPUn/+6qjtE41T7vkEqiLLI5JI10fGkSF3tNXkaJ8BVzqfifvCTwJK31vWNrdJcZl9uEmRKtPWXwOuqwcMwUO8KkgDaMPQ6tcS+bkAit5SjVXwUYq6DfDZVHBgmAtAzJY=,iv:SO4KRibr/DE8/tnYIXrYP7iXrU1ZbXs0wSYAC2v8tPw=,tag:Wv68tC3okLL+XtB+q9CIrQ==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

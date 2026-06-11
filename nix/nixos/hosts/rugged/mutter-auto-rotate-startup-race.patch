@@ -1,0 +1,103 @@
+diff --git a/src/backends/meta-monitor-manager.c b/src/backends/meta-monitor-manager.c
+index ca1485086..88c9916b1 100644
+--- a/src/backends/meta-monitor-manager.c
++++ b/src/backends/meta-monitor-manager.c
+@@ -126,6 +126,7 @@ typedef struct _MetaMonitorManagerPrivate
+ 
+   uint32_t backlight_serial;
+ 
++  gboolean panel_orientation_inhibit_tracking;
+   gboolean power_save_inhibit_orientation_tracking;
+ } MetaMonitorManagerPrivate;
+ 
+@@ -164,6 +165,7 @@ meta_monitor_manager_init (MetaMonitorManager *manager)
+     meta_monitor_manager_get_instance_private (manager);
+ 
+   priv->power_save_mode = META_POWER_SAVE_ON;
++  priv->panel_orientation_inhibit_tracking = FALSE;
+   priv->power_save_inhibit_orientation_tracking = FALSE;
+ }
+ 
+@@ -1164,11 +1166,21 @@ orientation_changed (MetaMonitorManager *manager)
+     {
+       priv->initial_orient_change_done = TRUE;
+       if (handle_initial_orientation_change (orientation_manager, manager))
+         {
+-          meta_orientation_manager_inhibit_tracking (orientation_manager);
++          if (!manager->panel_orientation_managed &&
++              !priv->panel_orientation_inhibit_tracking)
++            {
++              meta_orientation_manager_inhibit_tracking (orientation_manager);
++              priv->panel_orientation_inhibit_tracking = TRUE;
++            }
+           return;
+         }
+ 
+-      meta_orientation_manager_inhibit_tracking (orientation_manager);
++      if (!manager->panel_orientation_managed &&
++          !priv->panel_orientation_inhibit_tracking)
++        {
++          meta_orientation_manager_inhibit_tracking (orientation_manager);
++          priv->panel_orientation_inhibit_tracking = TRUE;
++        }
+     }
+ 
+   if (!manager->panel_orientation_managed)
+@@ -1293,10 +1305,13 @@ static void
+ update_panel_orientation_managed (MetaMonitorManager *manager)
+ {
+   MetaOrientationManager *orientation_manager;
++  MetaMonitorManagerPrivate *priv =
++    meta_monitor_manager_get_instance_private (manager);
+   ClutterBackend *clutter_backend;
+   ClutterSeat *seat;
+   gboolean panel_orientation_managed;
+ 
+   clutter_backend = meta_backend_get_clutter_backend (manager->backend);
+@@ -1320,7 +1335,14 @@ update_panel_orientation_managed (MetaMonitorManager *manager)
+ 
+   if (panel_orientation_managed)
+     {
+-      meta_orientation_manager_uninhibit_tracking (orientation_manager);
++      if (priv->panel_orientation_inhibit_tracking)
++        {
++          meta_orientation_manager_uninhibit_tracking (orientation_manager);
++          priv->panel_orientation_inhibit_tracking = FALSE;
++        }
+ 
+       /* Claiming the sensor is asynchronous. We listen to
+        * MetaOrientationManager::sensor-active to rotate to the current orientation
+        * once the sensor is claimed.
+@@ -1332,7 +1354,15 @@ update_panel_orientation_managed (MetaMonitorManager *manager)
+     {
+       MetaMonitorsConfig *current_config =
+         meta_monitor_config_manager_get_current (manager->config_manager);
+ 
+-      meta_orientation_manager_inhibit_tracking (orientation_manager);
++      if (priv->initial_orient_change_done &&
++          !priv->panel_orientation_inhibit_tracking)
++        {
++          meta_orientation_manager_inhibit_tracking (orientation_manager);
++          priv->panel_orientation_inhibit_tracking = TRUE;
++        }
+ 
+       /* Rotate back to normal transform when orientation goes unmanaged */
+       if (current_config)
+         {
+diff --git a/src/backends/meta-orientation-manager.c b/src/backends/meta-orientation-manager.c
+index 704e275a8..4f886e5e7 100644
+--- a/src/backends/meta-orientation-manager.c
++++ b/src/backends/meta-orientation-manager.c
+@@ -526,6 +526,12 @@ void
+ meta_orientation_manager_uninhibit_tracking (MetaOrientationManager *self)
+ {
++  if (self->inhibited_count == 0)
++    {
++      g_warning ("Ignoring unmatched orientation tracking uninhibit");
++      return;
++    }
++
+   self->inhibited_count--;
+ 
+   if (self->inhibited_count == 0)
+     sync_accelerometer_claimed (self);

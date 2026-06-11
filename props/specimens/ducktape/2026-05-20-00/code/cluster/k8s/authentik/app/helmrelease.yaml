@@ -1,0 +1,218 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  interval: 24h
+  url: https://charts.goauthentik.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  interval: 15m
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: authentik
+      version: "2026.2.1"
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: authentik
+  values:
+    # Global configuration
+    global:
+      deploymentAnnotations:
+        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-secrets,authentik-user-password"
+        configmap.reloader.stakater.com/reload: "authentik-sso-blueprints"
+
+    # Mount SSO blueprint ConfigMap into worker for native blueprint processing
+    blueprints:
+      configMaps:
+        - authentik-sso-blueprints
+
+    # Authentik server configuration
+    authentik:
+      # Secret key will be available in the main authentik secret via ESO merge
+      secret_key: ""
+
+      # Error reporting
+      error_reporting:
+        enabled: false
+
+      # PostgreSQL configuration — external CNPG cluster (authentik-db)
+      postgresql:
+        host: "authentik-db-rw"
+        name: "authentik"
+        user: "authentik"
+        password: "" # Loaded via env var (AUTHENTIK_POSTGRESQL__PASSWORD from CNPG secret)
+
+      # Redis configuration (optional for better performance)
+      redis:
+        host: ""
+
+      # Bootstrap configuration (password and token from ESO)
+      bootstrap:
+        # Password will be injected via extraEnvFrom (ESO-generated)
+        password: ""
+        # Token will be injected via extraEnvFrom (ESO-generated)
+        token: ""
+
+      # Secrets now loaded per-component via server.envFrom and worker.envFrom
+
+    # Server deployment — single replica (VPS memory too tight for 2+ with current requests)
+    server:
+      name: server
+      replicas: 1
+
+      # Preferred (not required) anti-affinity allows a surge pod to land on
+      # an occupied node while still spreading replicas across nodes when possible.
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: server
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
+
+      # Allow 20 min for DB migrations on first boot (default 10 min).
+      # If the startup probe kills the pod mid-migration, the PostgreSQL
+      # connection stays idle-in-transaction and blocks the next attempt.
+      startupProbe:
+        failureThreshold: 120
+        periodSeconds: 10
+
+      # Default 3s timeout is too tight — outpost API calls regularly take
+      # 1s+ even with VPS-local PostgreSQL. Give enough headroom.
+      livenessProbe:
+        timeoutSeconds: 10
+      readinessProbe:
+        timeoutSeconds: 10
+
+      # Load ESO-generated secret key via envFrom (plus all global secrets)
+      envFrom:
+        - configMapRef:
+            name: authentik-host
+        - secretRef:
+            name: authentik-bootstrap
+        - secretRef:
+            name: authentik-admin-password
+        - secretRef:
+            name: authentik-secret-key
+        - secretRef:
+            name: authentik-user-password
+
+      env:
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: authentik-db-app
+              key: password
+
+      # Service configuration
+      service:
+        enabled: true
+        type: ClusterIP
+        port: 80
+
+      # Ingress disabled — traffic routed via Gateway API HTTPRoute
+      ingress:
+        enabled: false
+
+      # Resources
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+    # Worker deployment — single replica
+    worker:
+      name: worker
+      replicas: 1
+
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: worker
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
+
+      # Load ESO-generated secret key via envFrom (plus all global secrets)
+      envFrom:
+        - configMapRef:
+            name: authentik-host
+        - secretRef:
+            name: authentik-bootstrap
+        - secretRef:
+            name: authentik-admin-password
+        - secretRef:
+            name: authentik-secret-key
+        - secretRef:
+            name: authentik-user-password
+
+      env:
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: authentik-db-app
+              key: password
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+    # PostgreSQL — disabled; using external CloudNativePG cluster (authentik-db)
+    postgresql:
+      enabled: false
+
+    # Redis (required for worker message queue) — pinned to VPS
+    redis:
+      enabled: true
+      master:
+        nodeSelector:
+          topology.kubernetes.io/region: hil
+
+    # Service account
+    serviceAccount:
+      create: true
+      name: authentik

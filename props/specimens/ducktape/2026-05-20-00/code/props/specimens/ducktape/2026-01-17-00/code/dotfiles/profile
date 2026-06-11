@@ -1,0 +1,62 @@
+#!/bin/sh
+# ~/.profile - Shell-agnostic login environment setup (POSIX compliant)
+#
+# NOTE (2025-10): Most environment variables have been migrated to Nix home-manager
+# (see ~/code/ducktape/nix/home/home.nix under home.sessionVariables).
+# This file now contains only complex conditional PATH management and legacy integrations
+# that are difficult to express declaratively in Nix.
+#
+# For: PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env
+# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
+
+# prepend $1 to $PATH once (if dir exists)
+add_path() {
+	[ -d "$1" ] || return
+	case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac
+}
+
+add_path "$HOME/.local/bin" # user's private binaries
+add_path "$HOME/.cargo/bin" # Rust
+add_path "$HOME/.cabal/bin" # Haskell
+add_path "$HOME/.r2env/bin" # Radare2
+add_path "$HOME/.elan/bin"  # Elan, for Lean theorem prover
+# Note: .bun/bin removed - Bun is not installed (Node.js is from Nix)
+# Ruby would be: $(ruby -rubygems -e 'puts Gem.user_dir')/bin
+
+# make less more friendly for non-text input files, see lesspipe(1)
+eval "$(SHELL=/bin/sh lesspipe)" # Force POSIX-compliant output for compatibility
+
+# Go installation
+# Note: GOPATH is now managed by Nix (see ~/code/ducktape/nix/home/home.nix)
+add_path "$HOME/.local/go/bin" # Go binaries from our Ansible-managed installation
+add_path "$GOPATH/bin"         # Go-installed tools
+
+# CUDA for Tensorflow
+if [ -d /usr/lib/cuda/targets/x86_64-linux/lib ]; then
+	export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib/cuda/targets/x86_64-linux/lib"
+fi
+
+# If present, load secrets env vars from ~/.secret_env
+if [ -f "$HOME/.secret_env" ]; then
+	. "$HOME/.secret_env"
+fi
+
+# dotnet
+if [ -d "$HOME/.dotnet" ]; then
+	export DOTNET_ROOT="$HOME/.dotnet"
+	add_path "$DOTNET_ROOT"
+	add_path "$DOTNET_ROOT/tools"
+fi
+
+# pnpm global packages
+# Note: PNPM_HOME is now managed by Nix (see ~/code/ducktape/nix/home/home.nix)
+add_path "$PNPM_HOME"
+
+# Source machine-specific profile if it exists
+# This allows host-specific additions without replacing the entire profile
+[ -f "$HOME/.profile.machine" ] && . "$HOME/.profile.machine"
+
+# tidy-up: drop helper function
+unset -f add_path 2>/dev/null
+
+# Note: NVM_DIR and BUN_INSTALL were removed - Node.js is now managed via Nix (nodejs_22 package)

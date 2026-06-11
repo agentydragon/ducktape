@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Vendored OpenAI Cookbook utilities.
+
+# gazelle:map_kind py_binary py_library apply_patch.py
+
+py_library(
+    name = "apply_patch",
+    srcs = ["apply_patch.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)

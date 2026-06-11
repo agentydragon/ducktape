@@ -1,0 +1,15 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+filegroup(
+    name = "shell_scripts",
+    srcs = glob(["*.sh"]),
+    visibility = ["//wt:__subpackages__"],
+)
+
+py_binary(
+    name = "wt-install",
+    srcs = ["install.py"],
+    data = [":shell_scripts"],
+    main = "install.py",
+    visibility = ["//visibility:public"],
+)

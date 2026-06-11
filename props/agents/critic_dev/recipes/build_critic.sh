@@ -11,12 +11,10 @@
 #
 # Prerequisites:
 #   - crane CLI available in PATH
-#   - PROPS_REGISTRY_URL or PROPS_BACKEND_URL set
+#   - PROPS_REGISTRY_URL set
 #
 # Environment:
-#   PROPS_REGISTRY_URL        Registry host, e.g. "registry:5000".
-#                              Derived from PROPS_BACKEND_URL if unset.
-#   PROPS_BACKEND_URL         Fallback: strip scheme to derive registry host.
+#   PROPS_REGISTRY_URL        Registry proxy URL or host, e.g. "http://registry-proxy:8000".
 #   PROPS_CRITIC_BASE_DIGEST  (optional) Base image digest. Defaults to
 #                              resolving critic:latest from the registry.
 #
@@ -37,11 +35,9 @@ if [[ "${CUSTOM_MAIN}" != /* ]]; then
   CUSTOM_MAIN="${SCRIPT_DIR}/${CUSTOM_MAIN}"
 fi
 
-# Derive registry from PROPS_BACKEND_URL if PROPS_REGISTRY_URL is not set.
-if [[ -z "${PROPS_REGISTRY_URL:-}" ]]; then
-  PROPS_REGISTRY_URL="$(echo "${PROPS_BACKEND_URL:?Set PROPS_REGISTRY_URL or PROPS_BACKEND_URL}" | sed 's|https\?://||')"
-fi
-REGISTRY="${PROPS_REGISTRY_URL}"
+REGISTRY="${PROPS_REGISTRY_URL:?Set PROPS_REGISTRY_URL}"
+REGISTRY="${REGISTRY#http://}"
+REGISTRY="${REGISTRY#https://}"
 
 # Default to the built-in critic:latest tag if no explicit digest is provided
 if [[ -n "${PROPS_CRITIC_BASE_DIGEST:-}" ]]; then

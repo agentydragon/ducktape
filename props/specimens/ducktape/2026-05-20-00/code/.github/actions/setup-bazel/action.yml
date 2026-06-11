@@ -1,0 +1,70 @@
+# Setup Bazel with BuildBuddy remote cache + GHA repository cache.
+# See .github/docs/bazel-caching.md for design rationale.
+name: Setup Bazel
+description: Setup Bazel with BuildBuddy remote cache and GitHub Actions local cache
+
+inputs:
+  buildbuddy_api_key:
+    description: "BuildBuddy API key for remote cache (optional - falls back to GHA cache)"
+    required: false
+    default: ""
+  extra_hash:
+    description: "Additional hash to append to cache key (use hashFiles() at call site)"
+    required: false
+    default: ""
+  rbe_image:
+    description: "Override RBE container image (optional - uses platform default if empty)"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # -- BuildBuddy remote cache --
+    - name: Setup BuildBuddy
+      id: buildbuddy
+      shell: bash
+      env:
+        BUILDBUDDY_API_KEY: ${{ inputs.buildbuddy_api_key }}
+        RBE_IMAGE: ${{ inputs.rbe_image }}
+      run: |
+        if [[ -z "$BUILDBUDDY_API_KEY" ]]; then
+          echo "BuildBuddy API key not provided, skipping remote cache setup"
+          exit 0
+        fi
+        "${{ github.workspace }}/devinfra/setup_buildbuddy.sh"
+
+    - name: Enable CI quiet mode
+      shell: bash
+      run: |
+        echo "" >> "$HOME/.bazelrc"
+        echo "# CI quiet mode (auto-added by setup-bazel)" >> "$HOME/.bazelrc"
+        echo "common --config=ci" >> "$HOME/.bazelrc"
+
+    # -- Bazelisk + GHA repository cache --
+    - name: Setup Bazelisk
+      uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Derive cache key
+      id: cache-key
+      shell: bash
+      env:
+        BASE_HASH: ${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+        EXTRA_HASH: ${{ inputs.extra_hash }}
+      run: |
+        if [[ -n "$EXTRA_HASH" ]]; then
+          HASH="${BASE_HASH:0:8}-${EXTRA_HASH:0:8}"
+        else
+          HASH="${BASE_HASH:0:16}"
+        fi
+        echo "key=bazel-repo-cache-${HASH}" >> $GITHUB_OUTPUT
+
+    - name: Restore/save Bazel repository cache
+      id: cache-restore
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/bazelisk
+          ~/.cache/bazel/_bazel_runner/cache/repos/v1
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: bazel-repo-cache-

@@ -1,0 +1,5 @@
+idle_watchdog: false
+git_shim:
+  block_add_all: true
+env_exports: |
+  export E2E_TEST_SECRET='hello-from-env-exports'

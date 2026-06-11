@@ -1,0 +1,7 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: test-secret
+spec:
+  secretStoreRef:
+    name: vault-backend

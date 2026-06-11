@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tana-mcp
+  namespace: tana-mcp
+  labels:
+    app.kubernetes.io/name: tana-mcp
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tana-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tana-mcp
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        # Tana Desktop running under Xvfb with noVNC for graphical admin access
+        - name: tana-desktop
+          image: ghcr.io/agentydragon/tana-desktop:devel-20260422205335-d9cfcf8 # {"$imagepolicy": "flux-system:tana-mcp"}
+          ports:
+            - name: mcp
+              containerPort: 8262
+              protocol: TCP
+            - name: novnc
+              containerPort: 6080
+              protocol: TCP
+          env:
+            - name: RESOLUTION
+              value: "1280x800x24"
+          volumeMounts:
+            - name: tana-config
+              mountPath: /home/tana/.config/tana
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          # Tana only serves /health on loopback inside the container. Kubelet
+          # httpGet probes target the pod IP, which stays unreachable even when
+          # Tana is healthy, so probe from inside the container instead.
+          # Generous startup probe: /health won't respond until Tana is logged in
+          # and MCP server is enabled (done manually via noVNC).
+          startupProbe:
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
+            failureThreshold: 120
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
+            periodSeconds: 15
+        # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
+        # accepts requests from cluster clients. Probe the proxy over HTTP so
+        # readiness reflects the actual cluster-facing path on :8263, not just
+        # that the port is open.
+        - name: proxy
+          image: nginx:alpine
+          ports:
+            - name: mcp-proxy
+              containerPort: 8263
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8263
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8263
+            periodSeconds: 10
+      volumes:
+        - name: tana-config
+          persistentVolumeClaim:
+            claimName: tana-mcp-config
+        - name: nginx-config
+          configMap:
+            name: tana-mcp-nginx-config

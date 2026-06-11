@@ -1,0 +1,21 @@
+min_preset: true
+env:
+  set:
+    JUPYTER_RUNTIME_DIR: /tmp/sjtest/runtime
+    JUPYTER_DATA_DIR: /tmp/sjtest/data
+    JUPYTER_CONFIG_DIR: /tmp/sjtest/config
+    JUPYTER_PATH: /tmp/sjtest/data
+    PYTHONPYCACHEPREFIX: /tmp/sjtest/pycache
+    MPLCONFIGDIR: /tmp/sjtest/mpl
+    HOME: /tmp/sjtest
+fs:
+  read_paths:
+    - /System
+    - /usr/lib
+    - /private/var/db/dyld
+    - /System/Volumes/Preboot
+    - /System/Cryptexes
+    - /System/Volumes/Preboot/Cryptexes
+  write_paths:
+    - /tmp/sjtest
+net: { mode: loopback }

@@ -1,0 +1,63 @@
+version: "3.8"
+
+services:
+  gitea:
+    image: gitea/gitea:1.21.11
+    container_name: public-git-gitea
+    restart: unless-stopped
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__server__ROOT_URL=http://localhost:3000/
+      - GITEA__server__DISABLE_SSH=true
+      - GITEA__server__DOMAIN=localhost
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/data/gitea.db
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__security__INSTALL_LOCK=true
+    ports:
+      - "3000:3000"
+    volumes:
+      # Entire Gitea data lives under $HOME/.combo_mcp/gitea
+      - ${HOME}/.combo_mcp/gitea:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/healthz || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+
+  gitea-init:
+    image: gitea/gitea:1.21.11
+    depends_on:
+      gitea:
+        condition: service_healthy
+    volumes:
+      - ${HOME}/.combo_mcp/gitea:/data
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >
+      set -e;
+      /usr/local/bin/gitea admin user create --admin \
+        --username "${GITEA_ADMIN_USERNAME:-admin}" \
+        --password "${GITEA_ADMIN_PASSWORD:-changeme}" \
+        --email "${GITEA_ADMIN_EMAIL:-admin@local}" \
+        --must-change-password=false || true;
+      /usr/local/bin/gitea admin user generate-access-token \
+        --username "${GITEA_ADMIN_USERNAME:-admin}" \
+        --scopes repo,write:repository \
+        --name public_git_token --raw > /data/admin.token || true;
+      echo "Gitea admin bootstrap complete."
+
+# Usage:
+#   docker compose -f ./src/adgn_llm/mcp/gitea/docker-compose.yml up -d
+#
+# Mirrors storage path inside host:
+#   ${HOME}/.combo_mcp/gitea/git/repositories
+#
+# Point the public_git MCP server to this store path:
+#   --git-store "${HOME}/.combo_mcp/gitea/git/repositories"
+#
+# Bootstrap:
+#   - Admin user: ${GITEA_ADMIN_USERNAME:-admin} / ${GITEA_ADMIN_PASSWORD:-changeme}
+#   - Token written to: ${HOME}/.combo_mcp/gitea/admin.token
+#
+# Then create pull mirrors via API or CLI, or use the UI if desired.

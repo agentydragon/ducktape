@@ -1,0 +1,338 @@
+"""Grader agent - implementation and container image.
+
+Build targets:
+    bazel run //props/agents/grader:load  -- Load grader image
+    bazel run //props/agents/grader:push  -- Push grader image
+
+The container runs a persistent agent loop that:
+1. Fetches snapshot to /workspace
+2. Renders system prompt from template
+3. Queries LLM via proxy (OPENAI_BASE_URL)
+4. Executes grader tools (list_pending, insert_edges, etc.)
+5. Sleeps on pg_notify, wakes to grade new critiques
+"""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
+
+exports_files(
+    ["prompt.md.mako"],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "//props/db:snapshots",
+        "@pypi//pydantic",
+    ],
+)
+
+# =============================================================================
+# In-container agent main entry point (snapshot grader)
+# =============================================================================
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    data = [
+        "prompt.md.mako",
+        "//props/agents/docs:db/agent_runs.md.mako",
+        "//props/agents/docs:db/critiques.md.mako",
+        "//props/agents/docs:db/examples.md.mako",
+        "//props/agents/docs:db/grading.md.mako",
+        "//props/agents/docs:db/ground_truth.md.mako",
+        "//props/agents/docs:source_inspection.md.mako",
+        "//props/agents/docs:system_access.md",
+    ],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":drift_handler",
+        ":notification_handler",
+        ":tools",
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:logging_handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:errors",
+        "//openai_utils:model",
+        "//props/agents:runtime",
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:notifications",
+        "//props/db:snapshot_io",
+        "@pypi//asyncpg",
+        "@pypi//asyncpg_stubs",
+        "@pypi//openai",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "grader",
+    main_module = "props.agents.grader.main",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
+    name = "grader_bin",
+    main = "main.py",
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":main",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":grader_bin",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_python3_symlink(
+    name = "python3_symlink",
+    binary_name = "grader_bin",
+)
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "drift_handler",
+    srcs = ["drift_handler.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "notification_handler",
+    srcs = ["notification_handler.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//openai_utils:model",
+        "//props/db:notifications",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_notification_handler",
+    srcs = ["test_notification_handler.py"],
+    requires_docker = True,
+    deps = [
+        ":notification_handler",
+        "//openai_utils:text_extraction",
+        "//props/core:ids",
+        "//props/db:notifications",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grading_edges_constraints",
+    size = "medium",
+    srcs = ["test_grading_edges_constraints.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//props:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_matchable_occurrences",
+    srcs = ["test_matchable_occurrences.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//props:conftest",
+        "//props/db:database",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":drift_handler",
+        ":tools",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:assertions",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_sleep_wake",
+    size = "medium",
+    srcs = ["test_e2e_sleep_wake.py"],
+    data = [
+        ":image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":drift_handler",
+        ":tools",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:assertions",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_clustering",
+    size = "medium",
+    srcs = ["test_e2e_clustering.py"],
+    data = [
+        ":image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":drift_handler",
+        ":tools",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:assertions",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_report_failure",
+    size = "medium",
+    srcs = ["test_e2e_report_failure.py"],
+    data = [
+        ":image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Container image (snapshot grader)
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("grader_bin"),
+    env = py_image_env(binary_name = "grader_bin"),
+    labels = {"org.opencontainers.image.title": "grader"},
+    tars = [
+        ":layers",
+        ":python3_symlink",
+    ],
+    visibility = ["//visibility:public"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["grader:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/grader",
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+    ],
+)

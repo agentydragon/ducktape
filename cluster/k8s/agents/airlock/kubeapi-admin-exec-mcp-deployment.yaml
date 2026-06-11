@@ -4,29 +4,27 @@ metadata:
   name: kubeapi-admin-exec-mcp
   namespace: airlock
   labels:
-    app: airlock
-    component: kubeapi-admin-exec-mcp
+    app.kubernetes.io/name: airlock
+    app.kubernetes.io/component: kubeapi-admin-exec-mcp
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: airlock
-      component: kubeapi-admin-exec-mcp
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: kubeapi-admin-exec-mcp
   template:
     metadata:
       labels:
-        app: airlock
-        component: kubeapi-admin-exec-mcp
+        app.kubernetes.io/name: airlock
+        app.kubernetes.io/component: kubeapi-admin-exec-mcp
     spec:
-      imagePullSecrets:
-        - name: harbor-pull-robot
       serviceAccountName: kubeapi-admin-exec-mcp
       automountServiceAccountToken: true
       containers:
         - name: kubeapi-admin-exec-mcp
-          image: ghcr.io/agentydragon/openclaw-exec:devel-20260401040551-df942a4 # {"$imagepolicy": "flux-system:openclaw-exec"}
+          image: ghcr.io/agentydragon/openclaw-exec:devel-20260610075033-2c51610 # {"$imagepolicy": "flux-system:openclaw-exec"}
           imagePullPolicy: Always
           ports:
             - name: mcp

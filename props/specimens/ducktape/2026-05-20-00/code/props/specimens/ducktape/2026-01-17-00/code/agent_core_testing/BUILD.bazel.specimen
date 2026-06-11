@@ -1,0 +1,35 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "agent_core_testing",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/testing",
+        "//openai_utils",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//rich",
+        "@pypi//structlog",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":agent_core_testing"],
+)

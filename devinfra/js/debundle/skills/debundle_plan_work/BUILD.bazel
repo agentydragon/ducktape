@@ -1,0 +1,17 @@
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
+
+skill_package(
+    name = "debundle_plan_work",
+    contents = [
+        skill_mapping(
+            srcs = ["SKILL.md"],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//devinfra/js/debundle/docs:guide.md",
+            ],
+            prefix = "references",
+        ),
+    ],
+)

@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: grocy-sf
+resources:
+  - ../../mcp-base
+  - valkey-ovh-instance.yaml
+  - server-httproute.yaml
+patches:
+  - target:
+      kind: Deployment
+      name: grocy-mcp-server
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "https://auth.allegedly.works/application/o/grocy-mcp-sf/"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "https://grocy-mcp-sf.allegedly.works"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/3/value
+        value: "https://grocy-sf.allegedly.works"
+  - target:
+      kind: Deployment
+      name: grocy-mcp-server
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: grocy-mcp-server
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: GROCY_MCP_AUTH__OIDC_CLIENT_ID
+                    valueFrom:
+                      secretKeyRef:
+                        name: grocy-mcp-oidc-sf
+                        key: client_id
+                  - name: GROCY_MCP_AUTH__OIDC_CLIENT_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: grocy-mcp-oidc-sf
+                        key: client_secret
+                  - name: GROCY_MCP_AUTH__PROXY_CLIENT_ID
+                    valueFrom:
+                      secretKeyRef:
+                        name: grocy-mcp-oidc-sf
+                        key: grocy_proxy_client_id
+                  - name: GROCY_MCP_PERSISTENCE__KIND
+                    value: "valkey"
+                  - name: GROCY_MCP_PERSISTENCE__HOST
+                    value: "grocy-sf-valkey-ovh-master.grocy-sf.svc.cluster.local"
+                  - name: GROCY_MCP_PERSISTENCE__DB
+                    value: "0"

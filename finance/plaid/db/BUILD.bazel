@@ -1,0 +1,198 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "link_profiles",
+    srcs = ["link_profiles.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = [
+        ":link_profiles",
+        "@pypi//certifi",
+        "@pypi//plaid_python",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        ":link_profiles",
+        "@pypi//certifi",
+        "@pypi//plaid_python",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_link_profiles",
+    srcs = ["test_link_profiles.py"],
+    deps = [
+        ":link_profiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "schema",
+    srcs = ["schema.py"],
+    visibility = [
+        "//finance/augur:__subpackages__",
+        "//finance/beancount_export:__pkg__",
+        "//finance/plaid:__subpackages__",
+    ],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "read_model",
+    srcs = ["read_model.py"],
+    visibility = ["//finance/augur:__subpackages__"],
+    deps = [
+        ":schema",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+filegroup(
+    name = "migrations",
+    srcs = glob(["migrations/**"]),
+    visibility = ["//finance/augur:__subpackages__"],
+)
+
+py_test(
+    name = "test_link_store",
+    size = "medium",
+    srcs = ["test_link_store.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":link_profiles",
+        ":link_store",
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_read_model",
+    size = "medium",
+    srcs = ["test_read_model.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":link_profiles",
+        ":link_store",
+        ":read_model",
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    srcs = ["test_sync.py"],
+    deps = [
+        ":sync",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dev_creds",
+    srcs = ["dev_creds.py"],
+    deps = [
+        ":client",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "link_store",
+    srcs = ["link_store.py"],
+    data = glob(["migrations/**"]),
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = [
+        ":link_profiles",
+        ":schema",
+        "@pypi//alembic",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "secret_store",
+    srcs = ["secret_store.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = [
+        ":link_profiles",
+        ":link_store",
+        ":secret_store",
+        "@pypi//plaid_python",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = [
+        ":sync",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "sandbox_smoke_lib",
+    srcs = ["sandbox_smoke.py"],
+    deps = [
+        ":client",
+        ":dev_creds",
+        "@pypi//plaid_python",
+    ],
+)
+
+py_binary(
+    name = "sandbox_smoke",
+    main_module = "finance.plaid.db.sandbox_smoke",
+    deps = [":sandbox_smoke_lib"],
+)

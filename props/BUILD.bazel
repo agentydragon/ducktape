@@ -2,8 +2,8 @@
 # gazelle:exclude specimens
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/deps:check.bzl", "assert_no_deps")
+load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([
     "config.toml",
@@ -21,9 +21,9 @@ pkg_tar(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//openai_utils:api_shape",
         "//openai_utils:model_metadata",
         "@pypi//pydantic",
     ],
@@ -34,7 +34,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core/testing:fixtures",

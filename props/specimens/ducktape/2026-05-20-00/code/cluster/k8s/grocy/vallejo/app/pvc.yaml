@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-config-ovh
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-ovh
+  resources:
+    requests:
+      storage: 1Gi

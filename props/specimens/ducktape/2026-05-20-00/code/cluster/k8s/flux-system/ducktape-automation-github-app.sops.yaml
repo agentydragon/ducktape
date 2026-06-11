@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ducktape-automation-github-app
+    namespace: flux-system
+    annotations:
+        description: 'GitHub App auth used by Flux source-controller and image-automation-controller for both the ducktape (gotk-sync) and gaffer-private GitRepositories. PEM source of truth: secrets/ducktape-automation.<date>.private-key.sops.pem.'
+type: Opaque
+stringData:
+    githubAppID: ENC[AES256_GCM,data:cdAYLESXXQ==,iv:BPmFl0VUCmdYXAsOa5EVY/dvsgxgFzIs4Mt8Za9DXiw=,tag:oHXunonlHys/3e1jyQO0gw==,type:str]
+    githubAppInstallationID: ENC[AES256_GCM,data:ir9bGU4I3Kbr,iv:euQ0zSqkmjjwaQCBFAU59shtT60S+yvWm2/JM/MjzK4=,tag:A2a0kBauCbmCED5J0+Cfuw==,type:str]
+    githubAppPrivateKey: ENC[AES256_GCM,data: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,iv:9a7XriKWF0wMQwMG/XZjAE9WtcgKhtB5yllxS/95Ifo=,tag:JnIaFk69gn8hs5YSGq09Pg==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA3ZnJGTmRPZlpCOU9nM2pC
+            Uldoeis5TkFvODVJOFJWalVVWG93M3dYckFNClFzNTlXMjd2dDB1c1BFa2pzMU1S
+            WnB3bmVEdURQOGdHQ2hqSlZnV2JsN3cKLS0tIHpKM3JoS28xbHNJZjJPTU5pVFdJ
+            SnBxZkk5MUZUYzQ2NXZqM3lzQzM5MGcKapmENEsD3sLFiV/zxplAT8w3LfBkJPNh
+            wG7VDAGDS5YSoWdp/satMp3ATEGc7oAJvPhnj0XcS+Of8z9njMVzuQ==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRFNhOU4xd2V6blUwRnVk
+            bjN5TmRmQTRMVHpJWmdlb2V2ZlhpTlNHcWw0CmV2MC9aSWUxRjk4b2F4RWp5TE1N
+            dStCaTRiekFmQXdOT2hOUEt4elNJdkkKLS0tIHo2cnFHM0drZ05TcFJtWi83Mm04
+            OXozVGd4MEZhZWdMbklSelZPdDdGSkUKgW97iO+Ym1D1XbUZPTEgZQil1Yj2be+7
+            X+zKp4uJMEksYt78viSprXHatj8K1/77c6MN5RG14l0k+FlxqsLiZg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-05-03T22:36:11Z"
+    mac: ENC[AES256_GCM,data:KYX9YoRXaMO7l6wm5vpYT6DTNKV0j6NYK6MzRMZeElOJMsd3iUmz5nhWyYeU8U7MCDSXw4vIVbZlIcQWUOtAndYXypR0FFJxI82wPf6oUMdTzCKbCcay2dAhrSfRn6M4TFNaat+GhvY+L5W2CwhqWiMD4FnDVx6USHg2/KWEHsg=,iv:C76NyPpPXhtLto0Zg0YSg0sqPZKlzPbsbUiRkWo+v1k=,tag:nKUezitifmIJrViv55PArg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

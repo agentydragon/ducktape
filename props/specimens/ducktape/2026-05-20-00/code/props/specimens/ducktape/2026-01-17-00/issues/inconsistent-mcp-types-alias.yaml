@@ -1,0 +1,28 @@
+rationale: |
+  The codebase uses two different aliases for `mcp.types`: `mcp_types` (27 files) and `mtypes` (2 files).
+  Within agent_server/, both conventions appear (2 files each), creating inconsistency.
+
+  Standardize on `mcp_types` which is the dominant convention across the codebase.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/mcp/approval_policy/engine.py:
+        - [23, 23]
+    note: "Uses 'as mtypes' - should use 'as mcp_types' for consistency (mcp_types used in 27 files vs mtypes in 2)"
+    critic_scopes_expected_to_recall:
+      - - agent_server/mcp/approval_policy/engine.py
+    match_file_restriction:
+      - agent_server/mcp/approval_policy/engine.py
+
+  - occurrence_id: occ-1
+    files:
+      agent_server/mcp/test_policy_gateway_middleware.py:
+        - [12, 12]
+    note: "Uses 'as mtypes' - should use 'as mcp_types' for consistency (mcp_types used in 27 files vs mtypes in 2)"
+    critic_scopes_expected_to_recall:
+      - - agent_server/mcp/test_policy_gateway_middleware.py
+    match_file_restriction:
+      - agent_server/mcp/test_policy_gateway_middleware.py

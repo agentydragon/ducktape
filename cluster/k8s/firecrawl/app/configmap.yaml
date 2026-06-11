@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firecrawl-config
+  namespace: firecrawl
+data:
+  NUM_WORKERS_PER_QUEUE: "4"
+  PORT: "3002"
+  HOST: "0.0.0.0"
+  REDIS_URL: "redis://firecrawl-redis:6379"
+  REDIS_RATE_LIMIT_URL: "redis://firecrawl-redis:6379"
+  PLAYWRIGHT_MICROSERVICE_URL: "http://firecrawl-playwright:3000"
+  USE_DB_AUTHENTICATION: "false"
+  HDX_NODE_BETA_MODE: "1"

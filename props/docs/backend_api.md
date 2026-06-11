@@ -14,6 +14,11 @@ backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
 auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
 ```
 
+For the deployed Kubernetes backend, wait for `/readyz` before starting runs. The
+HTTP server binds before slow startup finishes; until readiness is `200`, the
+run API may be reachable but orchestration state such as `app.state.registry`
+is not initialized yet.
+
 ## Using CriticRunClient (Recommended)
 
 For running critic evaluations, use the `CriticRunClient` class for the REST API calls and the `wait_until_graded()` function for polling grading status directly from the database:
@@ -24,9 +29,14 @@ from props.agents.critic_dev.grading import wait_until_graded
 from props.core.models.examples import WholeSnapshotExample
 
 async with CriticRunClient.from_env() as client:
+    # The runs API takes an image digest, not the display name "critic".
+    # Fetch /api/definitions?agent_type=critic and select the desired digest,
+    # usually the newest row with display_name == "critic".
+    definition_id = "sha256:..."
+
     # Run critic (calls REST API)
     result = await client.run_critic(
-        definition_id="critic",
+        definition_id=definition_id,
         example=WholeSnapshotExample(snapshot_slug="ducktape/2025-01-01"),
         timeout_seconds=3600,
         budget_usd=5.0,
@@ -54,11 +64,20 @@ schema = httpx.get(f"{backend_url}/openapi.json").json()
 
 ## Available Endpoints
 
-| Endpoint           | Method | Description               |
-| ------------------ | ------ | ------------------------- |
-| `/api/runs/critic` | POST   | Run critic on an example  |
-| `/v1/responses`    | POST   | LLM proxy (OpenAI format) |
-| `/v2/*`            | \*     | OCI registry proxy        |
+| Endpoint                      | Method | Description                                                        |
+| ----------------------------- | ------ | ------------------------------------------------------------------ |
+| `/api/definitions`            | GET    | List registered agent image digests; filter with `agent_type`      |
+| `/api/runs/critic`            | POST   | Run critic on an example                                           |
+| `/api/runs/{id}/llm_requests` | GET    | A run's LLM transcript (request/response rows); RLS-scoped         |
+| `/api/runs/{id}/logs`         | GET    | A run's container logs (from Loki); RLS-scoped to your descendants |
+
+The LLM proxy (`/v1/responses` and `/v1/chat/completions`) is a **separate
+service** (`props-llm-proxy`), reached via `OPENAI_BASE_URL`, not this backend.
+The registry proxy (`/v2/*`) is also a **separate service**, reached via
+`PROPS_REGISTRY_URL`, not this backend.
+Read a launched agent's
+**transcript** from `llm_requests` (DB, also exposed above) and its **container
+logs** via `/api/runs/{id}/logs` — agents cannot query Loki directly.
 
 ## Access Control
 

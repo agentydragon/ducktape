@@ -1,0 +1,16 @@
+rationale: |
+  `pr_info` is initialized as `""` (line 195), conditionally reassigned inside
+  an `if pr_link:` block (lines 207-213), then used once (line 221). This
+  widens the scope of mutable state. Instead, build `pr_parts` unconditionally
+  as `[pr_link]` if truthy (else `[]`), append status/changes, and inline
+  `" ".join(pr_parts)` at the use site. Eliminates the `pr_info` variable and
+  the `if` block.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/view_formatter.py:
+        - [195, 213]
+        - [221, 221]
+    critic_scopes_expected_to_recall:
+      - [wt/client/view_formatter.py]

@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kagent-db
+  namespace: flux-system
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/kagent/db
+  prune: true
+  wait: true
+  dependsOn:
+    - name: kagent-namespace
+    - name: cnpg
+    - name: local-path-provisioner

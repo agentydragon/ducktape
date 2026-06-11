@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tana-litellm
+  namespace: litellm
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "tana-litellm.allegedly.works"
+  rules:
+    - timeouts:
+        request: "600s"
+        backendRequest: "600s"
+      backendRefs:
+        - name: tana-litellm
+          port: 4000

@@ -33,6 +33,19 @@ func detectRepoURL() (string, error) {
 	return "", fmt.Errorf("no remote URLs found")
 }
 
+// detectHead returns the current branch name and commit SHA.
+func detectHead() (branch string, commit string, err error) {
+	repo, err := git.PlainOpenWithOptions(".", &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return "", "", fmt.Errorf("open git repo: %w", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return "", "", fmt.Errorf("get HEAD: %w", err)
+	}
+	return head.Name().Short(), head.Hash().String(), nil
+}
+
 // normalizeGitURL converts SSH-style git URLs to HTTPS for BuildBuddy matching.
 func normalizeGitURL(url string) string {
 	if len(url) > 4 && url[:4] == "git@" {

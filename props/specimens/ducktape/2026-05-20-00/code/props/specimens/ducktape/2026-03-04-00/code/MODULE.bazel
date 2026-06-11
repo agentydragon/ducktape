@@ -1,0 +1,584 @@
+module(
+    name = "ducktape",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.3")
+bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "protobuf", version = "33.4")
+bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2")
+bazel_dep(name = "aspect_rules_lint", version = "2.0.0")
+bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_multirun
+bazel_dep(name = "rules_multitool", version = "1.11.1")
+bazel_dep(name = "rules_mypy", version = "0.40.0")
+
+# Fork with two fixes for CI disk exhaustion during mypy type-checking:
+# 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
+#    get their own .mypy_cache outputs that downstream targets can symlink to
+#    (upstream skips external deps, causing each internal target to re-cache them)
+# 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
+#    upstream caches, reducing disk usage from O(n²) to O(n)
+# TODO: Propose these changes upstream and switch back to BCR version if accepted
+git_override(
+    module_name = "rules_mypy",
+    commit = "2417b972cbde24a66d6c5b10fab5737dcb1d9858",
+    remote = "https://github.com/agentydragon/rules_mypy.git",
+)
+
+# Terraform/OpenTofu validation (cluster/)
+bazel_dep(name = "rules_tf", version = "0.0.10")
+
+# Patch: check exit code of `tofu/terraform providers mirror` in the repo rule.
+# Upstream silently ignores failures (stdout >/dev/null, return code unchecked),
+# so a transient registry outage produces an incomplete mirror that Bazel caches,
+# causing validate tests to fail with "provider not found in mirror".
+# TODO: remove patches once https://github.com/yanndegat/rules_tf/pull/28 is merged
+single_version_override(
+    module_name = "rules_tf",
+    patch_strip = 1,
+    patches = [
+        "//patches:rules_tf_check_tofu_mirror.patch",
+        "//patches:rules_tf_check_terraform_mirror.patch",
+    ],
+)
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+tf.download(
+    # Pre-fetch provider plugins at Bazel fetch time so that tf_module validate
+    # and lint targets work hermetically (no network needed at test time).
+    # Each version must satisfy the constraints of ALL modules that use it.
+    # When modules disagree (e.g., ~>3.0 vs ~>3.7.0), use the tighter range.
+    mirror = {
+        "authentik": "goauthentik/authentik:2025.12.1",
+        "aws": "hashicorp/aws:5.100.0",
+        "external": "hashicorp/external:2.3.5",
+        "flux": "fluxcd/flux:1.7.6",
+        "harbor": "goharbor/harbor:3.11.3",
+        "hcloud": "hetznercloud/hcloud:1.60.0",
+        "headscale": "awlsring/headscale:0.5.0",
+        "helm": "hashicorp/helm:3.1.1",
+        "kubernetes": "hashicorp/kubernetes:2.38.0",
+        "local": "hashicorp/local:2.5.3",
+        "null": "hashicorp/null:3.2.4",
+        "powerdns": "pan-net/powerdns:1.5.0",
+        "proxmox": "bpg/proxmox:0.91.0",
+        "random": "hashicorp/random:3.7.2",
+        "talos": "siderolabs/talos:0.10.1",
+        "tls": "hashicorp/tls:4.1.0",
+        "vault": "hashicorp/vault:5.7.0",
+    },
+    tfdoc_version = "0.19.0",
+    tflint_version = "0.53.0",
+    use_tofu = True,
+    version = "1.11.2",  # OpenTofu version (latest as of 2025-12)
+)
+use_repo(tf, "tf_toolchains")
+
+register_toolchains("@tf_toolchains//:all")
+
+# Python OCI image layering (aspect_rules_py)
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+
+# Container images (rules_oci)
+bazel_dep(name = "rules_oci", version = "2.2.7")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+
+# Helm chart packaging (rules_helm)
+bazel_dep(name = "rules_helm", version = "0.21.0")
+
+helm = use_extension("@rules_helm//helm:extensions.bzl", "helm")
+helm.toolchain(
+    name = "helm_toolchains",
+    version = "3.14.4",
+)
+use_repo(helm, "helm_toolchains")
+
+register_toolchains("@helm_toolchains//:all")
+
+# External Helm subchart dependencies (bitnami postgresql)
+helm_charts = use_extension("//cluster/charts:helm_extensions.bzl", "helm_charts")
+use_repo(helm_charts, "helm_charts__postgresql")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+# Production base image for py_image_layer containers.
+# aspect_rules_py's py_binary generates a bash launcher, so the base needs a
+# shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
+# The hermetic Python toolchain is bundled in the interpreter layer.
+oci.pull(
+    name = "debian_slim",
+    digest = "sha256:6458e6ce2b6448e31bfdced4be7d8aa88d389e6694ab09f5a718a694abe147f4",
+    image = "docker.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "bookworm-slim",
+)
+
+# Test infrastructure: PostgreSQL for Testcontainers (match production version)
+oci.pull(
+    name = "postgres_18",
+    digest = "sha256:9b5bd946f3a507db72c55959700e517463e8d5dbb6f7eb30d920d5bcf6951431",
+    image = "docker.io/library/postgres",
+    platforms = ["linux/amd64"],
+    tag = "18",
+)
+
+# Test infrastructure: Docker registry for e2e tests
+oci.pull(
+    name = "registry_2",
+    digest = "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373",
+    image = "docker.io/library/registry",
+    platforms = ["linux/amd64"],
+    tag = "2",
+)
+
+# Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
+oci.pull(
+    name = "ryuk",
+    digest = "sha256:ce323122ac8fe22e87a63651903286d478c857c44961aa3a484c2596c53cd1d0",
+    image = "docker.io/testcontainers/ryuk",
+    platforms = ["linux/amd64"],
+    tag = "0.8.1",
+)
+
+# KubeSpan E2E: Talos discovery service (gRPC discovery protocol server)
+oci.pull(
+    name = "discovery_service",
+    digest = "sha256:432eaf0d512f5c5fed879cb2400bab58922f172a201dbb4494d749755aa81194",
+    image = "ghcr.io/siderolabs/discovery-service",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# KubeSpan E2E: Talos Linux container (KubeSpan peer for discovery test)
+oci.pull(
+    name = "talos_v1_9_5",
+    digest = "sha256:6a2a9dd6fca727ef0a920750ef4ef1addfd486198f87cbe9d6679a04ac80e707",
+    image = "ghcr.io/siderolabs/talos",
+    platforms = ["linux/amd64"],
+    tag = "v1.9.5",
+)
+
+# InvenTree application base image — for layering in the rai_plugin wheel.
+# To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+oci.pull(
+    name = "inventree_stable",
+    digest = "sha256:874bfdc56d524c545c38667b98873749bc5daf68130d47fc372fd32322288699",
+    image = "docker.io/inventree/inventree",
+    platforms = ["linux/amd64"],
+    tag = "stable",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_v1_9_5", "talos_v1_9_5_linux_amd64")
+
+# JavaScript/TypeScript (Node.js frontends)
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
+
+# Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
+bazel_dep(name = "rules_playwright", version = "0.5.3")
+
+playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright")
+playwright.repo(
+    name = "playwright_browsers",
+    # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
+    playwright_version = "1.50.1",
+)
+use_repo(playwright, "playwright_browsers")
+
+# Node.js toolchain
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+
+# Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
+# which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
+# Workspace-level npm packages (pnpm workspace)
+# All JS/TS projects share a single lockfile and node_modules
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm.npm_translate_lock(
+    name = "npm_ducktape",
+    # Generate bin entries for dev tools from workspace root
+    bins = {
+        "eslint": ["eslint=./bin/eslint.js"],
+        "prettier": ["prettier=./bin/prettier.cjs"],
+        "svelte-check": ["svelte-check=./bin/svelte-check"],
+        "@sveltejs/kit": ["svelte-kit=./svelte-kit.js"],
+        "vite": ["vite=./bin/vite.js"],
+        "storybook": ["storybook=./index.cjs"],
+        "http-server": ["http-server=./bin/http-server"],
+    },
+    # Track package.json and workspace files for auto-update
+    data = [
+        "//:agent_server/web/package.json",
+        "//:approval_gate/frontend/package.json",
+        "//:hack/rspcache/admin_ui/package.json",
+        "//:openclaw/approval-gate/package.json",
+        "//:package.json",
+        "//:pnpm-workspace.yaml",
+        "//:props/frontend/package.json",
+        "//:util/frontend_visual_test/package.json",
+    ],
+    # Disable postinstall for packages that download binaries during lifecycle hooks.
+    # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
+    lifecycle_hooks_exclude = [
+        # Tries to download native bindings from npm registry. Safe to skip since
+        # @storybook/test-runner (the only consumer via jest-resolve) isn't executed
+        # during bazel build - only used for manual testing.
+        "unrs-resolver",
+        # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
+        # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
+        # hook sandbox. Browsers are provided hermetically via rules_playwright
+        # (@playwright_browsers//:chromium-headless-shell) and PUPPETEER_EXECUTABLE_PATH.
+        "puppeteer",
+    ],
+    npmrc = "@@//:.npmrc",
+    # Root pnpm-lock.yaml with workspace packages
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # Hoist ESLint plugins for runtime discovery
+    public_hoist_packages = {
+        "@eslint/js": [""],
+        "@typescript-eslint/eslint-plugin": [""],
+        "@typescript-eslint/parser": [""],
+        "eslint-plugin-svelte": [""],
+        "eslint-plugin-import": [""],
+        "eslint-plugin-react": [""],
+        "eslint-plugin-react-hooks": [""],
+        "svelte-eslint-parser": [""],
+        "globals@16.5.0": [""],
+    },
+    # Auto-regenerate pnpm-lock.yaml when package.json changes
+    update_pnpm_lock = True,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
+)
+use_repo(npm, "npm_ducktape")
+
+# Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool.hub(lockfile = "//tools/multitool:lockfile.json")
+use_repo(multitool, "multitool")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+# Proxy env for pip downloads is injected via .bazelrc --action_env by the
+# session-start hook on Claude Code web. No hardcoded proxy here - this file
+# should work both on local dev machines and on CC web.
+
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    requirements_lock = "//:requirements_bazel.txt",
+)
+
+# Separate pip hub for homeassistant - requires Python 3.13.2+
+# Using "3.13" for Bazel toolchain (actual runtime is 3.13.x)
+pip.parse(
+    hub_name = "pypi_homeassistant",
+    python_version = "3.13",
+    requirements_lock = "//homeassistant:requirements.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant")
+
+# Type stubs for mypy - extracts types-* and *-stubs packages from requirements
+# and provides them to the mypy aspect for per-target stub inclusion.
+types = use_extension("@rules_mypy//mypy:types.bzl", "types")
+types.requirements(
+    name = "pip_types",
+    # Exclusions prevent rules_mypy from generating requirement("X") mappings
+    # for type stubs whose runtime package isn't in the pip hub (or has a
+    # different name). Without exclusion, Bazel fails at analysis time with
+    # "no such package '@@rules_python++pip+pypi//X'".
+    #
+    # Cleaned-up stubs (no longer need exclusion):
+    # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
+    #   (SQLAlchemy 2.0+ provides types via sqlalchemy[mypy])
+    # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
+    # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
+    # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
+    #   so their stubs resolve correctly
+    #
+    # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
+    # runtime package isn't in the pip hub, instead of failing at load time.
+    # That would eliminate the need for this exclusion list entirely.
+    exclude_requirements = [
+        # types-psycopg2 maps to requirement("psycopg2") but we use
+        # psycopg2-binary (different pip package name). Can't be fixed
+        # by adding a dep — psycopg2 and psycopg2-binary conflict.
+        "types-psycopg2",
+    ],
+    pip_requirements = "@pypi//:requirements.bzl",
+    requirements_txt = "//:requirements_bazel.txt",
+)
+use_repo(types, "pip_types")
+
+# uv toolchain for requirements locking
+uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
+uv.configure(version = "0.9.30")
+
+# BuildBuddy platform definitions — our //:rbe_linux_x64 inherits from these
+# since our RBE worker image is based on BuildBuddy's rbe-ubuntu24-04.
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
+
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+buildbuddy.platform(buildbuddy_container_image = "UBUNTU24_04_IMAGE")
+buildbuddy.gcc_toolchain(gcc_major_version = "13")
+use_repo(buildbuddy, "buildbuddy_toolchain")
+
+# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container, avoiding the
+# ~500 MB LLVM toolchain download. The toolchain's exec_compatible_with includes
+# @bazel_tools//tools/cpp:gcc, which only //:rbe_linux_x64 satisfies (via parent
+# inheritance), so CC actions targeting RBE use this toolchain.
+# .bazelrc sets BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 to block host auto-detection on
+# Nix; CI overrides this to 0 in bazel-repo-cache to use the GHA runner's system GCC.
+register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming
+
+# — rust toolchains —
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# ─ Rust crates (crate_universe) ─────────────────────────────────────────────
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+
+# If your workspace has Cargo.toml at the root:
+crate.from_cargo(
+    name = "crates",  # this becomes the repo name
+    cargo_lockfile = "//:Cargo.lock",
+    lockfile = "//:Cargo.Bazel.lock",
+    manifests = ["//:Cargo.toml"],
+)
+
+# expose the generated repo (↑ name="crates")
+use_repo(crate, "crates")
+
+# ─ Haskell ───────────────────────────────────────────────────────────────────
+bazel_dep(name = "rules_haskell", version = "1.0")
+
+# rules_haskell BCR 1.0 imports get_cpu_value from
+# @bazel_tools//tools/cpp:lib_cc_configure.bzl (removed in Bazel 8).
+# Master (post-PR #2348) vendors get_cpu_value locally.
+git_override(
+    module_name = "rules_haskell",
+    commit = "e70f8bce1f8fbd715f30017b01fda3c29ec3f066",
+    remote = "https://github.com/tweag/rules_haskell.git",
+)
+
+# rules_haskell pins rules_sh 0.4.0 which also imports get_cpu_value from
+# the removed location. rules_sh 0.5.0 vendors it locally.
+single_version_override(
+    module_name = "rules_sh",
+    version = "0.5.0",
+)
+
+# ─ GHC toolchain (binary bindist) ───────────────────────────────────────────
+haskell_toolchains = use_extension(
+    "@rules_haskell//extensions:haskell_toolchains.bzl",
+    "haskell_toolchains",
+)
+haskell_toolchains.bindists(version = "9.0.2")
+
+# ─ third-party Hackage packages via Stackage snapshot ───────────────────────
+stack = use_extension(
+    "@rules_haskell//extensions:stack_snapshot.bzl",
+    "stack_snapshot",
+)
+
+# Define the Stackage snapshot
+stack.snapshot(
+    name = "lts-19.17",  # This is the snapshot name
+)
+
+# Declare the packages we need
+stack.package(
+    name = "base",
+)
+stack.package(
+    name = "hakyll",
+)
+
+# Add required dependency packages for xml-conduit
+# Configure attoparsec with its internal components
+stack.package(
+    name = "attoparsec",
+    components = [
+        "lib:attoparsec",
+        "lib:attoparsec-internal",
+    ],
+    components_dependencies = {"lib:attoparsec": ["lib:attoparsec-internal"]},
+)
+stack.package(
+    name = "blaze-html",
+)
+stack.package(
+    name = "blaze-markup",
+)
+stack.package(
+    name = "conduit",
+)
+stack.package(
+    name = "conduit-extra",
+)
+stack.package(
+    name = "data-default-class",
+)
+stack.package(
+    name = "resourcet",
+)
+stack.package(
+    name = "xml-types",
+)
+
+# Set up xml-conduit override
+stack.package(
+    name = "xml-conduit",
+    vendored = "@xml_conduit//:xml-conduit",
+)
+
+# expose the repos the two extensions create
+use_repo(
+    haskell_toolchains,
+    "all_bindist_toolchains",
+)
+
+register_toolchains("@all_bindist_toolchains//:all")  # makes the toolchain visible
+
+use_repo(
+    stack,
+    "stackage",  # The repository for the pinned snapshot
+)
+
+# ─ one-off override for xml-conduit ─────────────────────────────────────────
+extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
+use_repo(extra_deps, "xml_conduit")
+
+# ─ External binaries via http_archive ────────────────────────────────────────
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# ─ Talos internal sources (cannot import, pulled from upstream at pinned tag) ──
+# Internal adapter/controller code from Talos internal/.
+# Used by kubespand for nftables chain management and peer state machine.
+# MPL-2.0 licensed (compatible with AGPL-3.0).
+_TALOS_TAG = "v1.13.0-alpha.2"
+
+http_archive(
+    name = "talos_internal",
+    build_file = "//third_party/siderolabs/talos_internal:BUILD.overlay.bazel",
+    patch_args = ["-p0"],
+    patches = [
+        "//third_party/siderolabs/talos_internal/patches:peer_status.patch",
+        "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
+        "//third_party/siderolabs/talos_internal/patches:nftables_chain.patch",
+    ],
+    sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
+    strip_prefix = "talos-1.13.0-alpha.2",
+    urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
+)
+
+# ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
+# Alpine linux-virt kernel with nftables modules for QEMU-based testing.
+# Smaller than Ubuntu (~38MB vs ~181MB) and purpose-built for VMs.
+http_file(
+    name = "alpine_linux_virt",
+    downloaded_file_path = "linux-virt.apk",
+    sha256 = "ec7a28f3a7fb8c1d08bdfb0459aa845e551ff14a2d88b7e446e33a901f996653",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.74-r0.apk"],
+)
+
+# Busybox static binary for initramfs (musl-linked, self-contained).
+http_file(
+    name = "busybox_static_x86_64",
+    downloaded_file_path = "busybox",
+    sha256 = "6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348",
+    urls = ["https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"],
+)
+
+# tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
+# Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
+http_file(
+    name = "tiktoken_o200k_base",
+    downloaded_file_path = "fb374d419588a4632f3f557e76b4b70aebbca790",
+    sha256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
+    urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
+)
+
+# gitstatusd - Git status daemon for wt tests
+# Build target: //third_party/gitstatusd
+http_archive(
+    name = "gitstatusd",
+    build_file_content = 'exports_files(["gitstatusd-linux-x86_64"])',
+    sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
+    urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
+)
+
+# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude_hooks tests.
+# Build target: //third_party/jdk
+http_archive(
+    name = "adoptium_jdk21",
+    build_file_content = """\
+exports_files([
+    "bin/keytool",
+    "lib/security/cacerts",
+])
+""",
+    sha256 = "a2650fba422283fbed20d936ce5d2a52906a5414ec17b2f7676dddb87201dbae",
+    strip_prefix = "jdk-21.0.6+7",
+    urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
+)
+
+# Crane binary for OCI image push/pull in agent containers and tests.
+# Downloaded directly instead of re-exporting from rules_oci's internal
+# oci_crane_linux_amd64 repo, which isn't visible to the main module in bzlmod.
+http_archive(
+    name = "crane",
+    build_file_content = 'exports_files(["crane"], visibility = ["//visibility:public"])\n',
+    sha256 = "cdf4d426d965d9a8ba613d7ebf3addf93101aa2e853a3f08fbfdaed2823918f3",
+    urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
+)
+
+# ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
+# These specimens reference external Git repos rather than bundled code/ dirs.
+# Code is fetched at build time and exposed as filegroups for create_code_tar.
+http_archive(
+    name = "specimen_crush_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "06f94a6f0c121b365bb84eb0b845df3c9f50261562d224d478582d25e21c0acb",
+    strip_prefix = "crush-a2a1ffa00943aa373f688ac05b667083ac3230b1",
+    urls = ["https://github.com/agentydragon/crush/archive/a2a1ffa00943aa373f688ac05b667083ac3230b1.tar.gz"],
+)
+
+http_archive(
+    name = "specimen_ducktape_2025_09_03_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b12ba5b8f553f3c90860e926af8527a531e49590395da23ec42a9e8fc01aa900",
+    strip_prefix = "ducktape-4ad33013af27e159863bed92ffcfdb55b388e46c",
+    urls = ["https://github.com/agentydragon/ducktape/archive/4ad33013af27e159863bed92ffcfdb55b388e46c.tar.gz"],
+)
+
+# ─ Go toolchain and dependencies ─────────────────────────────────────────────
+include("//third_party:go.MODULE.bazel")

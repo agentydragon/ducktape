@@ -1,0 +1,16 @@
+{
+    "filament_settings_id": [
+        "Rainbow PLA"
+    ],
+    "from": "User",
+    "inherits": "Elegoo Generic PLA",
+    "is_custom_defined": "0",
+    "name": "Rainbow PLA",
+    "nozzle_temperature_range_high": [
+        "220"
+    ],
+    "nozzle_temperature_range_low": [
+        "190"
+    ],
+    "version": "2.1.1.0"
+}

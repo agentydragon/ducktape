@@ -1,0 +1,19 @@
+{
+    "default_filament_colour": [
+        "#99C1F1"
+    ],
+    "filament_settings_id": [
+        "Glow PLA"
+    ],
+    "from": "User",
+    "inherits": "Elegoo Generic PLA",
+    "is_custom_defined": "0",
+    "name": "Glow PLA",
+    "nozzle_temperature_range_high": [
+        "220"
+    ],
+    "nozzle_temperature_range_low": [
+        "190"
+    ],
+    "version": "2.1.1.0"
+}

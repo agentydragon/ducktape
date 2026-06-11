@@ -1,0 +1,23 @@
+=== 0000:01:00.0 ===
+vendor: 0x10de
+device: 0x2b85
+driver: ../../../../bus/pci/drivers/nvidia
+d3cold_allowed: 1
+power/runtime_status: active
+power/control: on
+current_link_speed: 32.0 GT/s PCIe
+current_link_width: 8
+max_link_speed: 32.0 GT/s PCIe
+max_link_width: 16
+
+=== 0000:02:00.0 ===
+vendor: 0x10de
+device: 0x2b85
+driver: ../../../../bus/pci/drivers/nvidia
+d3cold_allowed: 1
+power/runtime_status: active
+power/control: on
+current_link_speed: 32.0 GT/s PCIe
+current_link_width: 8
+max_link_speed: 32.0 GT/s PCIe
+max_link_width: 16

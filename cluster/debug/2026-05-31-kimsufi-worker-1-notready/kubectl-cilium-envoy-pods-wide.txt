@@ -1,0 +1,8 @@
+NAME                 READY   STATUS    RESTARTS       AGE    IP           NODE                     NOMINATED NODE   READINESS GATES
+cilium-envoy-6nwhb   1/1     Running   1 (2d9h ago)   3d8h   10.42.0.16   talos-ks-game-worker-0   <none>           <none>
+cilium-envoy-ddwtg   1/1     Running   2 (2d4h ago)   3d8h   10.42.0.13   talos-kimsufi-worker-0   <none>           <none>
+cilium-envoy-fdd7n   1/1     Running   0              12d    10.42.0.15   talos-kimsufi-cp-0       <none>           <none>
+cilium-envoy-jb8p4   1/1     Running   1 (2d9h ago)   3d7h   10.42.0.14   talos-kimsufi-worker-1   <none>           <none>
+cilium-envoy-mbrvj   1/1     Running   0              10d    10.42.0.30   rugged                   <none>           <none>
+cilium-envoy-mpj4s   0/1     Pending   0              18d    <none>       wyrm2                    <none>           <none>
+cilium-envoy-z5c6l   1/1     Running   1 (2d9h ago)   3d8h   10.42.0.17   talos-ks-game-worker-1   <none>           <none>

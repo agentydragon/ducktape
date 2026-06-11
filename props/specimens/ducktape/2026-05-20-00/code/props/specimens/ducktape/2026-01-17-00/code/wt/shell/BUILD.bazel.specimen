@@ -1,0 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "shell",
+    srcs = [
+        "install.py",
+    ],
+    data = glob(["*.sh"]),
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+)
+
+py_binary(
+    name = "wt-install",
+    srcs = ["install.py"],
+    main = "install.py",
+    visibility = ["//visibility:public"],
+    deps = [":shell"],
+)

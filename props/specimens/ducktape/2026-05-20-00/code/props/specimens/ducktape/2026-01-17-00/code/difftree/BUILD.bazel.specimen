@@ -1,0 +1,61 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "difftree_lib",
+    srcs = [
+        "__init__.py",
+        "__main__.py",
+        "config.py",
+        "diff_tree.py",
+        "parser.py",
+        "progress_bar.py",
+        "tree.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//click",
+        "@pypi//rich",
+        "@pypi//unidiff",
+    ],
+)
+
+py_binary(
+    name = "difftree",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    deps = [":difftree_lib"],
+)
+
+py_test(
+    name = "test_all",
+    srcs = [
+        "conftest.py",
+        "test_cli.py",
+        "test_config.py",
+        "test_diff_tree.py",
+        "test_e2e.py",
+        "test_parser.py",
+        "test_progress_bar.py",
+        "test_snapshots.py",
+        "test_tree.py",
+    ],
+    data = ["__snapshots__/test_snapshots.ambr"],
+    imports = [".."],
+    main = "test_diff_tree.py",
+    deps = [
+        ":difftree_lib",
+        "@pypi//click",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//rich",
+        "@pypi//syrupy",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":difftree_lib"],
+)

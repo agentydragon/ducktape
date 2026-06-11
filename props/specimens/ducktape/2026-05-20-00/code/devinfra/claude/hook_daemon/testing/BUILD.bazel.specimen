@@ -1,0 +1,32 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//devinfra/claude:__subpackages__"])
+
+py_library(
+    name = "testing_helpers",
+    testonly = True,
+    srcs = ["testing_helpers.py"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/hook_daemon:config",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "session_start_helpers",
+    testonly = True,
+    srcs = ["session_start_helpers.py"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:common",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/hook_daemon/session_start:tmpfs",
+        "//devinfra/claude/testing:shell_helpers",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

@@ -1,0 +1,51 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m0s
+  path: ./cluster/k8s/kyverno/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m0s
+  wait: true
+  # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
+  # (certManager.enabled: false in kyverno.yaml). No cert-manager dependency.
+  #
+  # Health check strategy — all three must pass before downstream dependsOn fires:
+  #
+  # The critical gate is the VWC check. With internal cert management, kyverno's
+  # webhook-controller creates the VWC dynamically ONLY AFTER the TLS server is
+  # ready (see kyverno.yaml comments for source code references). So VWC
+  # existence is a true readiness signal — it means the webhook can serve HTTPS.
+  #
+  # Note: Flux/kstatus treats VWC as "unknown" status = pass (flux2#4346), so
+  # this check only verifies existence, not deep health. But with internal certs
+  # that's sufficient — the VWC won't exist until the webhook is operational.
+  # With certManager.enabled=true, this check would be useless because the Helm
+  # chart doesn't template the VWC (it's always dynamic), but the Deployment
+  # readiness probe would pass before the VWC is created, creating a race.
+  #
+  # wait: true is critical — without it, dependsOn only waits for YAML to be
+  # applied, not for resources to be healthy.
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: kyverno
+      namespace: flux-system
+    - apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      name: clusterpolicies.kyverno.io
+      namespace: ""
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kyverno-admission-controller
+      namespace: kyverno
+    - apiVersion: admissionregistration.k8s.io/v1
+      kind: ValidatingWebhookConfiguration
+      name: kyverno-resource-validating-webhook-cfg
+      namespace: ""

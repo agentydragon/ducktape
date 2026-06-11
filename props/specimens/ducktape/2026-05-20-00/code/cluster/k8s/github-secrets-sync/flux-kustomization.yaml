@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: github-secrets-sync
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/github-secrets-sync
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: github-secrets-sync
+      namespace: flux-system
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: agent-shared-secrets
+    - name: github-secrets-sync-secrets

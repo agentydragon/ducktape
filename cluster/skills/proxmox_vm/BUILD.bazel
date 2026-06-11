@@ -1,0 +1,24 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//skills:defs.bzl", "skill_package")
+
+py_library(
+    name = "vm_interact",
+    srcs = ["vm_interact.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pillow",
+        "@pypi//platformdirs",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "vm_interact_bin",
+    main_module = "cluster.skills.proxmox_vm.vm_interact",
+    deps = [":vm_interact"],
+)
+
+skill_package(
+    name = "proxmox_vm",
+    srcs = ["SKILL.md"],
+)

@@ -1,0 +1,31 @@
+{
+    "default_filament_colour": [
+        "#B5835A"
+    ],
+    "filament_flow_ratio": [
+        "0.9702"
+    ],
+    "filament_notes": [
+        "by temperature tower, 205 or 210 C looked like best temperature. setting to 215 C first layer, 210 C other layers.\n\ntemperature calibration: https://photos.app.goo.gl/NEhcTsbNQp8wTxfJ7\n\nflow rate calibration, starting at 0.98:\npass 1 (start at 0.98): https://photos.app.goo.gl/9rcGRhqEPCfaFdmRA -> center block (0) looks the best. +5 and -5 look similar.\npass 2 (start at 0.98): https://photos.app.goo.gl/rWy2t2WUSQWwx4Tw7 -> block -1 looks the best -> 0.98 changing to 0.9702"
+    ],
+    "filament_settings_id": [
+        "Mika3D Silk PLA - Copper"
+    ],
+    "from": "User",
+    "inherits": "Elegoo Generic PLA",
+    "is_custom_defined": "0",
+    "name": "Mika3D Silk PLA - Copper",
+    "nozzle_temperature": [
+        "210"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "215"
+    ],
+    "nozzle_temperature_range_high": [
+        "235"
+    ],
+    "nozzle_temperature_range_low": [
+        "200"
+    ],
+    "version": "2.1.1.0"
+}

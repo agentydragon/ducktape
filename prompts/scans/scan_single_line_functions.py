@@ -102,12 +102,10 @@ class SingleLineExtractor(ast.NodeVisitor):
         """Convert AST statement to readable string."""
         try:
             # Get the source line(s) for this statement
-            if hasattr(stmt, "lineno") and hasattr(stmt, "end_lineno"):
-                start = stmt.lineno - 1
-                end = stmt.end_lineno
-                statement_lines = self.lines[start:end]
-                return "".join(statement_lines).strip()
-            return ast.unparse(stmt)
+            start = stmt.lineno - 1
+            end = stmt.end_lineno
+            statement_lines = self.lines[start:end]
+            return "".join(statement_lines).strip()
         except Exception:
             return f"<{type(stmt).__name__}>"
 

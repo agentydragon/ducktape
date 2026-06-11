@@ -1,0 +1,29 @@
+# gazelle:python_generation_mode file
+# gazelle:python_library_naming_convention $package_name$_lib
+# Props workspace - top-level package
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+exports_files(["conftest.py"])
+
+# Shared pytest configuration for all props tests
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:responses",
+        "//mcp_infra/testing:fixtures",
+        "//props/testing",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:ground_truth",
+        "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
+        "@pypi//pytest",
+    ],
+)

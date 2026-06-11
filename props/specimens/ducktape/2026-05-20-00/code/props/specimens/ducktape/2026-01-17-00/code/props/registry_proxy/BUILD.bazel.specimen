@@ -1,0 +1,89 @@
+"""Registry proxy OCI image built with Bazel.
+
+The proxy enforces ACL and metadata tracking for agent image operations.
+
+Build targets:
+    bazel run //props/registry_proxy:load  -- Load into local Docker
+    bazel run //props/registry_proxy:push  -- Push to local registry (localhost:5050)
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props/core/agent_defs:init_tar.bzl", "init_script_tar")
+
+py_library(
+    name = "proxy_lib",
+    srcs = [
+        "__init__.py",
+        "proxy.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/core:oci_utils",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//psycopg",
+    ],
+)
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":proxy"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+init_script_tar(
+    name = "init_tar",
+    script = "init",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/init"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PROPS_REGISTRY_UPSTREAM_URL": "http://props-registry:5000",
+        "PORT": "5051",
+        "LOG_LEVEL": "info",
+    },
+    exposed_ports = ["5051/tcp"],
+    tars = [
+        ":app_tar",
+        ":init_tar",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-registry-proxy:latest"],
+)
+
+# Push to local registry (localhost:5050, running via devenv)
+# Usage: bazel run //props/registry_proxy:push
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/registry-proxy",
+)

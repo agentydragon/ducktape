@@ -1,12 +1,11 @@
 # Cilium CNI + Gateway API CRDs — deployed via helm CLI during bootstrap.
 #
-# Cilium's rendered manifest (~82KB) exceeds Hetzner's 32KB user_data limit,
-# so it can't be a Talos inlineManifest. Instead we install via helm CLI
-# after the k8s API is reachable.
+# Cilium's rendered manifest is large, so keep it out of Talos inline manifests
+# and install it via helm CLI after the k8s API is reachable.
 
 locals {
-  cilium_version      = "1.18.7"
-  gateway_api_version = "v1.4.1"
+  cilium_version      = "1.19.2"
+  gateway_api_version = "v1.5.1"
 }
 
 resource "null_resource" "gateway_api_crds" {
@@ -19,7 +18,8 @@ resource "null_resource" "gateway_api_crds" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    # Experimental channel CRDs (superset of standard: adds TLSRoute, etc.).
+    # Experimental channel — Cilium 1.19 requires TLSRoute v1alpha2, which the
+    # standard channel dropped in v1.5.0 (graduated to v1 only).
     # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
     command = <<-EOT
       set -e

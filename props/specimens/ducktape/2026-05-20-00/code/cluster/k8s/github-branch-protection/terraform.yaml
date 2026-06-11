@@ -1,0 +1,32 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: github-branch-protection
+  namespace: flux-system
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./tf/gitops/github-branch-protection
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "github_branch_protection"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password

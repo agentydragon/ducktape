@@ -1,0 +1,41 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+# Home Assistant custom component for Indoor Air Quality
+# Uses shared HA lock at //homeassistant:requirements
+py_library(
+    name = "indoor_aqi",
+    srcs = [
+        "custom_components/indoor_aqi/__init__.py",
+        "custom_components/indoor_aqi/config_flow.py",
+        "custom_components/indoor_aqi/sensor.py",
+    ],
+    data = glob(["custom_components/indoor_aqi/**/*.json"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi_homeassistant//homeassistant"],
+)
+
+py_test(
+    name = "test_all",
+    srcs = [
+        "tests/conftest.py",
+        "tests/test_config_flow.py",
+        "tests/test_init.py",
+        "tests/test_sensor.py",
+        "tests/test_sensor_simple.py",
+    ],
+    main = "tests/test_sensor.py",
+    deps = [
+        ":indoor_aqi",
+        "@pypi_homeassistant//pyhamcrest",
+        "@pypi_homeassistant//pytest",
+        "@pypi_homeassistant//pytest_homeassistant_custom_component",
+    ],
+)
+
+# Lint with ruff; mypy runs via --config=typecheck (uses Python 3.13)
+ruff_test(
+    name = "ruff",
+    srcs = [":indoor_aqi"],
+)

@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":proxy",
+        "//tools/claude_hooks:debug",
+    ],
+)
+
+py_binary(
+    name = "run",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+        ":proxy",
+        "//tools/claude_hooks:debug",
+    ],
+)

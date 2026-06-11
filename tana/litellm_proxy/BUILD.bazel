@@ -1,0 +1,166 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python/uv:lock.bzl", "lock")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+exports_files([
+    "requirements.in",
+    "requirements.txt",
+])
+
+# Generate requirements.txt from requirements.in.
+# Run: bazel run //tana/litellm_proxy:requirements.update
+#
+# This lock is intentionally separate from the repo-wide @pypi hub because
+# LiteLLM's proxy extra pins versions that conflict with unrelated repo deps.
+lock(
+    name = "requirements",
+    srcs = ["requirements.in"],
+    out = "requirements.txt",
+    exec_properties = {"dockerNetwork": "bridge"},
+    python_version = "3.13",
+)
+
+native_test(
+    name = "requirements_test",
+    src = ":requirements.update",
+    tags = [
+        "no-cache",
+        "requires-network",
+    ],
+)
+
+LITELLM_PROXY_PIP = "@pypi_tana_litellm_proxy//"
+
+LITELLM_PROXY_RUNTIME_DEPS = [
+    LITELLM_PROXY_PIP + "aiohttp",
+    LITELLM_PROXY_PIP + "apscheduler",
+    LITELLM_PROXY_PIP + "azure_identity",
+    LITELLM_PROXY_PIP + "azure_storage_blob",
+    LITELLM_PROXY_PIP + "backoff",
+    LITELLM_PROXY_PIP + "boto3",
+    LITELLM_PROXY_PIP + "cryptography",
+    LITELLM_PROXY_PIP + "fastapi",
+    LITELLM_PROXY_PIP + "fastapi_sso",
+    LITELLM_PROXY_PIP + "gunicorn",
+    LITELLM_PROXY_PIP + "litellm_enterprise",
+    LITELLM_PROXY_PIP + "litellm_proxy_extras",
+    LITELLM_PROXY_PIP + "mcp",
+    LITELLM_PROXY_PIP + "opentelemetry_api",
+    LITELLM_PROXY_PIP + "opentelemetry_exporter_otlp_proto_http",
+    LITELLM_PROXY_PIP + "opentelemetry_sdk",
+    LITELLM_PROXY_PIP + "orjson",
+    LITELLM_PROXY_PIP + "polars",
+    LITELLM_PROXY_PIP + "prometheus_client",
+    LITELLM_PROXY_PIP + "pydantic_settings",
+    LITELLM_PROXY_PIP + "pyjwt",
+    LITELLM_PROXY_PIP + "pynacl",
+    LITELLM_PROXY_PIP + "pyroscope_io",
+    LITELLM_PROXY_PIP + "python_multipart",
+    LITELLM_PROXY_PIP + "pyyaml",
+    LITELLM_PROXY_PIP + "rich",
+    LITELLM_PROXY_PIP + "rq",
+    LITELLM_PROXY_PIP + "soundfile",
+    LITELLM_PROXY_PIP + "uvicorn",
+    LITELLM_PROXY_PIP + "uvloop",
+    LITELLM_PROXY_PIP + "websockets",
+]
+
+py_library(
+    name = "provider",
+    srcs = [
+        "__init__.py",
+        "custom_handler.py",
+        "provider.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        LITELLM_PROXY_PIP + "httpx",
+        LITELLM_PROXY_PIP + "litellm",
+    ],
+)
+
+py_library(
+    name = "model_registry",
+    srcs = ["model_registry.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "demo",
+    srcs = ["demo.py"],
+    main_module = "tana.litellm_proxy.demo",
+    tags = ["manual"],
+    deps = [
+        ":provider",
+        LITELLM_PROXY_PIP + "litellm",
+    ],
+)
+
+py_binary(
+    name = "probe_models",
+    srcs = ["probe_models.py"],
+    main_module = "tana.litellm_proxy.probe_models",
+    tags = ["manual"],
+    deps = [
+        ":model_registry",
+        ":provider",
+    ],
+)
+
+py_test(
+    name = "test_provider",
+    srcs = ["test_provider.py"],
+    deps = [
+        ":provider",
+        LITELLM_PROXY_PIP + "httpx",
+        LITELLM_PROXY_PIP + "litellm",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy_runtime",
+    srcs = ["test_proxy_runtime.py"],
+    data = [":server_bin"],
+    deps = [
+        ":provider",
+        "//util/bazel:runfiles",
+        LITELLM_PROXY_PIP + "litellm",
+    ] + LITELLM_PROXY_RUNTIME_DEPS,
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    srcs = ["@@rules_python++pip+pypi_tana_litellm_proxy_313_litellm//:rules_python_wheel_entry_point_litellm.py"],
+    main = "@@rules_python++pip+pypi_tana_litellm_proxy_313_litellm//:rules_python_wheel_entry_point_litellm.py",
+    deps = [
+        ":provider",
+        LITELLM_PROXY_PIP + "litellm",
+    ] + LITELLM_PROXY_RUNTIME_DEPS,
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["tana-litellm-proxy:latest"],
+)

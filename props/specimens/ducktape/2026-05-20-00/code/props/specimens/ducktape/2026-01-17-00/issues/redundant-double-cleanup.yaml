@@ -1,0 +1,20 @@
+rationale: |
+  shutil.rmtree() with ignore_errors=True already suppresses all exceptions.
+  Wrapping it in contextlib.suppress(Exception) is redundant and adds noise.
+  Either use ignore_errors=True alone, or use contextlib.suppress with
+  ignore_errors=False - not both.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/server/worktree_service.py:
+        - [130, 131]
+    note: >-
+      contextlib.suppress(Exception) wraps shutil.rmtree(..., ignore_errors=True).
+      The suppress is redundant since ignore_errors already handles all errors.
+    critic_scopes_expected_to_recall:
+      - - wt/server/worktree_service.py
+    match_file_restriction:
+      - wt/server/worktree_service.py

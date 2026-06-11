@@ -9,7 +9,7 @@ bazel_dep(name = "rules_python", version = "1.9.0")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "1.9.0")
 bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "protobuf", version = "34.0.bcr.1")
+bazel_dep(name = "protobuf", version = "33.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "googleapis", version = "0.0.0-20260223-edfe7983")
 bazel_dep(name = "googleapis-go", version = "1.0.0")
@@ -20,6 +20,15 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_mul
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pins extension (oci_pull repos reference it)
 bazel_dep(name = "rules_mypy", version = "0.40.0")
+bazel_dep(name = "rules_conda", version = "0.3.2")
+
+# Conda epoch versions (e.g. "1!164.3095") contain '!' which is invalid in Bazel
+# repo names. Patch _package_repo_name to sanitize.
+single_version_override(
+    module_name = "rules_conda",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_conda_sanitize_repo_name.patch"],
+)
 
 # Fork with two fixes for CI disk exhaustion during mypy type-checking:
 # 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
@@ -28,10 +37,11 @@ bazel_dep(name = "rules_mypy", version = "0.40.0")
 # 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
 #    upstream caches, reducing disk usage from O(n²) to O(n)
 # TODO: Propose these changes upstream and switch back to BCR version if accepted
-git_override(
+archive_override(
     module_name = "rules_mypy",
-    commit = "355ae265ccef0e5928a440f2f1a2a9796298ec62",
-    remote = "https://github.com/agentydragon/rules_mypy.git",
+    sha256 = "938b128e28ddbf610ce09f3603d6797a8f023904908d16fb94748c193cda1122",
+    strip_prefix = "rules_mypy-355ae265ccef0e5928a440f2f1a2a9796298ec62",
+    urls = ["https://github.com/agentydragon/rules_mypy/archive/355ae265ccef0e5928a440f2f1a2a9796298ec62.tar.gz"],
 )
 
 # Terraform/OpenTofu validation (cluster/)
@@ -69,10 +79,12 @@ tf.download(
     # Each version must satisfy the constraints of ALL modules that use it.
     # When modules disagree (e.g., ~>3.0 vs ~>3.7.0), use the tighter range.
     mirror = {
-        "authentik": "goauthentik/authentik:2025.12.1",
+        "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
         "external": "hashicorp/external:2.3.5",
         "flux": "fluxcd/flux:1.7.6",
+        "forgejo": "svalabs/forgejo:1.5.0",
+        "github": "integrations/github:6.6.0",
         "grafana": "grafana/grafana:3.22.2",
         "harbor": "goharbor/harbor:3.11.3",
         "hcloud": "hetznercloud/hcloud:1.60.0",
@@ -82,8 +94,8 @@ tf.download(
         "libvirt": "dmacvicar/libvirt:0.9.3",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
-        "powerdns": "pan-net/powerdns:1.5.0",
-        "proxmox": "bpg/proxmox:0.91.0",
+        "ovh": "ovh/ovh:2.13.1",
+        "proxmox": "bpg/proxmox:0.93.0",
         "random": "hashicorp/random:3.7.2",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.10.1",
@@ -104,35 +116,8 @@ bazel_dep(name = "aspect_rules_py", version = "1.10.0")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
-bazel_dep(name = "rules_distroless", version = "0.6.2")
-
-# Fix filegroup circular deps in apt packages (e.g. libc6 <-> libgcc-s1).
-# Debian has legitimate circular dependencies between packages. The generated
-# per-arch filegroup targets reference other packages' filegroups, creating a
-# Bazel analysis cycle. The patch changes deps to point at :data targets
-# instead, breaking the cycle without losing content.
-# Upstream PR: https://github.com/bazel-contrib/rules_distroless/pull/164
-# TODO: Remove once upstream merges #164 and we upgrade rules_distroless.
-single_version_override(
-    module_name = "rules_distroless",
-    patch_strip = 1,
-    patches = ["//patches:rules_distroless_filegroup_cycle.patch"],
-)
-
+bazel_dep(name = "rules_distroless", version = "0.8.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
-
-# Helm chart packaging (rules_helm)
-bazel_dep(name = "rules_helm", version = "0.23.0")
-
-helm = use_extension("@rules_helm//helm:extensions.bzl", "helm")
-helm.host_tools(version = "3.14.4")
-use_repo(helm, "helm", "helm_toolchains")
-
-register_toolchains("@helm_toolchains//:all")
-
-# External Helm subchart dependencies (bitnami postgresql)
-helm_charts = use_extension("//cluster/charts:helm_extensions.bzl", "helm_charts")
-use_repo(helm_charts, "helm_charts__postgresql")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
@@ -146,6 +131,13 @@ oci.pull(
     image = "docker.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "bookworm-slim",
+)
+oci.pull(
+    name = "debian_trixie_slim",
+    digest = "sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a",
+    image = "docker.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "trixie-slim",
 )
 
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
@@ -173,6 +165,15 @@ oci.pull(
     image = "docker.io/testcontainers/ryuk",
     platforms = ["linux/amd64"],
     tag = "0.8.1",
+)
+
+# Test infrastructure: Grocy for MCP e2e tests (match cluster/k8s/grocy/deployment.yaml)
+oci.pull(
+    name = "grocy",
+    digest = "sha256:01036076182f2191e8ac42a3876548bfd3a139a2ada8705212e83806865c1f58",
+    image = "docker.io/linuxserver/grocy",
+    platforms = ["linux/amd64"],
+    tag = "v4.6.0-ls318",
 )
 
 # Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
@@ -238,7 +239,34 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "11",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+
+# Node 20 base image — used by //x/manifold_mcp_server:image as the runtime
+# image for the manifold-mcp-server sidecar (Node 20 + the vendored
+# manifold-mcp-server + supergateway npm packages, exposing the stdio MCP as
+# Streamable HTTP on localhost:8080 inside the manifold-mcp Pod).
+#
+# Digest is the multi-platform manifest list (image index) — rules_oci resolves
+# the platform-specific digest from `platforms` at fetch time.
+oci.pull(
+    name = "node_20_bookworm_slim",
+    digest = "sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+    image = "docker.io/library/node",
+    platforms = ["linux/amd64"],
+    tag = "20-bookworm-slim",
+)
+
+# Unprivileged nginx for the augur frontend image (static React bundle served
+# behind oauth2-proxy + readOnlyRootFilesystem).
+# To repin:
+#   crane digest --platform linux/amd64 docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+oci.pull(
+    name = "nginx_unprivileged",
+    digest = "sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48",
+    image = "docker.io/nginxinc/nginx-unprivileged",
+    platforms = ["linux/amd64"],
+    tag = "1.27-alpine",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "node_20_bookworm_slim", "node_20_bookworm_slim_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -246,7 +274,7 @@ use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12"
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
+use_repo(image_pins, "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
@@ -255,8 +283,8 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 # E2E test container: git + JDK layered on python:3.13-slim base.
 apt.install(
     name = "trixie_e2e",
-    lock = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.lock.json",
-    manifest = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.yaml",
+    lock = "//devinfra/claude/claude_hook/container_e2e:trixie_e2e.lock.json",
+    manifest = "//devinfra/claude/claude_hook/container_e2e:trixie_e2e.yaml",
 )
 
 # Firecracker VM pod: iproute2, iptables, mount, procps, openssh-client on debian:bookworm-slim.
@@ -266,30 +294,71 @@ apt.install(
     manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
 )
 
-# Token rotation image: git + bash on debian:bookworm-slim for SOPS token rotation CronJob.
+# CPAP sync: nmcli (talks to host NetworkManager over dbus) + git (pushes to
+# the cpap-data Forgejo repo) on debian:bookworm-slim.
 apt.install(
-    name = "bookworm_token_rotation",
-    lock = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.lock.json",
-    manifest = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.yaml",
+    name = "bookworm_cpap_sync",
+    lock = "//cpap:bookworm_cpap_sync.lock.json",
+    manifest = "//cpap:bookworm_cpap_sync.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "bookworm_token_rotation", "trixie_e2e")
+
+# JWT rotation image: curl + jq + git + bash on debian:trixie-slim for the
+# claude-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
+apt.install(
+    name = "trixie_jwt_rotation",
+    lock = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.yaml",
+)
+
+# attic-jwt-rotation CronJob (kubectl exec into attic pod for atticadm + commit).
+apt.install(
+    name = "trixie_attic_rotation",
+    lock = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.yaml",
+)
+
+# gnome-shell + Xvfb + dbus on debian:trixie-slim for the aiquota
+# extension golden-render tests.
+apt.install(
+    name = "gnome_shell_test",
+    lock = "//gnome/test_image:apt.lock.json",
+    manifest = "//gnome/test_image:apt.yaml",
+)
+
+# Budget exporter image: git + ca-certificates on debian:trixie-slim so the
+# export_ledger CronJob can clone/commit/push the Beancount ledger repo.
+apt.install(
+    name = "trixie_budget_exporter",
+    lock = "//finance/beancount_export:trixie_budget_exporter.lock.json",
+    manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
+)
+
+# Augur evidence scraper image: ca-certificates on debian:trixie-slim so
+# `import pygit2` can initialize libgit2's OpenSSL cert locations (it fails the
+# whole process at import without a system CA bundle).
+apt.install(
+    name = "trixie_evidence",
+    lock = "//finance/scraper:trixie_evidence.lock.json",
+    manifest = "//finance/scraper:trixie_evidence.yaml",
+)
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_evidence", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.7")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
 
 # Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
-bazel_dep(name = "rules_playwright", version = "0.5.3")
+bazel_dep(name = "rules_playwright", version = "0.5.3", dev_dependency = True)
 
-playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright")
+playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright", dev_dependency = True)
 playwright.repo(
-    name = "playwright_browsers",
     # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
     playwright_version = "1.50.1",
 )
-use_repo(playwright, "playwright_browsers")
+use_repo(playwright, playwright_browsers = "playwright")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
@@ -297,7 +366,7 @@ node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
 
 # Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
 # which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
-pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 pnpm.pnpm(
     pnpm_version = "9.15.9",
     pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
@@ -306,7 +375,7 @@ use_repo(pnpm, "pnpm")
 
 # Workspace-level npm packages (pnpm workspace)
 # All JS/TS projects share a single lockfile and node_modules
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm_ducktape",
     # Generate bin entries for dev tools from workspace root
@@ -331,6 +400,7 @@ npm.npm_translate_lock(
         "//:util/testing/frontend_visual/package.json",
         "//:x/agent_server/web/package.json",
         "//:x/rspcache/admin_ui/package.json",
+        "//:x/study_casino/frontend/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
@@ -345,7 +415,7 @@ npm.npm_translate_lock(
         # (@playwright_browsers//:chromium-headless-shell) and PUPPETEER_EXECUTABLE_PATH.
         "puppeteer",
     ],
-    npmrc = "@@//:.npmrc",
+    npmrc = "//:.npmrc",
     # Root pnpm-lock.yaml with workspace packages
     pnpm_lock = "//:pnpm-lock.yaml",
     # Hoist ESLint plugins for runtime discovery
@@ -389,7 +459,7 @@ npm_activitywatch.npm_translate_lock(
     # resolve in the http_archive where npm_link_all_packages() creates them,
     # not in the main workspace where the lockfile lives.
     link_workspace = "aw_webui",
-    npmrc = "@@//:.npmrc",
+    npmrc = "//:.npmrc",
     # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
     # variant, but lifecycle hooks are disabled in sandboxed builds.  Patch the
     # default (Vue 3) stub to add the missing hasInjectionContext export that
@@ -417,7 +487,13 @@ use_repo(multitool, "multitool")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
+    is_default = True,
     python_version = "3.13",
+)
+
+# rules_conda v0.3.2 hardcodes Python 3.11 for its internal tools (py-rattler, pyyaml).
+python.toolchain(
+    python_version = "3.11",
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
@@ -439,7 +515,16 @@ pip.parse(
     python_version = "3.13",
     requirements_lock = "//homeassistant:requirements.txt",
 )
-use_repo(pip, "pypi", "pypi_homeassistant")
+
+# Separate pip hub for the Tana LiteLLM proxy appliance. LiteLLM's proxy extra
+# pins package versions that conflict with unrelated repo-wide Python deps, so
+# keep the production proxy image in its own resolver universe.
+pip.parse(
+    hub_name = "pypi_tana_litellm_proxy",
+    python_version = "3.13",
+    requirements_lock = "//tana/litellm_proxy:requirements.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant", "pypi_tana_litellm_proxy")
 
 # Type stubs for mypy - extracts types-* and *-stubs packages from requirements
 # and provides them to the mypy aspect for per-target stub inclusion.
@@ -463,6 +548,9 @@ types.requirements(
     # runtime package isn't in the pip hub, instead of failing at load time.
     # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
+        # freecad-stubs provides FreeCAD/Part/Sketcher modules but there's
+        # no "freecad" runtime pip package — FreeCAD comes from conda.
+        "freecad-stubs",
         # types-psycopg2 maps to requirement("psycopg2") but we use
         # psycopg2-binary (different pip package name). Can't be fixed
         # by adding a dep — psycopg2 and psycopg2-binary conflict.
@@ -492,7 +580,7 @@ use_repo(buildbuddy, "buildbuddy_toolchain")
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
-bazel_dep(name = "rules_rust", version = "0.69.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
@@ -505,13 +593,25 @@ use_repo(rust, "rust_toolchains")
 register_toolchains("@rust_toolchains//:all")
 
 # ─ Rust crates (crate_universe) ─────────────────────────────────────────────
-crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+# Keep this extension visible to downstream modules. Ducktape BUILD files use
+# apparent labels such as `@crates//:anyhow`, and those labels are resolved in
+# Ducktape's own repository mapping when another workspace consumes Ducktape via
+# `bazel_dep` + `archive_override`. A downstream workspace's root `@crates`
+# repository cannot satisfy those labels.
+#
+# Do not attach Ducktape's `Cargo.Bazel.lock` here. rules_rust's rendered-lock
+# checksum is not portable across root-module and dependency-module path
+# contexts, which makes downstream consumers fail analysis even though
+# `Cargo.lock` is pinned. Let crate_universe render from the Cargo lock instead.
+crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+)
 
 # If your workspace has Cargo.toml at the root:
 crate.from_cargo(
     name = "crates",  # this becomes the repo name
     cargo_lockfile = "//:Cargo.lock",
-    lockfile = "//:Cargo.Bazel.lock",
     manifests = ["//:Cargo.toml"],
 )
 
@@ -521,7 +621,13 @@ use_repo(crate, "crates")
 # ─ ActivityWatch crate universe ──────────────────────────────────────────────
 # Separate from the main "crates" universe to avoid Cargo.lock conflicts.
 # aw-server-rust source is pulled via http_archive below (see @aw_server_rust).
-crate.from_cargo(
+aw_crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+    dev_dependency = True,
+    isolate = True,
+)
+aw_crate.from_cargo(
     name = "aw_server_crates",
     cargo_lockfile = "@aw_server_rust//:Cargo.lock",
     lockfile = "//third_party/activitywatch:Cargo.Bazel.lock",
@@ -541,7 +647,7 @@ crate.from_cargo(
 # build.rs reads AW_WEBUI_DIR and emits cargo:rustc-env=AW_WEBUI_DIR=<path>
 # so that rust-embed's interpolate-folder-path proc macro can embed all
 # files from that directory into the binary at compile time.
-crate.annotation(
+aw_crate.annotation(
     build_script_data = ["@aw_webui//:dist"],
     build_script_env = {
         "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
@@ -550,7 +656,7 @@ crate.annotation(
     crate = "aw-server",
     repositories = ["aw_server_crates"],
 )
-use_repo(crate, "aw_server_crates")
+use_repo(aw_crate, "aw_server_crates")
 
 # ─ Haskell ───────────────────────────────────────────────────────────────────
 bazel_dep(name = "rules_haskell", version = "1.0")
@@ -558,10 +664,11 @@ bazel_dep(name = "rules_haskell", version = "1.0")
 # rules_haskell BCR 1.0 imports get_cpu_value from
 # @bazel_tools//tools/cpp:lib_cc_configure.bzl (removed in Bazel 8).
 # Master (post-PR #2348) vendors get_cpu_value locally.
-git_override(
+archive_override(
     module_name = "rules_haskell",
-    commit = "60d787cad638370663758b37f880e56a8249786f",
-    remote = "https://github.com/tweag/rules_haskell.git",
+    sha256 = "a64e81f48e775bdbb8562f58aa53fd8f896649129a1f46bd7d97f9eced8ada0c",
+    strip_prefix = "rules_haskell-60d787cad638370663758b37f880e56a8249786f",
+    urls = ["https://github.com/tweag/rules_haskell/archive/60d787cad638370663758b37f880e56a8249786f.tar.gz"],
 )
 
 # rules_haskell pins rules_sh 0.4.0 which also imports get_cpu_value from
@@ -694,6 +801,46 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
+# Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
+# `//x/grocy_mcp:server` can drive `FastMCP.from_openapi` without
+# vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
+# updating the sha256.
+http_file(
+    name = "grocy_openapi_spec",
+    downloaded_file_path = "grocy.openapi.json",
+    sha256 = "04280473b40b031a30c335f7991c959e51c6f42e91689b2d526886f997b368c7",
+    urls = ["https://raw.githubusercontent.com/grocy/grocy/v4.6.0/grocy.openapi.json"],
+)
+
+# FreeCAD 1.2.dev from conda.
+# Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
+# lock_environments target has a Python version conflict with our 3.13 toolchain).
+conda = use_extension("@rules_conda//conda:extensions.bzl", "conda")
+conda.environment(
+    name = "freecad_conda",
+    environment = "default",
+    lockfile = "//skills/freecad/conda:pixi.lock",
+)
+use_repo(conda, "freecad_conda")
+
+# neka-nat/freecad-mcp addon — XML-RPC server for interactive FreeCAD driving.
+# Loaded via FreeCAD's -M flag. Used by skills/freecad interactive mode + tests.
+_FREECAD_MCP_COMMIT = "c1548b56ddbab8942ce069d25f097c491a013c16"
+
+http_archive(
+    name = "freecad_mcp",
+    build_file_content = """
+filegroup(
+    name = "addon",
+    srcs = glob(["addon/FreeCADMCP/**/*.py"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "8530d7177f333a1e66e256d2dfba8ff3990dafe4155e70a571c95e41680cf7cc",
+    strip_prefix = "freecad-mcp-" + _FREECAD_MCP_COMMIT,
+    urls = ["https://github.com/neka-nat/freecad-mcp/archive/" + _FREECAD_MCP_COMMIT + ".tar.gz"],
+)
+
 # gitstatusd - Git status daemon for wt tests
 # Build target: //third_party/gitstatusd
 http_archive(
@@ -704,7 +851,7 @@ http_archive(
 )
 
 # sops - Mozilla SOPS binary for age/KMS secret encryption/decryption.
-# Used by the claude-token-rotation CronJob image.
+# Used by the claude-jwt-rotation CronJob image.
 http_file(
     name = "sops_linux_amd64",
     downloaded_file_path = "sops",
@@ -797,7 +944,332 @@ http_archive(
 )
 
 # ─ Go toolchain and dependencies ─────────────────────────────────────────────
-include("//third_party:go.MODULE.bazel")
+# Go toolchain and external module dependencies.
+# Included from the root MODULE.bazel via include("//third_party:go.MODULE.bazel").
+
+# ─ Go toolchain ──────────────────────────────────────────────────────────
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.26.2")
+go_sdk.nogo(nogo = "//devinfra/lint:nogo")
+
+# ─ Go dependencies ───────────────────────────────────────────────────────
+# Primary source: //third_party:go.mod (first-party code: genkit, worthy)
+# Secondary: manual go_deps.module() entries for environment-manager deps
+# not covered by the root go.mod (go_deps only allows one from_file).
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//third_party:go.mod")
+
+# Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
+# of panicking. Bazel-built Go binaries embed "redacted" (6 decoded bytes)
+# in their build ID ELF note, which is shorter than garble's expected 15.
+# This affects even -seed=random builds: garble reads its own build ID in
+# toolexecCmd regardless of the seed source.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],
+    path = "mvdan.cc/garble",
+)
+
+# ─ environment-manager dependencies (vendored Anthropic binary) ──────────
+# These deps are from devinfra/claude/web_env/re/environment_manager/.../go.mod
+# and are not in the root go.mod.
+go_deps.module(
+    path = "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go",
+    sum = "h1:4erM3WLgEG/HIBrpBDmRbs1puhd7p0z7kNXDuhHthwM=",
+    version = "v1.36.4-20250130201111-63bb56e20495.1",
+)
+go_deps.module(
+    path = "connectrpc.com/connect",
+    sum = "h1:R5M57z05+90EfEvCY1b7hBxDVOUl45PrtXtAV2fOC14=",
+    version = "v1.19.1",
+)
+go_deps.module(
+    path = "github.com/DataDog/datadog-go/v5",
+    sum = "h1:9IEfH1Mw9AjWwhAMqCAkhbxjuJeMxm2ARX2VdgL+ols=",
+    version = "v5.8.2",
+)
+go_deps.module(
+    path = "github.com/cenkalti/backoff/v4",
+    sum = "h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=",
+    version = "v4.3.0",
+)
+go_deps.module(
+    path = "github.com/cenkalti/backoff/v5",
+    sum = "h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=",
+    version = "v5.0.3",
+)
+go_deps.module(
+    path = "github.com/davecgh/go-spew",
+    sum = "h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=",
+    version = "v1.1.2-0.20180830191138-d8f796af33cc",
+)
+go_deps.module(
+    path = "github.com/google/renameio/v2",
+    sum = "h1:UifI23ZTGY8Tt29JbYFiuyIU3eX+RNFtUwefq9qAhxg=",
+    version = "v2.0.0",
+)
+go_deps.module(
+    path = "github.com/gorilla/websocket",
+    sum = "h1:JeSE6pjso5THxAzdVpqr6/geYxZytqFMBCOtn/ujyeo=",
+    version = "v1.5.4-0.20250319132907-e064f32e3674",
+)
+go_deps.module(
+    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
+    sum = "h1:8Tjv8EJ+pM1xP8mK6egEbD1OgnVTyacbefKhmbLhIhU=",
+    version = "v2.27.2",
+)
+go_deps.module(
+    path = "github.com/inconshreveable/mousetrap",
+    sum = "h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=",
+    version = "v1.1.0",
+)
+go_deps.module(
+    path = "github.com/mark3labs/mcp-go",
+    sum = "h1:BywvZLPRT6Zx6mMG/MJfxLSZQkTGIcJSEGKsvr4DsoQ=",
+    version = "v0.37.0",
+)
+go_deps.module(
+    path = "github.com/mitchellh/mapstructure",
+    sum = "h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=",
+    version = "v1.5.0",
+)
+go_deps.module(
+    path = "github.com/pmezard/go-difflib",
+    sum = "h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=",
+    version = "v1.0.1-0.20181226105442-5d4384ee4fb2",
+)
+go_deps.module(
+    path = "github.com/spf13/cast",
+    sum = "h1:cuNEagBQEHWN1FnbGEjCXL2szYEXqfJPbP2HNUaca9Y=",
+    version = "v1.7.1",
+)
+go_deps.module(
+    path = "github.com/spf13/cobra",
+    sum = "h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=",
+    version = "v1.10.2",
+)
+go_deps.module(
+    path = "github.com/spf13/pflag",
+    sum = "h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=",
+    version = "v1.0.10",
+)
+
+# ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
+go_deps.module(
+    path = "github.com/TcM1911/r2g2",
+    sum = "h1:v+MaRN0sAGZsVP3+CC8WlL1psWZfAQwL5oTzSeF0K0s=",
+    version = "v0.3.2",
+)
+go_deps.module(
+    path = "github.com/blacktop/go-dwarf",
+    sum = "h1:OjmzfSgg/qAKckn2tWFebcgKgJ7HOqCj7bS+CiE1lrY=",
+    version = "v1.0.14",
+)
+go_deps.module(
+    path = "github.com/blacktop/go-macho",
+    sum = "h1:KpC13blu4m1LVUv3WPU3a73u1xNFapDeA4UJp/J0aG4=",
+    version = "v1.1.271",
+)
+go_deps.module(
+    path = "github.com/cheynewallace/tabby",
+    sum = "h1:JvUR8waht4Y0S3JF17G6Vhyt+FRhnqVCkk8l4YrOU54=",
+    version = "v1.1.1",
+)
+go_deps.module(
+    path = "github.com/elliotchance/orderedmap",
+    sum = "h1:wZtfeEONCbx6in1CZyE6bELEt/vFayMvsxqI5SgsR+A=",
+    version = "v1.4.0",
+)
+go_deps.module(
+    path = "github.com/goretk/gore",
+    sum = "h1:ADlDhsNmAm3ve9Q5dClyUuHUPD7VnwPe1njSDvrENTk=",
+    version = "v0.13.27",
+)
+go_deps.module(
+    path = "github.com/goretk/redress",
+    sum = "h1:JQA8moNOocmdrhdxRdhORE0pGTI8P0O1vZYJy9bqOuk=",
+    version = "v1.2.64",
+)
+go_deps.module(
+    path = "github.com/mandiant/GoReSym",
+    sum = "h1:rhIAoxKH+GTDXilQ2BWpfQ4zE97hVq6cv53wDSqtZlw=",
+    version = "v1.7.1",
+)
+go_deps.module(
+    path = "golang.org/x/arch",
+    sum = "h1:jZ6dpec5haP/fUv1kLCbuJy6dnRrfX6iVK08lZBFpk4=",
+    version = "v0.26.0",
+)
+go_deps.module(
+    path = "github.com/stretchr/testify",
+    sum = "h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=",
+    version = "v1.11.1",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/contrib/bridges/otelslog",
+    sum = "h1:bwnLpizECbPr1RrQ27waeY2SPIPeccCx/xLuoYADZ9s=",
+    version = "v0.13.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp",
+    sum = "h1:QQqYw3lkrzwVsoEX0w//EhH/TCnpRdEenKBOOEIMjWc=",
+    version = "v0.14.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
+    sum = "h1:aLmmtjRke7LPDQ3lvpFz+kNEH43faFhzW7v8BFIEydg=",
+    version = "v1.28.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/exporters/stdout/stdoutmetric",
+    sum = "h1:5gn2urDL/FBnK8OkCfD1j3/ER79rUuTYmCvlXBKeYL8=",
+    version = "v1.39.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/log",
+    sum = "h1:2rzJ+pOAZ8qmZ3DDHg73NEKzSZkhkGIua9gXtxNGgrM=",
+    version = "v0.14.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/sdk/log",
+    sum = "h1:JU/U3O7N6fsAXj0+CXz21Czg532dW2V4gG1HE/e8Zrg=",
+    version = "v0.14.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/sdk/metric",
+    sum = "h1:cXMVVFVgsIf2YL6QkRF4Urbr/aMInf+2WKg+sEJTtB8=",
+    version = "v1.39.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/proto/otlp",
+    sum = "h1:l706jCMITVouPOqEnii2fIAuO3IVGBRPV5ICjceRb/A=",
+    version = "v1.9.0",
+)
+go_deps.module(
+    path = "golang.org/x/net",
+    sum = "h1:d+qAbo5L0orcWAr0a9JweQpjXF19LMXJE8Ey7hwOdUA=",
+    version = "v0.53.0",
+)
+go_deps.module(
+    path = "golang.org/x/sync",
+    sum = "h1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=",
+    version = "v0.19.0",
+)
+go_deps.module(
+    path = "golang.org/x/text",
+    sum = "h1:B3njUFyqtHDUI5jMn1YIr5B0IE2U0qck04r6d4KPAxE=",
+    version = "v0.33.0",
+)
+go_deps.module(
+    path = "github.com/google/uuid",
+    sum = "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+    version = "v1.6.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel",
+    sum = "h1:lSQGzTgVR3+sgJDAU/7/ZMjN9Z+vUip7leaqBKy4sho=",
+    version = "v1.42.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/metric",
+    sum = "h1:2jXG+3oZLNXEPfNmnpxKDeZsFI5o4J+nz6xUlaFdF/4=",
+    version = "v1.42.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/sdk",
+    sum = "h1:LyC8+jqk6UJwdrI/8VydAq/hvkFKNHZVIWuslJXYsDo=",
+    version = "v1.42.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/trace",
+    sum = "h1:OUCgIPt+mzOnaUTpOQcBiM/PLQ/Op7oq6g4LenLmOYY=",
+    version = "v1.42.0",
+)
+go_deps.module(
+    path = "google.golang.org/genproto/googleapis/api",
+    sum = "h1:fCvbg86sFXwdrl5LgVcTEvNC+2txB5mgROGmRL5mrls=",
+    version = "v0.0.0-20251202230838-ff82c1b0f217",
+)
+go_deps.module(
+    path = "google.golang.org/genproto/googleapis/rpc",
+    sum = "h1:gRkg/vSppuSQoDjxyiGfN4Upv/h/DQmIR10ZU8dh4Ww=",
+    version = "v0.0.0-20251202230838-ff82c1b0f217",
+)
+go_deps.module(
+    path = "google.golang.org/grpc",
+    sum = "h1:6/+EFlxsMyoSbHbBoEDx94n/Ycx/bi0IhJ5Qh7b7LaA=",
+    version = "v1.79.0",
+)
+go_deps.module(
+    path = "google.golang.org/protobuf",
+    sum = "h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=",
+    version = "v1.36.11",
+)
+
+# ─ Repos exported for Bazel BUILD files ──────────────────────────────────
+# Includes directly-used repos AND transitive deps of manual go_deps.module()
+# entries (gazelle needs them visible for resolution).
+#
+# `bazel mod tidy` will try to drop `cc_mvdan_garble` and `com_github_go_git_go_git_v5`
+# because gazelle reports them as indirect (they're `// indirect` in
+# third_party/go.mod since no Go file under the module imports them — they're
+# referenced only from BUILD files: skills/reverse_engineer/examples and
+# devinfra/buildbuddy_cli respectively). Keep them here; do not re-run
+# `bazel mod tidy` without restoring them.
+use_repo(
+    go_deps,
+    "build_buf_gen_go_bufbuild_protovalidate_protocolbuffers_go",
+    "cc_mvdan_garble",
+    "com_connectrpc_connect",
+    "com_github_blacktop_go_dwarf",
+    "com_github_blacktop_go_macho",
+    "com_github_cenkalti_backoff_v4",
+    "com_github_cenkalti_backoff_v5",
+    "com_github_cheynewallace_tabby",
+    "com_github_datadog_datadog_go_v5",
+    "com_github_davecgh_go_spew",
+    "com_github_docker_docker",
+    "com_github_elliotchance_orderedmap",
+    "com_github_firebase_genkit_go",
+    "com_github_fsouza_go_dockerclient",
+    "com_github_go_git_go_git_v5",
+    "com_github_google_renameio_v2",
+    "com_github_google_uuid",
+    "com_github_goretk_gore",
+    "com_github_goretk_redress",
+    "com_github_gorilla_websocket",
+    "com_github_grpc_ecosystem_grpc_gateway_v2",
+    "com_github_inconshreveable_mousetrap",
+    "com_github_mandiant_goresym",
+    "com_github_mark3labs_mcp_go",
+    "com_github_mitchellh_mapstructure",
+    "com_github_pmezard_go_difflib",
+    "com_github_spf13_cast",
+    "com_github_spf13_cobra",
+    "com_github_spf13_pflag",
+    "com_github_stretchr_testify",
+    "com_github_tcm1911_r2g2",
+    "io_opentelemetry_go_contrib_bridges_otelslog",
+    "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
+    "io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp",
+    "io_opentelemetry_go_otel_exporters_stdout_stdoutmetric",
+    "io_opentelemetry_go_otel_log",
+    "io_opentelemetry_go_otel_metric",
+    "io_opentelemetry_go_otel_sdk",
+    "io_opentelemetry_go_otel_sdk_log",
+    "io_opentelemetry_go_otel_sdk_metric",
+    "io_opentelemetry_go_otel_trace",
+    "io_opentelemetry_go_proto_otlp",
+    "org_golang_google_genproto_googleapis_api",
+    "org_golang_google_genproto_googleapis_rpc",
+    "org_golang_google_grpc",
+    "org_golang_google_protobuf",
+    "org_golang_x_arch",
+    "org_golang_x_net",
+    "org_golang_x_sync",
+    "org_golang_x_text",
+)
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────
 buildbuddy_protos = use_extension("//third_party/buildbuddy:buildbuddy_protos.bzl", "buildbuddy_protos")

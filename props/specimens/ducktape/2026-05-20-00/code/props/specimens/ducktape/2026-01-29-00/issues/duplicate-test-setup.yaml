@@ -1,0 +1,15 @@
+rationale: |
+  These two test files test the same thing — notification envelope formatting —
+  with near-identical assertion logic. The only difference is transport (inproc
+  vs stdio). They should be a single parameterized test with shared fixtures.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/mcp/test_notifications_envelope.py:
+        - [37, 71]
+      agent_server/mcp/test_stdio_notifications_envelope.py:
+        - [13, 32]
+    critic_scopes_expected_to_recall:
+      - [agent_server/mcp/test_notifications_envelope.py]
+      - [agent_server/mcp/test_stdio_notifications_envelope.py]

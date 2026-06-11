@@ -1,0 +1,64 @@
+# ServiceMonitors for SeaweedFS. Alloy auto-discovers all ServiceMonitors
+# cluster-wide and forwards scraped samples to Mimir; no special selector
+# label needed (see cluster/k8s/monitoring/alloy/config.alloy).
+#
+# Metrics ports configured on the Seaweed CR (cluster/seaweed.yaml):
+#   master 9321, volume 9325, filer 9326, s3 9327
+# Each component's Service includes the metrics port; the operator names it
+# "metrics" by default.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seaweedfs-master
+  namespace: seaweedfs
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: master
+      app.kubernetes.io/name: seaweedfs
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seaweedfs-volume
+  namespace: seaweedfs
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: volume
+      app.kubernetes.io/name: seaweedfs
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seaweedfs-filer
+  namespace: seaweedfs
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: filer
+      app.kubernetes.io/name: seaweedfs
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seaweedfs-s3
+  namespace: seaweedfs
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: s3
+      app.kubernetes.io/name: seaweedfs
+  endpoints:
+    - port: metrics
+      interval: 30s

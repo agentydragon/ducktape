@@ -1,0 +1,3 @@
+compresion options:
+
+shortening node IDs in references to newly minted serial short IDs: only about 3.5 MB => 3.3 MB

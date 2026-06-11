@@ -1,0 +1,30 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+exports_files(
+    ["kubeconfig.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "kubeconfig",
+    srcs = ["kubeconfig.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "kubeconfig_bin",
+    main_module = "devinfra.k8s.kubeconfig",
+    deps = [":kubeconfig"],
+)
+
+py_test(
+    name = "test_kubeconfig",
+    srcs = ["test_kubeconfig.py"],
+    deps = [
+        ":kubeconfig",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

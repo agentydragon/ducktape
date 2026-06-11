@@ -1,0 +1,17 @@
+"""Test utilities for shared testing infrastructure."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "test_util",
+    srcs = ["docker.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:runfiles",
+        "@pypi//docker",
+        "@pypi//pytest",
+    ],
+)

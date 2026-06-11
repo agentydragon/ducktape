@@ -1,0 +1,174 @@
+# Ruff configuration for the entire repository
+# Centralized here (not in pyproject.toml) for clean separation:
+# - Root pyproject.toml: uv overrides and tool config only
+# - ruff.toml: All ruff formatting and linting rules
+# - Bazel's aspect_rules_lint reads this file via Label("//:ruff.toml")
+
+# Prefer one-line formatting when code fits
+line-length = 120
+# Target Python 3.13+ consistently
+target-version = "py313"
+
+# Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
+# .gitattributes is the source of truth; this list must stay in sync.
+# Reason: tools/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# See README.md "Lint/Format Exclusions" section for details.
+exclude = [
+    "**/third_party",
+    "k8s-old",
+    "tana/export/references",
+    "props/testing/fixtures/testdata",
+    "claude/claude_hooks/testdata",
+    "sandboxed_jupyter/testdata",
+    "sysrw/testdata",
+    "tana/testdata",
+]
+
+[format]
+# Ignore trailing commas when deciding whether to collapse to one line
+# (Google-style formatting: pack code densely when it fits)
+skip-magic-trailing-comma = true
+
+[lint]
+select = [
+    # Base
+    "E", "F",
+    # Pylint families
+    "PLC",   # convention
+    "PLE",   # errors
+    "PLR",   # refactor
+    "PLW",   # warnings
+    # Modernization / quality
+    "UP",    # pyupgrade
+    "FA",    # future annotations
+    "FURB",  # refurb
+    "I",     # Imports (isort replacement)
+    # Extras
+    "YTT",
+    "ASYNC",
+    "B",     # bugbear
+    "COM",   # commas
+    "C4",    # comprehensions
+    "LOG",   # logging
+    "PIE",
+    "PT",    # pytest
+    "RSE",
+    "RET",   # returns
+    "SIM",   # simplify
+    "SLOT",
+    "PTH",   # pathlib
+    "NPY",
+    "PD",    # pandas
+    "N",     # naming
+    "RUF"    # ruff-specific
+]
+# Keep these off globally; handled case-by-case or via constants
+ignore = [
+    "PLR2004",  # magic value comparisons
+    "PLR0912",  # too many branches
+    "PLR0915",  # too many statements
+    "PLR0911",  # too many returns
+    "PLR0913",  # too many arguments - often leads to unhelpful refactors
+    "B904",     # raise from e
+    "E501"      # line length (formatter handles wrapping)
+]
+
+# Avoid conflicts between ruff-format and trailing-comma rules
+extend-ignore = ["COM812"]
+
+# Allow mathematical symbols in strings
+allowed-confusables = ["σ"]
+
+# Enforce modern typing
+[lint.pyupgrade]
+# Target Python 3.12+ - no runtime typing imports needed
+keep-runtime-typing = false
+
+[lint.isort]
+# Don't treat same-package imports specially (no local-folder section)
+detect-same-package = false
+# Unknown packages default to third-party (no heuristics)
+default-section = "third-party"
+# Force third-party for packages that have same-named directories in repo
+known-third-party = ["ansible", "docker"]
+# First-party = our workspace packages (ruff uses heuristics otherwise)
+# TODO: Auto-generate this list from Bazel once bazelized
+known-first-party = [
+    "tools",
+    "adgn",
+    "adgn_mcp_starter",
+    "agent_core",
+    "agent_core_testing",
+    "agent_pkg",
+    "agent_server",
+    "arg0_runner",
+    "bazel_util",
+    "props",
+    "claude_history",
+    "claude_hooks",
+    "claude_optimizer",
+    "cli_util",
+    "clustering_util",
+    "cotrl",
+    "critic_util",
+    "dbus_fast_example",
+    "difftree",
+    "ducktape",
+    "ducktape_llm_common",
+    "editor_agent",
+    "editor_agent_runtime",
+    "editor_util",
+    "ember",
+    "finance",
+    "gatelet",
+    "git_commit_ai",
+    "gmail_archiver",
+    "gnome_terminal_profile_switcher",
+    "habitify",
+    "grader_util",
+    "habitify_mcp_server",
+    "homeassistant",
+    "indoor_aqi",
+    "inop",
+    "inventree_utils",
+    "llm",
+    "llm_html",
+    "mcp_infra",
+    "mcp_starter",
+    "mcp_utils",
+    "net_util",
+    "openai_utils",
+    "props_agent_util",
+    "props_backend",
+    "props_core",
+    "py_detectors",
+    "rspcache",
+    "sandboxed_jupyter",
+    "sysrw",
+    "tana",
+    "tana_export",
+    "tests",  # test packages (until colocated under main packages)
+    "wt",
+]
+combine-as-imports = true
+# Compatible with format.skip-magic-trailing-comma
+split-on-trailing-comma = false
+
+[lint.per-file-ignores]
+# Project-specific ignores (consolidated from individual pyproject.toml files)
+"gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+# AST visitor methods must use visit_<NodeType> naming (framework requirement)
+# Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
+"py_detectors/det_*.py" = ["N802"]
+# Test fixtures are intentionally bad code for detector testing
+"py_detectors/tests/fixtures/**" = ["ALL"]
+# Vendored third-party code - don't lint
+"**/third_party/**" = ["ALL"]
+"adgn/tools/trivial_patterns.py" = ["N802"]
+"prompts/scans/scan_*.py" = ["N802"]
+# Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
+"props/core/db/sync/sync.py" = ["PLC0415"]
+# sys.path manipulation must happen before pytest import
+"agent_server/tests/pytest_runner.py" = ["E402"]

@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: harbor
+  namespace: harbor
+  labels:
+    prometheus: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: harbor
+  endpoints:
+    - port: "8001"
+      path: /metrics
+      interval: 30s

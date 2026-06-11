@@ -1,0 +1,21 @@
+# ClusterIP only, deliberately: the gateway only exposes public hostnames,
+# and a publicly reachable pull-through cache would be an open relay to
+# web.archive.org. Dev access: kubectl port-forward.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wayback-cache
+  namespace: wayback-cache
+spec:
+  selector:
+    app.kubernetes.io/name: wayback-cache
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+    # Bearer-authed listener, target of the public HTTPRoute.
+    - port: 8090
+      targetPort: 8090
+      protocol: TCP
+      name: authed

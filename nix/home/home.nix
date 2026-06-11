@@ -4,10 +4,9 @@
   pkgsUnstable,
   lib,
   enableGui,
-  enableKube,
+
   isNixOS,
   isK8sWorker,
-  enableHeavyPackages,
   nix-colors,
   solarizedLight,
   solarizedDark,
@@ -15,113 +14,66 @@
   ducktape-artifacts,
   ...
 }:
-# IMPORTANT: Nix/Ansible Split for agentydragon machine
-# =====================================================
-# Nix home-manager manages:
-#   - User-level packages (dev tools, language servers, formatters)
-#   - GNOME dconf settings and terminal profiles
-#   - XDG autostart entries
-#   - GNOME extensions packages
-#   - oh-my-zsh
-#
-# Ansible continues to manage:
-#   - System packages (via apt)
-#   - Services and system configuration
-#   - Build dependencies (libssl-dev, etc.)
-#
-# Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
-#   - neovim (Nix: unstable version)
-#   - Node.js (Nix: nodejs_24)
-#   - Rust (Nix: rustc/cargo packages)
-# Note for NixOS systems with enableHeavyPackages:
-# Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
-# via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
-# See heavy-packages.nix for the complete list.
 let
   toTOML = (pkgs.formats.toml { }).generate;
 
-  # Import the single source of truth for heavy packages
-  heavyPkgs = import ./heavy-packages.nix;
-
-  # Install heavy packages via home-manager only if:
-  # 1. Heavy packages are enabled for this host
-  # 2. This is NOT a NixOS system (NixOS uses system packages)
-  installHeavyViaHomeManager = enableHeavyPackages && !isNixOS;
-
-  gnomeNvim = pkgs.vimUtils.buildVimPlugin {
-    pname = "gnome.nvim";
-    version = "2024-11-26";
-    src = pkgs.fetchFromGitHub {
-      owner = "willmcpherson2";
-      repo = "gnome.nvim";
-      rev = "87e850c1e9422310ede4b70df90a6a89c16bb9e1";
-      sha256 = "1zxq484k3mcppy21xiflmnji7j2n5zyc74ffbybhc9xasrgwa1nk";
-    };
-  };
-
-  vimLumen = pkgs.vimUtils.buildVimPlugin {
-    pname = "vim-lumen";
-    version = "2024-11-26";
-    src = pkgs.fetchFromGitHub {
-      owner = "vimpostor";
-      repo = "vim-lumen";
-      rev = "97157aac9f0d24c144a3defdfe5057ee61e18dcb";
-      sha256 = "1a32szs5hz9l1b1s1cfzbjvrn9wzqjkhffq9kaabvbpvlzd2hms9";
-    };
-  };
-
-  # Shell initialization scripts (loaded from external files to avoid escaping hell)
-  commonShellInit = builtins.readFile ./shell/common-init.sh;
-  bashInit = builtins.readFile ./shell/bash-init.sh;
-  zshInit = builtins.readFile ./shell/zsh-init.zsh;
-
   ducktapePackages = import ../packages {
-    inherit lib pkgs;
+    inherit lib pkgs pkgsUnstable;
     artifacts = ducktape-artifacts;
   };
   inherit (ducktapePackages)
     ducktape
-    claude-hooks
+    claude-hook-rs
+    claude-statusline
     gterm-theme
     bbapi
     ;
 in
 {
-  # Expose the full package set so host configs can use per-host packages
-  # (e.g., tana, bebas-neue-font) without re-importing nix/packages/.
   _module.args.ducktapePackages = ducktapePackages;
 
   imports = [
-
-    ../packages/google-drive-service.nix
     ./codex
     ./crush
+    ./modules/neovim.nix
+    ./modules/shell.nix
+    ./modules/tmux.nix
     ./modules/solarized.nix
     ./terminals
     ./claude_code
-    ./programs/gemini-cli.nix # Our local module with policies support
-    ./gemini_cli.nix # Configuration using the local module
+    ./programs/gemini-cli.nix
+    ./gemini_cli.nix
     ./shell/oh-my-posh.nix
     ./modules/gnome-shell-keybindings.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
+    ./modules/attic.nix
+    ./modules/atuin.nix
+    ./modules/buildbuddy.nix
     ./modules/datetime-format.nix
+    ./modules/sops-env.nix
     ./services/activitywatch.nix
+    ./opencode
   ];
-  # Home Manager needs a bit of information about you and the paths it should manage.
+  ducktape.sopsEnv = {
+    HF_TOKEN = {
+      sopsFile = ../../secrets/shared/huggingface.yaml;
+      key = "hf_token";
+    };
+    HABITIFY_API_KEY = {
+      sopsFile = ../../secrets/shared/habitify.yaml;
+      key = "habitify_api_key";
+    };
+  };
+
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
 
-  # Home Manager release your configuration is compatible with.
-  # NOTE: stateVersion is set per-host in hosts/*.nix files
-
-  # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
-  # XDG user directories - minimal setup, most point to $HOME
   xdg.userDirs = {
     enable = true;
-    createDirectories = false; # Don't create directories, just set the config
+    createDirectories = false;
     desktop = "$HOME";
     documents = "$HOME";
     download = "$HOME/downloads";
@@ -131,8 +83,6 @@ in
     templates = "$HOME";
     videos = "$HOME";
   };
-
-  services.google-drive.enable = lib.mkDefault false;
 
   nix.package = lib.mkDefault pkgs.nix;
 
@@ -147,27 +97,22 @@ in
       "nix-command"
       "flakes"
     ];
-    download-buffer-size = 268435456; # 256MB (increased from default 64MB)
-    connect-timeout = 5; # Fail fast on unreachable substituters
-
-    # Add nix-community cache for home-manager, nixGL, etc.
-    # Add self-hosted attic binary cache for CI-built closures.
-    # CLEANUP(2026-04-02): Re-enable cache.allegedly.works when cluster is back up
+    download-buffer-size = 268435456;
+    connect-timeout = 5;
     substituters = [
-      # "https://cache.allegedly.works/main"
       "https://cache.nixos.org/"
-      # "https://nix-community.cachix.org"
     ];
     trusted-public-keys = [
-      "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      # "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
   };
 
   programs.git = {
     enable = true;
-    package = pkgs.git.override { withLibsecret = true; };
+    package = (pkgs.git.override { withLibsecret = true; }).overrideAttrs {
+      doCheck = false;
+      doInstallCheck = false;
+    };
     lfs.enable = true;
 
     ignores = [
@@ -176,7 +121,7 @@ in
       "*.sw[op]"
       "**/.claude/settings.local.json"
       "**/CLAUDE.local.md"
-      "oneoff__*" # Temporary one-off scripts
+      "oneoff__*"
     ];
 
     settings = {
@@ -201,16 +146,10 @@ in
       clean.requireForce = true;
       branch.autosetuprebase = "always";
       rebase.autostash = true;
-      # Disable fork-point detection during pull --rebase. Fork-point uses
-      # the remote-tracking reflog to guess which local commits are "already
-      # upstream" after a force-push, and silently drops them. This caused
-      # a local commit to be lost after push + immediate pull when the remote
-      # was force-updated between the two operations.
       rebase.forkPoint = false;
       rerere.enabled = true;
       init.defaultBranch = "main";
       merge.tool = "vimdiff";
-      # Use libsecret credential helper for secure HTTPS token storage
       credential.helper = "libsecret";
       "url \"git@github.com:\"" = {
         insteadOf = [
@@ -218,75 +157,35 @@ in
           "https://github.com/"
         ];
       };
-      # nbdime difftool configuration
       "difftool \"nbdime\"".cmd = "git-nbdifftool diff \"$LOCAL\" \"$REMOTE\" \"$BASE\"";
       difftool.prompt = false;
       "mergetool \"nbdime\"".cmd = "git-nbmergetool merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"";
       mergetool.prompt = false;
     };
   };
-  programs.neovim = {
-    enable = true;
-    viAlias = true;
-    vimAlias = true;
-    withNodeJs = false;
-    withPython3 = false;
-    extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
-  };
 
-  # Delta - better git diffs
-  programs.delta = {
-    enable = true;
-    enableGitIntegration = true; # Explicitly enable as suggested by warning
-    options = {
-      navigate = true;
-      light = false; # Default to dark theme
-      side-by-side = true;
-      line-numbers = true;
-      syntax-theme = "Solarized (dark)"; # Use same theme as bat
-      features = "decorations";
-      decorations = {
-        commit-decoration-style = "bold yellow box ul";
-        file-style = "bold yellow ul";
-        file-decoration-style = "none";
-        hunk-header-decoration-style = "cyan box ul";
-      };
-      line-numbers-left-style = "cyan";
-      line-numbers-right-style = "cyan";
-      line-numbers-minus-style = "124";
-      line-numbers-plus-style = "28";
-    };
-  };
-
-  # GPG configuration
   programs.gpg = {
     enable = true;
     settings = {
-      # Use agent for key management
       use-agent = true;
-      # Default key preferences (modern crypto)
       default-preference-list = "SHA512 SHA384 SHA256 AES256 AES192 AES ZLIB BZIP2 ZIP Uncompressed";
       personal-cipher-preferences = "AES256 AES192 AES";
       personal-digest-preferences = "SHA512 SHA384 SHA256";
-      # UI preferences
       fixed-list-mode = true;
       keyid-format = "0xlong";
       with-fingerprint = true;
     };
   };
 
-  # GPG Agent configuration
   services.gpg-agent = {
     enable = true;
-    defaultCacheTtl = 28800; # 8 hours
-    maxCacheTtl = 86400; # 24 hours
-    pinentry.package = pkgs.pinentry-gtk2; # GUI pinentry for GNOME
+    defaultCacheTtl = 28800;
+    maxCacheTtl = 86400;
+    pinentry.package = pkgs.pinentry-gtk2;
   };
 
-  # SSH Agent - holds decrypted SSH keys in memory
   services.ssh-agent.enable = true;
 
-  # sops-nix: decrypt user secrets using ~/.ssh/id_ed25519 at home-manager activation time
   sops.age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 
   programs.ssh = {
@@ -302,16 +201,6 @@ in
     };
   };
 
-  programs.readline = {
-    enable = true;
-    variables = {
-      # Show all completion matches immediately on first tab (instead of requiring second tab)
-      show-all-if-ambiguous = true;
-    };
-  };
-
-  programs.dircolors.enable = true;
-
   xdg.configFile."appimagelauncher.cfg".text = ''
     [AppImageLauncher]
     %23%20%23%20additional_directories_to_watch=~/otherApplications:/even/more/applications
@@ -321,27 +210,16 @@ in
     enable_daemon=true
   '';
 
-  # Neovim configuration
-  xdg.configFile."nvim" = {
-    source = ./config/nvim;
-    recursive = true;
-  };
-  # Base bazelrc settings (layered by popos-bazel.nix and host configs)
   home.file.".bazelrc".text = ''
     common --show_progress_rate_limit=0.05
     common --progress_in_terminal_title
-    common --enable_bzlmod
-    build --platforms //:linux_x64
 
-    # Optional BuildBuddy / remote cache config (file not in git)
     try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
-  # Packages to install
   home.packages =
     with pkgs;
     [
-      # Python development environment
       (python3.withPackages (
         ps: with ps; [
           pydeps
@@ -350,121 +228,81 @@ in
 
       pkgs.pyright
 
-      ansible
       ast-grep
       attic-client
       awscli2
-      bazelisk
-      # bazelisk is the real binary; this wrapper makes it available as "bazel" too.
-      # IMPORTANT: This must be a real binary, not a shell alias. Shell aliases only
-      # work in interactive shells — they are invisible to subprocesses
-      # (e.g., subprocess.run(["bazel", ...]) in Python, Makefiles, pre-commit hooks).
-      # The Claude Code session hook installs a bazel wrapper shim that delegates to
-      # the real "bazel" binary on PATH; if only an alias exists, the shim cannot find
-      # it and fails with FileNotFoundError.
-      (pkgs.writeShellScriptBin "bazel" ''exec ${pkgs.bazelisk}/bin/bazelisk "$@"'')
       gnuplot
       jq
       mc
       mmv
       nethogs
-      pre-commit
-      ruff
       speedtest-cli
-      terraform
       uv
       xxd
       yq
       zsh
       atuin
 
-      # Tools from GitHub releases / binary downloads
       gh
       glab
       gitstatus
 
-      # Node/JS dev
       nodejs_24
       nodePackages.pnpm
       bun
 
-      # Rust toolchain - all from Nix to ensure consistent glibc
-      # Allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
       rustc
       cargo
       clippy
-      rustfmt
       rust-analyzer
       sccache
-      gcc # Matches Nix glibc for native extension builds
-      # jscpd, madge not in nixpkgs - install with: pnpm add -g jscpd madge
+      gcc
 
-      # Development languages/compilers
+      (writeShellScriptBin "z-claude" ''
+        exec env \
+          ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \
+          ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
+          ANTHROPIC_MODEL=glm-5.1 \
+          claude --disallowed-tools "WebFetch WebSearch" \
+          "$@"
+      '')
+
       go
-      # python312 moved to python3.withPackages in solarized.nix to avoid collision
 
-      # Development tools
       direnv
       devenv
-      nixfmt-rfc-style # Nix formatter (RFC 166 style)
-      rclone # Cloud storage mounting/sync
-      pkgsUnstable.opencode # AI coding agent for terminal (unstable for faster updates)
+      rclone
+      pkgsUnstable.opencode
 
-      # Tree-sitter CLI for manual parser management
-      tree-sitter # Used by nvim-treesitter auto_install
+      stylua
 
-      # Formatters for conform.nvim
-      stylua # Lua formatter
-
-      # Custom packages from ducktape repo
-      ducktape # git-commit-ai, difftree, gmail-archiver
-      claude-hooks # Claude Code hooks/statusline
-      bbapi # BuildBuddy API CLI
-      gterm-theme # GNOME Terminal theme follower
-      ducktapePackages.tana # Knowledge graph / note-taking
-    ]
-    ++ lib.optionals enableKube [
-      kubectl
-      kubernetes-helm
+      ducktape
+      claude-hook-rs
+      claude-statusline
+      bbapi
+      gterm-theme
+      ducktapePackages.tana-outliner
     ]
     ++ [
-      eza # Modern ls
-      zoxide # Smarter cd
+      eza
+      zoxide
       fzf
       fd
-      ripgrep
-      # TUI resource monitors
-      btop
-      bottom
-      procs # Modern process viewer with structured output
-      dust # Disk usage visualizer
-      tokei # SLOC analyzer grouped by language
-      # Network diagnostics (per-process usage and path tracing)
-      bandwhich
-      mtr
+      tokei
 
-      curl
-      wget
       pwgen
-      nmap
-      htop
-      iftop
-      iotop
       ffmpeg
-      mosh
-      ncdu
-      pv
-      tree
       sqlite
       gnupg
 
-      # Prompt themes (switchable via USE_OHMYPOSH env var)
-      oh-my-posh # Cross-shell prompt with proper powerline support
-      zsh-powerlevel10k # Powerlevel10k theme for zsh
+      oh-my-posh
+      zsh-powerlevel10k
 
+      yt-dlp
+      pdftk
+      qpdf
     ]
     ++ lib.optionals enableGui [
-      # Fonts - using modern individual nerd-fonts packages (covers ansible nerd_fonts role)
       nerd-fonts.fira-code
       nerd-fonts.droid-sans-mono
       nerd-fonts.jetbrains-mono
@@ -480,445 +318,141 @@ in
       nerd-fonts.proggy-clean-tt
       nerd-fonts.caskaydia-cove
 
-      # Additional fonts
       roboto
 
-      # GNOME Shell extensions are managed via programs.gnome-shell.extensions (see below).
-      # Packages and enabled-extensions dconf are handled by that module.
-    ]
-    ++ lib.optionals enableGui [
-      # GUI applications (migrated from Ansible)
-      # Note: discord and element-desktop moved to heavy packages
-
-      # Development & utilities
       flameshot
-      xclip # X11 clipboard utility
+      xclip
 
-      # Media players (lightweight alternatives)
       mplayer
       mpv
 
-      # Image viewer
       geeqie
+      evince
 
-      # System utilities
-      scrcpy # Android screen mirroring
-      virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
+      scrcpy
 
-      # Learning
       anki
 
-      # GNOME utilities
       gnome-tweaks
       dconf-editor
-    ]
-    ++ lib.optionals installHeavyViaHomeManager (heavyPkgs.heavyPackages pkgs)
-    ++ [
-      # CLI utilities (no GUI needed)
-      yt-dlp # YouTube downloader
-      pdftk # PDF manipulation toolkit
-      qpdf # PDF transformation/inspection tool
-
-      # TODO: comby is marked as broken in nixpkgs 25.11
-      # Previously we got it from oldPkgs (nixos-23.11) but removed during 25.11 migration
-      # Options: 1) build from source, 2) use unstable pin if fixed there, 3) find alternative
-      # pkgs.comby
     ];
 
-  # Enable fontconfig when GUI is enabled
+  targets.genericLinux.enable = !isNixOS;
+
   fonts.fontconfig.enable = enableGui;
 
-  home.sessionVariables = {
-    # Editor
-    EDITOR = "nvim";
-    VISUAL = "nvim";
-
-    # Basic Memory location
-    BASIC_MEMORY_HOME = "$HOME/.syncthing/pkm/basic-memory";
-
-    # Character encoding
-    DEFAULT_CHARSET = "utf8";
-
-    # GCC colored warnings and errors
-    GCC_COLORS = "error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01";
-
-    # Interactive shell settings
-    LESS = "-F -X -R"; # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
-
-    # Go workspace
-    GOPATH = "$HOME/.go";
-
-    # pnpm global packages
-    PNPM_HOME = "$HOME/.local/share/pnpm";
-  };
-
-  # Patch 2 critical MIME associations in-place without replacing the full
-  # mimeapps.list (desktop environment manages the rest).
   home.activation.fixMimeApps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
+    run ${pkgs.xdg-utils}/bin/xdg-mime default org.gnome.Evince.desktop application/pdf
     run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
   '';
 
-  # Terminal shortcut (Ctrl+Alt+T) — GNOME 49 removed the built-in 'terminal'
-  # media key, so we use a custom keybinding via xdg-terminal-exec.
   ducktape.gnomeCustomKeybindings.terminal = {
     name = "Launch Terminal";
     command = "xdg-terminal-exec";
     binding = "<Primary><Alt>t";
   };
 
-  # Default terminal for xdg-terminal-exec (used by Ctrl+Alt+T keybinding above)
   xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
 
-  # XDG autostart desktop entries (migrated from Ansible gui role)
-  xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Syncthing-GTK
-    Exec=syncthing-gtk --minimized
-    Icon=syncthing-gtk
-    Terminal=false
-    Categories=Network;FileTransfer;
-    X-GNOME-Autostart-enabled=true
-  '';
-  xdg.configFile."autostart/discord.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Discord (Minimized)
-    Exec=discord --start-minimized
-    Icon=discord
-    Terminal=false
-    Categories=Network;InstantMessaging;
-    X-GNOME-Autostart-enabled=true
-  '';
+  xdg.dataFile."themes/Ducktape Shell/gnome-shell/gnome-shell.css" = lib.mkIf enableGui {
+    text = ''
+      @import url("resource:///org/gnome/shell/theme/gnome-shell.css");
 
-  # GNOME dconf settings (migrated from Ansible gui role)
+      #panel .panel-button,
+      #panel .panel-button:hover,
+      #panel .panel-button:active,
+      #panel .panel-button:focus,
+      #panel .panel-button:checked,
+      #panel .panel-button:overview,
+      #panel .clock-display,
+      #panel .clock-display:hover,
+      #panel .clock-display:active,
+      #panel .clock-display:focus,
+      #panel .clock-display:checked,
+      #panel .clock-display:overview,
+      #panel .clock-display .clock,
+      #panel .clock-display-box {
+        border-radius: 4px;
+      }
+    '';
+  };
+
+  xdg.autostart = {
+    enable = true;
+    entries = [
+      (pkgs.writeText "syncthing-gtk.desktop" ''
+        [Desktop Entry]
+        Type=Application
+        Name=Syncthing-GTK
+        Exec=syncthing-gtk --minimized
+        Icon=syncthing-gtk
+        Terminal=false
+        Categories=Network;FileTransfer;
+        X-GNOME-Autostart-enabled=true
+      '')
+    ];
+  };
+
   dconf = {
     enable = true;
     settings = {
-      # GNOME preferences
       "org/gnome/desktop/wm/preferences" = {
-        focus-mode = "sloppy"; # Focus follows mouse
-        button-layout = ":minimize,maximize,close"; # Window buttons
+        focus-mode = "sloppy";
+        button-layout = ":minimize,maximize,close";
       };
 
-      # GNOME Night Light
       "org/gnome/settings-daemon/plugins/color" = {
         night-light-enabled = true;
         night-light-temperature = lib.hm.gvariant.mkUint32 2414;
       };
 
-      # K8s workers should not auto-suspend on AC power
       "org/gnome/settings-daemon/plugins/power" = lib.mkIf isK8sWorker {
         sleep-inactive-ac-type = "nothing";
       };
 
-      # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
       "org/gnome/shell/extensions/panel-date-format" = {
         format = "%a %Y-%m-%d %H:%M";
+      };
+
+      "org/gnome/shell/extensions/just-perfection" = {
+        clock-menu-position = 2;
+        clock-menu-position-offset = 0;
+        panel-button-padding-size = 4;
+        panel-indicator-padding-size = 4;
+        workspace-background-corner-size = 4;
+      };
+
+      "org/gnome/shell/extensions/user-theme" = {
+        name = "Ducktape Shell";
       };
 
       "org/gnome/terminal/legacy" = {
         default-show-menubar = false;
       };
-
     };
   };
 
-  # GNOME Shell extensions — managed via programs.gnome-shell module.
-  # This sets dconf enabled-extensions and installs packages automatically.
-  # Night-theme-switcher is added by solarized module.
-  # Appindicator is added by NixOS host files (rugged, wyrm2).
-  #
-  # Other GNOME tiling options to consider:
-  #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
-  #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
-  #   - gnomeExtensions.gtile: grid-based manual tiling (pick zones)
-  #   - gnomeExtensions.tiling-shell: newer, customizable drag-and-drop zone layouts
-  # Non-GNOME alternatives: hyprland (best NixOS integration), sway (i3 for Wayland), niri (scrollable tiling)
   programs.gnome-shell = lib.mkIf enableGui {
     enable = true;
     extensions = [
       { package = pkgs.gnomeExtensions.panel-date-format; }
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }
+      { package = pkgs.gnomeExtensions.gsconnect; }
+      { package = pkgs.gnomeExtensions.display-scale-switcher; }
+      { package = pkgsUnstable.gnomeExtensions.just-perfection; }
+      { package = pkgs.gnomeExtensions.user-themes; }
     ];
   };
 
-  # Common shell configuration
-  home.shellAliases = {
-    ".." = "cd ..";
-    suspend = "systemctl suspend";
-    npm = "pnpm";
-    npx = "echo '❌ No you idiot, use pnpm dlx' && false";
-    gmrc = "glab mr create --fill --remove-source-branch --yes";
-    gs = "git status --short --branch --show-stash";
-    vimdiff = "nvim -d";
-    alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
+  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" { };
 
-    # Custom eza aliases (beyond what programs.eza provides)
-    lt = "eza -l --tree --icons=auto --group-directories-first";
-    lS = "eza -l --sort=size --reverse --icons=auto --group-directories-first";
-    ld = "eza -l --only-dirs --icons=auto --group-directories-first";
-    l1 = "eza -1 --icons=auto";
-    lm = "eza -l --sort=modified --reverse --icons=auto --group-directories-first";
-  };
-
-  # GNOME Terminal profiles handled by solarized module
-
-  # Zsh configuration - full Nix management
-  programs.zsh = {
-    enable = true;
-
-    # .zshenv content (loaded for all zsh invocations, including scripts)
-    # TODO: Source nix-daemon.sh here for non-login shells (mosh). See nix/TODO.md.
-    envExtra = "skip_global_compinit=1";
-
-    # No auto-correction
-    enableCompletion = true;
-    autocd = true;
-
-    autosuggestion = {
-      enable = true;
-      strategy = [
-        "history"
-        "completion"
-      ];
-      highlight = "fg=244";
-    };
-
-    syntaxHighlighting.enable = true;
-
-    oh-my-zsh = {
-      enable = true;
-      plugins = [
-        "alias-finder"
-        "bazel"
-        "aliases"
-        "colored-man-pages"
-        "command-not-found"
-        "docker"
-        "git"
-        "gpg-agent"
-        "isodate"
-        "lein"
-        "python"
-        "rust"
-      ];
-    };
-
-    # p10k plugin loaded conditionally in zsh-init.zsh based on USE_OHMYPOSH env var
-    plugins = [
-      {
-        name = "powerlevel10k";
-        src = pkgs.zsh-powerlevel10k;
-        file = "share/zsh-powerlevel10k/powerlevel10k.zsh-theme";
-      }
-    ];
-
-    sessionVariables = {
-      ZSH_ALIAS_FINDER_AUTOMATIC = "true";
-      COMPLETION_WAITING_DOTS = "%F{yellow}...%f";
-      DISABLE_UNTRACKED_FILES_DIRTY = "true";
-      RPROMPT = "%*";
-      DEFAULT_USER = "agentydragon";
-      ZSH_THEME_TERM_TITLE_IDLE = "%n: %~ $";
-    };
-
-    # Additional initialization (loaded after oh-my-zsh)
-    initContent = lib.mkMerge [
-      (zshInit + "\n" + commonShellInit)
-
-      # Conditional zoxide integration for Claude Code compatibility (after everything else)
-      # Only initialize zoxide when NOT running in Claude Code to prevent function
-      # definition conflicts. Claude Code filters out functions starting with '_' or '__',
-      # breaking zoxide's __zoxide_z() function which cd() depends on.
-      # Claude's shell snapshot filters functions starting with '_'/'__',
-      # so __zoxide_z() is lost but cd() (which calls it) is kept → "command not found".
-      (lib.mkOrder 1400 ''
-        if [[ -z "$CLAUDECODE" ]]; then
-          eval "$(${lib.getExe pkgs.zoxide} init zsh --cmd cd)"
-        fi
-      '')
-    ];
-  };
-
-  # Bash configuration - full Nix management
-  programs.bash = {
-    enable = true;
-    enableCompletion = true;
-
-    shellOptions = [
-      "checkwinsize"
-      "globstar"
-    ];
-
-    # Bash-specific initialization
-    initExtra = bashInit + "\n" + commonShellInit;
-  };
-
-  # Atuin - better shell history
-  programs.atuin = {
-    enable = true;
-    enableBashIntegration = true;
-    enableZshIntegration = true;
-    flags = [ "--disable-up-arrow" ];
-    settings = {
-      sync_address = "https://atuin.allegedly.works";
-    };
-  };
-
-  # Direnv - per-directory environment management
-  programs.direnv = {
-    enable = true;
-    enableBashIntegration = true;
-    enableZshIntegration = true;
-    nix-direnv.enable = true;
-  };
-
-  # Zoxide - smarter cd (conditionally disabled for Claude Code)
-  programs.zoxide = {
-    enable = true;
-    enableBashIntegration = false; # Disabled for bash - disorients Claude/Codex assistants
-    enableZshIntegration = false; # Disabled - using custom conditional integration below
-    options = [ "--cmd cd" ];
-  };
-
-  # Eza - modern ls replacement
-  programs.eza = {
-    enable = true;
-    enableBashIntegration = true;
-    enableZshIntegration = true;
-    icons = "auto";
-    git = true;
-    extraOptions = [
-      "--group-directories-first"
-      "--header"
-    ];
-  };
-
-  programs.tmux = {
-    enable = true;
-    sensibleOnTop = true;
-
-    # Basic settings
-    mouse = true;
-    historyLimit = 100000;
-    baseIndex = 1; # Start windows at 1
-    keyMode = "vi"; # Vi mode keys
-    clock24 = true;
-    prefix = "C-b";
-    terminal = "tmux-256color"; # Better terminal type for modern tmux
-
-    # Plugins from TPM configuration
-    plugins = with pkgs.tmuxPlugins; [
-      resurrect # Save/restore sessions
-      continuum # Auto-save sessions periodically
-      yank # System clipboard integration
-      prefix-highlight # Show prefix/copy/sync modes in status
-    ];
-
-    # Main tmux configuration (migrated from tmux.conf)
-    extraConfig = ''
-      # Pane border titles - show pane title or current command
-      set -g pane-border-status top
-      set -g pane-border-format ' #{?pane_title,#{pane_title},#{pane_current_command}} '
-
-      # Window/Pane titles
-      set -g set-titles on
-      set -g set-titles-string '#S:#I.#P #W'
-      set -g allow-rename on
-      set -g automatic-rename on
-
-      # Status bar update interval
-      set -g status-interval 2
-
-      # Start panes at 1 (like windows)
-      setw -g pane-base-index 1
-
-      # Enable vi mode in copy mode
-      setw -g mode-keys vi
-
-      # Split bindings (| for horizontal, - for vertical)
-      bind | split-window -h
-      bind - split-window -v
-      unbind '"'
-      unbind %
-
-      # Pane navigation with vim keys (h/j/k/l) - repeatable with prefix
-      unbind -n C-h
-      unbind -n C-j
-      unbind -n C-k
-      unbind -n C-l
-      set -g repeat-time 400
-      bind -T prefix -r h select-pane -L
-      bind -T prefix -r j select-pane -D
-      bind -T prefix -r k select-pane -U
-      bind -T prefix -r l select-pane -R
-
-      # Resize panes with Alt + arrows
-      bind -n M-Left  resize-pane -L 5
-      bind -n M-Right resize-pane -R 5
-      # M-Up reserved for Codex CLI (queued prompt retrieval), so leave it unbound here.
-      unbind -n M-Up
-      bind -n M-Down  resize-pane -D 2
-
-      # Clipboard integration
-      set -g set-clipboard on
-
-      # Copy mode (vi) key bindings (tmux-yank handles clipboard integration via xclip)
-      bind -T copy-mode-vi v send -X begin-selection
-      bind -T copy-mode-vi y send -X copy-selection-and-cancel
-      bind -T copy-mode-vi Y send -X copy-line
-
-      # Status bar configuration
-      set -g status-left-length 60
-      set -g status-right-length 60
-      set -g status-left "#S #[fg=cyan]| #[default]#I:#W"
-      set -g status-right "#{prefix_highlight} #(whoami) #[fg=cyan]| %Y-%m-%d %H:%M"
-
-      # Plugin settings
-      # prefix-highlight configuration
-      set -g @prefix_highlight_show_copy_mode on
-      set -g @prefix_highlight_show_sync_mode on
-
-      # Ensure tmux refreshes SSH-related env vars when reattaching locally, so p10k context
-      # doesn't think we're still in an old SSH session.
-      set -g update-environment "DISPLAY SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION"
-
-      # tmux-resurrect settings
-      set -g @resurrect-strategy-nvim 'session'
-      set -g @resurrect-strategy-vim 'session'
-
-      # tmux-continuum settings
-      set -g @continuum-restore 'on'
-
-      # Enable true color support for xterm-256color terminals
-      set -ag terminal-overrides ",xterm-256color:RGB"
-
-      # Enable hyperlink support (OSC 8) for clickable links in terminal
-      set -as terminal-features ',*:hyperlinks'
-    '';
-  };
-
-  # Prompt configurations (switchable via USE_OHMYPOSH env var)
-  # oh-my-posh config is in shell/oh-my-posh.nix
-  home.file.".p10k.zsh".source = ./p10k.zsh;
-
-  # Cargo configuration - use sccache for compilation caching
-  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" {
-    build.rustc-wrapper = "sccache";
-  };
-
-  # Ansible configuration
   home.file.".ansible.cfg".source = (pkgs.formats.ini { }).generate "ansible.cfg" {
     defaults.collections_path = "~/.ansible/collections";
   };
 
-  # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
   home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     [[ -d "$HOME/.npm-global" ]] && echo "⚠️  WARNING: Remove legacy ~/.npm-global directory (replaced by pnpm)"
   '';
-
-  # Additional Claude Code MCP wiring is handled via programs.claude-code.
 }

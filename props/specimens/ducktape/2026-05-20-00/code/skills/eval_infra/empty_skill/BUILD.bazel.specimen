@@ -1,0 +1,10 @@
+load("//skills:defs.bzl", "skill_package")
+
+# The "skill off" arm payload for skill-eval rollouts. Mounting an empty
+# skill keeps the sandbox shape uniform across arms — there's no
+# `if skill_on:` branch in rollout code, just a different tar.
+skill_package(
+    name = "empty_skill",
+    srcs = ["SKILL.md"],
+    visibility = ["//skills:__subpackages__"],
+)

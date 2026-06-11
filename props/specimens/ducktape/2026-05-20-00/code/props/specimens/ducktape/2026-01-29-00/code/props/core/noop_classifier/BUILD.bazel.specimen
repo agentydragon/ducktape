@@ -1,0 +1,37 @@
+"""Noop classifier module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["//openai_utils:pydantic_strict_mode"],
+)
+
+py_library(
+    name = "classifier",
+    srcs = ["classifier.py"],
+    data = ["prompt.md"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display:rich_display",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+    ],
+)

@@ -4,21 +4,21 @@ metadata:
   name: atuin-server
   namespace: atuin
   labels:
-    app: atuin-server
+    app.kubernetes.io/name: atuin
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: atuin-server
+      app.kubernetes.io/name: atuin
   template:
     metadata:
       labels:
-        app: atuin-server
+        app.kubernetes.io/name: atuin
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: atuin
           image: ghcr.io/atuinsh/atuin:v18.12.0

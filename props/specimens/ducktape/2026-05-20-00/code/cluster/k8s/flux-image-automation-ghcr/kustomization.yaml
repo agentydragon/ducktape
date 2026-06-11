@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - props-backend-image-repository.yaml
+  - props-backend-image-policy.yaml
+  - image-update-automation.yaml
+  - openclaw-image-repository.yaml
+  - openclaw-image-policy.yaml
+  - activitywatch-image-repository.yaml
+  - activitywatch-image-policy.yaml
+  - cpap-sync-image-repository.yaml
+  - cpap-sync-image-policy.yaml
+  - airlock-image-repository.yaml
+  - airlock-image-policy.yaml
+  - auth-proxy-image-repository.yaml
+  - auth-proxy-image-policy.yaml
+  - openclaw-exec-image-repository.yaml
+  - openclaw-exec-image-policy.yaml
+  - homeassistant-proxy-image-repository.yaml
+  - homeassistant-proxy-image-policy.yaml
+  - tana-mcp-image-repository.yaml
+  - tana-mcp-image-policy.yaml
+  - mcp-oauth-facade-image-repository.yaml
+  - mcp-oauth-facade-image-policy.yaml
+  - manifold-mcp-server-image-repository.yaml
+  - manifold-mcp-server-image-policy.yaml
+  - tana-token-broker-image-repository.yaml
+  - tana-token-broker-image-policy.yaml
+  - token-provisioner-image-repository.yaml
+  - token-provisioner-image-policy.yaml
+  - claude-jwt-rotation-image-repository.yaml
+  - claude-jwt-rotation-image-policy.yaml
+  - attic-jwt-rotation-image-repository.yaml
+  - attic-jwt-rotation-image-policy.yaml
+  - authentik-mcp-poc-server-image-repository.yaml
+  - authentik-mcp-poc-server-image-policy.yaml
+  - authentik-mcp-poc-backend-image-repository.yaml
+  - authentik-mcp-poc-backend-image-policy.yaml
+  - grocy-mcp-oidc-server-image-repository.yaml
+  - grocy-mcp-oidc-server-image-policy.yaml
+  # CLEANUP: remove kubernetes-mcp-server entries when upstream releases
+  # the well-known 404 fallback (see third_party/kubernetes-mcp-server-pin.txt).
+  - kubernetes-mcp-server-image-repository.yaml
+  - kubernetes-mcp-server-image-policy.yaml
+  - rtl-tcp-image-repository.yaml
+  - rtl-tcp-image-policy.yaml
+  - study-casino-image-repository.yaml
+  - study-casino-image-policy.yaml

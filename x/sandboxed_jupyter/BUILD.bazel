@@ -3,8 +3,7 @@
 
 """Sandboxed Jupyter execution package."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "sandboxed_jupyter",
@@ -19,7 +18,6 @@ py_library(
         "sandboxer.py",
         "wrapper.py",
     ],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra:constants",

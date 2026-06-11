@@ -58,15 +58,15 @@ spec:
           # Allow operators that create child workloads from CRs deployed via GitOps
           - subjects:
               - kind: ServiceAccount
-                name: operator-vault-operator
-                namespace: vault
-          - subjects:
-              - kind: ServiceAccount
                 name: openclaw-operator
                 namespace: openclaw-operator
           - subjects:
               - kind: ServiceAccount
                 name: monitoring-operator
+                namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: grafana-operator
                 namespace: monitoring
           # Allow Authentik (creates outpost Deployments from provider CRs)
           - subjects:

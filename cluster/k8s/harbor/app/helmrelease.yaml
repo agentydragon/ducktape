@@ -59,29 +59,28 @@ spec:
     # Persistence configuration
     persistence:
       enabled: true
-      resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
-          storageClass: longhorn
+          storageClass: lvm-proxmox-hdd
           size: 30Gi
         jobservice:
-          storageClass: longhorn
-          size: 1Gi
+          jobLog:
+            storageClass: lvm-proxmox-hdd
+            size: 1Gi
         redis:
-          storageClass: longhorn
+          storageClass: lvm-proxmox-hdd
           size: 1Gi
         # trivy PVC removed — trivy disabled below
 
-    # Admin password from Password generator (bootstrap phase)
-    # TODO: Migrate to Vault-backed harbor-secrets once SSO is configured
+    # Admin password from SOPS-managed bootstrap secret.
     harborAdminPassword: "" # Will be set via existingSecret
     existingSecretAdminPassword: "harbor-admin-initial"
     existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
     # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
-    # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
-    # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
-    # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+    # cross-site latency (OVH<->Proxmox via KubeSpan) causes liveness probe
+    # timeouts when core/nginx are on OVH but database/redis are on Proxmox.
+    # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
     core:
       replicas: 1
       podAnnotations:
@@ -189,12 +188,10 @@ spec:
       exporter:
         path: /metrics
         port: 8001
+      # ServiceMonitor split into harbor/servicemonitor/ to avoid
+      # blocking Harbor deploys on monitoring-stack readiness.
       serviceMonitor:
-        enabled: true
-        # Match kube-prometheus-stack selector
-        additionalLabels:
-          prometheus: kube-prometheus-stack
-        interval: 30s
+        enabled: false
 
     nginx:
       nodeSelector:

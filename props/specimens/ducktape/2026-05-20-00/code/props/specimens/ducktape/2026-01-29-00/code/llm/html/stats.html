@@ -1,0 +1,93 @@
+{% extends "base.html" %} {% block content %}
+<h1>Server Statistics</h1>
+<p>Token counts and byte sizes for all served pages:</p>
+
+<div id="stats-container">
+  <!-- Loading spinner -->
+  <div class="text-center" id="loading-spinner">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading statistics...</p>
+  </div>
+
+  <!-- Stats table (hidden initially) -->
+  <table class="table" id="stats-table" style="display: none">
+    <thead>
+      <tr>
+        <th>Page</th>
+        <th>Claude 4</th>
+        <th>o3</th>
+        <th>Bytes</th>
+      </tr>
+    </thead>
+    <tbody id="stats-tbody">
+      <!-- Populated by JavaScript -->
+    </tbody>
+    <tfoot id="stats-tfoot">
+      <!-- Populated by JavaScript -->
+    </tfoot>
+  </table>
+
+  <!-- Error message (hidden initially) -->
+  <div class="alert alert-danger" id="error-message" style="display: none">
+    <strong>Error:</strong> <span id="error-text"></span>
+  </div>
+</div>
+
+<p><em>Note: Token counts are estimates. Actual usage may vary.</em></p>
+
+<script>
+  // Fetch stats data when page loads
+  document.addEventListener("DOMContentLoaded", async () => {
+    const spinner = document.getElementById("loading-spinner");
+    const table = document.getElementById("stats-table");
+    const tbody = document.getElementById("stats-tbody");
+    const tfoot = document.getElementById("stats-tfoot");
+    const errorDiv = document.getElementById("error-message");
+    const errorText = document.getElementById("error-text");
+
+    try {
+      const response = await fetch("/api/stats");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Populate table body
+      tbody.innerHTML = data.pages
+        .map(
+          (stat) => `
+            <tr>
+                <td><a href="${stat.url}">${stat.title}</a></td>
+                <td>${stat["claude-4"].toLocaleString()}</td>
+                <td>${stat["o3"].toLocaleString()}</td>
+                <td>${stat["bytes"].toLocaleString()}</td>
+            </tr>
+        `,
+        )
+        .join("");
+
+      // Populate table footer with totals
+      tfoot.innerHTML = `
+            <tr>
+                <th>Total</th>
+                <th>${data.totals["claude-4"].toLocaleString()}</th>
+                <th>${data.totals["o3"].toLocaleString()}</th>
+                <th>${data.totals["bytes"].toLocaleString()}</th>
+            </tr>
+        `;
+
+      // Hide spinner and show table
+      spinner.style.display = "none";
+      table.style.display = "table";
+    } catch (error) {
+      // Hide spinner and show error
+      spinner.style.display = "none";
+      errorText.textContent = error.message;
+      errorDiv.style.display = "block";
+    }
+  });
+</script>
+{% endblock %}

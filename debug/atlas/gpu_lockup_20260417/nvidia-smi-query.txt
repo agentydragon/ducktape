@@ -1,0 +1,3 @@
+name, pci.bus_id, driver_version, pstate, temperature.gpu, power.draw [W], pcie.link.gen.current, pcie.link.width.current, ecc.errors.uncorrected.volatile.total, memory.used [MiB], memory.total [MiB]
+NVIDIA GeForce RTX 5090, 00000000:01:00.0, 580.142, [GPU requires reset], [GPU requires reset], [N/A], [N/A], [N/A], [N/A], 2 MiB, 32607 MiB
+NVIDIA GeForce RTX 5090, 00000000:02:00.0, 580.142, [GPU requires reset], [GPU requires reset], [N/A], [N/A], [N/A], [N/A], 2 MiB, 32607 MiB

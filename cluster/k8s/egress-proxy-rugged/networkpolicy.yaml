@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-proxy-rugged-ingress
+  namespace: egress-proxy
+  annotations:
+    description: Restrict rugged egress proxy ingress to its HTTP proxy port from in-cluster pods
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: egress-proxy
+      app.kubernetes.io/instance: rugged
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080

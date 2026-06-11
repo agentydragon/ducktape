@@ -1,0 +1,42 @@
+[
+  {
+    "id": "location_a_property",
+    "source_catalog_id": "public_fixture",
+    "source_property_id": "location-a-property",
+    "location_id": "location_a",
+    "address": "Location A Property",
+    "neighborhood": "Location A",
+    "type": "Detached fixture",
+    "price_usd": 900000.0,
+    "rent_estimate_usd": 4200.0,
+    "beds": 3,
+    "baths": 2,
+    "sqft": 1400,
+    "year_built": 1948,
+    "hoa_monthly_usd": 0.0,
+    "annual_tax_on_list_usd": 10800.0,
+    "source_url": "https://example.invalid/location-a-property",
+    "image_url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMjAwJyBoZWlnaHQ9Jzc1MCcgdmlld0JveD0nMCAwIDEyMDAgNzUwJz48cmVjdCB3aWR0aD0nMTIwMCcgaGVpZ2h0PSc3NTAnIGZpbGw9JyNkYmVhZmUnLz48cmVjdCB5PSc0NDAnIHdpZHRoPScxMjAwJyBoZWlnaHQ9JzMxMCcgZmlsbD0nI2NiZDVlMScvPjxyZWN0IHg9JzI1MCcgeT0nMjUwJyB3aWR0aD0nNzAwJyBoZWlnaHQ9JzQwMCcgcng9JzI0JyBmaWxsPScjZmZmZmZmJyBzdHJva2U9JyM5NGEzYjgnIHN0cm9rZS13aWR0aD0nMTInLz48cG9seWdvbiBwb2ludHM9JzIxMCwzMjAgNjAwLDgwIDk5MCwzMjAnIGZpbGw9JyNlZjQ0NDQnLz48cmVjdCB4PSc1NDAnIHk9JzQ3MCcgd2lkdGg9JzEyMCcgaGVpZ2h0PScxODAnIGZpbGw9JyM5NGEzYjgnLz48cmVjdCB4PSczMjAnIHk9JzM2MCcgd2lkdGg9JzE1MCcgaGVpZ2h0PScxMTAnIGZpbGw9JyNiZmRiZmUnLz48cmVjdCB4PSc3MzAnIHk9JzM2MCcgd2lkdGg9JzE1MCcgaGVpZ2h0PScxMTAnIGZpbGw9JyNiZmRiZmUnLz48dGV4dCB4PSc2MDAnIHk9JzY5MCcgZm9udC1mYW1pbHk9J0FyaWFsLCBzYW5zLXNlcmlmJyBmb250LXNpemU9JzY0JyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmaWxsPScjNDc1NTY5Jz5Mb2NhdGlvbiBBPC90ZXh0Pjwvc3ZnPg==",
+    "notes": "Synthetic public fixture property."
+  },
+  {
+    "id": "location_b_property",
+    "source_catalog_id": "public_fixture",
+    "source_property_id": "location-b-property",
+    "location_id": "location_b",
+    "address": "Location B Property",
+    "neighborhood": "Location B",
+    "type": "Attached fixture",
+    "price_usd": 520000.0,
+    "rent_estimate_usd": 3100.0,
+    "beds": 3,
+    "baths": 2,
+    "sqft": 1250,
+    "year_built": 1985,
+    "hoa_monthly_usd": 150.0,
+    "annual_tax_on_list_usd": 5720.0,
+    "source_url": "https://example.invalid/location-b-property",
+    "image_url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMjAwJyBoZWlnaHQ9Jzc1MCcgdmlld0JveD0nMCAwIDEyMDAgNzUwJz48cmVjdCB3aWR0aD0nMTIwMCcgaGVpZ2h0PSc3NTAnIGZpbGw9JyNlY2ZjY2InLz48cmVjdCB5PSc0NTAnIHdpZHRoPScxMjAwJyBoZWlnaHQ9JzMwMCcgZmlsbD0nI2Q5Zjk5ZCcvPjxyZWN0IHg9JzI2MCcgeT0nMjQwJyB3aWR0aD0nNjgwJyBoZWlnaHQ9JzQxMCcgcng9JzI0JyBmaWxsPScjZjhmYWZjJyBzdHJva2U9JyM4NGNjMTYnIHN0cm9rZS13aWR0aD0nMTInLz48cG9seWdvbiBwb2ludHM9JzIyMCwzMjAgNjAwLDkwIDk4MCwzMjAnIGZpbGw9JyMxNmEzNGEnLz48cmVjdCB4PSc1NDInIHk9JzQ3MCcgd2lkdGg9JzExNicgaGVpZ2h0PScxODAnIGZpbGw9JyM2NDc0OGInLz48cmVjdCB4PSczMjAnIHk9JzM2MCcgd2lkdGg9JzE1MCcgaGVpZ2h0PScxMTAnIGZpbGw9JyNiYmY3ZDAnLz48cmVjdCB4PSc3MzAnIHk9JzM2MCcgd2lkdGg9JzE1MCcgaGVpZ2h0PScxMTAnIGZpbGw9JyNiYmY3ZDAnLz48dGV4dCB4PSc2MDAnIHk9JzY5MCcgZm9udC1mYW1pbHk9J0FyaWFsLCBzYW5zLXNlcmlmJyBmb250LXNpemU9JzY0JyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmaWxsPScjMzY1MzE0Jz5Mb2NhdGlvbiBCPC90ZXh0Pjwvc3ZnPg==",
+    "notes": "Synthetic public fixture property."
+  }
+]

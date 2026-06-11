@@ -28,7 +28,7 @@ from pathlib import Path
 import pygit2
 
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import build_universe
-from util.bazel.workspace import BazelWorkspace, get_build_workspace_directory
+from util.bazel.workspace import BazelBackend, BazelWorkspace, get_build_workspace_directory
 
 # The file we'll temporarily modify to simulate a change.
 _TARGET_FILE = Path("util/bazel/workspace.py")
@@ -131,14 +131,17 @@ def main() -> int:
     _BENCH_OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
 
     # Main workspace (default output base) for file_to_label.
-    main_ws = BazelWorkspace(root=repo_root)
+    main_ws = BazelWorkspace(root=repo_root, backend=BazelBackend.LOCAL)
     label = main_ws.file_to_label(_TARGET_FILE)
     if label is None:
         raise ValueError(f"No BUILD file found for {_TARGET_FILE}")
 
     # Bench workspace with separate output base to avoid lock contention.
     bench_ws = BazelWorkspace(
-        root=repo_root, output_base=_BENCH_OUTPUT_BASE, startup_flags=_read_session_startup_flags()
+        root=repo_root,
+        backend=BazelBackend.LOCAL,
+        output_base=_BENCH_OUTPUT_BASE,
+        startup_flags=_read_session_startup_flags(),
     )
 
     timestamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")

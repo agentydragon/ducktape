@@ -14,10 +14,10 @@ target-version = "py313"
 # Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [
-    "k8s_old",
     "tana/export/references",
     "props/testing/fixtures/testdata",
-    "x/claude_hooks/testdata",
+    "py_detectors/rules/**/bad/**",
+    "py_detectors/rules/**/ok/**",
     "x/sandboxed_jupyter/testdata",
     "sysrw/testdata",
     "tana/testdata",
@@ -85,7 +85,13 @@ ignore = [
     "PLR0911",  # too many returns
     "PLR0913",  # too many arguments - often leads to unhelpful refactors
     "B904",     # raise from e
-    "E501"      # line length (formatter handles wrapping)
+    "E501",     # line length (formatter handles wrapping)
+    # EXE002 (file is executable but has no shebang): the lint *aspect* runs ruff on
+    # bazel-out copies, which Bazel marks executable, so EXE002 fires on essentially
+    # every Python file regardless of the source permission bit. Real source files are
+    # non-executable, so pre-commit (which lints the actual tree) never triggers this
+    # and loses no signal. The rest of the EXE group (shebang presence/content) is kept.
+    "EXE002",
 ]
 
 # Avoid conflicts between ruff-format and trailing-comma rules
@@ -102,7 +108,7 @@ extend-ignore = ["COM812"]
 # TC006 — quoting cast() type expressions to avoid runtime eval is not worth the readability cost
 
 # Allow mathematical symbols in strings
-allowed-confusables = ["σ"]
+allowed-confusables = ["σ", "α", "β", "γ", "ε", "×"]
 
 # Enforce modern typing
 [lint.pyupgrade]
@@ -117,38 +123,36 @@ default-section = "third-party"
 # Force third-party for packages that have same-named directories in repo
 known-third-party = ["ansible", "docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
-# TODO: Auto-generate this list from Bazel once bazelized
+# TODO(first-party guard): add a CI/pre-commit check that fails when this list drifts
+#   — i.e. a top-level Python package is missing here, or a first-party import root
+#   collides with a third-party import name (from devinfra/gazelle_python.yaml). It
+#   can't be a hermetic bazel test: genquery's `scope` rejects `//...` so it can't
+#   enumerate all py targets, and a test sandbox can't glob the tree. A pre-commit /
+#   `bazel run` validator that scans the tree (or runs `bazel query`) is the shape.
+#   Until then, a missing entry surfaces as a (cryptic) bazel-out I001 from the lint aspect.
 known-first-party = [
     "devinfra",
     "util",
     "agent_core",
     "agent_pkg",
-    "agent_server",
+    "cpap",
     "x",
     "props",
-    "claude_history",
-    "claude_hooks",
-    "claude_linter_v2",
-    "cli_util",
-    "cotrl",
-    "dbus_fast_example",
     "difftree",
-    "ducktape",
     "ducktape_llm_common",
     "editor_agent",
     "ember",
     "finance",
     "git_commit_ai",
     "gmail_archiver",
-    "gterm_theme",
+    "gnome",
     "habitify",
     "homeassistant",
-    "indoor_aqi",
     "inop",
     "inventree_utils",
     "laser",
     "llm",
-    "llm_html",
+    "loom",
     "mcp_infra",
     "mcp_utils",
     "openai_utils",
@@ -157,6 +161,21 @@ known-first-party = [
     "tana",
     "tests",  # test packages (until colocated under main packages)
     "wt",
+    # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
+    # root, where ruff cannot auto-detect first-party packages (it only sees
+    # bazel-out/ copies), so any first-party top-level package missing here gets its
+    # imports mis-sorted into the third-party group, producing spurious I001. (When
+    # ruff runs from the repo root — e.g. pre-commit — auto-detection masks omissions.)
+    "agent_cli",
+    "aiquota",
+    "airlock",
+    "augur",
+    "cluster",
+    "mako_utils",
+    "nix",
+    "plaid_utils",
+    "skills",
+    "third_party",
 ]
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma

@@ -6,7 +6,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/gitops/github-secrets-sync
+  refreshBeforeApply: true
+  path: ./tf/gitops/github-secrets-sync
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -17,7 +18,15 @@ spec:
 
   backendConfig:
     customConfiguration: |
-      backend "kubernetes" {
-        secret_suffix = "github-secrets-sync"
-        namespace     = "flux-system"
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "github_secrets_sync"
       }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password

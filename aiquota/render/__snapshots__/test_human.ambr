@@ -1,0 +1,28 @@
+# serializer version: 1
+# name: test_currently_over_plan_collapses_to_7d_reset_only
+  '''
+  claude  ⚡ OVER PLAN — extra $3120.50/$4600 (68%) this month
+    7d reset: ↻ 6d10h
+  '''
+# ---
+# name: test_error_only_when_no_data
+  'zai: error — no api key path configured'
+# ---
+# name: test_extra_enabled_but_prepaid_has_room_shows_normal_bars
+  '''
+  claude
+    5h:   6%  ↻ 2h05m  Δ-52%  leaves ~90% unused at reset
+    7d:   2%  ↻ 4d21h  Δ-28%  leaves ~93% unused at reset
+    extra: $2324.85/$4600 (51%) spent this month
+  '''
+# ---
+# name: test_renders_both_windows_with_reset_and_pace
+  '''
+  codex
+    5h:  24%  ↻ 1h33m  Δ-45%  leaves ~65% unused at reset
+    7d:  48%  ↻ 5d12h  Δ+27%  exhausts ~3d21h before reset
+  zai
+    5h:  49%  ↻ 2h45m  Δ+4%  exhausts ~24m before reset
+    7d: 100%  ↻ 6d14h  Δ+94%  exhausts ~6d14h before reset
+  '''
+# ---

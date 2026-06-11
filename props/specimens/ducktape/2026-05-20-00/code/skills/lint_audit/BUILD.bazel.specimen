@@ -1,0 +1,6 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "lint_audit",
+    srcs = ["SKILL.md"],
+)

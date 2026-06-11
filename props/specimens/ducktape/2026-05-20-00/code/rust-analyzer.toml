@@ -1,0 +1,10 @@
+# rust-analyzer configuration for Bazel monorepo.
+# The repo root Cargo.toml is only for rules_rust crate_universe pinning — it is
+# not a buildable Cargo workspace.
+
+# Use discoverConfig to auto-generate rust-project.json on demand.
+# This replaces linkedProjects with an external command that runs Bazel's
+# gen_rust_project and feeds the result to rust-analyzer in JSONL format.
+# The command runs when rust-analyzer starts and when BUILD.bazel files change.
+[workspace]
+discoverConfig = { command = ["devinfra/rust/discover.sh", "{arg}"], progressLabel = "Bazel/rust-project.json", filesToWatch = ["BUILD.bazel"] }

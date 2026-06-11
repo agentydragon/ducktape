@@ -1,0 +1,82 @@
+rationale: |
+  Using getattr with default to probe for attributes when explicit isinstance
+  checks or typed class attributes would be clearer and type-safe.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      inop/test_optimizer_two_iters.py:
+        - [52, 53]
+    note: >-
+      getattr(choice, 'name', None) on ToolChoice union - should use
+      isinstance(choice, ToolChoiceFunction) then choice.name
+    critic_scopes_expected_to_recall:
+      - - inop/test_optimizer_two_iters.py
+    match_file_restriction:
+      - inop/test_optimizer_two_iters.py
+
+  - occurrence_id: occ-1
+    files:
+      inop/test_optimizer_two_iters.py:
+        - [128, 129]
+    note: "getattr(self, '_env', None) in FakeRunner - declare _env as class attribute instead"
+    critic_scopes_expected_to_recall:
+      - - inop/test_optimizer_two_iters.py
+    match_file_restriction:
+      - inop/test_optimizer_two_iters.py
+
+  - occurrence_id: occ-2
+    files:
+      agent_core/agent.py:
+        - [256, 257]
+    note: >-
+      except AttributeError after isinstance(block, TextContent) check -
+      TextContent.text is required, AttributeError impossible here
+    critic_scopes_expected_to_recall:
+      - - agent_core/agent.py
+    match_file_restriction:
+      - agent_core/agent.py
+
+  - occurrence_id: occ-3
+    files:
+      sysrw/test_loader_min.py:
+        - [39, 39]
+    note: "getattr(m, 'role', None) unnecessary - Message.role is required field, use m.role directly"
+    critic_scopes_expected_to_recall:
+      - - sysrw/test_loader_min.py
+    match_file_restriction:
+      - sysrw/test_loader_min.py
+
+  - occurrence_id: occ-4
+    files:
+      mcp_starter/test_server.py:
+        - [14, 14]
+        - [19, 19]
+        - [32, 32]
+        - [39, 39]
+        - [44, 44]
+        - [46, 49]
+    note: >-
+      Multiple defensive getattr on typed MCP results - is_error, type, mimeType, data
+      are all typed attributes. Use direct access after isinstance for content types.
+    critic_scopes_expected_to_recall:
+      - - mcp_starter/test_server.py
+    match_file_restriction:
+      - mcp_starter/test_server.py
+
+  - occurrence_id: occ-5
+    files:
+      ember/matrix_client.py:
+        - [258, 261]
+        - [266, 270]
+    note: >-
+      Unnecessary except AttributeError for event.sender - nio.Event.sender is required
+      field (dataclass field with init=False, set in __post_init__). MegolmEvent inherits
+      from Event, sender guaranteed. Line 255 accesses event.sender directly for
+      RoomMessageText.
+    critic_scopes_expected_to_recall:
+      - - ember/matrix_client.py
+    match_file_restriction:
+      - ember/matrix_client.py

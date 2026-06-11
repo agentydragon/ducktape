@@ -2,21 +2,20 @@
 
 ## Langfuse
 
-- [ ] **TODO(reliability): Move PostgreSQL to hcloud-volumes on VPS** —
-      Currently Langfuse's PostgreSQL is on `proxmox-csi-retain`. For
-      durability and cross-node HA, move to `hcloud-volumes` on VPS nodes
-      (same pattern as Authentik). See `cluster/k8s/langfuse/helmrelease.yaml`.
+- [ ] **TODO(tracing): LiteLLM Responses API logging** — `props/` speaks the
+      OpenAI Responses API through cluster LiteLLM, but LiteLLM
+      `1.86.3` does not emit Langfuse OTEL traces for the z.ai
+      Responses-to-chat bridge path. Checked upstream `1.87.1` and
+      `1.88.0-rc.3`; same code shape, not expected fixed. See
+      `cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`.
+      One possible mitigation is first-class props Chat Completions support; see
+      `props/docs/plans/chat_completions_api.md`.
 
 - [ ] **TODO(reliability): ClickHouse replication** — Currently single-node on
-      Proxmox. For production use, deploy a 3-node ClickHouse cluster.
-      See `cluster/k8s/langfuse/helmrelease.yaml`.
+      OVH `local-path-ovh`. For production use, deploy a replicated ClickHouse
+      cluster. See `cluster/k8s/langfuse/app/helmrelease.yaml`.
 
-- [ ] **TODO(reliability): Replace bundled MinIO with external S3** —
-      Currently using the Langfuse Helm chart's bundled single-node MinIO on
-      Proxmox. For durability, replace with Cloudflare R2, Hetzner Object
-      Storage, or a multi-node MinIO cluster.
-      See `cluster/k8s/langfuse/helmrelease.yaml`.
-
-- [ ] **TODO(reliability): Move Redis to VPS or add Sentinel** — Currently
-      single-node Redis on Proxmox. For reliability add Redis Sentinel or
-      move to VPS. See `cluster/k8s/langfuse/helmrelease.yaml`.
+- [ ] **TODO(reliability): ClickHouse backup** — PostgreSQL is CNPG OVH-HA,
+      Redis is operator-managed Valkey, and blob storage is SeaweedFS S3. The
+      remaining non-HA data plane is ClickHouse; add an explicit backup/export
+      path before treating Langfuse traces as durable history.

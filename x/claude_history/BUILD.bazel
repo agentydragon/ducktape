@@ -1,5 +1,5 @@
 # gazelle:ignore
-load("@rules_python//python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary")
 
 # Claude Code history reader - standalone script
 py_binary(

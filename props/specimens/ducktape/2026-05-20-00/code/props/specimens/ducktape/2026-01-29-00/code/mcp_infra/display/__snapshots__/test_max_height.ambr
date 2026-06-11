@@ -1,0 +1,27 @@
+# serializer version: 1
+# name: test_max_height_wrapping_snapshot
+  '''
+  The quick brown fox jumps over
+  the lazy dog again and again, 
+  repeating this classic pangram
+  to fill up space and 
+  demonstrate how long lines 
+  wrap across multiple visual 
+  lines when the console width 
+  is narrow. The quick brown fox
+  jumps over the lazy dog again 
+  and again, repeating this 
+  classic pangram to fill up 
+  space and demonstrate how long
+  lines wrap across multiple 
+  visual lines when the console 
+  width is narrow. The quick 
+  brown fox jumps over the lazy 
+  dog again and again, repeating
+  this classic pangram to fill 
+  up space and demonstrate how 
+  long lines wrap across 
+  ... (1404 more lines)
+  
+  '''
+# ---

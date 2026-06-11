@@ -1,0 +1,14 @@
+rationale: |
+  `GSettingsProfiles()` is instantiated independently in
+  `get_profile_uuid_by_name_mapping` (line 127) and `create_auto_profile`
+  (line 144). Accept a `GSettingsProfiles` parameter instead of creating
+  new instances in each function.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [127, 127]
+        - [144, 144]

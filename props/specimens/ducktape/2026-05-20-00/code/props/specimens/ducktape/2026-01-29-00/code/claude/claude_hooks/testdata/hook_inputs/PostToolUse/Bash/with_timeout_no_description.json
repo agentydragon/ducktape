@@ -1,0 +1,17 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "sleep 2",
+    "timeout": 5000
+  },
+  "tool_response": {
+    "stdout": "",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false
+  }
+}

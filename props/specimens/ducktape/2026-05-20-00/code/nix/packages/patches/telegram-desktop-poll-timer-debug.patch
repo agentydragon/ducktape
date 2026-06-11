@@ -1,0 +1,189 @@
+data: clamp poll closing timer to 1 day to avoid setTimeout overflow.
+
+Telegram Desktop crashes on startup when a forum/group containing a
+poll with close_date more than ~24.8 days in the future is synced:
+
+    Assertion Failed!
+      "timeout >= 0 && timeout <= std::numeric_limits<int>::max()"
+      base/timer.cpp:100
+
+base::Timer::setTimeout takes ms in an int, so any timeout above
+INT_MAX = 2,147,483,647 ms (~24.855 days) trips the assert and aborts.
+checkPollsClosings() multiplies (closest - now) seconds by 1000 with
+no upper bound, so polls with long close_periods always crash.
+
+Same class of bug as the TTL-timer overflow fixed for scheduleNextTTLs
+in commit b2e829904fb7976784618dea18700dbb5568b42f (Sep 2021). The
+poll closing timer was missed at the time. Apply the same shape of
+fix here: clamp the scheduled timeout at 86400 seconds (1 day). The
+timer re-runs checkPollsClosings on every tick, so long-lived polls
+keep being rescheduled daily until their close_date is within INT_MAX
+ms and the real fire time is set precisely.
+
+Reproduces 100% on 6.4.1 and 6.6.2 against an account that's a member
+of a forum supergroup with an open poll closing >25 days out. Affected
+users have no client-side workaround other than closing the poll on
+mobile or web.
+
+Local additions for diagnostics — bracketed [DUCKTAPE DEBUG], strip
+before submitting upstream:
+
+  * Track the PollData* with the smallest close_date during the loop.
+  * Track an example HistoryItem per poll via Session::_pollExampleItem,
+    populated in MediaPoll's ctor (parent + poll are both in scope
+    there). FullMsgId is lifetime-safe; staleness is filtered via
+    Session::message().
+  * When clamping kicks in, LOG() the poll's id, close_date, computed
+    delta in days, first 120 chars of question text, plus chat info
+    (peerId, peerName, username, msgId, topicRootId, topicTitle) from
+    the example item — falling back to _pollViews if the example
+    HistoryItem has been destroyed. Lets us identify which chat the
+    offending poll lives in even when the chat title doesn't match
+    the question text and Telegram desktop search misses it (forum
+    topics, archived chats, etc.).
+
+--- a/Telegram/SourceFiles/data/data_media_types.cpp
++++ b/Telegram/SourceFiles/data/data_media_types.cpp
+@@ -2303,6 +2303,12 @@ MediaPoll::MediaPoll(
+ 	not_null<PollData*> poll)
+ : Media(parent)
+ , _poll(poll) {
++	// [DUCKTAPE DEBUG] See Session::checkPollsClosings — lets the
++	// clamp log line name the chat the poll lives in even before
++	// any HistoryView::Poll has been constructed for it.
++	parent->history()->owner().registerPollExampleItem(
++		poll,
++		parent->fullId());
+ }
+
+ MediaPoll::~MediaPoll() {
+--- a/Telegram/SourceFiles/data/data_session.cpp
++++ b/Telegram/SourceFiles/data/data_session.cpp
+@@ -4403,6 +4403,9 @@ not_null<TodoListData*> Session::duplicateTodoList(
+ void Session::checkPollsClosings() {
+ 	const auto now = base::unixtime::now();
+ 	auto closest = 0;
++	// [DUCKTAPE DEBUG] Capture the poll matching `closest` so the
++	// LOG() below can name the offender when clamping kicks in.
++	PollData *closestPoll = nullptr;
+ 	for (auto i = _pollsClosings.begin(); i != _pollsClosings.end();) {
+ 		if (i->first <= now) {
+ 			if (i->second->closeByTimer()) {
+@@ -4412,12 +4415,74 @@ void Session::checkPollsClosings() {
+ 		} else {
+ 			if (!closest) {
+ 				closest = i->first;
++				closestPoll = i->second.get();  // [DUCKTAPE DEBUG]
+ 			}
+ 			++i;
+ 		}
+ 	}
+ 	if (closest) {
+-		_pollsClosingTimer.callOnce((closest - now) * crl::time(1000));
++		// Set timer not more than for 24 hours.
++		//
++		// base::Timer::setTimeout asserts timeout <= INT_MAX ms
++		// (~24.855 days). Polls with close_date further out would
++		// otherwise trip the assert and SIGABRT the whole client.
++		// Same shape as the TTL-timer fix in scheduleNextTTLs
++		// (commit b2e8299). The timer re-fires daily, so the next
++		// pass narrows in until the real close_date is in range.
++		const auto maxTimeout = TimeId(86400);
++		const auto timeout = std::min(
++			std::max(now, closest) - now,
++			maxTimeout);
++
++		// [DUCKTAPE DEBUG] Identify which poll forced the clamp, so
++		// the user can find and close it on mobile/web. Strip before
++		// sending upstream.
++		if (closestPoll && (closest - now) > maxTimeout) {
++			const auto deltaSec = closest - now;
++			HistoryItem *item = nullptr;
++			if (const auto it = _pollExampleItem.find(closestPoll);
++					it != _pollExampleItem.end()) {
++				item = message(it->second);
++			}
++			if (!item) {
++				if (const auto views = _pollViews.find(closestPoll);
++						views != _pollViews.end()
++						&& !views->second.empty()) {
++					item = (*views->second.begin())->data();
++				}
++			}
++			QString chatInfo = u"chat=(unknown)"_q;
++			if (item) {
++				const auto peer = item->history()->peer;
++				const auto rootId = item->topicRootId();
++				QString topicTitle;
++				if (rootId) {
++					if (const auto forum = peer->forum()) {
++						if (const auto topic = forum->topicFor(rootId)) {
++							topicTitle = topic->title();
++						}
++					}
++				}
++				chatInfo = QString(
++					"peerId=%1 peerName=%2 username=%3 "
++					"msgId=%4 topicRootId=%5 topicTitle=%6"
++					).arg(peer->id.value
++					).arg(peer->name()
++					).arg(peer->username()
++					).arg(item->id.bare
++					).arg(rootId.bare
++					).arg(topicTitle);
++			}
++			LOG(("Poll Debug: clamping long-lived poll closing timer; "
++				"pollId=%1 closeDate=%2 now=%3 deltaSec=%4 deltaDays=%5 "
++				"%6 question=%7"
++				).arg(closestPoll->id).arg(closest).arg(now
++				).arg(deltaSec).arg(double(deltaSec) / 86400.0
++				).arg(chatInfo
++				).arg(closestPoll->question.text.left(120)));
++		}
++
++		_pollsClosingTimer.callOnce(timeout * crl::time(1000));
+ 	} else {
+ 		_pollsClosingTimer.cancel();
+ 	}
+@@ -4619,6 +4684,17 @@ void Session::unregisterPollView(
+ 	}
+ }
+
++// [DUCKTAPE DEBUG] Track an example item per poll so the long-poll clamp
++// in checkPollsClosings can name the chat the offending poll lives in.
++// First-wins; later registrations overwrite without erasing on dtor (cheap
++// and good enough for diagnostics — stale FullMsgIds resolve to nullptr
++// via Session::message and the clamp branch falls back to _pollViews).
++void Session::registerPollExampleItem(
++		not_null<const PollData*> poll,
++		FullMsgId itemId) {
++	_pollExampleItem[poll] = itemId;
++}
++
+ void Session::registerTodoListView(
+ 		not_null<const TodoListData*> todolist,
+ 		not_null<ViewElement*> view) {
+--- a/Telegram/SourceFiles/data/data_session.h
++++ b/Telegram/SourceFiles/data/data_session.h
+@@ -802,6 +802,12 @@ public:
+ 	void unregisterPollView(
+ 		not_null<const PollData*> poll,
+ 		not_null<ViewElement*> view);
++	// [DUCKTAPE DEBUG] Track an example item per poll so the
++	// long-poll clamp in checkPollsClosings can name the chat
++	// the offending poll lives in even before any view is built.
++	void registerPollExampleItem(
++		not_null<const PollData*> poll,
++		FullMsgId itemId);
+ 	void registerTodoListView(
+ 		not_null<const TodoListData*> todolist,
+ 		not_null<ViewElement*> view);
+@@ -1212,6 +1218,8 @@ private:
+ 	std::unordered_map<
+ 		not_null<const PollData*>,
+ 		base::flat_set<not_null<ViewElement*>>> _pollViews;
++	// [DUCKTAPE DEBUG] See registerPollExampleItem.
++	base::flat_map<not_null<const PollData*>, FullMsgId> _pollExampleItem;
+ 	std::unordered_map<
+ 		not_null<const TodoListData*>,
+ 		base::flat_set<not_null<ViewElement*>>> _todoListViews;

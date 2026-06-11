@@ -1,0 +1,237 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bazel-contrib/rules_multitool/main/lockfile.schema.json",
+  "tofu": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.11.3/tofu_1.11.3_linux_amd64.zip",
+        "file": "tofu",
+        "sha256": "340195f742ba1939078e46010a0f45b620811f986b0051f43748f600eade674d",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.11.3/tofu_1.11.3_linux_arm64.zip",
+        "file": "tofu",
+        "sha256": "18d536624966f02799b3c40e487d7f4bd1dcc946132690f34a29b088d409c1e6",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.11.3/tofu_1.11.3_darwin_amd64.zip",
+        "file": "tofu",
+        "sha256": "5369340e97311b4c027c8965571dbe3fe0d5f2866b602d37185609e05f142268",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.11.3/tofu_1.11.3_darwin_arm64.zip",
+        "file": "tofu",
+        "sha256": "cdbf7284e03173147d19d8bd6a73e390a997832b818b66fe0b1cb5d188d39556",
+        "os": "macos",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "helm": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://get.helm.sh/helm-v4.0.5-linux-amd64.tar.gz",
+        "file": "linux-amd64/helm",
+        "sha256": "730e4e9fbff94168249ddd0b9b1b8c357b7f64815462dd88c6b39f09bf18b814",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://get.helm.sh/helm-v4.0.5-linux-arm64.tar.gz",
+        "file": "linux-arm64/helm",
+        "sha256": "206a7747702d13994a93629eaed4259bd9d0aec6e23ca52d640f47f7edfdc863",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://get.helm.sh/helm-v4.0.5-darwin-amd64.tar.gz",
+        "file": "darwin-amd64/helm",
+        "sha256": "270d906140eadbe95584d2cebae1fa0e46950027d82de0c4db937dc936b564a6",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://get.helm.sh/helm-v4.0.5-darwin-arm64.tar.gz",
+        "file": "darwin-arm64/helm",
+        "sha256": "b4d04ccf68004604e13878fce4a893711490914512f8759879f848136a9f5fca",
+        "os": "macos",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "flux": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz",
+        "file": "flux",
+        "sha256": "7b70b75af20e28fc30ee66cf5372ec8d51dd466fd2ee21aa42690984de70b09b",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_arm64.tar.gz",
+        "file": "flux",
+        "sha256": "4b8c95a1e8ad262dd33a67d28e22979cf3e022a9283d4676763b6728247d92a0",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_darwin_amd64.tar.gz",
+        "file": "flux",
+        "sha256": "aa7ae3666980d8255722133a1a9bf88c62a72c182581b36e17c3e05cc350f561",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_darwin_arm64.tar.gz",
+        "file": "flux",
+        "sha256": "d7c0595f7faa4b796da40e7d9b324dedb65ba67fb27e7101478bba47d0e05b32",
+        "os": "macos",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "kubeseal": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz",
+        "file": "kubeseal",
+        "sha256": "27c925635593b347b70c1cee3e9c8f38a374ca0c599b246fbad403539393f467",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-arm64.tar.gz",
+        "file": "kubeseal",
+        "sha256": "a61a2b31de5eb2c2c943f12d0d8dc8fd61968be6c16078fc9e68ea091b4b05d6",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-darwin-amd64.tar.gz",
+        "file": "kubeseal",
+        "sha256": "33fc3de1088299de9f7de0f351894ddf020f90420a4f8ee708497ca8aedba1e7",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-darwin-arm64.tar.gz",
+        "file": "kubeseal",
+        "sha256": "c1ed765191ce364e268b380b5e37db97b236a4c8e53dbdf1cc26b40f6b0be898",
+        "os": "macos",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "kustomize": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz",
+        "file": "kustomize",
+        "sha256": "6703a3a70a0c47cf0b37694030b54f1175a9dfeb17b3818b623ed58b9dbc2a77",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_arm64.tar.gz",
+        "file": "kustomize",
+        "sha256": "b4170d1acb8cfacace9f72884bef957ff56efdcd4813b66e7604aabc8b57e93d",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_darwin_amd64.tar.gz",
+        "file": "kustomize",
+        "sha256": "874224e75229821b1e571aefa45703789b77336302a34692eac65adbe0dc1cee",
+        "os": "macos",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_darwin_arm64.tar.gz",
+        "file": "kustomize",
+        "sha256": "5baa407bdaee51b97626ef1fca3292e1a1c846357d3028db826057ecceed7178",
+        "os": "macos",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "alejandra": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/kamadorueda/alejandra/releases/download/4.0.0/alejandra-x86_64-unknown-linux-musl",
+        "sha256": "a23b9d47cba945805c6169541046de890e94e07a5aa416c86dee15bca2da6216",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/kamadorueda/alejandra/releases/download/4.0.0/alejandra-aarch64-unknown-linux-musl",
+        "sha256": "a30b0d54ee3f0d6633d0398b50258408d2cc31646a9c8c4ba3ee4ebf2cebd8c8",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
+  "ruff": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/astral-sh/ruff/releases/download/0.14.0/ruff-aarch64-unknown-linux-musl.tar.gz",
+        "file": "ruff-aarch64-unknown-linux-musl/ruff",
+        "sha256": "34a25398f03e7d32a4ec406c5c841c6e183fa0a96fbdd40b7e7eec1f177b360e",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/astral-sh/ruff/releases/download/0.14.0/ruff-x86_64-unknown-linux-musl.tar.gz",
+        "file": "ruff-x86_64-unknown-linux-musl/ruff",
+        "sha256": "ed6d1b8407a1d228dc332fb19057e86e04a6cd3c2beacdb324ad6ff2a3f9071b",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/astral-sh/ruff/releases/download/0.14.0/ruff-aarch64-apple-darwin.tar.gz",
+        "file": "ruff-aarch64-apple-darwin/ruff",
+        "sha256": "0b7c193d5c45eda02226720eb75239fabeca995d5a0eb3830fd2973caa3030ec",
+        "os": "macos",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/astral-sh/ruff/releases/download/0.14.0/ruff-x86_64-apple-darwin.tar.gz",
+        "file": "ruff-x86_64-apple-darwin/ruff",
+        "sha256": "880ae046b435eb306cd557a7481eed6da463b85f283ba1f2c1e2ad7c139ed6c5",
+        "os": "macos",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

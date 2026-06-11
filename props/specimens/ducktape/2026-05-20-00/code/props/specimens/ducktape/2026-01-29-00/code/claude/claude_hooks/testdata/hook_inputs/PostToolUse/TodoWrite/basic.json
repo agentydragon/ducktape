@@ -1,0 +1,52 @@
+{
+  "session_id": "87491c5b-6b3d-46fc-b081-bfc0be6f1d33",
+  "transcript_path": "/Users/user/.claude/projects/-Users-user-test/87491c5b-6b3d-46fc-b081-bfc0be6f1d33.json",
+  "cwd": "/Users/user/test",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "TodoWrite",
+  "tool_input": {
+    "todos": [
+      {
+        "content": "Task A",
+        "status": "completed",
+        "priority": "low",
+        "id": "todo3"
+      },
+      {
+        "content": "Task B",
+        "status": "in_progress",
+        "priority": "medium",
+        "id": "todo2"
+      },
+      {
+        "content": "Task C",
+        "status": "pending",
+        "priority": "high",
+        "id": "todo1"
+      }
+    ]
+  },
+  "tool_response": {
+    "oldTodos": [],
+    "newTodos": [
+      {
+        "content": "Task A",
+        "status": "completed",
+        "priority": "low",
+        "id": "todo3"
+      },
+      {
+        "content": "Task B",
+        "status": "in_progress",
+        "priority": "medium",
+        "id": "todo2"
+      },
+      {
+        "content": "Task C",
+        "status": "pending",
+        "priority": "high",
+        "id": "todo1"
+      }
+    ]
+  }
+}

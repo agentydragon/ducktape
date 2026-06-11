@@ -1,0 +1,16 @@
+# SeaweedFS bucket holding attic's NAR chunks. Replication is per-volume
+# (defaultReplication "001" on the seaweedfs cluster) so this bucket is
+# automatically backed by replicated storage across both OVH nodes.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: attic
+  namespace: seaweedfs
+spec:
+  name: attic
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  access:
+    - user: attic
+      actions: [Read, Write, List, Tagging]

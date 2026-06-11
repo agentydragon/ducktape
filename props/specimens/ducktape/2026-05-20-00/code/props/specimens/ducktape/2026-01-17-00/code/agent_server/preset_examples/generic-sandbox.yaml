@@ -1,0 +1,262 @@
+name: generic-sandbox
+description: >
+  Example preset with a macOS seatbelt sandbox for safe local development
+system: |
+  You are a local development agent with a macOS seatbelt sandbox tool.
+  Prefer the sandboxed execution tool for commands on macOS and provide an SBPL
+  policy per call.
+
+  Approval and execution flow:
+  - The Approval Policy MCP server ("approval_policy") evaluates the current
+    policy before any tool executes.
+  - The policy decision is one of: allow, deny_continue, deny_abort, or ask.
+  - If the decision is ask, the UI synchronously prompts the user; tool execution
+    is blocked until the user approves or denies.
+  - The approval policy is Python code evaluated by the server and can be updated
+    (manually or via proposals) to expand or restrict what runs automatically.
+  - When a need is not covered by the current auto-approved rules, propose a
+    narrowly scoped automated policy change that enables only what is required
+    for the task. Keep proposals concrete, explain the risk, and prefer the
+    sandboxed path.
+
+  General philosophy:
+  - Execute as much as possible automatically under the current auto-approved
+    policy.
+  - If you foresee needing specific permissions that are not yet auto-approved,
+    coordinate with the user by proposing an automated policy change that enables
+    only what is needed for the task. For example, if you need to download code
+    from GitHub, propose enabling a curl invocation whose single argument matches
+    ^https?://github.com/.* with network enabled, without broadening other
+    sandbox permissions.
+
+  Keep runs deliberate and safe. Do not hide exceptions—report exact errors and
+  exit codes.
+
+approval_policy: |
+  # Validate seatbelt policies using the typed SBPL Pydantic models
+  from adgn.seatbelt.model import (
+    Action,
+    DefaultBehavior,
+    EnvPassthroughMode,
+    FileOp,
+    SBPLPolicy,
+  )
+  from agent_server.approvals import (
+    ApprovalContext,
+    PolicyDecision,
+    WellKnownServers,
+    WellKnownTools,
+  )
+  from urllib.parse import urlparse
+  import getopt
+
+  # Allowed env passthrough whitelist for seatbelt_exec
+  _ALLOWED_ENV = {
+    'HOME', 'LOGNAME', 'PATH', 'SHELL', 'USER', 'USERNAME', 'TMPDIR', 'TEMP', 'TMP'
+  }
+
+  # HTTP allowlists for curl/wget GET
+  APPROVED_HTTP_HOSTS = {
+    'github.com',
+    'raw.githubusercontent.com',
+    'codeload.github.com',
+    'objects.githubusercontent.com',
+    'pypi.org',
+    'files.pythonhosted.org',
+    'openai.com',
+  }
+  APPROVED_HTTP_HOST_SUFFIXES = {'.openai.com', '.githubusercontent.com'}
+  APPROVED_HTTP_SCHEMES = {'http', 'https'}
+
+  # Program specs (stdout-only writes; no file writes in example preset)
+  PROGRAM_SPECS = {
+    'curl': {
+      'paths': {'/usr/bin/curl'},
+      'short_ok': set('sSLf'),
+      'long_ok': {'--silent', '--show-error', '--location', '--fail'},
+      'kv_ok': {
+        '-X': lambda v: (v or '').upper() == 'GET',
+        '--request': lambda v: (v or '').upper() == 'GET',
+        # Output to stdout only
+        '-o': lambda v: v == '-',
+        '--output': lambda v: v == '-',
+      },
+    },
+    'wget': {
+      'paths': {'/opt/homebrew/bin/wget'},
+      'short_ok': set('q'),
+      'long_ok': {'--quiet', '--no-verbose'},
+      'kv_ok': {
+        '--method': lambda v: (v or '').upper() == 'GET',
+        # Output to stdout only
+        '-O': lambda v: v == '-',
+        '--output-document': lambda v: v == '-',
+      },
+    },
+  }
+  PROGRAM_SPEC_BY_PATH = {}
+  for _name, _spec in PROGRAM_SPECS.items():
+    for _p in (_spec.get('paths') or set()):
+      PROGRAM_SPEC_BY_PATH[_p] = _spec
+
+  def _urls_all_approved(args: list[str]) -> bool:
+    urls = []
+    for a in args:
+      if not isinstance(a, str):
+        return False
+      u = urlparse(a)
+      if (u.scheme or '').lower() not in APPROVED_HTTP_SCHEMES or not (u.netloc or ''):
+        return False
+      if u.username or u.password:
+        return False
+      host = (u.hostname or '').lower()
+      if not host:
+        return False
+      if not (host in APPROVED_HTTP_HOSTS or any(host.endswith(sfx) for sfx in (APPROVED_HTTP_HOST_SUFFIXES or set()))):
+        return False
+      urls.append(u)
+    return bool(urls)
+
+  def _validate_prog_argv(argv: list[str]) -> bool:
+    if not argv:
+      return False
+    prog_path = argv[0]
+    args = argv[1:]
+    spec = PROGRAM_SPEC_BY_PATH.get(prog_path)
+    if spec is None:
+      return False
+
+    short_ok = set(spec.get('short_ok') or ())
+    long_ok = set(spec.get('long_ok') or ())
+    kv_ok = spec.get('kv_ok') or {}
+
+    short_requires = {k[1]: v for k, v in kv_ok.items() if k.startswith('-') and not k.startswith('--') and len(k) == 2}
+    long_requires = [k[2:] + '=' for k in kv_ok if k.startswith('--')]
+
+    optstring = ''.join(sorted(short_ok)) + ''.join(ch + ':' for ch in sorted(short_requires))
+    longopts = sorted(x[2:] for x in long_ok) + sorted(long_requires)
+
+    try:
+      opts, rest = getopt.getopt(args, optstring, longopts)
+    except getopt.GetoptError:
+      return False
+
+    for opt, val in opts:
+      if opt.startswith('--'):
+        name = opt
+        if name in long_ok:
+          if val not in (None, ''):
+            return False
+        elif name in kv_ok:
+          if not kv_ok[name](val):
+            return False
+        else:
+          return False
+      else:
+        ch = opt[1:2]
+        if ch in short_ok:
+          if val not in (None, ''):
+            return False
+        elif ('-' + ch) in kv_ok:
+          if not kv_ok['-' + ch](val):
+            return False
+        else:
+          return False
+
+    # Non-option args must be approved URLs
+    return _urls_all_approved(rest)
+
+  def _is_http_get(argv: list[str]) -> bool:
+    return _validate_prog_argv(argv)
+
+  def _sbpl_validate(obj, *, allow_remote_outbound_http: bool = False) -> bool:
+    try:
+      policy = SBPLPolicy.model_validate(obj)
+      # Default deny is expected for safety
+      if policy.default_behavior != DefaultBehavior.DENY:
+        return False
+      # Process/system toggles
+      if not policy.process.allow_process_star:
+        return False
+      # System: sysctl_read and system_socket are allowed in this preset
+      # No mach lookups and no trace
+      if (policy.mach.global_names or []) != []:
+        return False
+      if policy.trace.enabled:
+        return False
+      # Files: allow only read/read-metadata/map-executable ops; no writes
+      allowed_ops = {FileOp.FILE_READ_STAR, FileOp.FILE_READ_METADATA, FileOp.FILE_MAP_EXECUTABLE}
+      for r in policy.files:
+        if r.action == Action.ALLOW and r.op not in allowed_ops:
+          return False
+      # Env passthrough: whitelist-only; whitelist subset of approved names
+      if policy.env.mode != EnvPassthroughMode.WHITELIST:
+        return False
+      if policy.env.whitelist and not set(policy.env.whitelist).issubset(_ALLOWED_ENV):
+        return False
+      # Network: allow local-only; if allowing remote HTTP GET, permit non-local-only
+      for n in policy.network:
+        if n.action == Action.ALLOW:
+          if n.local_only:
+            continue
+          if not allow_remote_outbound_http:
+            return False
+      return True
+    except Exception:
+      return False
+
+  class ApprovalPolicy:
+    """Sandbox‑aware defaults: allow UI/approval/resources; narrow seatbelt_exec allowances; ASK otherwise."""
+
+    def decide(self, ctx):
+      # Always allow UI, approval policy, and resources operations (using well-known enums)
+      if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
+        return (PolicyDecision.ALLOW, 'UI/approval/resources')
+      # Auto-allow macOS seatbelt sandboxed exec
+      if ctx.server == WellKnownServers.SEATBELT_EXEC and ctx.tool == WellKnownTools.SANDBOX_EXEC:
+        args = ctx.arguments or {}
+        argv = args.get('argv') or []
+        policy = ctx.seatbelt_policy  # runtime guarantees resolution for seatbelt_exec
+        if _is_http_get(argv):
+          if _sbpl_validate(policy, allow_remote_outbound_http=True):
+            return (PolicyDecision.ALLOW, 'seatbelt: curl/wget HTTP GET')
+        if _sbpl_validate(policy):
+          return (PolicyDecision.ALLOW, 'safe seatbelt policy')
+      # Ask for everything else by default. Encourage the agent to proactively propose
+      # a narrowly scoped automated policy change when it is likely to be acceptable and
+      # would unblock the current task (e.g., a single-URL curl to GitHub as described above).
+      return (
+        PolicyDecision.ASK,
+        "default ask; propose narrow auto-approval if needed",
+      )
+
+  # Minimal policy tests to enforce invariants (executed on approval)
+  ApprovalPolicy.TEST_CASES = [
+    (
+      ApprovalContext(
+        server=WellKnownServers.UI,
+        tool=WellKnownTools.SEND_MESSAGE,
+        arguments={},
+      ),
+      PolicyDecision.ALLOW,
+    ),
+    (
+      ApprovalContext(
+        server=WellKnownServers.RESOURCES,
+        tool="list",
+        arguments={"server": "approval_policy"},
+      ),
+      PolicyDecision.ALLOW,
+    ),
+  ]
+
+specs:
+  seatbelt_exec:
+    # Example HTTP spec. If you are embedding the seatbelt server, prefer using
+    # an inproc factory in code or attach via the UI presets. For external servers,
+    # provide a reachable URL and a valid bearer token via `auth` or headers.
+    transport: http
+    url: http://127.0.0.1:8768/mcp
+    auth: <replace-with-token>
+    timeout_secs: 30
+    sse_read_timeout_secs: 300

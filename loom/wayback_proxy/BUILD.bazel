@@ -1,0 +1,153 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//yarl",
+    ],
+)
+
+py_library(
+    name = "addon",
+    srcs = ["addon.py"],
+    deps = [
+        ":proxy",
+        "@pypi//mitmproxy",
+        "@pypi//yarl",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        ":addon",
+        ":proxy",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_binary(
+    name = "wayback_proxy",
+    main_module = "loom.wayback_proxy.server",
+    deps = [":server"],
+)
+
+py_library(
+    name = "fake_ia",
+    testonly = True,
+    srcs = ["fake_ia.py"],
+    visibility = ["//loom/gym:__pkg__"],
+    deps = ["@pypi//aiohttp"],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    deps = [
+        ":addon",
+        ":fake_ia",
+        ":proxy",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+        "@pypi//pytest_bazel",
+        "@pypi//yarl",
+    ],
+)
+
+# Live smoke against the real Internet Archive; run on demand, never in CI
+# ("manual" keeps it out of wildcard builds, "external" disables caching).
+py_test(
+    name = "test_live_ia",
+    srcs = ["test_live_ia.py"],
+    tags = [
+        "external",
+        "manual",
+    ],
+    deps = [
+        ":proxy",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+        "@pypi//pytest_bazel",
+        "@pypi//yarl",
+    ],
+)
+
+# ── OCI image (pattern: x/grocy_mcp/BUILD.bazel) ─────────────────────────────
+
+aspect_py_binary(
+    name = "proxy_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "proxy_layers",
+    binary = ":proxy_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("proxy_bin"),
+    env = py_image_env(binary_name = "proxy_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":proxy_layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["wayback-proxy:latest"],
+)
+
+oci_layout_rloc(
+    name = "image_info",
+    testonly = True,
+    image = ":image",
+    visibility = ["//loom/gym:__pkg__"],
+)
+
+filegroup(
+    name = "compose",
+    srcs = ["compose.yaml"],
+)
+
+py_test(
+    name = "test_compose_e2e",
+    size = "large",
+    srcs = ["test_compose_e2e.py"],
+    data = [
+        ":compose",
+        ":image_info",
+        "//third_party/containers:python_3_13_slim",
+    ],
+    requires_docker = True,
+    deps = [
+        ":fake_ia",
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+        "@pypi//pytest_bazel",
+    ],
+)

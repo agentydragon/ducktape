@@ -6,7 +6,10 @@ metadata:
   namespace: flux-system
 spec:
   type: grafana
-  address: https://grafana.allegedly.works
+  # notification-controller ≥1.7 sends the request to `address` as-is
+  # (no auto-append of /api/annotations like older versions did), so the
+  # full endpoint path is required here.
+  address: https://grafana.allegedly.works/api/annotations
   secretRef:
     name: grafana-flux-token
 ---

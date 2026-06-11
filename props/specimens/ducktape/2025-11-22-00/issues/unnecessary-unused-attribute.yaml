@@ -1,0 +1,15 @@
+rationale: |
+  ConnectionManager._send_direct_all builds an envelope and broadcasts JSON to all
+  connected clients, but it is never called anywhere in the class or exposed publicly.
+  Dead code should be removed to reduce maintenance burden.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [174, 184]
+    note: _send_direct_all defined but never called
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py

@@ -1,0 +1,12 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "testing",
+    srcs = ["strict_mode_models.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)

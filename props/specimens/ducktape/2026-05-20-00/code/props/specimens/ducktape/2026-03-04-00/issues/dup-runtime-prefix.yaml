@@ -1,0 +1,17 @@
+rationale: |
+  `RUNTIME_MOUNT_PREFIX = MCPMountPrefix("runtime")` is defined in two places:
+  `mcp_infra/constants.py:22` (module-level) and
+  `mcp_infra/exec/docker/server.py:49` (class attribute on `ContainerExecServer`).
+  Both carry the same value. Callers are split between the two definitions.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/constants.py:
+        - [22, 22]
+      mcp_infra/exec/docker/server.py:
+        - [49, 49]
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/constants.py, mcp_infra/exec/docker/server.py]

@@ -1,11 +1,13 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
+
   interface Props {
     active: boolean;
     onclick: () => void;
-    children: import("svelte").Snippet;
+    children: Snippet;
   }
 
-  let { active, onclick, children }: Props = $props();
+  const { active, onclick, children }: Props = $props();
 </script>
 
 <button

@@ -1,0 +1,10 @@
+"""ADGN - Agent framework and LLM tooling."""
+
+# NOTE: No aggregator target - use specific per-file targets in subdirectories
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+#
+# Targets are defined in subdirectory BUILD files:
+#   //adgn/agent:cli - Agent CLI
+#   //adgn/gitea_pr_gate:policy_common - Gitea PR gate policy
+#   //adgn/gitea_pr_gate:policy_server_fastapi - Gitea PR gate server
+#   //adgn/tools:trivial_patterns - Trivial patterns linter

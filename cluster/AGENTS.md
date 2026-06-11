@@ -24,18 +24,24 @@ documentation. Fetch it with WebFetch to discover available doc pages.
 **NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
 the git remote, not your local filesystem.
 
-## CRITICAL: Authentik Teardown -- Remaining TF State
+## CRITICAL: Wiping a backing DB orphans tofu state
 
-Most Authentik SSO uses native blueprints. Two TF modules still target Authentik-adjacent systems:
-`tfstate-default-sso-secrets` (OAuth2 secrets in Vault) and `tfstate-default-vault-oidc-auth`
-(Vault OIDC backend). After Authentik DB wipe, `vault-oidc-auth` requires
-`vault auth disable oidc/` before re-apply.
-See <docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md>.
+`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and `tf/gitops/forgejo-props/`
+(Forgejo registry user) both manage objects inside another stateful system whose IDs
+they record in tfstate. Wiping the backing DB without also clearing the tofu state
+triggers `Unable to read … not found with id N` failures on the next plan.
 
-## CRITICAL: VPS-Only Resilience
+State now lives in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR),
+not in the old `tfstate-default-*` k8s secrets (those were retired with the
+kubernetes-backend migration). Recovery procedure for both this and the historical
+secret-based variant: <docs/troubleshooting.md> § "Resource ID Desync After Wiping a
+Backing Datastore". Original incident write-up:
+<docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
-DNS and website MUST work with VPS only (without Proxmox). No `proxmox-csi-retain` storage
-or Proxmox-pinned nodes. See <docs/plan.md> "VPS-Only Resilience Invariants".
+## CRITICAL: OVH-Only Resilience
+
+DNS and website MUST work with OVH only (without Proxmox). No `proxmox-csi-retain` storage
+or Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
@@ -46,8 +52,6 @@ or Proxmox-pinned nodes. See <docs/plan.md> "VPS-Only Resilience Invariants".
 3. Debug freely, but solutions MUST be declarative
 4. Done = bootstrap->verify passes
 5. SSO required for all in-scope applications
-
-@docs/plan.md
 
 ### Debugging Broken Bootstrap
 
@@ -72,148 +76,94 @@ Terraform modules, create BUILD.bazel targets for format, lint, and validate.
 
 Delegate complex diagnostics and independent workstreams to subagents via the Task tool.
 
-## SSO Integration
-
-Native blueprints in `k8s/authentik/app/blueprints/` (ConfigMap, re-applied every 60 min).
-
-**Secret flow**: `terraform/gitops/sso-secrets/` -> Vault -> ESO `authentik-sso-client-secrets`
-in authentik namespace -> worker `envFrom` -> blueprint `!Env` tags.
-
-**App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from same Vault path.
-
-**Proxy-mode NetworkPolicy (required)**: When a service is behind the shared proxy outpost,
-add a `networkpolicy.yaml` restricting ingress to the outpost pod. Without this, any pod can
-forge `X-authentik-username` headers. Template:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: <service>-ingress
-  namespace: <namespace>
-spec:
-  podSelector:
-    matchLabels:
-      <pod-label>: <value>
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: authentik
-          podSelector:
-            matchLabels:
-              goauthentik.io/outpost-name: shared-proxy-outpost
-      ports:
-        - port: <backend-port>
-          protocol: TCP
-```
-
-`namespaceSelector` + `podSelector` in the same `from` item are ANDed.
-
-**Deleting Authentik providers or applications**: Always add a `state: absent` tombstone
-entry — never just remove the `state: present` block. The worker re-applies blueprints
-every 60 min; the absent entry is what actually removes the stale resource. Follow the
-`CLEANUP` tombstone convention from <../STYLE.md>. Place absent entries in the app's
-existing blueprint, or in a dedicated cleanup blueprint (e.g.,
-`k8s/authentik/blueprints/headscale-cleanup.yaml`) when the app itself is gone. Remove
-the entries after a few reconcile cycles once confirmed clean.
-
 ## Operational Context
 
-- **SSH**: `root@atlas` (Proxmox host, key auth)
+- **SSH**: `root@atlas` (Proxmox host, key auth). Fallback from wyrm2: `root@10.2.0.2` if nebula DNS isn't up yet.
 - **Talos CLI**: Run from cluster directory (direnv provides tools + config)
 - **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 
 ## Key Files
 
-All in `terraform/main/`:
+In `terraform/main/`:
 
 | File                       | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
-| `hetzner-nodes.tf`         | VPS definitions                                |
+| `ovh-nodes.tf`             | OVH Kimsufi bare-metal definitions             |
 | `proxmox-nodes.tf`         | Proxmox VM definitions                         |
 | `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
 | `cilium.tf`                | CNI configuration                              |
-| `main.tf`                  | Providers, firewall, Talos bootstrap           |
+| `infrastructure.tf`        | Firewall, Talos bootstrap, registry mirrors    |
 | `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
+| `nebula.tf`                | Per-node Nebula config + endpoint drift check  |
+
+At repo root:
+
+| File               | Purpose                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| `nebula-mesh.json` | Mesh host roster (SSOT). Add/remove/re-IP: <docs/mesh_membership.md> |
+
+## SSO
+
+See <docs/sso.md> for secret flow, proxy NetworkPolicy template, blueprint tombstone rules.
 
 ## Secrets
 
-@docs/secrets.md
+See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key management.
 
-### Bootstrap Dependencies
+**Keep <docs/bootstrap_dependencies.md> up to date** when adding/removing/changing secrets,
+SOPS files, tofu resources, or external credential requirements.
 
-@docs/bootstrap-dependencies.md
+### Annotating a SOPS-encrypted Secret
 
-**Keep this document up to date.** When adding, removing, or changing secrets,
-SOPS files, tofu resources, or external credential requirements, update
-<docs/bootstrap-dependencies.md> in the same commit. This is the single
-reference for "what do I need to regenerate if X is lost?"
+Adding annotations/labels to a `*.sops.yaml` Secret needs **no manual re-MAC** —
+encrypting recomputes the MAC. But these files set no `mac_only_encrypted`, so
+the document MAC covers metadata too: a **raw text edit** of the ciphertext
+(without re-encrypting) fails decryption with a `MAC mismatch` (verified —
+adding one annotation to a real `*.sops.yaml` Secret breaks `sops -d`). Go
+through `sops`: with the cluster age key, `sops <file>` edits and re-MACs in one
+step. An **agent** that lacks the key can still _encrypt_ to a rule's recipients
+(encryption only needs their public keys), so it authors the whole Secret as
+plaintext and `sops -e -i`s it — minting a fresh value for any opaque field it
+can't recover (i.e. rotate). Example: `k8s/wayback-cache/token.sops.yaml` carries
+the emberstack reflector annotations inline and was (re)authored that way.
 
 ### Description Annotations
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
-make the purpose obvious. Skip for obvious cases (sole deployment under a named
-kustomization, SSO client secrets under `authentik/blueprints/`).
-
-## CNPG (CloudNativePG)
-
-@docs/cnpg-conventions.md
-
-## Troubleshooting
-
-@docs/troubleshooting.md
-
-@docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
+make the purpose obvious. Skip for obvious cases.
 
 ## Container Images
 
-Ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
-CI pushes via BuildBuddy Workflows (`devinfra/ci/bb_push_images.py`) and GitHub
-Actions (openclaw-image, tana-mcp-image workflows). GHCR packages are public (no
-pull credentials needed).
+See <docs/container-images.md> for build/push/tag guide and Flux image automation.
 
-Props agent images are still published to Harbor (`registry.allegedly.works`).
-The Harbor Terraform (`terraform/gitops/harbor-ci/`) and pull robot credentials
-remain active for props.
+## Agent RBAC Architecture
 
-**Gotcha -- Flux image automation race**: When renaming image paths, push at least one
-image to the new path before updating `ImageRepository` resources. Otherwise Flux reverts
-to the old path (old `ImageRepository` still finds tags).
+When adding agent read access to a new service namespace, create a new `agent-rbac/`
+directory — never add RoleBindings to `claude-rbac` or `shared-rbac`. The full
+three-layer split, permission scopes, and the sandbox quota live once in the claude-rbac
+README, transcluded here:
+
+@k8s/agents/claude-rbac/README.md
 
 ## Flux Kustomization Layering
 
 **Never mix HelmReleases with CRD instances in the same Kustomization.**
 
-Layer 1 (CRD operators) -> Layer 2 (secrets with ESO) -> Layer 3 (app with
-HelmRelease). Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
+Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease).
+Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
 Violations detected by pre-commit (`validate_kustomizations.py`).
 
-### k8s/ Directory Structure
+- Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
+- Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
-**Flat** (single flux-kustomization): all manifests including `namespace.yaml`
-live directly in the service directory. Example: `scanner/`, `gateway/`.
+## Reference Documentation
 
-**Grouped** (multiple flux-kustomizations): subdirectories for each layer.
-Example: `langfuse/{namespace,secrets,db,app}/`. A separate `namespace/`
-subdir is needed only when multiple sibling kustomizations depend on the
-namespace existing first.
+Read these on demand when the task requires them:
 
-**Agent infrastructure** lives under `agents/` (openclaw, airlock, claude-rbac,
-tana-mcp, etc.).
-
-### When Adding New Applications
-
-**Simple service** (one flux-kustomization): create `k8s/{app}/` with all
-manifests flat (namespace.yaml, deployment.yaml, service.yaml, etc.) and one
-`flux-kustomization.yaml`.
-
-**Service with secrets or database** (multiple flux-kustomizations):
-
-1. Create `k8s/{app}/namespace/` with `namespace.yaml` + `flux-kustomization.yaml`
-2. Create `k8s/{app}/secrets/` for ESO resources (`dependsOn: {app}-namespace, external-secrets-config`)
-3. Create `k8s/{app}/app/` for workload (`dependsOn: {app}-namespace, {app}-secrets`)
-4. Add cert-manager issuer toggle only if the app's own manifests reference
-   `${LETSENCRYPT_ISSUER}` (not needed when TLS is handled by the gateway)
+- <docs/plan.md> — cluster roadmap, TODO list, suspended services, future directions
+- <docs/secrets.md> — SOPS procedures, adding/rotating secrets, age key management
+- <docs/bootstrap_dependencies.md> — full dependency graph for bootstrap recovery
+- <docs/cnpg_conventions.md> — CloudNativePG rules (2 profiles, storage, region pinning)
+- <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, secrets, DNS, and
+  log retrieval (use Loki for logs of pods that no longer exist — `kubectl logs` can't)
+- <docs/lessons_learned/> — past incident postmortems (ESO desync, MTU, hostname loss, etc.)

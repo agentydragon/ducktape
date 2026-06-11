@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mitmproxy-ca-key
+  namespace: agents-mitmproxy
+  annotations:
+    description: MITM proxy CA private key for sandbox HTTPS inspection
+type: Opaque
+stringData:
+  mitmproxy-ca.key: ENC[AES256_GCM,data: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,iv:v/U7YrR3bBnQqTfGtvolxLb1aqeOz/pSpvzDOpQm5Cg=,tag:pMivQl6altvRpoShIIS9FA==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPR3hEalBOTldudU14ZHUw
+        ZDg2a2JXWEpQbVBxd2hPN2d6azJ5MEJ6eTNjCnNVMUtlNnFFTFdDWGRoczlTU3VS
+        MGx2SGZXWW43MWZZaGhvM0RPTXBRSjgKLS0tIFFFZCs5ZmZmejcrSFVMalEwYllj
+        ZUs5WlRoY3pmcFE3R0pKUDkydHBxS2cKJxHs/ND0z/ilfh6+/MVNRKMS2FNYgwb6
+        3w3H7T8uHnwZd+iN9FN7mVFQT5aT/MJ2fHyupdHzURwFkjO+MhVgzQ==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4cTJpL0I5bzFMRUh3V3RE
+        elNKQ3V6Q09ncUtZeldEbWRiRFdVeUZXZkQ0ClAyOEl1S3hZTWU2NHZZWWxmYlhQ
+        UmkyOTRDYXVMWEJMdGJ6enNtZnNtYWMKLS0tIEJlYVRLM0xORW5uc1FxL0t1a0Fq
+        eldoRGUxSk9QUEtMRHJ1bEVIMFIzeUEKlLzANrvTRlJlt+AloCVN1qgzZyj91nPR
+        w7p/cA8POCxoMcEIyEPr0cNZ6afKKQOU58CQqmmIEyESk4avVGnU1w==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-05T19:50:17Z"
+  mac: ENC[AES256_GCM,data:dFkRH4rY/n7npIeH2HJ16/3HUdBu+HUoF6563muwDKouxPKf7fnn0PaUD/Js3bqpFhSeq6Qg7RfZ4llKmRBBgXwK0Fzn/nZ4eez+2oGBirvCXZaGs4h70U/vm0cW5CSA9xobASZi3N8LngFQui04EKC598M3CjCfkC3n/YQCctE=,iv:SfQW1kEbTn7LHjtgRYl6kbzNHJ6hwPL/mL5rs4mEcJ8=,tag:XaO69C0udXLTcwCAA/Rh+A==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

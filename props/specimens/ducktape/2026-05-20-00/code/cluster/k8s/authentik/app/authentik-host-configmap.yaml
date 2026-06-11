@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-host
+  namespace: authentik
+data:
+  AUTHENTIK_HOST: "https://auth.allegedly.works"

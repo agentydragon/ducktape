@@ -1,0 +1,159 @@
+# serializer version: 1
+# name: TestInjectMitmproxyProxy.test_pod_in_other_namespace_not_mutated
+  '''
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-other-ns
+    namespace: default
+  spec:
+    containers:
+    - image: curlimages/curl:latest
+      name: app
+  
+  '''
+# ---
+# name: TestInjectMitmproxyProxy.test_pod_with_existing_volumes
+  '''
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-existing-volumes
+    namespace: claude-sandbox
+  spec:
+    containers:
+    - env:
+      - name: MY_VAR
+        value: hello
+      - name: HTTP_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: HTTPS_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: NO_PROXY
+        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+      - name: SSL_CERT_FILE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: CURL_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: REQUESTS_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: NODE_EXTRA_CA_CERTS
+        value: /mitmproxy-ca/ca-cert.pem
+      image: example/manager:latest
+      name: manager
+      volumeMounts:
+      - mountPath: /etc/config
+        name: config
+      - mountPath: /mitmproxy-ca
+        name: mitmproxy-ca-cert
+        readOnly: true
+    volumes:
+    - configMap:
+        name: my-config
+      name: config
+    - configMap:
+        name: mitmproxy-ca-cert
+      name: mitmproxy-ca-cert
+  
+  '''
+# ---
+# name: TestInjectMitmproxyProxy.test_pod_with_init_containers
+  '''
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-with-init
+    namespace: claude-sandbox
+  spec:
+    containers:
+    - env:
+      - name: HTTP_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: HTTPS_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: NO_PROXY
+        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+      - name: SSL_CERT_FILE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: CURL_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: REQUESTS_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: NODE_EXTRA_CA_CERTS
+        value: /mitmproxy-ca/ca-cert.pem
+      image: curlimages/curl:latest
+      name: app
+      volumeMounts:
+      - mountPath: /mitmproxy-ca
+        name: mitmproxy-ca-cert
+        readOnly: true
+    initContainers:
+    - command:
+      - sh
+      - -c
+      - echo hello
+      env:
+      - name: HTTP_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: HTTPS_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: NO_PROXY
+        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+      - name: SSL_CERT_FILE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: CURL_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: REQUESTS_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: NODE_EXTRA_CA_CERTS
+        value: /mitmproxy-ca/ca-cert.pem
+      image: busybox:latest
+      name: init-setup
+      volumeMounts:
+      - mountPath: /mitmproxy-ca
+        name: mitmproxy-ca-cert
+        readOnly: true
+    volumes:
+    - configMap:
+        name: mitmproxy-ca-cert
+      name: mitmproxy-ca-cert
+  
+  '''
+# ---
+# name: TestInjectMitmproxyProxy.test_pod_without_init_containers
+  '''
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-no-init
+    namespace: claude-sandbox
+  spec:
+    containers:
+    - env:
+      - name: HTTP_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: HTTPS_PROXY
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
+      - name: NO_PROXY
+        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+      - name: SSL_CERT_FILE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: CURL_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: REQUESTS_CA_BUNDLE
+        value: /mitmproxy-ca/ca-cert.pem
+      - name: NODE_EXTRA_CA_CERTS
+        value: /mitmproxy-ca/ca-cert.pem
+      image: curlimages/curl:latest
+      name: app
+      volumeMounts:
+      - mountPath: /mitmproxy-ca
+        name: mitmproxy-ca-cert
+        readOnly: true
+    volumes:
+    - configMap:
+        name: mitmproxy-ca-cert
+      name: mitmproxy-ca-cert
+  
+  '''
+# ---

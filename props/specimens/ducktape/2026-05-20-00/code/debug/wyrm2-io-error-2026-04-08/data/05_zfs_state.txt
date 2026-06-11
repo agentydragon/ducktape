@@ -1,0 +1,397 @@
+--- zfs list -r rpool ---
+NAME                            USED  AVAIL  REFER  MOUNTPOINT
+rpool                          1.61T  1.90T    96K  /rpool
+rpool/ROOT                     83.9G  1.90T    96K  /rpool/ROOT
+rpool/ROOT/pve-1               83.9G  1.90T  83.9G  /
+rpool/data                     1.05T  1.90T    96K  /rpool/data
+rpool/data/base-104-disk-0       96K  1.90T    88K  -
+rpool/data/base-104-disk-1     16.1G  1.90T  16.1G  -
+rpool/data/base-104-disk-2       72K  1.90T    64K  -
+rpool/data/base-9001-disk-0      56K  1.90T    56K  -
+rpool/data/vm-100-disk-1        725G  1.90T   668G  -
+rpool/data/vm-100-disk-2        128K  1.90T    64K  -
+rpool/data/vm-100-disk-3        224K  1.90T   112K  -
+rpool/data/vm-10000-cloudinit    76K  1.90T    76K  -
+rpool/data/vm-10000-disk-0       84K  1.90T    84K  -
+rpool/data/vm-10000-disk-1     2.49G  1.90T  2.49G  -
+rpool/data/vm-105-disk-0         96K  1.90T    96K  -
+rpool/data/vm-105-disk-1       18.5G  1.90T  18.5G  -
+rpool/data/vm-105-disk-2         64K  1.90T    64K  -
+rpool/data/vm-110-disk-0       11.4M  1.90T  11.4M  -
+rpool/data/vm-110-disk-1        202G  1.90T   202G  -
+rpool/data/vm-110-disk-2       15.3G  1.90T  15.3G  -
+rpool/data/vm-110-disk-3       91.2G  1.90T  91.2G  -
+rpool/data/vm-110-disk-4        116K  1.90T   116K  -
+rpool/data/vm-110-disk-5       2.20M  1.90T  2.20M  -
+rpool/data/vm-1301-cloudinit     72K  1.90T    72K  -
+rpool/data/vm-1301-disk-0      2.83G  1.90T  2.83G  -
+rpool/data/vm-9001-disk-1      1.01G  1.90T  1.01G  -
+rpool/swap                      130G  1.97T  62.2G  -
+rpool/var-lib-vz                362G  1.90T   362G  /var/lib/vz
+
+--- zfs get all rpool/var-lib-vz ---
+NAME              PROPERTY                VALUE                   SOURCE
+rpool/var-lib-vz  type                    filesystem              -
+rpool/var-lib-vz  creation                Sun Jul  6  3:08 2025   -
+rpool/var-lib-vz  used                    362G                    -
+rpool/var-lib-vz  available               1.90T                   -
+rpool/var-lib-vz  referenced              362G                    -
+rpool/var-lib-vz  compressratio           1.20x                   -
+rpool/var-lib-vz  mounted                 yes                     -
+rpool/var-lib-vz  quota                   none                    default
+rpool/var-lib-vz  reservation             none                    default
+rpool/var-lib-vz  recordsize              128K                    default
+rpool/var-lib-vz  mountpoint              /var/lib/vz             local
+rpool/var-lib-vz  sharenfs                off                     default
+rpool/var-lib-vz  checksum                on                      default
+rpool/var-lib-vz  compression             on                      inherited from rpool
+rpool/var-lib-vz  atime                   on                      inherited from rpool
+rpool/var-lib-vz  devices                 on                      default
+rpool/var-lib-vz  exec                    on                      default
+rpool/var-lib-vz  setuid                  on                      default
+rpool/var-lib-vz  readonly                off                     default
+rpool/var-lib-vz  zoned                   off                     default
+rpool/var-lib-vz  snapdir                 hidden                  default
+rpool/var-lib-vz  aclmode                 discard                 default
+rpool/var-lib-vz  aclinherit              restricted              default
+rpool/var-lib-vz  createtxg               11                      -
+rpool/var-lib-vz  canmount                on                      default
+rpool/var-lib-vz  xattr                   sa                      default
+rpool/var-lib-vz  copies                  1                       default
+rpool/var-lib-vz  version                 5                       -
+rpool/var-lib-vz  utf8only                off                     -
+rpool/var-lib-vz  normalization           none                    -
+rpool/var-lib-vz  casesensitivity         sensitive               -
+rpool/var-lib-vz  vscan                   off                     default
+rpool/var-lib-vz  nbmand                  off                     default
+rpool/var-lib-vz  sharesmb                off                     default
+rpool/var-lib-vz  refquota                none                    default
+rpool/var-lib-vz  refreservation          none                    default
+rpool/var-lib-vz  guid                    7098098751738428275     -
+rpool/var-lib-vz  primarycache            all                     default
+rpool/var-lib-vz  secondarycache          all                     default
+rpool/var-lib-vz  usedbysnapshots         0B                      -
+rpool/var-lib-vz  usedbydataset           362G                    -
+rpool/var-lib-vz  usedbychildren          0B                      -
+rpool/var-lib-vz  usedbyrefreservation    0B                      -
+rpool/var-lib-vz  logbias                 latency                 default
+rpool/var-lib-vz  objsetid                274                     -
+rpool/var-lib-vz  dedup                   off                     default
+rpool/var-lib-vz  mlslabel                none                    default
+rpool/var-lib-vz  sync                    standard                inherited from rpool
+rpool/var-lib-vz  dnodesize               legacy                  default
+rpool/var-lib-vz  refcompressratio        1.20x                   -
+rpool/var-lib-vz  written                 362G                    -
+rpool/var-lib-vz  logicalused             436G                    -
+rpool/var-lib-vz  logicalreferenced       436G                    -
+rpool/var-lib-vz  volmode                 default                 default
+rpool/var-lib-vz  filesystem_limit        none                    default
+rpool/var-lib-vz  snapshot_limit          none                    default
+rpool/var-lib-vz  filesystem_count        none                    default
+rpool/var-lib-vz  snapshot_count          none                    default
+rpool/var-lib-vz  snapdev                 hidden                  default
+rpool/var-lib-vz  acltype                 off                     default
+rpool/var-lib-vz  context                 none                    default
+rpool/var-lib-vz  fscontext               none                    default
+rpool/var-lib-vz  defcontext              none                    default
+rpool/var-lib-vz  rootcontext             none                    default
+rpool/var-lib-vz  relatime                on                      inherited from rpool
+rpool/var-lib-vz  redundant_metadata      all                     default
+rpool/var-lib-vz  overlay                 on                      default
+rpool/var-lib-vz  encryption              off                     default
+rpool/var-lib-vz  keylocation             none                    default
+rpool/var-lib-vz  keyformat               none                    default
+rpool/var-lib-vz  pbkdf2iters             0                       default
+rpool/var-lib-vz  special_small_blocks    0                       default
+rpool/var-lib-vz  prefetch                all                     default
+rpool/var-lib-vz  direct                  standard                default
+rpool/var-lib-vz  longname                off                     default
+rpool/var-lib-vz  defaultuserquota        0                       -
+rpool/var-lib-vz  defaultgroupquota       0                       -
+rpool/var-lib-vz  defaultprojectquota     0                       -
+rpool/var-lib-vz  defaultuserobjquota     0                       -
+rpool/var-lib-vz  defaultgroupobjquota    0                       -
+rpool/var-lib-vz  defaultprojectobjquota  0                       -
+
+--- zpool status -v ---
+  pool: rpool
+ state: ONLINE
+status: Some supported and requested features are not enabled on the pool.
+	The pool can still be used, but some features are unavailable.
+action: Enable all features using 'zpool upgrade'. Once this is done,
+	the pool may no longer be accessible by software that does not support
+	the features. See zpool-features(7) for details.
+  scan: scrub repaired 0B in 00:13:10 with 0 errors on Sun Mar  8 00:37:11 2026
+config:
+
+	NAME                                             STATE     READ WRITE CKSUM
+	rpool                                            ONLINE       0     0     0
+	  nvme-Sabrent_SB-RKT5-4TB_48836385700861-part3  ONLINE       0     0     0
+
+errors: No known data errors
+
+  pool: tank
+ state: ONLINE
+status: Some supported and requested features are not enabled on the pool.
+	The pool can still be used, but some features are unavailable.
+action: Enable all features using 'zpool upgrade'. Once this is done,
+	the pool may no longer be accessible by software that does not support
+	the features. See zpool-features(7) for details.
+  scan: scrub repaired 0B in 00:46:27 with 0 errors on Sun Mar  8 01:10:29 2026
+config:
+
+	NAME                                  STATE     READ WRITE CKSUM
+	tank                                  ONLINE       0     0     0
+	  raidz2-0                            ONLINE       0     0     0
+	    ata-ST16000NT001-3MC101_ZYD4ZZG9  ONLINE       0     0     0
+	    ata-ST16000NT001-3MC101_ZYD502GM  ONLINE       0     0     0
+	    ata-ST16000NT001-3MC101_ZYD5HBLM  ONLINE       0     0     0
+	    ata-ST16000NT001-3MC101_ZYD5L9NE  ONLINE       0     0     0
+
+errors: No known data errors
+
+--- zpool list ---
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+rpool  3.62T  1.55T  2.08T        -         -    41%    42%  1.00x    ONLINE  -
+tank   58.2T  2.06T  56.1T        -         -     2%     3%  1.00x    ONLINE  -
+
+--- zpool iostat rpool 1 3 ---
+              capacity     operations     bandwidth
+pool        alloc   free   read  write   read  write
+----------  -----  -----  -----  -----  -----  -----
+rpool       1.55T  2.08T    105    254  1.35M  8.79M
+rpool       1.55T  2.08T      9     55  72.0K   844K
+rpool       1.55T  2.08T    315    316  2.22M  9.42M
+
+--- zpool events -v (full) ---
+TIME                           CLASS
+Apr  5 2026 20:07:01.310527566 sysevent.fs.zfs.history_event
+        version = 0x0
+        class = "sysevent.fs.zfs.history_event"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        history_hostname = "(none)"
+        history_internal_str = "pool version 5000; software version unknown; uts (none) 6.17.13-2-pve #1 SMP PREEMPT_DYNAMIC PMX 6.17.13-2 (2026-03-13T08:06Z) x86_64"
+        history_internal_name = "open"
+        history_txg = 0x44464f
+        history_time = 0x69d32355
+        time = 0x69d32355 0x1282464e
+        eid = 0x1
+
+Apr  5 2026 20:07:01.322527565 sysevent.fs.zfs.config_sync
+        version = 0x0
+        class = "sysevent.fs.zfs.config_sync"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d32355 0x1339614d
+        eid = 0x2
+
+Apr  5 2026 20:07:01.322527565 sysevent.fs.zfs.pool_import
+        version = 0x0
+        class = "sysevent.fs.zfs.pool_import"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d32355 0x1339614d
+        eid = 0x3
+
+Apr  5 2026 20:07:01.322527565 sysevent.fs.zfs.history_event
+        version = 0x0
+        class = "sysevent.fs.zfs.history_event"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        history_hostname = "(none)"
+        history_internal_str = "pool version 5000; software version unknown; uts (none) 6.17.13-2-pve #1 SMP PREEMPT_DYNAMIC PMX 6.17.13-2 (2026-03-13T08:06Z) x86_64"
+        history_internal_name = "import"
+        history_txg = 0x444651
+        history_time = 0x69d32355
+        time = 0x69d32355 0x1339614d
+        eid = 0x4
+
+Apr  5 2026 20:07:01.331527564 sysevent.fs.zfs.config_sync
+        version = 0x0
+        class = "sysevent.fs.zfs.config_sync"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d32355 0x13c2b58c
+        eid = 0x5
+
+Apr  5 2026 20:07:08.129526783 sysevent.fs.zfs.history_event
+        version = 0x0
+        class = "sysevent.fs.zfs.history_event"
+        pool = "tank"
+        pool_guid = 0xdb938178799ccc14
+        pool_state = 0x0
+        pool_context = 0x0
+        history_hostname = "atlas"
+        history_internal_str = "pool version 5000; software version unknown; uts atlas 6.17.13-2-pve #1 SMP PREEMPT_DYNAMIC PMX 6.17.13-2 (2026-03-13T08:06Z) x86_64"
+        history_internal_name = "open"
+        history_txg = 0x425a02
+        history_time = 0x69d3235c
+        time = 0x69d3235c 0x7b86bff
+        eid = 0x6
+
+Apr  5 2026 20:07:08.357526757 sysevent.fs.zfs.config_sync
+        version = 0x0
+        class = "sysevent.fs.zfs.config_sync"
+        pool = "tank"
+        pool_guid = 0xdb938178799ccc14
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d3235c 0x154f6ce5
+        eid = 0x7
+
+Apr  5 2026 20:07:08.358526757 sysevent.fs.zfs.pool_import
+        version = 0x0
+        class = "sysevent.fs.zfs.pool_import"
+        pool = "tank"
+        pool_guid = 0xdb938178799ccc14
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d3235c 0x155eaf25
+        eid = 0x8
+
+Apr  5 2026 20:07:08.381526754 sysevent.fs.zfs.history_event
+        version = 0x0
+        class = "sysevent.fs.zfs.history_event"
+        pool = "tank"
+        pool_guid = 0xdb938178799ccc14
+        pool_state = 0x0
+        pool_context = 0x0
+        history_hostname = "atlas"
+        history_internal_str = "pool version 5000; software version unknown; uts atlas 6.17.13-2-pve #1 SMP PREEMPT_DYNAMIC PMX 6.17.13-2 (2026-03-13T08:06Z) x86_64"
+        history_internal_name = "import"
+        history_txg = 0x425a04
+        history_time = 0x69d3235c
+        time = 0x69d3235c 0x16bda2e2
+        eid = 0x9
+
+Apr  5 2026 20:07:08.589526730 sysevent.fs.zfs.config_sync
+        version = 0x0
+        class = "sysevent.fs.zfs.config_sync"
+        pool = "tank"
+        pool_guid = 0xdb938178799ccc14
+        pool_state = 0x0
+        pool_context = 0x0
+        time = 0x69d3235c 0x232376ca
+        eid = 0xa
+
+Apr  5 2026 21:43:51.211214476 sysevent.fs.zfs.history_event
+        version = 0x0
+        class = "sysevent.fs.zfs.history_event"
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        history_hostname = "atlas"
+        history_dsname = "rpool/data/vm-110-disk-0"
+        history_internal_str = " "
+        history_internal_name = "create"
+        history_dsid = 0xeac
+        history_txg = 0x444ba8
+        history_time = 0x69d33a07
+        time = 0x69d33a07 0xc96e08c
+        eid = 0xb
+
+Apr  8 2026 19:59:39.817502212 ereport.fs.zfs.dio_verify_wr
+        class = "ereport.fs.zfs.dio_verify_wr"
+        ena = 0xb57cf2d2bf004401
+        detector = (embedded nvlist)
+                version = 0x0
+                scheme = "zfs"
+                pool = 0xc170ad860ad210ac
+                vdev = 0x32aa13725be05094
+        (end detector)
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        pool_failmode = "wait"
+        vdev_guid = 0x32aa13725be05094
+        vdev_type = "disk"
+        vdev_path = "/dev/disk/by-id/nvme-Sabrent_SB-RKT5-4TB_48836385700861-part3"
+        vdev_ashift = 0xc
+        vdev_complete_ts = 0xeb57cf2cdd96
+        vdev_delta_ts = 0x117dc
+        vdev_read_errors = 0x0
+        vdev_write_errors = 0x0
+        vdev_cksum_errors = 0x0
+        vdev_delays = 0x0
+        dio_verify_errors = 0x1
+        parent_guid = 0xc170ad860ad210ac
+        parent_type = "root"
+        vdev_spare_paths =
+        vdev_spare_guids =
+        zio_err = 0x5
+        zio_flags = 0x300080 [CANFAIL DONT_QUEUE DONT_PROPAGATE]
+        zio_stage = 0x2000000 [DIO_CHECKSUM_VERIFY]
+        zio_pipeline = 0x6e00000 [VDEV_IO_START VDEV_IO_DONE VDEV_IO_ASSESS DIO_CHECKSUM_VERIFY DONE]
+        zio_delay = 0x110db
+        zio_timestamp = 0xeb57cf2bc5ba
+        zio_delta = 0x117dc
+        zio_type = 0x2 [WRITE]
+        zio_priority = 0x1 [SYNC_WRITE]
+        zio_offset = 0x1d887d55000
+        zio_size = 0x20000
+        zio_objset = 0x112
+        zio_object = 0x105
+        zio_level = 0x0
+        zio_blkid = 0x34b4e
+        time = 0x69d7161b 0x30ba1804
+        eid = 0xc
+
+Apr  8 2026 20:41:46.382080727 ereport.fs.zfs.dio_verify_wr
+        class = "ereport.fs.zfs.dio_verify_wr"
+        ena = 0xda41131538503c01
+        detector = (embedded nvlist)
+                version = 0x0
+                scheme = "zfs"
+                pool = 0xc170ad860ad210ac
+                vdev = 0x32aa13725be05094
+        (end detector)
+        pool = "rpool"
+        pool_guid = 0xc170ad860ad210ac
+        pool_state = 0x0
+        pool_context = 0x0
+        pool_failmode = "wait"
+        vdev_guid = 0x32aa13725be05094
+        vdev_type = "disk"
+        vdev_path = "/dev/disk/by-id/nvme-Sabrent_SB-RKT5-4TB_48836385700861-part3"
+        vdev_ashift = 0xc
+        vdev_complete_ts = 0xeda41130ccb3
+        vdev_delta_ts = 0x171034
+        vdev_read_errors = 0x0
+        vdev_write_errors = 0x0
+        vdev_cksum_errors = 0x0
+        vdev_delays = 0x0
+        dio_verify_errors = 0x2
+        parent_guid = 0xc170ad860ad210ac
+        parent_type = "root"
+        vdev_spare_paths =
+        vdev_spare_guids =
+        zio_err = 0x5
+        zio_flags = 0x300080 [CANFAIL DONT_QUEUE DONT_PROPAGATE]
+        zio_stage = 0x2000000 [DIO_CHECKSUM_VERIFY]
+        zio_pipeline = 0x6e00000 [VDEV_IO_START VDEV_IO_DONE VDEV_IO_ASSESS DIO_CHECKSUM_VERIFY DONE]
+        zio_delay = 0x170ead
+        zio_timestamp = 0xeda41119bc7f
+        zio_delta = 0x171034
+        zio_type = 0x2 [WRITE]
+        zio_priority = 0x1 [SYNC_WRITE]
+        zio_offset = 0x20ba7c6a000
+        zio_size = 0x20000
+        zio_objset = 0x112
+        zio_object = 0x105
+        zio_level = 0x0
+        zio_blkid = 0x91aaa
+        time = 0x69d71ffa 0x16c616d7
+        eid = 0xd

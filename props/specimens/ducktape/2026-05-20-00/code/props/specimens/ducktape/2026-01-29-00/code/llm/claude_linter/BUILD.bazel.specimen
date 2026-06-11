@@ -1,0 +1,137 @@
+# gazelle:resolve py llm.claude_linter.cli //llm/claude_linter:cli
+# gazelle:resolve py llm.claude_linter.cli.cli //llm/claude_linter:cli
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# NOTE: No aggregator target - use specific per-file targets like :cli, :config
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        ":precommit_runner",
+        "//llm:claude_code_api",
+        "@pypi//click",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "precommit_runner",
+    srcs = ["precommit_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "claude-linter",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [
+        ":cli",
+        ":config",
+        ":models",
+        ":precommit_runner",
+        "//llm:claude_code_api",
+        "@pypi//click",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_claude_linter",
+    srcs = ["test_claude_linter.py"],
+    main = "test_claude_linter.py",
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_claude_post_hook",
+    srcs = ["test_claude_post_hook.py"],
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_claude_pre_hook",
+    srcs = ["test_claude_pre_hook.py"],
+    deps = [
+        ":cli",
+        ":conftest",
+        ":precommit_runner",
+        "@pypi//click",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hooks",
+    srcs = ["test_hooks.py"],
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

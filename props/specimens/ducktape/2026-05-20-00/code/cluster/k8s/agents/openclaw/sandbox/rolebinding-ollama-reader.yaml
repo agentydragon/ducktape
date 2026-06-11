@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openclaw-ollama-reader
+  namespace: ollama
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ollama-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: openclaw-sandbox
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw-gateway

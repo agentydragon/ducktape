@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nvidia-device-plugin-agent-rbac
+  namespace: flux-system
+  annotations:
+    description: Agent RBAC for nvidia-device-plugin namespace. Lightweight — only RoleBindings. Depends on namespace existing + claude-rbac for ClusterRoles.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/nvidia-device-plugin/agent-rbac
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    - name: nvidia-device-plugin
+    - name: claude-rbac

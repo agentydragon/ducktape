@@ -1,0 +1,67 @@
+"""GEPA module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "warm_start",
+    srcs = ["warm_start.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/db:examples",
+        "//props/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "gepa_adapter",
+    srcs = ["gepa_adapter.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":warm_start",
+        "//agent_core:events",
+        "//openai_utils:model",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:splits",
+        "//props/db:config",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "@pypi//aiodocker",
+        "@pypi//gepa",
+        "@pypi//litellm",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_warm_start",
+    srcs = ["test_warm_start.py"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":warm_start",
+        "//props/db:examples",
+        "//props/db:session",
+        "//props/testing/fixtures:ground_truth",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

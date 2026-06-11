@@ -14,5 +14,12 @@ resources:
   - rbac-executor.yaml
   - deployment.yaml
   - service.yaml
+  - llm-proxy-deployment.yaml
+  - llm-proxy-service.yaml
+  - registry-proxy-deployment.yaml
+  - registry-proxy-service.yaml
+  - registry-pull-secret.yaml
   - httproute.yaml
+  - registry-httproute.yaml
   - rolebinding-ollama-consumer.yaml
+  - cleanuppolicy-finished-pods.yaml

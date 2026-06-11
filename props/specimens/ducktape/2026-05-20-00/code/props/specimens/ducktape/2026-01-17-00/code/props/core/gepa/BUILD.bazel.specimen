@@ -1,0 +1,73 @@
+"""GEPA module - per-file targets."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "warm_start",
+    srcs = ["warm_start.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/db:examples",
+        "//props/core/db:session",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "gepa_adapter",
+    srcs = ["gepa_adapter.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":warm_start",
+        "//agent_core",
+        "//openai_utils",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:display",
+        "//props/core:splits",
+        "//props/core/db:config",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//aiodocker",
+        "@pypi//gepa",
+        "@pypi//litellm",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_warm_start",
+    srcs = ["test_warm_start.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_postgres",
+    ],
+    deps = [
+        ":warm_start",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/testing",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)

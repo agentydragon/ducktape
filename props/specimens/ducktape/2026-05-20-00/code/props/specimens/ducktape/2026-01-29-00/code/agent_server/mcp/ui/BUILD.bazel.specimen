@@ -1,0 +1,17 @@
+"""MCP UI server - tools for agent-to-UI communication."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "ui",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/server:bus",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+    ],
+)

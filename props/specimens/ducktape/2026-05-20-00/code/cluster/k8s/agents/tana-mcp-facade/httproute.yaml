@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "tana-mcp-facade.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: tana-mcp-facade
+          port: 8765
+      timeouts:
+        request: "60s"
+        backendRequest: "60s"

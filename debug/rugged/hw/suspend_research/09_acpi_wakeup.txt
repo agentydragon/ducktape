@@ -1,0 +1,41 @@
+=== wakeup dir ===
+Permissions Size User Date Modified Name
+drwxr-xr-x     - root 14 May 12:43  wakeup32
+
+=== ACPI power dir ===
+Permissions Size User Date Modified Name
+.rw-r--r--  4.1k root 14 May 12:43  async
+.rw-r--r--  4.1k root 14 May 12:43  autosuspend_delay_ms
+.rw-r--r--  4.1k root 14 May 12:43  control
+.r--r--r--  4.1k root 14 May 12:43  runtime_active_kids
+.r--r--r--  4.1k root 14 May 12:43  runtime_active_time
+.r--r--r--  4.1k root 14 May 12:43  runtime_enabled
+.r--r--r--  4.1k root 14 May 12:43  runtime_status
+.r--r--r--  4.1k root 14 May 12:43  runtime_suspended_time
+.r--r--r--  4.1k root 14 May 12:43  runtime_usage
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/async ---
+disabled
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/autosuspend_delay_ms ---
+cat: '/sys/bus/pci/devices/0000:71:00.0/firmware_node/power/autosuspend_delay_ms': Input/output error
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/control ---
+auto
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_active_kids ---
+0
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_active_time ---
+0
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_enabled ---
+disabled
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_status ---
+unsupported
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_suspended_time ---
+0
+--- /sys/bus/pci/devices/0000:71:00.0/firmware_node/power/runtime_usage ---
+0
+
+=== runtime + power_state of PCI device ===
+power_state: D0
+runtime_status: active
+runtime_enabled: forbidden
+control: on
+d3cold_allowed: 1
+wakeup: disabled

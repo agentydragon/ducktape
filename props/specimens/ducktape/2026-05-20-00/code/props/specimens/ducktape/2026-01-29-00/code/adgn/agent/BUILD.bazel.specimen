@@ -1,0 +1,52 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:compaction",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:transcript_handler",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//mcp_infra:config_loader",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display:rich_display",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "adgn_agent",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+        "//agent_core:agent",
+        "//agent_core:compaction",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:transcript_handler",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//mcp_infra:config_loader",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display:rich_display",
+        "//openai_utils:client_factory",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)

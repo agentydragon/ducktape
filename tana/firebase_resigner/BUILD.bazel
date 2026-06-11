@@ -1,0 +1,70 @@
+"""Tana Firebase session re-signer — keeps the in-pod Tana signed in via custom-token deliveries."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "resigner",
+    srcs = ["resigner.py"],
+    visibility = ["//tana:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_resigner",
+    srcs = ["test_resigner.py"],
+    deps = [
+        ":resigner",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    deps = [":resigner"],
+)
+
+py_binary(
+    name = "firebase_resigner",
+    main_module = "tana.firebase_resigner.cli",
+    deps = [":cli"],
+)
+
+aspect_py_binary(
+    name = "firebase_resigner_bin",
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":firebase_resigner_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("firebase_resigner_bin"),
+    env = py_image_env(binary_name = "firebase_resigner_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["tana-firebase-resigner:latest"],
+)

@@ -1,0 +1,30 @@
+# Agent Runs Table
+
+The `agent_runs` table tracks all agent executions.
+
+{{ describe_relation("agent_runs") }}
+
+## RLS Context
+
+All agents use `current_agent_run_id()` to get their run ID:
+
+```sql
+SELECT current_agent_run_id();  -- Returns UUID from username
+```
+
+RLS policies filter writes by this function.
+
+## Querying Your Config
+
+```sql
+-- Get your full type_config (improvement/optimizer agents)
+SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
+
+-- Extract specific fields
+SELECT
+    type_config->>'agent_type' AS agent_type,
+    type_config->'allowed_examples' AS allowed_examples,
+    type_config->'baseline_definition_ids' AS baselines
+FROM agent_runs
+WHERE agent_run_id = current_agent_run_id();
+```

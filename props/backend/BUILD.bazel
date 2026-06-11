@@ -4,9 +4,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//props/specimens:defs.bzl", "specimen_layer_tars")
 
@@ -17,7 +15,6 @@ load("//props/specimens:defs.bzl", "specimen_layer_tars")
 py_library(
     name = "deps",
     srcs = ["deps.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//props:config",
@@ -29,7 +26,6 @@ py_library(
 py_library(
     name = "auth",
     srcs = ["auth.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":deps",
@@ -42,17 +38,46 @@ py_library(
 )
 
 py_library(
-    name = "app",
-    srcs = ["app.py"],
-    imports = ["../.."],
+    name = "oidc",
+    srcs = ["oidc.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "@pypi//authlib",
+        "@pypi//httpx",
+        "@pypi//pydantic_settings",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "loki",
+    srcs = ["loki.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_loki",
+    srcs = ["test_loki.py"],
+    deps = [
+        ":loki",
+        "//props:conftest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":oidc",
         "//props:config",
         "//props/backend/routes:agent_definitions",
+        "//props/backend/routes:auth_routes",
         "//props/backend/routes:ground_truth",
-        "//props/backend/routes:llm",
         "//props/backend/routes:model_metadata",
-        "//props/backend/routes:registry",
         "//props/backend/routes:runs",
         "//props/backend/routes:stats",
         "//props/core:oci_utils",
@@ -67,13 +92,14 @@ py_library(
         "//util:logging",
         "@pypi//asyncpg",
         "@pypi//fastapi",
+        "@pypi//itsdangerous",
+        "@pypi//starlette",
     ],
 )
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
@@ -87,7 +113,6 @@ py_library(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
@@ -104,7 +129,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pytest"],
 )
@@ -116,7 +140,6 @@ py_library(
 py_test(
     name = "test_auth",
     srcs = ["test_auth.py"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":auth",
@@ -130,9 +153,18 @@ py_test(
 )
 
 py_test(
+    name = "test_oidc",
+    srcs = ["test_oidc.py"],
+    deps = [
+        ":oidc",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":cli",
@@ -148,7 +180,6 @@ py_test(
 py_test(
     name = "test_agent_db_integration",
     srcs = ["test_agent_db_integration.py"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":auth",
@@ -175,7 +206,6 @@ py_test(
 
 py_binary(
     name = "backend_cli",
-    imports = ["../.."],
     main_module = "props.backend.cli",
     visibility = ["//props/frontend:__pkg__"],
     deps = [
@@ -201,7 +231,6 @@ py_binary(
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
     name = "backend_bin",
-    imports = ["../.."],
     main = "cli.py",
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -298,10 +327,4 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["props-backend:latest"],
-)
-
-ghcr_push(
-    name = "push_ghcr",
-    image = ":image",
-    repository = "ghcr.io/agentydragon/props-backend",
 )

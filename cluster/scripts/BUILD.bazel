@@ -1,30 +1,35 @@
 # gazelle:ignore
 # Cluster utility scripts (non-validation).
-# Validators are in //cluster/scripts/validate_cluster/.
+# Validators are in //cluster/validation/.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-
-py_library(
-    name = "generate_claude_kubeconfig_lib",
-    srcs = ["generate_claude_kubeconfig.py"],
-    imports = ["../.."],
-    visibility = ["//cluster:__pkg__"],
-    deps = [
-        "//devinfra/claude:hook_config",
-        "//util/bazel:workspace",
-        "@pypi//kubernetes",
-    ],
-)
-
-py_binary(
-    name = "generate_claude_kubeconfig",
-    main_module = "cluster.scripts.generate_claude_kubeconfig",
-    deps = [":generate_claude_kubeconfig_lib"],
-)
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # Verify Authentik authentication works end-to-end
 py_binary(
     name = "check_authentik_login",
     srcs = ["check_authentik_login.py"],
-    imports = ["../.."],
+)
+
+py_binary(
+    name = "ovh_hil_availability",
+    srcs = ["ovh_hil_availability.py"],
+)
+
+# Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
+# the validation test in //cluster/validation/.
+py_library(
+    name = "nebula_mesh",
+    srcs = ["nebula_mesh.py"],
+    data = ["//:nebula-mesh.json"],
+    visibility = ["//cluster:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_binary(
+    name = "render_mobile_nebula_config",
+    srcs = ["render_mobile_nebula_config.py"],
+    deps = [
+        ":nebula_mesh",
+        "@pypi//pyyaml",
+    ],
 )

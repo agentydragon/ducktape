@@ -1,0 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "stubs",
+    srcs = [
+        "resources_stub.py",
+        "server_stubs.py",
+        "typed_stubs.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra/compositor",
+        "//mcp_infra/resources",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)

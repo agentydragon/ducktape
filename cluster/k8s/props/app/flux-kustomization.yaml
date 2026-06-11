@@ -17,7 +17,13 @@ spec:
     - name: props-secrets
     - name: props-db
     - name: gateway
+    - name: external-secrets-operator
+    - name: forgejo-props # ensures the Forgejo `props` registry user exists
   healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: props-registry-pull
+      namespace: props
     - apiVersion: apps/v1
       kind: Deployment
       name: props

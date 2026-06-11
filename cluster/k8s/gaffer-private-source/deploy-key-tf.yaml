@@ -1,0 +1,42 @@
+# CLEANUP(2026-05-03): superseded by ducktape-automation GitHub App auth
+#   (cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml).
+#   Once App auth on the gaffer-private GitRepository has been Ready=True for
+#   ≥1 day, retire by:
+#     1. Remove this file and github-pat-gaffer-private-flux.sops.yaml from
+#        cluster/k8s/gaffer-private-source/kustomization.yaml.
+#     2. Strip prevent_destroy lifecycle blocks in
+#        tf/gitops/gaffer-private-flux/main.tf, then `tofu destroy` the module
+#        (revokes the GitHub deploy key, deletes the gaffer-private-deploy-key
+#        Secret, and the github-pat-gaffer-private-flux PAT).
+#     3. Delete tf/gitops/gaffer-private-flux/ and the BUILD.bazel target.
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: gaffer-private-flux
+  namespace: flux-system
+  annotations:
+    description: "Generates the gaffer-private flux deploy keypair, registers it on GitHub, and writes the flux Secret. Sourced from the flux-system GitRepository (NOT gaffer-private — chicken-and-egg). Superseded by ducktape-automation GitHub App auth — see top-of-file CLEANUP."
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  approvePlan: "auto"
+  path: ./tf/gitops/gaffer-private-flux
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "gaffer_private_flux"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password

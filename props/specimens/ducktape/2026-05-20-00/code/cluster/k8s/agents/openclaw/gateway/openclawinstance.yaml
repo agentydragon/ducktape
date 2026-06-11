@@ -1,0 +1,399 @@
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: openclaw
+  namespace: openclaw-gateway
+spec:
+  image:
+    repository: ghcr.io/agentydragon/openclaw-matrix
+    tag: "devel-20260430104728-a5387f2" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    pullPolicy: Always
+  env:
+    # OpenClaw requires an API key for every provider. Ollama has no auth,
+    # but a dummy value satisfies the auth-profiles check.
+    - name: OLLAMA_API_KEY
+      value: "unused-ollama-has-no-auth"
+    - name: OLLAMA_BASE_URL
+      value: "http://ollama.ollama.svc.cluster.local:11434"
+    - name: GEMINI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-gemini-api-key
+          key: api-key
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-openai-api-key
+          key: api-key
+    - name: ANTHROPIC_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-anthropic-api-key
+          key: api-key
+    - name: TELEGRAM_BOT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-telegram-bot-token
+          key: token
+    - name: MATRIX_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-matrix-bot-password
+          key: password
+  config:
+    raw:
+      cron:
+        enabled: true
+      agents:
+        defaults:
+          model:
+            primary: "anthropic/claude-opus-4-6"
+          models:
+            ollama/gpt-oss:20b:
+              alias: gpt-oss-20b
+            ollama/gpt-oss:120b:
+              alias: gpt-oss-120b
+            google/gemini-3.1-pro-preview:
+              alias: gemini-3.1-pro
+            google/gemini-3-pro-preview:
+              alias: gemini-3-pro
+            google/gemini-3-flash-preview:
+              alias: gemini-3-flash
+            google/gemini-2.5-pro:
+              alias: gemini-2.5-pro
+            google/gemini-2.5-flash:
+              alias: gemini-2.5-flash
+            openai/gpt-5.2:
+              alias: gpt-5.2
+            openai/gpt-5.2-pro:
+              alias: gpt-5.2-pro
+            openai/gpt-5.2-codex:
+              alias: gpt-5.2-codex
+            openai/gpt-5.1:
+              alias: gpt-5.1
+            openai/gpt-5-mini:
+              alias: gpt-5-mini
+            openai/gpt-5-nano:
+              alias: gpt-5-nano
+            anthropic/claude-opus-4-6:
+              alias: claude-opus-4.6
+            anthropic/claude-sonnet-4-6:
+              alias: claude-sonnet-4.6
+            anthropic/claude-opus-4-5-20251101:
+              alias: claude-opus-4.5
+            anthropic/claude-sonnet-4-5-20250929:
+              alias: claude-sonnet-4.5
+            anthropic/claude-haiku-4-5-20251001:
+              alias: claude-haiku-4.5
+      models:
+        providers:
+          ollama:
+            baseUrl: "http://ollama.ollama.svc.cluster.local:11434"
+            api: ollama
+            models:
+              - id: "gpt-oss:20b"
+                name: "GPT-OSS 20B"
+                reasoning: true
+                input: ["text"]
+                contextWindow: 131072
+                maxTokens: 8192
+              - id: "gpt-oss:120b"
+                name: "GPT-OSS 120B"
+                reasoning: true
+                input: ["text"]
+                contextWindow: 131072
+                maxTokens: 8192
+          google:
+            baseUrl: "https://generativelanguage.googleapis.com/v1beta"
+            api: google-generative-ai
+            models:
+              - id: "gemini-3.1-pro-preview"
+                name: "Gemini 3.1 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-3-pro-preview"
+                name: "Gemini 3 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-3-flash-preview"
+                name: "Gemini 3 Flash"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-2.5-pro"
+                name: "Gemini 2.5 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-2.5-flash"
+                name: "Gemini 2.5 Flash"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+          openai:
+            baseUrl: "https://api.openai.com/v1"
+            api: openai-completions
+            models:
+              - id: "gpt-5.2"
+                name: "GPT-5.2"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+              - id: "gpt-5.2-pro"
+                name: "GPT-5.2 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+              - id: "gpt-5.2-codex"
+                name: "GPT-5.2 Codex"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+              - id: "gpt-5.1"
+                name: "GPT-5.1"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+              - id: "gpt-5-mini"
+                name: "GPT-5 Mini"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+              - id: "gpt-5-nano"
+                name: "GPT-5 Nano"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 400000
+                maxTokens: 128000
+          anthropic:
+            baseUrl: "https://api.anthropic.com"
+            api: anthropic-messages
+            models:
+              - id: "claude-opus-4-6"
+                name: "Claude Opus 4.6"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 200000
+                maxTokens: 128000
+              - id: "claude-sonnet-4-6"
+                name: "Claude Sonnet 4.6"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 200000
+                maxTokens: 64000
+              - id: "claude-opus-4-5-20251101"
+                name: "Claude Opus 4.5"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 200000
+                maxTokens: 64000
+              - id: "claude-sonnet-4-5-20250929"
+                name: "Claude Sonnet 4.5"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 200000
+                maxTokens: 64000
+              - id: "claude-haiku-4-5-20251001"
+                name: "Claude Haiku 4.5"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 200000
+                maxTokens: 64000
+      tools:
+        # Built-in exec is disabled. The Airlock plugin registers an exec
+        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
+        # injection, replacing the node-host exec path entirely.
+        exec:
+          security: deny
+      plugins:
+        entries:
+          airlock:
+            config:
+              airlock:
+                # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
+                url: "http://127.0.0.1:8767/mcp/"
+              execServer:
+                url: "http://127.0.0.1:8766/mcp"
+      gateway:
+        trustedProxies:
+          - "10.244.0.0/16"
+        controlUi:
+          # Safe behind Authentik: outpost authenticates all requests upstream,
+          # and NetworkPolicy restricts gateway ingress to authentik namespace.
+          # Token auth (auto-generated by operator) satisfies sharedAuthOk,
+          # allowing device auth bypass. Without this, OpenClaw's device
+          # pairing requirement blocks all non-localhost connections.
+          dangerouslyDisableDeviceAuth: true
+          allowedOrigins:
+            - "https://openclaw.allegedly.works"
+            # Auth: operator auto-generates token via enrichConfigWithGatewayAuth()
+            # and sets mode to "token". No explicit auth section needed.
+      channels:
+        telegram:
+          enabled: true
+          dmPolicy: allowlist
+          allowFrom:
+            - 349002008
+          actions:
+            sendMessage: true
+            reactions: true
+            deleteMessage: true
+            sticker: true
+        matrix:
+          enabled: true
+          homeserver: "http://matrix-synapse.matrix.svc.cluster.local:8008"
+          userId: "@openclaw:allegedly.works"
+          # Password injected via MATRIX_PASSWORD env var
+          deviceName: "OpenClaw Agent"
+          encryption: false
+          autoJoin: always
+          dm:
+            enabled: true
+            policy: allowlist
+            allowFrom:
+              - "@agentydragon:allegedly.works"
+          actions:
+            reactions: true
+            messages: true
+  storage:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: local-path-proxmox
+  # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "768Mi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  chromium:
+    enabled: true
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+  sidecars:
+    - name: airlock-auth-proxy
+      image: ghcr.io/agentydragon/auth-proxy:devel-20260412193822-6262e48 # {"$imagepolicy": "flux-system:auth-proxy"}
+      env:
+        - name: UPSTREAM_URL
+          value: "http://airlock.airlock.svc.cluster.local:8765"
+        - name: TOKEN_URL
+          value: "http://authentik-server.authentik.svc.cluster.local/application/o/openclaw-agent/token/"
+        - name: CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: airlock-secrets
+              key: client-id
+        - name: CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: airlock-secrets
+              key: client-secret
+        - name: SCOPE
+          value: "openid propose read"
+        - name: PORT
+          value: "8767"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+    - name: exec-server
+      image: ghcr.io/agentydragon/openclaw-exec:devel-20260412193807-6262e48 # {"$imagepolicy": "flux-system:openclaw-exec"}
+      # DirectExecServer entrypoint is baked into the base image.
+      # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
+      args: ["--host", "127.0.0.1", "--port", "8766"]
+      env: []
+      # SA token provides kubectl access to openclaw-sandbox namespace.
+      # Workspace PVC is shared with the gateway so file tools and exec
+      # see the same filesystem.
+      volumeMounts:
+        - name: sandbox-sa-token
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          readOnly: true
+        - name: data
+          mountPath: /home/openclaw/.openclaw
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+  sidecarVolumes:
+    - name: sandbox-sa-token
+      secret:
+        secretName: sandbox-sa-token
+        items:
+          - key: token
+            path: token
+          - key: ca.crt
+            path: ca.crt
+          - key: namespace
+            path: namespace
+  security:
+    networkPolicy:
+      additionalEgress:
+        # Allow egress to Ollama in ollama namespace (port 11434).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ollama
+          ports:
+            - port: 11434
+              protocol: TCP
+        # Allow egress to Matrix/Synapse in matrix namespace (port 8008).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: matrix
+          ports:
+            - port: 8008
+              protocol: TCP
+        # Allow egress to mitmproxy for proxied internet access.
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: agents-mitmproxy
+          ports:
+            - port: 8080
+              protocol: TCP
+        # Allow egress to airlock MCP endpoint (unified port 8765).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: airlock
+          ports:
+            - port: 8765
+              protocol: TCP
+        # Allow egress to Authentik for OAuth2 token exchange (auth proxy sidecar).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: authentik
+          ports:
+            - port: 80
+              protocol: TCP
+  availability:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox

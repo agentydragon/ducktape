@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "plan": {
+      "description": "The plan you came up with, that you want to run by the user for approval. Supports markdown. The plan should be pretty concise.",
+      "type": "string"
+    }
+  },
+  "required": ["plan"],
+  "type": "object"
+}

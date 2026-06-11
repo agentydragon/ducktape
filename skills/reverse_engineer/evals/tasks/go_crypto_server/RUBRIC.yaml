@@ -1,0 +1,110 @@
+# Rubric for the go_crypto_server specimen.
+#
+# The judge is given:
+#   - The agent's recovered source (or written description of behavior).
+#   - SPEC.md from this directory.
+#   - The reference Go source files in this directory (the ground truth).
+#
+# Each item is a high-level question about a distinct component of the
+# specimen. The judge scores 0/1/2 — none / partial / full — by comparing
+# the agent's recovery against the reference. Identifier names don't
+# matter; behavioral / structural correctness does.
+#
+# Where useful, items mention a "would-it-round-trip" property: the
+# judge should consider whether the agent's recovered description, if
+# faithfully implemented, would produce the same observable behavior
+# (same ciphertexts under a known key + plaintext, same MAC tags, same
+# wire output) as the reference.
+
+specimen: go_crypto_server
+language: go
+# (Total weight across items is derived by the scorer; not pinned here.)
+
+items:
+  - id: wire_protocol
+    weight: 12
+    description: |
+      Did the agent correctly recover the JSON wire protocol — the
+      versioned envelope, the set of endpoints with their request/response
+      shapes, and the success/error response separation? An implementation
+      faithful to the agent's recovery should accept and emit the same
+      bytes on the wire as the reference.
+
+  - id: error_codes
+    weight: 4
+    description: |
+      Did the agent correctly recover the numeric error code table and
+      its mapping to HTTP status codes? Codes are constants embedded in
+      the binary as integers and reasons as string literals.
+
+  - id: token_issuance
+    weight: 8
+    description: |
+      Did the agent correctly recover the token PRNG (algorithm and seed
+      source) and the token's external format? A faithful re-implementation
+      seeded the same way would produce the same token sequence as the
+      reference.
+
+  - id: session_key_derivation
+    weight: 8
+    description: |
+      Did the agent identify how the per-session encryption key is derived
+      from the token? Spotting that the key is the token bytes verbatim
+      (no separate KDF) is the security-relevant observation.
+
+  - id: block_cipher
+    weight: 18
+    description: |
+      Did the agent correctly recover the block cipher — block size,
+      round count, round function, S-box, key schedule, and round
+      constants? Fully correct means a re-implementation would produce
+      bit-identical ciphertexts under a known plaintext + master key as
+      the reference.
+
+  - id: cipher_mode
+    weight: 6
+    description: |
+      Did the agent identify the mode of operation (ECB) and the padding
+      scheme (PKCS#7 over the 8-byte block)? Reproducing message
+      encryption depends on both.
+
+  - id: mac
+    weight: 14
+    description: |
+      Did the agent correctly recover the MAC construction — the
+      Merkle-Damgård chaining, the compression function built from the
+      block cipher, the IV, the preimage layout (key, key-length, message),
+      and the tag size? Fully correct means a re-implementation would
+      produce bit-identical tags.
+
+  - id: custom_base32
+    weight: 8
+    description: |
+      Did the agent correctly recover the custom base32 — the alphabet,
+      the padding character, and the packing scheme? A re-implementation
+      should encode and decode bytes identically to the reference.
+
+  - id: export_payload_layout
+    weight: 8
+    description: |
+      Did the agent correctly recover the byte layout of the export
+      snapshot (the per-note length-prefixed concatenation, the appended
+      MAC tag, the base32 wrapping)? A re-implementation should produce
+      the same export blob given the same notes and key.
+
+  - id: storage_and_concurrency
+    weight: 4
+    description: |
+      Did the agent correctly describe the in-memory per-session storage
+      model (token-keyed sessions, per-session note map with insertion
+      order, mutex-guarded shared state, no persistence)? Behavioral, not
+      structural — internal type names don't matter.
+
+  - id: overall_completeness
+    weight: 4
+    description: |
+      Across the whole recovery, did the agent miss any major component
+      that's necessary to reproduce the binary's externally observable
+      behavior? Score reflects gaps that the per-component items above
+      didn't already capture (e.g. a missing endpoint, an undocumented
+      side effect, a behavior that only shows up in concurrent use).

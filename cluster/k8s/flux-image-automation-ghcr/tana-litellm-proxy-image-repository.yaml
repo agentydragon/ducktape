@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: tana-litellm-proxy
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/tana-litellm-proxy
+  interval: 5m

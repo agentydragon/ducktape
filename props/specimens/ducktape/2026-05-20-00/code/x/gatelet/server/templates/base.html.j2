@@ -1,0 +1,17 @@
+{# Audience: depends on extending template #}
+<!doctype html>
+<html>
+  <head>
+    <title>{% block title %}Gatelet{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <header>
+      <h1>{{ header | default("Gatelet") }}</h1>
+      {% block nav %}{% endblock %}
+    </header>
+
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>

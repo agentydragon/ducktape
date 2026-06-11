@@ -1,10 +1,12 @@
 """Generic OAuth2 provider: authorization URL, code exchange, token refresh."""
 
+import base64
+import hashlib
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
-from urllib.parse import urlencode, urlparse
+from typing import Literal
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import BaseModel, Field
@@ -16,9 +18,16 @@ ACCESS_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "token_type", "
 ALL_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "refresh_token", "token_type", "expires_at", "scope"})
 
 
+def generate_pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge) per RFC 7636 with S256 method."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
 class TokenSecretConfig(BaseModel):
     name: str
-    annotations: dict[str, str] = Field(default_factory=dict)
 
 
 class BaseProviderConfig(BaseModel):
@@ -36,15 +45,11 @@ class OAuth2ProviderConfig(BaseProviderConfig):
     scopes: list[str] = Field(description="OAuth2 scopes to request")
     refresh_margin_seconds: int = Field(default=3600, description="Seconds before expiry to trigger refresh")
     extra_auth_params: dict[str, str] = Field(default_factory=dict, description="Extra query params for authorize URL")
-
-
-class PlaidProviderConfig(BaseProviderConfig):
-    provider_type: Literal["plaid"]
-    token_url: str = Field(description="Plaid /item/public_token/exchange endpoint")
-    products: list[str] = Field(description="Plaid products to request (e.g. transactions, auth)")
-
-
-ProviderConfig = Annotated[OAuth2ProviderConfig | PlaidProviderConfig, Field(discriminator="provider_type")]
+    use_pkce: bool = Field(default=False, description="Use PKCE (RFC 7636 S256). Required for SMART on FHIR.")
+    aud: str | None = Field(
+        default=None,
+        description="Optional `aud` param on the authorize URL — required for SMART on FHIR (FHIR base URL).",
+    )
 
 
 class TokenData(BaseModel):
@@ -62,7 +67,7 @@ class OAuthConfig(BaseModel):
     managed_by: str = Field(
         default="airlock", description="Value for app.kubernetes.io/managed-by label on managed secrets"
     )
-    providers: list[ProviderConfig] = Field(description="Provider configurations")
+    providers: list[OAuth2ProviderConfig] = Field(description="Provider configurations")
 
 
 class _BaseProvider:
@@ -76,7 +81,7 @@ class GenericOAuth2Provider(_BaseProvider):
         self.client_id = client_id
         self.client_secret = client_secret
 
-    def build_authorize_url(self, state: str) -> str:
+    def build_authorize_url(self, state: str, code_challenge: str | None = None) -> str:
         params = {
             "response_type": "code",
             "client_id": self.client_id,
@@ -85,20 +90,25 @@ class GenericOAuth2Provider(_BaseProvider):
             "state": state,
             **self.config.extra_auth_params,
         }
+        if code_challenge is not None:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
+        if self.config.aud is not None:
+            params["aud"] = self.config.aud
         return f"{self.config.authorize_url}?{urlencode(params)}"
 
-    async def exchange_code(self, code: str) -> TokenData:
+    async def exchange_code(self, code: str, code_verifier: str | None = None) -> TokenData:
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "redirect_uri": self.config.redirect_uri,
+        }
+        if code_verifier is not None:
+            data["code_verifier"] = code_verifier
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.config.token_url,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "redirect_uri": self.config.redirect_uri,
-                },
-            )
+            response = await client.post(self.config.token_url, data=data)
             response.raise_for_status()
             return _parse_token_response(response.json())
 
@@ -123,78 +133,6 @@ class GenericOAuth2Provider(_BaseProvider):
     def needs_refresh(self, token: TokenData) -> bool:
         margin = timedelta(seconds=self.config.refresh_margin_seconds)
         return datetime.now(UTC) >= token.expires_at - margin
-
-
-class PlaidProvider(_BaseProvider):
-    """Plaid Link provider.
-
-    Plaid uses a JS widget flow rather than a standard OAuth2 redirect:
-    1. Server calls /link/token/create to get a link_token.
-    2. Browser renders a page with the Plaid Link JS widget.
-    3. User links their bank; for OAuth institutions the bank redirects to
-       redirect_uri?oauth_state_id=<id> (server re-renders the widget with
-       receivedRedirectUri to resume the session).
-    4. On success the widget calls onSuccess(public_token); the page POSTs it
-       to our /callback/plaid endpoint.
-    5. Server exchanges the public_token for an access_token here.
-
-    Plaid access_tokens never expire, so needs_refresh() always returns False.
-    """
-
-    def __init__(self, config: PlaidProviderConfig, client_id: str, client_secret: str) -> None:
-        self.config = config
-        self.client_id = client_id
-        self.client_secret = client_secret
-
-    def _plaid_host(self) -> str:
-        parsed = urlparse(self.config.token_url)
-        return f"{parsed.scheme}://{parsed.netloc}"
-
-    async def create_link_token(self, state: str) -> str:
-        """Create a Plaid link_token. `state` is stored server-side for CSRF."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self._plaid_host()}/link/token/create",
-                json={
-                    "client_id": self.client_id,
-                    "secret": self.client_secret,
-                    "user": {"client_user_id": "owner"},
-                    "products": self.config.products,
-                    "country_codes": ["US"],
-                    "language": "en",
-                    "redirect_uri": self.config.redirect_uri,
-                },
-            )
-            response.raise_for_status()
-            return str(response.json()["link_token"])
-
-    async def exchange_public_token(self, public_token: str) -> TokenData:
-        """Exchange a Plaid public_token for a permanent access_token."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.config.token_url,
-                json={"client_id": self.client_id, "secret": self.client_secret, "public_token": public_token},
-            )
-            response.raise_for_status()
-            data = response.json()
-        # Plaid access_tokens have no expiry; use a far-future sentinel.
-        return TokenData(
-            access_token=data["access_token"],
-            refresh_token="",
-            token_type="Bearer",
-            expires_at=datetime.now(UTC) + timedelta(days=36500),
-            scope=" ".join(self.config.products),
-        )
-
-    async def refresh_tokens(self, refresh_token: str) -> TokenData:
-        raise NotImplementedError("Plaid access_tokens do not expire and cannot be refreshed")
-
-    def needs_refresh(self, token: TokenData) -> bool:
-        return False
-
-
-# Union type used in app, refresh loop, and CLI.
-Provider = GenericOAuth2Provider | PlaidProvider
 
 
 def _parse_token_response(data: dict) -> TokenData:

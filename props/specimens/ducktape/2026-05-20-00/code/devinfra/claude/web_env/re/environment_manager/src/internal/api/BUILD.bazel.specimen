@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "api",
+    srcs = [
+        "ccr_backend.go",
+        "client.go",
+        "get_session_context.go",
+        "noop_backend.go",
+        "retry.go",
+        "session_ingress_backend.go",
+        "session_ingress_client.go",
+        "session_ingress_types.go",
+        "work_client.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/api",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/util",
+        "@com_github_google_uuid//:uuid",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//propagation",
+    ],
+)

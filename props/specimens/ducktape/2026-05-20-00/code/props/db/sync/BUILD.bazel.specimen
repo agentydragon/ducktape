@@ -1,0 +1,158 @@
+load("//devinfra/deps:check.bzl", "assert_no_deps")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "yaml_loader",
+    srcs = ["yaml_loader.py"],
+    visibility = [
+        "//props/db:__subpackages__",
+        "//props/specimens/scripts:__pkg__",
+    ],
+    deps = [
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/core/models:types",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export",
+    srcs = ["export.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/db:models",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "stats",
+    srcs = ["stats.py"],
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":stats",
+        "//openai_utils:model_metadata",
+        "//props:config",
+        "//props/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":stats",
+        ":yaml_loader",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:true_positive",
+        "//props/db:models",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# Boundary enforcement
+# =============================================================================
+
+# yaml_loader is a pure parsing layer — it must not depend on
+# the DB/ORM layer (sqlalchemy, props/db:models).
+assert_no_deps(
+    name = "test_yaml_loader_no_db_deps",
+    forbidden = [
+        "@pypi//sqlalchemy",
+        "//props/db:models",
+    ],
+    targets = ["//props/db/sync:yaml_loader"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_example_generation",
+    srcs = ["test_example_generation.py"],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sync_occurrence_update",
+    size = "medium",
+    srcs = ["test_sync_occurrence_update.py"],
+    requires_docker = True,
+    deps = [
+        ":sync",
+        ":yaml_loader",
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/db:conftest",
+        "//props/db:models",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_model_metadata_sync",
+    srcs = ["test_model_metadata_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":model_metadata",
+        "//props:config",
+        "//props:conftest",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sync_snapshot_files",
+    srcs = ["test_sync_snapshot_files.py"],
+    requires_docker = True,
+    deps = [
+        ":sync",
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -1,0 +1,40 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "display",
+    srcs = [
+        "__init__.py",
+        "event_renderer.py",
+        "json_utils.py",
+        "rich_display.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//compact_json",
+        "@pypi//fastmcp",  # event_renderer.py, rich_display.py
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_display",
+    srcs = [
+        "test_compact_display.py",
+        "test_max_height.py",
+    ],
+    data = ["__snapshots__/test_compact_display.ambr"],
+    main = "test_compact_display.py",
+    deps = [
+        ":display",
+        "//mcp_infra:test_support",
+        "@pypi//syrupy",
+    ],
+)

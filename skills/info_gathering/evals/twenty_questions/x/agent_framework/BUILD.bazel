@@ -1,0 +1,59 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "twenty_questions",
+    srcs = ["twenty_questions.py"],
+    deps = [
+        "//skills/eval_infra:af_chat_client",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "//skills/eval_infra:termination",
+        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+        "//skills/info_gathering:info_gathering_skill_spec",
+        "//skills/info_gathering/evals/twenty_questions:prompts",
+        "//skills/info_gathering/evals/twenty_questions:result_types",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
+        # The agent_framework core package's openai/anthropic stub modules
+        # reference these sibling packages; mypy needs them on the dep graph.
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+    ],
+)
+
+py_binary(
+    name = "twenty_questions_bin",
+    main_module = "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions",
+    deps = [":twenty_questions"],
+)
+
+py_test(
+    name = "test_twenty_questions",
+    srcs = [
+        "conftest.py",
+        "test_twenty_questions.py",
+    ],
+    data = ["//third_party/containers:python_3_13_slim"],
+    requires_docker = True,
+    deps = [
+        ":twenty_questions",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+        "//skills/info_gathering/evals:replay_client",
+        "//skills/info_gathering/evals/twenty_questions:result_types",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

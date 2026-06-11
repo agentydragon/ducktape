@@ -1,0 +1,13 @@
+rationale: |
+  When all `max_tries` binding attempts fail, `pick_free_port` returns the
+  original `preferred` port — a port known to be in use. This leads to
+  confusing "address already in use" errors downstream. Raise an exception
+  instead.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      util/net.py:
+        - [94, 94]

@@ -6,10 +6,13 @@
 
 # Build system
 /bazel-*
+/.docker-certs/
+/bb-out
 **/node_modules/
 **/.aspect/
 # Cargo/rust-analyzer target dirs (Bazel is the build system, not cargo)
 **/target/
+/rust-project.json
 
 # Python
 **/__pycache__/
@@ -61,6 +64,7 @@ cluster/charts/*/charts/
 
 # NixOS build artifacts
 **/nixos-cloud-image
+/result
 nix/**/result
 
 # Web and build artifacts
@@ -69,6 +73,7 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
+**/.claude/scheduled_tasks.lock
 worktrees
 cluster/.git
 cluster/.claude/
@@ -81,7 +86,6 @@ cluster/.claude/
 .gitconfig
 !devinfra/claude/web_env/rootfs/root/.gitconfig
 .gitmodules
-.mcp.json
 .profile
 !devinfra/claude/web_env/rootfs/root/.profile
 .ripgreprc
@@ -96,8 +100,10 @@ cluster/.claude/
 !cluster/k8s/**/config
 !props/specimens/**/claude_linter_v2/config
 !x/claude_linter_v2/config
+!augur/fit/config
+!augur/model/config
 !**/claude_hooks/config
-!devinfra/claude/web_env/re/environment_manager/*/src/internal/config
+!devinfra/claude/web_env/re/environment_manager/src/internal/config
 
 **/refs
 **/objects
@@ -119,3 +125,5 @@ cluster/.claude/
 !/devinfra/claude/web_env/rootfs/home/claude/.claude/skills
 !/devinfra/claude/web_env/rootfs/root/.claude/settings.json
 !/devinfra/claude/web_env/rootfs/root/.claude/skills
+tgarchive/*.session
+tgarchive/backup/

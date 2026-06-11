@@ -1,0 +1,10 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "cnpg_region_switch",
+    srcs = [
+        "RUNBOOK.md",
+        "SKILL.md",
+    ],
+    visibility = ["//skills:__pkg__"],
+)

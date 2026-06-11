@@ -1,0 +1,21 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "forgejo": "svalabs/forgejo:~>1.5",
+        "kubernetes": "hashicorp/kubernetes:~>2.38",
+        "random": "hashicorp/random:~>3.7",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "budget-ledger",
+    providers = [
+        "forgejo",
+        "kubernetes",
+        "random",
+    ],
+    providers_versions = ":providers",
+)

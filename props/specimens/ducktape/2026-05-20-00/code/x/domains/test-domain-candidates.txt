@@ -1,0 +1,603 @@
+# Test domain candidates for cluster
+# Dragon/furry/hacker themed
+# Bulk query these for availability
+
+# Dragon/Wyrm
+wyrm.dev
+wyrm.cloud
+wyrm.systems
+wyrm.network
+wyrm.io
+drake.dev
+drake.cloud
+drake.io
+wyvern.dev
+wyvern.cloud
+wyvern.io
+drakon.dev
+drakon.io
+drakon.cloud
+hoard.dev
+hoard.cloud
+hoard.network
+hoard.io
+lair.dev
+lair.cloud
+lair.systems
+lair.sh
+lair.io
+scales.dev
+scales.cloud
+scales.io
+talon.dev
+talon.systems
+talon.cloud
+kobold.dev
+kobold.cloud
+kobold.io
+derg.dev
+derg.cloud
+derg.io
+
+# Scaly/Furry
+scaly.dev
+scaly.systems
+scaly.cloud
+scaly.io
+scaliest.network
+snoot.dev
+snoot.cloud
+snoot.io
+snootiest.network
+maw.dev
+maws.dev
+maw.cloud
+maw.io
+toothy.dev
+toothy.cloud
+toothiest.network
+floof.dev
+floof.cloud
+floof.io
+floofiest.network
+beans.dev
+beans.cloud
+pawpad.dev
+pawpad.cloud
+awoo.dev
+awoo.systems
+awoo.cloud
+yeen.dev
+yeen.cloud
+
+# Hacker-cred
+0xwyrm.dev
+0xdragon.dev
+0xscale.dev
+0xlair.dev
+segfault.dev
+segfault.cloud
+coredump.dev
+coredump.cloud
+kernelpanic.dev
+kernelpanic.cloud
+nullptr.dev
+nullptr.cloud
+deadbeef.dev
+deadbeef.cloud
+cafebabe.dev
+cafebabe.cloud
+
+# Adjective.network (slowest.network style)
+scaliest.network
+toothiest.network
+snootiest.network
+floofiest.network
+hoardiest.network
+sleepiest.network
+hungriest.network
+crunchiest.network
+chonkiest.network
+grumpiest.network
+sneakiest.network
+sharpest.network
+
+# Short/Punchy
+rawr.dev
+rawr.cloud
+rawr.io
+chomp.dev
+chomp.cloud
+nom.dev
+nom.cloud
+burp.cloud
+burp.dev
+growl.dev
+growl.cloud
+roar.dev
+roar.cloud
+
+# Bonus fun ones (removed invalid TLDs like .lair, .hoard)
+scalie.club
+
+# === PUNNY ===
+
+# Dragon puns
+drag.on
+scale.able
+tail.scale
+fire.wall
+hiss.tory
+fang.tastic
+claw.some
+rep.tiles
+egg.celent
+char.red
+scale.ding
+dra.gone
+hot.take
+cold.blooded
+
+# Furry puns
+paw.sitive
+fur.ocious
+claw.ver
+snout.standing
+paw.some
+fur.ever
+tail.ored
+fur.real
+paw.sible
+
+# Hacker + dragon puns
+sudo.roar
+byte.hoard
+cache.dragon
+data.hoard
+bit.scales
+raid.boss
+loot.tables
+rm.rf.lair
+dev.null.dragon
+fork.tongue
+
+# === ORIGINAL/CREATIVE ===
+
+# Evocative made-up
+wyrmhole.dev
+wyrmhole.cloud
+wyrmhole.network
+scalemail.dev
+scalemail.cloud
+voidwyrm.dev
+voidwyrm.cloud
+deepscale.dev
+deepscale.cloud
+ashscale.dev
+coldfire.dev
+coldfire.cloud
+ironmaw.dev
+ironmaw.cloud
+nulldrake.dev
+nulldrake.cloud
+darkscale.dev
+chromescale.dev
+embercore.dev
+ashfall.dev
+ashfall.cloud
+cryptlair.dev
+clawmark.dev
+drakenode.dev
+drakenode.cloud
+
+# Cyberpunk dragon
+chromescale.dev
+chromescale.cloud
+synthscale.dev
+neonwyrm.dev
+neonwyrm.cloud
+ghostwyrm.dev
+ghostwyrm.cloud
+glitchdrake.dev
+phantomscale.dev
+rustfang.dev
+steelclaw.dev
+copperscale.dev
+
+# Mythology references
+fafnir.dev
+fafnir.cloud
+nidhogg.dev
+nidhogg.cloud
+ouroboros.dev
+ouroboros.cloud
+lindwurm.dev
+lindwurm.cloud
+tatzelwurm.dev
+amphithere.dev
+knucker.dev
+jormungandr.dev
+
+# Absurdist/funny (single-level only)
+nogoldhere.cloud
+emptycave.dev
+emptycave.cloud
+bigchonk.dev
+smoldragon.dev
+chonkywyrm.dev
+sleepydrake.dev
+grumpywyrm.dev
+hungrymaw.dev
+
+# Short + punchy originals
+skvl.dev
+drkn.dev
+skly.dev
+wrym.dev
+drk.dev
+maw.io
+klaw.dev
+snek.dev
+snek.cloud
+hiss.dev
+rawrxd.dev
+
+# Lair/den themed
+underlair.dev
+cryptlair.dev
+deeplair.dev
+voidlair.dev
+thelair.dev
+mylair.cloud
+ourlair.dev
+secretlair.dev
+
+# Hoard themed
+bithoard.dev
+bithoard.cloud
+datahoard.dev
+datahoard.cloud
+goldhoard.dev
+secrethoard.dev
+thehoard.dev
+thehoard.cloud
+hoarder.dev
+hoarder.cloud
+
+# Scale wordplay
+upscale.dev
+downscale.dev
+outscale.dev
+prescale.dev
+rescale.dev
+unscale.dev
+megascale.dev
+nanoscale.dev
+
+# Tail themed (tailscale adjacent)
+tailspin.dev
+tailwind.dev
+tailgate.dev
+tailend.dev
+longtail.dev
+forkedtail.dev
+
+# Fire/breath themed
+firebreath.dev
+firebreath.cloud
+coldbreath.dev
+ashbreath.dev
+smokestack.dev
+embercloud.dev
+sparkscale.dev
+
+# Tooth/fang themed
+fangs.dev
+fanged.dev
+toothsome.dev
+sharptooth.dev
+sabertooth.dev
+venomfang.dev
+
+# Wing themed
+wingspan.dev
+darkwing.dev
+ironwing.dev
+swiftwing.dev
+nightwing.dev
+batwinged.dev
+
+# Egg themed
+dragonegg.dev
+goldegg.dev
+nestegg.dev
+hatchling.dev
+wyrmling.dev
+
+# More .network (slowest.network style)
+scaliest.network
+toothiest.network
+snootiest.network
+floofiest.network
+hoardiest.network
+sleepiest.network
+hungriest.network
+crunchiest.network
+chonkiest.network
+grumpiest.network
+sneakiest.network
+sharpest.network
+coldest.network
+darkest.network
+deepest.network
+longest.network
+oldest.network
+wisest.network
+
+# === TLD COMPLETES THE PHRASE ===
+
+# __.network (reads as "__ network")
+neural.network
+darkest.network
+private.network
+vast.network
+mesh.network
+wyrmnet.network
+scalenet.network
+dragonmesh.network
+tailscale.network
+
+# __.cloud (reads as "__ cloud")
+storm.cloud
+thunder.cloud
+dark.cloud
+ash.cloud
+smoke.cloud
+mushroom.cloud
+fire.cloud
+dragon.cloud
+
+# __.zone (reads as "__ zone")
+danger.zone
+comfort.zone
+twilight.zone
+dragon.zone
+fire.zone
+scale.zone
+drop.zone
+war.zone
+end.zone
+friend.zone
+
+# __.space (reads as "__ space")
+crawl.space
+head.space
+void.space
+deep.space
+wyrm.space
+dragon.space
+negative.space
+liminal.space
+inner.space
+
+# __.world (reads as "__ world")
+under.world
+other.world
+lost.world
+wyrm.world
+dragon.world
+old.world
+new.world
+
+# __.land (reads as "__ land")
+dragon.land
+waste.land
+dream.land
+no.land
+wyrm.land
+
+# __.host (reads as "__ host")
+dragon.host
+gracious.host
+wyrm.host
+
+# __.house (reads as "__ house")
+dragon.house
+ware.house
+fire.house
+power.house
+scale.house
+mad.house
+
+# __.systems (reads as "__ systems")
+dragon.systems
+scale.systems
+operating.systems
+file.systems
+nervous.systems
+star.systems
+belief.systems
+
+# __.life (reads as "__ life")
+dragon.life
+wild.life
+night.life
+scale.life
+low.life
+thug.life
+
+# __.rocks (reads as "__ rocks")
+dragon.rocks
+this.rocks
+wyrm.rocks
+scale.rocks
+
+# __.wtf (reads as "__ wtf")
+dragon.wtf
+seriously.wtf
+wait.wtf
+uh.wtf
+
+# __.lol
+dragon.lol
+wyrm.lol
+scale.lol
+ayy.lol
+
+# __.fail / __.win
+epic.fail
+dragon.fail
+epic.win
+flawless.win
+dragon.win
+
+# __.run
+must.run
+dragon.run
+wyrm.run
+hit.run
+
+# __.sh (shell script)
+wyrm.sh
+lair.sh
+hoard.sh
+scale.sh
+
+# __.io (input/output pun)
+stud.io
+rad.io
+rat.io
+scenar.io
+portfol.io
+
+# __.is (reads as "__ is")
+this.is
+what.is
+dragon.is
+scale.is
+
+# __.it (reads as "__ it")
+ship.it
+do.it
+love.it
+scale.it
+hoard.it
+bite.it
+
+# __.me
+bite.me
+fight.me
+scale.me
+at.me
+
+# === CONFIRMED AVAILABLE ===
+# Dragon themed
+dragonic.ai
+dragonic.systems          # $35/year
+dragonic.agency
+reptilian.systems
+
+# Self-deprecating infra humor
+flakiest.network
+questionable.network
+dubious.systems
+dubious.services
+janky.services
+innocuous.host
+ducttape.services         # matches repo name!
+uninvited.network
+fluffy.network
+precarious.network
+precarious.systems
+ducttaped.network
+rickety.systems
+unmaintained.systems
+improvised.solutions
+provisional.network
+inadvertent.network
+
+# AI alignment / subversive humor
+allegedly.works           # REGISTERED!
+sycophantic.systems
+sycophantic.services
+sycophantic.technology
+rewardhacking.services
+misaligned.capital
+hoarding.capital
+seize.capital
+overthrow.capital
+sabotaging.capital
+collectivize.capital
+theoretically.works
+
+# Misc fun
+innocent.computer
+chaotic.partners
+
+# Previously checked as taken (will be verified by scanner)
+suspicious.cloud
+sketchy.systems
+accidental.systems
+
+# AI alignment humor
+sycophantic.systems       # $35/year
+sycophantic.services
+sycophantic.technology
+rewardhacking.services
+
+# Misc fun
+innocent.computer
+chaotic.partners
+overthrow.capital         # lol
+
+# === MORE ___est.network (flakiest.network style) ===
+scaliest.network
+toothiest.network
+snootiest.network
+floofiest.network
+hoardiest.network
+sleepiest.network
+hungriest.network
+crunchiest.network
+chonkiest.network
+grumpiest.network
+sneakiest.network
+sharpest.network
+coldest.network
+darkest.network
+deepest.network
+longest.network
+oldest.network
+wisest.network
+slowest.network
+fastest.network
+strangest.network
+weirdest.network
+dankest.network
+edgiest.network
+spikiest.network
+pointiest.network
+fiercest.network
+mightiest.network
+trickiest.network
+sneakiest.network
+stealthiest.network
+quietest.network
+loudest.network
+brightest.network
+dimmest.network
+warmest.network
+coolest.network
+hottest.network
+iciest.network
+smokiest.network
+haziest.network
+fuzziest.network
+fluffiest.network
+softest.network
+hardest.network
+toughest.network
+roughest.network
+smoothest.network
+slickest.network
+glossiest.network

@@ -1,0 +1,324 @@
+# NOTE: No aggregator target - use specific per-file targets like :settings, :session_start
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+
+# === Base modules (no internal deps) ===
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "streaming",
+    srcs = ["streaming.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "proxy_vars",
+    srcs = ["proxy_vars.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    data = [
+        "config/bazelrc.mako",
+        "config/env.mako",
+        "config/nix.conf",
+        "config/podman/containers.conf",
+        "config/podman/policy.json",
+        "config/podman/registries.conf",
+        "config/podman/storage.conf",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "proxy_credentials",
+    srcs = ["proxy_credentials.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyjwt"],
+)
+
+# === Modules with internal deps ===
+
+py_library(
+    name = "env_file",
+    srcs = ["env_file.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+    ],
+)
+
+py_library(
+    name = "bazelisk_setup",
+    srcs = ["bazelisk_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings",
+    ],
+)
+
+py_library(
+    name = "nix_setup",
+    srcs = ["nix_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":settings",
+        ":streaming",
+    ],
+)
+
+py_library(
+    name = "proxy_setup",
+    srcs = ["proxy_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":proxy_vars",
+        ":settings",
+        "//net_util:net",
+        "//tools/claude_hooks/supervisor:client",
+        "@pypi//cryptography",
+        "@pypi//mako",
+    ],
+)
+
+py_library(
+    name = "podman_service",
+    srcs = ["podman_service.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//tools/claude_hooks/supervisor:client",
+    ],
+)
+
+# === Binaries ===
+
+py_binary(
+    name = "bazel_wrapper",
+    srcs = ["bazel_wrapper.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":debug",
+        ":env_file",
+        ":errors",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//tools:env_utils",
+        "//tools/claude_hooks/supervisor:client",
+    ],
+)
+
+py_binary(
+    name = "session_start",
+    srcs = ["session_start.py"],
+    data = [":bazel_wrapper"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bazelisk_setup",
+        ":debug",
+        ":env_file",
+        ":errors",
+        ":nix_setup",
+        ":podman_service",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":settings",
+        "//fmt_util",
+        "//tools:build_info",
+        "//tools:env_utils",
+        "//tools/claude_hooks/supervisor:setup",
+        "@pypi//pydantic",
+    ],
+)
+
+# === Packaging ===
+
+py_package(
+    name = "claude_hooks_pkg",
+    packages = [
+        "fmt_util",
+        "net_util",
+        "tools",
+        "tools.claude_hooks",
+        "tools.claude_hooks.auth_proxy",
+        "tools.claude_hooks.supervisor",
+    ],
+    deps = [
+        ":bazel_wrapper",
+        ":bazelisk_setup",
+        ":env_file",
+        ":errors",
+        ":nix_setup",
+        ":podman_service",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":session_start",
+        ":settings",
+        ":streaming",
+        "//net_util:net",
+        "//tools/claude_hooks/auth_proxy:main",
+        "//tools/claude_hooks/auth_proxy:proxy",
+        "//tools/claude_hooks/supervisor:client",
+        "//tools/claude_hooks/supervisor:setup",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "claude_hooks",
+    # Only claude-session-start is a console script. Other commands are invoked via
+    # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
+    entry_points = {"console_scripts": ["claude-session-start = tools.claude_hooks.session_start:main"]},
+    python_requires = ">=3.13",
+    requires = [
+        "cryptography",
+        "httpx",
+        "mako",
+        "platformdirs",
+        "pydantic",
+        "pydantic-settings",
+        "pyjwt",
+        "supervisor",
+        "tenacity",
+    ],
+    version = "0.1.0",
+    deps = [":claude_hooks_pkg"],
+)
+
+# === Tests ===
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_session_start",
+    srcs = ["test_session_start.py"],
+    data = [
+        ":session_start",
+        "//tools/claude_hooks/auth_proxy:run",
+        "//tools/claude_hooks/testdata/test_workspace:workspace_files",
+    ],
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "NODE_EXTRA_CA_CERTS",
+    ],
+    imports = ["../.."],
+    # local: podman needs user namespaces (newuidmap), blocked by linux-sandbox
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        ":conftest",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":session_start",
+        ":settings",
+        "//:runfiles",
+        "//net_util:net",
+        "//tools/claude_hooks/testing:fixtures",
+        "//tools/claude_hooks/testing:mock_egress_proxy",
+        "//tools/claude_hooks/testing:shell_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    imports = ["../.."],
+    deps = [
+        ":proxy_credentials",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = [
+        # The proxy binary is spawned as a subprocess by supervisor
+        "//tools/claude_hooks/auth_proxy:run",
+    ],
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+    ],
+    imports = ["../.."],
+    tags = ["integration"],
+    deps = [
+        ":conftest",
+        ":proxy_setup",
+        ":settings",
+        "//net_util:net",
+        "//tools/claude_hooks/supervisor:client",
+        "//tools/claude_hooks/supervisor:setup",
+        "//tools/claude_hooks/testing:fixtures",
+        "//tools/claude_hooks/testing:mock_egress_proxy",
+        "@pypi//cryptography",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# === Linting ===

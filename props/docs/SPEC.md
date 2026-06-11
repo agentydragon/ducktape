@@ -167,9 +167,9 @@ Critic-dev agents perform the full definition development loop:
 - Parent run link (for child agents)
 - Child run links
 - LLM requests table (from `llm_requests`):
-  - Model, latency, token counts, cost
+  - Model, API shape, latency, token counts, cost
   - Expandable request/response bodies
-- Container stdout/stderr (from `agent_runs.container_stdout/stderr`)
+- Container logs (merged stdout/stderr from Loki, via `GET /api/runs/{id}/logs`)
 - Completion summary when done
 - Grading summary (for grader runs): TP matches, FP hits, recall score
 
@@ -402,6 +402,19 @@ CritiqueDetailPage
 
 - `GET /api/runs/{run_id}/issues-with-locations` — critique issues with file locations
 - Existing: `GET /api/runs/{run_id}` already has grading_edges
+
+### Authentication
+
+Two parallel auth paths share the backend:
+
+- **Machine clients** (agents, CI `docker login`/crane, evaluator scripts) send
+  base64 Postgres credentials as a Bearer/Basic token. Identity and Row-Level
+  Security derive from the Postgres role (`auth.py`).
+- **Browser users** sign in via Authentik OIDC (`GET /auth/login` →
+  `/auth/callback`), establishing a signed session cookie. A successful SSO login
+  maps to admin access only; evaluator/agent roles stay token-based. Enabled when
+  `PROPS_OIDC_ISSUER` is set — otherwise the dashboard is token-only.
+- `GET /auth/me` — current SSO user (`{email}`) or 401; `GET /auth/logout` — clear session.
 
 ---
 

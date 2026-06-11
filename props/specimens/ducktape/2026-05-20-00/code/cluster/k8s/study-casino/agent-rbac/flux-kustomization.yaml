@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: study-casino-agent-rbac
+  namespace: flux-system
+  annotations:
+    description: Agent RBAC for study-casino namespace. Lightweight — only RoleBindings. Depends on namespace existing + claude-rbac for ClusterRoles.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/study-casino/agent-rbac
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    - name: study-casino-namespace
+    - name: claude-rbac

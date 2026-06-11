@@ -1,0 +1,377 @@
+blockstat:
+	efidisk0:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 0
+		flush_total_time_ns: 0
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 0
+		rd_merged: 0
+		rd_operations: 0
+		rd_total_time_ns: 0
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 0
+		wr_highest_offset: 189952
+		wr_merged: 0
+		wr_operations: 0
+		wr_total_time_ns: 0
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	pflash0:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 0
+		flush_total_time_ns: 0
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 0
+		rd_merged: 0
+		rd_operations: 0
+		rd_total_time_ns: 0
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 0
+		wr_highest_offset: 0
+		wr_merged: 0
+		wr_operations: 0
+		wr_total_time_ns: 0
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	scsi0:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 350959
+		flush_total_time_ns: 1189051023259
+		idle_time_ns: 1638390158560
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 164381983232
+		rd_merged: 0
+		rd_operations: 6428185
+		rd_total_time_ns: 1777575301781
+		timed_stats:
+		unmap_bytes: 123659005952
+		unmap_merged: 0
+		unmap_operations: 279517
+		unmap_total_time_ns: 23131460391
+		wr_bytes: 1782395526144
+		wr_highest_offset: 322122522624
+		wr_merged: 0
+		wr_operations: 21929461
+		wr_total_time_ns: 11397787968107
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	scsi1:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 12
+		flush_total_time_ns: 29156054
+		idle_time_ns: 1671921159974
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 6689792
+		rd_merged: 0
+		rd_operations: 732
+		rd_total_time_ns: 125851746
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 491520
+		wr_highest_offset: 12885037056
+		wr_merged: 0
+		wr_operations: 62
+		wr_total_time_ns: 975320480
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	scsi2:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 3
+		flush_total_time_ns: 3701448
+		idle_time_ns: 1671920552581
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 7451648
+		rd_merged: 0
+		rd_operations: 803
+		rd_total_time_ns: 76445450
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 12288
+		wr_highest_offset: 10875850752
+		wr_merged: 0
+		wr_operations: 3
+		wr_total_time_ns: 1909324
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	scsi4:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 2
+		failed_zone_append_operations: 0
+		flush_operations: 177
+		flush_total_time_ns: 4796781066
+		idle_time_ns: 1638386724976
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 13809924096
+		rd_merged: 0
+		rd_operations: 108655
+		rd_total_time_ns: 43012120840
+		timed_stats:
+		unmap_bytes: 183856869376
+		unmap_merged: 0
+		unmap_operations: 1430
+		unmap_total_time_ns: 20180830
+		wr_bytes: 67420065792
+		wr_highest_offset: 107523428352
+		wr_merged: 0
+		wr_operations: 261017
+		wr_total_time_ns: 1687036312033
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	virtio0:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 82381
+		flush_total_time_ns: 90501429873
+		idle_time_ns: 1661908919792
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 1284240384
+		rd_merged: 1723
+		rd_operations: 113861
+		rd_total_time_ns: 11925109230
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 17903390720
+		wr_highest_offset: 485364994048
+		wr_merged: 20912
+		wr_operations: 116766
+		wr_total_time_ns: 82050285371
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	virtio1:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 9
+		flush_total_time_ns: 13334001
+		idle_time_ns: 1671922313567
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 523576320
+		rd_merged: 2
+		rd_operations: 4740
+		rd_total_time_ns: 706161822
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 114688
+		wr_highest_offset: 97844727808
+		wr_merged: 0
+		wr_operations: 24
+		wr_total_time_ns: 3510530
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	virtio2:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 3031
+		flush_total_time_ns: 4804474044
+		idle_time_ns: 1671803269133
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 2644180992
+		rd_merged: 7
+		rd_operations: 26138
+		rd_total_time_ns: 2612839969
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 2073270784
+		wr_highest_offset: 32280412160
+		wr_merged: 13984
+		wr_operations: 37317
+		wr_total_time_ns: 15224145593
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+	virtio3:
+		account_failed: 1
+		account_invalid: 1
+		failed_flush_operations: 0
+		failed_rd_operations: 0
+		failed_unmap_operations: 0
+		failed_wr_operations: 0
+		failed_zone_append_operations: 0
+		flush_operations: 1976565
+		flush_total_time_ns: 2866235030711
+		idle_time_ns: 1639376760488
+		invalid_flush_operations: 0
+		invalid_rd_operations: 0
+		invalid_unmap_operations: 0
+		invalid_wr_operations: 0
+		invalid_zone_append_operations: 0
+		rd_bytes: 40724337664
+		rd_merged: 2500
+		rd_operations: 686889
+		rd_total_time_ns: 131609836610
+		timed_stats:
+		unmap_bytes: 0
+		unmap_merged: 0
+		unmap_operations: 0
+		unmap_total_time_ns: 0
+		wr_bytes: 72752111616
+		wr_highest_offset: 213992751104
+		wr_merged: 18286
+		wr_operations: 8183645
+		wr_total_time_ns: 1167768797711
+		zone_append_bytes: 0
+		zone_append_merged: 0
+		zone_append_operations: 0
+		zone_append_total_time_ns: 0
+cpus: 32
+disk: 0
+diskread: 223382384128
+diskwrite: 1942544983552
+maxdisk: 322122547200
+maxmem: 103079215104
+mem: 1066786816
+memhost: 1066786816
+name: wyrm2
+netin: 744597364598
+netout: 56068977487
+nics:
+	tap110i0:
+		netin: 744597364598
+		netout: 56068977487
+pid: 548353
+pressurecpufull: 0
+pressurecpusome: 0
+pressureiofull: 0
+pressureiosome: 0
+pressurememoryfull: 0
+pressurememorysome: 0
+proxmox-support:
+	backup-access-api: 1
+	backup-fleecing: 1
+	backup-max-workers: 1
+	pbs-dirty-bitmap: 1
+	pbs-dirty-bitmap-migration: 1
+	pbs-dirty-bitmap-savevm: 1
+	pbs-library-version: 2.0.2 (594183eab9fa275f45dfff5dd15b16f150abd503)
+	pbs-masterkey: 1
+	query-bitmap-info: 1
+qmpstatus: io-error
+running-machine: pc-q35-10.1+pve0
+running-qemu: 10.1.2
+status: running
+uptime: 256941
+vmid: 110

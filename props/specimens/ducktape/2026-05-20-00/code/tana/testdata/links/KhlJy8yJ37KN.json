@@ -1,0 +1,294 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_T02",
+      "props": {
+        "created": 1749756870580,
+        "name": "field-definition",
+        "description": "Field definition.  All field definitions are instances of this",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T02_META"
+      },
+      "children": [
+        "SYS_A208_T",
+        "SYS_A01",
+        "SYS_A10",
+        "SYS_A02",
+        "SYS_T44",
+        "SYS_T60",
+        "SYS_T82",
+        "SYS_T127",
+        "SYS_T85",
+        "SYS_T90",
+        "SYS_A03",
+        "SYS_T51",
+        "SYS_T52",
+        "SYS_T53",
+        "SYS_A06",
+        "SYS_A08",
+        "SYS_T46",
+        "SYS_T28",
+        "SYS_T30",
+        "SYS_T40",
+        "SYS_TEV001",
+        "SYS_TEV002",
+        "SYS_TEV003",
+        "SYS_TEV004",
+        "SYS_TEV005",
+        "SYS_TEV006",
+        "SYS_TEV007"
+      ]
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_A78",
+      "props": {
+        "created": 1749756870601,
+        "name": "URL",
+        "_ownerId": "SYS_0",
+        "_metaNodeId": "SYS_A78_META"
+      },
+      "children": ["SYS_T69"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SYS_T02_META",
+      "props": {
+        "created": 1749756870612,
+        "_ownerId": "SYS_T02",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T02_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T02_META_SYS_A13",
+      "props": {
+        "created": 1749756870612,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T02_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "SYS_A78_META",
+      "props": {
+        "created": 1749756870645,
+        "_ownerId": "SYS_A78",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_A78_META_SYS_A12", "SYS_A78_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_A78_META_SYS_A13",
+      "props": {
+        "created": 1749756870645,
+        "_docType": "tuple",
+        "_ownerId": "SYS_A78_META"
+      },
+      "children": ["SYS_A13", "SYS_T02"]
+    },
+    {
+      "id": "KhlJy8yJ37KN",
+      "props": {
+        "created": 1749768209419,
+        "name": "Links (test reference KhlJy8yJ37KN)",
+        "_ownerId": "MFjacEHVlv36"
+      },
+      "touchCounts": [77, 0],
+      "modifiedTs": [1749780112332, 0],
+      "children": ["Wp7HIrMoNrO4", "FFPXhyEfnayx", "dba4M_Hn6Brc", "7umOnOsiI5ek"]
+    },
+    {
+      "id": "Wp7HIrMoNrO4",
+      "props": {
+        "created": 1749768210875,
+        "name": "Basic link",
+        "_ownerId": "KhlJy8yJ37KN"
+      },
+      "touchCounts": [17, 0],
+      "modifiedTs": [1749768219581, 0],
+      "children": ["7v3kgWicVaRn"]
+    },
+    {
+      "id": "7v3kgWicVaRn",
+      "props": {
+        "created": 1749768213944,
+        "name": "https://www.google.com/",
+        "_ownerId": "Wp7HIrMoNrO4",
+        "_docType": "url"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749768219256, 0],
+      "children": ["loQFvVTGhz1F"]
+    },
+    {
+      "id": "kzrpyezyQKyx",
+      "props": {
+        "created": 1749768218875,
+        "name": "https://www.google.com/",
+        "_ownerId": "loQFvVTGhz1F"
+      },
+      "touchCounts": [3, 0],
+      "modifiedTs": [1749768219256, 0]
+    },
+    {
+      "id": "loQFvVTGhz1F",
+      "props": {
+        "created": 1749768218876,
+        "_docType": "tuple",
+        "_ownerId": "7v3kgWicVaRn"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749768219256, 0],
+      "children": ["SYS_A78", "kzrpyezyQKyx"]
+    },
+    {
+      "id": "FFPXhyEfnayx",
+      "props": {
+        "created": 1749768219273,
+        "name": "Inline link: <span data-inlineref-node=\"_VJcNPQVghEd\"></span>",
+        "_ownerId": "KhlJy8yJ37KN"
+      },
+      "touchCounts": [61, 0],
+      "modifiedTs": [1749768239898, 0]
+    },
+    {
+      "id": "_VJcNPQVghEd",
+      "props": {
+        "created": 1749768239470,
+        "name": "https://www.reddit.com/",
+        "_docType": "url",
+        "_ownerId": "FFPXhyEfnayx"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749768239898, 0],
+      "children": ["wwJEQGqbFyUk"]
+    },
+    {
+      "id": "dba4M_Hn6Brc",
+      "props": {
+        "created": 1749768239779,
+        "name": "Inline link with different text: <span data-inlineref-node=\"G3mhwksxY0VD\"></span>",
+        "_ownerId": "KhlJy8yJ37KN"
+      },
+      "touchCounts": [47, 0],
+      "modifiedTs": [1749768259367, 0]
+    },
+    {
+      "id": "G3mhwksxY0VD",
+      "props": {
+        "created": 1749768253535,
+        "name": "here",
+        "_docType": "url",
+        "_ownerId": "dba4M_Hn6Brc"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749768259367, 0],
+      "children": ["PKwdSGBZ1haq"]
+    },
+    {
+      "id": "7umOnOsiI5ek",
+      "props": {
+        "created": 1749768254182,
+        "name": "Link with embedded additional content:",
+        "_ownerId": "KhlJy8yJ37KN"
+      },
+      "touchCounts": [57, 0],
+      "modifiedTs": [1749768282989, 0],
+      "children": ["cU_TGBgRfNpj"]
+    },
+    {
+      "id": "cU_TGBgRfNpj",
+      "props": {
+        "created": 1749768266077,
+        "name": "https://xkcd.com/",
+        "_ownerId": "7umOnOsiI5ek",
+        "_docType": "url"
+      },
+      "touchCounts": [9, 0],
+      "modifiedTs": [1749768284287, 0],
+      "children": ["OC7bAbhdtp1k", "k5VPGJjDvE8F", "jQT4raE2V6oA"]
+    },
+    {
+      "id": "diAINTCvVTJd",
+      "props": {
+        "created": 1749768281633,
+        "name": "https://xkcd.com/",
+        "_ownerId": "OC7bAbhdtp1k"
+      },
+      "touchCounts": [3, 0],
+      "modifiedTs": [1749768282030, 0]
+    },
+    {
+      "id": "OC7bAbhdtp1k",
+      "props": {
+        "created": 1749768281634,
+        "_docType": "tuple",
+        "_ownerId": "cU_TGBgRfNpj"
+      },
+      "touchCounts": [6, 0],
+      "modifiedTs": [1749768282030, 0],
+      "children": ["SYS_A78", "diAINTCvVTJd"]
+    },
+    {
+      "id": "k5VPGJjDvE8F",
+      "props": {
+        "created": 1749768282055,
+        "name": "content 1",
+        "_ownerId": "cU_TGBgRfNpj"
+      },
+      "touchCounts": [19, 0],
+      "modifiedTs": [1749768288239, 0]
+    },
+    {
+      "id": "jQT4raE2V6oA",
+      "props": {
+        "created": 1749768284093,
+        "name": "content 2",
+        "_ownerId": "cU_TGBgRfNpj"
+      },
+      "touchCounts": [16, 0],
+      "modifiedTs": [1749768291120, 0]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+"""ADGN - Agent framework and LLM tooling."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "adgn",
+    srcs = [
+        "agent/cli.py",
+        "gitea_pr_gate/policy_common.py",
+        "gitea_pr_gate/policy_server_fastapi.py",
+        "testing/bootstrap.py",
+        "tools/trivial_patterns.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//adgn/mcp/gitea_mirror:gitea_mirror_lib",
+        "//agent_core",
+        "//agent_core_testing",
+        "//agent_pkg/host",
+        "//agent_pkg/runtime",
+        "//arg0_runner",
+        "//cli_util",
+        "//mcp_infra",
+        "//mcp_infra/display",
+        "//net_util",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//aiosqlite",
+        "@pypi//anthropic",
+        "@pypi//anyio",
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//openai",
+        "@pypi//pandas",
+        "@pypi//pathspec",
+        "@pypi//platformdirs",
+        "@pypi//plotnine",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+        "@pypi//requests",
+        "@pypi//rich",
+        "@pypi//structlog",
+        "@pypi//tenacity",
+        "@pypi//tiktoken",
+        "@pypi//typer",
+        "@pypi//typer_di",
+        "@pypi//types_docker",
+        "@pypi//types_pyyaml",
+        "@pypi//types_requests",
+        "@pypi//types_unidiff",
+        "@pypi//unidiff",
+        "@pypi//uvicorn",
+    ],
+)
+
+# CLI entry points
+py_binary(
+    name = "adgn_agent",
+    srcs = ["agent/cli.py"],
+    main = "agent/cli.py",
+    deps = [
+        ":adgn",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "adgn_trivial_patterns",
+    srcs = ["tools/trivial_patterns.py"],
+    main = "tools/trivial_patterns.py",
+    deps = [":adgn"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":adgn"],
+)

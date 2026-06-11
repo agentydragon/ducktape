@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: lvm-proxmox-ssd-block
+provisioner: local.csi.openebs.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  storage: "lvm"
+  volgroup: "openebs-proxmox-ssd"
+  thinProvision: "yes"

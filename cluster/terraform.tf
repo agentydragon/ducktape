@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38.0" # Latest: v2.38.0
     }
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.4.0" # Latest: v5.4.0 (major bump from 4.x)
-    }
     authentik = {
       source  = "goauthentik/authentik"
       version = "~> 2025.10.0" # Latest: v2025.10.0
@@ -41,10 +37,6 @@ terraform {
     harbor = {
       source  = "goharbor/harbor"
       version = "~> 3.11.0" # Latest: v3.11.2
-    }
-    gitea = {
-      source  = "go-gitea/gitea"
-      version = "~> 0.7.0" # Latest: v0.7.0 (major improvement from 0.5)
     }
     powerdns = {
       source  = "pan-net/powerdns"

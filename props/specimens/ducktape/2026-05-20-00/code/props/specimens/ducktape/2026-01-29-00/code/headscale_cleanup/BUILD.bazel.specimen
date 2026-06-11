@@ -1,0 +1,55 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+
+py_library(
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cli_util:logging",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "headscale-cleanup",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_package(
+    name = "headscale_cleanup_pkg",
+    packages = ["headscale_cleanup"],
+    deps = [
+        ":__main__",
+        ":cli",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "headscale_cleanup",
+    entry_points = {
+        "console_scripts": [
+            "headscale-cleanup = headscale_cleanup.cli:main",
+        ],
+    },
+    python_requires = ">=3.11",
+    requires = [
+        "structlog",
+        "typer",
+    ],
+    version = "0.1.0",
+    deps = [":headscale_cleanup_pkg"],
+)

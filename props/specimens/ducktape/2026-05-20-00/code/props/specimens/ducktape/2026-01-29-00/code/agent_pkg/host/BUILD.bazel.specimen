@@ -1,0 +1,39 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle will create per-file py_library targets
+
+py_library(
+    name = "bootstrap_handler",
+    srcs = ["bootstrap_handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":init_runner",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:tool_provider",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "builder",
+    srcs = ["builder.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "init_runner",
+    srcs = ["init_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":builder",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp",
+    ],
+)

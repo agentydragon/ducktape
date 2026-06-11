@@ -1,0 +1,121 @@
+"""Server package - FastAPI app, state management, reducers."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Lower-level types and utilities - no MCP server dependencies
+py_library(
+    name = "types",
+    srcs = [
+        "bus.py",
+        "exceptions.py",
+        "protocol.py",
+        "state.py",
+        "status_shared.py",
+        "system_message.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_server/models",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+# Mode handler and reducer - depend on types and mcp servers, but not full runtime
+py_library(
+    name = "handlers",
+    srcs = [
+        "mode_handler.py",
+        "reducer.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":types",
+        "//agent_core",
+        "//agent_server/mcp/ui",
+        "//agent_server/notifications",
+        "//agent_server/persist",
+        "//mcp_infra/display",
+        "//mcp_infra/exec",
+        "//mcp_infra/notifications",
+        "//openai_utils",
+    ],
+)
+
+# Server runtime types (session, event handler) - used by runtime package
+py_library(
+    name = "runtime_types",
+    srcs = ["runtime.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":handlers",
+        ":types",
+        "//agent_core",
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist",
+        "//mcp_infra/compositor",
+        "//openai_utils",
+    ],
+)
+
+# Full server package - FastAPI app (highest level, depends on everything)
+py_library(
+    name = "server",
+    srcs = [
+        "app.py",
+        "mcp_routing.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":handlers",
+        ":runtime_types",
+        ":types",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/runtime",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+# Tests
+_TEST_DEPS = [
+    ":handlers",
+    ":types",
+    "//agent_server/testing",
+    "//mcp_infra",
+    "//mcp_infra/exec",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+py_test(
+    name = "test_end_turn_ui_integration",
+    srcs = ["test_end_turn_ui_integration.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_history_fold_typed",
+    srcs = ["test_history_fold_typed.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_reducer",
+    srcs = ["test_reducer.py"],
+    imports = ["../.."],
+    deps = _TEST_DEPS,
+)

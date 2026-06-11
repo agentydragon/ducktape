@@ -1,0 +1,15 @@
+rationale: |
+  `format_sync_status` has a `compact` keyword argument (line 23) and a
+  `compact=True` branch (lines 29-35), but the only call site (line 89)
+  never passes it. Remove the parameter and the dead branch.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/client/view_formatter.py:
+        - [23, 23]
+        - [29, 35]
+    critic_scopes_expected_to_recall:
+      - [wt/client/view_formatter.py]
+    match_file_restriction:
+      - wt/client/view_formatter.py

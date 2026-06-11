@@ -11,7 +11,7 @@
     items: BreadcrumbItem[];
   }
 
-  let { items }: Props = $props();
+  const { items }: Props = $props();
 </script>
 
 <nav class="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">

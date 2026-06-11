@@ -1,0 +1,51 @@
+# serializer version: 1
+# name: test_docker_exec_shell_unwrapping_snapshot[/bin/sh_-lc]
+  '''
+  ● Agent: runtime_exec: sed -n '1,10p' file.txt
+    ⎿ exit_code=0  duration=0.1s
+    output text
+  
+  '''
+# ---
+# name: test_docker_exec_shell_unwrapping_snapshot[bash_-c]
+  '''
+  ● Agent: runtime_exec: ls -la /workspace
+    ⎿ exit_code=0  duration=0.1s
+    output text
+  
+  '''
+# ---
+# name: test_docker_exec_shell_unwrapping_snapshot[non_wrapped]
+  '''
+  ● Agent: runtime_exec: ruff check /workspace
+    ⎿ exit_code=0  duration=0.1s
+    output text
+  
+  '''
+# ---
+# name: test_docker_exec_shell_unwrapping_snapshot[non_wrapped_spaces]
+  '''
+  ● Agent: runtime_exec: python -c 'print('"'"'hello world'"'"')'
+    ⎿ exit_code=0  duration=0.1s
+    output text
+  
+  '''
+# ---
+# name: test_docker_exec_shell_unwrapping_snapshot[sh_-c]
+  '''
+  ● Agent: runtime_exec: echo hello | tr a-z A-Z
+    ⎿ exit_code=0  duration=0.1s
+    output text
+  
+  '''
+# ---
+# name: test_docker_exec_with_custom_cwd_snapshot
+  '''
+  ● Agent: runtime_exec: pwd && ls  [cwd=/tmp/custom]
+    ⎿ exit_code=0  duration=0.1s
+    /tmp/custom
+    file1.txt
+    file2.py
+  
+  '''
+# ---

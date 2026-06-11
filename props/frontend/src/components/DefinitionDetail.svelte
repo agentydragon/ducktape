@@ -13,7 +13,7 @@
   interface Props {
     data: DefinitionDetailResponse;
   }
-  let { data }: Props = $props();
+  const { data }: Props = $props();
 
   // Column group configs (same as DefinitionsTable)
   const colGroups: { split: Split; kind: ExampleKind; label: string }[] = [

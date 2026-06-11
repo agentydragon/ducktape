@@ -1,0 +1,102 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "gmail_archiver_lib",
+    srcs = [
+        "cli/__init__.py",
+        "cli/common.py",
+        "cli/filters.py",
+        "cli/labels.py",
+        "date_patterns.py",
+        "dirs.py",
+        "event_classifier.py",
+        "filter_planner.py",
+        "filter_sync.py",
+        "gmail_api_models.py",
+        "gmail_client.py",
+        "gmail_yaml_filters_models.py",
+        "html_utils.py",
+        "inbox.py",
+        "models.py",
+        "plan.py",
+        "plan_display.py",
+        "planners/aliexpress.py",
+        "planners/anthem_eob.py",
+        "planners/anthem_reimbursement.py",
+        "planners/anthropic.py",
+        "planners/dbsa.py",
+        "planners/doordash.py",
+        "planners/one_medical.py",
+        "planners/spruce.py",
+        "planners/square.py",
+        "planners/usps.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//email_reply_parser",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth_httplib2",
+        "@pypi//google_auth_oauthlib",
+        "@pypi//openai",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//python_dateutil",
+        "@pypi//pyyaml",
+        "@pypi//rich",
+        "@pypi//tenacity",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "gmail_archiver",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    main = "__main__.py",
+    deps = [":gmail_archiver_lib"],
+)
+
+py_test(
+    name = "test_gmail_link",
+    srcs = ["test_gmail_link.py"],
+    imports = [".."],
+    deps = [
+        ":gmail_archiver_lib",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_anthropic",
+    srcs = [
+        "planners/conftest.py",
+        "planners/test_anthropic.py",
+    ],
+    imports = [".."],
+    deps = [
+        ":gmail_archiver_lib",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_square",
+    srcs = [
+        "planners/conftest.py",
+        "planners/test_square.py",
+    ],
+    imports = [".."],
+    deps = [
+        ":gmail_archiver_lib",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":gmail_archiver_lib"],
+)

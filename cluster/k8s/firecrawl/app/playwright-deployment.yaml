@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecrawl-playwright
+  namespace: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: playwright
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: firecrawl
+      app.kubernetes.io/component: playwright
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: firecrawl
+        app.kubernetes.io/component: playwright
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: playwright-service
+          image: ghcr.io/firecrawl/playwright-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"

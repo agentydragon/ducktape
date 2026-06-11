@@ -9,9 +9,12 @@
 #   - Alloy (monitoring namespace, OTel log forwarding)
 #   - Gatus (gatus namespace, health checks)
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
+#   - Loki itself (SimpleScalable: read↔backend↔write on 3100/9095/7946)
 #
 # Allowed egress from Loki:
-#   - MinIO (minio namespace, S3 chunk/index storage)
+#   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
+#   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
+#   - Loki itself (intra-cluster gossip + gRPC + HTTP on 7946/9095/3100)
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -36,8 +39,19 @@ spec:
     # Grafana → Loki (log queries)
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: grafana
+            app: grafana
             k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: backend
+            app.kubernetes.io/instance: props
+            k8s:io.kubernetes.pod.namespace: props
       toPorts:
         - ports:
             - port: "3100"
@@ -72,13 +86,65 @@ spec:
             - port: "3100"
               protocol: TCP
 
-  egress:
-    # Loki → MinIO (S3 chunk/index storage)
-    - toEndpoints:
+    # Loki ↔ Loki (SimpleScalable: read/write/backend talk on memberlist,
+    # gRPC, and HTTP).
+    - fromEndpoints:
         - matchLabels:
-            app: minio
-            k8s:io.kubernetes.pod.namespace: minio
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
       toPorts:
         - ports:
-            - port: "9000"
+            - port: "3100"
+              protocol: TCP
+            - port: "9095"
+              protocol: TCP
+            - port: "7946"
+              protocol: TCP
+
+  egress:
+    # Loki → kube-apiserver (sc-rules sidecar watches secrets)
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+
+    # Loki → kube-dns (DNS resolution)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # Loki → SeaweedFS S3 (S3 chunk/index storage)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: s3
+            app.kubernetes.io/name: seaweedfs
+            k8s:io.kubernetes.pod.namespace: seaweedfs
+      toPorts:
+        - ports:
+            - port: "8333"
+              protocol: TCP
+
+    # Loki ↔ Loki (SimpleScalable: memberlist gossip, gRPC, HTTP)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "7946"
+              protocol: TCP
+            - port: "9095"
+              protocol: TCP
+            - port: "3100"
               protocol: TCP

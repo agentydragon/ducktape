@@ -1,0 +1,61 @@
+{
+  "tokens": [
+    {
+      "name": "wyrm2 attic reader",
+      "sops_file": "secrets/hosts/wyrm2-attic.yaml",
+      "sub": "wyrm2",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
+      "name": "rugged attic reader",
+      "sops_file": "secrets/hosts/rugged-attic.yaml",
+      "sub": "rugged",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
+      "name": "iguana attic reader",
+      "sops_file": "secrets/hosts/iguana-attic.yaml",
+      "sub": "iguana",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
+      "name": "atlas attic reader",
+      "sops_file": "secrets/hosts/atlas-attic.yaml",
+      "sub": "atlas",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
+      "name": "claude-web attic reader",
+      "sops_file": "secrets/claude-web-attic.yaml",
+      "sub": "claude-web",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
+      "name": "ducktape CI attic writer (main)",
+      "sops_file": "secrets/ci/attic-main-writer.sops.yaml",
+      "sub": "ducktape-ci",
+      "validity": "1 year",
+      "_pull_rationale": "gaffer:r is needed by the nix-attic-push workflow: evaluating flake outputs that reference nix/packages/gaffer.nix triggers builtins.fetchClosure against cache.allegedly.works/gaffer to substitute the private drivefs/drivectl closures bundled into NixOS/home configs.",
+      "pull": ["main", "gaffer"],
+      "push": ["main"]
+    },
+    {
+      "name": "gaffer CI attic writer",
+      "sops_file": "secrets/ci/attic-gaffer-writer.sops.yaml",
+      "sub": "gaffer-ci",
+      "validity": "1 year",
+      "pull": ["gaffer"],
+      "push": ["gaffer"]
+    }
+  ]
+}

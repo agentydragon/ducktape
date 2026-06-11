@@ -1,0 +1,949 @@
+rationale: |
+  These filegroup/library targets had no direct non-generated consumers in a clean Bazel query of ducktape at commit 995a1fce6410ec4a882d2e861b41423c8c839148. Unconsumed build targets create stale build surface and should either be wired into a real binary/test/artifact path, removed, or explicitly documented as intentional public/manual entry points.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-000
+    files:
+      agent_core/testing/BUILD.bazel:
+        - [5, 5]
+    note: "//agent_core/testing:assertions (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["agent_core/testing/BUILD.bazel"]
+    match_file_restriction:
+      - "agent_core/testing/BUILD.bazel"
+  - occurrence_id: occ-001
+    files:
+      agent_core/BUILD.bazel:
+        - [70, 70]
+    note: "//agent_core:progress (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["agent_core/BUILD.bazel"]
+    match_file_restriction:
+      - "agent_core/BUILD.bazel"
+  - occurrence_id: occ-002
+    files:
+      agent_pkg/BUILD.bazel:
+        - [14, 14]
+    note: "//agent_pkg:output (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["agent_pkg/BUILD.bazel"]
+    match_file_restriction:
+      - "agent_pkg/BUILD.bazel"
+  - occurrence_id: occ-003
+    files:
+      airlock/openclaw/BUILD.bazel:
+        - [41, 41]
+    note: "//airlock/openclaw:index (js_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["airlock/openclaw/BUILD.bazel"]
+    match_file_restriction:
+      - "airlock/openclaw/BUILD.bazel"
+  - occurrence_id: occ-004
+    files:
+      cluster/k8s/BUILD.bazel:
+        - [1, 1]
+    note: "//cluster/k8s:cluster_yaml_files (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["cluster/k8s/BUILD.bazel"]
+    match_file_restriction:
+      - "cluster/k8s/BUILD.bazel"
+  - occurrence_id: occ-005
+    files:
+      devinfra/claude/claude_api/BUILD.bazel:
+        - [36, 36]
+    note: "//devinfra/claude/claude_api:profile (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/claude_api/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/claude_api/BUILD.bazel"
+  - occurrence_id: occ-006
+    files:
+      devinfra/claude/hook_daemon/session_start/BUILD.bazel:
+        - [85, 85]
+    note: "//devinfra/claude/hook_daemon/session_start:conftest (py_library); no direct non-generated consumers; already testonly=true"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/hook_daemon/session_start/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/hook_daemon/session_start/BUILD.bazel"
+  - occurrence_id: occ-007
+    files:
+      devinfra/claude/hook_daemon/testing/BUILD.bazel:
+        - [16, 16]
+    note: "//devinfra/claude/hook_daemon/testing:session_start_helpers (py_library); no direct non-generated consumers; already testonly=true"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/hook_daemon/testing/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/hook_daemon/testing/BUILD.bazel"
+  - occurrence_id: occ-008
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel"
+  - occurrence_id: occ-009
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel"
+  - occurrence_id: occ-010
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign:codesign (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign/BUILD.bazel"
+  - occurrence_id: occ-011
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy:deploy (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy/BUILD.bazel"
+  - occurrence_id: occ-012
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot:snapshot (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot/BUILD.bazel"
+  - occurrence_id: occ-013
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status:status (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status/BUILD.bazel"
+  - occurrence_id: occ-014
+    files:
+      devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel:tunnel (go_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel"
+  - occurrence_id: occ-015
+    files:
+      devinfra/claude/BUILD.bazel:
+        - [5, 5]
+    note: "//devinfra/claude:shell (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/BUILD.bazel"
+  - occurrence_id: occ-016
+    files:
+      devinfra/claude/BUILD.bazel:
+        - [17, 17]
+    note: "//devinfra/claude:streaming (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/claude/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/claude/BUILD.bazel"
+  - occurrence_id: occ-017
+    files:
+      devinfra/firecracker/manager/BUILD.bazel:
+        - [51, 51]
+    note: "//devinfra/firecracker/manager:process_api_client (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/firecracker/manager/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/firecracker/manager/BUILD.bazel"
+  - occurrence_id: occ-018
+    files:
+      devinfra/js/debundle/live_proxy/BUILD.bazel:
+        - [9, 9]
+    note: "//devinfra/js/debundle/live_proxy:browser_load_test_entry_point (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/live_proxy/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/live_proxy/BUILD.bazel"
+  - occurrence_id: occ-019
+    files:
+      devinfra/js/debundle/skills/debundle_architect/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_architect:debundle_architect (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"
+  - occurrence_id: occ-020
+    files:
+      devinfra/js/debundle/skills/debundle_architect/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"
+  - occurrence_id: occ-021
+    files:
+      devinfra/js/debundle/skills/debundle_intake/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_intake:debundle_intake (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_intake/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_intake/BUILD.bazel"
+  - occurrence_id: occ-022
+    files:
+      devinfra/js/debundle/skills/debundle_intake/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_intake/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_intake/BUILD.bazel"
+  - occurrence_id: occ-023
+    files:
+      devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"
+  - occurrence_id: occ-024
+    files:
+      devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"
+  - occurrence_id: occ-025
+    files:
+      devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"
+  - occurrence_id: occ-026
+    files:
+      devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"
+  - occurrence_id: occ-027
+    files:
+      devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"
+  - occurrence_id: occ-028
+    files:
+      devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"
+  - occurrence_id: occ-029
+    files:
+      devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"
+  - occurrence_id: occ-030
+    files:
+      devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"
+  - occurrence_id: occ-031
+    files:
+      devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"
+  - occurrence_id: occ-032
+    files:
+      devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel:
+        - [3, 3]
+    note: "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"]
+    match_file_restriction:
+      - "devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"
+  - occurrence_id: occ-033
+    files:
+      inventree_utils/BUILD.bazel:
+        - [26, 26]
+    note: "//inventree_utils:tasks (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["inventree_utils/BUILD.bazel"]
+    match_file_restriction:
+      - "inventree_utils/BUILD.bazel"
+  - occurrence_id: occ-034
+    files:
+      llm/mcp/habitify/BUILD.bazel:
+        - [23, 23]
+    note: "//llm/mcp/habitify:constants (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["llm/mcp/habitify/BUILD.bazel"]
+    match_file_restriction:
+      - "llm/mcp/habitify/BUILD.bazel"
+  - occurrence_id: occ-035
+    files:
+      llm/BUILD.bazel:
+        - [33, 33]
+    note: "//llm:core (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["llm/BUILD.bazel"]
+    match_file_restriction:
+      - "llm/BUILD.bazel"
+  - occurrence_id: occ-036
+    files:
+      mcp_infra/authentik_auth/BUILD.bazel:
+        - [16, 16]
+    note: "//mcp_infra/authentik_auth:store (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["mcp_infra/authentik_auth/BUILD.bazel"]
+    match_file_restriction:
+      - "mcp_infra/authentik_auth/BUILD.bazel"
+  - occurrence_id: occ-037
+    files:
+      mcp_infra/BUILD.bazel:
+        - [51, 51]
+    note: "//mcp_infra:client_helpers (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["mcp_infra/BUILD.bazel"]
+    match_file_restriction:
+      - "mcp_infra/BUILD.bazel"
+  - occurrence_id: occ-038
+    files:
+      mcp_infra/BUILD.bazel:
+        - [15, 15]
+    note: "//mcp_infra:test_support (py_library); no direct non-generated consumers; already testonly=true"
+    critic_scopes_expected_to_recall:
+      - ["mcp_infra/BUILD.bazel"]
+    match_file_restriction:
+      - "mcp_infra/BUILD.bazel"
+  - occurrence_id: occ-039
+    files:
+      props/db/sync/BUILD.bazel:
+        - [24, 24]
+    note: "//props/db/sync:export (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["props/db/sync/BUILD.bazel"]
+    match_file_restriction:
+      - "props/db/sync/BUILD.bazel"
+  - occurrence_id: occ-040
+    files:
+      props/frontend/src/lib/BUILD.bazel:
+        - [97, 97]
+    note: "//props/frontend/src/lib:IssueIdLink (js_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["props/frontend/src/lib/BUILD.bazel"]
+    match_file_restriction:
+      - "props/frontend/src/lib/BUILD.bazel"
+  - occurrence_id: occ-041
+    files:
+      skills/backtrace/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/backtrace:backtrace (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/backtrace/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/backtrace/BUILD.bazel"
+  - occurrence_id: occ-042
+    files:
+      skills/backtrace/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/backtrace:backtrace_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/backtrace/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/backtrace/BUILD.bazel"
+  - occurrence_id: occ-043
+    files:
+      skills/branch_splitter/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/branch_splitter:branch_splitter (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/branch_splitter/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/branch_splitter/BUILD.bazel"
+  - occurrence_id: occ-044
+    files:
+      skills/branch_splitter/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/branch_splitter:branch_splitter_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/branch_splitter/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/branch_splitter/BUILD.bazel"
+  - occurrence_id: occ-045
+    files:
+      skills/buildbuddy_api/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/buildbuddy_api:buildbuddy_api (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/buildbuddy_api/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/buildbuddy_api/BUILD.bazel"
+  - occurrence_id: occ-046
+    files:
+      skills/buildbuddy_api/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/buildbuddy_api:buildbuddy_api_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/buildbuddy_api/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/buildbuddy_api/BUILD.bazel"
+  - occurrence_id: occ-047
+    files:
+      skills/cihealth/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cihealth:cihealth (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cihealth/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cihealth/BUILD.bazel"
+  - occurrence_id: occ-048
+    files:
+      skills/cihealth/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cihealth:cihealth_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cihealth/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cihealth/BUILD.bazel"
+  - occurrence_id: occ-049
+    files:
+      skills/cluster_health/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cluster_health:cluster_health (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cluster_health/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cluster_health/BUILD.bazel"
+  - occurrence_id: occ-050
+    files:
+      skills/cluster_health/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cluster_health:cluster_health_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cluster_health/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cluster_health/BUILD.bazel"
+  - occurrence_id: occ-051
+    files:
+      skills/cnpg_region_switch/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cnpg_region_switch:cnpg_region_switch (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cnpg_region_switch/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cnpg_region_switch/BUILD.bazel"
+  - occurrence_id: occ-052
+    files:
+      skills/cnpg_region_switch/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/cnpg_region_switch:cnpg_region_switch_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cnpg_region_switch/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cnpg_region_switch/BUILD.bazel"
+  - occurrence_id: occ-053
+    files:
+      skills/cpap/BUILD.bazel:
+        - [4, 4]
+    note: "//skills/cpap:cpap (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cpap/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cpap/BUILD.bazel"
+  - occurrence_id: occ-054
+    files:
+      skills/cpap/BUILD.bazel:
+        - [4, 4]
+    note: "//skills/cpap:cpap_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/cpap/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/cpap/BUILD.bazel"
+  - occurrence_id: occ-055
+    files:
+      skills/eval_infra/empty_skill/BUILD.bazel:
+        - [6, 6]
+    note: "//skills/eval_infra/empty_skill:empty_skill (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/eval_infra/empty_skill/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/eval_infra/empty_skill/BUILD.bazel"
+  - occurrence_id: occ-056
+    files:
+      skills/followups/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/followups:followups (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/followups/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/followups/BUILD.bazel"
+  - occurrence_id: occ-057
+    files:
+      skills/followups/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/followups:followups_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/followups/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/followups/BUILD.bazel"
+  - occurrence_id: occ-058
+    files:
+      skills/forensic_surgeon/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/forensic_surgeon:forensic_surgeon (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/forensic_surgeon/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/forensic_surgeon/BUILD.bazel"
+  - occurrence_id: occ-059
+    files:
+      skills/forensic_surgeon/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/forensic_surgeon:forensic_surgeon_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/forensic_surgeon/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/forensic_surgeon/BUILD.bazel"
+  - occurrence_id: occ-060
+    files:
+      skills/freecad/BUILD.bazel:
+        - [5, 5]
+    note: "//skills/freecad:freecad (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/freecad/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/freecad/BUILD.bazel"
+  - occurrence_id: occ-061
+    files:
+      skills/freecad/BUILD.bazel:
+        - [5, 5]
+    note: "//skills/freecad:freecad_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/freecad/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/freecad/BUILD.bazel"
+  - occurrence_id: occ-062
+    files:
+      skills/ground_skill/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/ground_skill:ground_skill (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/ground_skill/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/ground_skill/BUILD.bazel"
+  - occurrence_id: occ-063
+    files:
+      skills/ground_skill/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/ground_skill:ground_skill_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/ground_skill/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/ground_skill/BUILD.bazel"
+  - occurrence_id: occ-064
+    files:
+      skills/hetzner_vnc_screenshot/BUILD.bazel:
+        - [23, 23]
+    note: "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/hetzner_vnc_screenshot/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/hetzner_vnc_screenshot/BUILD.bazel"
+  - occurrence_id: occ-065
+    files:
+      skills/hetzner_vnc_screenshot/BUILD.bazel:
+        - [23, 23]
+    note: "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/hetzner_vnc_screenshot/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/hetzner_vnc_screenshot/BUILD.bazel"
+  - occurrence_id: occ-066
+    files:
+      skills/info_gathering/evals/twenty_questions/BUILD.bazel:
+        - [62, 62]
+    note: "//skills/info_gathering/evals/twenty_questions:conftest (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/info_gathering/evals/twenty_questions/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/info_gathering/evals/twenty_questions/BUILD.bazel"
+  - occurrence_id: occ-067
+    files:
+      skills/info_gathering/evals/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/info_gathering/evals:litellm_tool_provider (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/info_gathering/evals/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/info_gathering/evals/BUILD.bazel"
+  - occurrence_id: occ-068
+    files:
+      skills/info_gathering/BUILD.bazel:
+        - [5, 5]
+    note: "//skills/info_gathering:info_gathering (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/info_gathering/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/info_gathering/BUILD.bazel"
+  - occurrence_id: occ-069
+    files:
+      skills/later/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/later:later (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/later/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/later/BUILD.bazel"
+  - occurrence_id: occ-070
+    files:
+      skills/later/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/later:later_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/later/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/later/BUILD.bazel"
+  - occurrence_id: occ-071
+    files:
+      skills/lint_audit/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/lint_audit:lint_audit (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/lint_audit/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/lint_audit/BUILD.bazel"
+  - occurrence_id: occ-072
+    files:
+      skills/lint_audit/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/lint_audit:lint_audit_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/lint_audit/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/lint_audit/BUILD.bazel"
+  - occurrence_id: occ-073
+    files:
+      skills/mcp_design/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/mcp_design:mcp_design (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/mcp_design/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/mcp_design/BUILD.bazel"
+  - occurrence_id: occ-074
+    files:
+      skills/mcp_design/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/mcp_design:mcp_design_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/mcp_design/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/mcp_design/BUILD.bazel"
+  - occurrence_id: occ-075
+    files:
+      skills/pave/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/pave:pave (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/pave/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/pave/BUILD.bazel"
+  - occurrence_id: occ-076
+    files:
+      skills/pave/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/pave:pave_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/pave/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/pave/BUILD.bazel"
+  - occurrence_id: occ-077
+    files:
+      skills/proxmox_vm/BUILD.bazel:
+        - [21, 21]
+    note: "//skills/proxmox_vm:proxmox_vm (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/proxmox_vm/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/proxmox_vm/BUILD.bazel"
+  - occurrence_id: occ-078
+    files:
+      skills/proxmox_vm/BUILD.bazel:
+        - [21, 21]
+    note: "//skills/proxmox_vm:proxmox_vm_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/proxmox_vm/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/proxmox_vm/BUILD.bazel"
+  - occurrence_id: occ-079
+    files:
+      skills/readback/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/readback:readback (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/readback/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/readback/BUILD.bazel"
+  - occurrence_id: occ-080
+    files:
+      skills/readback/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/readback:readback_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/readback/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/readback/BUILD.bazel"
+  - occurrence_id: occ-081
+    files:
+      skills/reverse_engineer/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/reverse_engineer:reverse_engineer (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/reverse_engineer/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/reverse_engineer/BUILD.bazel"
+  - occurrence_id: occ-082
+    files:
+      skills/session_logs/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/session_logs:session_logs (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/session_logs/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/session_logs/BUILD.bazel"
+  - occurrence_id: occ-083
+    files:
+      skills/session_logs/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/session_logs:session_logs_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/session_logs/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/session_logs/BUILD.bazel"
+  - occurrence_id: occ-084
+    files:
+      skills/superforecaster/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/superforecaster:superforecaster (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/superforecaster/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/superforecaster/BUILD.bazel"
+  - occurrence_id: occ-085
+    files:
+      skills/superforecaster/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/superforecaster:superforecaster_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/superforecaster/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/superforecaster/BUILD.bazel"
+  - occurrence_id: occ-086
+    files:
+      skills/update_deps/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/update_deps:update_deps (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/update_deps/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/update_deps/BUILD.bazel"
+  - occurrence_id: occ-087
+    files:
+      skills/update_deps/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/update_deps:update_deps_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/update_deps/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/update_deps/BUILD.bazel"
+  - occurrence_id: occ-088
+    files:
+      skills/verify_docs/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/verify_docs:verify_docs (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/verify_docs/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/verify_docs/BUILD.bazel"
+  - occurrence_id: occ-089
+    files:
+      skills/verify_docs/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/verify_docs:verify_docs_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/verify_docs/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/verify_docs/BUILD.bazel"
+  - occurrence_id: occ-090
+    files:
+      skills/web_selfcheck/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/web_selfcheck:web_selfcheck (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/web_selfcheck/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/web_selfcheck/BUILD.bazel"
+  - occurrence_id: occ-091
+    files:
+      skills/web_selfcheck/BUILD.bazel:
+        - [3, 3]
+    note: "//skills/web_selfcheck:web_selfcheck_skill_spec (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["skills/web_selfcheck/BUILD.bazel"]
+    match_file_restriction:
+      - "skills/web_selfcheck/BUILD.bazel"
+  - occurrence_id: occ-092
+    files:
+      tana/export/headless_autoexport/BUILD.bazel:
+        - [3, 3]
+    note: "//tana/export/headless_autoexport:record_from_profile (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["tana/export/headless_autoexport/BUILD.bazel"]
+    match_file_restriction:
+      - "tana/export/headless_autoexport/BUILD.bazel"
+  - occurrence_id: occ-093
+    files:
+      tana/export/BUILD.bazel:
+        - [3, 3]
+    note: "//tana/export:cli (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["tana/export/BUILD.bazel"]
+    match_file_restriction:
+      - "tana/export/BUILD.bazel"
+  - occurrence_id: occ-094
+    files:
+      tana/export/BUILD.bazel:
+        - [66, 66]
+    note: "//tana/export:sample (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["tana/export/BUILD.bazel"]
+    match_file_restriction:
+      - "tana/export/BUILD.bazel"
+  - occurrence_id: occ-095
+    files:
+      third_party/jdk/BUILD.bazel:
+        - [10, 10]
+    note: "//third_party/jdk:cacerts (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["third_party/jdk/BUILD.bazel"]
+    match_file_restriction:
+      - "third_party/jdk/BUILD.bazel"
+  - occurrence_id: occ-096
+    files:
+      third_party/jdk/BUILD.bazel:
+        - [4, 4]
+    note: "//third_party/jdk:keytool (filegroup); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["third_party/jdk/BUILD.bazel"]
+    match_file_restriction:
+      - "third_party/jdk/BUILD.bazel"
+  - occurrence_id: occ-097
+    files:
+      util/testing/frontend_visual/BUILD.bazel:
+        - [25, 25]
+    note: "//util/testing/frontend_visual:puppeteer_lib (js_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["util/testing/frontend_visual/BUILD.bazel"]
+    match_file_restriction:
+      - "util/testing/frontend_visual/BUILD.bazel"
+  - occurrence_id: occ-098
+    files:
+      x/agent_server/mcp/BUILD.bazel:
+        - [5, 5]
+    note: "//x/agent_server/mcp:matrix_server (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/agent_server/mcp/BUILD.bazel"]
+    match_file_restriction:
+      - "x/agent_server/mcp/BUILD.bazel"
+  - occurrence_id: occ-099
+    files:
+      x/agent_server/server/BUILD.bazel:
+        - [107, 107]
+    note: "//x/agent_server/server:exceptions (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/agent_server/server/BUILD.bazel"]
+    match_file_restriction:
+      - "x/agent_server/server/BUILD.bazel"
+  - occurrence_id: occ-100
+    files:
+      x/agent_server/BUILD.bazel:
+        - [82, 82]
+    note: "//x/agent_server:web_api_constants (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/agent_server/BUILD.bazel"]
+    match_file_restriction:
+      - "x/agent_server/BUILD.bazel"
+  - occurrence_id: occ-101
+    files:
+      x/claude_linter_v2/session/BUILD.bazel:
+        - [14, 14]
+    note: "//x/claude_linter_v2/session:state (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/claude_linter_v2/session/BUILD.bazel"]
+    match_file_restriction:
+      - "x/claude_linter_v2/session/BUILD.bazel"
+  - occurrence_id: occ-102
+    files:
+      x/claude_linter_v2/utils/BUILD.bazel:
+        - [3, 3]
+    note: "//x/claude_linter_v2/utils:gitignore (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/claude_linter_v2/utils/BUILD.bazel"]
+    match_file_restriction:
+      - "x/claude_linter_v2/utils/BUILD.bazel"
+  - occurrence_id: occ-103
+    files:
+      x/gatelet/server/BUILD.bazel:
+        - [110, 110]
+    note: "//x/gatelet/server:prompts (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/gatelet/server/BUILD.bazel"]
+    match_file_restriction:
+      - "x/gatelet/server/BUILD.bazel"
+  - occurrence_id: occ-104
+    files:
+      x/gitea/pr_gate/BUILD.bazel:
+        - [9, 9]
+    note: "//x/gitea/pr_gate:policy_server_fastapi (py_library); no direct non-generated consumers"
+    critic_scopes_expected_to_recall:
+      - ["x/gitea/pr_gate/BUILD.bazel"]
+    match_file_restriction:
+      - "x/gitea/pr_gate/BUILD.bazel"

@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import qrcode
-import svgwrite
+import svg
 from fontTools.ttLib import TTFont
 
 _FONT_FAMILY = "Bebas Neue"
@@ -24,7 +24,9 @@ def _font_text_width_at_1em(text: str) -> float:
     cmap = font.getBestCmap()
     hmtx = font["hmtx"].metrics
     units_per_em: int = font["head"].unitsPerEm
-    total = sum(hmtx.get(cmap.get(ord(c), ".notdef"), (0, 0))[0] for c in text)
+    if cmap is None:
+        raise ValueError(f"Font {font_path} has no cmap table")
+    total: int = sum(hmtx.get(cmap.get(ord(c), ".notdef"), (0, 0))[0] for c in text)
     return total / units_per_em
 
 
@@ -52,25 +54,26 @@ def generate(text: str, output: Path, caption: str | None = None) -> None:
     vb_x = -(_PAPER_W - size) // 2
     vb_y = -(_PAPER_H - content_h) // 2
 
-    dwg = svgwrite.Drawing(str(output), size=("8.5in", "11in"), viewBox=f"{vb_x} {vb_y} {_PAPER_W} {_PAPER_H}")
+    elements: list[svg.Element] = []
 
     # White background.
-    dwg.add(dwg.rect(insert=(0, 0), size=(size, content_h), fill="white"))
+    elements.append(svg.Rect(x=0, y=0, width=size, height=content_h, fill="white"))
 
     # QR modules.
     offset = _BORDER * box
     for row_idx, row in enumerate(matrix):
         for col_idx, dark in enumerate(row):
             if dark:
-                dwg.add(
-                    dwg.rect(insert=(offset + col_idx * box, offset + row_idx * box), size=(box, box), fill="black")
+                elements.append(
+                    svg.Rect(x=offset + col_idx * box, y=offset + row_idx * box, width=box, height=box, fill="black")
                 )
 
     if caption:
-        dwg.add(
-            dwg.text(
-                caption,
-                insert=(size / 2, size + font_size // 2 + box // 4),
+        elements.append(
+            svg.Text(
+                text=caption,
+                x=size / 2,
+                y=size + font_size // 2 + box // 4,
                 text_anchor="middle",
                 font_family=_FONT_FAMILY,
                 font_size=font_size,
@@ -78,7 +81,13 @@ def generate(text: str, output: Path, caption: str | None = None) -> None:
             )
         )
 
-    dwg.save()
+    canvas = svg.SVG(
+        width=svg.Length(8.5, "in"),
+        height=svg.Length(11, "in"),
+        viewBox=svg.ViewBoxSpec(vb_x, vb_y, _PAPER_W, _PAPER_H),
+        elements=elements,
+    )
+    output.write_text(str(canvas))
 
 
 def main() -> None:

@@ -1,0 +1,15 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "notifications",
+    srcs = [
+        "__init__.py",
+        "types.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)

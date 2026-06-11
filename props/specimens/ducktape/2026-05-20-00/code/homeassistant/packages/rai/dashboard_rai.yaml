@@ -1,0 +1,348 @@
+views:
+  - title: Rai's room
+    path: rai-s-room
+    icon: mdi:bed-king
+    cards:
+      - type: horizontal-stack
+        cards:
+          - show_name: true
+            show_icon: true
+            type: button
+            tap_action:
+              action: toggle
+            entity: scene.rai_s_room_work_lights
+            show_state: false
+            name: Work lights
+          - show_name: true
+            show_icon: true
+            type: button
+            tap_action:
+              action: toggle
+            entity: scene.rai_s_room_sleep_mode_plus_nook_light
+            name: Sleep + nook light
+          - type: entity
+            entity: switch.adaptive_lighting_sleep_mode_rai_room_lights
+            name: Sleep mode
+            state_color: true
+          - type: entity
+            entity: switch.adaptive_lighting_rai_room_lights
+          - type: entity
+            entity: input_boolean.skip_morning_lights
+            name: Skip morning lights
+            state_color: true
+      - type: horizontal-stack
+        cards:
+          - graph: line
+            type: sensor
+            entity: sensor.rai_s_room_temperature
+            detail: 1
+          - type: thermostat
+            entity: climate.thermostat
+      - type: horizontal-stack
+        cards:
+          - graph: line
+            type: sensor
+            entity: sensor.rai_s_room_carbon_dioxide
+            detail: 2
+          - graph: line
+            type: sensor
+            entity: sensor.rai_s_room_vocs
+            detail: 1=
+          - type: entities
+            entities:
+              - entity: binary_sensor.rai_window_sensor_contact
+                name: Bed
+              - entity: binary_sensor.rai_nook_window_contact
+                name: Nook
+            state_color: false
+        title: Air quality
+      - type: light
+        entity: light.rai_s_room_ceiling_lights
+      - type: history-graph
+        entities:
+          - entity: binary_sensor.rais_room_occupancy
+            name: Occupancy
+          - entity: binary_sensor.rais_room_motion
+            name: Motion
+          - entity: binary_sensor.rai_window_sensor_contact
+            name: Main window
+          - entity: binary_sensor.rai_nook_window_contact
+            name: Nook window
+      - type: horizontal-stack
+        cards:
+          - graph: line
+            type: sensor
+            entity: sensor.rai_window_sensor_battery
+            detail: 1
+            name: Window sensor
+          - graph: line
+            type: sensor
+            entity: sensor.rai_s_room_battery
+            detail: 1
+            name: Airthings
+          - graph: line
+            type: sensor
+            entity: sensor.rai_nook_window_battery
+            detail: 1
+        title: Batteries
+      - type: entities
+        entities:
+          - switch.tp_link_smart_plug_3fe5
+        title: Rai's desk plug
+    badges:
+      - type: custom:mushroom-template-badge
+        content: "{{ states(entity) }}"
+        icon: "{{ state_attr(entity, 'icon') }}"
+        color: "{{ state_attr(entity, 'color') }}"
+        entity: sensor.rai_s_room_aqi
+        label: ""
+        tap_action:
+          action: navigate
+          navigation_path: /dashboard-rai/atmosphere
+  - type: sections
+    max_columns: 4
+    title: Lights
+    path: lights
+    sections:
+      - type: grid
+        cards:
+          - type: light
+            entity: light.rai_s_room_ceiling_lights
+          - type: heading
+            heading: Adaptive lighting
+            heading_style: title
+          - type: entity
+            entity: switch.adaptive_lighting_sleep_mode_rai_room_lights
+            name: Sleep mode
+          - type: entity
+            entity: switch.adaptive_lighting_rai_room_lights
+            name: Adaptive lighting on/off
+      - type: grid
+        cards:
+          - square: true
+            type: grid
+            cards:
+              - type: light
+                entity: light.left_row_1_closet
+                name: L1 Closet
+              - type: light
+                entity: light.left_row_2_shelving
+                name: L2 Shelving
+              - type: light
+                entity: light.left_row_3_nook
+                name: L3 Nook
+              - type: light
+                entity: light.middle_row_1_doorway
+                name: M1 Doorway
+              - type: light
+                entity: light.middle_row_2_room_center
+                name: M2 Room center
+              - type: light
+                entity: light.middle_row_3_mid_room_nightstand
+                name: M3 Mid-room nightstand
+              - type: light
+                entity: light.right_row_1_above_desk
+                name: R1 dug-up ceiling
+              - type: light
+                entity: light.right_row_2_bed_walkway
+                name: R2 Bed walkway
+              - type: light
+                entity: light.right_row_3_corner_nightstand
+                name: R3 Corner nightstand
+            columns: 3
+            grid_options:
+              columns: 12
+              rows: auto
+        column_span: 1
+      - type: grid
+        cards:
+          - type: entity
+            entity: switch.rai_room_switch
+            name: Lightswitch relay
+            state_color: false
+          - show_name: true
+            show_icon: true
+            type: button
+            tap_action:
+              action: toggle
+            entity: scene.rai_s_room_sleep_mode_plus_nook_light
+            name: Sleep mode + nook light
+          - show_name: true
+            show_icon: true
+            type: button
+            tap_action:
+              action: toggle
+            entity: scene.rai_s_room_work_lights
+            name: Work
+    icon: mdi:lightbulb-on
+    cards: []
+    badges:
+      - type: entity
+        show_name: true
+        show_state: false
+        show_icon: true
+        entity: light.rai_s_room_ceiling_lights
+        color: white
+        icon: mdi:soldering-iron
+        state_content: name
+        name: Full power
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_on
+          target:
+            entity_id: light.rai_s_room_ceiling_lights
+          data:
+            kelvin: 6500
+            brightness_pct: 100
+  - title: Atmosphere
+    path: atmosphere
+    icon: mdi:weather-windy
+    cards:
+      - type: history-graph
+        entities:
+          - entity: binary_sensor.rais_room_occupancy
+            name: Occupancy
+      - type: history-graph
+        entities:
+          - entity: sensor.rai_s_room_carbon_dioxide
+            name: Rai room CO2
+          - entity: sensor.rai_s_room_vocs
+            name: Rai room VOCs
+          - entity: binary_sensor.rai_window_sensor_contact
+            name: Bed window
+          - entity: binary_sensor.rai_nook_window_contact
+            name: Nook window
+          - entity: sensor.rai_s_room_aqi
+      - type: history-graph
+        entities:
+          - entity: sensor.rai_s_room_temperature
+          - entity: sensor.rai_s_room_humidity
+          - entity: sensor.rai_s_room_atmospheric_pressure
+          - entity: binary_sensor.rai_window_sensor_contact
+            name: Bed window
+          - entity: binary_sensor.rai_nook_window_contact
+            name: Nook window
+    badges:
+      - type: custom:mushroom-template-badge
+        content: "{{ states(entity) }}"
+        icon: "{{ state_attr(entity, 'icon') }}"
+        color: "{{ state_attr(entity, 'color') }}"
+        entity: sensor.rai_s_room_aqi
+        label: ""
+      - type: entity
+        show_name: false
+        show_state: true
+        show_icon: true
+        entity: sensor.rai_s_room_temperature
+        color: ""
+      - type: entity
+        show_name: false
+        show_state: true
+        show_icon: true
+        entity: sensor.rai_s_room_humidity
+        color: ""
+      - type: entity
+        show_name: false
+        show_state: true
+        show_icon: true
+        entity: sensor.rai_s_room_atmospheric_pressure
+        color: ""
+      - type: entity
+        show_name: true
+        show_state: true
+        show_icon: true
+        entity: binary_sensor.rai_window_sensor_contact
+        color: light-blue
+        show_entity_picture: false
+        name: Window
+      - type: custom:mushroom-template-badge
+        content: "{{ states(entity, with_unit=True) }}"
+        icon: mdi:molecule-co2
+        color: ""
+        entity: sensor.rai_s_room_carbon_dioxide
+      - type: custom:mushroom-template-badge
+        content: VOC {{ states(entity, with_unit=True) }}
+        icon: mdi:molecule
+        color: ""
+        entity: sensor.rai_s_room_vocs
+  - type: sections
+    max_columns: 4
+    title: Charges
+    path: charges
+    icon: mdi:battery-charging-30
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Pixel 6
+            heading_style: title
+          - type: gauge
+            entity: sensor.rai_s_pixel_6_battery_level
+            needle: false
+          - type: entities
+            entities:
+              - entity: sensor.rai_s_pixel_6_battery_level
+                secondary_info: last-updated
+                name: Battery
+              - entity: sensor.rai_s_pixel_6_battery_power
+                name: Power delta
+              - entity: sensor.rai_s_pixel_6_battery_state
+                name: State
+              - entity: sensor.rai_s_pixel_6_remaining_charge_time
+                name: Time remaining
+      - type: grid
+        cards:
+          - type: heading
+            heading: From halinuxcompanion
+            heading_style: title
+          - type: entities
+            entities:
+              - entity: sensor.rai_s_thinkpad_battery_level_bat0
+                name: ThinkPad battery
+                secondary_info: last-updated
+              - entity: sensor.rai_s_thinkpad_battery_level_a8f5e1772c59
+                secondary_info: last-changed
+                name: Shokz battery from ThinkPad
+              - entity: sensor.rai_s_thinkpad_battery_level_782b64a10e1e
+                name: QC45 battery from ThinkPad
+                secondary_info: last-updated
+              - entity: sensor.template_pixel6_tasker_a8_f5_e1_77_2c_59_battery
+                name: Shokz battery from Pixel
+                secondary_info: last-changed
+            state_color: true
+  - icon: mdi:laptop
+    path: thinkpad
+    title: ThinkPad
+    cards:
+      - type: entities
+        entities:
+          - entity: sensor.rai_s_thinkpad_cpu_temperature
+            name: ℃ CPU
+          - entity: sensor.rai_s_thinkpad_gpu_temperature
+            name: ℃ GPU
+          - entity: sensor.rai_s_thinkpad_cpu_load
+            name: Load average
+          - entity: sensor.rai_s_thinkpad_uptime
+            name: Uptime
+          - entity: sensor.rai_s_thinkpad_memory_usage
+            name: "% RAM"
+      - type: history-graph
+        entities:
+          - entity: sensor.rai_s_thinkpad_cpu_usage
+            name: "% CPU"
+          - entity: sensor.rai_s_thinkpad_uptime
+            name: Uptime
+          - entity: sensor.rai_s_thinkpad_memory_usage
+            name: "% RAM"
+          - entity: sensor.rai_s_thinkpad_cpu_load
+            name: Load average
+      - type: history-graph
+        entities:
+          - entity: sensor.rai_s_thinkpad_cpu_temperature
+            name: ℃ CPU
+          - entity: sensor.rai_s_thinkpad_gpu_temperature
+            name: ℃ GPU
+          - entity: sensor.rai_s_thinkpad_thinkpad_0_fan_speed
+            name: Fan 0 RPM
+          - entity: sensor.rai_s_thinkpad_thinkpad_1_fan_speed
+            name: Fan 1 RPM

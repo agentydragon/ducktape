@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: postscanmail-mcp
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/postscanmail-mcp/app
+  prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: postscanmail-mcp
+      namespace: postscanmail-mcp
+  dependsOn:
+    - name: gateway
+    - name: postscanmail-mcp-namespace
+    - name: valkey
+    - name: agent-machine-access-tf

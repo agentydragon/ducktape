@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# InvenTree plugin - requires Django from InvenTree environment
+py_library(
+    name = "custom_tags",
+    srcs = ["custom_tags.py"],
+    # TODO: Add Django to requirements_bazel.txt to make hermetic
+    tags = ["manual"],
+)
+
+py_test(
+    name = "test_custom_tags",
+    srcs = ["test_custom_tags.py"],
+    # TODO: Add Django to requirements_bazel.txt to make hermetic
+    tags = ["manual"],
+    deps = [":custom_tags"],
+)

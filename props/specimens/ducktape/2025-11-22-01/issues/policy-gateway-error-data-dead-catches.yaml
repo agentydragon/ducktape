@@ -1,0 +1,33 @@
+rationale: |
+  `_raise_if_reserved_code(e: McpError, ...)` receives an MCP error whose
+  `.error` field is typed as `mcp.types.ErrorData`. `ErrorData.code` is a
+  required `int` and `ErrorData.message` is a required `str`, so the broad
+  `try`/`except Exception` blocks around `error.code` and `error.message` are
+  defensive dead code.
+
+  Those handlers make the function look like `McpError.error` may have an
+  arbitrary shape, and they would silently hide corruption of the typed
+  invariant by falling back to `None` / `str(e)`. The code should trust the
+  `ErrorData` contract and read the fields directly:
+
+  ```
+  error = e.error
+  code = error.code
+  msg = error.message
+  data = error.data
+  ```
+
+  This issue is only about the unnecessary catches around typed member access.
+  The later fallback path that parses arbitrary dictionaries from `e.args` is a
+  separate concern and should use specific validation/type exceptions if kept.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/policy_gateway/middleware.py:
+        - - 42
+          - 56
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/policy_gateway/middleware.py

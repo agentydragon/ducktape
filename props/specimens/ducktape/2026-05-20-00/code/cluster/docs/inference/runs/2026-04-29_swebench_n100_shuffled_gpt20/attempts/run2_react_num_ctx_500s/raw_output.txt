@@ -1,0 +1,39 @@
+docker login ghcr.io: Login Succeeded
+$ /home/agentydragon/.cache/uv/environments-v2/run-swebench-31f334848be50ca8/bin/inspect eval /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-29_swebench_n100_shuffled_gpt20/swebench_react_task.py@swe_bench_react --model openai/gpt-oss:20b --limit 100 --message-limit 1000 --sandbox docker --max-connections 2 --display plain --sample-shuffle 42 --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-29_swebench_n100_shuffled_gpt20/eval_logs
+Loading dataset princeton-nlp/SWE-bench_Verified from Hugging Face...
+Saving the dataset (0/1 shards):   0%|          | 0/500 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 8966.63 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 8811.49 examples/s]
+ default Pulling
+ default Pulled
+
+---------------------------------------------------------
+swe_bench_react (100 samples): openai/gpt-oss:20b
+max_connections: 2, sample_shuffle: 42, message_limit: 1000, dataset:
+princeton-nlp/SWE-bench_Verified
+---------------------------------------------------------
+
+Steps:   1/100   1% | Samples:   1/100 | mean:  n/a | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 23
+Steps:   2/100   2% | Samples:   2/100 | mean: 0.00 | subprocesses:  0/32, docker:  1/64, openai:  1/ 2 | HTTP retries: 46
+[04/30/26 01:07:08] WARNING  [RSNk3bZJh8Nfi9dA8gisCD              _model.py:1932
+                             swe_bench_react/django__django-14672
+                             /1 openai/gpt-oss:20b] ->
+                             gpt-oss:20b retry 10 (retrying in
+                             1,537 seconds) [InternalServerError
+                             500]
+[04/30/26 01:16:49] WARNING  [6uo6am4VTT8PYtE22zF8XM              _model.py:1932
+                             swe_bench_react/django__django-14493
+                             /1 openai/gpt-oss:20b] ->
+                             gpt-oss:20b retry 10 (retrying in
+                             1,538 seconds) [InternalServerError
+                             500]
+[04/30/26 01:33:18] WARNING  [RSNk3bZJh8Nfi9dA8gisCD              _model.py:1932
+                             swe_bench_react/django__django-14672
+                             /1 openai/gpt-oss:20b] ->
+                             gpt-oss:20b retry 11 (retrying in
+                             1,800 seconds) [InternalServerError
+                             500]
+[04/30/26 01:42:50] WARNING  [6uo6am4VTT8PYtE22zF8XM              _model.py:1932
+                             swe_bench_react/django__django-14493
+                             /1 openai/gpt-oss:20b] ->
+                             gpt-oss:20b retry 11 (retrying in
+                             1,800 seconds) [InternalServerError
+                             500]

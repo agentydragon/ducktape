@@ -1,0 +1,5 @@
+# Raw forensic dumps captured by `debug/rugged/modem.sh dump`. They
+# contain mmcli output (IMEI, IMSI, ICCID, phone number) and full
+# dmesg/journal slices that aren't worth committing wholesale. Commit
+# specific extracted excerpts into the research doc as needed.
+snapshots/

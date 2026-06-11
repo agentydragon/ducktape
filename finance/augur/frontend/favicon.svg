@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Augur">
+  <defs>
+    <linearGradient id="centerBlue" x1="84" y1="430" x2="424" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0b5cff"/>
+    </linearGradient>
+    <linearGradient id="midBlue" x1="84" y1="430" x2="424" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#93c5fd"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="outerBlue" x1="84" y1="430" x2="424" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#outerBlue)" opacity="0.72"
+        d="M76 438 C116 309 177 215 264 151 C318 112 373 82 438 42 C432 118 392 178 326 220 C240 274 154 339 76 438 Z"/>
+  <path fill="url(#midBlue)" opacity="0.82"
+        d="M76 438 C123 326 197 252 294 204 C352 175 399 146 453 101 C447 165 414 212 356 246 C265 299 171 358 76 438 Z"/>
+  <path fill="url(#centerBlue)" opacity="1"
+        d="M76 438 C146 347 237 291 340 264 C389 251 426 229 463 190 C457 249 424 286 365 308 C271 342 171 384 76 438 Z"/>
+  <path fill="url(#midBlue)" opacity="0.82"
+        d="M76 438 C160 383 253 353 353 349 C398 347 432 330 459 294 C447 350 411 381 350 394 C252 414 157 428 76 438 Z"/>
+  <path fill="url(#outerBlue)" opacity="0.72"
+        d="M76 438 C166 421 256 420 345 431 C389 436 421 421 447 388 C428 437 389 460 327 459 C231 457 147 448 76 438 Z"/>
+</svg>

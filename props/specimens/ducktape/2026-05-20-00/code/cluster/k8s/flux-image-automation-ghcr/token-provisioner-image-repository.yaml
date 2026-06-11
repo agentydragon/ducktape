@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: token-provisioner
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/token-provisioner
+  interval: 5m

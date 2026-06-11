@@ -1,11 +1,10 @@
 """MCP Loop server - loop control tools."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "loop",
     srcs = ["server.py"],
-    imports = ["../../../.."],
     visibility = ["//x/agent_server:__subpackages__"],
     deps = [
         "//mcp_infra:flat_tool",

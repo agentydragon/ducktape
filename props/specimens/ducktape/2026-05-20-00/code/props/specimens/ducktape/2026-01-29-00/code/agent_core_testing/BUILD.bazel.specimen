@@ -1,0 +1,69 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# NOTE: No aggregator target - use specific per-file targets like :fixtures, :responses, :steps
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "echo_server",
+    srcs = ["echo_server.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:naming",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//openai_utils:pydantic_strict_mode",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":echo_server",
+        ":responses",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:tool_provider",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//fastmcp",
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":echo_server",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:builders",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "steps",
+    srcs = ["steps.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)

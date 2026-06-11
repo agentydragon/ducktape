@@ -1,0 +1,11 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  external:
+    url: http://grafana-service.monitoring.svc.cluster.local:3000
+    tenantNamespace: flux-system
+  client:
+    useKubeAuth: true

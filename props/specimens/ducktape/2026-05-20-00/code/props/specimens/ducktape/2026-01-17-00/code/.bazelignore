@@ -1,0 +1,25 @@
+# Ignore pnpm internal directories that contain BUILD.bazel files
+# These are created when using hoist=false but should not be processed by Bazel
+node_modules/.pnpm
+bazel-js-skeletons
+
+# Python virtualenvs - contain installed package sources that confuse Gazelle
+# Note: .bazelignore patterns are root-relative only (no ** glob support)
+.venv
+venv
+
+# Development environment caches
+# Root level
+.devenv
+.direnv
+.uv-cache
+.pre-commit-cache
+.cache
+# Nested (.bazelignore doesn't support ** globs, so list explicitly)
+adgn/.direnv
+cluster/.direnv
+wt/.direnv
+props/.direnv
+
+# Investigations - no BUILD files
+investigations

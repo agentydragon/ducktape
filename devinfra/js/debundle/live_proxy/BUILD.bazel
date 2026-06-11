@@ -1,0 +1,74 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+exports_files(["harness_monitor.html"])
+
+py_library(
+    name = "proxy_lib",
+    srcs = [
+        "addon.py",
+        "core.py",
+        "logging_utils.py",
+        "mitmproxy_script.py",
+        "package_tree.py",
+        "responses.py",
+        "serve.py",
+        "server.py",
+        "vendor_runtime.py",
+    ],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "browser_test_lib",
+    srcs = [
+        "browser_runner.py",
+    ],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//playwright",
+    ],
+)
+
+py_binary(
+    name = "serve_bin",
+    main_module = "devinfra.js.debundle.live_proxy.serve",
+    visibility = ["//visibility:public"],
+    deps = [":proxy_lib"],
+)
+
+py_test(
+    name = "core_test",
+    srcs = ["core_test.py"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "package_tree_test",
+    srcs = ["package_tree_test.py"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "server_test",
+    srcs = ["server_test.py"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

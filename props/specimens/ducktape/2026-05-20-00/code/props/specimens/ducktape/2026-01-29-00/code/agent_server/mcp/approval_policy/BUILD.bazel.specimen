@@ -1,0 +1,129 @@
+"""MCP Approval Policy server - policy engine and middleware."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_test(
+    name = "test_policy_validation",
+    srcs = ["test_policy_validation.py"],
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":engine",
+        "//agent_server/testing:approval_policy_testdata",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_preset_policy_loading",
+    srcs = ["test_preset_policy_loading.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        "//agent_server:presets",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_schema",
+    srcs = ["test_schema.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server_available",
+    srcs = ["test_server_available.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    imports = ["../../.."],
+    tags = ["requires_docker"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core_testing:responses",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":engine",
+        "//agent_server/policies:policy_types",
+        "//mcp_infra/stubs:server_stubs",
+    ],
+)
+
+py_library(
+    name = "engine",
+    srcs = ["engine.py"],
+    data = ["instructions.j2.md"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_server:agent_types",
+        "//agent_server:approvals",
+        "//agent_server/models:proposal_status",
+        "//agent_server/persist:types",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policy_eval:container",
+        "//agent_server/policy_eval:runner",
+        "//mcp_infra:constants",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:naming",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/exec:docker",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)

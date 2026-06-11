@@ -1,0 +1,18 @@
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
+
+skill_package(
+    name = "debundle_integrator",
+    contents = [
+        skill_mapping(
+            srcs = ["SKILL.md"],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//devinfra/js/debundle/skills/shared:debundle_user_guide.md",
+                "//devinfra/js/debundle/skills/shared:workflow.md",
+            ],
+            prefix = "references",
+        ),
+    ],
+)

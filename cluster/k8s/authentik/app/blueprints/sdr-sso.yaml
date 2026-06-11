@@ -1,0 +1,27 @@
+version: 1
+metadata:
+  name: SSO - SDR
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: sdr-provider
+    state: present
+    identifiers:
+      name: sdr
+    attrs:
+      external_host: "https://sdr.allegedly.works"
+      internal_host: "http://openwebrx.sdr.svc.cluster.local:8073"
+      mode: proxy
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      access_token_validity: "hours=24"
+  - model: authentik_core.application
+    id: sdr-app
+    state: present
+    identifiers:
+      slug: sdr
+    attrs:
+      name: OpenWebRX+ SDR
+      provider: !KeyOf sdr-provider
+      meta_description: "Software Defined Radio receiver"
+      meta_launch_url: "https://sdr.allegedly.works"

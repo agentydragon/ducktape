@@ -44,12 +44,7 @@ When provisioning a new VM or remote machine:
    ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
      gh ssh-key add - --title "HOSTNAME"
 
-   # From your provisioning machine (with glab installed and authenticated):
-   ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
-     glab ssh-key add -t "HOSTNAME"
-
-   # Verify both worked from the new machine:
-   ssh agentydragon@NEW_MACHINE_IP 'for host in github.com gitlab.com; do echo "Testing $host:"; ssh -T git@$host; done'
+   # Verify GitHub worked from the new machine.
    ```
 
 3. Clone ducktape repository and checkout devel branch:

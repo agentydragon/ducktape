@@ -1,0 +1,113 @@
+rationale: |
+  Using dict[str, Any] as a record type when the keys are known and fixed.
+  Should use a dataclass or Pydantic model for type safety and IDE support.
+  Pydantic preferred when serializing to JSON (provides .model_dump_json()).
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      prompts/scans/scan_single_line_functions.py:
+        - [30, 30]
+        - [120, 129]
+        - [144, 144]
+        - [161, 161]
+        - [174, 174]
+    note: >-
+      dict[str, Any] used for function info record with known keys (name, file, line,
+      is_async, statement, decorators, signature). Define a dataclass SingleLineFunction
+      and use throughout.
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_single_line_functions.py
+    match_file_restriction:
+      - prompts/scans/scan_single_line_functions.py
+
+  - occurrence_id: occ-1
+    files:
+      prompts/scans/scan_single_line_functions.py:
+        - [173, 179]
+    note: >-
+      Manual dict grouping pattern - use defaultdict(list) instead of checking key
+      existence and initializing empty list.
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_single_line_functions.py
+    match_file_restriction:
+      - prompts/scans/scan_single_line_functions.py
+
+  - occurrence_id: occ-2
+    files:
+      prompts/scans/scan_string_literals.py:
+        - [36, 37]
+        - [45, 45]
+        - [50, 50]
+        - [55, 58]
+        - [63, 68]
+        - [75, 75]
+        - [81, 82]
+        - [88, 88]
+        - [92, 92]
+        - [108, 108]
+        - [151, 151]
+    note: >-
+      dict[str, Any] used for Literal record (value, line, file) and Symbol record (name,
+      line, file, type). Use Pydantic models since output is JSON-serialized.
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_string_literals.py
+    match_file_restriction:
+      - prompts/scans/scan_string_literals.py
+
+  - occurrence_id: occ-3
+    files:
+      prompts/scans/scan_error_handling.py:
+        - [25, 28]
+        - [35, 35]
+        - [39, 39]
+        - [88, 88]
+        - [113, 113]
+        - [115, 115]
+    note: >-
+      dict[str, Any] used for error handling issue records (line, col, etc). Define
+      Pydantic models: HandlerIssue, FileIssues, ScanResult.
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_error_handling.py
+    match_file_restriction:
+      - prompts/scans/scan_error_handling.py
+
+  - occurrence_id: occ-4
+    files:
+      prompts/scans/scan_dataclass_candidates.py:
+        - [25, 25]
+        - [29, 36]
+        - [87, 87]
+        - [102, 102]
+        - [104, 104]
+    note: "dict[str, Any] used for class analysis results. Define Pydantic models: ClassInfo, ScanResult."
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_dataclass_candidates.py
+    match_file_restriction:
+      - prompts/scans/scan_dataclass_candidates.py
+
+  - occurrence_id: occ-5
+    files:
+      prompts/scans/scan_comments.py:
+        - [21, 21]
+        - [31, 31]
+        - [52, 52]
+    note: >-
+      dict[str, Any] used for comment records (line, comment, context_before,
+      context_after, type). Define Pydantic model: CommentInfo.
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_comments.py
+    match_file_restriction:
+      - prompts/scans/scan_comments.py
+
+  - occurrence_id: occ-6
+    files:
+      prompts/scans/scan_manual_serde.py:
+        - [26, 26]
+    note: "dict[str, Any] used for dict literal records. Define Pydantic model: DictLiteralInfo."
+    critic_scopes_expected_to_recall:
+      - - prompts/scans/scan_manual_serde.py
+    match_file_restriction:
+      - prompts/scans/scan_manual_serde.py

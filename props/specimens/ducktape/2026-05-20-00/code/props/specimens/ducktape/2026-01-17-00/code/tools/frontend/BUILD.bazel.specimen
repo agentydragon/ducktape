@@ -1,0 +1,17 @@
+# Frontend build tooling
+# Vite, SvelteKit, and Storybook binaries from root workspace
+
+load("@npm_ducktape//:storybook/package_json.bzl", storybook_bin = "bin")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+# Vite binary for frontend builds
+vite_bin.vite_binary(name = "vite")
+
+# Svelte-check binary for type checking
+svelte_check_bin.svelte_check_binary(name = "svelte-check")
+
+# Storybook binary for dev server
+storybook_bin.storybook_binary(name = "storybook")

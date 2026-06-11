@@ -1,0 +1,26 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "host",
+    srcs = [
+        "bootstrap_handler.py",
+        "builder.py",
+        "init_runner.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/exec",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":host"],
+)

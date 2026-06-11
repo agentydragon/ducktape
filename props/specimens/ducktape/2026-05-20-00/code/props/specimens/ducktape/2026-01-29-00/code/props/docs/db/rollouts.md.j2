@@ -1,0 +1,185 @@
+# Analyzing Agent Rollouts
+
+This document explains how to query and analyze agent execution traces (rollouts) to diagnose failures and improve prompts.
+
+## Schema
+
+{{ describe_relation("agent_runs") }}
+{{ describe_relation("events") }}
+
+## Event Types
+
+Events are stored with a discriminated `payload` column. The `event_type` field indicates the type:
+
+| event_type | Description | Key payload fields |
+|------------|-------------|-------------------|
+| `user_text` | User message | `text` |
+| `assistant_text` | Assistant response text | `text` |
+| `tool_call` | Tool invocation | `name`, `args_json`, `call_id` |
+| `function_call_output` | Tool result | `call_id`, `result` |
+| `reasoning` | Reasoning/thinking | `summary` (list of summary items) |
+| `api_request` | Full API request | `request`, `model`, `phase_number` |
+| `response` | API response with usage | `usage`, `model`, `response_id` |
+
+## Basic Queries
+
+### Get all events for a run
+
+```sql
+SELECT sequence_num, event_type, payload
+FROM events
+WHERE agent_run_id = '<run_id>'
+ORDER BY sequence_num;
+```
+
+### Get tool calls only
+
+```sql
+SELECT
+    sequence_num,
+    payload->>'name' AS tool_name,
+    payload->>'args_json' AS args
+FROM events
+WHERE agent_run_id = '<run_id>'
+  AND event_type = 'tool_call'
+ORDER BY sequence_num;
+```
+
+### Get tool call with its result
+
+```sql
+SELECT
+    tc.sequence_num,
+    tc.payload->>'name' AS tool_name,
+    tc.payload->>'call_id' AS call_id,
+    tco.payload->'result' AS result
+FROM events tc
+JOIN events tco
+    ON tc.agent_run_id = tco.agent_run_id
+    AND tc.payload->>'call_id' = tco.payload->>'call_id'
+WHERE tc.agent_run_id = '<run_id>'
+  AND tc.event_type = 'tool_call'
+  AND tco.event_type = 'function_call_output'
+ORDER BY tc.sequence_num;
+```
+
+## Diagnostic Patterns
+
+### Find runs that hit max turns
+
+```sql
+SELECT ar.agent_run_id, ar.status, ar.model,
+       ar.type_config->'example'->>'snapshot_slug' AS snapshot
+FROM agent_runs ar
+WHERE ar.status = 'max_turns_exceeded'
+  AND ar.type_config->>'agent_type' = 'critic';
+```
+
+### Count tool calls per run
+
+```sql
+SELECT
+    ar.agent_run_id,
+    ar.type_config->'example'->>'snapshot_slug' AS snapshot,
+    COUNT(*) FILTER (WHERE e.event_type = 'tool_call') AS n_tool_calls,
+    COUNT(DISTINCT e.payload->>'name') AS n_unique_tools
+FROM agent_runs ar
+JOIN events e ON ar.agent_run_id = e.agent_run_id
+WHERE ar.type_config->>'agent_type' = 'critic'
+GROUP BY ar.agent_run_id
+ORDER BY n_tool_calls DESC;
+```
+
+### Find which tools a critic used
+
+```sql
+SELECT
+    payload->>'name' AS tool_name,
+    COUNT(*) AS call_count
+FROM events
+WHERE agent_run_id = '<run_id>'
+  AND event_type = 'tool_call'
+GROUP BY payload->>'name'
+ORDER BY call_count DESC;
+```
+
+### Trace a critic's file reading pattern
+
+```sql
+SELECT
+    sequence_num,
+    payload->>'name' AS tool,
+    payload->'args_json' AS args
+FROM events
+WHERE agent_run_id = '<run_id>'
+  AND event_type = 'tool_call'
+  AND payload->>'name' LIKE '%read%' OR payload->>'name' LIKE '%exec%'
+ORDER BY sequence_num;
+```
+
+## Failure Analysis
+
+### Did critic read the right files?
+
+Compare files read vs files containing issues:
+
+```sql
+-- Files the critic read (extract from docker_exec ls/cat commands or read_resource calls)
+SELECT DISTINCT payload->'args_json' AS args
+FROM events
+WHERE agent_run_id = '<run_id>'
+  AND event_type = 'tool_call'
+  AND payload->>'name' LIKE '%exec%';
+
+-- Files with issues (from ground truth)
+SELECT DISTINCT o.file_path
+FROM true_positives tp
+JOIN true_positive_occurrences o ON tp.tp_id = o.tp_id AND tp.snapshot_slug = o.snapshot_slug
+WHERE tp.snapshot_slug = '<snapshot_slug>';
+```
+
+### Where did critic get stuck?
+
+Look at the last few events before max_turns:
+
+```sql
+SELECT sequence_num, event_type,
+       CASE
+           WHEN event_type = 'tool_call' THEN payload->>'name'
+           WHEN event_type = 'assistant_text' THEN LEFT(payload->>'text', 100)
+           ELSE event_type
+       END AS summary
+FROM events
+WHERE agent_run_id = '<run_id>'
+ORDER BY sequence_num DESC
+LIMIT 20;
+```
+
+### Compare successful vs failed runs
+
+```sql
+WITH run_stats AS (
+    SELECT
+        ar.agent_run_id,
+        ar.status,
+        COUNT(*) FILTER (WHERE e.event_type = 'tool_call') AS n_tools,
+        COUNT(*) FILTER (WHERE e.event_type = 'assistant_text') AS n_texts
+    FROM agent_runs ar
+    JOIN events e ON ar.agent_run_id = e.agent_run_id
+    WHERE ar.type_config->>'agent_type' = 'critic'
+      AND ar.type_config->'example'->>'snapshot_slug' = '<snapshot_slug>'
+    GROUP BY ar.agent_run_id
+)
+SELECT status,
+       AVG(n_tools) AS avg_tools,
+       AVG(n_texts) AS avg_texts
+FROM run_stats
+GROUP BY status;
+```
+
+## RLS Notes
+
+- **TRAIN split:** Full access to events for all critic/grader runs
+- **VALID/TEST splits:** Events are RLS-blocked to prevent overfitting
+
+Query only TRAIN split runs when analyzing execution traces.

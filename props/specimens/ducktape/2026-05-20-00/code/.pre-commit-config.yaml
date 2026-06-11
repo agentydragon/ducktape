@@ -1,0 +1,311 @@
+default_install_hook_types:
+  - pre-commit
+  - prepare-commit-msg
+  - commit-msg
+
+default_stages: [pre-commit]
+
+# Global exclusions for git-tracked files that should skip hooks
+# Note: .gitignore is respected automatically (pre-commit only runs on tracked files)
+# Uses (?x) verbose regex mode for readable multi-line patterns
+exclude: |
+  (?x)^(
+    # Legacy/archived directories
+    x/k8s_old/.*|
+
+    # Artifacts captured from live Claude Code containers — not our source code
+    devinfra/claude/web_env/(rootfs|reference)/.*|
+    devinfra/claude/web_env/live-dpkg-versions\.txt|
+
+    # Test data
+    x/claude_hooks/testdata/.*\.md|
+    tana/testdata/.*|
+
+    # Generated content
+    llm/instruct_logseq/.*|
+
+    # Specimens committed snapshot code
+    props/specimens/[^/]+/[^/]+/code/.*
+  )$
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Safety guard: block pushes to protected branches.
+      # 'main' and 'master' are protected by default.
+      - id: no-commit-to-branch
+
+      - id: trailing-whitespace
+        # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
+        exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf)$"
+      - id: end-of-file-fixer
+        # .dxf: FreeCAD TechDraw DXF output ends without a trailing newline
+        exclude: "\\.dxf$"
+
+      - id: check-merge-conflict
+
+      # Syntax checks
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+        # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/|props/helm/templates/"
+      - id: check-toml
+
+      # TODO: enable check-json
+      # - id: check-json
+
+      # TODO: maybe:
+      # https://github.com/pre-commit/pre-commit-hooks?tab=readme-ov-file#name-tests-test
+      # --pytest-test-first
+      # - check-shebang-scripts-are-executable
+
+  # Ruff linter and formatter — ruff provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff-check
+        entry: ruff check --fix --force-exclude --config ruff.toml
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff format --force-exclude --config ruff.toml
+        language: system
+        types: [python]
+
+  # TODO: Check if Bazel mypy (runs by default via bazel build //...) can replace
+  # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
+  # correctly and uses a single mypy.ini config.
+
+  # Nix formatter (RFC 166 style) — nixfmt provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: nixfmt
+        name: nixfmt
+        entry: nixfmt
+        language: system
+        types: [nix]
+
+  # Statix - Nix anti-pattern linter — statix provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: statix
+        name: statix
+        entry: statix check
+        language: system
+        types: [nix]
+        pass_filenames: false
+
+  # Markdown linting. Scoped to staged files via `files:` regex below; the
+  # markdownlint-cli2 config (.markdownlint-cli2.jsonc) has no globs of its
+  # own, so pre-commit's positional args (= staged files) are the only inputs.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.0
+    hooks:
+      - id: markdownlint-cli2
+        args: [--fix]
+        files: ^(cluster|website)/.*\.md$
+
+  # NOTE: ESLint and svelte-check are handled by Bazel:
+  # - ESLint: bazel build //... (lint aspects run by default)
+  # - svelte-check: bazel test //props/frontend:svelte_check_test
+  #                 bazel test //x/agent_server/web:svelte_check_test
+
+  # Buildifier - Bazel/Starlark formatting and linting — buildifier provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: buildifier
+        name: buildifier
+        entry: buildifier --lint=fix
+        language: system
+        files: "(BUILD|WORKSPACE|\\.bzl|\\.bazel)$"
+
+  # shfmt - Shell script formatting — shfmt provided by devShell / web-session via Nix
+  # Exclude .zsh: pre-commit's identify tags zsh as shell, but shfmt can't parse
+  # advanced zsh-specific syntax (e.g. p10k.zsh, zsh-init.zsh).
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -w
+        language: system
+        types: [shell]
+        exclude: "\\.zsh$"
+
+  # rustfmt - Rust code formatting — rustfmt provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt
+        language: system
+        types: [rust]
+
+  # gofumpt - Go code formatting — gofumpt provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt -w
+        language: system
+        types: [go]
+
+  # ============================================================================
+  # LOCAL HOOKS
+  # ============================================================================
+
+  - repo: local
+    hooks:
+      # Ansible syntax check: Fast validation for pre-commit
+      # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
+      # CI: Runs full ansible-lint with all rules (thorough, slower)
+      - id: ansible-syntax-check
+        name: ansible-playbook --syntax-check
+        entry: ansible/scripts/run-syntax-check.sh
+        language: system
+        # Only root-level ansible/*.yaml (playbooks), not roles/vars/etc subdirs.
+        files: "^ansible/[^/]+\\.yaml$"
+        # TODO: Re-enable gpd.yaml once all machines use Nix home-manager
+        # and legacy_* roles are deleted. Currently gpd.yaml → legacy_gui →
+        # petermosmans.customize-gnome (missing galaxy role) breaks syntax-check.
+        exclude: "^ansible/(gpd|requirements|inventory)\\.yaml$"
+        pass_filenames: true
+
+      # Prettier formatter - uses .prettierrc.cjs config and .prettierignore.
+      # Prettier + plugins bundled in Nix (nix/packages/prettier/) — NODE_PATH
+      # is set by the wrapper so .prettierrc.cjs's require() resolves.
+      - id: prettier
+        name: prettier
+        entry: prettier --write --ignore-unknown --list-different
+        language: system
+        files: "\\.(js|mjs|cjs|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
+        exclude: "\\.pnpm/"
+
+      # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml
+      - id: no-subdir-pyproject-toml
+        name: No sub-directory pyproject.toml files
+        entry: bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n" "$@" >&2; exit 1' --
+        language: system
+        files: "pyproject\\.toml$"
+        exclude: "^pyproject\\.toml$"
+
+      # Pre-commit file validations (tf-centralization, filenames, cluster, frozen-specimens)
+      - id: ducktape-precommit
+        name: ducktape pre-commit
+        entry: ducktape-precommit
+        language: system
+        pass_filenames: true
+        always_run: true
+        stages: [pre-commit]
+
+      # Verify test files have pytest_bazel.main() entry points
+      - id: ducktape-pytest-main-check
+        name: ducktape pytest-main-check
+        entry: ducktape-pytest-main-check
+        language: system
+        pass_filenames: true
+        always_run: true
+        stages: [pre-commit]
+
+      # Enforce affected Bazel tests are cached/passing (opt-in via DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1)
+      - id: ducktape-enforce-bazel-tests
+        name: ducktape enforce-bazel-tests
+        entry: ducktape-enforce-bazel-tests
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # Block amending already-pushed commits
+      - id: ducktape-prepare-commit-msg
+        name: ducktape prepare-commit-msg
+        entry: ducktape-prepare-commit-msg
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [prepare-commit-msg]
+
+      # Enforce BAZEL_TEST_INVOCATIONS= tag
+      - id: ducktape-commit-msg
+        name: ducktape commit-msg
+        entry: ducktape-commit-msg
+        language: system
+        always_run: true
+        stages: [commit-msg]
+
+      # Kubernetes manifest validation (auto-installed via go install)
+      # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
+      # external-secrets, etc.  Niche CRDs without catalog
+      # schemas (powerdns-operator, kagent) are skipped rather than failing.
+      # TODO: Run the datree CRD extractor against the live cluster to get
+      # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,
+      # RemoteMCPServer), check them into cluster/schemas/, add as a
+      # -schema-location, and drop -ignore-missing-schemas.
+      # gotk-components.yaml is excluded (auto-generated by Flux).
+      - id: kubeconform
+        name: kubeconform (cluster)
+        language: system
+        entry: kubeconform
+          -schema-location default
+          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          -ignore-missing-schemas
+        files: ^cluster/k8s/.*\.(yaml|yml)$
+        exclude: |
+          (?x)^(
+            cluster/k8s/flux-system/gotk-components\.yaml|
+            # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
+            cluster/k8s/.*/kustomization\.yaml|
+            # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
+            cluster/k8s/.*/valkey-instance\.yaml|
+            # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
+            # spec.master.defaultReplication, spec.volume.storageClassName — all
+            # present in operator v1.0.19's live CRD)
+            cluster/k8s/seaweedfs/cluster/seaweed\.yaml|
+            # Authentik blueprints are not K8s manifests, skip validation
+            cluster/k8s/authentik/app/blueprints/.*|
+            # Application config files, not K8s manifests
+            cluster/k8s/gatus/app/config\.yaml|
+            cluster/k8s/agents/airlock/config\.yaml|
+            cluster/k8s/agents/grocy-mcp/envoy\.yaml|
+            cluster/k8s/agents/homeassistant-proxy/config\.yaml|
+            cluster/k8s/agents/claude-sandbox-firecracker/config\.yaml|
+            cluster/k8s/litellm/app/proxy-config\.yaml|
+            # Helm values files consumed via configMapGenerator, not K8s manifests
+            cluster/k8s/.*/ccm-values\.yaml|
+            # APT manifests for Bazel rules_distroless, not K8s manifests
+            cluster/k8s/agents/claude-jwt-rotation/trixie_jwt_rotation\.yaml|
+            cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
+            # Authelia app config files, not K8s manifests
+            cluster/k8s/authelia/app/configuration\.yml|
+            cluster/k8s/authelia/app/users\.yml
+          )$
+        types: [yaml]
+
+  # ============================================================================
+  # CLUSTER-SPECIFIC HOOKS (external repos, scoped to cluster/ directory)
+  # ============================================================================
+
+  # Checkov security scanner for Terraform
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 3.2.513
+    hooks:
+      - id: checkov_diff
+        args: ["--framework", "terraform", "--skip-check", "CKV_TF_1,CKV2_AWS_23", "-f"]
+        files: "^(cluster/terraform|tf)/.*\\.tf$"
+        additional_dependencies: ["urllib3", "python-dateutil"]
+
+  # TFLint - Terraform linter — tflint provided by devShell / web-session via Nix
+  # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
+  # Wrapper groups changed files by directory and runs tflint --chdir=<dir> per directory
+  # (tflint always lints the whole module, not individual files)
+  - repo: local
+    hooks:
+      - id: tflint
+        name: tflint (cluster)
+        language: system
+        entry: devinfra/precommit/run_tflint.sh
+        files: "^(cluster/terraform|tf)/.*\\.tf$"
+
+  # NOTE: terraform_validate hook removed — Bazel rules_tf now covers all
+  # terraform modules via :validate and :lint targets with hermetic providers.
+  # See MODULE.bazel tf.download(mirror={...}) for provider configuration.

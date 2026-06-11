@@ -1,0 +1,49 @@
+# Vallejo, CA — Mare Island residential parcel.
+#
+# Mare Island is a former U.S. Navy base on the western edge of
+# Vallejo, transferred to the City of Vallejo in 1996 and redeveloped
+# (initially via Lennar) into a mix of residential, commercial, and
+# light-industrial parcels. The redevelopment is financed in part by
+# three overlapping City of Vallejo Community Facilities Districts
+# (CFDs), which appear on residential property-tax bills as flat
+# non-ad-valorem special taxes:
+#
+#   - CFD 2002-1: Mare Island Facilities (infrastructure — roads,
+#     sewer, environmental remediation tied to the Navy land transfer).
+#   - CFD 2005-1A: Mare Island Services (police and fire services for
+#     the island, calculated from "population served + building square
+#     footage").
+#   - CFD 2005-1B: secondary CFD with limited public detail.
+#
+# Per CBS San Francisco (2024), Mare Island residential homeowners pay
+# roughly "$2,300 per year extra" in CFD assessments compared to
+# mainland Vallejo, with ~322 single-family parcels collectively
+# contributing > $3M/yr (commercial parcels carry the larger share).
+# The residential CFD tax structure caps each parcel at a flat maximum;
+# the rate-per-parcel here aggregates 2002-1 + 2005-1A + 2005-1B for a
+# representative single-family lot.
+#
+# Sources:
+#   - https://www.cbsnews.com/sanfrancisco/news/vallejo-mare-island-homeowners-seek-to-shed-special-tax-theyve-uselessly-paid-for-years/
+#   - https://www.vallejosun.com/mare-island-property-owners-ask-vallejo-council-to-end-special-tax-for-police-and-fire-services/
+#   - https://www.vallejosun.com/mare-island-residents-request-state-audit-of-vallejos-special-tax-spending/
+#   - https://www.cityofvallejo.net/common/pages/DisplayFile.aspx?itemId=19274617
+#
+# Caveats — see augur/sim/TODO.md for follow-ups:
+#   - CFD assessments in California typically escalate up to 2%/yr;
+#     this fixture treats the figure as flat.
+#   - CFDs have stated terms (Mare Island's are designed to sunset as
+#     development completes); this fixture treats them as in-force for
+#     the simulation horizon.
+#   - Real tax bills itemize each CFD separately; this fixture sums them.
+location_id: vallejo_mare_island
+display_name: "Vallejo, CA — Mare Island"
+jurisdiction_ids:
+  - federal_us
+  - california
+# Solano County / Vallejo ad-valorem rate: 1% Prop 13 base + ~0.15% in
+# Solano County / Vallejo / school-district voter-approved bonds.
+annual_property_tax_rate: 0.0115
+# Aggregate residential CFD special tax: 2002-1 facilities +
+# 2005-1A police/fire services + 2005-1B (per CBS SF reporting).
+annual_special_assessment_usd: 2300.0

@@ -1,0 +1,12 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# Firecracker binary — packaged as a tar layer for the VM pod OCI image.
+# The binary comes from @firecracker_release (http_archive in MODULE.bazel).
+pkg_tar(
+    name = "firecracker_layer",
+    srcs = ["@firecracker_release//:release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    remap_paths = {"release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64": "firecracker"},
+    visibility = ["//devinfra/firecracker:__subpackages__"],
+)

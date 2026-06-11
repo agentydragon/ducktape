@@ -1,0 +1,59 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        "//agent_pkg:mcp",
+        "//util:logging",
+        "//util:typer",
+        "@pypi//typer",
+    ],
+)
+
+# --- OCI Image ---
+
+aspect_py_binary(
+    name = "editor_submit",
+    imports = ["../.."],
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":editor_submit",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    env = {
+        "PATH": "/editor_agent/runtime:/editor_agent/runtime/_editor_submit.venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":layers"],
+    workdir = "/workspace",
+)
+
+# Load image into local Docker daemon
+# Run: bazel run //editor_agent/runtime:load
+# For tarball: bazel build //editor_agent/runtime:load --output_groups=+tarball
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["adgn-editor:latest"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)

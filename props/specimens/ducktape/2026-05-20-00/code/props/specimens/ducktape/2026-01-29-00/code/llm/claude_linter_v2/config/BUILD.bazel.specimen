@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "clean_models",
+    srcs = ["clean_models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm/claude_linter_v2:rule_registry",
+        "//llm/claude_linter_v2/config:models",
+        "@pypi//pydantic",
+        "@pypi//tomli",
+        "@pypi//tomli_w",
+    ],
+)
+
+py_library(
+    name = "loader",
+    srcs = ["loader.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:clean_models"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)

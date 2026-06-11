@@ -1,0 +1,19 @@
+# Manual trigger button for the "Low Battery Notifications & Actions" automation,
+# which uses the Blackshome/low-battery-notifications-and-actions.yaml blueprint
+# (installed at /config/blueprints/automation/Blackshome/). The automation runs
+# automatically Mon/Wed/Sat at 8 AM; this button lets you trigger it on demand
+# from the UI.
+#
+# TODO: This is a house-level concern, not really Rai's room. Options:
+#   - Move the automation itself into this package (pulling in the blueprint use)
+#   - Delete this button and remove it from the blueprint automation config
+#   - Leave as-is
+input_boolean:
+  skip_morning_lights:
+    name: Skip morning lights
+    icon: mdi:weather-sunny-off
+
+input_button:
+  trigger_low_battery_check:
+    name: Trigger low battery check
+    icon: mdi:battery-charging-wireless-outline

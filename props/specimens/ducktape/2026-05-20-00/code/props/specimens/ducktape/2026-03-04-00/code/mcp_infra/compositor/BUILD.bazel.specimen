@@ -1,0 +1,284 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "admin",
+    srcs = ["admin.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:snapshots",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "meta_server",
+    srcs = ["meta_server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "mount",
+    srcs = ["mount.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "notifications_buffer",
+    srcs = ["notifications_buffer.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":compositor",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/notifications:types",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "rendering",
+    srcs = ["rendering.py"],
+    data = ["templates/compositor_instructions.md.mako"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mako_utils:preprocessor",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "@pypi//mako",
+    ],
+)
+
+py_library(
+    name = "resources_server",
+    srcs = ["resources_server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:urls",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/resources:types",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mount",
+        ":rendering",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:tool_schemas",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//mcp_infra:__subpackages__"],
+    deps = [
+        "//agent_core/testing:responses",
+        "//mcp_infra/testing:docker_fixtures",
+        "//mcp_infra/testing:fixtures",
+        "//third_party/debian_slim:fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_admin",
+    srcs = [
+        "conftest.py",
+        "test_admin.py",
+    ],
+    requires_docker = True,
+    deps = [
+        ":admin",
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "//mcp_infra/testing:stdio_app",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inproc_server_storage",
+    srcs = [
+        "conftest.py",
+        "test_inproc_server_storage.py",
+    ],
+    requires_docker = True,
+    deps = [
+        ":admin",
+        ":compositor",
+        ":conftest",
+        ":mount",
+        "//mcp_infra:conftest",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_lifecycle",
+    srcs = [
+        "conftest.py",
+        "test_lifecycle.py",
+    ],
+    requires_docker = True,
+    deps = [
+        ":admin",
+        ":compositor",
+        ":conftest",
+        ":mount",
+        ":server",
+        "//mcp_infra:conftest",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:fixtures",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_meta",
+    srcs = ["test_meta.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "compositor",
+    srcs = ["compositor.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":meta_server",
+        ":resources_server",
+        ":server",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+    ],
+)
+
+py_test(
+    name = "test_rendering_instructions",
+    srcs = ["test_rendering_instructions.py"],
+    imports = ["../.."],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":rendering",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "@pypi//mcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_resources_flow",
+    srcs = ["test_resources_flow.py"],
+    data = ["//third_party/debian_slim:load"],
+    imports = ["../.."],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":resources_server",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core/testing/mcp:responses",
+        "//mcp_infra:conftest",
+        "//mcp_infra:prefix",
+        "//mcp_infra/display:event_renderer",
+        "//openai_utils:model",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)

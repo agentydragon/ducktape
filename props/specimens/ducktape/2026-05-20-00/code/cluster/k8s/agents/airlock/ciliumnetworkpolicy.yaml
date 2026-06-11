@@ -1,0 +1,83 @@
+# CiliumNetworkPolicy for the Airlock namespace pods.
+#
+# airlock server (component: server, port 8765):
+#   Cilium ingress entity — browser requests proxied by Cilium Gateway API (Envoy).
+#     Envoy runs on host network on VPS nodes; traffic arrives as the node IP classified as
+#     the reserved "ingress" entity, not as the Envoy pod. Using fromEntities: ingress is
+#     the correct pattern (same as authentik-server-ingress, gatus-ingress, etc.).
+#   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
+#   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
+#
+# kubeapi-admin-exec-mcp (component: kubeapi-admin-exec-mcp, port 8766):
+#   Only the Airlock server (same namespace) connects to it.
+#
+# The host entity covers kubelet liveness/readiness probes for both pods.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: airlock-ingress
+  namespace: airlock
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: server
+  ingress:
+    # Kubelet health probes from the local node + Cilium Gateway API traffic.
+    # When the backend pod is on the same node as Envoy, source appears as "host" (local node).
+    # When the backend is on a different node (e.g. wyrm2), Cilium on the receiving node sees
+    # the VPS node IP, which is classified as "kube-apiserver" (control plane node IPs).
+    # Both entities must be allowed for the gateway to work regardless of pod scheduling.
+    - fromEntities:
+        - host
+        - ingress
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # OpenClaw agent auth-proxy sidecar with OAuth2 JWT (client_credentials).
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw-gateway
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # Authentik embedded proxy outpost — OAuth broker UI behind SSO.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kubeapi-admin-exec-mcp-ingress
+  namespace: airlock
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: kubeapi-admin-exec-mcp
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8766"
+              protocol: TCP
+    # Only the Airlock server pod connects to the exec backend.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: airlock
+            app.kubernetes.io/component: server
+      toPorts:
+        - ports:
+            - port: "8766"
+              protocol: TCP

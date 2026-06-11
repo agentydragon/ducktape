@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+  labels:
+    app.kubernetes.io/name: tana-mcp-facade
+  annotations:
+    description: "Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT."
+    reloader.stakater.com/auto: "true"
+    # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
+    # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
+    # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
+    # regardless of node load). CPU is compressible: without a limit the pod
+    # bursts freely on idle capacity and gets its fair share when contended.
+    # Memory limits are still managed (RequestsAndLimits is the default).
+    goldilocks.fairwinds.com/vpa-resource-policy: >
+      {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tana-mcp-facade
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tana-mcp-facade
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: server
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260515224828-280fb91 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: tana-mcp-facade-config
+          env:
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tana-mcp-facade-oidc
+                  key: client_id
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tana-mcp-facade-oidc
+                  key: client_secret
+            - name: MCP_FACADE_UPSTREAM__BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            periodSeconds: 20

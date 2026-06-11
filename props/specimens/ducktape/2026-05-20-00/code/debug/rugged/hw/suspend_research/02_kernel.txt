@@ -1,0 +1,5 @@
+Linux rugged 6.19.14 #1-NixOS SMP PREEMPT_DYNAMIC Wed Apr 22 11:30:53 UTC 2026 x86_64 GNU/Linux
+
+initrd=\EFI\nixos\0mfs1g3fi22l5sjnbcxlvl2hybdjk98f-initrd-linux-6.19.14-initrd.efi init=/nix/store/8f81jj1i91h0s22ckdfcld3z363la7v1-nixos-system-rugged-25.11.20260425.a4bf066/init loglevel=4 lsm=landlock,yama,bpf
+
+Linux version 6.19.14 (nixbld@localhost) (gcc (GCC) 14.3.0, GNU ld (GNU Binutils) 2.44) #1-NixOS SMP PREEMPT_DYNAMIC Wed Apr 22 11:30:53 UTC 2026

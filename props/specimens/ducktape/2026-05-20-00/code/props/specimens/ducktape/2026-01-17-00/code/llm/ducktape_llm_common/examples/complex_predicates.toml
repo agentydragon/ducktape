@@ -1,0 +1,84 @@
+# Example of complex multiline predicates in claude-linter config
+
+[[repo_rules]]
+predicate = """
+def is_safe_shell_pipeline(ctx):
+    if ctx.tool != "Bash" or not ctx.command:
+        return False
+
+    SAFE_COMMANDS = {
+        "grep", "find", "ls", "cat", "head", "tail",
+        "wc", "sort", "uniq", "cut", "echo"
+    }
+
+    # Split by pipe and check each command
+    parts = ctx.command.split("|")
+    for part in parts:
+        cmd = part.strip().split()[0] if part.strip() else ""
+        if cmd and cmd not in SAFE_COMMANDS:
+            return False
+    return True
+
+is_safe_shell_pipeline(ctx)
+"""
+action = "allow"
+reason = "Safe shell pipelines are allowed"
+
+[[repo_rules]]
+predicate = """
+# Check if modifying critical system files
+critical_paths = [
+    "/etc/passwd", "/etc/shadow", "/etc/sudoers",
+    "~/.ssh/authorized_keys", "~/.bashrc"
+]
+import os
+for path in critical_paths:
+    expanded = os.path.expanduser(path)
+    if ctx.path and (ctx.path == expanded or ctx.path.startswith(expanded)):
+        result = True
+        break
+else:
+    result = False
+result
+"""
+action = "deny"
+reason = "Cannot modify critical system files"
+
+[[repo_rules]]
+predicate = """
+# Complex SQL injection detection
+def check_sql_safety(ctx):
+    if ctx.tool != "Bash":
+        return True  # Only check bash commands
+
+    if not ctx.command:
+        return True
+
+    import re
+
+    # Look for database commands
+    db_commands = ["mysql", "psql", "sqlite3", "mongosh"]
+    has_db_command = any(cmd in ctx.command for cmd in db_commands)
+
+    if not has_db_command:
+        return True
+
+    # Check for potential SQL injection patterns
+    dangerous_patterns = [
+        r".*\\$\\{.*\\}.*",  # Bash variable substitution in SQL
+        r".*\\$\\(.*\\).*",  # Command substitution
+        r".*`.*`.*",         # Backtick substitution
+        r'.*"\\s*\\+\\s*.*', # String concatenation
+        r".*'\\s*\\+\\s*.*", # String concatenation
+    ]
+
+    for pattern in dangerous_patterns:
+        if re.search(pattern, ctx.command):
+            return False
+
+    return True
+
+check_sql_safety(ctx)
+"""
+action = "warn"
+reason = "Potential SQL injection risk"

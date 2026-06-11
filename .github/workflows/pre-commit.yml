@@ -4,7 +4,9 @@
 name: Pre-commit checks
 
 on:
-  workflow_call:
+  push:
+    branches: [main, devel]
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -20,19 +22,9 @@ jobs:
       # ENVIRONMENT SETUP
       # ============================================================================
 
-      - uses: ./.github/actions/setup-python-env
+      - uses: ./.github/actions/setup-nix-devtools
 
-      - uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: experimental-features = nix-command flakes
-
-      # Install web-session via flake — provides ducktape-precommit, nixfmt,
-      # pre-commit, and other dev tools (all language: system hooks).
-      - name: Install web-session tools
-        run: nix profile install .#web-session
-
-      # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
-      - uses: ./.github/actions/bazel-repo-cache
+      - uses: ./.github/actions/setup-bazel
         id: bazel-cache
 
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
@@ -66,6 +58,11 @@ jobs:
       # ============================================================================
 
       - name: Run pre-commit
+        env:
+          # no-commit-to-branch is a local guard against committing directly to
+          # devel/main. CI deliberately runs pre-commit against the protected
+          # branch's own checkout, where that hook would always fail — skip it here.
+          SKIP: no-commit-to-branch
         run: |
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)

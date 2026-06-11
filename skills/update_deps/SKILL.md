@@ -2,8 +2,8 @@
 name: update_deps
 description: >
   Automated dependency updates — reads Renovate dashboard, applies safe updates,
-  produces tested PRs from the agent's fork. One bulk PR for trivial bumps,
-  separate PRs for non-trivial migrations. Use on a schedule or manually.
+  produces tested PRs. One bulk PR for trivial bumps, separate PRs for
+  non-trivial migrations. Use on a schedule or manually.
 ---
 
 # Automated Dependency Updates
@@ -25,7 +25,7 @@ Two PR categories:
 You are **NOT done** until:
 
 - `bazel test //...` passes on RBE for every open PR (verify via BuildBuddy
-  invocation link — CI on GitHub does not run for fork PRs, see [#787](https://github.com/agentydragon/ducktape/issues/787))
+  invocation link)
 - Every available update is either in a PR or has a documented blocker with
   specific evidence (see Evidence Requirements)
 
@@ -66,28 +66,19 @@ On every run, start by reading ALL existing dep-update PR descriptions to
 understand what the previous run already tried and decided. Then diff against the
 current Renovate dashboard to find what's new or changed.
 
-## Fork & Branch Setup
-
-You run as `agentydragon-agent` without collaborator access. You work on a fork.
-
-- **Fork**: `agentydragon-agent/ducktape`
-- **Upstream**: `agentydragon/ducktape`
-- **PRs**: cross-fork PRs targeting `agentydragon/ducktape` branch `devel`
+## Branch Setup
 
 ```bash
-# Ensure remotes
-git remote get-url upstream 2>/dev/null || git remote add upstream https://github.com/agentydragon/ducktape.git
-git remote get-url fork 2>/dev/null || git remote add fork https://github.com/agentydragon-agent/ducktape.git
-git fetch upstream devel
+# Fetch latest devel
+git fetch origin devel
 
 # List all existing dep-update PRs
-gh pr list --repo agentydragon/ducktape --author agentydragon-agent \
-  --search "deps:" --state open --json number,url,headRefName,title
+gh pr list --search "deps:" --state open --json number,url,headRefName,title
 
 # Check out bulk branch (create or rebase)
-git fetch fork deps/auto-update 2>/dev/null && \
-  git checkout deps/auto-update && git rebase upstream/devel || \
-  git checkout -b deps/auto-update upstream/devel
+git fetch origin deps/auto-update 2>/dev/null && \
+  git checkout deps/auto-update && git rebase origin/devel || \
+  git checkout -b deps/auto-update origin/devel
 ```
 
 ## Gather Available Updates
@@ -200,6 +191,27 @@ Good commit message examples:
 
 ## Apply Updates
 
+### Cross-ecosystem version compatibility
+
+Some dependencies are declared in multiple ecosystems (pip, Bazel, Nix) and
+their versions must remain compatible. When updating any of these, verify all
+declarations.
+
+**Protobuf** is the primary example:
+
+| Ecosystem | Declaration                                                      | Example                          |
+| --------- | ---------------------------------------------------------------- | -------------------------------- |
+| Bazel     | `MODULE.bazel`: `bazel_dep(name = "protobuf", version = "33.1")` | protoc gencode 6.33.1            |
+| pip       | `pyproject.toml`: `protobuf==6.33.1`                             | Python runtime                   |
+| Nix       | `nix/packages/default.nix`: `protobuf` (tracks nixpkgs)          | Runtime in devShell/home-manager |
+
+**Rule**: protobuf runtime (pip/Nix) must be **>=** gencode (Bazel protoc).
+Bazel module version `X.Y` maps to gencode `6.X.Y`. If bumping Bazel protobuf,
+also bump pip. If Nix lags behind, do not bump Bazel/pip past the Nix version.
+
+When proposing ANY protobuf update, verify all three are compatible and note
+the versions in the PR description.
+
 ### Lockfile regeneration by ecosystem
 
 After editing version pins, regenerate lockfiles:
@@ -239,9 +251,8 @@ Run `bazel build //... && bazel test //...` to verify. If something breaks:
 If snapshot tests fail due to intentional output changes:
 
 ```bash
-bazel test //path/to:snapshot_test \
+bbr test //path/to:snapshot_test \
   --test_arg=--snapshot-update \
-  --remote_executor="" \
   --nocache_test_results
 ```
 
@@ -258,18 +269,18 @@ commit messages without having to look up changelogs.
 
 ```bash
 # Bulk PR
-git push fork deps/auto-update --force
+git push origin deps/auto-update --force
 
 # Non-trivial PRs
-git push fork deps/<package-slug> --force
+git push origin deps/<package-slug> --force
 ```
 
 ## Create or Update PRs
 
 ```bash
 # Bulk PR
-gh pr create --repo agentydragon/ducktape \
-  --head agentydragon-agent:deps/auto-update --base devel \
+gh pr create \
+  --base devel \
   --title "deps: bulk dependency updates ($(date +%Y-%m-%d))" \
   --body "$(cat <<'PREOF'
 <bulk PR body — see format below>
@@ -277,8 +288,8 @@ PREOF
 )"
 
 # Non-trivial PR
-gh pr create --repo agentydragon/ducktape \
-  --head agentydragon-agent:deps/<slug> --base devel \
+gh pr create \
+  --base devel \
   --title "deps: migrate <package> to <version>" \
   --body "$(cat <<'PREOF'
 <non-trivial PR body — see format below>
@@ -289,7 +300,7 @@ PREOF
 To update an existing PR description:
 
 ```bash
-gh pr edit <NUMBER> --repo agentydragon/ducktape --body "$(cat <<'PREOF'
+gh pr edit <NUMBER> --body "$(cat <<'PREOF'
 <updated body>
 PREOF
 )"
@@ -297,30 +308,9 @@ PREOF
 
 ## Verifying Tests
 
-After pushing a commit intended as "final" on any PR, you **MUST** verify
-tests pass on RBE. GitHub Actions CI does not run for fork PRs (no
-`BUILDBUDDY_API_KEY` — see [#787](https://github.com/agentydragon/ducktape/issues/787)),
-so verify via BuildBuddy directly:
-
-```bash
-# Run tests and get a BuildBuddy invocation link
-bazel test //... --build_metadata=ROLE=ci
-
-# Check the last invocation for this branch
-bbapi invocations --count 1
-```
-
-If tests fail:
-
-1. Read the failure logs (`bbapi log <invocation-id>`)
-2. Diagnose the root cause
-3. Fix the issue (code change, revert a problematic update, etc.)
-4. Push again and re-run
-
-**You are NOT done until `bazel test //...` passes on RBE for all PRs.** This
-may require multiple fix-push cycles. If a test failure is clearly pre-existing
-(also failing on `devel`), document it in the PR description but do not let it
-block you.
+Follow the standard "Before Hand-off" instructions in AGENTS.md. If a test
+failure is clearly pre-existing (also failing on `devel`), document it in the
+PR description but do not let it block you.
 
 ## Bulk PR Description Format
 

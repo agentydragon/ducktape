@@ -1,0 +1,54 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: local-path-provisioner
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.containeroo.ch
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: local-path-provisioner
+  namespace: local-path-storage
+spec:
+  interval: 30m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: local-path-provisioner
+      version: "0.0.35"
+      sourceRef:
+        kind: HelmRepository
+        name: local-path-provisioner
+        namespace: flux-system
+  values:
+    storageClass:
+      name: local-path
+      defaultClass: false
+      reclaimPolicy: Delete
+    nodePathMap:
+      # Use /var/local-path-provisioner on all nodes
+      # On Talos this is writable and persists across reboots
+      - node: DEFAULT_PATH_FOR_NON_LISTED_NODES
+        paths:
+          - /var/local-path-provisioner
+      # OVH Kimsufi workers carve a dedicated XFS partition on /dev/sdb via
+      # Talos UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted
+      # at /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
+      # (allowedTopologies zone=hil-ovh) is what routes SeaweedFS volume
+      # server PVCs here.
+      - node: talos-kimsufi-worker-0
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: talos-kimsufi-worker-1
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+    # Configure helper pods to run in local-path-storage namespace (privileged)
+    # This avoids PodSecurity restrictions in workload namespaces
+    configmap:
+      helperPodNamespace: local-path-storage

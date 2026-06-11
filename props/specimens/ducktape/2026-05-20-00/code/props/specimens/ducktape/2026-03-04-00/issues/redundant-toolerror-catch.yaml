@@ -1,0 +1,16 @@
+rationale: |
+  Lines 224-225 catch all non-`FileNotFoundError` exceptions and re-raise as
+  `ToolError(str(e))`. FastMCP's `ToolManager.call_tool` already converts
+  uncaught exceptions to `ToolError` (with the tool name in the message).
+  The broad catch is redundant and violates the project's own convention
+  documented in `mcp_infra/docs/fastmcp_exceptions.md`: "Don't blanket-catch
+  exceptions." The `FileNotFoundError` catch (lines 221-223) is fine — it
+  provides an actionable `SANDBOX_EXEC_MISSING` prefix.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/exec/seatbelt.py:
+        - [224, 225]

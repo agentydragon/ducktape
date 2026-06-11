@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-ci
+  namespace: docker-ci
+  labels:
+    app.kubernetes.io/name: docker-ci
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: docker-ci
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: docker-ci
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: dind
+          image: docker:27-dind
+          args:
+            - dockerd
+            - --host=unix:///var/run/docker.sock
+            - --host=tcp://0.0.0.0:2376
+            - --tlsverify
+            - --tlscacert=/certs/ca.pem
+            - --tlscert=/certs/server-cert.pem
+            - --tlskey=/certs/server-key.pem
+            - --storage-driver=overlay2
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 2376
+          volumeMounts:
+            - name: docker-data
+              mountPath: /var/lib/docker
+            - name: server-tls
+              mountPath: /certs/server-key.pem
+              subPath: server-key.pem
+              readOnly: true
+            - name: public-certs
+              mountPath: /certs/ca.pem
+              subPath: ca.pem
+              readOnly: true
+            - name: public-certs
+              mountPath: /certs/server-cert.pem
+              subPath: server-cert.pem
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          readinessProbe:
+            exec:
+              command:
+                - docker
+                - info
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - docker
+                - info
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: docker-data
+          persistentVolumeClaim:
+            claimName: docker-ci-data
+        - name: server-tls
+          secret:
+            secretName: docker-ci-server-tls
+        - name: public-certs
+          configMap:
+            name: docker-ci-public-certs

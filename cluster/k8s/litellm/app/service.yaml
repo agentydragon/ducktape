@@ -2,13 +2,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: litellm
-  namespace: ollama
+  namespace: litellm
   labels:
-    app: litellm
+    app.kubernetes.io/name: litellm
 spec:
   type: ClusterIP
   selector:
-    app: litellm
+    app.kubernetes.io/name: litellm
   ports:
     - name: http
       port: 4000

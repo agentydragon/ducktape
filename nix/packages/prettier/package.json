@@ -1,0 +1,10 @@
+{
+  "name": "prettier-with-plugins",
+  "version": "3.8.1",
+  "private": true,
+  "dependencies": {
+    "prettier": "3.8.1",
+    "prettier-plugin-svelte": "3.4.1",
+    "svelte": "5.38.1"
+  }
+}

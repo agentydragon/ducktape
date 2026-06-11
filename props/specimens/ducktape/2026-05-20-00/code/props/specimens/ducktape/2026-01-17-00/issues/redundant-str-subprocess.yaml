@@ -1,0 +1,79 @@
+rationale: |
+  Since Python 3.6, subprocess.run(), subprocess.Popen(), and related functions accept
+  Path objects directly in command argument lists. Wrapping Path objects in str() is
+  unnecessary and adds noise.
+
+  Remove the redundant str() calls - pass the Path objects directly to subprocess.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/testing/conftest.py:
+        - [589, 589]
+    note: str(script_path) and str(cwd) in subprocess.run call
+    critic_scopes_expected_to_recall:
+      - - wt/testing/conftest.py
+    match_file_restriction:
+      - wt/testing/conftest.py
+
+  - occurrence_id: occ-1
+    files:
+      sysrw/run_eval.py:
+        - [254, 254]
+    note: str(template_path) in subprocess.run call (str(REWRITE_APPLY) is valid - it's a Traversable not Path)
+    critic_scopes_expected_to_recall:
+      - - sysrw/run_eval.py
+    match_file_restriction:
+      - sysrw/run_eval.py
+
+  - occurrence_id: occ-2
+    files:
+      claude/claude_hooks/precommit_autofix.py:
+        - [221, 221]
+    note: str(config_file) and str(file_path) in subprocess.run call
+    critic_scopes_expected_to_recall:
+      - - claude/claude_hooks/precommit_autofix.py
+    match_file_restriction:
+      - claude/claude_hooks/precommit_autofix.py
+
+  - occurrence_id: occ-3
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/utils/gitignore.py:
+        - [54, 54]
+    note: str(file_path) in subprocess.run call
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/utils/gitignore.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/utils/gitignore.py
+
+  - occurrence_id: occ-4
+    files:
+      nix/home/claude-code/skills/proxmox-vm/vm-interact.py:
+        - [171, 171]
+    note: str(local_ppm) in subprocess.run call
+    critic_scopes_expected_to_recall:
+      - - nix/home/claude-code/skills/proxmox-vm/vm-interact.py
+    match_file_restriction:
+      - nix/home/claude-code/skills/proxmox-vm/vm-interact.py
+
+  - occurrence_id: occ-5
+    files:
+      llm/ducktape_llm_common/ducktape_llm_common/claude_linter/precommit_runner.py:
+        - [66, 66]
+    note: str(abs_path.parent) in cwd parameter - Path.parent is already PathLike
+    critic_scopes_expected_to_recall:
+      - - llm/ducktape_llm_common/ducktape_llm_common/claude_linter/precommit_runner.py
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_linter/precommit_runner.py
+
+  - occurrence_id: occ-6
+    files:
+      tools/format/__main__.py:
+        - [148, 148]
+    note: "[str(f) for f in files] in command args - can pass Path objects directly"
+    critic_scopes_expected_to_recall:
+      - - tools/format/__main__.py
+    match_file_restriction:
+      - tools/format/__main__.py

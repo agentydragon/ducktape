@@ -1,0 +1,166 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Gazelle will create per-file py_library targets
+
+py_library(
+    name = "aliexpress",
+    srcs = ["aliexpress.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "anthem_eob",
+    srcs = ["anthem_eob.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "anthem_reimbursement",
+    srcs = ["anthem_reimbursement.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "anthropic",
+    srcs = ["anthropic.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:date_patterns",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+        "@pypi//python_dateutil",
+    ],
+)
+
+py_library(
+    name = "dbsa",
+    srcs = ["dbsa.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:event_classifier",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "doordash",
+    srcs = ["doordash.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//fmt_util",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "one_medical",
+    srcs = ["one_medical.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:plan",
+    ],
+)
+
+py_library(
+    name = "spruce",
+    srcs = ["spruce.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:plan",
+    ],
+)
+
+py_library(
+    name = "square",
+    srcs = ["square.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "usps",
+    srcs = ["usps.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:date_patterns",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:models",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_anthropic",
+    srcs = ["test_anthropic.py"],
+    deps = [
+        ":anthropic",
+        ":conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_square",
+    srcs = ["test_square.py"],
+    deps = [
+        ":conftest",
+        ":square",
+        "@pypi//pytest_bazel",
+    ],
+)

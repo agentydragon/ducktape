@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecrawl-nuq-worker
+  namespace: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: nuq-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: firecrawl
+      app.kubernetes.io/component: nuq-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: firecrawl
+        app.kubernetes.io/component: nuq-worker
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nuq-worker
+          image: ghcr.io/firecrawl/firecrawl:latest
+          imagePullPolicy: Always
+          command: ["node"]
+          args: ["--max-old-space-size=3072", "dist/src/services/worker/nuq-worker.js"]
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: "nuq-worker"
+            - name: NUQ_WORKER_PORT
+              value: "3006"
+            - name: NUQ_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-db-app
+                  key: uri
+          envFrom:
+            - configMapRef:
+                name: firecrawl-config
+            - secretRef:
+                name: firecrawl-secret
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3

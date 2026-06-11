@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { goto, resolve } from "$lib/router";
+  import { goto } from "$lib/router";
   import { fetchSnapshots, type SnapshotsResponse } from "$lib/api/client";
   import { splitBadgeClass } from "$lib/colors";
 
@@ -8,7 +8,7 @@
     initialData?: SnapshotsResponse["snapshots"];
   }
 
-  let { initialData }: Props = $props();
+  const { initialData }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let snapshots: SnapshotsResponse["snapshots"] = $state(initialData ?? []);

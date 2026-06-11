@@ -1,0 +1,227 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  type: oci
+  interval: 24h
+  url: oci://code.forgejo.org/forgejo-helm
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  interval: 15m
+  timeout: 15m # Extended timeout (PostgreSQL + PVC binding + init containers)
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3 # Retry transient upgrade failures (e.g. slow S3 backend readiness) instead of going Stalled
+  chart:
+    spec:
+      chart: forgejo
+      version: "17.1.0"
+      sourceRef:
+        kind: HelmRepository
+        name: forgejo
+        namespace: forgejo
+  valuesFrom:
+    - kind: Secret
+      name: forgejo-db-app
+      valuesKey: password
+      # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
+      targetPath: gitea.config.database.PASSWD
+  values:
+    # Global configuration
+    global:
+      imageRegistry: ""
+
+    # CRITICAL: Use Recreate strategy for RWO volumes
+    # RollingUpdate + RWO volumes = deadlock when init containers fail
+    # See docs/RWO_VOLUME_DEPLOYMENT_STRATEGY.md for details
+    strategy:
+      type: Recreate
+
+    # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only)
+    # and co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+
+    # Forgejo configuration (chart retains the legacy `gitea:` values key)
+    gitea:
+      admin:
+        # Username and password from SOPS secret
+        existingSecret: "forgejo-admin-password"
+        email: "admin@allegedly.works"
+        # Password set once on creation, never reset (SSO for normal use)
+        passwordMode: initialOnlyNoReset
+
+      # OAuth2 authentication sources
+      oauth:
+        - name: "authentik"
+          provider: "openidConnect"
+          existingSecret: "forgejo-oauth-client-secret"
+          autoDiscoverUrl: "https://auth.allegedly.works/application/o/forgejo/.well-known/openid-configuration"
+          iconUrl: "https://auth.allegedly.works/static/dist/assets/icons/icon.png"
+          scopes: "email profile"
+          # Map the Authentik `groups` claim (emitted by the default `profile`
+          # scope mapping) to Forgejo site-admin: members of the `forgejo-admins`
+          # Authentik group (tf/gitops/sso-providers/main.tf) are promoted to admin
+          # on OIDC login, non-members demoted. The built-in local admin account is
+          # unaffected (not an OAuth2 user). Takes effect on the user's next login.
+          groupClaimName: "groups"
+          adminGroup: "forgejo-admins"
+
+      config:
+        APP_NAME: "Forgejo: Beyond coding. We forge."
+        RUN_MODE: prod
+
+        server:
+          DOMAIN: git.allegedly.works
+          SSH_DOMAIN: git.allegedly.works
+          ROOT_URL: https://git.allegedly.works
+          HTTP_PORT: 3000
+          SSH_PORT: 2222
+          DISABLE_SSH: false
+          START_SSH_SERVER: true
+
+        session:
+          PROVIDER: db
+
+        cache:
+          ENABLED: true
+          ADAPTER: memory
+
+        queue:
+          TYPE: level
+
+        metrics:
+          ENABLED: true
+          TOKEN: ""
+          # TODO: Set a metrics token and add bearerTokenSecret to the ServiceMonitor
+          # via a SOPS-managed secret (follow LiteLLM token pattern).
+
+        security:
+          INSTALL_LOCK: true
+          SECRET_KEY: "change-this-secret-key-in-production"
+
+        database:
+          DB_TYPE: postgres
+          HOST: forgejo-db-rw.forgejo:5432
+          NAME: forgejo
+          USER: forgejo
+
+        oauth2_client:
+          REGISTER_EMAIL_CONFIRM: false
+          ENABLE_AUTO_REGISTRATION: true
+          USERNAME: nickname
+          UPDATE_AVATAR: true
+          ACCOUNT_LINKING: login
+
+        # Object storage on SeaweedFS S3: packages (container registry), LFS,
+        # attachments, artifacts. Git repos stay on the seaweedfs-ovh PVC — git
+        # needs a POSIX filesystem, so there's no S3 backend for repos. Creds
+        # are injected via additionalConfigFromEnvs below.
+        storage:
+          STORAGE_TYPE: minio
+          MINIO_ENDPOINT: seaweedfs-s3.seaweedfs.svc:8333
+          MINIO_BUCKET: forgejo
+          MINIO_LOCATION: us-east-1
+          MINIO_USE_SSL: false
+          MINIO_BUCKET_LOOKUP: path
+
+      # SeaweedFS S3 credentials from the Reflector-mirrored s3-identity-forgejo
+      # Secret (source in the seaweedfs namespace). FORGEJO__ is the chart's
+      # env -> app.ini prefix.
+      additionalConfigFromEnvs:
+        - name: FORGEJO__storage__MINIO_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: s3-identity-forgejo
+              key: accessKey
+        - name: FORGEJO__storage__MINIO_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-identity-forgejo
+              key: secretKey
+
+    # Trust cluster CA bundle (includes Let's Encrypt staging CA)
+    deployment:
+      # Reloader: auto-restart pods when secrets change
+      annotations:
+        reloader.stakater.com/auto: "true"
+      env:
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
+
+    # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
+    extraVolumes:
+      - name: cluster-ca
+        configMap:
+          name: cluster-internal-ca-bundle
+
+    extraContainerVolumeMounts:
+      - name: cluster-ca
+        mountPath: /etc/ssl/certs/cluster-ca
+        readOnly: true
+
+    extraInitVolumeMounts:
+      - name: cluster-ca
+        mountPath: /etc/ssl/certs/cluster-ca
+        readOnly: true
+
+    # Service configuration
+    service:
+      http:
+        type: ClusterIP
+        port: 3000
+      ssh:
+        type: NodePort
+        port: 2222
+        nodePort: 30501
+
+    # Resources
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+    # Persistence
+    # Repos + LFS/packages/attachments/artifacts all live here, on SeaweedFS via
+    # the seaweedfs-ovh CSI (object-backed; git needs a POSIX FS, so no S3 backend).
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: seaweedfs-ovh
+
+    # PostgreSQL: external CNPG cluster (forgejo-db)
+    postgresql:
+      enabled: false
+
+    postgresql-ha:
+      enabled: false
+
+    # Redis (disabled)
+    redis-cluster:
+      enabled: false
+
+    # Valkey (disabled — using db sessions, memory cache, level queues)
+    valkey-cluster:
+      enabled: false
+
+    # Memcached (disabled)
+    memcached:
+      enabled: false
+
+    # Service account
+    serviceAccount:
+      create: true

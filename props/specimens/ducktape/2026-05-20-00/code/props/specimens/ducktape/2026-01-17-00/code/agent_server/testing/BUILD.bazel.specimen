@@ -1,0 +1,32 @@
+"""Testing utilities package for agent_server."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "testing",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["testdata/**"],
+    ),
+    data = glob(["testdata/**/*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core_testing",
+        "//agent_server:root_modules",
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/mcp/chat",
+        "//agent_server/mcp/ui",
+        "//agent_server/policies",
+        "//agent_server/server:types",
+        "//net_util",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//uvicorn",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":testing"],
+)

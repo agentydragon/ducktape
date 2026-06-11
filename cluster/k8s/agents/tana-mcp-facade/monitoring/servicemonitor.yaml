@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tana-mcp-facade
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

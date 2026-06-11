@@ -1,0 +1,16 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "trivial_patterns",
+    srcs = ["trivial_patterns.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "adgn_trivial_patterns",
+    srcs = ["trivial_patterns.py"],
+    main = "trivial_patterns.py",
+    visibility = ["//visibility:public"],
+    deps = [":trivial_patterns"],
+)

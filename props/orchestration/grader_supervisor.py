@@ -7,17 +7,30 @@ Reconciliation is triggered by:
 - startup (spawn_existing)
 - pg_notify snapshot_created
 - pg_notify grader_definition_changed (image push)
+- a periodic backstop (catches drift between events)
 
 Each trigger calls reconcile(), which compares desired state (all snapshot
-slugs from DB) against actual state (self._handles) and creates/kills
-containers to converge.
+slugs from DB) against **actual state read from the runtime** (grader pods
+listed by label) and converges:
+
+- adopt a healthy existing grader (right image, running) — so graders survive
+  backend restarts instead of being orphaned and duplicated;
+- reap duplicates, graders for removed snapshots, wrong-image graders, and
+  terminal pods (finalizing their run record);
+- spawn a grader for any snapshot that lacks a healthy one.
+
+Because actual state comes from the API (not in-memory handles), a restarted
+backend re-adopts the running graders rather than spawning a second generation.
+
+Event-driven triggers are debounced: a burst coalesces into a single
+trailing-edge reconcile. Startup reconciles immediately.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Coroutine
+from collections import defaultdict
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -36,38 +49,61 @@ from props.db.notifications import (
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
-from props.orchestration.agent_registry import AgentRunHandle, ImageResolutionError, ResolvedImage
+from props.orchestration.agent_registry import AgentRunHandle, GraderPodInfo, ImageResolutionError, ResolvedImage
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
+# Coalesce reconcile triggers arriving within this window into a single
+# trailing-edge reconcile (delay-and-collapse, never skip).
+DEFAULT_RECONCILE_DEBOUNCE_S = 30.0
+# Backstop reconcile interval: catches drift the event triggers miss (a grader
+# that crashed, a pod deleted out-of-band). 0 disables the loop.
+DEFAULT_PERIODIC_RECONCILE_S = 120.0
+
 
 class GraderSupervisor:
-    """Manages per-snapshot grader containers via reconciliation.
-
-    Each snapshot gets one long-lived grader container. The supervisor
-    maintains a dict of handles and reconciles against the DB snapshot
-    list whenever an event fires (new snapshot, new image, startup).
+    """Manages per-snapshot grader containers via reconciliation against the
+    Kubernetes/Docker API.
 
     Use as async context manager:
 
         async with GraderSupervisor(...) as gs:
             await gs.spawn_existing()
             ...
-        # gs.shutdown() called automatically
+        # gs.shutdown() called automatically (leaves graders running)
     """
 
-    def __init__(self, registry: AgentRegistry, db_config: DatabaseConfig, model: str, db: Database):
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        db_config: DatabaseConfig,
+        model: str,
+        db: Database,
+        *,
+        reconcile_debounce_s: float = DEFAULT_RECONCILE_DEBOUNCE_S,
+        periodic_reconcile_s: float = DEFAULT_PERIODIC_RECONCILE_S,
+    ):
         self._registry = registry
         self._db_config = db_config
         self._model = model
         self._db = db
+        # Lifecycle handles for the graders this process currently owns (spawned
+        # or adopted). NOT the source of truth for reconcile — that's the API —
+        # only a place to retain collector tasks so they aren't GC'd.
         self._handles: dict[SnapshotSlug, AgentRunHandle] = {}
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Trailing-edge debounce of event-driven reconciles.
+        self._reconcile_debounce_s = reconcile_debounce_s
+        self._debounce_task: asyncio.Task[None] | None = None
+        self._pending_triggers: list[str] = []
+        # Periodic backstop.
+        self._periodic_reconcile_s = periodic_reconcile_s
+        self._periodic_task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> GraderSupervisor:
         await self.start()
@@ -78,13 +114,7 @@ class GraderSupervisor:
     ) -> None:
         await self.shutdown()
 
-    def _launch_background(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
-        """Launch a background task and prevent garbage collection."""
-        task = asyncio.create_task(coro, name=name)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-
-    # --- Event handlers (thin wrappers that trigger reconcile) ---
+    # --- Event handlers (debounced — coalesce bursts into one reconcile) ---
 
     def _snapshot_created_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -96,7 +126,7 @@ class GraderSupervisor:
             return
         notification = SnapshotCreatedNotification.model_validate_json(payload)
         logger.info(f"Snapshot created: {notification.snapshot_slug}")
-        self._launch_background(self.reconcile(), name="reconcile-snapshot-created")
+        self._schedule_reconcile(trigger=f"snapshot_created:{notification.snapshot_slug}")
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -108,63 +138,166 @@ class GraderSupervisor:
             return
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
-        self._launch_background(self.reconcile(restart_existing=True), name="reconcile-definition-changed")
+        # No restart flag: reconcile detects wrong-image graders from the API and
+        # replaces them, so a tag move just schedules a normal reconcile.
+        self._schedule_reconcile(trigger=f"grader_definition_changed:{notification.tag}")
 
     # --- Lifecycle ---
 
     async def start(self) -> None:
-        """Start pg_notify listeners. Call spawn_existing() separately after HTTP is ready."""
+        """Start pg_notify listeners + periodic backstop. Call spawn_existing() after HTTP is ready."""
         await self._start_listener()
+        if self._periodic_reconcile_s > 0:
+            self._periodic_task = asyncio.create_task(self._periodic_loop(), name="grader-periodic-reconcile")
 
     async def spawn_existing(self) -> None:
         """Initial reconciliation after HTTP server is ready."""
-        await self.reconcile()
+        await self.reconcile(trigger="startup")
+
+    async def _periodic_loop(self) -> None:
+        while not self._shutdown:
+            try:
+                await asyncio.sleep(self._periodic_reconcile_s)
+            except asyncio.CancelledError:
+                return
+            self._schedule_reconcile(trigger="periodic")
+
+    # --- Debounced reconcile scheduling ---
+
+    def _schedule_reconcile(self, *, trigger: str) -> None:
+        """Debounce an event-driven reconcile: coalesce rapid triggers into one
+        trailing-edge run after ``reconcile_debounce_s`` of quiet."""
+        if self._shutdown:
+            return
+        self._pending_triggers.append(trigger)
+        # Reset the quiet window so we fire once, after the LAST trigger. Only a
+        # still-debouncing timer is cancelled — never an in-flight reconcile.
+        if self._debounce_task is not None and not self._debounce_task.done():
+            self._debounce_task.cancel()
+        task = asyncio.create_task(self._run_debounced_reconcile(), name="grader-debounced-reconcile")
+        self._debounce_task = task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _run_debounced_reconcile(self) -> None:
+        try:
+            await asyncio.sleep(self._reconcile_debounce_s)
+        except asyncio.CancelledError:
+            # Superseded by a newer trigger (window reset) or shutdown — the
+            # replacement timer, if any, will fire. Don't reconcile here.
+            return
+        # Window elapsed. Clear the timer handle first so a trigger arriving
+        # during the (awaited) reconcile opens a fresh window instead of
+        # cancelling this run.
+        self._debounce_task = None
+        if self._shutdown:
+            return
+        triggers = self._pending_triggers
+        self._pending_triggers = []
+        label = triggers[0] if len(triggers) == 1 else f"debounced({len(triggers)}): {', '.join(triggers)}"
+        await self.reconcile(trigger=label)
 
     # --- Core reconciliation ---
 
-    async def reconcile(self, *, restart_existing: bool = False) -> None:
-        """Converge actual state toward desired state.
-
-        Desired: one grader per snapshot (if image available).
-        Actual: self._handles.
-
-        If restart_existing is True, kill all tracked graders first (used
-        when the grader image changes).
-        """
+    async def reconcile(self, *, trigger: str) -> None:
+        """Converge actual state (grader pods listed from the runtime) toward
+        desired state (one grader per snapshot on the current image)."""
         if self._shutdown:
             return
 
-        # Resolve image — if unavailable, nothing to do.
+        logger.info("Reconcile triggered by %s", trigger)
+
         try:
             resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
         except ImageResolutionError:
-            logger.warning("Grader image not available — skipping reconciliation")
+            logger.warning("Reconcile [%s] aborted: grader image not available", trigger)
             return
 
-        # Get desired set from DB.
         with self._db.session() as session:
             desired: set[SnapshotSlug] = {s.slug for s in session.query(Snapshot.slug).all()}
 
-        # If image changed, kill everything so containers pick up the new image.
-        if restart_existing:
-            for slug in list(self._handles.keys()):
-                await self._kill_grader(slug)
+        pods = await self._registry.list_grader_pods()
+        by_snapshot: dict[SnapshotSlug, list[GraderPodInfo]] = defaultdict(list)
+        for pod in pods:
+            by_snapshot[pod.snapshot_slug].append(pod)
 
-        # Kill graders for snapshots that no longer exist.
-        for slug in list(self._handles.keys()):
-            if slug not in desired:
-                logger.info(f"Snapshot {slug} removed, killing grader")
-                await self._kill_grader(slug)
+        handles_by_pod_name = {h.name: h for h in self._handles.values()}
+        new_handles: dict[SnapshotSlug, AgentRunHandle] = {}
+        kept = adopted = reaped = spawned = 0
 
-        # Spawn missing graders.
-        spawned = 0
+        for slug, plist in by_snapshot.items():
+            # A keeper is one running pod, for a desired snapshot, on the current image.
+            keeper = next(
+                (p for p in plist if slug in desired and p.phase == "running" and p.image_ref == resolved.oci_ref), None
+            )
+            for pod in plist:
+                if keeper is not None and pod.name == keeper.name:
+                    continue
+                await self._reap(pod, desired=desired, image=resolved, tracked=handles_by_pod_name)
+                reaped += 1
+            if keeper is not None:
+                existing = handles_by_pod_name.get(keeper.name)
+                if existing is not None:
+                    new_handles[slug] = existing
+                    kept += 1
+                else:
+                    new_handles[slug] = self._registry.adopt_grader_pod(keeper)
+                    adopted += 1
+
         for slug in desired:
-            if slug not in self._handles:
-                await self._spawn_grader(slug, image=resolved)
-                spawned += 1
+            if slug not in new_handles:
+                handle = await self._spawn_grader(slug, image=resolved, trigger=trigger)
+                if handle is not None:
+                    new_handles[slug] = handle
+                    spawned += 1
 
-        if spawned or restart_existing:
-            logger.info(f"Reconciled: {len(self._handles)} graders running ({spawned} spawned, {len(desired)} desired)")
+        # Cancel collectors for handles we no longer carry (pod vanished out-of-band
+        # or was reaped); finalizes their run as CANCELLED.
+        carried = {id(h) for h in new_handles.values()}
+        for old in self._handles.values():
+            if id(old) not in carried:
+                await old.kill_and_delete()
+        self._handles = new_handles
+
+        logger.info(
+            "Reconcile [%s] done: desired=%d kept=%d adopted=%d spawned=%d reaped=%d running=%d",
+            trigger,
+            len(desired),
+            kept,
+            adopted,
+            spawned,
+            reaped,
+            len(self._handles),
+        )
+
+    async def _reap(
+        self,
+        pod: GraderPodInfo,
+        *,
+        desired: set[SnapshotSlug],
+        image: ResolvedImage,
+        tracked: dict[str, AgentRunHandle],
+    ) -> None:
+        """Delete an unwanted grader pod and finalize its run.
+
+        If this process owns the pod (has a handle), cancel via the handle so its
+        collector finalizes; otherwise reap it via the registry (orphan path).
+        """
+        reason = (
+            "snapshot_removed"
+            if pod.snapshot_slug not in desired
+            else "wrong_image"
+            if pod.image_ref != image.oci_ref
+            else "terminal"
+            if pod.phase in ("succeeded", "failed")
+            else "duplicate"
+        )
+        handle = tracked.get(pod.name)
+        if handle is not None:
+            logger.info("Reaping tracked grader %s for %s (reason: %s)", pod.name, pod.snapshot_slug, reason)
+            await handle.kill_and_delete()
+        else:
+            await self._registry.reap_grader_pod(pod, reason=reason)
 
     # --- Internal helpers ---
 
@@ -188,27 +321,32 @@ class GraderSupervisor:
                 logger.warning(f"Error closing listener connection: {e}")
             self._listener_conn = None
 
-    async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage) -> None:
+    async def _spawn_grader(
+        self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage, trigger: str
+    ) -> AgentRunHandle | None:
         try:
-            logger.info(f"Starting grader for {snapshot_slug}")
             handle = await self._registry.start_snapshot_grader(
                 image=image, snapshot_slug=snapshot_slug, model=self._model
             )
-            self._handles[snapshot_slug] = handle
-            logger.info(f"Grader container {handle.name} running for {snapshot_slug}")
+            logger.info(
+                "Spawned grader %s for %s (trigger: %s, image: %s)", handle.name, snapshot_slug, trigger, image.digest
+            )
+            return handle
         except Exception:
-            logger.exception(f"Failed to start grader for {snapshot_slug}")
-
-    async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
-        handle = self._handles.pop(snapshot_slug, None)
-        if handle:
-            await handle.kill_and_delete()
+            logger.exception("Failed to start grader for %s (trigger: %s)", snapshot_slug, trigger)
+            return None
 
     async def shutdown(self) -> None:
-        """Kill all grader containers and stop listeners."""
+        """Stop listeners + timers. Leaves grader pods running so the next backend
+        instance adopts them (no restart churn)."""
         self._shutdown = True
-        logger.info("Shutting down graders...")
+        logger.info("Shutting down grader supervisor (leaving graders running)...")
+        if self._debounce_task is not None and not self._debounce_task.done():
+            self._debounce_task.cancel()
+        if self._periodic_task is not None and not self._periodic_task.done():
+            self._periodic_task.cancel()
         await self._stop_listener()
-        for slug in list(self._handles.keys()):
-            await self._kill_grader(slug)
-        logger.info("All graders stopped")
+        # Intentionally do NOT kill grader pods or cancel their collector tasks:
+        # the pods outlive this process and are adopted on the next startup.
+        self._handles = {}
+        logger.info("Grader supervisor stopped")

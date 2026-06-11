@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: manifold-mcp
+  namespace: manifold-mcp
+  labels:
+    app.kubernetes.io/name: manifold-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: manifold-mcp
+  ports:
+    - name: http
+      port: 8765
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

@@ -7,8 +7,28 @@ and Kubernetes (K8sExecutor).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Literal, Protocol
+
+# Runtime-agnostic pod lifecycle phase. Maps k8s pod phases directly; the Docker
+# executor maps container states onto the same set.
+PodPhase = Literal["pending", "running", "succeeded", "failed", "unknown"]
+
+
+@dataclass(frozen=True)
+class PodInfo:
+    """Snapshot of a running/terminal agent container, as observed from the runtime.
+
+    The GraderSupervisor reconciles against this (listed by label) rather than
+    in-memory handles, so it survives backend restarts and can adopt/reap
+    containers a previous instance started.
+    """
+
+    name: str
+    image: str
+    phase: PodPhase
+    labels: dict[str, str] = field(default_factory=dict)
+    annotations: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -73,9 +93,32 @@ class ContainerExecutor(Protocol):
         ...
 
     async def run_container(
-        self, *, name: str, image_id: str, env: dict[str, str], labels: dict[str, str]
+        self,
+        *,
+        name: str,
+        image_id: str,
+        env: dict[str, str],
+        labels: dict[str, str],
+        annotations: dict[str, str] | None = None,
     ) -> ContainerHandle:
-        """Create and start a container/pod. Returns a handle for lifecycle management."""
+        """Create and start a container/pod. Returns a handle for lifecycle management.
+
+        `annotations` carry metadata that may not be a valid label value (e.g. a
+        snapshot slug containing '/'). Kubernetes stores them as pod annotations;
+        Docker (which has no annotations) folds them into labels.
+        """
+        ...
+
+    async def list_pods(self, label_selector: dict[str, str]) -> list[PodInfo]:
+        """List containers/pods matching all of the given labels."""
+        ...
+
+    def handle_for(self, name: str) -> ContainerHandle:
+        """Build a handle for an already-running container/pod by name.
+
+        Used to adopt or delete a container that this process did not start
+        (e.g. a grader left running by a previous backend instance).
+        """
         ...
 
     async def close(self) -> None:

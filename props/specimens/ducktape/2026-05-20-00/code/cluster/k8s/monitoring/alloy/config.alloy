@@ -1,0 +1,79 @@
+// --- Metrics scraping (replaces Prometheus) ---
+
+// Discover and scrape all ServiceMonitor targets cluster-wide.
+prometheus.operator.servicemonitors "cluster" {
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// Discover and scrape all PodMonitor targets cluster-wide.
+prometheus.operator.podmonitors "cluster" {
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// Push scraped metrics to Mimir.
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push"
+  }
+}
+
+// --- Rule sync (replaces Prometheus rule evaluation) ---
+
+// Sync PrometheusRule CRDs to Mimir Ruler for evaluation.
+mimir.rules.kubernetes "rules" {
+  address = "http://mimir-gateway.monitoring.svc.cluster.local"
+}
+
+// --- OTLP ingestion (OpenClaw traces, logs, metrics) ---
+
+otelcol.receiver.otlp "openclaw" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Convert OTLP metrics to Prometheus format and push to Mimir.
+otelcol.exporter.prometheus "default" {
+  forward_to          = [prometheus.remote_write.mimir.receiver]
+  add_metric_suffixes = false
+}
+
+// Forward OTel logs to Loki.
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.monitoring.receiver]
+}
+
+loki.write "monitoring" {
+  endpoint {
+    url = "http://loki.loki.svc.cluster.local:3100/loki/api/v1/push"
+  }
+}
+
+// Forward traces to Tempo via OTLP/gRPC.
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo.monitoring.svc.cluster.local:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

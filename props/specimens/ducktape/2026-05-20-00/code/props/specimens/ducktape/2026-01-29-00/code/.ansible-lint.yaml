@@ -1,0 +1,46 @@
+---
+# Repository-wide ansible-lint configuration.
+# File discovery is limited by running ansible-lint from ansible/ directory (see pre-commit config).
+# The 'kinds' configuration does NOT limit discovery scope - ansible-lint discovers all files
+# in the current directory first, then applies kinds filtering. Discovery scope is controlled
+# by the working directory when ansible-lint runs.
+#
+# NOTE: Due to compatibility issues with ansible-core 2.19.0+ (which removed
+# ansible.parsing.yaml.constructor), the pre-commit hook pins ansible-core<2.19.0.
+# This config works with ansible-lint v24.9.2 + ansible-core 2.18.x.
+
+# Note: ansible.cfg moved to ansible/ subdirectory with relative paths
+
+# Skip false-positive warnings from incomplete ansible-lint module parameter database
+skip_list: []
+exclude_paths:
+  # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
+  - "roles/legacy_*/**"
+  - ".ansible/**" # Galaxy-installed roles and collections (not our code)
+
+# Custom modules and plugins configuration
+# Note: custom_module_paths and action_plugins are not valid in config file
+# Use environment variables ANSIBLE_LIBRARY and ANSIBLE_ACTION_PLUGINS instead
+
+# Mock these custom modules/actions so ansible-lint recognizes them
+mock_modules:
+  - github_release_install
+  - github_release_info
+  - dconf_array_edit
+  - install_handler
+  - autostart_entry
+  - community.general.snap
+  - community.general.dconf
+  - community.general.ufw
+  - community.docker.docker_container
+  - community.docker.docker_compose_v2
+  - ansible.posix.mount
+
+# Mock these roles if they're external/Galaxy roles
+mock_roles:
+  - petermosmans.customize-gnome
+  - geerlingguy.docker
+  - systemli.letsencrypt
+  - nbigot.ansible-fail2ban
+  - diodonfrost.p10k
+  - rolehippie.syncthing

@@ -1,0 +1,50 @@
+# EditorConfig for shfmt and general editor settings
+# https://editorconfig.org/
+
+root = true
+
+# Default for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Shell scripts - shfmt configuration
+# shfmt reads these settings: indent_style, indent_size, binary_next_line, switch_case_indent
+[*.sh]
+indent_style = space
+indent_size = 2
+# Keep binary operators at start of line (shfmt -bn)
+binary_next_line = true
+# Indent switch cases (shfmt -ci)
+switch_case_indent = true
+
+# Python files
+[*.py]
+indent_style = space
+indent_size = 4
+
+# YAML files
+[*.{yaml,yml}]
+indent_style = space
+indent_size = 2
+
+# JavaScript/TypeScript
+[*.{js,ts,jsx,tsx,svelte}]
+indent_style = space
+indent_size = 2
+
+# Nix files
+[*.nix]
+indent_style = space
+indent_size = 2
+
+# Bazel/Starlark
+[*.{bazel,bzl}]
+indent_style = space
+indent_size = 4
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false

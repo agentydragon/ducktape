@@ -1,0 +1,183 @@
+"""MCP Approval Policy server - policy engine and middleware."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "engine",
+    srcs = ["engine.py"],
+    data = ["instructions.mako.md"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_server:agent_types",
+        "//agent_server:approvals",
+        "//agent_server/models:proposal_status",
+        "//agent_server/persist:types",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policy_eval:container",
+        "//agent_server/policy_eval:runner",
+        "//mako_utils:preprocessor",
+        "//mcp_infra:constants",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:naming",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/exec:docker",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//mako",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_test(
+    name = "test_engine",
+    srcs = ["test_engine.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":engine",
+        "//agent_server:conftest",
+        "//agent_server:presets",
+        "//agent_server/mcp:conftest",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gateway_middleware",
+    srcs = ["test_gateway_middleware.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":engine",
+        "//agent_server:conftest",
+        "//agent_server/mcp:conftest",
+        "//agent_server/policies:policy_types",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/enhanced:flat_mixin",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core/testing:responses",
+        "//agent_server:conftest",
+        "//agent_server/mcp:conftest",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_utils",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":engine",
+        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core/testing/mcp:responses",
+        "//agent_server:conftest",
+        "//agent_server/policies:policy_types",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_infra:resource_utils",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_default_policy",
+    srcs = ["test_default_policy.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//agent_server:conftest",
+        "//agent_server/policies:policy_types",
+        "//agent_server/testing:fixtures",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/testing:simple_servers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_eval_abort",
+    srcs = ["test_eval_abort.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":engine",
+        "//agent_server:conftest",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)

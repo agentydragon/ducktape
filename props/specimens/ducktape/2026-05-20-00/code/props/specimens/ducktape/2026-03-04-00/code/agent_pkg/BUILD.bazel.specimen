@@ -1,0 +1,22 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "mcp",
+    srcs = ["mcp.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+py_library(
+    name = "output",
+    srcs = ["output.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mako_utils:preprocessor",
+        "@pypi//mako",
+    ],
+)

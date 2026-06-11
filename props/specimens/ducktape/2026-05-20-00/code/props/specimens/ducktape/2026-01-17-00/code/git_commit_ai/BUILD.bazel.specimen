@@ -1,0 +1,124 @@
+"""Git commit AI package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "git_commit_ai_lib",
+    srcs = [
+        "__init__.py",
+        "agent_backend.py",
+        "cli.py",
+        "editor.py",
+        "git_ro/__init__.py",
+        "git_ro/formatting.py",
+        "git_ro/server.py",
+    ],
+    data = ["commit_editmsg.mako"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/bootstrap",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/enhanced",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//mako",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_binary(
+    name = "git_commit_ai",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [":git_commit_ai_lib"],
+)
+
+py_test(
+    name = "test_git_commit_ai",
+    srcs = [
+        "conftest.py",
+        "git_ro/conftest.py",
+        "git_ro/test_cat_file.py",
+        "git_ro/test_diff.py",
+        "git_ro/test_show.py",
+        "git_ro/test_stat_counts.py",
+        "git_ro/test_status_log.py",
+        "test_amend.py",
+        "test_editor.py",
+        "test_stage_all.py",
+        "testing/__init__.py",
+        "testing/git_repo_utils.py",
+    ],
+    main = "test_amend.py",
+    deps = [
+        ":git_commit_ai_lib",
+        "//mcp_infra/testing",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":git_commit_ai_lib"],
+)
+
+# Package for wheel - bundles git_commit_ai and all local dependencies
+py_package(
+    name = "git_commit_ai_pkg",
+    packages = [
+        "agent_core",
+        "cli_util",
+        "git_commit_ai",
+        "mcp_infra",
+        "mcp_utils",
+        "openai_utils",
+    ],
+    deps = [":git_commit_ai_lib"],
+)
+
+py_wheel(
+    name = "git_commit_ai_wheel",
+    distribution = "git_commit_ai",
+    entry_points = {
+        "console_scripts": ["git-commit-ai = git_commit_ai.cli:main"],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        "aiodocker",
+        "anyio",
+        "compact-json",
+        "fastmcp>=2.0",
+        "httpx",
+        "jinja2",
+        "mako>=1.3",
+        "mcp",
+        "openai",
+        "pydantic>=2.0",
+        "pyhamcrest",
+        "pygit2>=1.14",
+        "rich",
+        "structlog",
+        "tenacity",
+        "typer",
+    ],
+    # Strip the src/ prefix from other packages' paths
+    strip_path_prefixes = [
+        "agent_core/src",
+        "cli_util/src",
+        "mcp_infra/src",
+        "mcp_utils/src",
+        "openai_utils/src",
+    ],
+    version = "0.1.0",
+    deps = [":git_commit_ai_pkg"],
+)

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - cronjob.yaml
+  - alloy-otlp-cronjob.yaml
+configMapGenerator:
+  - name: authentik-jwt-rotation-script
+    namespace: agents-infra
+    files:
+      - rotate.sh

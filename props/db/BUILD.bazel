@@ -1,6 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/deps:check.bzl", "assert_no_deps")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # =============================================================================
 # Leaf modules (no db/ deps)
@@ -9,7 +8,6 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "@pypi//asyncpg",
@@ -22,7 +20,6 @@ py_library(
 py_library(
     name = "snapshots",
     srcs = ["snapshots.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -30,7 +27,6 @@ py_library(
 py_library(
     name = "notifications",
     srcs = ["notifications.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -41,7 +37,6 @@ py_library(
 py_library(
     name = "snapshot_io",
     srcs = ["snapshot_io.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":database",
@@ -52,7 +47,6 @@ py_library(
 py_library(
     name = "queries",
     srcs = ["queries.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
@@ -67,10 +61,10 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":snapshots",
+        "//openai_utils:api_shape",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:splits",
@@ -83,7 +77,6 @@ py_library(
 py_library(
     name = "database",
     srcs = ["database.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
@@ -96,7 +89,6 @@ py_library(
 py_library(
     name = "examples",
     srcs = ["examples.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
@@ -114,7 +106,6 @@ py_library(
 py_library(
     name = "query_builders",
     srcs = ["query_builders.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
@@ -130,7 +121,6 @@ py_library(
     name = "setup",
     srcs = ["setup.py"],
     data = ["//props/db/migrations"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
@@ -151,7 +141,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pytest"],
 )
@@ -179,7 +168,6 @@ py_test(
     srcs = [
         "test_agent_queries.py",
     ],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -200,7 +188,6 @@ py_test(
     srcs = [
         "test_tp_occurrence_credits.py",
     ],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -221,7 +208,6 @@ py_test(
     srcs = [
         "test_pydantic_column_null.py",
     ],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -240,7 +226,6 @@ py_test(
     srcs = [
         "test_split_based_rls.py",
     ],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":config",
@@ -266,7 +251,6 @@ py_test(
 py_test(
     name = "test_view_extracts_grade_fields",
     srcs = ["test_view_extracts_grade_fields.py"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":config",

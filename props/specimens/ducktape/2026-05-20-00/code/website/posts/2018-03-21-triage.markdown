@@ -1,0 +1,119 @@
+---
+title: Triage
+---
+
+I am tired and feel like I shouldn't go to sleep yet. The Soylent thing has been
+working only very very slowly. I assume the first few days were just losing the
+contents of my bowels and now I just want to keep it up. Maybe in the hope that
+it will remove the habit of snacking when I feel stressed/bad.
+
+The thing about feeling stressed at work has gotten a little bit better. But
+somehow I don't feel that much like I'm winning.
+
+Tomorrow a pretty useful thing would be to wake up reasonably early, then ~8
+hours of work. I could really use some emotional support. Something's wrong,
+actually a bunch of things feel wrong. I feel lonely. I don't want to be fat.
+Work sucks and looks like my attempts to hoist myself into an AI safety, or at
+least AI-related position might fall flat. I might have reached beyond what I
+am currently good enough for.
+
+I guess the last part feels pretty close to it. Work sucks. If I could do
+anything with my life, I would do X. Solve for X.
+
+My feelings about it are, ... I feel like I kind of grew up with the implicit
+assumption that work matters. Like, when you are the best at school or at work,
+people will like you and you will be happy. I want to feel, ..., okay? loved?
+like, I want to cry about how hard and painful things are. Speaking of which,
+dental pain sucks.
+
+So what's so painful. First answer is "the fact that I feel I don't have anyone
+to cry to". (At this time. Growth mindset I guess.) I guess compared with that
+the other things which come up are much lesser. Actually maybe not. I also feel
+that I have no idea where I'm running, but I'm running there as fast as I can.
+And stopping where I am, or even the entire idea of stopping, feels dangerous
+and scary and I don't want that.
+
+Huh. It would be pretty funny if the function of snacking was to make this
+cluster of things not hurt. On the other hand, I might still be in the period
+where going off SSRI's can do funny chemical things to your head, so there's
+that. I guess there might be some fancy antidepressant I could start on to make
+me itch less right now, but would I want this to stop itching? Maybe not
+medicating it and not trying to shut it down might be good signal to do
+something differently...
+
+With that off my chest, it's still almost midnight and I feel like there are
+things I should be doing tomorrow. I have a pretty good idea of work things that
+need doing.
+
+Things on my mind are:
+
+- Work on my master's thesis.
+- Check that my mass transit card in ZRH still works (been here a year, it might
+  run out).
+- Buy batteries for my bank's card reader 2FA machine.
+
+_Feeling of having to come up with more stuff._
+
+- Errrr...
+
+- I guess, I'm still fat, what do I do about it? Well, that feels kind of
+  forced...
+- I don't really want to do anything exercise-typey tomorrow. I even have a
+  semi-good excuse for why not to, my ankle is still swollen.
+- But I feel that makes me bad.
+
+Huh. Does it? It feels like it makes me bad, though S2 would publicly say it
+doesn't. I also feel tired so probably not gonna IDC on that... Bookmark I
+guess.
+
+I'm probably not going to reach a point of "yeah I have a plan for tomorrow and
+it's a plan which totally resonates", because I'm pretty tired.
+
+Okay.
+
+Let's also put some things into Complice. Record weight, eat just Soylent.
+(Hmm. My calendar reminders are also getting a bit unwieldy. Maybe cancel some
+of them. Or reevaluate why they're there. Or start behaving by them...?)
+
+Get the goddamn batteries.
+And while I'm getting the goddamn batteries, also get some (goddamn) laundry
+detergent. And check out what other things I'm missing. Lowest-effort way to do
+that would be coop's delivery service to the Google office. Yeah, sure, that
+sounds good.
+
+My room is again slowly becoming a mess. That felt good fixing last time, let's
+add that.
+
+_Feeling of having to do more._
+
+Okay, when I'm home, I'm going to try to write some Python code that will run in
+Kubernetes on Google's cloud to download a dump of Wikipedia for my master's
+thesis. Oh, also, I might be able to download it in chunks so it doesn't have to
+be loaded into the backing store (probably some kind of BigTable or whatever)
+in a single thread.
+
+Actually let's change around my Complice goals, too.
+
+I should also make plans for Easter break.
+Not sure about what's the deliverable for that. There's a bunch of ways I could
+spend Easter. Baseline, lounging around in Prague chatting with friends. Working
+intensely on my master's thesis. (That sounds good in some way.)
+
+Triage done? Argh doesn't feel entirely like it. I should also make some better
+plans for one of my partners visiting Zurich.
+
+_Itch_. But well, I guess this triage will do. The parts which are most
+important on it are keeping on track with not overeating or snacking, and
+making some progress on the thesis.
+
+Part of me feels like this is just not enough. Just getting that one Kubernetes
+script done in one day? Hah, don't make me laugh. At this rate, you'll be
+stumbling around at roughly the same spot in the thesis until time runs out.
+
+Oh, and also, I want to some day go and implement a bunch of ML papers so I can
+learn TensorFlow and get the confidence to say "I can write AI". That might
+actually have higher priority than the master's thesis, if I were to only care
+about getting a job in AI.
+
+_Sigh._ 3, 2, 1, chaaaaaaaarge, and let's go to sleep. And if we can't, maybe we
+can try to probe this "nothing is enough" thing.

@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: budget-ledger
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/forgejo/budget-ledger
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Wait for the Terraform apply (creates the Forgejo repo + service user + the
+  # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: budget-ledger
+      namespace: flux-system
+  dependsOn:
+    - name: forgejo # Forgejo API must be up (provider target)
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: budget-namespace # the git-creds Secret lands in the budget namespace

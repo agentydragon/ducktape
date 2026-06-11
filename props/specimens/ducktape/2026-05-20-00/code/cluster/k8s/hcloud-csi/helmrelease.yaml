@@ -1,0 +1,44 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: hcloud
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.hetzner.cloud
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hcloud-csi
+  namespace: kube-system
+spec:
+  interval: 30m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: hcloud-csi
+      version: "2.19.1"
+      sourceRef:
+        kind: HelmRepository
+        name: hcloud
+        namespace: flux-system
+  values:
+    storageClasses:
+      - name: hcloud-volumes
+        defaultStorageClass: false
+        reclaimPolicy: Retain
+    # Filter on zone (`hil-dc1`), not region (`hil`). Both Hetzner VPS and
+    # OVH Kimsufi bare metal nodes share region=`hil`, but only Hetzner Cloud
+    # nodes are reachable by the Hetzner CSI driver (it talks to hcloud API
+    # with node IDs that don't exist for OVH). Hetzner VPS get zone=`hil-dc1`
+    # from Talos CCM; kimsufi gets zone=`hil-ovh` (explicit node label).
+    controller:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-dc1
+    node:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-dc1

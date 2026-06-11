@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tana-firebase-resigner
+  namespace: tana-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tana-firebase-resigner
+  namespace: tana-mcp
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tana-firebase-refresh-token"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tana-firebase-resigner
+  namespace: tana-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tana-firebase-resigner
+subjects:
+  - kind: ServiceAccount
+    name: tana-firebase-resigner
+    namespace: tana-mcp

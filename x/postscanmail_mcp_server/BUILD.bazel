@@ -1,0 +1,80 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server_cli",
+    main_module = "x.postscanmail_mcp_server.server",
+    deps = [":server"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":server",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: root conftest sets asyncio_mode="auto"
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+# ── OCI image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["postscanmail-mcp-server:latest"],
+)

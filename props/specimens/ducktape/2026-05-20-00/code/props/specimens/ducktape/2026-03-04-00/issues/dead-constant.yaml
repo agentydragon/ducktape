@@ -1,0 +1,21 @@
+rationale: |
+  Constants defined but never referenced in the codebase.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/constants.py:
+        - [36, 36]
+    note: "SEATBELT_EXEC_MOUNT_PREFIX; sole consumer is dead file bad_template.py"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/constants.py]
+      - [agent_server/testing/testdata/approval_policy/bad_template.py]
+  - occurrence_id: occ-1
+    files:
+      gnome_terminal_profile_switcher/main.py:
+        - [16, 16]
+    note: "THEME_SOURCE_PROFILES; never referenced"
+    critic_scopes_expected_to_recall:
+      - [gnome_terminal_profile_switcher/main.py]

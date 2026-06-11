@@ -1,0 +1,20 @@
+rationale: |
+  `GmailInbox.fetch_messages_metadata` silently drops messages that are in
+  `_full_cache` but not `_metadata_cache`. Line 77 skips re-fetching IDs
+  already in `_full_cache` (correct, since full data is a superset of
+  metadata). But lines 94-97 then fail to include those IDs in the result:
+  the `elif mid in self._full_cache` branch executes `pass` instead of
+  appending to `result`. Any message previously fetched via `fetch_messages`
+  (which populates `_full_cache`) will be silently omitted from subsequent
+  `fetch_messages_metadata` calls.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/inbox.py:
+        - [77, 77] # uncached_ids skips _full_cache entries
+        - [94, 97] # elif branch silently drops them from result
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/inbox.py]

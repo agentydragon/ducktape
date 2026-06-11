@@ -1,0 +1,36 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agent-machine-access-tf
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/agents/machine-access-tf
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: agent-machine-access
+      namespace: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: authentik
+    # TF writes grocy-mcp-oidc secrets into per-household namespaces.
+    - name: grocy-sf
+    - name: grocy-vallejo
+    - name: tana-mcp
+    # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
+    # namespace, so that namespace must exist first.
+    - name: kubectl-sandbox-mcp-namespace
+    # Same for manifold-mcp.
+    - name: manifold-mcp-namespace
+    # Same for postscanmail-mcp.
+    - name: postscanmail-mcp-namespace
+    # Same for plaid-mcp.
+    - name: plaid-mcp-namespace

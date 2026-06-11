@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "testing",
+    srcs = [
+        "__init__.py",
+        "exec_stubs.py",
+        "fixtures.py",
+        "notifications.py",
+        "simple_servers.py",
+        "stdio_app.py",
+        "stdio_notifier.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//mcp_infra/notifications",
+        "//mcp_infra/resources",
+        "//mcp_infra/stubs",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)

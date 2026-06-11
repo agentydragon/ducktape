@@ -1,0 +1,16 @@
+"""Models package - pure data types with no internal dependencies."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "policy_error",
+    srcs = ["policy_error.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "proposal_status",
+    srcs = ["proposal_status.py"],
+    visibility = ["//:__subpackages__"],
+)

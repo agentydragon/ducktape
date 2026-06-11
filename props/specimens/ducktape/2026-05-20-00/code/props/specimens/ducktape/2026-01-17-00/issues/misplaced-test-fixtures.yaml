@@ -1,0 +1,31 @@
+rationale: |
+  Several test fixtures in `agent_core_testing/fixtures.py` are only used by
+  `agent_core/test_tool_execution.py` and should be moved into that test
+  module: `ValidationServer` (line 292), `validation_server` (line 310),
+  `_FailInput` (line 315), `FAIL_TOOL_NAME` (line 322),
+  `error_payload_server` (line 326), `_EmptyInput` (line 181),
+  `_SlowOutput` (line 185), and `slow_server` (line 194).
+
+  Additionally, `agent_server/conftest.py` has duplicate dead copies of
+  `ValidationServer` (line 392), `_FailInput` (line 417),
+  `validation_server` (line 412), and `slow_server` (line 441) — no test
+  in `agent_server/` uses any of them.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core_testing/fixtures.py:
+        - [181, 210]
+        - [292, 340]
+      agent_core/test_tool_execution.py:
+        - [19, 19]
+    note: "Fixtures only used by test_tool_execution.py; move into that module"
+    critic_scopes_expected_to_recall:
+      - [agent_core_testing/fixtures.py, agent_core/test_tool_execution.py]
+  - occurrence_id: occ-1
+    files:
+      agent_server/conftest.py:
+        - [392, 455]
+    note: "Duplicate ValidationServer/_FailInput/validation_server/slow_server — dead code"
+    critic_scopes_expected_to_recall:
+      - [agent_server/conftest.py]

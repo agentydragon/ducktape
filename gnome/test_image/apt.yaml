@@ -1,0 +1,62 @@
+# Deb packages for the gnome-shell render-test container.
+#
+# The container runs gnome-shell headless under Xvfb, loads the
+# aiquota extension with a fixture JSON, and grabs the Xvfb root
+# window with `scrot` for golden-PNG comparison. (The GNOME
+# Shell.Screenshot D-Bus API is gated on unsafe_mode in modern GNOME and
+# rejects external callers, so screenshotting at the X layer is the
+# practical path.)
+#
+# Regenerate the lock file after any change:
+#   bazel run @gnome_shell_test//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+  - channel: trixie-updates main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # GNOME Shell + the JS engine (gjs) and toolkit (mutter, libst) it loads
+  # at runtime. Pulls gsettings-desktop-schemas as a dep.
+  - "gnome-shell"
+  # X virtual framebuffer + auth — gnome-shell --x11 needs a real X display.
+  - "xvfb"
+  - "xauth"
+  # dbus-launch / dbus-run-session for the session bus.
+  - "dbus-x11"
+  # GNOME's default UI font; without it St falls back to whatever fontconfig
+  # picks up and goldens become non-reproducible.
+  - "fonts-cantarell"
+  # gdbus CLI (D-Bus from shell) for enabling extensions.
+  - "libglib2.0-bin"
+  # scrot grabs the X root window. The org.gnome.Shell.Screenshot D-Bus
+  # interface is gated on unsafe_mode in GNOME 42+ and split out into a
+  # service that only accepts portal callers, so we screenshot at the X
+  # layer directly.
+  - "scrot"
+  # GIR typelibs the extension imports at module top: gi://Secret
+  # (libsecret) is referenced even in fixture mode, so the typelib must
+  # be present or extension.js fails to load.
+  - "gir1.2-secret-1"
+  # SVG pixbuf loader — without it St.Icon can't rasterize the
+  # extension's symbolic SVGs and the panel renders the labels but no
+  # icons. Pulls librsvg2-common which registers the loader.
+  - "librsvg2-common"
+  # MIME database — gdk-pixbuf needs it to resolve image/svg+xml to the
+  # SVG loader.
+  - "shared-mime-info"
+  # update-mime-database / gdk-pixbuf-query-loaders binaries (run from
+  # render.sh because rules_distroless skips dpkg postinst).
+  - "libgdk-pixbuf2.0-bin"
+  # glib-compile-schemas (run once at container start; rules_distroless
+  # skips dpkg postinst triggers, so the gschemas.compiled cache is empty).
+  - "libglib2.0-dev-bin"
+  # procps: pkill / wait used in render.sh tear-down.
+  - "procps"

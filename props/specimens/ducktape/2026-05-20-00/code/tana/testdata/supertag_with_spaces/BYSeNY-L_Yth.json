@@ -1,0 +1,123 @@
+{
+  "formatVersion": 1,
+  "docs": [
+    {
+      "id": "SYS_T01",
+      "props": {
+        "created": 1749756870579,
+        "name": "supertag",
+        "description": "The Core supertag.  The supertag for the supertag nodes",
+        "_docType": "tagDef",
+        "_ownerId": "SYS_T00",
+        "_metaNodeId": "SYS_T01_META"
+      }
+    },
+    {
+      "id": "SYS_A13",
+      "props": {
+        "created": 1749756870591,
+        "name": "Node supertags(s)",
+        "description": "Supertag for node, if set it defines what the node represents",
+        "_ownerId": "SYS_T19",
+        "_metaNodeId": "SYS_A13_META"
+      },
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+    },
+    {
+      "id": "SYS_T01_META",
+      "props": {
+        "created": 1749756870611,
+        "_ownerId": "SYS_T01",
+        "_docType": "metanode"
+      },
+      "children": ["SYS_T01_META_SYS_A13"]
+    },
+    {
+      "id": "SYS_T01_META_SYS_A13",
+      "props": {
+        "created": 1749756870611,
+        "_docType": "tuple",
+        "_ownerId": "SYS_T01_META"
+      },
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "BYSeNY-L_Yth",
+      "props": {
+        "created": 1749775991149,
+        "name": "Node with supertags with space in name: (test reference BYSeNY-L_Yth)",
+        "_ownerId": "MFjacEHVlv36"
+      },
+      "touchCounts": [59, 0],
+      "modifiedTs": [1749780511603, 0],
+      "children": ["YXr3zkjO5wEa"]
+    },
+    {
+      "id": "YXr3zkjO5wEa",
+      "props": {
+        "created": 1749776001010,
+        "name": "Node with tags with space",
+        "_ownerId": "BYSeNY-L_Yth",
+        "_metaNodeId": "0HG3IgXOZ4iN"
+      },
+      "touchCounts": [86, 0],
+      "modifiedTs": [1749776015627, 0]
+    },
+    {
+      "id": "rQQE21hWgQgv",
+      "props": {
+        "created": 1749776014921,
+        "name": "supertag with space in name",
+        "_ownerId": "z-GIaRFjsyQ5_SCHEMA",
+        "_docType": "tagDef",
+        "_metaNodeId": "m2zbPGKj8FgF"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749776015164, 0]
+    },
+    {
+      "id": "m2zbPGKj8FgF",
+      "props": {
+        "created": 1749776014927,
+        "_ownerId": "rQQE21hWgQgv",
+        "_docType": "metanode"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015164, 0],
+      "children": ["_zwKdmZFROPH", "lPwEmWn20v8K", "JMF6bsdsGC8I"]
+    },
+    {
+      "id": "_zwKdmZFROPH",
+      "props": {
+        "created": 1749776014928,
+        "_docType": "tuple",
+        "_ownerId": "m2zbPGKj8FgF"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015164, 0],
+      "children": ["SYS_A13", "SYS_T01"]
+    },
+    {
+      "id": "0HG3IgXOZ4iN",
+      "props": {
+        "created": 1749776014988,
+        "_ownerId": "YXr3zkjO5wEa",
+        "_docType": "metanode"
+      },
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749776015627, 0],
+      "children": ["tuQu2g9Ns0L4"]
+    },
+    {
+      "id": "tuQu2g9Ns0L4",
+      "props": {
+        "created": 1749776014989,
+        "_docType": "tuple",
+        "_ownerId": "0HG3IgXOZ4iN"
+      },
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015627, 0],
+      "children": ["SYS_A13", "rQQE21hWgQgv"]
+    }
+  ]
+}

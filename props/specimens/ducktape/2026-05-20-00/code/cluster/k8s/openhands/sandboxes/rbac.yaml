@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openhands-sandbox-manager
+  namespace: openhands-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "pods/portforward", "services", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openhands-sandbox-manager
+  namespace: openhands-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openhands-sandbox-manager
+subjects:
+  - kind: ServiceAccount
+    name: openhands
+    namespace: openhands

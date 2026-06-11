@@ -1,0 +1,8 @@
+# gitstatusd - Git status daemon from romkatv/gitstatus
+# https://github.com/romkatv/gitstatus
+
+filegroup(
+    name = "gitstatusd",
+    srcs = ["@gitstatusd//:gitstatusd-linux-x86_64"],
+    visibility = ["//visibility:public"],
+)

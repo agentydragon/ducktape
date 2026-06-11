@@ -1,0 +1,81 @@
+# Cluster validation scripts
+#
+# These scripts validate cluster configuration via pre-commit hooks.
+# Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
+#
+# Usage:
+#   bazel run //cluster/scripts:validate_kustomizations
+#   bazel run //cluster/scripts:validate_flux_build
+#   bazel run //cluster/scripts:validate_dependencies
+#   bazel run //cluster/scripts:validate_sealed_secrets
+#   bazel run //cluster/scripts:validate_helm_templates
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//cluster:__subpackages__"])
+
+exports_files([
+    "tofu_validate.sh",
+    "validate_flux_build.py",
+    "validate_kustomizations.py",
+    "validate_dependencies.py",
+    "validate_sealed_secrets.py",
+    "validate_helm_templates.py",
+])
+
+py_library(
+    name = "runfiles_util",
+    srcs = ["runfiles_util.py"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+# Validate all kustomization directories can build
+py_binary(
+    name = "validate_kustomizations",
+    srcs = ["validate_kustomizations.py"],
+    data = ["@multitool//tools/kustomize"],
+    deps = [
+        ":runfiles_util",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Validate Flux can build the kustomization tree
+py_binary(
+    name = "validate_flux_build",
+    srcs = ["validate_flux_build.py"],
+    data = ["@multitool//tools/flux"],
+    deps = [
+        ":runfiles_util",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Validate GitOps dependency graph (no external binaries needed)
+py_binary(
+    name = "validate_dependencies",
+    srcs = ["validate_dependencies.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+# Validate SealedSecrets can be decrypted with terraform keypair
+py_binary(
+    name = "validate_sealed_secrets",
+    srcs = ["validate_sealed_secrets.py"],
+    data = [
+        "@multitool//tools/kubeseal",
+        "@multitool//tools/tofu",
+    ],
+    deps = [":runfiles_util"],
+)
+
+# Validate Helm templates can render
+py_binary(
+    name = "validate_helm_templates",
+    srcs = ["validate_helm_templates.py"],
+    data = [
+        "//cluster/terraform/01-infrastructure:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [":runfiles_util"],
+)

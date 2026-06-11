@@ -95,17 +95,11 @@
   no_log: true
   tags: [nebula, secrets]
 
-- name: Decrypt Nebula secrets with sops
+- name: Decrypt Nebula host key with sops (binary format)
   ansible.builtin.shell: |
-    SOPS_AGE_KEY={{ nebula_age_key.stdout }} sops decrypt {{ nebula_sops_secrets_file }}
-  register: nebula_secrets_raw
+    SOPS_AGE_KEY={{ nebula_age_key.stdout }} sops decrypt {{ nebula_host_key_sops_file }}
+  register: nebula_host_key_raw
   changed_when: false
-  no_log: true
-  tags: [nebula, secrets]
-
-- name: Parse Nebula secrets
-  ansible.builtin.set_fact:
-    nebula_secrets: "{{ nebula_secrets_raw.stdout | from_yaml }}"
   no_log: true
   tags: [nebula, secrets]
 
@@ -120,7 +114,7 @@
 
 - name: Deploy Nebula CA certificate
   ansible.builtin.copy:
-    content: "{{ nebula_secrets.nebula_ca_cert }}"
+    src: "{{ nebula_ca_cert_file }}"
     dest: /etc/nebula/ca.crt
     owner: root
     group: root
@@ -130,7 +124,7 @@
 
 - name: Deploy Nebula host certificate
   ansible.builtin.copy:
-    content: "{{ nebula_secrets.nebula_host_cert }}"
+    src: "{{ nebula_host_cert_file }}"
     dest: /etc/nebula/host.crt
     owner: root
     group: root
@@ -140,7 +134,7 @@
 
 - name: Deploy Nebula host key
   ansible.builtin.copy:
-    content: "{{ nebula_secrets.nebula_host_key }}"
+    content: "{{ nebula_host_key_raw.stdout }}"
     dest: /etc/nebula/host.key
     owner: root
     group: root

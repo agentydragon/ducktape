@@ -1,6 +1,6 @@
 """Props test fixtures package."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 
@@ -29,6 +29,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/bazel:runfiles",
+        "//util/testing:postgres",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -62,14 +63,17 @@ py_library(
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
+        "//props/llm_proxy:app",
         "//props/orchestration:agent_registry",
         "//props/orchestration:docker_env",
         "//props/orchestration:docker_executor",
+        "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
         "//util:crane",
         "//util:net",
         "@pypi//aiodocker",
+        "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//uvicorn",

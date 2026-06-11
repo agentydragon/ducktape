@@ -1,7 +1,0 @@
-# Generated CI workflow files — exported for test_generate_ci_check
-exports_files(
-    [
-        "ci.yml",
-    ],
-    visibility = ["//devinfra/ci:__pkg__"],
-)

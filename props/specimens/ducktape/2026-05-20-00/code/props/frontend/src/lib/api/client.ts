@@ -1,0 +1,317 @@
+import createClient from "openapi-fetch";
+import type { paths, components } from "./schema";
+import { getToken, onAuthFailed } from "$lib/stores/token";
+
+// Create typed API client (types from Bazel: //props/frontend/src/lib:schema)
+export const api = createClient<paths>({ baseUrl: "" });
+
+// Attach admin token as Bearer header to every request
+api.use({
+  async onRequest({ request }) {
+    const token = getToken();
+    if (token) {
+      request.headers.set("Authorization", `Bearer ${token}`);
+    }
+    return request;
+  },
+  async onResponse({ response }) {
+    if (response.status === 401) {
+      onAuthFailed();
+    }
+    return response;
+  },
+});
+
+// Authenticated fetch for endpoints with slash-containing path params (snapshot slugs).
+// openapi-fetch encodes '/' in path params, breaking FastAPI's {slug:path} routes.
+async function authedFetch<T>(url: string): Promise<T> {
+  const token = getToken();
+  const resp = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (resp.status === 401) onAuthFailed();
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    const msg = body?.detail ?? `HTTP ${resp.status}`;
+    throw new Error(msg);
+  }
+  return resp.json();
+}
+
+// Re-export generated types
+export type DefinitionInfo = components["schemas"]["DefinitionInfo"];
+export type ActiveRunInfo = components["schemas"]["ActiveRunInfo"];
+export type ValidationRunRequest = components["schemas"]["ValidationRunRequest"];
+export type ValidationRunResponse = components["schemas"]["ValidationRunResponse"];
+export type CriticRunSpecifics = components["schemas"]["CriticRunSpecifics"];
+export type GraderRunSpecifics = components["schemas"]["GraderRunSpecifics"];
+export type OtherRunSpecifics = components["schemas"]["OtherRunSpecifics"];
+export type AgentRunDetail = components["schemas"]["AgentRunDetail"];
+
+// Type guards for AgentRunDetail discriminated union
+export function isCriticRun(run: AgentRunDetail): run is AgentRunDetail & { details: CriticRunSpecifics } {
+  return "agent_type" in run.details && run.details.agent_type === "critic";
+}
+
+export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { details: GraderRunSpecifics } {
+  return "agent_type" in run.details && run.details.agent_type === "grader";
+}
+
+export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
+export type JobInfo = components["schemas"]["JobInfo"];
+export type JobsResponse = components["schemas"]["JobsResponse"];
+export type AgentType = components["schemas"]["AgentType"];
+export type RunInfo = components["schemas"]["RunInfo"];
+export type RunGradingSummary = components["schemas"]["RunGradingSummary"];
+export type RunsListResponse = components["schemas"]["RunsListResponse"];
+export type CriticTypeConfig = components["schemas"]["CriticTypeConfig"];
+export type GraderTypeConfig = components["schemas"]["GraderTypeConfig"];
+export type FreeformTypeConfig = components["schemas"]["FreeformTypeConfig"];
+export type CriticDevOptimizeTypeConfig = components["schemas"]["CriticDevOptimizeTypeConfig"];
+export type CriticDevImproveTypeConfig = components["schemas"]["CriticDevImproveTypeConfig"];
+export type WholeSnapshotExample = components["schemas"]["WholeSnapshotExample-Output"];
+export type SingleFileSetExample = components["schemas"]["SingleFileSetExample-Output"];
+export type Split = components["schemas"]["Split"];
+export type ExampleKind = components["schemas"]["ExampleKind"];
+export type ChildRunInfo = components["schemas"]["ChildRunInfo"];
+export type GraderRunInfo = components["schemas"]["GraderRunInfo"];
+export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
+export type TpTarget = components["schemas"]["TpTarget"];
+export type FpTarget = components["schemas"]["FpTarget"];
+export type GradingTarget = TpTarget | FpTarget;
+
+// Enum value arrays for UI dropdowns (must match schema definitions)
+export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = ["in_progress", "exited", "timed_out"];
+
+export const AGENT_TYPE_VALUES: AgentType[] = [
+  "critic",
+  "grader",
+  "critic_dev_optimize",
+  "critic_dev_improve",
+  "freeform",
+];
+
+// Extract error message from API error response
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === "object") {
+    // FastAPI HTTPException format: { detail: string }
+    if ("detail" in error && typeof (error as { detail: unknown }).detail === "string") {
+      return (error as { detail: string }).detail;
+    }
+    // Generic message field
+    if ("message" in error && typeof (error as { message: unknown }).message === "string") {
+      return (error as { message: string }).message;
+    }
+  }
+  return fallback;
+}
+
+// Convenience wrapper for overview endpoint
+export async function fetchOverview() {
+  const { data, error } = await api.GET("/api/stats/overview");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch overview"));
+  return data;
+}
+
+// Fetch all definitions
+export async function fetchDefinitions(agentType?: AgentType) {
+  const { data, error } = await api.GET("/api/definitions", {
+    params: { query: agentType ? { agent_type: agentType } : {} },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch definitions"));
+  return data;
+}
+
+// Fetch active runs
+export async function fetchActiveRuns() {
+  const { data, error } = await api.GET("/api/runs/active");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch active runs"));
+  return data;
+}
+
+// Trigger validation runs
+export async function triggerValidationRuns(request: ValidationRunRequest) {
+  const { data, error } = await api.POST("/api/runs/validation", {
+    body: request,
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to trigger validation runs"));
+  return data;
+}
+
+// Fetch validation jobs
+export async function fetchJobs() {
+  const { data, error } = await api.GET("/api/runs/jobs");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch jobs"));
+  return data;
+}
+
+// Fetch run details
+export async function fetchRun(runId: string) {
+  const { data, error } = await api.GET("/api/runs/{run_id}", {
+    params: { path: { run_id: runId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch run"));
+  return data;
+}
+
+// Fetch all runs with filters and pagination
+export interface RunsFilters {
+  status?: AgentRunStatus;
+  image_digest?: string;
+  agent_type?: AgentType;
+  split?: Split;
+  example_kind?: ExampleKind;
+  offset?: number;
+  limit?: number;
+}
+
+export async function fetchRuns(filters?: RunsFilters) {
+  const { data, error } = await api.GET("/api/runs", {
+    params: { query: filters ?? {} },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch runs"));
+  return data;
+}
+
+// Fetch definition detail with per-example stats
+export type DefinitionDetailResponse = components["schemas"]["DefinitionDetailResponse"];
+export type ExampleStats = components["schemas"]["ExampleStats"];
+export type LLMCostStats = components["schemas"]["LLMCostStats"];
+
+export async function fetchDefinitionDetail(definitionId: string) {
+  const { data, error } = await api.GET("/api/stats/definitions/{image_digest}", {
+    params: { path: { image_digest: definitionId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch definition"));
+  return data;
+}
+
+// Fetch example detail with per-definition stats
+export type ExampleDetailResponse = components["schemas"]["ExampleDetailResponse"];
+export type DefinitionStatsForExample = components["schemas"]["DefinitionStatsForExample"];
+
+export async function fetchExampleDetail(snapshotSlug: string, exampleKind: ExampleKind, filesHash: string | null) {
+  const { data, error } = await api.GET("/api/stats/examples", {
+    params: {
+      query: {
+        snapshot_slug: snapshotSlug,
+        example_kind: exampleKind,
+        ...(filesHash ? { files_hash: filesHash } : {}),
+      },
+    },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch example detail"));
+  return data;
+}
+
+// --- Overview ---
+export type OverviewResponse = components["schemas"]["OverviewResponse"];
+
+// --- Ground truth snapshots ---
+export type SnapshotsResponse = components["schemas"]["SnapshotsListResponse"];
+export type SnapshotSummary = components["schemas"]["SnapshotSummary"];
+export type SnapshotDetailResponse = components["schemas"]["SnapshotDetailResponse"];
+export type TpInfo = components["schemas"]["TpInfo"];
+export type FpInfo = components["schemas"]["FpInfo"];
+export type OccurrenceInfo = components["schemas"]["OccurrenceInfo"];
+export type ReportedIssueInfo = components["schemas"]["ReportedIssueInfo"];
+export type ReportedIssueOccurrenceInfo = components["schemas"]["ReportedIssueOccurrenceInfo"];
+export type LocationAnchor = components["schemas"]["LocationAnchor"];
+
+// LLM request types
+export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];
+export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
+
+export async function fetchSnapshots() {
+  const { data, error } = await api.GET("/api/gt/snapshots");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
+  return data;
+}
+
+export async function fetchSnapshotDetail(
+  snapshotSlug: string,
+  exampleKind?: string,
+  filesHash?: string
+): Promise<SnapshotDetailResponse> {
+  const params = new URLSearchParams();
+  if (exampleKind) params.set("example_kind", exampleKind);
+  if (filesHash) params.set("files_hash", filesHash);
+  const qs = params.toString();
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}${qs ? "?" + qs : ""}`);
+}
+
+// File tree types (autogenerated from OpenAPI schema)
+export type FileTreeNode = components["schemas"]["FileTreeNode"];
+export type FileTreeResponse = components["schemas"]["FileTreeResponse"];
+export type FileContentResponse = components["schemas"]["FileContentResponse"];
+
+// Fetch snapshot file tree
+export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/tree`);
+}
+
+// Fetch file content from snapshot
+export async function fetchSnapshotFile(snapshotSlug: string, filePath: string): Promise<FileContentResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`);
+}
+
+// Fetch LLM requests for an agent run
+export async function fetchLLMRequests(runId: string) {
+  const { data, error } = await api.GET("/api/runs/{run_id}/llm_requests", {
+    params: { path: { run_id: runId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
+  return data;
+}
+
+// --- Clusters ---
+export type ClusterMemberResponse = components["schemas"]["ClusterMemberResponse"];
+export type ClusterResponse = components["schemas"]["ClusterResponse"];
+export type ClustersListResponse = components["schemas"]["ClustersListResponse"];
+
+export async function fetchSnapshotClusters(snapshotSlug: string): Promise<ClustersListResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`);
+}
+
+// --- Model metadata ---
+
+export type ModelMetadataInfo = components["schemas"]["ModelMetadataInfo"];
+
+export async function fetchModelMetadata() {
+  const { data, error } = await api.GET("/api/model_metadata");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch model metadata"));
+  return data;
+}
+
+// --- Stats: occurrence stats, distributions, coverage ---
+
+export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];
+export type OccurrenceStatsResponse = components["schemas"]["OccurrenceStatsResponse"];
+export type CoverageResponse = components["schemas"]["CoverageResponse"];
+export type CoverageExample = components["schemas"]["CoverageExample"];
+export type CoverageDefinition = components["schemas"]["CoverageDefinition"];
+export type CoverageCell = components["schemas"]["CoverageCell"];
+
+export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split) {
+  const { data, error } = await api.GET("/api/stats/occurrences", {
+    params: {
+      query: {
+        limit: 500,
+        sort_by: "mean_credit",
+        sort_dir: "asc",
+        ...(snapshotSlug ? { snapshot_slug: snapshotSlug } : {}),
+        ...(split ? { split } : {}),
+      },
+    },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch occurrence stats"));
+  return data;
+}
+
+export async function fetchCoverage(split: Split, limitDefinitions?: number) {
+  const { data, error } = await api.GET("/api/stats/coverage", {
+    params: { query: { split, ...(limitDefinitions ? { limit_definitions: limitDefinitions } : {}) } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch coverage"));
+  return data;
+}

@@ -1,0 +1,37 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "gitea_mirror_lib",
+    srcs = [
+        "launcher.py",
+        "server.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/enhanced",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//requests",
+    ],
+)
+
+py_binary(
+    name = "launcher",
+    srcs = ["launcher.py"],
+    deps = [":gitea_mirror_lib"],
+)
+
+py_test(
+    name = "test_server",
+    srcs = [
+        "conftest.py",
+        "test_server.py",
+    ],
+    deps = [
+        ":gitea_mirror_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
