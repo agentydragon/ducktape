@@ -457,14 +457,22 @@ fn find_matching_target_var_declarators(
             match_source = selector.match_source,
         ),
     };
+    let prepared = PreparedNeedle::new(needle, selector);
+    let prefilter = VarDeclaratorPrefilter::new(needle, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
+        if !prefilter.var_decl_can_match(candidate_var) {
+            continue;
+        }
         for declarator in &candidate_var.decls {
+            if !prefilter.declarator_can_match(declarator) {
+                continue;
+            }
             let candidate_item = module_item_for_single_var_declarator(item, declarator);
-            if !module_items_match(needle, &candidate_item, selector) {
+            if !prepared.matches(&candidate_item) {
                 continue;
             }
             let declared = declared_bindings_for_var_declarator(declarator);
@@ -504,14 +512,22 @@ fn find_matching_var_declarators(
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
+    let prepared = PreparedNeedle::new(needle, selector);
+    let prefilter = VarDeclaratorPrefilter::new(needle, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
+        if !prefilter.var_decl_can_match(candidate_var) {
+            continue;
+        }
         for declarator in &candidate_var.decls {
+            if !prefilter.declarator_can_match(declarator) {
+                continue;
+            }
             let candidate_item = module_item_for_single_var_declarator(item, declarator);
-            if !module_items_match(needle, &candidate_item, selector) {
+            if !prepared.matches(&candidate_item) {
                 continue;
             }
             let declared = declared_bindings_for_var_declarator(declarator);
@@ -535,6 +551,54 @@ fn find_matching_var_declarators(
         }
     }
     Ok(matches)
+}
+
+/// Cheap candidate prefilters for the per-declarator matching loops.
+/// Both `find_matching_var_declarators` paths clone a fresh
+/// single-declarator `ModuleItem` per candidate declarator before
+/// running the full structural match; these keys reject most
+/// candidates before that clone.
+struct VarDeclaratorPrefilter {
+    /// `var`/`let`/`const` of the needle's declaration. Both the
+    /// wildcard matcher (`match_var_decl`) and plain structural
+    /// equality require kind equality, so a kind mismatch can never
+    /// match — sound in every mode.
+    needle_kind: VarDeclKind,
+    /// The needle declarator's plain-`Ident` binding name, when the
+    /// match is exact (no wildcards, no alpha renaming). In that mode
+    /// equality requires the candidate declarator to bind the same
+    /// plain ident, so a name mismatch can never match. `None`
+    /// disables the name key (wildcards, alpha mode, or a
+    /// destructuring pattern).
+    needle_ident: Option<Atom>,
+}
+
+impl VarDeclaratorPrefilter {
+    fn new(needle: &ModuleItem, prepared: &PreparedNeedle) -> Self {
+        let needle_var = selector_single_var_declarator(needle)
+            .expect("caller checked the needle is a single-declarator var decl");
+        let needle_ident = (prepared.no_wildcards && !prepared.alpha)
+            .then(|| match &needle_var.decls[0].name {
+                Pat::Ident(ident) => Some(ident.id.sym.clone()),
+                _ => None,
+            })
+            .flatten();
+        Self {
+            needle_kind: needle_var.kind,
+            needle_ident,
+        }
+    }
+
+    fn var_decl_can_match(&self, candidate: &VarDecl) -> bool {
+        candidate.kind == self.needle_kind
+    }
+
+    fn declarator_can_match(&self, declarator: &VarDeclarator) -> bool {
+        let Some(needle_sym) = &self.needle_ident else {
+            return true;
+        };
+        matches!(&declarator.name, Pat::Ident(ident) if ident.id.sym == *needle_sym)
+    }
 }
 
 fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
@@ -633,16 +697,13 @@ fn find_matching_body_indices(
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
 ) -> Vec<usize> {
-    SyntaxContext::within_ignored_ctxt(|| {
-        runtime_module
-            .body
-            .iter()
-            .enumerate()
-            .filter_map(|(body_idx, item)| {
-                module_items_match(needle, item, selector).then_some(body_idx)
-            })
-            .collect()
-    })
+    let prepared = PreparedNeedle::new(needle, selector);
+    runtime_module
+        .body
+        .iter()
+        .enumerate()
+        .filter_map(|(body_idx, item)| prepared.matches(item).then_some(body_idx))
+        .collect()
 }
 
 fn find_matching_body_ranges(
@@ -653,49 +714,132 @@ fn find_matching_body_ranges(
     if needles.is_empty() || needles.len() > runtime_module.body.len() {
         return Vec::new();
     }
+    let prepared: Vec<PreparedNeedle> = needles
+        .iter()
+        .map(|needle| PreparedNeedle::new(needle, selector))
+        .collect();
     runtime_module
         .body
         .windows(needles.len())
         .enumerate()
         .filter_map(|(body_idx, candidates)| {
-            needles
+            prepared
                 .iter()
                 .zip(candidates)
-                .all(|(needle, candidate)| module_items_match(needle, candidate, selector))
+                .all(|(needle, candidate)| needle.matches(candidate))
                 .then_some(body_idx)
         })
         .collect()
 }
 
-fn module_items_match(
-    needle: &ModuleItem,
-    candidate: &ModuleItem,
-    selector: &AnonymousStatementSelector,
-) -> bool {
-    SyntaxContext::within_ignored_ctxt(|| {
-        let wildcard_idents = wildcard_ident_names(needle);
-        let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
-        if selector.wildcard_string_literals.is_empty() && wildcard_idents.is_empty() {
-            // No wildcards: plain structural equality. Without wildcards
-            // the two trees have identical shape, so global
-            // alpha-canonicalization cannot desync — keep that cheap path.
-            if alpha {
-                let mut needle = needle.clone();
-                let mut candidate = candidate.clone();
-                needle.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
-                candidate.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
-                return needle.eq_ignore_span(&candidate);
+/// Needle-derived matching state hoisted out of the per-candidate
+/// loops. The previous `module_items_match` recomputed the needle's
+/// wildcard-ident set — and, in alpha mode without wildcards, cloned
+/// and re-canonicalized BOTH trees — once per candidate comparison;
+/// the needle side of that work is invariant across candidates.
+struct PreparedNeedle<'a> {
+    needle: &'a ModuleItem,
+    selector: &'a AnonymousStatementSelector,
+    wildcard_idents: WildcardIdents,
+    alpha: bool,
+    /// Neither string-literal nor syntactic-hole wildcards present —
+    /// the plain structural-equality fast path applies.
+    no_wildcards: bool,
+    /// The needle pre-canonicalized once for the no-wildcard alpha
+    /// path (`None` otherwise).
+    canonical_needle: Option<ModuleItem>,
+}
+
+impl<'a> PreparedNeedle<'a> {
+    fn new(needle: &'a ModuleItem, selector: &'a AnonymousStatementSelector) -> Self {
+        SyntaxContext::within_ignored_ctxt(|| {
+            let wildcard_idents = wildcard_ident_names(needle);
+            let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
+            let no_wildcards =
+                selector.wildcard_string_literals.is_empty() && wildcard_idents.is_empty();
+            let canonical_needle = (no_wildcards && alpha).then(|| {
+                let mut canonical = needle.clone();
+                canonical.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
+                canonical
+            });
+            Self {
+                needle,
+                selector,
+                wildcard_idents,
+                alpha,
+                no_wildcards,
+                canonical_needle,
             }
-            return needle.eq_ignore_span(candidate);
+        })
+    }
+
+    fn matches(&self, candidate: &ModuleItem) -> bool {
+        SyntaxContext::within_ignored_ctxt(|| {
+            if self.no_wildcards {
+                // No wildcards: plain structural equality. The cheap
+                // shape prefilter rejects most candidates before the
+                // alpha path's per-candidate clone + canonicalize.
+                if !no_wildcard_shape_prefilter(self.needle, candidate) {
+                    return false;
+                }
+                // Without wildcards the two trees have identical shape,
+                // so global alpha-canonicalization cannot desync — keep
+                // that cheap path.
+                if let Some(canonical_needle) = &self.canonical_needle {
+                    let mut candidate = candidate.clone();
+                    candidate
+                        .visit_mut_with(&mut AlphaIdentCanonicalizer::new(&self.wildcard_idents));
+                    return canonical_needle.eq_ignore_span(&candidate);
+                }
+                return self.needle.eq_ignore_span(candidate);
+            }
+            // Wildcards present: the structural matcher tracks an identifier
+            // bijection for alpha mode (see `AstWildcardMatcher::alpha`), so
+            // holes that absorb identifier-bearing subtrees don't desync the
+            // identifiers after them — and it walks borrowed trees with no
+            // per-comparison clone + canonicalize.
+            AstWildcardMatcher::new(self.selector, &self.wildcard_idents, self.alpha)
+                .match_module_item(self.needle, candidate)
+        })
+    }
+}
+
+/// Cheap top-level shape check, sound only in **no-wildcard** mode
+/// (where matching is structural equality): a `false` return proves
+/// the full comparison cannot succeed. Compares the item/statement/
+/// declaration discriminants and, for variable declarations, the
+/// `var`/`let`/`const` kind and declarator count.
+fn no_wildcard_shape_prefilter(needle: &ModuleItem, candidate: &ModuleItem) -> bool {
+    fn decl_shape(n: &Decl, c: &Decl) -> bool {
+        if std::mem::discriminant(n) != std::mem::discriminant(c) {
+            return false;
         }
-        // Wildcards present: the structural matcher tracks an identifier
-        // bijection for alpha mode (see `AstWildcardMatcher::alpha`), so
-        // holes that absorb identifier-bearing subtrees don't desync the
-        // identifiers after them — and it walks borrowed trees with no
-        // per-comparison clone + canonicalize.
-        AstWildcardMatcher::new(selector, &wildcard_idents, alpha)
-            .match_module_item(needle, candidate)
-    })
+        match (n, c) {
+            (Decl::Var(nv), Decl::Var(cv)) => {
+                nv.kind == cv.kind && nv.decls.len() == cv.decls.len()
+            }
+            _ => true,
+        }
+    }
+    match (needle, candidate) {
+        (ModuleItem::Stmt(n), ModuleItem::Stmt(c)) => {
+            std::mem::discriminant(n) == std::mem::discriminant(c)
+                && match (n, c) {
+                    (Stmt::Decl(nd), Stmt::Decl(cd)) => decl_shape(nd, cd),
+                    _ => true,
+                }
+        }
+        (ModuleItem::ModuleDecl(n), ModuleItem::ModuleDecl(c)) => {
+            std::mem::discriminant(n) == std::mem::discriminant(c)
+                && match (n, c) {
+                    (ModuleDecl::ExportDecl(ne), ModuleDecl::ExportDecl(ce)) => {
+                        decl_shape(&ne.decl, &ce.decl)
+                    }
+                    _ => true,
+                }
+        }
+        _ => false,
+    }
 }
 
 #[derive(Clone, Default)]

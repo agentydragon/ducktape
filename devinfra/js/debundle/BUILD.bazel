@@ -256,6 +256,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_hints.rs",
+        "analysis_tests/factorization_validation.rs",
         "analysis_tests/mod.rs",
         "atomic_units.rs",
         "chunk_analysis.rs",
@@ -325,6 +326,7 @@ rust_library(
     deps = [
         ":analysis",
         ":spec",
+        "@crates//:swc_atoms",
     ],
 )
 
@@ -397,11 +399,9 @@ rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
-        "peel/factorize_tests.rs",
         "peel/mod.rs",
         "peel/plan.rs",
         "peel/quotient.rs",
-        "peel/test_utils.rs",
         "peel/topo_order.rs",
     ],
     crate_root = "peel/mod.rs",

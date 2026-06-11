@@ -5,6 +5,8 @@ use swc_common::{FileName, SyntaxContext, sync::Lrc};
 use swc_ecma_ast::*;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
+mod factorization_validation;
+
 /// Construct an `Id` for a test fixture binding using
 /// `SyntaxContext::empty()`. Real chunks would use the chunk's
 /// `top_level_mark` via `ids::top_level_id`, but tests don't run

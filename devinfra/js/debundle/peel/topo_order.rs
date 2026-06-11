@@ -65,9 +65,11 @@
 //!   classes with `ord` in `(ord[lo], ord[hi]]` that are reachable
 //!   from `lo`. Strictly bounded by `|{v : ord[v] ≤ ord[hi]}|`,
 //!   typically much smaller than the cone.
-//! - `apply_contract(winner, loser)`: `O(|Δ_b|)` where `Δ_b` is the
-//!   set of pre-loser predecessors with `ord ∈ [ord[winner],
-//!   ord[loser])`.
+//! - `apply_contract(winner, loser)`: `O(|W| + |E_W|)` where `W` is
+//!   the set of live classes with `ord ∈ [ord[lo], ord[hi]]` (the
+//!   affected rank window) and `E_W` the edges among them — the
+//!   implementation re-runs Kahn's over the whole window, not just
+//!   PK's `Δ_f ∪ Δ_b` subset.
 //!
 //! All costs are bounded by the affected region, not the whole
 //! reachable cone — that's the win.
@@ -131,11 +133,12 @@ fn constraining_ins<'a>(
 ///
 /// When the underlying class graph contains cycles, the topological
 /// order is **not** a valid ordering (no such ordering exists). In
-/// that case, the `is_dag` flag is set to `false` and
-/// `would_create_cycle` rejects the fast-path and signals the caller
-/// to use the slow fallback. Once a sequence of merges restores the
-/// DAG property (no more `cached_cycles`), the caller can call
-/// `init_from_dag` again to re-establish a valid order.
+/// that case the `is_dag` flag is `false`, callers must route cycle
+/// checks through their slow fallback instead of
+/// `would_create_cycle` (which debug-asserts `is_dag`), and the
+/// kernel re-attempts `init_from_dag` after each committed
+/// contraction until the DAG property is restored (see
+/// `QuotientGraph::merge_classes_unchecked`).
 #[derive(Debug, Clone)]
 pub(super) struct TopoOrder {
     /// `ord[c.0]` is the topological rank of class `c`. Lower ranks
@@ -157,10 +160,11 @@ pub(super) struct TopoOrder {
     pos_to_class: Vec<Option<ClassId>>,
     /// `true` iff `ord` is a valid topological order over the live
     /// classes. Set by `init_from_dag` based on whether Kahn's
-    /// visited every live node. Reset to `false` by
-    /// `mark_potentially_cyclic` (defensive — called by partition-
-    /// driven mutations that bypass `apply_contract`). Cleared back
-    /// to `true` by a successful re-init.
+    /// visited every live node. Reset to `false` by `apply_contract`
+    /// when the post-merge window contains a cycle (gate-bypassing
+    /// contractions — e.g. seed merges via `merge_classes_unchecked`
+    /// — can legally create one). Cleared back to `true` by a
+    /// successful re-init.
     is_dag: bool,
     /// Per-DFS visited marker. `visited_epoch[c.0] == current_epoch`
     /// iff `c` was reached in the current `would_create_cycle` call.
@@ -316,12 +320,21 @@ impl TopoOrder {
     /// the **out-neighborhood** of `lo` (excluding `hi` itself, to
     /// skip the direct edge), pruned to nodes with `ord ≤ ord[hi]`.
     /// If `hi` is reached, the merge would create a cycle.
+    ///
+    /// Caller contract: only valid while `is_dag()` — the ord-window
+    /// pruning is meaningless on an arbitrary order, so callers must
+    /// route through the slow cone-DFS fallback when degraded.
     pub(super) fn would_create_cycle(
         &mut self,
         c1: ClassId,
         c2: ClassId,
         out_edges: &[FxHashMap<ClassId, EdgeState>],
     ) -> bool {
+        debug_assert!(
+            self.is_dag,
+            "would_create_cycle called while the order is degraded (!is_dag); \
+             use the cone-DFS fallback"
+        );
         if c1 == c2 {
             return false;
         }
@@ -381,8 +394,11 @@ impl TopoOrder {
     /// Update the topological order after committing a contraction.
     /// The merge has just happened in the parent kernel: `loser` has
     /// been emptied and its incident edges relabeled to `winner` in
-    /// the class adjacency. The caller MUST have verified the merge
-    /// is safe via `would_create_cycle` first.
+    /// the class adjacency. Gated callers verify safety via
+    /// `would_create_cycle` first; gate-bypassing contractions
+    /// (partition seeding) may commit a cycle-creating merge, in
+    /// which case the order degrades to `is_dag = false` instead of
+    /// staying valid.
     ///
     /// `out_edges` / `in_neighbors` reflect the **post-merge** class
     /// adjacency (with loser already removed). The function reorders
@@ -530,13 +546,34 @@ impl TopoOrder {
                 queue.push(n);
             }
         }
-        assert_eq!(
-            visited,
-            window_classes.len(),
-            "apply_contract: window subgraph has a cycle (visited {} of {})",
-            visited,
-            window_classes.len()
-        );
+        if visited < window_classes.len() {
+            // The post-merge window subgraph contains a cycle. This is
+            // reachable input, not a bug: gate-bypassing contractions
+            // (partition seeding via `merge_classes_unchecked`) may
+            // legally merge a cycle-creating group. No valid
+            // topological order exists, so degrade: give the
+            // cycle-bound classes arbitrary consecutive ranks (keeping
+            // `ord`/`pos_to_class` well-formed) and mark `is_dag =
+            // false` so cycle checks fall back to the slow cone-DFS.
+            // A later `init_from_dag` re-establishes the fast path
+            // once the graph is a DAG again.
+            self.is_dag = false;
+            let placed: FxHashSet<ClassId> = self.pos_to_class[lo_idx..lo_idx + visited]
+                .iter()
+                .copied()
+                .flatten()
+                .collect();
+            for c in window_classes
+                .iter()
+                .copied()
+                .filter(|c| !placed.contains(c))
+            {
+                self.ord[c.0] = new_ord;
+                self.pos_to_class[new_ord as usize] = Some(c);
+                new_ord += 1;
+                visited += 1;
+            }
+        }
         // The window had `hi_ord - lo_ord + 1` slots; we filled the
         // first `window_classes.len()` (which equals `visited`),
         // leaving one trailing slot (the loser's rank vacated the
@@ -1124,6 +1161,52 @@ mod tests {
                 assert_pos_to_class_inverse(&t, &alive);
             }
         }
+    }
+
+    #[test]
+    fn init_from_dag_on_cyclic_graph_degrades_instead_of_panicking() {
+        // 0 → 1 → 2 → 0 is a cycle; no valid topological order
+        // exists. init_from_dag must mark !is_dag (so the kernel
+        // falls back to the cone-DFS) while keeping `ord` a total,
+        // well-formed function over the live classes.
+        let (out, in_) = adj(4, &[(0, 1), (1, 2), (2, 0), (2, 3)]);
+        let mut t = TopoOrder::empty();
+        t.init_from_dag(4, (0..4).map(cid), &out, &in_);
+        assert!(!t.is_dag());
+        assert_eq!(t.live_count(), 4);
+        let alive: BTreeSet<ClassId> = (0..4).map(cid).collect();
+        assert_pos_to_class_inverse(&t, &alive);
+    }
+
+    #[test]
+    fn apply_contract_under_gate_bypass_cycle_degrades_instead_of_panicking() {
+        // Gate-bypassing seed merges (`merge_classes_unchecked` on a
+        // cycle-creating group) commit contractions WITHOUT a
+        // would_create_cycle check. 0 → 1 → 2 → 3; merging 0 and 3
+        // relabels 2 → 3 into 2 → 0, closing the cycle 0 → 1 → 2 → 0.
+        // The window Kahn cannot complete; apply_contract must
+        // degrade to !is_dag instead of asserting (the old release
+        // panic).
+        let (mut out, mut in_) = adj(4, &[(0, 1), (1, 2), (2, 3)]);
+        let mut t = TopoOrder::empty();
+        t.init_from_dag(4, (0..4).map(cid), &out, &in_);
+        assert!(t.is_dag());
+        // Kernel-side adjacency relabel: loser 3's incoming edge
+        // (2, 3) becomes (2, 0).
+        remove_edge(&mut out, &mut in_, cid(2), cid(3));
+        add_edge(&mut out, &mut in_, cid(2), cid(0));
+        t.apply_contract(cid(0), cid(3), &out, &in_);
+        assert!(!t.is_dag(), "cycle-creating contract must degrade");
+        assert!(t.rank_of(cid(3)).is_none(), "loser is dead");
+        // ord stays a well-formed inverse pair even while degraded.
+        let alive: BTreeSet<ClassId> = (0..3).map(cid).collect();
+        assert_pos_to_class_inverse(&t, &alive);
+        // Recovery: once the adjacency is a DAG again, re-init
+        // restores the fast path.
+        remove_edge(&mut out, &mut in_, cid(2), cid(0));
+        t.init_from_dag(4, (0..3).map(cid), &out, &in_);
+        assert!(t.is_dag());
+        t.validate(&out).expect("recovered order is valid");
     }
 
     #[test]

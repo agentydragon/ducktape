@@ -1,44 +1,22 @@
+//! Factorization-validation tests: cycle detection, realizability,
+//! and purity interplay through `validate_factorization` over real
+//! parsed chunks. They exercise the analysis crate's
+//! `chunk_factorization`, `validation`, and purity machinery (the
+//! file lived at `peel/factorize_tests.rs` historically, but never
+//! tested `peel::factorize`).
+
 use std::collections::{BTreeSet, HashMap};
 
-use analysis::*;
-use swc_common::{FileName, SyntaxContext, sync::Lrc};
-use swc_ecma_ast::{Id, Module};
+use super::{analyze_facts, parse, test_id};
+use crate::*;
+use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
-/// Test helper mirroring the one in `analysis_tests/mod.rs`.
-/// Provided here because the `logical` free function is not
-/// part of the `analysis` crate's public API — it is a test-only
-/// convenience for constructing `ModuleId` values from a raw
-/// logical index.
+/// Test-only convenience for constructing `ModuleId` values from a
+/// raw logical index (the `logical` free function is not part of the
+/// crate's public API).
 fn logical(idx: usize) -> ModuleId {
     ModuleId::logical(idx)
-}
-
-/// Construct an `Id` for a test fixture binding using
-/// `SyntaxContext::empty()`. Real chunks would use the chunk's
-/// `top_level_mark` via `ids::top_level_id`, but tests don't run
-/// through resolver so they use the empty context uniformly.
-fn test_id(name: &str) -> Id {
-    (name.into(), SyntaxContext::empty())
-}
-
-fn parse(source: &str) -> Module {
-    let cm: Lrc<swc_common::SourceMap> = Default::default();
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    Parser::new_from(lexer).parse_module().unwrap()
-}
-
-fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_chunk(module, &AnalysisHints::default(), None, |_| None).facts
 }
 
 /// logical module always sits at the highest index appended by

@@ -96,10 +96,10 @@ Use the factorizer to surface what's currently extractable:
 
 1. **`debundle modules propose --format json > proposals.json`** —
    factorizer proposals + diagnostics derived from the atomic DAG.
-2. **Skim the diagnostics.** Each diagnostic explains why a closed
-   atomic-DAG set could not become a `peelable_now` proposal
-   (oversized, blocked by an active module, residual-dependency
-   leak).
+2. **Skim the diagnostics.** Each diagnostic carries a `reason`
+   explaining why a closed atomic-DAG set could not become a proposal
+   (currently `exceeds_size_cap`: the spec edit is larger than
+   `--size-cap-lines`).
 3. **Apply reviewed binding-only proposals** (see the move workflow
    below). `bindings assign --batch` accepts selected proposal objects
    when every selected row maps to member moves: `landable_today: true`,

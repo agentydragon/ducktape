@@ -19,11 +19,12 @@ use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand};
+use peel::factorize::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
-    PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
+    PeelArgs, PeelCommand, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
     resolve_binding_owners, run_explain_report, run_graph_summary_report, run_patch_plan_report,
-    run_peel, run_plan_work_report, run_source_slice_report, run_units_report,
+    run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
 use selector_debt::{SelectorDebtReport, compute_selector_debt, render_selector_debt_text};
@@ -449,7 +450,7 @@ pub struct DescribeArgs {
     pub common: PeelCommonArgs,
 
     /// Hard line ceiling used when resolving proposal-id references.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Maximum number of rows to emit per report section. Zero means unlimited.
@@ -481,7 +482,7 @@ pub struct ShowSourceArgs {
     pub common: PeelCommonArgs,
 
     /// Hard line ceiling used when resolving proposal-id references.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Extra source lines around the selected owner span.
@@ -559,6 +560,61 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // hide them since `main.rs` prints only the top context.
         DebundleCommand::Gate(args) => run_gate_cli(args),
     }
+}
+
+/// Dispatch the deprecated `debundle peel <verb>` aliases. Each alias
+/// delegates to the same report + renderer pair as its replacement
+/// verb, so `--format` (and the tty default) behaves identically —
+/// the aliases previously ignored the flag and always printed JSON.
+fn run_peel(args: PeelArgs) -> Result<()> {
+    match args.command {
+        PeelCommand::PlanWork(args) => {
+            deprecation_notice("peel plan-work", "modules propose");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_plan_work_report(&args)?;
+            print_report(&report, format, render_plan_work_text).context("writing plan-work output")
+        }
+        PeelCommand::Units(args) => {
+            deprecation_notice("peel units", "atoms");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_units_report(&args)?;
+            print_report(&report, format, render_units_text).context("writing units output")
+        }
+        PeelCommand::PatchPlan(args) => {
+            deprecation_notice("peel patch-plan", "coverage");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_patch_plan_report(&args)?;
+            print_report(&report, format, render_patch_plan_text)
+                .context("writing patch-plan output")
+        }
+        PeelCommand::Explain(args) => {
+            deprecation_notice("peel explain", "describe <id>");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_explain_report(&args)?;
+            print_report(&report, format, render_explain_text).context("writing explain output")
+        }
+        PeelCommand::SourceSlice(args) => {
+            deprecation_notice("peel source-slice", "show-source <id>");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_source_slice_report(&args)?;
+            print_report(&report, format, render_source_slice_text)
+                .context("writing source-slice output")
+        }
+        PeelCommand::GraphSummary(args) => {
+            deprecation_notice("peel graph-summary", "graph-summary");
+            let format = OutputFormat::resolve(args.format);
+            let report = run_graph_summary_report(&args)?;
+            print_report(&report, format, render_graph_summary_text)
+                .context("writing graph-summary output")
+        }
+    }
+}
+
+fn deprecation_notice(old: &str, new: &str) {
+    eprintln!(
+        "warning: `debundle {old}` is deprecated; use `debundle {new}` instead. The `peel` \
+         namespace will be removed in a future release."
+    );
 }
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
@@ -1324,6 +1380,12 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             out.push_str(&format!("    {} -> {}\n", home.binding, home.path));
         }
     }
+    if !report.unknown_binding_ids.is_empty() {
+        out.push_str(&format!(
+            "  unknown bindings (claimed but absent from owner graph): {}\n",
+            report.unknown_binding_ids.join(", ")
+        ));
+    }
     out.push_str(&format!("  atomic_units: {}\n", report.atomic_units.len()));
     out.push_str(&format!(
         "  incoming_edges: {}, outgoing_edges: {}\n",
@@ -1541,6 +1603,7 @@ mod tests {
             incoming_atomic_edges: vec![],
             outgoing_atomic_edges: vec![],
             quotient_edges: vec![],
+            unknown_binding_ids: vec![],
             factorize_proposals: None,
             factorize_diagnostics: None,
             limits: None,

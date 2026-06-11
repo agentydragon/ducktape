@@ -1531,14 +1531,22 @@ queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `show-source`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
 
-`debundle modules propose` computes proposal owner sets with three statuses:
+`debundle modules propose` labels each proposal owner set with a status:
 
-- **`peelable_now`** — this closed atomic-DAG owner set is currently usable
-  as an authoring proposal.
-- **`blocked_cycle`** — the proposal conflicts with active module ownership
-  or would otherwise create an invalid assignment.
-- **`blocked_residual_dependency`** — the proposal exceeds the configured
-  cap or leaves a required residual dependency outside the closed set.
+- **`peelable_now`** — this closed atomic-DAG owner set has no outgoing
+  constraining edges into other residual cells; it can be promoted on
+  its own.
+- **`blocked_residual_dependency`** — the cell reads other residual
+  cells (`edges_to_other_residual_cells > 0`); promoting it alone would
+  route those reads through `residual_entry`, so the referenced cells
+  must land first or together.
+- **`blocked_cycle`** is reserved vocabulary that is currently
+  unreachable: the quotient's contraction gate refuses cycle-creating
+  merges, so no emitted class is cyclic by construction.
+
+Classes whose spec-edit size exceeds `--size-cap-lines` are not
+proposals at all — they surface as diagnostics with reason
+`exceeds_size_cap`.
 
 The important invariant is that the proposal queue is a projection over
 `atomic_graph`, not a separate fact emitted by the transform pipeline.

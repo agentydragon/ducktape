@@ -58,6 +58,11 @@ use crate::quotient::{
     build_seed_quotient, greedy_merge_to_convergence,
 };
 
+/// Default `--size-cap-lines` for every CLI verb that runs the
+/// factorizer. One named constant so the planner verbs and the
+/// internal rebuild paths can't drift apart.
+pub const DEFAULT_SIZE_CAP_LINES: usize = 10_000;
+
 #[derive(Debug, Clone)]
 pub struct PeelFactorizeOptions {
     pub owner_graph_path: PathBuf,
@@ -158,10 +163,6 @@ pub struct FactorizeProposal {
     /// Active module paths this cell's outgoing constraining edges
     /// target (deduplicated).
     pub active_modules_referenced: Vec<String>,
-    /// Should be empty for certified proposals. Kept for defensive
-    /// compatibility with older reports.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cycle_blocker_owner_ids: Vec<String>,
     /// Anonymous owners that the proposer cannot turn into stable
     /// `anonymous_statements:` selectors. The proposal stays visible
     /// for architectural review, but is not directly feedable to a
@@ -173,6 +174,14 @@ pub struct FactorizeProposal {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub landability_notes: Vec<String>,
     /// Proposal verdict for this closed atomic-unit owner set.
+    /// `PeelableNow` when the cell has no outgoing edges into other
+    /// residual cells; `BlockedResidualDependency` when it does
+    /// (promoting it alone would route reads through
+    /// `residual_entry`, which the cycle gate rejects — the
+    /// referenced cells must land first or together).
+    /// `BlockedCycle` is currently unreachable here: the quotient's
+    /// contraction gate refuses cycle-creating merges, so no emitted
+    /// class is cyclic by construction.
     pub status: PeelCandidateStatus,
     /// `true` for atomic-DAG-closed proposal cells.
     pub landable_today: bool,
@@ -197,6 +206,11 @@ pub struct FactorizeProposal {
     pub merge_into: Option<Vec<String>>,
 }
 
+/// A class the factorizer cannot turn into a proposal. `reason` is
+/// the discriminator; there is deliberately no `status` field — the
+/// old one was a write-only constant that paired
+/// `BlockedResidualDependency` with every reason, including
+/// `ExceedsSizeCap`, and nothing read it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FactorizeDiagnosticReport {
     pub diagnostic_id: String,
@@ -206,14 +220,7 @@ pub struct FactorizeDiagnosticReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
-    pub status: PeelCandidateStatus,
     pub reason: FactorizeDiagnosticReason,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cycle_blocker_owner_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub active_modules_referenced: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends_module_id: Option<String>,
 }
 
 pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
@@ -222,10 +229,21 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
             .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
+    analyze_peel_factorize_on_graph(&graph, options)
+}
+
+/// [`analyze_peel_factorize`] for callers that already hold the parsed
+/// `OwnerGraphReport`. The planner verbs load the graph once for their
+/// own report sections; re-reading `owner_graph_path` here would parse
+/// the same multi-megabyte JSON a second time per command.
+pub fn analyze_peel_factorize_on_graph(
+    graph: &OwnerGraphReport,
+    options: &PeelFactorizeOptions,
+) -> Result<PeelFactorizeReport> {
     let claims = load_active_claims(&options.modules_root)?;
     let addressable_anonymous_owner_ids = if options.source_root.is_some() {
         Some(addressable_anonymous_statement_owner_ids(
-            &graph,
+            graph,
             &options.owner_graph_path,
             &options.modules_root,
             options.source_root.as_deref(),
@@ -234,7 +252,7 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
         None
     };
     factorize_with_context(
-        &graph,
+        graph,
         &claims,
         options.size_cap_lines,
         FactorizeContext {
@@ -357,7 +375,8 @@ fn factorize_with_context(
         size_cap_lines,
         &context,
     );
-    let diagnostics = collect_size_cap_diagnostics(&quotient, graph, size_cap_lines);
+    let diagnostics =
+        collect_size_cap_diagnostics(&quotient, &class_to_labels, graph, size_cap_lines);
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
@@ -446,6 +465,38 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
         .unwrap_or(0)
 }
 
+/// The line count the size cap (and `size_lines_estimate`) measures
+/// for a class, matching the spec edit the proposal would perform:
+///
+/// - Unlabeled (fresh-module) class: every owner lands in the new
+///   module, so the whole class counts (`class_lines`).
+/// - Labeled (extension / merge) class: the edit only ADDS the
+///   residual-origin owners to already-active modules, so only those
+///   additions count. Measuring the whole class here would reject a
+///   10-line extension to a 600-line module as "600 lines".
+fn class_proposal_lines(
+    quotient: &QuotientGraph,
+    graph: &OwnerGraphReport,
+    c: ClassId,
+    is_extension: bool,
+) -> usize {
+    if !is_extension {
+        return quotient.class_lines(c);
+    }
+    quotient
+        .class_members(c)
+        .filter(|o| graph.is_residual(&graph.nodes[o.0].destination))
+        .map(|o| owner_line_count(&graph.nodes[o.0]))
+        .sum()
+}
+
+/// `true` when `class_to_labels` marks `c` as carrying at least one
+/// pre-existing-module label (i.e. the class is an extension or merge,
+/// not a fresh module).
+fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c: ClassId) -> bool {
+    class_to_labels.get(&c).is_some_and(|s| !s.is_empty())
+}
+
 /// Render the quotient's surviving (non-empty, non-residual-only)
 /// classes into proposals.
 ///
@@ -508,8 +559,13 @@ fn emit_proposals(
 
     // Classes that exceed the size cap aren't proposals — they
     // surface as diagnostics. Filter them out here so they don't
-    // count toward the `auto_partition_NNNN` numbering.
-    candidate_classes.retain(|c| quotient.class_lines(*c) <= size_cap_lines);
+    // count toward the `auto_partition_NNNN` numbering. The cap
+    // applies to the size of the spec edit, not the whole class —
+    // see `class_proposal_lines`.
+    candidate_classes.retain(|&c| {
+        class_proposal_lines(quotient, graph, c, class_has_labels(class_to_labels, c))
+            <= size_cap_lines
+    });
 
     // Owner-index → candidate_classes-position. Used by edge-
     // attribution to bucket cross-class edges by candidate id.
@@ -520,19 +576,45 @@ fn emit_proposals(
         }
     }
 
+    // Bucket every residual / active edge by source candidate in ONE
+    // pass. The previous shape re-scanned the full edge lists once per
+    // candidate (`O(candidates × edges)`), which dominated on large
+    // graphs.
+    let mut edge_stats: Vec<CandidateEdgeStats> = candidate_classes
+        .iter()
+        .map(|_| CandidateEdgeStats::default())
+        .collect();
+    for &(s, t) in residual_edges {
+        let (Some(&cs), Some(&ct)) = (owner_to_candidate.get(&s), owner_to_candidate.get(&t))
+        else {
+            continue;
+        };
+        if cs == ct {
+            edge_stats[cs].internal += 1;
+        } else {
+            edge_stats[cs].to_residual += 1;
+            edge_stats[cs].residual_targets.insert(ct);
+        }
+    }
+    for (source_owner, module_path) in active_edges {
+        if let Some(&cs) = owner_to_candidate.get(source_owner) {
+            edge_stats[cs].to_active += 1;
+            edge_stats[cs].active_targets.insert(module_path.clone());
+        }
+    }
+
     let mut proposals: Vec<FactorizeProposal> = candidate_classes
         .iter()
+        .zip(edge_stats)
         .enumerate()
-        .map(|(candidate_idx, &class_id)| {
+        .map(|(candidate_idx, (&class_id, edges))| {
             build_proposal(
                 candidate_idx,
                 class_id,
                 class_to_labels.get(&class_id),
                 quotient,
-                residual_edges,
-                active_edges,
+                edges,
                 graph,
-                &owner_to_candidate,
                 context,
             )
         })
@@ -587,13 +669,20 @@ fn emit_proposals(
     // Resolve cross-references once, from the candidate-index carrier to
     // the targets' final ids. Every target index is a live candidate
     // (it came from `owner_to_candidate`, which only maps candidate-
-    // class owners), so the lookup never misses; `expect` would be
-    // equally valid, but we keep the resolution total.
+    // class owners), so the lookup never misses — a miss would mean a
+    // dangling cross-reference, which is a bug worth crashing on.
     for proposal in out.iter_mut() {
         let mut referenced: Vec<String> = proposal
             .residual_target_candidate_idxs
             .iter()
-            .filter_map(|idx| final_id_for.get(idx).cloned())
+            .map(|idx| {
+                final_id_for
+                    .get(idx)
+                    .unwrap_or_else(|| {
+                        panic!("cross-reference target candidate {idx} has no final proposal id")
+                    })
+                    .clone()
+            })
             .collect();
         referenced.sort();
         referenced.dedup();
@@ -603,12 +692,33 @@ fn emit_proposals(
     out
 }
 
+/// Per-candidate edge attribution, bucketed in one pass over the
+/// residual / active edge lists by `emit_proposals`.
+#[derive(Debug, Default)]
+struct CandidateEdgeStats {
+    /// Constraining residual edges with both endpoints in this candidate.
+    internal: usize,
+    /// Constraining residual edges from this candidate into other
+    /// candidate classes.
+    to_residual: usize,
+    /// The target candidate indices of `to_residual` edges.
+    residual_targets: BTreeSet<usize>,
+    /// Constraining edges from this candidate into active-claimed modules.
+    to_active: usize,
+    /// The active module paths `to_active` edges target.
+    active_targets: BTreeSet<ModulePath>,
+}
+
 /// Build a `FactorizeDiagnosticReport(ExceedsSizeCap)` for every
-/// surviving class whose combined line count exceeds the cap. The
-/// pre-commit-4 cell pipeline computed this from cell closures; the
-/// new pipeline reads it from the post-greedy quotient.
+/// surviving class whose proposal size exceeds the cap. Uses the same
+/// `class_proposal_lines` measure as `emit_proposals`' cap filter, so
+/// a class is either a proposal or a size-cap diagnostic — never both,
+/// never neither. The pre-commit-4 cell pipeline computed this from
+/// cell closures; the new pipeline reads it from the post-greedy
+/// quotient.
 fn collect_size_cap_diagnostics(
     quotient: &QuotientGraph,
+    class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
 ) -> Vec<FactorizeDiagnosticReport> {
@@ -617,7 +727,9 @@ fn collect_size_cap_diagnostics(
         if quotient.class_is_residual(c) {
             continue;
         }
-        if quotient.class_lines(c) <= size_cap_lines {
+        if class_proposal_lines(quotient, graph, c, class_has_labels(class_to_labels, c))
+            <= size_cap_lines
+        {
             continue;
         }
         // Compose the diagnostic from the class's owners.
@@ -647,14 +759,15 @@ fn collect_size_cap_diagnostics(
             ),
             owner_ids,
             binding_ids: binding_ids.into_iter().collect(),
-            size_lines_estimate: quotient.class_lines(c),
+            size_lines_estimate: class_proposal_lines(
+                quotient,
+                graph,
+                c,
+                class_has_labels(class_to_labels, c),
+            ),
             source_line_range: line_range.into_array(),
             ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-            status: PeelCandidateStatus::BlockedResidualDependency,
             reason: FactorizeDiagnosticReason::ExceedsSizeCap,
-            cycle_blocker_owner_ids: Vec::new(),
-            active_modules_referenced: Vec::new(),
-            extends_module_id: None,
         });
     }
     diagnostics
@@ -696,16 +809,13 @@ fn compute_topo_depths(
     depths.into_iter().map(|d| d.unwrap_or(0)).collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_proposal(
     candidate_idx: usize,
     class_id: ClassId,
     labels: Option<&BTreeSet<ModulePath>>,
     quotient: &QuotientGraph,
-    residual_edges: &[(usize, usize)],
-    active_edges: &[(usize, ModulePath)],
+    edges: CandidateEdgeStats,
     graph: &OwnerGraphReport,
-    owner_to_candidate: &HashMap<usize, usize>,
     context: &FactorizeContext,
 ) -> FactorizeProposal {
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
@@ -761,39 +871,18 @@ fn build_proposal(
     owner_ids.sort();
     anonymous_owner_ids.sort();
 
-    let mut internal = 0usize;
-    let mut to_residual = 0usize;
-    let mut residual_targets: BTreeSet<usize> = BTreeSet::new();
-    for &(s, t) in residual_edges {
-        let (Some(&cs), Some(&ct)) = (owner_to_candidate.get(&s), owner_to_candidate.get(&t))
-        else {
-            continue;
-        };
-        if cs == candidate_idx && ct == candidate_idx {
-            internal += 1;
-        } else if cs == candidate_idx {
-            to_residual += 1;
-            residual_targets.insert(ct);
-        }
-    }
     // Carry the cross-class residual targets as candidate indices.
     // Resolving them to final `proposed_module_id`s here would be
     // wrong: the post-sort renumber rewrites fresh-module ids, and a
     // target candidate may itself be an `extend:`/`merge:` class whose
     // id is not `auto_partition_*`. `emit_proposals` resolves these
     // indices to each target's actual final id after id assignment.
-    let residual_target_candidate_idxs: Vec<usize> = residual_targets.into_iter().collect();
-
-    let mut to_active = 0usize;
-    let mut active_targets: BTreeSet<ModulePath> = BTreeSet::new();
-    for (source_owner, module_path) in active_edges {
-        if owner_to_candidate.get(source_owner) == Some(&candidate_idx) {
-            to_active += 1;
-            active_targets.insert(module_path.clone());
-        }
-    }
-    let active_modules_referenced: Vec<String> =
-        active_targets.iter().map(ModulePath::to_string).collect();
+    let residual_target_candidate_idxs: Vec<usize> = edges.residual_targets.into_iter().collect();
+    let active_modules_referenced: Vec<String> = edges
+        .active_targets
+        .iter()
+        .map(ModulePath::to_string)
+        .collect();
 
     let extension_owner_ids: Vec<String> = if is_extension {
         let mut ids: Vec<String> = owner_idxs
@@ -823,6 +912,14 @@ fn build_proposal(
         unaddressable_owner_ids,
         notes,
     } = anonymous_addressability(&owner_idxs, graph, context);
+    // Status reflects the cell-graph reality: outgoing constraining
+    // edges into other residual cells mean this cell cannot be
+    // promoted alone (the reads would route through residual_entry).
+    let status = if edges.to_residual > 0 {
+        PeelCandidateStatus::BlockedResidualDependency
+    } else {
+        PeelCandidateStatus::PeelableNow
+    };
     FactorizeProposal {
         proposed_module_id,
         owner_ids,
@@ -831,16 +928,15 @@ fn build_proposal(
         size_lines_estimate: size_lines,
         source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-        internal_edges: internal,
-        edges_to_other_residual_cells: to_residual,
+        internal_edges: edges.internal,
+        edges_to_other_residual_cells: edges.to_residual,
         other_residual_cells_referenced: Vec::new(),
         residual_target_candidate_idxs,
-        edges_to_active_modules: to_active,
+        edges_to_active_modules: edges.to_active,
         active_modules_referenced,
-        cycle_blocker_owner_ids: Vec::new(),
         unaddressable_anonymous_owner_ids: unaddressable_owner_ids,
         landability_notes: notes,
-        status: PeelCandidateStatus::PeelableNow,
+        status,
         landable_today: landable,
         extends_module_id,
         extension_owner_ids,
@@ -994,184 +1090,23 @@ fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_atoms::Atom;
-
-    use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleKey,
-        OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-        Purity, SourceLocation, StatementKind, StatementOrdinal,
+    use analysis::{DepKind, StatementKind};
+    use report_fixtures::{
+        active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_ref, no_claims, owner,
+        owner_edge, residual_owner,
     };
-
-    use super::super::test_utils;
-
-    fn owner(
-        id: &str,
-        ordinal_value: usize,
-        bindings: &[&str],
-        lines: usize,
-    ) -> OwnerGraphNodeReport {
-        owner_at(
-            id,
-            ordinal_value,
-            bindings,
-            lines,
-            test_utils::module_ref("residual"),
-        )
-    }
-
-    fn owner_in_active_module(
-        id: &str,
-        ordinal_value: usize,
-        bindings: &[&str],
-        lines: usize,
-        module_path: &str,
-    ) -> OwnerGraphNodeReport {
-        owner_at(
-            id,
-            ordinal_value,
-            bindings,
-            lines,
-            test_utils::module_ref(module_path),
-        )
-    }
-
-    fn owner_at(
-        id: &str,
-        ordinal_value: usize,
-        bindings: &[&str],
-        lines: usize,
-        destination: ModuleKey,
-    ) -> OwnerGraphNodeReport {
-        OwnerGraphNodeReport {
-            id: id.to_string(),
-            statement_ordinal: StatementOrdinal(ordinal_value),
-            source_location: Some(SourceLocation {
-                source_path: "x.js".to_string(),
-                start_line: ordinal_value * 100,
-                end_line: ordinal_value * 100 + lines.saturating_sub(1),
-            }),
-            declared_bindings: bindings.iter().map(|b| test_utils::binding(b)).collect(),
-            statement_kind: StatementKind::VarDecl,
-            purity: Purity::Pure,
-            destination,
-        }
-    }
-
-    fn edge(
-        id: &str,
-        source: &str,
-        target: &str,
-        kind: DepKind,
-        constrains: bool,
-    ) -> OwnerGraphEdgeReport {
-        edge_for_binding(id, source, target, kind, constrains, None)
-    }
-
-    fn edge_for_binding(
-        id: &str,
-        source: &str,
-        target: &str,
-        kind: DepKind,
-        constrains: bool,
-        binding: Option<&str>,
-    ) -> OwnerGraphEdgeReport {
-        OwnerGraphEdgeReport {
-            id: id.to_string(),
-            source: source.to_string(),
-            target: target.to_string(),
-            edge_kind: kind,
-            binding: binding.map(Atom::from),
-            statement_ordinal: StatementOrdinal(0),
-            constrains_init_order: constrains,
-            role: None,
-        }
-    }
-
-    fn unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
-        let mut owner_ids = Vec::new();
-        let mut members = Vec::new();
-        let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
-        let mut line_range = LineRange::new();
-        let mut min_ordinal = usize::MAX;
-        let mut max_ordinal = 0usize;
-        for owner in owners {
-            owner_ids.push(owner.id.clone());
-            members.extend(owner.declared_bindings.clone());
-            destinations.insert(owner.destination.clone(), owner.destination.clone());
-            if let Some(location) = &owner.source_location {
-                line_range.expand(location);
-            }
-            min_ordinal = min_ordinal.min(owner.statement_ordinal.0);
-            max_ordinal = max_ordinal.max(owner.statement_ordinal.0);
-        }
-        AtomicUnitReport {
-            id: id.to_string(),
-            owner_ids,
-            members,
-            anonymous_statement_owner_ids: Vec::new(),
-            destinations: destinations.into_values().collect(),
-            causes: Vec::new(),
-            size_lines_estimate: line_range.size_estimate(),
-            source_line_range: line_range.into_array(),
-            ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-        }
-    }
-
-    fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicUnitEdgeReport {
-        AtomicUnitEdgeReport {
-            id: id.to_string(),
-            source: source.to_string(),
-            target: target.to_string(),
-            edge_kinds: vec![DepKind::EagerUse],
-            owner_edge_ids: vec![id.replace("atomic", "edge")],
-            constrains_init_order: true,
-        }
-    }
-
-    fn graph_with_atomic_units(
-        nodes: Vec<OwnerGraphNodeReport>,
-        edges: Vec<OwnerGraphEdgeReport>,
-        atomic_units: Vec<AtomicUnitReport>,
-        atomic_edges: Vec<AtomicUnitEdgeReport>,
-    ) -> OwnerGraphReport {
-        // The module table is the single source of truth for path +
-        // residual; build it from the distinct owner destinations.
-        let module_nodes = test_utils::module_table(nodes.iter().map(|n| &n.destination));
-        OwnerGraphReport {
-            chunk_id: "x".to_string(),
-            nodes,
-            edges,
-            quotient: OwnerGraphQuotientReport {
-                nodes: module_nodes,
-                edges: vec![],
-                sccs: vec![],
-            },
-            atomic_graph: AtomicGraphReport {
-                nodes: atomic_units,
-                edges: atomic_edges,
-            },
-        }
-    }
-
-    fn no_claims() -> BTreeMap<String, ModulePath> {
-        BTreeMap::new()
-    }
-
-    fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
-        pairs
-            .iter()
-            .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
-            .collect()
-    }
 
     #[test]
     fn residual_atomic_units_become_singleton_proposals() {
-        let a = owner("a", 1, &["a"], 10);
-        let b = owner("b", 2, &["b"], 10);
-        let graph = graph_with_atomic_units(
+        let a = residual_owner("a", 1, &["a"], 10);
+        let b = residual_owner("b", 2, &["b"], 10);
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
             vec![],
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![],
         );
         let report = factorize(&graph, &no_claims(), 10_000).unwrap();
@@ -1203,13 +1138,16 @@ mod tests {
 
     #[test]
     fn outgoing_residual_atomic_edges_close_proposals() {
-        let a = owner("a", 1, &["a"], 10);
-        let b = owner("b", 2, &["b"], 10);
-        let edges = vec![edge("e1", "a", "b", DepKind::EagerUse, true)];
-        let graph = graph_with_atomic_units(
+        let a = residual_owner("a", 1, &["a"], 10);
+        let b = residual_owner("b", 2, &["b"], 10);
+        let edges = vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)];
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
             edges,
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
         let report = factorize(&graph, &no_claims(), 10_000).unwrap();
@@ -1223,13 +1161,16 @@ mod tests {
 
     #[test]
     fn edges_to_active_modules_count_outgoing_to_active_claims() {
-        let a = owner_in_active_module("a", 1, &["a"], 10, "ui/x");
-        let b = owner("b", 2, &["b"], 10);
-        let edges = vec![edge("e1", "b", "a", DepKind::EagerUse, true)];
-        let graph = graph_with_atomic_units(
+        let a = active_owner("a", 1, &["a"], 10, "ui/x");
+        let b = residual_owner("b", 2, &["b"], 10);
+        let edges = vec![owner_edge("e1", "b", "a", DepKind::EagerUse, true)];
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
             edges,
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
         let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
@@ -1272,26 +1213,26 @@ mod tests {
         // extension. The buggy emitter formatted that reference as
         // `auto_partition_<candidate_idx>` — an id no emitted proposal
         // carries — yielding a dangling reference.
-        let foo = owner_in_active_module("foo", 1, &["foo"], 10, "features/foo");
-        let baz = owner_in_active_module("baz", 2, &["baz"], 10, "features/baz");
-        let bridge = owner("bridge", 3, &["bridge"], 10);
-        let consumer = owner("consumer", 4, &["consumer"], 10);
-        let graph = graph_with_atomic_units(
+        let foo = active_owner("foo", 1, &["foo"], 10, "features/foo");
+        let baz = active_owner("baz", 2, &["baz"], 10, "features/baz");
+        let bridge = residual_owner("bridge", 3, &["bridge"], 10);
+        let consumer = residual_owner("consumer", 4, &["consumer"], 10);
+        let graph = graph_of(
             vec![foo.clone(), baz.clone(), bridge.clone(), consumer.clone()],
             vec![
                 // bridge depends on the `features/foo` module -> absorbed.
-                edge("e1", "bridge", "foo", DepKind::EagerUse, true),
+                owner_edge("e1", "bridge", "foo", DepKind::EagerUse, true),
                 // consumer depends on bridge (cross-class residual edge)
                 // and on the `features/baz` module (second module ->
                 // greedy refuses to absorb consumer).
-                edge("e2", "consumer", "bridge", DepKind::EagerUse, true),
-                edge("e3", "consumer", "baz", DepKind::EagerUse, true),
+                owner_edge("e2", "consumer", "bridge", DepKind::EagerUse, true),
+                owner_edge("e3", "consumer", "baz", DepKind::EagerUse, true),
             ],
             vec![
-                unit("atomic:0", &[&foo]),
-                unit("atomic:1", &[&baz]),
-                unit("atomic:2", &[&bridge]),
-                unit("atomic:3", &[&consumer]),
+                atomic_unit_for("atomic:0", &[&foo]),
+                atomic_unit_for("atomic:1", &[&baz]),
+                atomic_unit_for("atomic:2", &[&bridge]),
+                atomic_unit_for("atomic:3", &[&consumer]),
             ],
             // Only the bridge -> foo reachability edge. No
             // consumer -> bridge atomic edge: pass-3 must not fold
@@ -1364,27 +1305,18 @@ mod tests {
 
     #[test]
     fn merge_proposals_use_spec_module_labels_not_generated_target_files() {
-        let a = owner_at(
-            "a",
-            1,
-            &["a"],
-            10,
-            test_utils::module_ref("domains/system/ids"),
-        );
-        let b = owner_at(
-            "b",
-            2,
-            &["b"],
-            10,
-            test_utils::module_ref("domains/system/id_helpers"),
-        );
-        let graph = graph_with_atomic_units(
+        let a = owner("a", 1, &["a"], 10, module_ref("domains/system/ids"));
+        let b = owner("b", 2, &["b"], 10, module_ref("domains/system/id_helpers"));
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
             vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "a", DepKind::EagerUse, true),
+                owner_edge("e1", "a", "b", DepKind::EagerUse, true),
+                owner_edge("e2", "b", "a", DepKind::EagerUse, true),
             ],
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![],
         );
         let report = factorize(&graph, &no_claims(), 10_000).unwrap();
@@ -1414,16 +1346,19 @@ mod tests {
         // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
         // is now unrepresentable: the wire carries one interned key
         // and the table holds one canonical path.)
-        let dest = test_utils::module_ref("domains/system/ids");
-        let a = owner_at("a", 1, &["a"], 10, dest.clone());
-        let b = owner_at("b", 2, &["b"], 10, dest.clone());
-        let graph = graph_with_atomic_units(
+        let dest = module_ref("domains/system/ids");
+        let a = owner("a", 1, &["a"], 10, dest.clone());
+        let b = owner("b", 2, &["b"], 10, dest.clone());
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
             vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "a", DepKind::EagerUse, true),
+                owner_edge("e1", "a", "b", DepKind::EagerUse, true),
+                owner_edge("e2", "b", "a", DepKind::EagerUse, true),
             ],
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![],
         );
         let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
@@ -1444,11 +1379,11 @@ mod tests {
         // proposer must instead surface a clean `Err` so the CLI
         // (`debundle modules propose`) reports it through `anyhow`
         // rather than aborting.
-        let a = owner_at("a", 1, &["a"], 10, test_utils::module_ref("features/foo"));
-        let mut graph = graph_with_atomic_units(
+        let a = owner("a", 1, &["a"], 10, module_ref("features/foo"));
+        let mut graph = graph_of(
             vec![a.clone()],
             vec![],
-            vec![unit("atomic:0", &[&a])],
+            vec![atomic_unit_for("atomic:0", &[&a])],
             vec![],
         );
         // Drop the owner's destination from the module table to
@@ -1470,12 +1405,12 @@ mod tests {
 
     #[test]
     fn anonymous_import_export_proposals_stay_visible_but_not_landable() {
-        let mut import = owner("owner:import", 1, &[], 1);
+        let mut import = residual_owner("owner:import", 1, &[], 1);
         import.statement_kind = StatementKind::Import;
-        let graph = graph_with_atomic_units(
+        let graph = graph_of(
             vec![import.clone()],
             vec![],
-            vec![unit("atomic:0", &[&import])],
+            vec![atomic_unit_for("atomic:0", &[&import])],
             vec![],
         );
         let report = factorize(&graph, &no_claims(), 10_000).unwrap();
@@ -1500,12 +1435,12 @@ mod tests {
 
     #[test]
     fn full_ast_addressable_anonymous_proposals_remain_landable() {
-        let mut effect = owner("owner:effect", 1, &[], 1);
+        let mut effect = residual_owner("owner:effect", 1, &[], 1);
         effect.statement_kind = StatementKind::SideEffect;
-        let graph = graph_with_atomic_units(
+        let graph = graph_of(
             vec![effect.clone()],
             vec![],
-            vec![unit("atomic:0", &[&effect])],
+            vec![atomic_unit_for("atomic:0", &[&effect])],
             vec![],
         );
         let report = factorize_with_context(
@@ -1525,12 +1460,12 @@ mod tests {
 
     #[test]
     fn ambiguous_full_ast_anonymous_proposals_stay_visible_but_not_landable() {
-        let mut effect = owner("owner:effect", 1, &[], 1);
+        let mut effect = residual_owner("owner:effect", 1, &[], 1);
         effect.statement_kind = StatementKind::SideEffect;
-        let graph = graph_with_atomic_units(
+        let graph = graph_of(
             vec![effect.clone()],
             vec![],
-            vec![unit("atomic:0", &[&effect])],
+            vec![atomic_unit_for("atomic:0", &[&effect])],
             vec![],
         );
         let report = factorize_with_context(
@@ -1568,12 +1503,15 @@ mod tests {
     // singleton class becomes its own diagnostic.
     #[test]
     fn oversized_singletons_become_size_cap_diagnostics() {
-        let a = owner("a", 1, &["a"], 10);
-        let b = owner("b", 2, &["b"], 10);
-        let graph = graph_with_atomic_units(
+        let a = residual_owner("a", 1, &["a"], 10);
+        let b = residual_owner("b", 2, &["b"], 10);
+        let graph = graph_of(
             vec![a.clone(), b.clone()],
-            vec![edge("e1", "a", "b", DepKind::EagerUse, true)],
-            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
         let report = factorize(&graph, &no_claims(), 5).unwrap();

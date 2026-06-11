@@ -19,13 +19,9 @@
 //!   collapses each input group into one class, regardless of
 //!   pre-existing edges between the owners.
 
-use std::collections::BTreeMap;
-
 use analysis::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
-    ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, Purity, RealizabilityVerdict, SourceLocation, StatementKind,
-    StatementOrdinal, check_realizability,
+    AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity,
+    RealizabilityVerdict, SourceLocation, StatementKind, StatementOrdinal, check_realizability,
 };
 
 use peel::factorize::factorize;
@@ -33,154 +29,10 @@ use peel::quotient::{
     OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
     greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
-use report_fixtures::{module_ref, module_table};
-use spec::ModulePath;
-
-// ---------- Fixture helpers (generic; no the upstream/gaffer strings). ----------
-
-/// Active-claims map (binding name → canonical module path) from
-/// clean spec paths. `no_claims()` is the empty case.
-fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
-    pairs
-        .iter()
-        .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
-        .collect()
-}
-
-fn no_claims() -> BTreeMap<String, ModulePath> {
-    BTreeMap::new()
-}
-
-fn binding(name: &str) -> BindingReport {
-    BindingReport {
-        binding: name.into(),
-        export_name: name.into(),
-    }
-}
-
-fn owner(
-    id: &str,
-    ordinal: usize,
-    bindings: &[&str],
-    lines: usize,
-    destination: ModuleKey,
-) -> OwnerGraphNodeReport {
-    OwnerGraphNodeReport {
-        id: id.to_string(),
-        statement_ordinal: StatementOrdinal(ordinal),
-        source_location: Some(SourceLocation {
-            source_path: "x.js".to_string(),
-            start_line: ordinal * 100,
-            end_line: ordinal * 100 + lines.saturating_sub(1),
-        }),
-        declared_bindings: bindings.iter().map(|b| binding(b)).collect(),
-        statement_kind: StatementKind::VarDecl,
-        purity: Purity::Pure,
-        destination,
-    }
-}
-
-fn residual_owner(
-    id: &str,
-    ordinal: usize,
-    bindings: &[&str],
-    lines: usize,
-) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref("residual"))
-}
-
-fn active_owner(
-    id: &str,
-    ordinal: usize,
-    bindings: &[&str],
-    lines: usize,
-    module_path: &str,
-) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref(module_path))
-}
-
-fn owner_edge(
-    id: &str,
-    source: &str,
-    target: &str,
-    kind: DepKind,
-    constrains: bool,
-) -> OwnerGraphEdgeReport {
-    OwnerGraphEdgeReport {
-        id: id.to_string(),
-        source: source.to_string(),
-        target: target.to_string(),
-        edge_kind: kind,
-        binding: None,
-        statement_ordinal: StatementOrdinal(0),
-        constrains_init_order: constrains,
-        role: None,
-    }
-}
-
-fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
-    let mut owner_ids = Vec::new();
-    let mut members = Vec::new();
-    let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
-    let mut line_range = LineRange::new();
-    let mut min_ordinal = usize::MAX;
-    let mut max_ordinal = 0usize;
-    for o in owners {
-        owner_ids.push(o.id.clone());
-        members.extend(o.declared_bindings.clone());
-        destinations.insert(o.destination.clone(), o.destination.clone());
-        if let Some(location) = &o.source_location {
-            line_range.expand(location);
-        }
-        min_ordinal = min_ordinal.min(o.statement_ordinal.0);
-        max_ordinal = max_ordinal.max(o.statement_ordinal.0);
-    }
-    AtomicUnitReport {
-        id: id.to_string(),
-        owner_ids,
-        members,
-        anonymous_statement_owner_ids: Vec::new(),
-        destinations: destinations.into_values().collect(),
-        causes: Vec::new(),
-        size_lines_estimate: line_range.size_estimate(),
-        source_line_range: line_range.into_array(),
-        ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-    }
-}
-
-fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicUnitEdgeReport {
-    AtomicUnitEdgeReport {
-        id: id.to_string(),
-        source: source.to_string(),
-        target: target.to_string(),
-        edge_kinds: vec![DepKind::EagerUse],
-        owner_edge_ids: vec![id.replace("atomic", "edge")],
-        constrains_init_order: true,
-    }
-}
-
-fn graph_of(
-    nodes: Vec<OwnerGraphNodeReport>,
-    edges: Vec<OwnerGraphEdgeReport>,
-    units: Vec<AtomicUnitReport>,
-    unit_edges: Vec<AtomicUnitEdgeReport>,
-) -> OwnerGraphReport {
-    let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
-    OwnerGraphReport {
-        chunk_id: "x".to_string(),
-        nodes,
-        edges,
-        quotient: OwnerGraphQuotientReport {
-            nodes: module_nodes,
-            edges: vec![],
-            sccs: vec![],
-        },
-        atomic_graph: AtomicGraphReport {
-            nodes: units,
-            edges: unit_edges,
-        },
-    }
-}
+use report_fixtures::{
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_ref, no_claims,
+    owner_edge, residual_owner,
+};
 
 // ---------- Tests. ----------
 
@@ -2880,4 +2732,63 @@ fn lazy_pq_greedy_matches_full_scan_greedy_on_corpus() {
             "[{name}] lazy-PQ greedy diverged from full-scan greedy"
         );
     }
+}
+
+#[test]
+fn gate_bypassing_partition_cycle_degrades_gracefully_and_recovers() {
+    // `from_report_with_partition` bypasses the contraction gate: a
+    // group that closes a class-graph cycle is legal input. Shape:
+    // a → b → c (owner constraining edges), group {a, c}. Contracting
+    // a and c yields the class cycle {a,c} → b → {a,c}. The
+    // incremental topo order's window Kahn cannot complete during the
+    // group merge — this used to be a reachable release-mode
+    // `assert_eq!` panic; it must instead degrade to the slow cycle
+    // gate and keep answering correctly. Distinct active destinations
+    // keep each class on its own ModuleId so the cycle stays visible
+    // to the realizability projection (an all-residual fixture would
+    // collapse into one module and hide it).
+    let a = active_owner("owner:a", 1, &["BindingA"], 5, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 5, "ui/b");
+    let c = active_owner("owner:c", 3, &["BindingC"], 5, "ui/c");
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone()],
+        vec![
+            owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
+        ],
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&c]),
+        ],
+        vec![],
+    );
+    let (mut q, group_classes) = QuotientGraph::from_report_with_partition(
+        &report,
+        10_000,
+        &[vec![OwnerIdx(0), OwnerIdx(2)]],
+    );
+    let merged = group_classes[0];
+    let b_class = q.class_of(OwnerIdx(1));
+    assert_eq!(q.class_of(OwnerIdx(0)), merged);
+    assert_eq!(q.class_of(OwnerIdx(2)), merged);
+
+    // The cycle is visible to the kernel's evidence surface.
+    assert!(
+        !q.cycle_set().cycles.is_empty(),
+        "the bypassed contraction's class cycle must surface in cycle_set()",
+    );
+
+    // The (degraded, cone-DFS-backed) gate still answers: merging the
+    // cycle classes together dissolves the cycle into one class, so
+    // the contraction is permitted and the kernel returns to a
+    // realizable, cycle-free state.
+    let survivor = q.contract(merged, b_class).expect("cycle-dissolving merge");
+    assert_eq!(q.class_of(OwnerIdx(1)), survivor);
+    assert!(
+        q.cycle_set().cycles.is_empty(),
+        "dissolving the cycle must clear the evidence",
+    );
+    // And gated merges keep functioning after recovery.
+    assert!(!q.merge_preserves_invariants(survivor, survivor));
 }

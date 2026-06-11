@@ -10,8 +10,10 @@ use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use super::factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
-use super::factorize::{PeelFactorizeReport, analyze_peel_factorize};
+use super::factorize::{
+    DEFAULT_SIZE_CAP_LINES, FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions,
+    PeelFactorizeReport, analyze_peel_factorize, analyze_peel_factorize_on_graph,
+};
 use anonymous_resolution::{AnonymousStatementClaimSet, resolve_anonymous_statement_claims};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
@@ -29,11 +31,11 @@ use spec_modules::{
 #[derive(Debug, ClapArgs)]
 pub struct PeelArgs {
     #[command(subcommand)]
-    command: PeelCommand,
+    pub command: PeelCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum PeelCommand {
+pub enum PeelCommand {
     /// Deprecated alias for `debundle modules propose`.
     #[command(name = "plan-work")]
     PlanWork(PlanWorkArgs),
@@ -69,7 +71,7 @@ pub struct PlanWorkArgs {
     pub common: CommonArgs,
 
     /// Hard line ceiling per emitted proposal.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Root used to resolve relative `source_location.source_path`
@@ -142,7 +144,7 @@ pub struct GraphSummaryArgs {
     pub common: CommonArgs,
 
     /// Hard line ceiling per emitted proposal.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Maximum number of largest residual units to emit. Zero means unlimited.
@@ -173,7 +175,7 @@ pub struct ExplainArgs {
     pub selection: SelectionArgs,
 
     /// Hard line ceiling used when resolving `--proposal-id`.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Root used to resolve relative `source_location.source_path`
@@ -205,7 +207,7 @@ pub struct SourceSliceArgs {
     pub selection: SelectionArgs,
 
     /// Hard line ceiling used when resolving `--proposal-id`.
-    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
     /// Extra source lines to include around the selected owner span.
@@ -341,6 +343,10 @@ pub struct ExplainReport {
     pub incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub quotient_edges: Vec<QuotientEdgeReport>,
+    /// Bindings claimed by a `--module-path` selection that do not
+    /// appear in the owner graph. Always empty for other selections.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown_binding_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub factorize_proposals: Option<Vec<FactorizeProposal>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -445,6 +451,10 @@ pub enum BindingHomeSourceKind {
 pub struct SourceSliceReport {
     pub query: QueryReport,
     pub owner_ids: Vec<String>,
+    /// Bindings claimed by a `--module-path` selection that do not
+    /// appear in the owner graph. Always empty for other selections.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown_binding_ids: Vec<String>,
     pub slices: Vec<SourceSlice>,
 }
 
@@ -457,47 +467,6 @@ pub struct SourceSlice {
     pub context_start_line: usize,
     pub context_end_line: usize,
     pub text: String,
-}
-
-pub fn run_peel(args: PeelArgs) -> Result<()> {
-    match args.command {
-        PeelCommand::PlanWork(args) => {
-            deprecation_notice("peel plan-work", "modules propose");
-            print_json(&run_plan_work_report(&args)?).context("writing plan-work JSON")
-        }
-        PeelCommand::Units(args) => {
-            deprecation_notice("peel units", "atoms");
-            print_json(&run_units_report(&args)?).context("writing units JSON")
-        }
-        PeelCommand::PatchPlan(args) => {
-            deprecation_notice("peel patch-plan", "coverage");
-            print_json(&run_patch_plan_report(&args)?).context("writing patch-plan JSON")
-        }
-        PeelCommand::Explain(args) => {
-            deprecation_notice("peel explain", "describe <id>");
-            print_json(&run_explain_report(&args)?).context("writing explain JSON")
-        }
-        PeelCommand::SourceSlice(args) => {
-            deprecation_notice("peel source-slice", "show-source <id>");
-            print_json(&run_source_slice_report(&args)?).context("writing source-slice JSON")
-        }
-        PeelCommand::GraphSummary(args) => {
-            deprecation_notice("peel graph-summary", "graph-summary");
-            print_json(&run_graph_summary_report(&args)?).context("writing graph-summary JSON")
-        }
-    }
-}
-
-fn deprecation_notice(old: &str, new: &str) {
-    eprintln!(
-        "warning: `debundle {old}` is deprecated; use `debundle {new}` instead. The `peel` \
-         namespace will be removed in a future release."
-    );
-}
-
-pub fn print_json<T: Serialize>(value: &T) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(value)?);
-    Ok(())
 }
 
 /// Uniform output format selector for every read-only query command,
@@ -559,17 +528,6 @@ where
     }
 }
 
-/// Emit a vec of items as ndjson when `format == Ndjson`, or as a
-/// single pretty JSON / text-rendered document otherwise. Most query
-/// commands wrap a `Vec<T>` (with optional summary) so this is the
-/// shape the streaming format helps with.
-pub fn print_ndjson_items<T: Serialize>(items: &[T]) -> Result<()> {
-    for item in items {
-        println!("{}", serde_json::to_string(item)?);
-    }
-    Ok(())
-}
-
 pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     let mut report = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
@@ -578,9 +536,7 @@ pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
         size_cap_lines: args.size_cap_lines,
     })?;
     let mut sections = BTreeMap::new();
-    if args.limit > 0 {
-        sort_factorize_diagnostics(&mut report.diagnostics);
-    }
+    sort_factorize_diagnostics(&mut report.diagnostics);
     apply_limit_with_metadata(
         &mut report.proposals,
         args.limit,
@@ -636,12 +592,15 @@ pub fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
 pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let factorize = if args.include_proposals {
-        Some(analyze_peel_factorize(&PeelFactorizeOptions {
-            owner_graph_path: args.common.owner_graph_path.clone(),
-            modules_root: args.common.modules_root.clone(),
-            source_root: args.source_root.clone(),
-            size_cap_lines: 10_000,
-        })?)
+        Some(analyze_peel_factorize_on_graph(
+            &graph,
+            &PeelFactorizeOptions {
+                owner_graph_path: args.common.owner_graph_path.clone(),
+                modules_root: args.common.modules_root.clone(),
+                source_root: args.source_root.clone(),
+                size_cap_lines: DEFAULT_SIZE_CAP_LINES,
+            },
+        )?)
     } else {
         None
     };
@@ -677,12 +636,15 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
 pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let factorize = if args.include_proposals {
-        Some(analyze_peel_factorize(&PeelFactorizeOptions {
-            owner_graph_path: args.common.owner_graph_path.clone(),
-            modules_root: args.common.modules_root.clone(),
-            source_root: args.source_root.clone(),
-            size_cap_lines: args.size_cap_lines,
-        })?)
+        Some(analyze_peel_factorize_on_graph(
+            &graph,
+            &PeelFactorizeOptions {
+                owner_graph_path: args.common.owner_graph_path.clone(),
+                modules_root: args.common.modules_root.clone(),
+                source_root: args.source_root.clone(),
+                size_cap_lines: args.size_cap_lines,
+            },
+        )?)
     } else {
         None
     };
@@ -748,17 +710,23 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
     );
     let factorize = if args.include_proposals || selection_needs_factorize {
-        Some(analyze_peel_factorize(&PeelFactorizeOptions {
-            owner_graph_path: args.common.owner_graph_path.clone(),
-            modules_root: args.common.modules_root.clone(),
-            source_root: None,
-            size_cap_lines: args.size_cap_lines,
-        })?)
+        Some(analyze_peel_factorize_on_graph(
+            &graph,
+            &PeelFactorizeOptions {
+                owner_graph_path: args.common.owner_graph_path.clone(),
+                modules_root: args.common.modules_root.clone(),
+                source_root: args.source_root.clone(),
+                size_cap_lines: args.size_cap_lines,
+            },
+        )?)
     } else {
         None
     };
     let include_factorize_sections = factorize.is_some();
-    let owner_ids = resolve_owner_ids(
+    let ResolvedSelection {
+        owner_ids,
+        unknown_binding_ids,
+    } = resolve_owner_ids(
         &selection,
         &graph,
         &args.common,
@@ -893,6 +861,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         incoming_atomic_edges,
         outgoing_atomic_edges,
         quotient_edges,
+        unknown_binding_ids,
         factorize_proposals: include_factorize_sections.then_some(factorize_proposals),
         factorize_diagnostics: include_factorize_sections.then_some(factorize_diagnostics),
         limits: limit_report(args.limit, sections),
@@ -903,7 +872,10 @@ pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceRepo
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);
-    let owner_ids = resolve_owner_ids(
+    let ResolvedSelection {
+        owner_ids,
+        unknown_binding_ids,
+    } = resolve_owner_ids(
         &selection,
         &graph,
         &args.common,
@@ -942,6 +914,7 @@ pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceRepo
     Ok(SourceSliceReport {
         query,
         owner_ids,
+        unknown_binding_ids,
         slices,
     })
 }
@@ -1064,7 +1037,7 @@ fn patch_plan_rows(
     source_root: Option<&Path>,
     factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<PatchPlanRow>> {
-    let binding_to_owner = binding_to_owner(graph);
+    let binding_to_owner = binding_to_owner(graph)?;
     let unit_by_owner = unit_by_owner(graph);
     let unit_by_id: BTreeMap<String, &AtomicUnitReport> = graph
         .atomic_graph
@@ -1072,9 +1045,31 @@ fn patch_plan_rows(
         .iter()
         .map(|unit| (unit.id.clone(), unit))
         .collect();
-    load_patch_sets(modules_root)?
+    let patch_sets = load_patch_sets(modules_root)?;
+    // Resolve every patch set's anonymous-statement claims in ONE
+    // batched call. The resolver parses each claimed source file once
+    // per call, so calling it per row re-parsed every source file per
+    // patch set.
+    let anonymous_owners_by_set = {
+        let claim_sets: Vec<AnonymousStatementClaimSet> = patch_sets
+            .iter()
+            .map(|patch_set| AnonymousStatementClaimSet {
+                module_path: &patch_set.file,
+                selectors: &patch_set.anonymous_selectors,
+            })
+            .collect();
+        resolve_anonymous_statement_claims(
+            graph,
+            owner_graph_path,
+            modules_root,
+            source_root,
+            &claim_sets,
+        )?
+    };
+    patch_sets
         .into_iter()
-        .map(|patch_set| {
+        .zip(anonymous_owners_by_set)
+        .map(|(patch_set, anonymous_owners)| {
             let mut requested_binding_ids: Vec<String> =
                 patch_set.bindings.iter().cloned().collect();
             requested_binding_ids.sort();
@@ -1088,18 +1083,7 @@ fn patch_plan_rows(
                     unknown_binding_ids.push(binding.clone());
                 }
             }
-            let claim_sets = [AnonymousStatementClaimSet {
-                module_path: &patch_set.file,
-                selectors: &patch_set.anonymous_selectors,
-            }];
-            let anonymous_owners = resolve_anonymous_statement_claims(
-                graph,
-                owner_graph_path,
-                modules_root,
-                source_root,
-                &claim_sets,
-            )?;
-            for owner in &anonymous_owners[0] {
+            for owner in &anonymous_owners {
                 if let Some(node) = graph.nodes.get(owner.0) {
                     requested_owner_ids.insert(node.id.clone());
                 }
@@ -1217,14 +1201,32 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     Ok(sets)
 }
 
-fn binding_to_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
+/// Map each declared (minified) binding name to its owner id.
+///
+/// A binding name declared by two distinct owners would make every
+/// binding-keyed claim ambiguous; the previous shape silently kept
+/// the last writer. Owner graphs are built from per-chunk top-level
+/// scopes, where binding ids are unique — a duplicate means a
+/// malformed/merged report, so it surfaces as an error (mirroring
+/// `resolve_binding_owners`, which returns all matches so callers can
+/// see the ambiguity).
+fn binding_to_owner(graph: &OwnerGraphReport) -> Result<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
     for node in &graph.nodes {
         for binding in &node.declared_bindings {
-            out.insert(binding.binding.to_string(), node.id.clone());
+            if let Some(existing) = out.insert(binding.binding.to_string(), node.id.clone()) {
+                if existing != node.id {
+                    bail!(
+                        "malformed owner graph: binding {:?} declared by multiple owners \
+                         ({existing}, {})",
+                        binding.binding,
+                        node.id,
+                    );
+                }
+            }
         }
     }
-    out
+    Ok(out)
 }
 
 fn unit_by_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
@@ -1344,6 +1346,15 @@ pub fn resolve_binding_owners<'a>(
     by_minified
 }
 
+/// Result of resolving a selection to owner ids.
+/// `unknown_binding_ids` is non-empty only for module-path selections
+/// whose YAML claims bindings the owner graph does not declare.
+#[derive(Debug, Clone)]
+struct ResolvedSelection {
+    owner_ids: Vec<String>,
+    unknown_binding_ids: Vec<String>,
+}
+
 fn resolve_owner_ids(
     selection: &SelectionKind,
     graph: &OwnerGraphReport,
@@ -1351,7 +1362,8 @@ fn resolve_owner_ids(
     size_cap_lines: usize,
     source_root: Option<&Path>,
     factorize: Option<&PeelFactorizeReport>,
-) -> Result<Vec<String>> {
+) -> Result<ResolvedSelection> {
+    let mut unknown_binding_ids: Vec<String> = Vec::new();
     let mut owner_ids: Vec<String> = match selection {
         SelectionKind::Owner(owner_id) => {
             if graph.nodes.iter().any(|node| node.id == *owner_id) {
@@ -1361,7 +1373,10 @@ fn resolve_owner_ids(
             }
         }
         SelectionKind::ModulePath(module_path) => {
-            resolve_module_path_owner_ids(graph, common, source_root, module_path)?
+            let (resolved, unknown) =
+                resolve_module_path_owner_ids(graph, common, source_root, module_path)?;
+            unknown_binding_ids = unknown;
+            resolved
         }
         SelectionKind::Module(module_id) => {
             let owner_ids: Vec<String> = graph
@@ -1389,12 +1404,15 @@ fn resolve_owner_ids(
             let proposal_owner_ids = if let Some(factorize) = factorize {
                 owner_ids_for_proposal(factorize, proposal_id)
             } else {
-                let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-                    owner_graph_path: common.owner_graph_path.clone(),
-                    modules_root: common.modules_root.clone(),
-                    source_root: source_root.map(Path::to_path_buf),
-                    size_cap_lines,
-                })?;
+                let factorize = analyze_peel_factorize_on_graph(
+                    graph,
+                    &PeelFactorizeOptions {
+                        owner_graph_path: common.owner_graph_path.clone(),
+                        modules_root: common.modules_root.clone(),
+                        source_root: source_root.map(Path::to_path_buf),
+                        size_cap_lines,
+                    },
+                )?;
                 owner_ids_for_proposal(&factorize, proposal_id)
             };
             if let Some(owner_ids) = proposal_owner_ids {
@@ -1416,12 +1434,15 @@ fn resolve_owner_ids(
             let diagnostic_owner_ids = if let Some(factorize) = factorize {
                 owner_ids_for_diagnostic(factorize, diagnostic_id)
             } else {
-                let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-                    owner_graph_path: common.owner_graph_path.clone(),
-                    modules_root: common.modules_root.clone(),
-                    source_root: source_root.map(Path::to_path_buf),
-                    size_cap_lines,
-                })?;
+                let factorize = analyze_peel_factorize_on_graph(
+                    graph,
+                    &PeelFactorizeOptions {
+                        owner_graph_path: common.owner_graph_path.clone(),
+                        modules_root: common.modules_root.clone(),
+                        source_root: source_root.map(Path::to_path_buf),
+                        size_cap_lines,
+                    },
+                )?;
                 owner_ids_for_diagnostic(&factorize, diagnostic_id)
             };
             if let Some(owner_ids) = diagnostic_owner_ids {
@@ -1438,15 +1459,22 @@ fn resolve_owner_ids(
     if owner_ids.is_empty() {
         bail!("selection did not resolve to any owner ids");
     }
-    Ok(owner_ids)
+    Ok(ResolvedSelection {
+        owner_ids,
+        unknown_binding_ids,
+    })
 }
 
+/// Resolve a module-path selection to `(owner_ids, unknown_binding_ids)`.
+/// Bindings the YAML claims but the owner graph does not declare are
+/// returned (not swallowed) so callers can surface partial misses;
+/// only the all-unknown case is a hard error.
 fn resolve_module_path_owner_ids(
     graph: &OwnerGraphReport,
     common: &CommonArgs,
     source_root: Option<&Path>,
     module_path: &str,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, Vec<String>)> {
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
     let claims = read_module_claims(&yaml_path)
         .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
@@ -1454,7 +1482,7 @@ fn resolve_module_path_owner_ids(
         bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
     }
 
-    let binding_to_owner = binding_to_owner(graph);
+    let binding_to_owner = binding_to_owner(graph)?;
     let mut owner_ids = BTreeSet::<String>::new();
     let mut unknown_binding_ids = Vec::<String>::new();
     for binding in &claims.bindings {
@@ -1488,7 +1516,7 @@ fn resolve_module_path_owner_ids(
             unknown_binding_ids.join(", ")
         );
     }
-    Ok(owner_ids.into_iter().collect())
+    Ok((owner_ids.into_iter().collect(), unknown_binding_ids))
 }
 
 fn owner_ids_for_proposal(
@@ -1656,13 +1684,15 @@ mod tests {
     use std::path::Path;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleKey,
-        OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-        Purity, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+        AtomicGraphReport, DepKind, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        OwnerGraphQuotientReport, OwnerGraphReport, QuotientSccReport, SourceLocation,
+        StatementOrdinal,
+    };
+    use report_fixtures::{
+        atomic_edge_for_owner_edge, atomic_unit_for, member, module_ref, module_table, owner_node,
     };
     use tempfile::TempDir;
 
-    use super::super::test_utils;
     use super::*;
 
     fn write(path: &Path, body: &str) {
@@ -1672,73 +1702,34 @@ mod tests {
         fs::write(path, body).unwrap();
     }
 
-    fn owner(id: &str, ordinal: usize, binding: &str, export_name: &str) -> OwnerGraphNodeReport {
-        OwnerGraphNodeReport {
-            id: id.to_string(),
-            statement_ordinal: StatementOrdinal(ordinal),
-            source_location: Some(SourceLocation {
+    /// Residual owner whose single binding carries a readable export
+    /// name and whose source span is line `ordinal + 1` of the
+    /// fixture's `static/index.js` (the source-slice test reads that
+    /// real file, so the location must line up with its contents).
+    fn renamed_owner(
+        id: &str,
+        ordinal: usize,
+        binding: &str,
+        export_name: &str,
+    ) -> OwnerGraphNodeReport {
+        owner_node(
+            id,
+            ordinal,
+            vec![member(binding, export_name)],
+            Some(SourceLocation {
                 source_path: "static/index.js".to_string(),
                 start_line: ordinal + 1,
                 end_line: ordinal + 1,
             }),
-            declared_bindings: vec![test_utils::member(binding, export_name)],
-            statement_kind: StatementKind::VarDecl,
-            purity: Purity::Pure,
-            destination: test_utils::module_ref("residual"),
-        }
-    }
-
-    fn atomic_unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
-        let mut owner_ids = Vec::new();
-        let mut members = Vec::new();
-        let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
-        let mut start_line = usize::MAX;
-        let mut end_line = 0usize;
-        let mut size_lines_estimate = 0usize;
-        for owner in owners {
-            owner_ids.push(owner.id.clone());
-            members.extend(owner.declared_bindings.clone());
-            destinations.insert(owner.destination.clone(), owner.destination.clone());
-            if let Some(location) = &owner.source_location {
-                start_line = start_line.min(location.start_line);
-                end_line = end_line.max(location.end_line);
-                size_lines_estimate += location.end_line + 1 - location.start_line;
-            }
-        }
-        AtomicUnitReport {
-            id: id.to_string(),
-            owner_ids,
-            members,
-            anonymous_statement_owner_ids: Vec::new(),
-            destinations: destinations.into_values().collect(),
-            causes: Vec::new(),
-            size_lines_estimate,
-            source_line_range: Some([start_line, end_line]),
-            ordinal_span: 0,
-        }
-    }
-
-    fn atomic_edge(
-        id: &str,
-        source: &str,
-        target: &str,
-        owner_edge_id: &str,
-    ) -> AtomicUnitEdgeReport {
-        AtomicUnitEdgeReport {
-            id: id.to_string(),
-            source: source.to_string(),
-            target: target.to_string(),
-            edge_kinds: vec![DepKind::EagerUse],
-            owner_edge_ids: vec![owner_edge_id.to_string()],
-            constrains_init_order: true,
-        }
+            module_ref("residual"),
+        )
     }
 
     fn graph_fixture() -> OwnerGraphReport {
-        let zz = owner("owner:0", 1, "ZZ", "PaymentError");
-        let aa = owner("owner:1", 2, "aa", "aa");
+        let zz = renamed_owner("owner:0", 1, "ZZ", "PaymentError");
+        let aa = renamed_owner("owner:1", 2, "aa", "aa");
         let nodes = vec![zz.clone(), aa.clone()];
-        let module_nodes = test_utils::module_table(nodes.iter().map(|n| &n.destination));
+        let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
         OwnerGraphReport {
             chunk_id: "static/index".to_string(),
             nodes,
@@ -1759,10 +1750,10 @@ mod tests {
             },
             atomic_graph: AtomicGraphReport {
                 nodes: vec![
-                    atomic_unit("atomic:0", &[&zz]),
-                    atomic_unit("atomic:1", &[&aa]),
+                    atomic_unit_for("atomic:0", &[&zz]),
+                    atomic_unit_for("atomic:1", &[&aa]),
                 ],
-                edges: vec![atomic_edge(
+                edges: vec![atomic_edge_for_owner_edge(
                     "atomic_edge:0",
                     "atomic:1",
                     "atomic:0",
@@ -1945,8 +1936,8 @@ mod tests {
     #[test]
     fn explain_limit_applies_per_section_and_reports_totals() {
         let mut graph = graph_fixture();
-        graph.nodes.push(owner("owner:2", 3, "bb", "bb"));
-        graph.nodes.push(owner("owner:3", 4, "cc", "cc"));
+        graph.nodes.push(renamed_owner("owner:2", 3, "bb", "bb"));
+        graph.nodes.push(renamed_owner("owner:3", 4, "cc", "cc"));
         graph.edges.push(OwnerGraphEdgeReport {
             id: "edge:1".to_string(),
             source: "owner:2".to_string(),

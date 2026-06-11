@@ -1740,6 +1740,24 @@ impl RealizabilityIndex {
             .rollback_graphs(entry.i_graph_mark, entry.constraining_graph_mark);
     }
 
+    /// Discard rollback state for every delta pushed so far. Call
+    /// after a batch of **permanent** pushes (the `commit_merge` case
+    /// above) — committed deltas are never undone, and without this
+    /// truncation their journal entries (inverse assignments,
+    /// impacted-edge lists, and the two graphs' edge journals)
+    /// accumulate for the lifetime of the index.
+    ///
+    /// Caller contract: no outstanding [`DeltaHandle`] may be undone
+    /// after `commit` (the journal is cleared, so any such `undo`
+    /// panics on the LIFO check). The peel kernel satisfies this by
+    /// construction — speculative push/undo pairs are scoped and
+    /// balanced before any commit.
+    pub fn commit(&mut self) {
+        self.journal.clear();
+        self.quotient.i_graph.commit();
+        self.quotient.constraining_graph.commit();
+    }
+
     /// Apply `delta`, run `f` against the index in its post-push
     /// state, then undo. The scoped form guarantees the per-call
     /// push/undo pair regardless of `f`'s control flow.
@@ -2784,6 +2802,44 @@ mod tests {
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &baseline)),
+        );
+    }
+
+    #[test]
+    fn commit_drops_journal_state_and_index_stays_queryable() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+
+        // Permanent push (the commit_merge shape: no matching undo).
+        index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+        );
+        let committed = normalize_verdict(index.verdict());
+        index.commit();
+
+        // Committed state is intact, and subsequent scoped
+        // speculative work (push + undo) still balances correctly
+        // against the new journal baseline.
+        assert_eq!(index.partition().of(OwnerId(1)), module_id(1));
+        assert_eq!(normalize_verdict(index.verdict()), committed);
+        index.scoped(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(0)],
+                to: module_id(2),
+            },
+            |idx| idx.verdict(),
+        );
+        assert_eq!(normalize_verdict(index.verdict()), committed);
+        assert!(
+            index.journal.is_empty(),
+            "scoped work must not leak entries"
         );
     }
 

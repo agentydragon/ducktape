@@ -70,6 +70,20 @@ where
         }
     }
 
+    /// Discard the rollback journal for everything applied so far.
+    /// Call when the current graph state is committed — i.e. no
+    /// rollback past this point will ever be requested. Without this,
+    /// permanently-applied mutations accumulate journal entries for
+    /// the lifetime of the graph.
+    ///
+    /// Invalidates every outstanding [`GraphMark`]: marks taken
+    /// before `commit` must not be passed to `rollback_to` afterwards
+    /// (the caller contract in `RealizabilityIndex` guarantees this —
+    /// speculative push/undo pairs are balanced before a commit).
+    pub(crate) fn commit(&mut self) {
+        self.journal.clear();
+    }
+
     pub(crate) fn edge_count(&self, from: N, to: N) -> usize {
         self.edge_counts.get(&(from, to)).copied().unwrap_or(0)
     }
@@ -147,18 +161,41 @@ where
             .flatten()
     }
 
+    /// The strict SCC containing `node`, computed as the intersection
+    /// of forward and reverse reachability from `node`. Localized:
+    /// cost is bounded by `node`'s reachable cones, not the whole
+    /// graph — the previous shape ran a full Tarjan and materialized
+    /// every SCC per query. A node with no incident edges yields
+    /// `{node}`.
     pub(crate) fn scc_containing(&self, node: N) -> BTreeSet<N> {
-        // The strict SCC that contains `node`. Petgraph's Tarjan only
-        // emits SCCs for nodes that appear as edge endpoints, so a
-        // node with no incident edges needs an explicit `{node}`
-        // fallback to match the legacy forward-∩-reverse-reachability
-        // semantics.
-        for scc in self.all_sccs() {
-            if scc.contains(&node) {
-                return scc;
+        let forward = self.reachable_from(node, |graph, n| graph.successors(n));
+        let mut scc: BTreeSet<N> = self
+            .reachable_from(node, |graph, n| graph.predecessors(n))
+            .intersection(&forward)
+            .copied()
+            .collect();
+        scc.insert(node);
+        scc
+    }
+
+    /// Nodes reachable from `start` (excluding `start` unless it lies
+    /// on a cycle through itself) via the `neighbors` direction.
+    fn reachable_from<'a, I>(
+        &'a self,
+        start: N,
+        neighbors: impl Fn(&'a Self, N) -> I,
+    ) -> BTreeSet<N>
+    where
+        I: Iterator<Item = N> + 'a,
+    {
+        let mut seen: BTreeSet<N> = BTreeSet::new();
+        let mut stack: Vec<N> = neighbors(self, start).collect();
+        while let Some(n) = stack.pop() {
+            if seen.insert(n) {
+                stack.extend(neighbors(self, n));
             }
         }
-        BTreeSet::from([node])
+        seen
     }
 
     pub(crate) fn all_sccs(&self) -> Vec<BTreeSet<N>> {
@@ -385,6 +422,25 @@ mod tests {
         assert_eq!(graph.edge_count("b", "a"), 0);
         assert!(graph.contains_edge("a", "b"));
         assert!(!graph.contains_edge("b", "a"));
+    }
+
+    #[test]
+    fn commit_truncates_journal_and_keeps_state_rollbackable_from_new_baseline() {
+        let mut graph = RollbackDiGraph::new();
+        graph.increment_edge("a", "b");
+        graph.increment_edge("b", "c");
+        graph.commit();
+        // Committed edges survive; a rollback to a post-commit mark
+        // only unwinds post-commit work.
+        let mark = graph.mark();
+        graph.increment_edge("c", "a");
+        graph.rollback_to(mark);
+        assert_eq!(graph.edge_count("a", "b"), 1);
+        assert_eq!(graph.edge_count("b", "c"), 1);
+        assert_eq!(graph.edge_count("c", "a"), 0);
+        // Rolling back to the post-commit baseline is a no-op.
+        graph.rollback_to(graph.mark());
+        assert_eq!(graph.distinct_edge_count(), 2);
     }
 
     #[test]

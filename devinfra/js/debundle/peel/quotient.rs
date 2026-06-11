@@ -947,11 +947,25 @@ impl QuotientGraph {
             self.classes[winner.0].is_pre_existing_module = true;
         }
         self.update_class_adjacency_after_merge(winner, loser);
-        // Maintain the Pearce-Kelly topological order. `out_edges` /
-        // `in_neighbors` already reflect the post-merge adjacency;
-        // the PK reorder runs over the affected window only.
-        self.topo_ord
-            .apply_contract(winner, loser, &self.out_edges, &self.in_neighbors);
+        if self.topo_ord.is_dag() {
+            // Maintain the Pearce-Kelly topological order. `out_edges` /
+            // `in_neighbors` already reflect the post-merge adjacency;
+            // the PK reorder runs over the affected window only. A
+            // gate-bypassing cycle-creating merge degrades the order
+            // to `!is_dag` here instead of keeping it valid.
+            self.topo_ord
+                .apply_contract(winner, loser, &self.out_edges, &self.in_neighbors);
+        } else {
+            // Degraded order (a previous gate-bypassing merge created
+            // a class-graph cycle). While degraded, every cycle check
+            // already pays the slow cone-DFS, so spend O(|V| + |E|)
+            // per committed contraction attempting a full rebuild —
+            // contractions are the only events that can dissolve the
+            // cycle, and the first one that does restores the PK fast
+            // path instead of leaving `!is_dag` as a permanent perf
+            // degradation.
+            self.rebuild_topo_ord();
+        }
         #[cfg(debug_assertions)]
         debug_assert!(self.topo_ord.validate(&self.out_edges).is_ok());
         self.update_cycle_cache_after_merge(winner, loser);
@@ -962,6 +976,12 @@ impl QuotientGraph {
         for delta in deltas {
             self.realizability_index.push(&self.owner_graph, delta);
         }
+        // The deltas above are committed — nothing will undo them —
+        // so drop their rollback state. Without this, the index's
+        // journals grow without bound across the greedy's committed
+        // merges (speculative push/undo pairs are balanced and leave
+        // no entries behind).
+        self.realizability_index.commit();
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
         if post_module.0.0 >= self.next_module_idx {
@@ -1482,13 +1502,15 @@ impl QuotientGraph {
     /// Rebuild the topological-order index from scratch by running
     /// Kahn's over the current `out_edges` / `in_neighbors` adjacency.
     /// Called in `from_report*` after `rebuild_class_adjacency`, and
-    /// as a defensive fallback if a partition-driven mutation
-    /// bypasses the incremental `apply_contract` path.
+    /// from `merge_classes_unchecked` after every committed
+    /// contraction while the order is degraded (`!is_dag`) — the
+    /// opportunistic recovery that restores the PK fast path once a
+    /// contraction dissolves the last class-graph cycle.
     ///
     /// O(|V| + |E|) — same cost as the adjacency walk it covers.
     /// Incremental updates (`apply_contract`) keep the order valid
-    /// across `contract` calls, so the rebuild is one-shot per
-    /// quotient construction.
+    /// across `contract` calls, so on DAG-shaped (i.e. normal) inputs
+    /// the rebuild is one-shot per quotient construction.
     fn rebuild_topo_ord(&mut self) {
         let num_classes = self.classes.len();
         let live: Vec<ClassId> = self.iter_classes().collect();
@@ -1870,6 +1892,9 @@ impl QuotientGraph {
                     to: new_module,
                 },
             );
+            // Permanent push — drop its rollback state (see
+            // `merge_classes_unchecked`).
+            self.realizability_index.commit();
         }
         self.class_module_id.insert(c, new_module);
         // The advisory `cached_cycles` is intentionally left stale —
