@@ -545,17 +545,12 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
         .route("/mailbox", post(handle_mailbox))
         .with_state(state.clone());
 
-    // Write pidfile and acquire exclusive flock (held for daemon lifetime).
-    // Kernel releases the flock on process death, making client-side
-    // is_pidfile_locked() probes authoritative for liveness detection.
+    // Publish the pidfile only after its flock is already held. The launcher
+    // polls `pidfile exists && unlocked` as a late-crash signal while waiting
+    // for READY; writing the pidfile before locking it creates a false death
+    // window and can make the launcher close the readiness pipe too early.
     let pidfile = daemon_dir.join("daemon.pid");
-    std::fs::write(&pidfile, std::process::id().to_string()).unwrap();
-    let pidfile_fd = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&pidfile)
-        .expect("reopen pidfile for flock");
-    unsafe { libc::flock(pidfile_fd.as_raw_fd(), libc::LOCK_EX) };
+    let pidfile_fd = write_locked_pidfile(&pidfile);
     // pidfile_fd must outlive the server — keep it alive here.
 
     eprintln!(
@@ -597,6 +592,19 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
 
     axum::serve(listener, app).await.unwrap();
     drop(pidfile_fd); // explicit: flock released here (or on process death)
+}
+
+fn write_locked_pidfile(pidfile: &Path) -> std::fs::File {
+    let parent = pidfile.parent().expect("pidfile must have parent");
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).expect("create pidfile tmp");
+    write!(tmp, "{}", std::process::id()).expect("write pidfile tmp");
+    let rc = unsafe { libc::flock(tmp.as_file().as_raw_fd(), libc::LOCK_EX) };
+    assert!(
+        rc == 0,
+        "flock pidfile failed: {}",
+        std::io::Error::last_os_error()
+    );
+    tmp.persist(pidfile).expect("persist pidfile")
 }
 
 // ---------------------------------------------------------------------------
@@ -925,6 +933,30 @@ mod tests {
             write_session_bazelrc(&self.session_dir, &self.bbr_bazelrc, env);
             std::fs::read_to_string(self.session_dir.join("bazelrc")).unwrap()
         }
+    }
+
+    #[test]
+    fn write_locked_pidfile_is_locked_when_visible() {
+        let f = PathFixture::new();
+        let dir = f.mkdir("daemon");
+        let pidfile = dir.join("daemon.pid");
+
+        let pidfile_fd = write_locked_pidfile(&pidfile);
+
+        assert_eq!(
+            std::fs::read_to_string(&pidfile).unwrap(),
+            std::process::id().to_string()
+        );
+        assert!(
+            daemon_lifecycle::is_pidfile_locked(&pidfile),
+            "published pidfile must already be locked"
+        );
+
+        drop(pidfile_fd);
+        assert!(
+            !daemon_lifecycle::is_pidfile_locked(&pidfile),
+            "dropping the pidfile fd must release the lock"
+        );
     }
 
     #[test]
