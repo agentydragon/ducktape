@@ -17,12 +17,60 @@ analysis cache survives CI runs. This investigation separates:
 - `x/firecracker_workflow/README.md`: warm snapshot recycling should preserve full VM memory,
   including a running Bazel server and in-memory analysis cache. A fully warm repeat showed
   `0 packages loaded, 0 targets configured`.
-- `devinfra/x/runner_recycle_stats/README.md`: sampled runner logs showed 100% warm outer
-  runner reuse over a recent window, and the note infers that external-repo fetches and analysis
-  cache are reused.
+- The predecessor `runner_recycle_stats` note sampled runner logs and found 100% warm outer
+  runner reuse over a recent window. Its stronger inference that the analysis cache was reused
+  is the claim this investigation narrows.
 
 The main suspected hole: the newer runner-recycle analysis classifies only the outer runner
 header. It does not independently measure inner Bazel analysis work in CI.
+
+## Outer Runner Snapshot-Reuse Stats
+
+`runner_recycle_stats.py` classifies BuildBuddy Firecracker runner invocations as warm or
+cold from BuildBuddy history. It answers the outer-VM question only: did the `HOSTED_BAZEL`
+`remote ...` runner resume from a snapshot or start from an empty workspace?
+
+Every `bbr`/CI run dispatches a `ci_runner` Firecracker VM configured in
+`../../bbr.json` with:
+
+```json
+"recycle-runner": "true",
+"remote-snapshot-save-policy": "always",
+"snapshot-read-policy": "newest"
+```
+
+The runner's first console lines are the empirical signal:
+
+| Verdict  | Console header                                                                             | What it proves                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **warm** | `Syncing existing repo...` -> shallow `git fetch --depth=1` + `git clean` + `git checkout` | the runner workspace/output-base came from a previous snapshot; external repos and Bazel server state may be available |
+| **cold** | `Cloning ...`                                                                              | a fresh VM/workspace was used, so the runner redoes clone/fetch/setup work before invoking Bazel                       |
+
+Warm outer-runner reuse is not the same claim as "the Bazel analysis cache did no work".
+Use BES metrics, Bazel profiles, and probe bundles from this investigation to answer the inner
+Bazel question.
+
+Usage:
+
+```bash
+# Full sample over the densest recent window
+devinfra/x/ci_build_profile_analysis/runner_recycle_stats.py --count 600
+
+# Wider window (API pages by recency; larger N == more hours)
+devinfra/x/ci_build_profile_analysis/runner_recycle_stats.py --count 8000
+
+# Only classify cold-start candidates: first runner after each >10min idle gap
+devinfra/x/ci_build_profile_analysis/runner_recycle_stats.py --count 8000 --gaps-only
+```
+
+Needs `BUILDBUDDY_API_KEY` plus `bb` and `bbapi` on `PATH`.
+
+Earlier findings from 2026-06-08: in an 8000-invocation sample spanning 39.8h
+(`2026-06-07 07:46` to `2026-06-08 23:36` UTC), 3930 invocations were runner
+invocations. The densest 2.3h window had 296 warm runners and 0 cold runners. The 23
+first-after-`>10min`-idle-gap candidates, including gaps of 9.6h and 6.8h, were also
+all warm. The runner image digest had last changed on 2026-05-21, so the sample did not
+cover an image-roll relineage.
 
 ## Work Log
 
@@ -32,8 +80,8 @@ header. It does not independently measure inner Bazel analysis work in CI.
   - `x/firecracker_workflow/README.md`
   - `debug/bazel_ci_analysis_cache.md`
   - `debug/bb_remote_default_branch_cache_warning.md`
-  - `devinfra/x/runner_recycle_stats/README.md`
-  - `devinfra/x/runner_recycle_stats/runner_recycle_stats.py`
+  - the predecessor runner-recycle stats note
+  - `devinfra/x/ci_build_profile_analysis/runner_recycle_stats.py`
 - Confirmed CI uses `.github/actions/bb-remote/action.yml`, which passes:
   - `workload-isolation-type=firecracker`
   - `init-dockerd=true`

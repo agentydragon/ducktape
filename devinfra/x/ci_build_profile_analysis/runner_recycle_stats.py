@@ -8,13 +8,16 @@ first console lines reveal whether the VM resumed from a snapshot:
 
   warm (snapshot reused):  "Syncing existing repo..." -> shallow git fetch +
                            git clean + git checkout. repo and Bazel output-base
-                           (external-repo fetches + analysis cache) survive.
+                           survive, so external repos and Bazel server state may
+                           be available.
   cold (fresh VM):         "Cloning ..." -> full clone, re-fetch every external
                            repo, reload all packages ("redoing repo fetch work").
 
-There is no clean structured field for this; the console header is authoritative
-(`bbapi execution` is currently broken on a proto field). We list runner
-invocations via `bbapi`, fetch each runner's console via `bb view`, and classify.
+This classifies only the outer runner VM. Use BES metrics and Bazel profiles to
+answer whether the inner Bazel analysis cache did any work. There is no clean
+structured field for runner warm/cold state; the console header is authoritative.
+We list runner invocations via `bbapi`, fetch each runner's console via `bb view`,
+and classify.
 
 Usage:
   ./runner_recycle_stats.py [--count N] [--workers W] [--gaps-only] [--json]
