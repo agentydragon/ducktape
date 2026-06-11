@@ -30,7 +30,12 @@ spec:
   values:
     langfuse:
       features:
-        signUpDisabled: true
+        # SSO-only: email/password login is disabled below via
+        # AUTH_DISABLE_USERNAME_PASSWORD. Signup must stay enabled so the
+        # Authentik-gated SSO flow can establish the session on first login;
+        # access is bounded by the langfuse application's admins-group policy
+        # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
+        signUpDisabled: false
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       nextauth:
@@ -72,6 +77,33 @@ spec:
       additionalEnv:
         - name: NODE_OPTIONS
           value: "--max-old-space-size=1536"
+        # --- Authentik SSO (generic OIDC relying party) ---
+        # Client credentials come from the langfuse-oidc-config secret, minted
+        # by tf/gitops/sso-providers/provider_langfuse.tf in the authentik
+        # namespace and reflected here by emberstack reflector.
+        - name: AUTH_CUSTOM_NAME
+          value: "Authentik"
+        - name: AUTH_CUSTOM_ISSUER
+          value: "https://auth.allegedly.works/application/o/langfuse/"
+        - name: AUTH_CUSTOM_SCOPE
+          value: "openid email profile"
+        - name: AUTH_CUSTOM_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-oidc-config
+              key: client-id
+        - name: AUTH_CUSTOM_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-oidc-config
+              key: client-secret
+        # Link the SSO identity to the headless-init admin user (same email)
+        # so login lands on the existing org/project instead of an empty one.
+        - name: AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING
+          value: "true"
+        # SSO-only: disable email/password login and signup entirely.
+        - name: AUTH_DISABLE_USERNAME_PASSWORD
+          value: "true"
         - name: LANGFUSE_INIT_ORG_ID
           value: "langfuse-default-org"
         - name: LANGFUSE_INIT_ORG_NAME
@@ -90,10 +122,13 @@ spec:
             secretKeyRef:
               name: langfuse-secrets
               key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+        # Email matches the Authentik identity (agentydragon@gmail.com) so the
+        # SSO account links to this org owner. Headless init adds this user as
+        # an owner of langfuse-default-org on startup.
         - name: LANGFUSE_INIT_USER_EMAIL
-          value: "admin@allegedly.works"
+          value: "agentydragon@gmail.com"
         - name: LANGFUSE_INIT_USER_NAME
-          value: "admin"
+          value: "Rai"
         - name: LANGFUSE_INIT_USER_PASSWORD
           valueFrom:
             secretKeyRef:

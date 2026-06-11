@@ -10,7 +10,7 @@ TF owns the client_secret lifecycle — no Vault, no ESO, no `!Env` drift.
 **Secret flow**: TF creates provider → reads `client_secret` → writes `kubernetes_secret`
 in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
-**Currently managed**: grafana, headlamp, openclaw-agent.
+**Currently managed**: grafana, headlamp, openclaw-agent, props, langfuse.
 
 ### Blueprint-managed providers (deprecated)
 
