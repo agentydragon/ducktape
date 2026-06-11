@@ -1,8 +1,9 @@
 # serializer version: 1
-# name: test_currently_over_plan_collapses_to_7d_reset_only
+# name: test_currently_over_plan_shows_text_only_window_resets
   '''
   claude  ⚡ OVER PLAN — extra $3120.50/$4600 (68%) this month
-    7d reset: ↻ 6d10h
+    5h:  99%  ↻ 1h00m
+    7d: 100%  ↻ 6d10h
   '''
 # ---
 # name: test_error_only_when_no_data

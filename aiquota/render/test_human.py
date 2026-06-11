@@ -92,10 +92,10 @@ def test_extra_enabled_but_prepaid_has_room_shows_normal_bars(snapshot: Snapshot
     assert out == snapshot
 
 
-def test_currently_over_plan_collapses_to_7d_reset_only(snapshot: SnapshotAssertion) -> None:
+def test_currently_over_plan_shows_text_only_window_resets(snapshot: SnapshotAssertion) -> None:
     # Only when the 7d window is actually maxed (>=100%) is the user paying
-    # extra *right now* — then the bars are noise and the 7d reset (which
-    # ends the burn) is what matters.
+    # extra *right now* — then the bars are noise, but the 5h/7d reset text
+    # still tells the user when each exhausted bucket recovers.
     out = human.render(
         _quotas(
             _pq(

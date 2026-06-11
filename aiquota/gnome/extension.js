@@ -554,14 +554,11 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
         if (p.state.currentlyOverPlan === true) {
-          p.shortRow.visible = false;
+          const { short, long, staleAge } = effectiveState(p.state);
+          p.shortRow.visible = true;
           p.longRow.visible = true;
-          const live = withLiveReset(p.state.long);
-          const reset = live ? `↻ ${formatDuration(live.resetSeconds)}` : "";
-          p.longRow._summaryLabel.set_text(`7d reset: ${reset}`);
-          this._setBarFill(p.longRow._timeFill, null);
-          this._setBarFill(p.longRow._usageFill, null);
-          this._setBarTint(p.longRow._usageFill, "unknown");
+          this._renderExtraActiveRow(p.shortRow, "5h", short, staleAge);
+          this._renderExtraActiveRow(p.longRow, "7d", long, staleAge);
         } else {
           const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
@@ -594,7 +591,25 @@ const QuotaIndicator = GObject.registerClass(
       item.label.set_text(parts.join(" · "));
     }
 
+    _renderExtraActiveRow(item, label, state, staleAgeSeconds) {
+      item._bars.visible = false;
+      this._setBarFill(item._timeFill, null);
+      this._setBarFill(item._usageFill, null);
+      this._setBarTint(item._usageFill, "unknown");
+      if (state == null) {
+        item._summaryLabel.set_text(`${label}: no data`);
+        return;
+      }
+      const liveState = withLiveReset(state);
+      const used = liveState.usedPercent != null ? `${Math.round(liveState.usedPercent)}%` : "?";
+      const reset = `↻${formatDuration(liveState.resetSeconds)}`;
+      const parts = [used, reset];
+      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
+      item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
+    }
+
     _renderPopupRow(item, label, state, staleAgeSeconds) {
+      item._bars.visible = true;
       if (state == null) {
         item._summaryLabel.set_text(`${label}: no data`);
         this._setBarFill(item._timeFill, null);

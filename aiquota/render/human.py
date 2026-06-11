@@ -31,11 +31,13 @@ def _render_provider(pv: ProviderView, now: datetime) -> str:
         return f"{pv.provider}: error — {error}"
 
     if pv.currently_over_plan:
-        # Mirror the GNOME popup's collapsed view: while burning, 5h/7d bars are
-        # noise — what matters is when the 7d window resets (which ends the burn).
+        # Mirror the GNOME popup's text-only active-extra view: while burning,
+        # bars are noise, but both reset countdowns still matter.
         lines = [f"{pv.provider}  {_format_extra_active(extra)}"]
+        if short is not None:
+            lines.append(_active_window_line("5h", short, stale))
         if long is not None:
-            lines.append(f"  7d reset: ↻ {format_duration(long.reset_seconds)}")
+            lines.append(_active_window_line("7d", long, stale))
         return "\n".join(lines)
 
     lines = [_header(pv.provider, error)]
@@ -88,6 +90,13 @@ def _format_extra_active(extra: ExtraUsage | None) -> str:
 def _format_extra_informational(extra: ExtraUsage) -> str:
     pct = round(extra.utilization)
     return f"extra: ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) spent this month"
+
+
+def _active_window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:
+    parts = [f"{label}: {round(w.used_percent):>3d}%", f"↻ {format_duration(w.reset_seconds)}"]
+    if stale_age is not None:
+        parts.append(f"(stale {stale_age})")
+    return "  " + "  ".join(parts)
 
 
 def _window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:
