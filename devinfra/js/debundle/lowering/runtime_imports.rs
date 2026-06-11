@@ -86,12 +86,16 @@ pub(super) enum RuntimeImportKind {
     Namespace,
 }
 
-pub(super) fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) -> ImportSpecifier {
+fn ident_from_id(id: &Id) -> Ident {
+    Ident::new(id.0.clone(), DUMMY_SP, id.1)
+}
+
+pub(super) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -> ImportSpecifier {
     match &info.kind {
         RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            imported: if imported == local {
+            local: ident_from_id(local),
+            imported: if imported == local.0.as_ref() {
                 None
             } else {
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
@@ -103,11 +107,11 @@ pub(super) fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) 
         }),
         RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            local: ident_from_id(local),
         }),
         RuntimeImportKind::Namespace => ImportSpecifier::Namespace(ImportStarAsSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            local: ident_from_id(local),
         }),
     }
 }

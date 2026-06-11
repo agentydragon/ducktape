@@ -63,11 +63,11 @@ pub(super) fn source_chunk_imports_for_moved_body(
     source_chunk_id: &str,
     source_runtime_file: &str,
     dest_target_file: &str,
-    needed: BTreeMap<String, &RuntimeImportInfo>,
+    needed: BTreeMap<Id, &RuntimeImportInfo>,
 ) -> Result<Vec<ModuleItem>> {
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
     let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(needed.len());
-    for (local, info) in needed {
+    for (local_id, info) in needed {
         let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
         {
@@ -98,7 +98,10 @@ pub(super) fn source_chunk_imports_for_moved_body(
             // Bare specifier (npm package etc.) — pass through unchanged.
             info.src.clone()
         };
-        pairs.push((rewritten_source, runtime_reimport_specifier(&local, info)));
+        pairs.push((
+            rewritten_source,
+            runtime_reimport_specifier(&local_id, info),
+        ));
     }
     Ok(group_specifiers_into_import_decls(pairs))
 }

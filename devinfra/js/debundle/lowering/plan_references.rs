@@ -26,7 +26,7 @@ pub(super) struct ModuleReferenceNeeds<'a> {
     pub(super) cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
     pub(super) residual_entry_imports: BTreeMap<String, EntryExport>,
     pub(super) missing_residual_exports: BTreeSet<String>,
-    pub(super) runtime_reimports: BTreeMap<String, &'a RuntimeImportInfo>,
+    pub(super) runtime_reimports: BTreeMap<Id, &'a RuntimeImportInfo>,
     /// Side-effect-only providers: modules this module has a constraining
     /// edge to (via at-init call promotion) but whose bindings aren't
     /// directly referenced in this module's body. Without an explicit
@@ -223,7 +223,7 @@ pub(super) fn plan_module_reference_needs<'a>(
                 })
         });
         if let Some(info) = info {
-            needs.runtime_reimports.insert(name_str.to_string(), info);
+            needs.runtime_reimports.insert(body_id.clone(), info);
         }
     }
 

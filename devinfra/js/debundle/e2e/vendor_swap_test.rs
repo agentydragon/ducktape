@@ -1446,6 +1446,155 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
 }
 
 #[test]
+fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
+    // Logical-module materialization synthesizes a fresh import for moved
+    // source-chunk bindings. For bundled partial swaps, that generated import
+    // is then rewritten to the package facade and all references using the
+    // import binding's same hygiene context must follow it. A no-context import
+    // alias would leave bare `toolkitMap` / `toolkitMake` references behind.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "toolkit-core";
+    const PACKAGE_VERSION: &str = "1.0.0";
+
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-materialized-named-",
+        "toolkit-core.esbuilt.js",
+        "const Toolkit = {\n\
+           map(value) { return `package:${value}`; },\n\
+           make(target) { target.mark = \"package\"; return target; },\n\
+         };\n\
+         export { Toolkit };\n",
+        &[
+            (
+                VENDOR_PATH,
+                "const map = value => `vendor:${value}`;\n\
+                 const make = target => { target.mark = \"vendor\"; return target; };\n\
+                 export { map as m, make as k };\n",
+            ),
+            (
+                APP_PATH,
+                "import { m as toolkitMap, k as toolkitMake } from \"../../vendor/entry.js\";\n\
+                 const direct = toolkitMap(\"top\");\n\
+                 const shadowed = ((toolkitMap) => toolkitMap(\"shadow\"))(value => `local:${value}`);\n\
+                 const made = toolkitMake({ label: \"top\" });\n\
+                 export { direct, shadowed, made };\n",
+            ),
+        ],
+    );
+    let report_root = ws.out_root.join("reports").join("tree");
+    let package_root = ws.write_upstream_package(
+        "upstream/toolkit-core",
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        "index.js",
+        "export const map = value => `package:${value}`;\n\
+         export const make = target => { target.mark = \"package\"; return target; };\n",
+    );
+
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({
+            VENDOR_PATH: {
+                "level": "bundled_partial_swap",
+                "identity": "materialized named alias bundled partial swap fixture",
+                "bundle": { "path": &bundle_path },
+                "packages": {
+                    PACKAGE_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "index.js",
+                        "bundle_export": "Toolkit",
+                        "namespace": "Toolkit",
+                    },
+                },
+                "symbols": {
+                    "m": {
+                        "package": PACKAGE_NAME,
+                        "kind": "named",
+                        "upstream_export": "map",
+                    },
+                    "k": {
+                        "package": PACKAGE_NAME,
+                        "kind": "named",
+                        "upstream_export": "make",
+                    },
+                },
+            },
+        }),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "helpers/toolkit": {
+                        "members": [
+                            {
+                                "name": "direct",
+                                "selector": { "binding": { "name": "direct" } },
+                            },
+                            {
+                                "name": "shadowed",
+                                "selector": { "binding": { "name": "shadowed" } },
+                            },
+                            {
+                                "name": "made",
+                                "selector": { "binding": { "name": "made" } },
+                            },
+                        ],
+                    },
+                },
+            },
+            "unassigned_mode": {
+                "static/app": { "kind": "inline_in_entry" },
+            },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": &report_root,
+                "target_dir": "modules",
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let materialized_path = ws
+        .out_root
+        .join("app/static/app/modules/helpers/toolkit.js");
+    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
+    assert!(
+        materialized.contains("vendors/generated/static/vendor/toolkit-core.js"),
+        "materialized module should import the generated bundled facade:\n{materialized}",
+    );
+    assert!(
+        materialized.contains("Toolkit.map(") && materialized.contains("Toolkit.make("),
+        "materialized module should rewrite imported aliases to package-facade members:\n{materialized}",
+    );
+    assert!(
+        !materialized.contains("toolkitMap(\"top\")") && !materialized.contains("toolkitMake"),
+        "materialized module should not retain top-level generated import aliases:\n{materialized}",
+    );
+    assert!(
+        materialized.contains("toolkitMap(\"shadow\")"),
+        "shadowed local parameter should not be rewritten by the package-facade alias pass:\n{materialized}",
+    );
+
+    let probe_path = ws.out_root.join("__run_materialized_named.mjs");
+    write_text_file(
+        &probe_path,
+        "const { direct, shadowed, made } = await import(\"./app/static/app/modules/helpers/toolkit.js\");\n\
+         console.log(`${direct}|${shadowed}|${made.mark}`);\n",
+    );
+    assert_node_output(&probe_path, "package:top|local:shadow|package\n", "");
+}
+
+#[test]
 fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     // Zod's public surface can be swapped while a residual app schema in the
     // same vendor chunk still calls an internal zod helper that Vite did not
