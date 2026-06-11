@@ -19,19 +19,23 @@
 //! fixture assertions flip to agreement and this harness becomes a
 //! strict-equality check (and the catalog is deleted).
 //!
-//! Skeleton caveats (completed by Track F1 in later PRs):
-//! - generation uses a deterministic xorshift sweep over small
-//!   synthetic reports rather than proptest (no proptest dep in the
-//!   crate universe yet);
-//! - per-tier skip-soundness assertions arrive with the ladder
-//!   itself (PR 3).
+//! PR 3 additions: every comparison also runs the index's tier
+//! ladder (`QuotientGraph::ladder_decision_for_merge`) and asserts
+//! **strict equality** against the reference plus per-tier skip
+//! soundness (§7.1) — the ladder has no divergence catalog; only the
+//! legacy class-level gate keeps one until PR 4 routes
+//! `check_merge_boolean` through the ladder.
+//!
+//! Skeleton caveat (completed by Track F1 in later PRs): generation
+//! uses a deterministic xorshift sweep over small synthetic reports
+//! rather than proptest (no proptest dep in the crate universe yet).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
-use gate::{RealizabilityVerdict, SccRejection, check_realizability_touching};
+use gate::{LadderDecision, RealizabilityVerdict, SccRejection, check_realizability_touching};
 use peel::quotient::{
     ClassId, OwnerIdx, PartitionGroup, QuotientGraph, SpecModuleGroup, build_seed_quotient,
     greedy_step,
@@ -233,6 +237,60 @@ fn classify_divergence(gate_accepts: bool, reference: &RealizabilityVerdict) -> 
     DivergenceClass::CrossRebindBlindness
 }
 
+/// PR 3 (plan §8): the tier ladder must equal the reference predicate
+/// on EVERY query — the divergence catalog does not apply to it — and
+/// each deciding tier must be certified by the reference shape its
+/// skip-condition theorem names (plan §7.1 tier-skip soundness), so a
+/// ladder bug localizes to its tier.
+fn assert_ladder_matches_reference(
+    c1: ClassId,
+    c2: ClassId,
+    ladder: LadderDecision,
+    reference: &RealizabilityVerdict,
+) {
+    assert_eq!(
+        ladder.accepts(),
+        reference.is_realizable(),
+        "({c1:?}, {c2:?}): ladder {ladder:?} diverges from the reference \
+         predicate: {reference:#?}",
+    );
+    let mutual_cycle = reference
+        .unrealizable_sccs
+        .iter()
+        .any(|scc| scc.rejection == SccRejection::MutualConstrainingCycle);
+    let tdz = reference
+        .unrealizable_sccs
+        .iter()
+        .any(|scc| scc.rejection == SccRejection::EsmEvaluationTdz);
+    match ladder {
+        LadderDecision::ConstrainingCycleReject => assert!(
+            mutual_cycle,
+            "({c1:?}, {c2:?}): tier-1 reject must be certified by a \
+             MutualConstrainingCycle touching M: {reference:#?}",
+        ),
+        LadderDecision::CrossRebindReject => assert!(
+            !reference.cross_rebinds.is_empty(),
+            "({c1:?}, {c2:?}): tier-1 rebind reject must be certified by a \
+             clause-2 cross-rebind touching M: {reference:#?}",
+        ),
+        LadderDecision::SimulatorReject => assert!(
+            tdz,
+            "({c1:?}, {c2:?}): tier-3 reject must be certified by an \
+             EsmEvaluationTdz diagnosis touching M: {reference:#?}",
+        ),
+        LadderDecision::NoMultiModuleISccAccept | LadderDecision::NoConstrainingPairAccept => {
+            assert!(
+                !tdz,
+                "({c1:?}, {c2:?}): tier-2 vacuity claims Pass 2 produced \
+                 nothing touching M: {reference:#?}",
+            )
+        }
+        LadderDecision::DeltaFreeAccept
+        | LadderDecision::DeltaFreeReject
+        | LadderDecision::SimulatorAccept => {}
+    }
+}
+
 /// Run one gate-vs-reference comparison. Returns `None` when the
 /// non-cycle preconditions fail (the gate's `false` would not be a
 /// predicate decision).
@@ -255,6 +313,10 @@ fn compare_gate_to_reference(
     let pre_dirty =
         !check_realizability_touching(owner_graph, &pre_partition, post_module).is_realizable();
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
+    // The ladder is the post-state predicate itself, so its equality
+    // claim is NOT scoped to clean pre-states — assert on every query.
+    let ladder = q.ladder_decision_for_merge(c1, c2);
+    assert_ladder_matches_reference(c1, c2, ladder, &reference);
     Some(if gate_accepts == reference.is_realizable() {
         QueryOutcome::Agree
     } else if pre_dirty {

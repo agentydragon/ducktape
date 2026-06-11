@@ -515,11 +515,13 @@ rust_test(
     ],
 )
 
-# Differential harness skeleton for the gate-ladder unification
-# (plans/incremental_gate_unification.md §7.1, PR 1 of §8): compares
-# the kernel's hot boolean merge gate against the touching-filtered
-# `check_realizability` reference, with the known-divergence catalog
-# encoded as expected failures.
+# Differential harness for the gate-ladder unification
+# (plans/incremental_gate_unification.md §7.1, PRs 1+3 of §8):
+# compares the kernel's hot boolean merge gate against the
+# touching-filtered `check_realizability` reference (known-divergence
+# catalog encoded as expected failures until the PR 4 cutover) and
+# asserts the index's tier ladder strictly equals the reference with
+# per-tier skip soundness.
 rust_test(
     name = "peel_gate_differential_test",
     srcs = ["peel/gate_differential_test.rs"],

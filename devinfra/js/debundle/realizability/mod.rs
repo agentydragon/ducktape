@@ -49,7 +49,7 @@ mod incremental_quotient;
 
 pub use condensation_order::CondensationOrder;
 use esm_simulator::EsmEvaluationSimulator;
-pub use incremental_quotient::{DeltaHandle, PartitionDelta};
+pub use incremental_quotient::{DeltaHandle, LadderDecision, PartitionDelta};
 use incremental_quotient::{IncrementalQuotient, JournalEntry, QuotientOverlay};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
@@ -521,8 +521,79 @@ impl RealizabilityIndex {
         let overlay = self
             .quotient
             .overlay_for_move(owner_graph, &self.partition, owners, to);
-        self.quotient.verdict_with_overlay_touching(to, &overlay)
+        let verdict = self.quotient.verdict_with_overlay_touching(to, &overlay);
+        if gate_oracle_enabled() {
+            // Oracle mode (plan §7.2): the boolean tier ladder must
+            // agree with the evidence-producing verdict on every
+            // diagnostic-path query.
+            let decision = self.quotient.ladder_decide(to, &overlay);
+            assert_eq!(
+                decision.accepts(),
+                verdict.is_realizable(),
+                "DEBUNDLE_GATE_ORACLE: ladder {decision:?} diverges from the overlay \
+                 verdict for {to:?}: {verdict:#?}",
+            );
+        }
+        verdict
     }
+
+    /// Tier-laddered decision for a hypothetical owner move, filtered
+    /// to the target module (`plans/incremental_gate_unification.md`
+    /// §3; PR 3 of §8). Exactly equal to
+    /// `verdict_after_moving_owners_touching(..).is_realizable()` with
+    /// evidence materialization elided: tiers 0–2 are short-circuits
+    /// whose skip conditions are theorems about the predicate, tier 3
+    /// runs the shared simulator path. With `DEBUNDLE_GATE_ORACLE`
+    /// set, every query is additionally cross-checked against the
+    /// pure touching-filtered reference and divergence panics.
+    pub fn ladder_decision_after_moving_owners_touching(
+        &self,
+        owner_graph: &OwnerGraph,
+        owners: &[OwnerId],
+        to: ModuleId,
+    ) -> LadderDecision {
+        let overlay = self
+            .quotient
+            .overlay_for_move(owner_graph, &self.partition, owners, to);
+        let decision = self.quotient.ladder_decide(to, &overlay);
+        if gate_oracle_enabled() {
+            let mut post_partition = self.partition.clone();
+            for &owner in owners {
+                post_partition.set(owner, to);
+            }
+            let reference = check_realizability_touching(owner_graph, &post_partition, to);
+            assert_eq!(
+                decision.accepts(),
+                reference.is_realizable(),
+                "DEBUNDLE_GATE_ORACLE: ladder {decision:?} diverges from the pure \
+                 reference for {to:?}: {reference:#?}",
+            );
+        }
+        decision
+    }
+
+    /// Boolean form of
+    /// [`Self::ladder_decision_after_moving_owners_touching`] — the
+    /// §8 PR 3 gate-ladder entry point. PR 4 routes the kernel's
+    /// `check_merge_boolean` here.
+    pub fn would_remain_realizable_after_moving_owners_touching(
+        &self,
+        owner_graph: &OwnerGraph,
+        owners: &[OwnerId],
+        to: ModuleId,
+    ) -> bool {
+        self.ladder_decision_after_moving_owners_touching(owner_graph, owners, to)
+            .accepts()
+    }
+}
+
+/// One-time cached `DEBUNDLE_GATE_ORACLE` probe (plan §7.2): when set,
+/// every ladder query cross-checks against the reference predicate and
+/// panics on divergence. Off by default — the reference is
+/// `O(V + E)` per query.
+fn gate_oracle_enabled() -> bool {
+    static ORACLE_ENABLED: OnceLock<bool> = OnceLock::new();
+    *ORACLE_ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_GATE_ORACLE").is_some())
 }
 
 /// True when `overlay` introduces no changes the ESM evaluation
@@ -631,6 +702,50 @@ pub mod gate_perf_counters {
 
     pub(super) static DIAGNOSTIC_TRANSLATION_CALLS: AtomicUsize = AtomicUsize::new(0);
     pub(super) static DIAGNOSTIC_TRANSLATION_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+    // -- Gate-ladder per-tier counters (plan §3; PR 3 of §8) ----------------
+
+    pub(super) static LADDER_TIER0_ACCEPT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER0_REJECT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER1_CYCLE_REJECT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER1_CROSS_REBIND_REJECT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER2_NO_MULTI_ISCC_ACCEPT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER2_NO_PAIR_ACCEPT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER3_ACCEPT: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static LADDER_TIER3_REJECT: AtomicUsize = AtomicUsize::new(0);
+    /// Per-tier cumulative wall time in nanoseconds
+    /// (`DEBUNDLE_TIMING=1` only; zero otherwise).
+    pub(super) static LADDER_TIER1_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(super) static LADDER_TIER2_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(super) static LADDER_TIER3_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    pub(super) fn record_ladder_decision(
+        decision: LadderDecision,
+        tier1_nanos: Option<u64>,
+        tier2_nanos: Option<u64>,
+        tier3_nanos: Option<u64>,
+    ) {
+        let counter = match decision {
+            LadderDecision::DeltaFreeAccept => &LADDER_TIER0_ACCEPT,
+            LadderDecision::DeltaFreeReject => &LADDER_TIER0_REJECT,
+            LadderDecision::ConstrainingCycleReject => &LADDER_TIER1_CYCLE_REJECT,
+            LadderDecision::CrossRebindReject => &LADDER_TIER1_CROSS_REBIND_REJECT,
+            LadderDecision::NoMultiModuleISccAccept => &LADDER_TIER2_NO_MULTI_ISCC_ACCEPT,
+            LadderDecision::NoConstrainingPairAccept => &LADDER_TIER2_NO_PAIR_ACCEPT,
+            LadderDecision::SimulatorAccept => &LADDER_TIER3_ACCEPT,
+            LadderDecision::SimulatorReject => &LADDER_TIER3_REJECT,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+        if let Some(nanos) = tier1_nanos {
+            LADDER_TIER1_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
+        if let Some(nanos) = tier2_nanos {
+            LADDER_TIER2_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
+        if let Some(nanos) = tier3_nanos {
+            LADDER_TIER3_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
+    }
 
     // -- Reservoir-sampled histograms --------------------------------------
     //
@@ -983,6 +1098,37 @@ pub mod gate_perf_counters {
         let _ = writeln!(
             out,
             "  overlay simulator rebuilds: {overlay_rebuilds}, cumulative {overlay_rebuild_secs:.3}s, per-call avg {overlay_rebuild_per_call_us:.3} µs"
+        );
+
+        let tier0_accept = LADDER_TIER0_ACCEPT.load(Ordering::Relaxed);
+        let tier0_reject = LADDER_TIER0_REJECT.load(Ordering::Relaxed);
+        let tier1_cycle = LADDER_TIER1_CYCLE_REJECT.load(Ordering::Relaxed);
+        let tier1_rebind = LADDER_TIER1_CROSS_REBIND_REJECT.load(Ordering::Relaxed);
+        let tier2_no_scc = LADDER_TIER2_NO_MULTI_ISCC_ACCEPT.load(Ordering::Relaxed);
+        let tier2_no_pair = LADDER_TIER2_NO_PAIR_ACCEPT.load(Ordering::Relaxed);
+        let tier3_accept = LADDER_TIER3_ACCEPT.load(Ordering::Relaxed);
+        let tier3_reject = LADDER_TIER3_REJECT.load(Ordering::Relaxed);
+        let ladder_total = tier0_accept
+            + tier0_reject
+            + tier1_cycle
+            + tier1_rebind
+            + tier2_no_scc
+            + tier2_no_pair
+            + tier3_accept
+            + tier3_reject;
+        let _ = writeln!(
+            out,
+            "gate ladder: {ladder_total} queries; tier0 {tier0_accept} accept / {tier0_reject} reject; \
+             tier1 {tier1_cycle} cycle-reject + {tier1_rebind} rebind-reject; \
+             tier2 {tier2_no_scc} no-multi-iscc + {tier2_no_pair} no-pair accept; \
+             tier3 {tier3_accept} accept / {tier3_reject} reject"
+        );
+        let tier1_secs = LADDER_TIER1_NANOS.load(Ordering::Relaxed) as f64 / 1e9;
+        let tier2_secs = LADDER_TIER2_NANOS.load(Ordering::Relaxed) as f64 / 1e9;
+        let tier3_secs = LADDER_TIER3_NANOS.load(Ordering::Relaxed) as f64 / 1e9;
+        let _ = writeln!(
+            out,
+            "  ladder wall: tier1 {tier1_secs:.3}s, tier2 {tier2_secs:.3}s, tier3 {tier3_secs:.3}s"
         );
 
         let diagnostic_calls = DIAGNOSTIC_TRANSLATION_CALLS.load(Ordering::Relaxed);

@@ -1004,3 +1004,199 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
         }
     }
 }
+
+// ---------------------------------------------------------------------
+// Gate-ladder tests (plans/incremental_gate_unification.md §3; PR 3
+// of §8): the tier-laddered boolean must equal the evidence-producing
+// overlay verdict on every move query, with each fixture pinning the
+// tier expected to decide it.
+// ---------------------------------------------------------------------
+
+/// Assert the ladder, the boolean wrapper, and the overlay verdict
+/// agree for one move query; return the decision for tier pinning.
+fn assert_ladder_matches_verdict(
+    index: &RealizabilityIndex,
+    owner_graph: &OwnerGraph,
+    owners: &[OwnerId],
+    to: ModuleId,
+) -> LadderDecision {
+    let decision = index.ladder_decision_after_moving_owners_touching(owner_graph, owners, to);
+    let verdict = index.verdict_after_moving_owners_touching(owner_graph, owners, to);
+    assert_eq!(
+        decision.accepts(),
+        verdict.is_realizable(),
+        "ladder {decision:?} diverges from the overlay verdict for move \
+         {owners:?} → {to:?}: {verdict:#?}",
+    );
+    assert_eq!(
+        decision.accepts(),
+        index.would_remain_realizable_after_moving_owners_touching(owner_graph, owners, to),
+    );
+    decision
+}
+
+#[test]
+fn ladder_tier0_delta_free_move_accepts_on_clean_state() {
+    let source = "const a = 1; const b = a + 1;";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    // Owner 1 already lives in module 0 — the move is delta-free.
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(0));
+    assert_eq!(decision, LadderDecision::DeltaFreeAccept);
+}
+
+#[test]
+fn ladder_tier0_delta_free_move_rejects_on_dirty_pre_state() {
+    // Mutual constraining cycle committed between modules 1 and 2; a
+    // delta-free move touching module 1 must reject (post == pre, and
+    // the pre-state touching verdict is dirty).
+    let source = "const a = b + 1; const b = a + 1;";
+    let owner_graph = parse_and_build(source);
+    let mut partition = Partition::new(&owner_graph, module_id(0));
+    partition.set(OwnerId(0), module_id(1));
+    partition.set(OwnerId(1), module_id(2));
+    let index = RealizabilityIndex::from_partition(&owner_graph, partition);
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(0)], module_id(1));
+    assert_eq!(decision, LadderDecision::DeltaFreeReject);
+}
+
+#[test]
+fn ladder_tier1_rejects_constraining_cycle_move() {
+    // Moving `b` out of residual closes the mutual eager 2-cycle —
+    // a Pass-1 reject the constraining condensation decides.
+    let source = "const a = b + 1; const b = a + 1;";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::ConstrainingCycleReject);
+}
+
+#[test]
+fn ladder_tier1_rejects_cross_rebind_move() {
+    // Moving the writer out of residual turns the intra-module rebind
+    // into a clause-2 cross-module rebinding write.
+    let source = "let a = 0; function b() { a = 1; }";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::CrossRebindReject);
+}
+
+#[test]
+fn ladder_tier2_accepts_acyclic_cross_module_move() {
+    // The move adds one constraining edge and closes nothing — the
+    // I-condensation proves Pass 2 vacuous without a simulator build.
+    let source = "const a = 1; const b = a + 1;";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::NoMultiModuleISccAccept);
+}
+
+#[test]
+fn ladder_tier2_accepts_pure_lazy_cycle_move() {
+    // The move closes a pure-lazy I-cycle: multi-module I-SCC with no
+    // constraining pair inside — Lemma 2 says it never TDZs.
+    let source = "function a() { return b(); } function b() { return a(); }";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::NoConstrainingPairAccept);
+}
+
+#[test]
+fn ladder_tier3_accepts_lemma_two_rescued_move() {
+    // The `lemma_two_rescues_asymmetric_cycle...` shape reached via a
+    // speculative move: dep_value + lazy_reader sit in mod 1; moving
+    // cross_value to mod 2 closes the asymmetric I-SCC {1, 2} with a
+    // constraining pair, so the ladder must run the simulator — which
+    // rescues (Lemma 2).
+    let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } console.log(dep_value, cross_value, lazy_reader());";
+    let owner_graph = parse_and_build(source);
+    let mut partition = Partition::new(&owner_graph, module_id(0));
+    partition.set(OwnerId(0), module_id(1));
+    partition.set(OwnerId(2), module_id(1));
+    let index = RealizabilityIndex::from_partition(&owner_graph, partition);
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(2));
+    assert_eq!(decision, LadderDecision::SimulatorAccept);
+}
+
+#[test]
+fn ladder_tier3_rejects_tdz_move() {
+    // Asymmetric I-SCC with the constraining edge pointing INTO
+    // residual (the `constraining_edge_into_residual_inside_scc`
+    // shape, reached via a move): residual is the DFS root and
+    // evaluates last, so the moved statement's eager read of `seed`
+    // TDZs. Pass 1 is clean (one constraining direction) and the
+    // I-SCC carries a constraining pair, so only tier 3 can decide.
+    let source = "const seed = 1; const x = seed + 1; function readX() { return x; }";
+    let owner_graph = parse_and_build(source);
+    let index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::SimulatorReject);
+}
+
+/// Condensation-order maintenance: the ladder stays equal to the
+/// overlay verdict across committed pushes (incremental edge
+/// insert/remove), `commit`, and `undo` (invalidate + lazy rebuild,
+/// plan §4's journal interaction).
+#[test]
+fn ladder_matches_verdict_across_push_commit_undo() {
+    let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
+    let owner_graph = parse_and_build(source);
+    let mut index = RealizabilityIndex::from_partition(
+        &owner_graph,
+        Partition::new(&owner_graph, module_id(0)),
+    );
+    let sweep = |index: &RealizabilityIndex| {
+        for owner in 0..owner_graph.num_nodes() {
+            for module in 0..4 {
+                assert_ladder_matches_verdict(
+                    index,
+                    &owner_graph,
+                    &[OwnerId(owner)],
+                    module_id(module),
+                );
+            }
+        }
+    };
+    sweep(&index);
+    index.push(
+        &owner_graph,
+        PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(1)],
+            to: module_id(1),
+        },
+    );
+    sweep(&index);
+    index.commit();
+    sweep(&index);
+    let speculative = index.push(
+        &owner_graph,
+        PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(2)],
+            to: module_id(2),
+        },
+    );
+    sweep(&index);
+    index.undo(&owner_graph, speculative);
+    sweep(&index);
+}

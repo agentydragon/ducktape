@@ -13,6 +13,7 @@ use analysis::partition::Partition;
 
 use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 
+use super::condensation_order::CondensationOrder;
 use super::esm_simulator::EsmEvaluationSimulator;
 use super::{
     CrossRebindEdge, RealizabilityVerdict, SccDiagnosis, SccRejection, gate_perf_counters,
@@ -114,6 +115,54 @@ pub(super) enum EdgeContributionKind {
     Import { constraining: bool, sequenced: bool },
 }
 
+/// How the gate ladder decided one boolean realizability query
+/// (`plans/incremental_gate_unification.md` §3; PR 3 of §8). Each
+/// variant names the tier that decided and the skip-condition theorem
+/// (or exact evaluation) certifying the decision — the differential
+/// harness asserts per-variant tier-skip soundness against the pure
+/// reference predicate.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum LadderDecision {
+    /// Tier 0: the move's overlay is empty (post-state == pre-state)
+    /// and the committed pre-state touching verdict is clean.
+    DeltaFreeAccept,
+    /// Tier 0: empty overlay, but the pre-state touching verdict
+    /// already carries a violation at the target module.
+    DeltaFreeReject,
+    /// Tier 1: the target's post-move constraining SCC is
+    /// multi-module — precisely a `MutualConstrainingCycle` diagnosis
+    /// touching the target (clause 3, Pass 1).
+    ConstrainingCycleReject,
+    /// Tier 1: a cross-module rebinding write touches the target
+    /// (clause 2).
+    CrossRebindReject,
+    /// Tier 2: the target's post-move I-SCC is single-module — Pass 2
+    /// is vacuous (modules outside any I-cycle cannot be rejected by
+    /// the simulator).
+    NoMultiModuleISccAccept,
+    /// Tier 2: the target's post-move I-SCC is multi-module but
+    /// carries no effective constraining pair — pure-lazy I-cycles
+    /// never TDZ (Lemma 2), so Pass 2 is vacuous.
+    NoConstrainingPairAccept,
+    /// Tier 3: the scoped ESM evaluation simulator found no TDZ pair.
+    SimulatorAccept,
+    /// Tier 3: the simulator proved a TDZ — an `EsmEvaluationTdz`
+    /// diagnosis touching the target.
+    SimulatorReject,
+}
+
+impl LadderDecision {
+    pub fn accepts(self) -> bool {
+        matches!(
+            self,
+            Self::DeltaFreeAccept
+                | Self::NoMultiModuleISccAccept
+                | Self::NoConstrainingPairAccept
+                | Self::SimulatorAccept
+        )
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct QuotientOverlay {
     pub(super) i_delta: BTreeMap<(ModuleId, ModuleId), isize>,
@@ -125,6 +174,19 @@ pub(super) struct QuotientOverlay {
 }
 
 impl QuotientOverlay {
+    /// True when the move changes no quotient contribution at all —
+    /// the ladder's tier-0 "delta-free" condition (post-state ==
+    /// pre-state). Stricter than [`super::overlay_is_simulator_noop`],
+    /// which ignores cross-rebind edits.
+    pub(super) fn is_empty(&self) -> bool {
+        self.i_delta.is_empty()
+            && self.constraining_delta.is_empty()
+            && self.constraining_added.is_empty()
+            && self.constraining_removed.is_empty()
+            && self.cross_rebind_added.is_empty()
+            && self.cross_rebind_removed.is_empty()
+    }
+
     pub(super) fn add_contribution(&mut self, contribution: EdgeContribution) {
         match contribution.kind {
             EdgeContributionKind::Rebind => {
@@ -449,6 +511,21 @@ pub(super) struct IncrementalQuotient {
     /// `Cell` (not `RefCell`) because the value is `Copy` and we only
     /// read/write a single bool.
     pub(super) base_snapshot_stale: Cell<bool>,
+    /// Tier-1 structure of the gate ladder (plan §3/§4): SCC
+    /// condensation order maintained over `constraining_graph`.
+    /// Updated in the same `add_current_edge` / `remove_current_edge`
+    /// funnel that maintains the graph; invalidated (lazy rebuild) by
+    /// `rollback_graphs` — undo is off the hot path. `RefCell` because
+    /// queries need `&mut` (path halving, lazy rebuild) while the
+    /// verdict/ladder API is `&self`, matching the simulator caches.
+    pub(super) constraining_order: RefCell<CondensationOrder<ModuleId>>,
+    /// Tier-2 structure: the same condensation order over `i_graph`.
+    pub(super) i_order: RefCell<CondensationOrder<ModuleId>>,
+    /// Tier-0 memo: `verdict_touching(module).is_realizable()` for the
+    /// current committed quotient state. Cleared on every quotient
+    /// mutation — including cross-rebind edits, which bypass
+    /// `invalidate_cached_simulator`.
+    pub(super) cached_touching_clean: RefCell<BTreeMap<ModuleId, bool>>,
 }
 
 impl IncrementalQuotient {
@@ -466,6 +543,11 @@ impl IncrementalQuotient {
             // base-snapshot rebuild — matches what a real
             // snapshot-per-push design would do on startup.
             base_snapshot_stale: Cell::new(true),
+            // Both orders start stale and lazily rebuild from their
+            // base graph on the first ladder query.
+            constraining_order: RefCell::new(CondensationOrder::new()),
+            i_order: RefCell::new(CondensationOrder::new()),
+            cached_touching_clean: RefCell::new(BTreeMap::new()),
         };
         for edge in owner_graph.iter_edges() {
             quotient.add_current_edge(edge, partition, true);
@@ -481,6 +563,9 @@ impl IncrementalQuotient {
         *self.cached_base_simulator.borrow_mut() = None;
         *self.cached_base_i_successors.borrow_mut() = None;
         *self.cached_base_constraining_pairs.borrow_mut() = None;
+        // Every path that invalidates the simulator also changed the
+        // graphs/buckets the tier-0 touching verdict reads.
+        self.cached_touching_clean.get_mut().clear();
         // DEBUNDLE_TIMING=1 only: the next gate query will emulate a
         // fresh base-SCC snapshot rebuild. The flag costs one
         // unconditional store per invalidation (a few thousand per
@@ -589,6 +674,12 @@ impl IncrementalQuotient {
     pub(super) fn rollback_graphs(&mut self, i_mark: GraphMark, constraining_mark: GraphMark) {
         self.i_graph.rollback_to(i_mark);
         self.constraining_graph.rollback_to(constraining_mark);
+        // Out-of-band base mutation for the condensation orders (the
+        // undo path): invalidate + lazy rebuild on the next query
+        // instead of journaled rollback — undo is off the hot path
+        // everywhere (plan §4, journal interaction).
+        self.constraining_order.get_mut().invalidate();
+        self.i_order.get_mut().invalidate();
         // Graph topology just changed; drop the cached simulator.
         self.invalidate_cached_simulator();
     }
@@ -619,6 +710,9 @@ impl IncrementalQuotient {
                     owner_edge: edge.id,
                 },
             );
+            // Rebinds bypass the simulator/graph invalidation but DO
+            // change the touching verdict the tier-0 memo caches.
+            self.cached_touching_clean.get_mut().clear();
             return;
         }
 
@@ -627,12 +721,16 @@ impl IncrementalQuotient {
         self.invalidate_cached_simulator();
         if update_graphs {
             self.i_graph.increment_edge(from, to);
+            self.i_order.get_mut().insert_edge(&self.i_graph, from, to);
         }
         if !edge.reason.constrains_init_order() {
             return;
         }
         if update_graphs {
             self.constraining_graph.increment_edge(from, to);
+            self.constraining_order
+                .get_mut()
+                .insert_edge(&self.constraining_graph, from, to);
         }
         let bucket = self.constraining_buckets.entry((from, to)).or_default();
         bucket.insert_edge(edge.id, edge.reason.is_sequenced());
@@ -656,6 +754,9 @@ impl IncrementalQuotient {
         };
         if edge.reason.is_rebind() {
             self.cross_rebinds.remove(&edge.id);
+            // Mirror `add_current_edge`: rebind edits change the
+            // touching verdict the tier-0 memo caches.
+            self.cached_touching_clean.get_mut().clear();
             return;
         }
 
@@ -664,12 +765,16 @@ impl IncrementalQuotient {
         self.invalidate_cached_simulator();
         if update_graphs {
             self.i_graph.decrement_edge(from, to);
+            self.i_order.get_mut().remove_edge(&self.i_graph, from, to);
         }
         if !edge.reason.constrains_init_order() {
             return;
         }
         if update_graphs {
             self.constraining_graph.decrement_edge(from, to);
+            self.constraining_order
+                .get_mut()
+                .remove_edge(&self.constraining_graph, from, to);
         }
         let pair = (from, to);
         let mut remove_bucket = false;
@@ -833,27 +938,10 @@ impl IncrementalQuotient {
         let i_modules = i_graph_view.scc_containing(module);
         let i_scc_size = i_modules.len();
         if i_modules.len() >= 2 && !reported.contains(&i_modules) {
-            let constraining_pairs = self.constraining_pairs_with_overlay(overlay);
-            let any_inside_scc = constraining_pairs.iter().any(|(from, to)| {
-                i_modules.contains(from)
-                    && i_modules.contains(to)
-                    && !self
-                        .constraining_bucket_with_overlay((*from, *to), overlay)
-                        .is_empty()
-            });
+            let any_inside_scc = self.overlay_constraining_pair_inside(&i_modules, overlay);
             i_scc_had_constraining_pair = any_inside_scc;
             if any_inside_scc {
-                let simulation = self.build_simulator(Some(overlay));
-                let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = constraining_pairs
-                    .into_iter()
-                    .filter(|pair| {
-                        !self
-                            .constraining_bucket_with_overlay(*pair, overlay)
-                            .is_empty()
-                    })
-                    .collect();
-                let tdz_pairs: Vec<(ModuleId, ModuleId)> =
-                    simulation.tdz_pairs(&i_modules, &effective_pairs).collect();
+                let tdz_pairs = self.overlay_tdz_pairs(&i_modules, overlay);
                 if !tdz_pairs.is_empty() {
                     let constraining_owner_edges =
                         self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
@@ -874,6 +962,196 @@ impl IncrementalQuotient {
             !verdict.is_realizable(),
         );
         verdict
+    }
+
+    /// Whether `modules` contains both endpoints of an effective
+    /// constraining pair under `overlay` — the Pass-2 candidacy test
+    /// shared by `verdict_with_overlay_touching` and the ladder's
+    /// tier 2 (pure-lazy I-SCCs never TDZ).
+    pub(super) fn overlay_constraining_pair_inside(
+        &self,
+        modules: &BTreeSet<ModuleId>,
+        overlay: &QuotientOverlay,
+    ) -> bool {
+        self.constraining_pairs_with_overlay(overlay)
+            .iter()
+            .any(|(from, to)| {
+                modules.contains(from)
+                    && modules.contains(to)
+                    && !self
+                        .constraining_bucket_with_overlay((*from, *to), overlay)
+                        .is_empty()
+            })
+    }
+
+    /// TDZ-violating constraining pairs inside `modules` under
+    /// `overlay` — the exact Pass-2 evaluation (overlay-patched
+    /// simulator build + post-order check). Shared by the
+    /// evidence-producing `verdict_with_overlay_touching` and the
+    /// ladder's tier 3, so the two cannot drift.
+    pub(super) fn overlay_tdz_pairs(
+        &self,
+        modules: &BTreeSet<ModuleId>,
+        overlay: &QuotientOverlay,
+    ) -> Vec<(ModuleId, ModuleId)> {
+        let simulation = self.build_simulator(Some(overlay));
+        let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = self
+            .constraining_pairs_with_overlay(overlay)
+            .into_iter()
+            .filter(|pair| {
+                !self
+                    .constraining_bucket_with_overlay(*pair, overlay)
+                    .is_empty()
+            })
+            .collect();
+        simulation.tdz_pairs(modules, &effective_pairs).collect()
+    }
+
+    /// Tier-0 memo: `verdict_touching(module).is_realizable()` against
+    /// the committed quotient state, cached until the next mutation.
+    fn touching_is_clean(&self, module: ModuleId) -> bool {
+        if let Some(&clean) = self.cached_touching_clean.borrow().get(&module) {
+            return clean;
+        }
+        let clean = self.verdict_touching(module).is_realizable();
+        self.cached_touching_clean
+            .borrow_mut()
+            .insert(module, clean);
+        clean
+    }
+
+    /// Allocation-free boolean twin of
+    /// `cross_rebinds_touching_with_overlay` for the ladder's tier-1
+    /// clause-2 check.
+    fn any_cross_rebind_touching_with_overlay(
+        &self,
+        module: ModuleId,
+        overlay: &QuotientOverlay,
+    ) -> bool {
+        self.cross_rebinds.iter().any(|(edge_id, rebind)| {
+            !overlay.cross_rebind_removed.contains(edge_id)
+                && (rebind.from == module || rebind.to == module)
+        }) || overlay
+            .cross_rebind_added
+            .values()
+            .any(|rebind| rebind.from == module || rebind.to == module)
+    }
+
+    /// Tier-laddered boolean evaluation of the touching predicate
+    /// (`plans/incremental_gate_unification.md` §3): each tier either
+    /// decides — its skip condition is a theorem about
+    /// `verdict_with_overlay_touching(module, overlay)` — or
+    /// escalates, and tier 3 runs the same scoped-simulator
+    /// evaluation the verdict path runs, so the boolean cannot drift
+    /// from the evidence-producing form.
+    pub(super) fn ladder_decide(
+        &self,
+        module: ModuleId,
+        overlay: &QuotientOverlay,
+    ) -> LadderDecision {
+        // Tier 0: delta-free move — post-state == pre-state, so the
+        // (cached) committed-state touching verdict decides.
+        if overlay.is_empty() {
+            let decision = if self.touching_is_clean(module) {
+                LadderDecision::DeltaFreeAccept
+            } else {
+                LadderDecision::DeltaFreeReject
+            };
+            gate_perf_counters::record_ladder_decision(decision, None, None, None);
+            return decision;
+        }
+
+        // `DEBUNDLE_TIMING=1` shadow path; see
+        // `verdict_with_overlay_touching` for the rationale.
+        self.maybe_record_base_snapshot();
+
+        // Tier 1: clause 2 (cross-rebinds touching `module`) and
+        // Pass 1 — is `module`'s post-move constraining SCC
+        // multi-module? — on the maintained constraining condensation.
+        let tier1_start = if gate_perf_counters::enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        let tier1 = if self.constraining_order.borrow_mut().would_join_multi_scc(
+            &self.constraining_graph,
+            &overlay.constraining_delta,
+            module,
+            module,
+        ) {
+            Some(LadderDecision::ConstrainingCycleReject)
+        } else if self.any_cross_rebind_touching_with_overlay(module, overlay) {
+            Some(LadderDecision::CrossRebindReject)
+        } else {
+            None
+        };
+        let tier1_nanos =
+            tier1_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
+        if let Some(decision) = tier1 {
+            gate_perf_counters::record_ladder_decision(decision, tier1_nanos, None, None);
+            return decision;
+        }
+
+        // Tier 2: Pass-2 vacuity on the I-condensation. Overlay
+        // removals inside a multi-module I-SCC route through the
+        // exact bidirectional fallback inside `would_join_multi_scc`
+        // (plan §3, tier-2 exactness caveat).
+        let tier2_start = if gate_perf_counters::enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        let multi_i_scc = self.i_order.borrow_mut().would_join_multi_scc(
+            &self.i_graph,
+            &overlay.i_delta,
+            module,
+            module,
+        );
+        if !multi_i_scc {
+            let tier2_nanos =
+                tier2_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
+            gate_perf_counters::record_ladder_decision(
+                LadderDecision::NoMultiModuleISccAccept,
+                tier1_nanos,
+                tier2_nanos,
+                None,
+            );
+            return LadderDecision::NoMultiModuleISccAccept;
+        }
+        // Multi-module I-SCC (rare): materialize its member set —
+        // the constraining-pair lookup needs it, exactly as
+        // `verdict_with_overlay_touching` computes it.
+        let i_modules =
+            OverlayGraphView::new(&self.i_graph, &overlay.i_delta).scc_containing(module);
+        let pair_inside = self.overlay_constraining_pair_inside(&i_modules, overlay);
+        let tier2_nanos =
+            tier2_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
+        if !pair_inside {
+            gate_perf_counters::record_ladder_decision(
+                LadderDecision::NoConstrainingPairAccept,
+                tier1_nanos,
+                tier2_nanos,
+                None,
+            );
+            return LadderDecision::NoConstrainingPairAccept;
+        }
+
+        // Tier 3: exact Pass 2 — the shared scoped-simulator
+        // evaluation.
+        let tier3_start = if gate_perf_counters::enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        let decision = if self.overlay_tdz_pairs(&i_modules, overlay).is_empty() {
+            LadderDecision::SimulatorAccept
+        } else {
+            LadderDecision::SimulatorReject
+        };
+        let tier3_nanos =
+            tier3_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
+        gate_perf_counters::record_ladder_decision(decision, tier1_nanos, tier2_nanos, tier3_nanos);
+        decision
     }
 
     /// Resolve a list of TDZ-violating `(from, to)` pairs to their

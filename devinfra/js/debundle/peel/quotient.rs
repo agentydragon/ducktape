@@ -69,7 +69,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition};
 use gate::{
-    PartitionDelta, RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
+    LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
+    record_gate_diagnostic_translation,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -1316,6 +1317,35 @@ impl QuotientGraph {
             })
             .collect();
         self.translate_verdict_with_owner_modules(&verdict, &owner_modules, Some((c1, c2)))
+    }
+
+    /// Tier-laddered boolean gate decision for the speculative merge
+    /// `(c1, c2)` (`plans/incremental_gate_unification.md` §3; PR 3 of
+    /// §8). Derives the same single-target move
+    /// `realizability_cycles_after_contract` computes and routes it
+    /// through the index's ladder instead of the evidence-producing
+    /// verdict. NOT yet consulted by `check_merge_boolean` — the PR 4
+    /// cutover does that; until then the differential harness and
+    /// `DEBUNDLE_GATE_ORACLE` runs exercise it.
+    ///
+    /// Caller contract: `(c1, c2)` must pass the non-cycle merge
+    /// preconditions (same as the other speculative cycle queries).
+    pub fn ladder_decision_for_merge(&self, c1: ClassId, c2: ClassId) -> LadderDecision {
+        let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
+        let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
+        let mut owners: Vec<OwnerId> = Vec::new();
+        for delta in &deltas {
+            let PartitionDelta::MoveOwners { owners: moved, to } = delta;
+            debug_assert_eq!(
+                *to, post_module,
+                "speculative deltas are single-target by construction",
+            );
+            owners.extend(moved.iter().copied());
+        }
+        owners.sort();
+        owners.dedup();
+        self.realizability_index
+            .ladder_decision_after_moving_owners_touching(&self.owner_graph, &owners, post_module)
     }
 
     /// `translate_verdict_to_evidence` parameterized by an explicit
