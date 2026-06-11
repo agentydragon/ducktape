@@ -6,10 +6,15 @@ ClusterIP. The daemon target, upstream, env, args, and image staging all live in
 `eval-job.yaml` (commented) — `claude-sandbox` is `baseline` PSA (no privileged →
 no local DinD), hence the remote daemon. This README is just the run procedure.
 
+The Job reaches docker-ci by its in-cluster service name (`docker-ci.docker-ci.svc`),
+which `NO_PROXY` excludes — so it connects direct, bypassing the agent mitmproxy
+entirely. That requires the svc name in the docker-ci server cert SAN (see
+`cluster/k8s/docker-ci/README.md`'s rotation step).
+
 Prereqs: `docker-ci` Running on OVH; the `ghcr.io/agentydragon/{loom-gym-eval,wayback-proxy,loom-gym-sandbox}`
-images published (on merge to `devel`); the mitmproxy `ignore_hosts` passthrough
-reconciled; and the reflected `litellm-master-key` + `claude-forgejo-credentials`
-secrets present in `claude-sandbox`.
+images published (on merge to `devel`); the docker-ci server cert carrying the svc
+SAN; and the reflected `litellm-master-key` + `claude-forgejo-credentials` secrets
+present in `claude-sandbox`.
 
 ## 1. Create the docker-ci mTLS secret (the only non-manifest step)
 

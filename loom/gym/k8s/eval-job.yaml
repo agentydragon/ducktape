@@ -30,7 +30,7 @@ spec:
               done
           env:
             - name: DOCKER_HOST
-              value: tcp://docker-ci.allegedly.works:2376
+              value: tcp://docker-ci.docker-ci.svc.cluster.local:2376
             - name: DOCKER_TLS_VERIFY
               value: "1"
             - name: DOCKER_CERT_PATH
@@ -58,11 +58,13 @@ spec:
             - --log-dir
             - /work/logs
           env:
-            # Remote daemon: the docker CLI talks to docker-ci over mTLS. The host
-            # must match the server cert SAN (docker-ci.allegedly.works), so we use
-            # the TLS-passthrough route rather than the bare ClusterIP.
+            # Remote daemon over mTLS. We target docker-ci by its in-cluster
+            # service name, which the cluster NO_PROXY excludes — so the connection
+            # goes direct, bypassing the agent mitmproxy entirely (no passthrough,
+            # no public-gateway hairpin). Requires this name in the docker-ci server
+            # cert SAN (alongside docker-ci.allegedly.works for external RBE).
             - name: DOCKER_HOST
-              value: tcp://docker-ci.allegedly.works:2376
+              value: tcp://docker-ci.docker-ci.svc.cluster.local:2376
             - name: DOCKER_TLS_VERIFY
               value: "1"
             - name: DOCKER_CERT_PATH

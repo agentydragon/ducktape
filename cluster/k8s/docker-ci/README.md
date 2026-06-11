@@ -73,7 +73,10 @@ openssl req -new -x509 -days 3650 -key ca-key.pem -sha256 -out ca.pem -subj '/CN
 # Server cert
 openssl ecparam -genkey -name prime256v1 -noout -out server-key.pem
 openssl req -new -key server-key.pem -sha256 -out server.csr -subj '/CN=docker-ci.allegedly.works'
-printf 'subjectAltName=DNS:docker-ci.allegedly.works\nextendedKeyUsage=serverAuth\n' > ext.cnf
+# SAN covers both the external name (RBE runners via the gateway TLSRoute) and the
+# in-cluster service name (the loom/gym eval Job connects direct, bypassing the
+# agent mitmproxy via NO_PROXY — see loom/gym/k8s/eval-job.yaml).
+printf 'subjectAltName=DNS:docker-ci.allegedly.works,DNS:docker-ci.docker-ci.svc.cluster.local\nextendedKeyUsage=serverAuth\n' > ext.cnf
 openssl x509 -req -days 3650 -sha256 -in server.csr -CA ca.pem -CAkey ca-key.pem \
   -CAcreateserial -out server-cert.pem -extfile ext.cnf
 
