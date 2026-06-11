@@ -25,7 +25,7 @@ RBE executor (Firecracker)
   │  sets DOCKER_HOST, DOCKER_TLS_VERIFY, DOCKER_CERT_PATH atomically
   │
   ▼
-DinD pod (k8s, Proxmox) — mTLS on tcp://docker-ci.allegedly.works:2376
+DinD pod (k8s, OVH) — mTLS on tcp://docker-ci.allegedly.works:2376
 ```
 
 ## mTLS Certificate Setup
@@ -96,12 +96,8 @@ cp client-key.pem secrets/docker-ci/client-key.sops.pem && sops -e -i secrets/do
 - **Namespace**: `docker-ci` (privileged PSA — DinD requires it)
 - **Deployment**: `docker:27-dind` with `--tlsverify`, scheduled on OVH workers
   (`topology.kubernetes.io/region: hil`)
-- **Storage**: `emptyDir` (30Gi) for the `/var/lib/docker` overlay2 store. It is a
-  disposable layer cache, so it is _not_ a PVC: that keeps the daemon reschedulable
-  onto any OVH worker on node failure (no node-pinned PV to strand it), at the cost
-  of a cold re-pull after a restart. overlay2 requires a local fs, so a networked
-  backend (SeaweedFS) is not usable here; if re-pull cost ever matters, front the
-  daemon with a registry pull-through cache rather than moving this store.
+- **Storage**: `emptyDir` (30Gi) for `/var/lib/docker` — a disposable overlay2
+  cache, hence no PVC (rationale in `deployment.yaml`).
 - **Service**: ClusterIP on port 2376
 - **ConfigMap**: `docker-ci-public-certs` (ca.pem, server-cert.pem)
 - **Secret**: `docker-ci-server-tls` (server-key.pem, SOPS-encrypted)
