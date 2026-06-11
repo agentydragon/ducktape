@@ -101,9 +101,9 @@ impl EdgeRole {
 /// quotient/gate/reports consumers apply to the edge.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
-    pub(crate) kind: DepKind,
-    pub(crate) statement_ordinal: StatementOrdinal,
-    pub(crate) binding: Option<Id>,
+    pub kind: DepKind,
+    pub statement_ordinal: StatementOrdinal,
+    pub binding: Option<Id>,
     pub(crate) role: EdgeRole,
 }
 
@@ -1389,7 +1389,7 @@ pub enum EndpointView {
 /// `view` selects which projection rule the caller wants:
 ///
 /// - [`EndpointView::Lenient`] — used by `build_module_quotient` and
-///   `reports::build_quotient_edge_reports`. Drops same-module edges
+///   `report_builders::build_quotient_edge_reports` (gate crate). Drops same-module edges
 ///   AND drops cross-module [`EdgeRole::PromotedAtInit`] edges when
 ///   the callee module differs from the caller module. ESM
 ///   justification: the body read fires inside a call into a
@@ -1413,7 +1413,7 @@ pub enum EndpointView {
 /// Invariant: every quotient-projecting consumer of the owner graph
 /// MUST route through this function so the lenient-vs-gate decision
 /// stays welded to the edge's [`EdgeRole`] at one source-level point.
-pub(crate) fn partition_endpoints(
+pub fn partition_endpoints(
     edge: &OwnerEdge,
     partition: &Partition,
     view: EndpointView,
@@ -1788,7 +1788,7 @@ pub fn chunk_source_import_order_from_adjacency(
 pub struct OwnerEdgeId(pub usize);
 
 impl OwnerEdgeId {
-    pub(crate) fn report_key(self) -> String {
+    pub fn report_key(self) -> String {
         format!("owner_edge:{}", self.0)
     }
 }

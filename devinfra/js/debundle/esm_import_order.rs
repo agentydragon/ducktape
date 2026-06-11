@@ -31,10 +31,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::graph::{
+use analysis::graph::{
     chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
 };
-use crate::ids::ModuleId;
+use analysis::ids::ModuleId;
 
 /// Sort key for one import target: `(position, target)` with missing
 /// positions falling to `usize::MAX` so unconstrained modules sort

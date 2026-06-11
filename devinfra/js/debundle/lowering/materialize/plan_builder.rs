@@ -592,7 +592,7 @@ impl ChunkPlanBuilder {
     }
 
     /// Apply a batch of rebind-fold decisions produced by the
-    /// Stage A.5 composer (`analysis::compute_rebind_folds`).
+    /// Stage A.5 composer (`stage_one::compute_rebind_folds`).
     ///
     /// Each fold reroutes a single binding from its previous plan
     /// (if any) to the cycle's explicit destination. The

@@ -46,7 +46,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 use binding_targets::{callee_base_expr, strip_parens};
 use spec::{AdmissionCheck, AdmissionOverrides};
 
-use crate::facts::top_level_item_views;
+use analysis::facts::top_level_item_views;
 
 /// Where a dynamic-import specifier resolves, from the caller chunk's
 /// perspective. Produced by the artifact-aware resolver the lowering

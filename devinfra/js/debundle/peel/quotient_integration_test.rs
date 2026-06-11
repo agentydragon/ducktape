@@ -20,9 +20,10 @@
 //!   pre-existing edges between the owners.
 
 use analysis::{
-    AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity,
-    RealizabilityVerdict, SourceLocation, StatementKind, StatementOrdinal, check_realizability,
+    AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity, SourceLocation,
+    StatementKind, StatementOrdinal,
 };
+use gate::{RealizabilityVerdict, check_realizability};
 
 use peel::factorize::factorize;
 use peel::quotient::{
@@ -2125,7 +2126,7 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
 
     // Materializer-side verdict.
     let (owner_graph, partition) = owner_graph_and_partition_from_spec(&report, &spec);
-    let verdict = analysis::check_realizability(&owner_graph, &partition);
+    let verdict = gate::check_realizability(&owner_graph, &partition);
     let materializer_unrealizable = !verdict.is_realizable();
     assert!(
         materializer_unrealizable,
@@ -2416,7 +2417,7 @@ fn planner_and_materializer_agree_on_corpus() {
         // Materializer-side.
         let (owner_graph, partition) =
             owner_graph_and_partition_from_spec(&case.report, &case.spec);
-        let verdict = analysis::check_realizability(&owner_graph, &partition);
+        let verdict = gate::check_realizability(&owner_graph, &partition);
         let materializer_unrealizable = !verdict.is_realizable();
 
         // Planner-side.

@@ -1,8 +1,8 @@
 use std::process::ExitCode;
 
-use analysis::SccTimingReporter;
 use clap::Parser;
 use debundle_cli::{DebundleArgs, run_debundle_cli};
+use gate::SccTimingReporter;
 use swc_common::{GLOBALS, Globals};
 
 fn main() -> ExitCode {

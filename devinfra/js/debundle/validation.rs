@@ -4,14 +4,14 @@ use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
-use crate::factor_assembly::AtomicUnitConflict;
-use crate::graph::{EndpointView, OwnerEdgeId, partition_endpoints};
-use crate::partition::Partition;
 use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
+use analysis::factor_assembly::AtomicUnitConflict;
+use analysis::graph::{EndpointView, OwnerEdgeId, partition_endpoints};
+use analysis::partition::Partition;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use crate::{DepKind, ModuleId, OwnerGraph, StatementOrdinal};
+use analysis::{DepKind, ModuleId, OwnerGraph, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -540,7 +540,7 @@ pub fn render_atomic_unit_conflict_summary(
             .members
             .iter()
             .copied()
-            .map(crate::reports::owner_key)
+            .map(analysis::reports::owner_key)
             .collect();
         member_ids.sort();
         let mut conflicting_modules: Vec<String> = c
@@ -572,7 +572,7 @@ pub fn render_atomic_unit_conflict_summary(
             };
             out.push_str(&format!(
                 "    - {}{} → {}\n",
-                crate::reports::owner_key(claim.owner),
+                analysis::reports::owner_key(claim.owner),
                 names,
                 module_path(claim.module),
             ));

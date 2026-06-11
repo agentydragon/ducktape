@@ -31,10 +31,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use ::gate::{render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization};
 use analysis::{
     AtomicUnit, AtomicUnitConflict, ConflictingClaim, ModuleId, OwnerGraph, OwnerGraphReport,
-    OwnerId, Partition, compute_atomic_units, render_atomic_unit_conflict_summary,
-    render_cycle_summary, validate_factorization,
+    OwnerId, Partition, compute_atomic_units,
 };
 use anonymous_resolution::{
     AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,

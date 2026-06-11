@@ -1,19 +1,16 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
+use crate::report_builders::build_owner_graph_report;
+use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
+use analysis::factor_assembly::{AtomicUnitConflict, assemble_partition};
+use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
+use analysis::partition::Partition;
+use analysis::{LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport};
+
 use crate::chunk_analysis::ChunkAnalysis;
 use crate::esm_import_order::EsmImportOrder;
-use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
-use crate::graph::{build_module_quotient, chunk_constraining_module_edges};
-use crate::partition::Partition;
-use crate::reports::build_owner_graph_report;
-use crate::validation::validate_factorization;
-
-use crate::{
-    FactorizationReport, LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient,
-    OwnerGraphReport,
-};
+use crate::validation::{FactorizationReport, validate_factorization};
 
 /// Per-chunk factorization output: the spec's partition of the
 /// owner graph, plus the realizability views derived from it
@@ -46,7 +43,7 @@ pub struct ChunkFactorization {
     pub dep_graph: ModuleQuotient,
     /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
     /// topological order. Precomputed at build time for
-    /// `reports::build_quotient_scc_reports`.
+    /// `report_builders::build_quotient_scc_reports`.
     dep_graph_sccs: Vec<Vec<ModuleId>>,
     /// Shared per-module ESM import ordering — the single source of
     /// truth the emitter renders import declarations from and the
@@ -67,8 +64,8 @@ impl ChunkFactorization {
     /// should call [`Self::build_with`] instead.
     pub fn build(
         chunk_id: String,
-        facts: Vec<crate::StatementFacts>,
-        bindings: HashMap<swc_ecma_ast::Id, crate::BindingKind>,
+        facts: Vec<analysis::StatementFacts>,
+        bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
@@ -91,9 +88,9 @@ impl ChunkFactorization {
     /// factorization doesn't redo the work.
     pub fn build_with(
         chunk_id: String,
-        facts: Vec<crate::StatementFacts>,
+        facts: Vec<analysis::StatementFacts>,
         precomputed: OwnerGraphAndUnits,
-        bindings: HashMap<swc_ecma_ast::Id, crate::BindingKind>,
+        bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
@@ -113,7 +110,7 @@ impl ChunkFactorization {
         let assembly_conflicts = outcome.conflicts;
         let dep_graph = build_module_quotient(&owner_graph, &partition);
         // Cache the dep-graph SCC partition so downstream consumers
-        // (`reports::build_quotient_scc_reports`, the validator's
+        // (`report_builders::build_quotient_scc_reports`, the validator's
         // verdict path) share one Tarjan walk instead of each
         // recomputing it.
         let dep_graph_sccs = dep_graph.sccs();

@@ -40,12 +40,12 @@ use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitable};
 use rustc_hash::FxHashSet;
 
-use crate::OwnerId;
 use crate::esm_import_order::EsmImportOrder;
-use crate::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
-use crate::ids::ModuleId;
-use crate::partition::Partition;
 use crate::rollback_graph::{GraphMark, RollbackDiGraph};
+use analysis::OwnerId;
+use analysis::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
+use analysis::ids::ModuleId;
+use analysis::partition::Partition;
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a
@@ -59,7 +59,7 @@ use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 /// - [`crate::validation::CycleReport`] — validator's rendered
 ///   projection: stringified module names + `evidence` and FAS `cut`
 ///   decorations.
-/// - [`crate::reports::schema::QuotientSccReport`] — wire-format
+/// - [`analysis::reports::schema::QuotientSccReport`] — wire-format
 ///   projection: stringified module ids + edge ids. Covers every
 ///   SCC of the dep graph (including realizable single-module ones),
 ///   not only the offending diagnoses listed here.
@@ -159,9 +159,11 @@ pub fn check_realizability(
         if !edge.reason.is_rebind() {
             continue;
         }
-        let Some((from, to)) =
-            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
-        else {
+        let Some((from, to)) = analysis::graph::partition_endpoints(
+            edge,
+            partition,
+            analysis::graph::EndpointView::Gate,
+        ) else {
             continue;
         };
         verdict.cross_rebinds.push(CrossRebindEdge {
@@ -1066,17 +1068,19 @@ impl IncrementalQuotient {
 
     fn add_current_edge(
         &mut self,
-        edge: &crate::graph::OwnerEdge,
+        edge: &analysis::graph::OwnerEdge,
         partition: &Partition,
         update_graphs: bool,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
-        // See [`crate::graph::partition_endpoints`] for why and
+        // See [`analysis::graph::partition_endpoints`] for why and
         // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
         // for the regression fixture.
-        let Some((from, to)) =
-            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
-        else {
+        let Some((from, to)) = analysis::graph::partition_endpoints(
+            edge,
+            partition,
+            analysis::graph::EndpointView::Gate,
+        ) else {
             return;
         };
         if edge.reason.is_rebind() {
@@ -1109,16 +1113,18 @@ impl IncrementalQuotient {
 
     fn remove_current_edge(
         &mut self,
-        edge: &crate::graph::OwnerEdge,
+        edge: &analysis::graph::OwnerEdge,
         partition: &Partition,
         update_graphs: bool,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
         // Must mirror `add_current_edge` (see
-        // [`crate::graph::partition_endpoints`]).
-        let Some((from, to)) =
-            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
-        else {
+        // [`analysis::graph::partition_endpoints`]).
+        let Some((from, to)) = analysis::graph::partition_endpoints(
+            edge,
+            partition,
+            analysis::graph::EndpointView::Gate,
+        ) else {
             return;
         };
         if edge.reason.is_rebind() {
@@ -2360,12 +2366,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::OwnerId;
-    use crate::facts::analyze_chunk;
-    use crate::graph::build_owner_graph;
-    use crate::ids::{LogicalModuleIndex, ModuleId};
-    use crate::partition::Partition;
-    use crate::{AnalysisHints, OwnerGraph};
+    use analysis::OwnerId;
+    use analysis::facts::analyze_chunk;
+    use analysis::graph::build_owner_graph;
+    use analysis::ids::{LogicalModuleIndex, ModuleId};
+    use analysis::partition::Partition;
+    use analysis::{AnalysisHints, OwnerGraph};
     use swc_common::{FileName, SourceMap, sync::Lrc};
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 

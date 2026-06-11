@@ -26,9 +26,9 @@ use std::collections::HashMap;
 
 use swc_ecma_ast::Id;
 
-use crate::atomic_units::OwnerGraphAndUnits;
-use crate::graph::DepKind;
-use crate::ids::{BindingKind, LogicalModuleIndex, ModuleId};
+use analysis::atomic_units::OwnerGraphAndUnits;
+use analysis::graph::DepKind;
+use analysis::ids::{BindingKind, LogicalModuleIndex, ModuleId};
 
 /// One rebind-fold decision: a binding that should be (re)routed
 /// from its current plan to `dest`. Carries `previous` so the caller
@@ -106,7 +106,7 @@ pub fn compute_rebind_folds(
             continue;
         }
         let mut explicit_dest: Option<usize> = None;
-        let mut owners_to_fold: Vec<crate::graph::OwnerId> = Vec::new();
+        let mut owners_to_fold: Vec<analysis::graph::OwnerId> = Vec::new();
         for &owner_id in &unit.members {
             let Some(node) = owner_graph.node(owner_id) else {
                 continue;

@@ -9,6 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use super::{analyze_facts, parse, test_id};
 use crate::*;
+use analysis::*;
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 

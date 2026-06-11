@@ -257,13 +257,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_hints.rs",
-        "analysis_tests/factorization_validation.rs",
-        "analysis_tests/mod.rs",
         "atomic_units.rs",
-        "chunk_admission.rs",
-        "chunk_analysis.rs",
-        "chunk_factorization.rs",
-        "esm_import_order.rs",
         "factor_assembly.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
@@ -277,24 +271,15 @@ rust_library(
         "purity/mod.rs",
         "purity/redundant_hints_tests.rs",
         "purity/whitelists.rs",
-        "realizability.rs",
         "reports/mod.rs",
         "reports/schema.rs",
-        "rollback_graph.rs",
-        "stage_one/mod.rs",
-        "stage_one/rebind_fold.rs",
-        "validation.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
-        ":output_layout",
         ":spec",
-        "@crates//:anyhow",
         "@crates//:petgraph",
-        "@crates//:rayon",
-        "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_atoms",
@@ -309,10 +294,75 @@ rust_test(
     crate = ":analysis",
     edition = "2024",
     deps = [
+        "@crates//:swc_ecma_parser",
+    ],
+)
+
+rust_library(
+    name = "gate",
+    srcs = [
+        "analysis_tests/factorization_validation.rs",
+        "analysis_tests/mod.rs",
+        "chunk_analysis.rs",
+        "chunk_factorization.rs",
+        "esm_import_order.rs",
+        "gate.rs",
+        "realizability.rs",
+        "report_builders.rs",
+        "rollback_graph.rs",
+        "validation.rs",
+    ],
+    crate_root = "gate.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":spec",
+        "@crates//:petgraph",
+        "@crates//:rayon",
+        "@crates//:rustc-hash",
+        "@crates//:serde",
+        "@crates//:swc_atoms",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "gate_test",
+    crate = ":gate",
+    edition = "2024",
+    deps = [
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_parser",
-        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
+    name = "stage_one",
+    srcs = [
+        "stage_one/chunk_admission.rs",
+        "stage_one/mod.rs",
+        "stage_one/rebind_fold.rs",
+    ],
+    crate_root = "stage_one/mod.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":binding_targets",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "stage_one_test",
+    crate = ":stage_one",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_ecma_parser",
     ],
 )
 
@@ -412,6 +462,7 @@ rust_library(
     deps = [
         ":analysis",
         ":anonymous_resolution",
+        ":gate",
         ":spec",
         ":spec_modules",
         "@crates//:anyhow",
@@ -452,6 +503,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
+        ":gate",
         ":peel",
         ":report_fixtures",
         ":spec",
@@ -514,10 +566,12 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
+        ":gate",
         ":js_ast",
         ":output_layout",
         ":source_match",
         ":spec",
+        ":stage_one",
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -640,6 +694,7 @@ rust_library(
     deps = [
         ":analysis",
         ":anonymous_resolution",
+        ":gate",
         ":js_ast",
         ":output_layout",
         ":peel",
@@ -682,8 +737,8 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":cli",
+        ":gate",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",

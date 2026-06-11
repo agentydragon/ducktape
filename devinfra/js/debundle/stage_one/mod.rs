@@ -47,20 +47,21 @@
 //! [`compute_rebind_folds`]; the lowering-side caller applies the
 //! returned folds to its `ModulePlan` list.
 
+mod chunk_admission;
 mod rebind_fold;
 
+pub use chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
 pub use rebind_fold::{RebindFold, compute_rebind_folds};
 
 use anyhow::{Result, bail};
 use swc_common::Span;
 use swc_ecma_ast::Module;
 
-use crate::AnalysisHints;
-use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
-use crate::chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
-use crate::facts::{ChunkFactAnalysis, analyze_chunk};
-use crate::graph::OwnerGraphOptions;
-use crate::purity::{RedundantPureMemberReason, RedundantPurityReason};
+use analysis::AnalysisHints;
+use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
+use analysis::facts::{ChunkFactAnalysis, analyze_chunk};
+use analysis::graph::OwnerGraphOptions;
+use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
 /// Output of Stage A: the per-chunk analysis that does not depend on
 /// the spec.

@@ -49,7 +49,7 @@ pub struct AtomicUnit {
 /// Owner graph plus its precomputed atomic units. Bundled so a single
 /// chunk-level computation pays the Tarjan/SCC cost once and threads
 /// the result through `synthesize_mini_factor_plans` →
-/// [`crate::ChunkFactorization::build_with`] and atomic-DAG report emission.
+/// `ChunkFactorization::build_with` (gate crate) and atomic-DAG report emission.
 #[derive(Debug, Clone)]
 pub struct OwnerGraphAndUnits {
     pub owner_graph: OwnerGraph,

@@ -373,7 +373,7 @@ pub(super) fn materialize_logical_chunk(
 
 /// Stage A.5 composer: fold rebind-only atomic units into their
 /// explicit destination. Bridges the pure
-/// `analysis::compute_rebind_folds` decision over the chunk's
+/// `stage_one::compute_rebind_folds` decision over the chunk's
 /// post-seed partition (managed by `ChunkPlanBuilder`) into the
 /// builder's plan-list/catalogue state.
 ///
@@ -501,7 +501,7 @@ fn validate_and_emit_reports(
     chunk_id: &str,
     report_out_dir: Option<&Path>,
     factorization: &ChunkFactorization,
-    factorization_report: &::analysis::FactorizationReport,
+    factorization_report: &::gate::FactorizationReport,
     timings: &mut PhaseTimings,
 ) -> Result<()> {
     if let Some(report_out_dir) = report_out_dir {
@@ -554,8 +554,7 @@ fn validate_and_emit_reports(
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and
             // `docs/cli.md` § "Gate queries" for the CLI surface.
-            let wire =
-                ::analysis::BlockingSccEntry::from_cycle_reports(&factorization_report.cycles);
+            let wire = ::gate::BlockingSccEntry::from_cycle_reports(&factorization_report.cycles);
             time_phase!(timings, "write_cycles_report", {
                 write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)
             })?;

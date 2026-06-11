@@ -1,46 +1,36 @@
-//! Module analysis engine for `materialize_logical_modules`.
+//! Module analysis core for `materialize_logical_modules`.
 //!
-//! Background: see <docs/design.md>. This crate treats debundling as an
-//! owner-graph quotient and scheduling problem:
+//! Background: see <docs/design.md>. This crate carries the shared
+//! analysis substrate of the owner-graph quotient model:
 //!
 //! 1. Analyze each source chunk into top-level owner facts: declarations,
 //!    at-init reads/writes, lazy reads/writes, side effects, imports, source
-//!    locations, and top-level await.
-//! 2. Build a fine-grained owner graph over those facts.
-//! 3. Map owners to destination modules from the spec.
-//! 4. Quotient the owner graph into the module dependency graph used by ESM
-//!    import emission and linker-order reasoning.
-//! 5. Validate realizability and emit stable graph reports from that same
-//!    graph model. Agent-facing peel recommendation heuristics run from the
-//!    serialized graph via the `debundle peel` CLI.
+//!    locations, and top-level await (`facts`, `purity`).
+//! 2. Build a fine-grained owner graph over those facts (`graph`,
+//!    `atomic_units`).
+//! 3. Map owners to destination modules from the spec (`partition`,
+//!    `factor_assembly`).
+//! 4. Emit stable graph reports from that same graph model (`reports`).
+//!
+//! Realizability checking and factorization validation live in the
+//! `gate` crate; the spec-independent per-chunk Stage A composer lives
+//! in the `stage_one` crate. Both build on this core.
 
-mod analysis_hints;
-mod atomic_units;
-mod chunk_admission;
-mod chunk_analysis;
-mod chunk_factorization;
-mod esm_import_order;
-mod factor_assembly;
-mod facts;
-mod graph;
-mod ids;
-mod partition;
-mod purity;
-mod realizability;
-mod reports;
-mod rollback_graph;
-mod stage_one;
-mod validation;
+pub mod analysis_hints;
+pub mod atomic_units;
+pub mod factor_assembly;
+pub mod facts;
+pub mod graph;
+pub mod ids;
+pub mod partition;
+pub mod purity;
+pub mod reports;
 
 pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
     compute_owner_graph_and_units_with,
 };
-pub use chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
-pub use chunk_analysis::ChunkAnalysis;
-pub use chunk_factorization::ChunkFactorization;
-pub use esm_import_order::EsmImportOrder;
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
@@ -65,24 +55,9 @@ pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
     RedundantPurityHint, RedundantPurityReason,
 };
-pub use realizability::{
-    CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
-    SccDiagnosis, SccRejection, SccTimingReporter, check_realizability,
-    record_gate_diagnostic_translation,
-};
 pub use reports::schema::{
     AtomicGraphReport, AtomicUnitConflictReport, AtomicUnitEdgeReport, AtomicUnitReport,
     BindingReport, ConflictingClaimReport, EdgeRoleReport, FactorizeDiagnosticReason, LineRange,
     ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
     OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport, QuotientSccReport, SourceLocation,
 };
-pub use stage_one::{
-    RebindFold, StageOneAnalysis, compute_rebind_folds, compute_stage_one_analysis,
-};
-pub use validation::{
-    BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
-    render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,
-};
-
-#[cfg(test)]
-mod analysis_tests;

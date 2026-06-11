@@ -14,8 +14,10 @@ use std::collections::{BTreeSet, HashMap};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
-use crate::reports::owner_key;
-use crate::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph, StatementFacts};
+use analysis::reports::owner_key;
+use analysis::{
+    BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph, StatementFacts,
+};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///

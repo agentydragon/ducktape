@@ -32,7 +32,7 @@
 //! ## The unified realizability gate (Track A)
 //!
 //! The kernel's cycle gate is the single function
-//! `analysis::check_realizability(&OwnerGraph, &Partition)`. The same
+//! `gate::check_realizability(&OwnerGraph, &Partition)`. The same
 //! function the materializer's `validate_factorization` calls.
 //!
 //! The kernel must not reimplement the gate over the JSON
@@ -50,7 +50,7 @@
 //! merge-candidate queries run per (c1, c2) pair, so a from-scratch
 //! implementation would cost `O(|V|² · |E|)` per planner round.
 //!
-//! Commit 5 wires the kernel through `analysis::RealizabilityIndex`,
+//! Commit 5 wires the kernel through `gate::RealizabilityIndex`,
 //! the persistent-state incremental form of the gate (docs/design.md
 //! "Realizability primitive → Iterative, undo-aware shape"). Per
 //! contract, the kernel pushes a `PartitionDelta::MoveOwners` for the
@@ -67,9 +67,9 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use analysis::{
-    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, PartitionDelta,
-    RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
+use analysis::{DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition};
+use gate::{
+    PartitionDelta, RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -163,7 +163,7 @@ pub enum SeedContractionRejected {
         cycle: CycleEvidence,
     },
     /// Track A: unrealizable SCC surfaced by the unified gate
-    /// (`analysis::check_realizability`) on the **final** seed
+    /// (`gate::check_realizability`) on the **final** seed
     /// quotient. Catches asymmetric `(eager forward, lazy back)`
     /// I-cycles plus mutual constraining SCCs assembled across
     /// multiple per-merge contractions whose individual
@@ -246,7 +246,7 @@ struct ClassData {
 pub struct QuotientGraph {
     /// Typed IR reconstructed from the source report. Used by the
     /// unified realizability gate
-    /// (`analysis::check_realizability`). Stored once at
+    /// (`gate::check_realizability`). Stored once at
     /// construction; never mutated.
     owner_graph: OwnerGraph,
     /// Owners whose `OwnerGraphNodeReport.destination.residual` is
@@ -1211,7 +1211,7 @@ impl QuotientGraph {
         Partition::from_assignments(of, residual)
     }
 
-    /// Translate an `analysis::RealizabilityVerdict` (in ModuleId
+    /// Translate an `gate::RealizabilityVerdict` (in ModuleId
     /// space) back into the kernel's `CycleEvidence` shape (in
     /// ClassId space, with owner-id strings for diagnostics).
     /// `overlay` lets callers project class `a` and `b` as if they

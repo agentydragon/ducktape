@@ -10,12 +10,16 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AnalysisHints, AtomicUnitConflict, BindingKind, ChunkFactorization, DepKind,
-    DynamicImportTarget, KnownEffect, LogicalModule as FactorizationLogicalModule,
-    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerGraphOptions, OwnerId, RebindFold,
-    RedundantPurityHint, StageOneAnalysis, compute_rebind_folds, compute_stage_one_analysis,
-    render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
+    AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect,
+    LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    OwnerGraphOptions, OwnerId, RedundantPurityHint, top_level_id,
 };
+use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
+use stage_one::{
+    DynamicImportTarget, RebindFold, StageOneAnalysis, compute_rebind_folds,
+    compute_stage_one_analysis,
+};
+
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,
     ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,

@@ -37,10 +37,6 @@ path.
 
 ## Encapsulation + module boundaries
 
-### `:analysis` is a Bazel god-crate
-
-The `analysis` `rust_library` (`BUILD.bazel`) compiles ~29 srcs spanning the owner graph (`graph.rs`), the realizability gate (`realizability.rs`), fact extraction (`facts/`), purity (`purity/`), admission (`chunk_admission.rs`), validation, reports, and `stage_one` as one crate. Module boundaries inside it are convention-only; splitting along the existing directory seams would make them compiler-enforced and cut incremental rebuild scope.
-
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
 
 `chunk_factorization.rs::ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:

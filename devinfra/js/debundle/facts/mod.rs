@@ -616,13 +616,13 @@ where
     analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span)
 }
 
-pub(crate) enum TopLevelItemView<'a> {
+pub enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
     Owned(ModuleItem),
 }
 
 impl TopLevelItemView<'_> {
-    pub(crate) fn as_module_item(&self) -> &ModuleItem {
+    pub fn as_module_item(&self) -> &ModuleItem {
         match self {
             Self::Borrowed(item) => item,
             Self::Owned(item) => item,
@@ -635,7 +635,7 @@ impl TopLevelItemView<'_> {
 /// single-declarator statements preserving source order; unchanged
 /// statements stay borrowed so the analyzer does not clone the whole
 /// app chunk just to get per-declarator ownership.
-pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
+pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
     let mut out = Vec::with_capacity(body.len());
     for item in body {
         match item {

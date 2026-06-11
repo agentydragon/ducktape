@@ -3,7 +3,7 @@
 //! When `materialize_logical_modules` rejects a spec, it writes one
 //! entry per blocking SCC to `reports/tree/<chunk>/cycles.json` and
 //! exits with a stderr summary. The trimmed wire shape (see
-//! [`analysis::BlockingSccEntry`] and `docs/wire_format.md`) carries
+//! [`BlockingSccEntry`] and `docs/wire_format.md`) carries
 //! `id` / `modules` / `cut` per SCC — enough to dispatch follow-up
 //! queries without storing the full evidence block on disk.
 //!
@@ -28,10 +28,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use analysis::{
-    BlockingSccEntry, CycleEdge, DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport,
-    StatementOrdinal,
-};
+use ::gate::{BlockingSccEntry, CycleEdge};
+use analysis::{DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport, StatementOrdinal};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use serde::Serialize;
@@ -386,7 +384,7 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 /// in the SCC's `modules` set.
 ///
 /// Output mirrors the materializer's
-/// [`analysis::CycleReport`]`.evidence`: one `CycleEdge` per owner
+/// [`::gate::CycleReport`]`.evidence`: one `CycleEdge` per owner
 /// edge whose endpoints both fall in different modules of the SCC,
 /// with `from_binding` set to the first declared binding of any
 /// owner declaring at the same statement ordinal (anonymous source
