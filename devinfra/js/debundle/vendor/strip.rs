@@ -5,9 +5,7 @@ use analysis::{
     AnalysisHints, ChunkId, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk,
 };
 use anyhow::{Context, Result, bail};
-use binding_targets::{
-    binding_name_strings, declaration_ids, declaration_name_strings, module_export_name,
-};
+use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::sync::Lrc;
@@ -217,7 +215,7 @@ fn strip_one_chunk_with_replacement_imports(
     split_top_level_var_decls(module);
     let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
     let stripped_export_specifiers = stripped.len();
-    let post_strip_exports = collect_exported_names(module);
+    let post_strip_exports = super::collect_exported_names(module);
 
     let dropped_total_before = module.body.len();
     sweep_unreachable_top_level(
@@ -231,7 +229,7 @@ fn strip_one_chunk_with_replacement_imports(
     let dropped = dropped_total_before - retained;
 
     // Phase 2 must not change the export surface relative to Phase 1.
-    let post_dce_exports = collect_exported_names(module);
+    let post_dce_exports = super::collect_exported_names(module);
     if post_dce_exports != post_strip_exports {
         let removed: Vec<_> = post_strip_exports
             .difference(&post_dce_exports)
@@ -725,13 +723,11 @@ fn sweep_unreachable_top_level(
         );
     }
 
-    let mut original = std::mem::take(&mut module.body);
-    for (i, is_live) in live.iter().enumerate().rev() {
-        if !*is_live {
-            original.remove(i);
-        }
-    }
-    module.body = original;
+    module.body = std::mem::take(&mut module.body)
+        .into_iter()
+        .zip(live.iter())
+        .filter_map(|(item, &is_live)| is_live.then_some(item))
+        .collect();
     Ok(())
 }
 
@@ -1595,53 +1591,6 @@ fn matches_global_intrinsic(name: &str) -> bool {
             | "WeakRef"
             | "WeakSet"
     )
-}
-
-/// Subset of [`collect_exported_names`] in `vendor.rs`: returns the
-/// post-mutation export surface of `module`. Local re-exports
-/// (`export { x as y }`), `export const x = …`, `export function`,
-/// `export class`, `export default …` all count.
-fn collect_exported_names(module: &Module) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    for item in &module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_))
-            | ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
-                out.insert("default".to_string());
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                match &export_decl.decl {
-                    Decl::Fn(f) => {
-                        out.insert(f.ident.sym.to_string());
-                    }
-                    Decl::Class(c) => {
-                        out.insert(c.ident.sym.to_string());
-                    }
-                    Decl::Var(v) => {
-                        for d in &v.decls {
-                            out.extend(binding_name_strings(&d.name));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
-                for spec in &named.specifiers {
-                    if let ExportSpecifier::Named(named_spec) = spec {
-                        out.insert(
-                            named_spec
-                                .exported
-                                .as_ref()
-                                .map(module_export_name)
-                                .unwrap_or_else(|| module_export_name(&named_spec.orig)),
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    out
 }
 
 #[cfg(test)]

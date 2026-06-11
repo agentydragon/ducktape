@@ -17,7 +17,12 @@ pub(super) fn generate_named_from_default_wrapper(
     named_exports: &BTreeSet<String>,
 ) -> Result<String> {
     let mut body = Vec::new();
-    let default_local = Ident::new_no_ctxt("_d".into(), DUMMY_SP);
+    // The synthetic local hoisting upstream's default must not collide
+    // with any identifier the upstream body already uses — a duplicate
+    // top-level `const` is a module-level SyntaxError.
+    let mut used_idents = super::module_used_idents(&upstream_ast.module);
+    let default_local_name = super::unique_synthetic_ident("_d", &mut used_idents);
+    let default_local = Ident::new_no_ctxt(default_local_name.as_str().into(), DUMMY_SP);
     for item in &upstream_ast.module.body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
@@ -40,9 +45,9 @@ pub(super) fn generate_named_from_default_wrapper(
             _ => body.push(item.clone()),
         }
     }
-    body.push(export_default_ident("_d"));
+    body.push(export_default_ident(&default_local_name));
     for name in named_exports {
-        body.push(export_const_member(name, "_d", name));
+        body.push(export_const_member(name, &default_local_name, name));
     }
     emit_js_module(
         &ParsedJsModule {
@@ -62,14 +67,16 @@ pub(super) fn generate_named_from_default_wrapper(
 pub(super) fn generate_named_from_json_default_wrapper(
     upstream_json: &Value,
     named_exports: &BTreeSet<String>,
-) -> String {
-    let body = serde_json::to_string_pretty(upstream_json).unwrap_or_else(|_| "{}".to_string());
+) -> Result<String> {
+    // `_d` cannot collide here: the wrapper body is pure JSON data, so
+    // no upstream identifier exists to clash with.
+    let body = serde_json::to_string_pretty(upstream_json)?;
     let named = named_exports
         .iter()
         .map(|name| format!("export const {name} = _d.{name};"))
         .collect::<Vec<_>>()
         .join("\n");
-    format!("const _d = {body};\nexport default _d;\n{named}\n")
+    Ok(format!("const _d = {body};\nexport default _d;\n{named}\n"))
 }
 
 pub(super) fn generate_named_from_module_default_wrapper(
@@ -77,7 +84,10 @@ pub(super) fn generate_named_from_module_default_wrapper(
     vendor_exports: &BTreeSet<String>,
     chunk_path: &str,
 ) -> Result<String> {
-    let default_local_name = "__vendor_default__";
+    // Avoid duplicate-declaration SyntaxErrors when the upstream body
+    // already binds the synthetic default-local name.
+    let mut used_idents = super::module_used_idents(&upstream_ast.module);
+    let default_local_name = &super::unique_synthetic_ident("__vendor_default__", &mut used_idents);
     let mut found_default = false;
     let mut deferred_default_alias: Option<String> = None;
     let mut body = Vec::new();
@@ -93,7 +103,7 @@ pub(super) fn generate_named_from_module_default_wrapper(
                     decls: vec![VarDeclarator {
                         span: DUMMY_SP,
                         name: Pat::Ident(BindingIdent {
-                            id: Ident::new_no_ctxt(default_local_name.into(), DUMMY_SP),
+                            id: Ident::new_no_ctxt(default_local_name.as_str().into(), DUMMY_SP),
                             type_ann: None,
                         }),
                         init: Some(default_expr.expr.clone()),

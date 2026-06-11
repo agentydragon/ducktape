@@ -125,7 +125,9 @@ pub fn rename_vendor_exports(
                 .with_context(|| {
                     format!("rename_vendor_exports vendor chunk {chunk_name} is missing entry AST")
                 })?;
-            collect_boundary_mapping(&vendor_ast.module)
+            let mapping = collect_boundary_mapping(&vendor_ast.module);
+            validate_boundary_mapping_collisions(&vendor_ast.module, &mapping, chunk_path)?;
+            mapping
         };
         if !mapping.is_empty() {
             chunks_with_mapping += 1;
@@ -293,6 +295,10 @@ struct SwapVendorJob {
     subpath: String,
     wrapper_shape: Option<WrapperShape>,
     vendor_exports: BTreeSet<String>,
+    /// Chunk export names verified to alias the chunk's own default
+    /// export (bound to the same local binding). Consumed by the
+    /// `named_from_module_default` wrapper-shape check.
+    vendor_default_aliases: BTreeSet<String>,
 }
 
 fn resolve_vendor_swap(
@@ -384,7 +390,7 @@ fn resolve_vendor_swap(
                 );
             }
             let wrapper =
-                generate_named_from_json_default_wrapper(&upstream_json, &non_default_exports);
+                generate_named_from_json_default_wrapper(&upstream_json, &non_default_exports)?;
             generated_wrapper_path = write_wrapper_if_requested(
                 options.write,
                 options.output_wrapper_dir.as_deref(),
@@ -394,6 +400,26 @@ fn resolve_vendor_swap(
             )?;
         }
         Some(WrapperShape::NamedFromModuleDefault) => {
+            // The wrapper re-exports the upstream default under every
+            // vendor named-export name (`export const <name> =
+            // <default>;`). That equation only holds when the chunk
+            // itself binds <name> to the same local as its default
+            // export; anything else would silently alias an unrelated
+            // export to the upstream default.
+            let claimed = job
+                .vendor_exports
+                .iter()
+                .filter(|name| name.as_str() != "default")
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let unverified = set_diff(&claimed, &job.vendor_default_aliases);
+            if !unverified.is_empty() {
+                bail!(
+                    "swap_vendor_chunks vendor entry {} named-from-module-default: vendor named exports [{}] are not verified aliases of the chunk's default export; the wrapper would re-export the upstream default under unrelated names",
+                    job.chunk_path,
+                    unverified.into_iter().collect::<Vec<_>>().join(","),
+                );
+            }
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
             let wrapper = generate_named_from_module_default_wrapper(
@@ -412,7 +438,7 @@ fn resolve_vendor_swap(
         None => {
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-            let upstream_exports = collect_exported_names(&upstream_ast.module, true);
+            let upstream_exports = collect_exported_names(&upstream_ast.module);
             let missing = set_diff(&job.vendor_exports, &upstream_exports);
             if !missing.is_empty() {
                 bail!(
@@ -522,7 +548,8 @@ pub fn swap_vendor_chunks(
                 version: swap.version.clone(),
                 subpath: swap.subpath.clone(),
                 wrapper_shape: swap.wrapper_shape,
-                vendor_exports: collect_exported_names(&entry_ast.module, false),
+                vendor_exports: collect_exported_names(&entry_ast.module),
+                vendor_default_aliases: verified_default_alias_export_names(&entry_ast.module),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -572,6 +599,69 @@ fn chunk_id_from_chunk_path(chunk_path: &str, stage: &str) -> Result<String> {
         bail!("{stage}: chunk path must end in .js: {chunk_path}");
     };
     Ok(chunk_id.to_string())
+}
+
+/// Bail when a boundary-mapping key (a vendor-LOCAL binding name) is
+/// itself a genuine export name of the vendor entry bound to a
+/// *different* local. The caller-side rewrite treats `import { k }` as
+/// "the caller spelled export `<mapping[k]>` by its vendor-local name" —
+/// but when the vendor really exports the name `k` (from another local),
+/// that import is legitimate and rewriting it would silently rebind the
+/// caller to the wrong value.
+fn validate_boundary_mapping_collisions(
+    module: &Module,
+    mapping: &BTreeMap<String, String>,
+    chunk_path: &str,
+) -> Result<()> {
+    if mapping.is_empty() {
+        return Ok(());
+    }
+    // export name -> Some(local sym) when the export aliases a plain
+    // local binding; None when its local identity is not a local ident
+    // (forwarded `export … from`, string-literal orig).
+    let mut export_locals: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for item in &module.body {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+                for specifier in &named.specifiers {
+                    let ExportSpecifier::Named(named_spec) = specifier else {
+                        continue;
+                    };
+                    let exported = named_spec
+                        .exported
+                        .as_ref()
+                        .map(module_export_name)
+                        .unwrap_or_else(|| module_export_name(&named_spec.orig));
+                    let local = match (&named.src, &named_spec.orig) {
+                        (None, ModuleExportName::Ident(local)) => Some(local.sym.to_string()),
+                        _ => None,
+                    };
+                    export_locals.insert(exported, local);
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                for name in declaration_name_strings(&export_decl.decl) {
+                    export_locals.insert(name.clone(), Some(name));
+                }
+            }
+            _ => {}
+        }
+    }
+    for local_name in mapping.keys() {
+        let Some(identity) = export_locals.get(local_name) else {
+            continue;
+        };
+        if identity.as_deref() != Some(local_name.as_str()) {
+            let bound_to = identity
+                .as_deref()
+                .map(|local| format!("local `{local}`"))
+                .unwrap_or_else(|| "a non-local origin".to_string());
+            bail!(
+                "rename_vendor_exports vendor entry {chunk_path}: boundary mapping key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
+            );
+        }
+    }
+    Ok(())
 }
 
 fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
@@ -844,15 +934,17 @@ fn module_has_export_star(module: &Module) -> bool {
     })
 }
 
-fn collect_exported_names(module: &Module, include_default: bool) -> BTreeSet<String> {
+/// Export names of `module`. The `default` name is included whether it
+/// comes from an `export default …` declaration or the named form
+/// `export { x as default }` — the two spellings are equivalent on the
+/// module's export surface.
+fn collect_exported_names(module: &Module) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for item in &module.body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_))
             | ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
-                if include_default {
-                    names.insert("default".to_string());
-                }
+                names.insert("default".to_string());
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
                 for name in declaration_name_strings(&export_decl.decl) {
@@ -876,6 +968,49 @@ fn collect_exported_names(module: &Module, include_default: bool) -> BTreeSet<St
         }
     }
     names
+}
+
+/// Export names of `module` that are verified aliases of its default
+/// export — bound to the same local binding as the default. Empty when
+/// the default's local identity cannot be established.
+fn verified_default_alias_export_names(module: &Module) -> BTreeSet<String> {
+    let by_export = collect_local_idents_by_export_name(module);
+    let default_id = by_export
+        .get("default")
+        .cloned()
+        .or_else(|| default_export_decl_local_id(module));
+    let Some(default_id) = default_id else {
+        return BTreeSet::new();
+    };
+    by_export
+        .iter()
+        .filter(|(name, id)| name.as_str() != "default" && **id == default_id)
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Local binding `Id` of the module's `export default …` declaration,
+/// when the default is a plain local identifier (or a named fn/class).
+fn default_export_decl_local_id(module: &Module) -> Option<Id> {
+    for item in &module.body {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
+                let Expr::Ident(ident) = &*default_expr.expr else {
+                    return None;
+                };
+                return Some(ident.to_id());
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) => {
+                return match &default_decl.decl {
+                    DefaultDecl::Fn(function) => function.ident.as_ref().map(Ident::to_id),
+                    DefaultDecl::Class(class) => class.ident.as_ref().map(Ident::to_id),
+                    DefaultDecl::TsInterfaceDecl(_) => None,
+                };
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn collect_default_export_object_keys(
@@ -1088,9 +1223,11 @@ where
     let mut self_rewrite_import_locals = Vec::new();
     for result in results {
         for ((chunk_name, chunk_export), count) in &result.references_by_symbol {
-            let mapping = mappings_ref
-                .get(chunk_name)
-                .expect("symbol rewritten against a chunk that wasn't in the mappings");
+            let Some(mapping) = mappings_ref.get(chunk_name) else {
+                bail!(
+                    "partial-swap dispatch: file rewrite reported references to `{chunk_export}` on chunk {chunk_name}, which has no partial-swap mapping"
+                );
+            };
             if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
                 && let Some(symbol_resolution) = resolution.symbols_mut().get_mut(chunk_export)
             {
@@ -1155,7 +1292,10 @@ pub fn apply_partial_vendor_swaps(
             .with_context(|| {
                 format!("apply_partial_vendor_swaps vendor chunk {chunk_name} is missing entry AST")
             })?;
-        let chunk_exports = collect_exported_names(&entry_ast.module, false);
+        // `default` is a swappable name when the chunk binds it via the
+        // named form (`export { x as default }`), which the strip pass
+        // can map to a chunk-local binding.
+        let chunk_exports = collect_exported_names(&entry_ast.module);
 
         // Validate every declared chunk_export exists as an actual export
         // on the chunk; otherwise the per-symbol rewrite would silently
@@ -1238,7 +1378,7 @@ pub fn apply_partial_vendor_swaps(
                 .with_context(|| format!("reading {}", upstream_path.display()))?;
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-            let upstream_exports = collect_exported_names(&upstream_ast.module, true);
+            let upstream_exports = collect_exported_names(&upstream_ast.module);
             // Packages that re-export everything from a sibling module
             // (`export * from "./other.js"`) can't be fully enumerated
             // by a single-file `collect_exported_names`. Skip the strict
@@ -1407,7 +1547,7 @@ pub fn apply_bundled_partial_vendor_swaps(
                     "apply_bundled_partial_vendor_swaps vendor chunk {chunk_name} is missing entry AST"
                 )
             })?;
-        let chunk_exports = collect_exported_names(&entry_ast.module, false);
+        let chunk_exports = collect_exported_names(&entry_ast.module);
 
         for (chunk_export, symbol) in &bundled.symbols {
             if !chunk_exports.contains(chunk_export) && symbol.local.is_none() {
@@ -1447,7 +1587,7 @@ pub fn apply_bundled_partial_vendor_swaps(
         let bundle_code = fs::read_to_string(&bundled.bundle.path)
             .with_context(|| format!("reading {}", bundled.bundle.path.display()))?;
         let bundle_ast = parse_js_module(&bundled.bundle.path.display().to_string(), &bundle_code)?;
-        let bundle_exports = collect_exported_names(&bundle_ast.module, true);
+        let bundle_exports = collect_exported_names(&bundle_ast.module);
         for (package_name, package) in &bundled.packages {
             if package.bundle_export != "default" && !is_valid_identifier(&package.bundle_export) {
                 bail!(
@@ -1777,6 +1917,20 @@ fn rewrite_partial_swap_in_file(
         },
     );
 
+    // Pass A2: rewrite `export { x } from "<vendor-chunk>"` re-exports of
+    // swapped names. The strip pass removes those names from the chunk's
+    // export surface, so an unrewritten re-export would link-fail.
+    module.body = rewrite_partial_swap_export_from_decls(
+        std::mem::take(&mut module.body),
+        job.caller_chunk_id,
+        &job.file_path,
+        references,
+        chunk_table,
+        materialized_index,
+        mappings,
+        &mut references_by_symbol,
+    );
+
     // Pass B: rewrite every Expr::Ident reference to a tracked local
     // binding into `<namespace>.<upstream_export>`. Only kind=member
     // populates `bindings`; kind=namespace and kind=default leave the
@@ -1797,6 +1951,115 @@ fn rewrite_partial_swap_in_file(
         references_by_symbol,
         self_rewrite_import_locals: BTreeSet::new(),
     }
+}
+
+/// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
+/// re-exports of swapped names against the upstream package:
+///
+/// * `kind: named`     → `export { <upstream_export> as <name> } from "<pkg>"`
+/// * `kind: default`   → `export { default as <name> } from "<pkg>"`
+/// * `kind: namespace` → `export * as <name> from "<pkg>"`
+/// * `kind: member`    → retained — a member access off a namespace import
+///   has no live re-export equivalent; the post-strip consumer gate bails
+///   with a precise diagnostic instead.
+///
+/// Bundled partial swaps are not rewritten here (their facade default is
+/// only member-addressable); the consumer gate covers them.
+#[allow(clippy::too_many_arguments)] // mirrors rewrite_swap_import_decls' resolution context
+fn rewrite_partial_swap_export_from_decls(
+    original_body: Vec<ModuleItem>,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    references: &ArtifactIndexes,
+    chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
+    mappings: &PartialSwapMappings,
+    references_by_symbol: &mut BTreeMap<(String, String), usize>,
+) -> Vec<ModuleItem> {
+    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len());
+    for item in original_body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(mut named)) = item else {
+            new_body.push(item);
+            continue;
+        };
+        let Some(src) = named.src.as_deref() else {
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
+            continue;
+        };
+        let source = str_value(src);
+        let Some(target_chunk_id) = resolve_partial_swap_import_target(
+            &source,
+            caller_chunk_id,
+            caller_file_path,
+            references,
+            chunk_table,
+            materialized_index,
+        ) else {
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
+            continue;
+        };
+        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
+        let chunk_mapping = if target_chunk_id == caller_chunk_id {
+            None
+        } else {
+            mappings.get(&target_chunk_name)
+        };
+        let Some(chunk_mapping) = chunk_mapping else {
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
+            continue;
+        };
+        let mut retained: Vec<ExportSpecifier> = Vec::new();
+        let mut replacements: Vec<ModuleItem> = Vec::new();
+        for specifier in std::mem::take(&mut named.specifiers) {
+            let ExportSpecifier::Named(named_spec) = &specifier else {
+                retained.push(specifier);
+                continue;
+            };
+            let orig_name = module_export_name(&named_spec.orig);
+            let exported_name = named_spec
+                .exported
+                .as_ref()
+                .map(module_export_name)
+                .unwrap_or_else(|| orig_name.clone());
+            let Some(target) = chunk_mapping.symbols.get(&orig_name) else {
+                retained.push(specifier);
+                continue;
+            };
+            if !is_valid_identifier(&exported_name) {
+                retained.push(specifier);
+                continue;
+            }
+            let replacement = match target.kind {
+                PartialSwapKind::Named => target
+                    .upstream_export
+                    .as_deref()
+                    .map(|upstream| make_named_reexport(&target.package, upstream, &exported_name)),
+                PartialSwapKind::Default => Some(make_named_reexport(
+                    &target.package,
+                    "default",
+                    &exported_name,
+                )),
+                PartialSwapKind::Namespace => {
+                    Some(make_namespace_reexport(&target.package, &exported_name))
+                }
+                PartialSwapKind::Member => None,
+            };
+            let Some(replacement) = replacement else {
+                retained.push(specifier);
+                continue;
+            };
+            replacements.push(replacement);
+            *references_by_symbol
+                .entry((chunk_mapping.chunk_id.clone(), orig_name))
+                .or_insert(0) += 1;
+        }
+        new_body.extend(replacements);
+        if !retained.is_empty() {
+            named.specifiers = retained;
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
+        }
+    }
+    new_body
 }
 
 fn rewrite_bundled_partial_swap_in_file(
@@ -2079,7 +2342,8 @@ fn seed_bundled_partial_swap_self_rewrites(
             caller_file_path,
             &package_coords.facade_app_path,
         );
-        let local = unique_synthetic_ident("__debundle_bps", chunk_export, &mut used_idents);
+        let local =
+            unique_synthetic_ident(&format!("__debundle_bps_{chunk_export}"), &mut used_idents);
         match target.kind {
             PartialSwapKind::Member | PartialSwapKind::Named => {
                 let upstream_export = target
@@ -2121,10 +2385,9 @@ fn seed_bundled_partial_swap_self_rewrites(
     }
 }
 
-fn unique_synthetic_ident(prefix: &str, export_name: &str, used: &mut BTreeSet<String>) -> String {
-    let base = format!("{prefix}_{export_name}");
-    if used.insert(base.clone()) {
-        return base;
+fn unique_synthetic_ident(base: &str, used: &mut BTreeSet<String>) -> String {
+    if used.insert(base.to_string()) {
+        return base.to_string();
     }
     let mut i = 2usize;
     loop {
@@ -2528,6 +2791,213 @@ fn make_named_import(package: &str, local: &str, upstream_export: &str) -> Modul
         with: None,
         phase: ImportPhase::Evaluation,
     }))
+}
+
+/// `export { <orig> as <exported> } from "<source>"` (alias omitted when
+/// the names match).
+fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
+    let exported_name = (orig != exported)
+        .then(|| ModuleExportName::Ident(Ident::new_no_ctxt(exported.into(), DUMMY_SP)));
+    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+        span: DUMMY_SP,
+        specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
+            span: DUMMY_SP,
+            orig: ModuleExportName::Ident(Ident::new_no_ctxt(orig.into(), DUMMY_SP)),
+            exported: exported_name,
+            is_type_only: false,
+        })],
+        src: Some(Box::new(Str {
+            span: DUMMY_SP,
+            value: source.into(),
+            raw: None,
+        })),
+        type_only: false,
+        with: None,
+    }))
+}
+
+/// `export * as <exported> from "<source>"`.
+fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+        span: DUMMY_SP,
+        specifiers: vec![ExportSpecifier::Namespace(ExportNamespaceSpecifier {
+            span: DUMMY_SP,
+            name: ModuleExportName::Ident(Ident::new_no_ctxt(exported.into(), DUMMY_SP)),
+        })],
+        src: Some(Box::new(Str {
+            span: DUMMY_SP,
+            value: source.into(),
+            raw: None,
+        })),
+        type_only: false,
+        with: None,
+    }))
+}
+
+/// Post-strip cross-chunk soundness gate for partial vendor swaps.
+///
+/// `apply_partial_vendor_swaps` / `apply_bundled_partial_vendor_swaps`
+/// rewrite `ImportDecl` named specifiers (and, for non-bundled swaps,
+/// rewritable `export … from` re-exports); the strip pass then removes
+/// every swapped name from the vendor chunk's export surface. Any
+/// consumer that survived those rewrites while still referencing the
+/// stripped surface yields a broken emitted tree:
+///
+/// * a named import / re-export of a swapped name link-fails;
+/// * a namespace import (`import * as M`) silently reads `undefined`
+///   for swapped members;
+/// * `export *` silently drops the swapped names from the re-exporter.
+///
+/// Scan every retained file of every chunk and bail with a precise
+/// diagnostic on the first surviving consumer. Over-restriction is the
+/// accepted failure mode: a namespace consumer that only reads
+/// non-swapped members would work at runtime, but is rejected anyway
+/// because per-member usage is not analyzed here.
+pub fn validate_partial_swap_consumers(
+    artifact: &ChunkBundle,
+    vendor: &BTreeMap<String, VendorMark>,
+    references: &ArtifactIndexes,
+) -> Result<()> {
+    let chunk_table = &artifact.chunk_table;
+    let mut swapped_by_chunk: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (chunk_path, mark) in vendor {
+        let symbols = match &mark.level {
+            VendorLevel::PartialSwap(partial) => &partial.symbols,
+            VendorLevel::BundledPartialSwap(partial) => &partial.symbols,
+            _ => continue,
+        };
+        swapped_by_chunk.insert(
+            chunk_id_from_chunk_path(chunk_path, "validate_partial_swap_consumers")?,
+            symbols.keys().cloned().collect(),
+        );
+    }
+    if swapped_by_chunk.is_empty() {
+        return Ok(());
+    }
+    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
+    for chunk_artifact in &artifact.chunks {
+        let caller_chunk_id = chunk_artifact.chunk_id;
+        let caller_chunk_name = chunk_table.name(caller_chunk_id);
+        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
+            let Some(ast) = chunk_artifact
+                .js
+                .get_file(&file_path)
+                .and_then(|file| file.ast())
+            else {
+                continue;
+            };
+            for item in &ast.module.body {
+                let ModuleItem::ModuleDecl(decl) = item else {
+                    continue;
+                };
+                let source = match decl {
+                    ModuleDecl::Import(import) => str_value(&import.src),
+                    ModuleDecl::ExportNamed(named) => {
+                        let Some(src) = named.src.as_deref() else {
+                            continue;
+                        };
+                        str_value(src)
+                    }
+                    ModuleDecl::ExportAll(export_all) => str_value(&export_all.src),
+                    _ => continue,
+                };
+                let Some(target_chunk_id) = resolve_partial_swap_import_target(
+                    &source,
+                    caller_chunk_id,
+                    &file_path,
+                    references,
+                    chunk_table,
+                    &materialized_index,
+                ) else {
+                    continue;
+                };
+                let target_chunk_name = chunk_table.name(target_chunk_id);
+                let Some(swapped) = swapped_by_chunk.get(target_chunk_name) else {
+                    continue;
+                };
+                let consumer = format!("{caller_chunk_name}/{file_path}");
+                check_partial_swap_consumer_decl(decl, swapped, &consumer, target_chunk_name)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_partial_swap_consumer_decl(
+    decl: &ModuleDecl,
+    swapped: &BTreeSet<String>,
+    consumer: &str,
+    target_chunk_name: &str,
+) -> Result<()> {
+    let swapped_list = || swapped.iter().cloned().collect::<Vec<_>>().join(",");
+    match decl {
+        ModuleDecl::Import(import) => {
+            for specifier in &import.specifiers {
+                match specifier {
+                    ImportSpecifier::Named(named) => {
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        if swapped.contains(&imported) {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it",
+                            );
+                        }
+                    }
+                    ImportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} namespace-imports partially-swapped vendor chunk {target_chunk_name}; swapped members [{}] would read as `undefined` on the namespace object — namespace consumers of partially-swapped chunks are unsupported, restructure the spec",
+                            swapped_list(),
+                        );
+                    }
+                    ImportSpecifier::Default(_) => {
+                        if swapped.contains("default") {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportNamed(named) => {
+            for specifier in &named.specifiers {
+                match specifier {
+                    ExportSpecifier::Named(named_spec) => {
+                        let orig = module_export_name(&named_spec.orig);
+                        if swapped.contains(&orig) {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
+                            );
+                        }
+                    }
+                    ExportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} re-exports the namespace of partially-swapped vendor chunk {target_chunk_name} (`export * as …`); swapped members [{}] would read as `undefined`",
+                            swapped_list(),
+                        );
+                    }
+                    ExportSpecifier::Default(_) => {
+                        if swapped.contains("default") {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportAll(_) => {
+            bail!(
+                "partial-swap consumer gate: {consumer} uses `export *` from partially-swapped vendor chunk {target_chunk_name}; swapped names [{}] would silently vanish from the re-exporter's surface",
+                swapped_list(),
+            );
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn is_valid_identifier(name: &str) -> bool {

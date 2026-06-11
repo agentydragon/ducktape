@@ -2619,6 +2619,89 @@ where emission discovers new graph edges or silently mutates the
 assignment, because that reintroduces hidden closure behavior and
 makes diagnostics disagree with emitted output.
 
+## Vendor chunk swapping
+
+The `vendor` spec map classifies chunks as vendor code at one of four
+levels: `suppress` (annotation only — the chunk and its callers pass
+through byte-identical), `boundary_rename` (rewrite caller imports
+from vendor-local names to the vendor's public export names),
+`swap` (replace the whole chunk with an upstream npm package), and
+`partial_swap` / `bundled_partial_swap` (swap a subset of the chunk's
+exports against upstream packages and strip the swapped bodies from
+the residual chunk). Soundness edges that are deliberate contracts
+rather than missing features are documented here.
+
+### Full swap: callers are proxy/import-map-dependent
+
+`level: swap` removes the vendor chunk from the artifact. Caller
+imports of the removed chunk are **intentionally left dangling** in
+the plain `write_js_tree` output: the live-proxy / import-map layer
+(<../live_proxy/>) resolves the dangling chunk specifier to the
+swapped package at serve time. The plain emitted tree is therefore
+not directly runnable under bare Node when a full swap is configured.
+Pinned by `full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy`
+in <../e2e/vendor_swap_test.rs>.
+
+### Partial swap: consumer rewrites and the post-strip gate
+
+Per-symbol partial swaps rewrite two consumer shapes in retained
+files: named `ImportDecl` specifiers and `export { x } from
+"<chunk>"` re-exports of swapped names (`kind: named` / `default` /
+`namespace`). Shapes with no live rewrite — `import * as M` namespace
+imports of the chunk, `export *` from the chunk, and re-exports of
+`kind: member` symbols or bundled-swap symbols — are rejected by the
+**post-strip consumer gate** (`validate_partial_swap_consumers`),
+which scans every retained file after the strip pass and bails on any
+surviving reference to the stripped export surface. Over-restriction
+is the accepted failure mode: a namespace consumer that happens to
+read only non-swapped members is still rejected, because per-member
+usage is not analyzed.
+
+### Deliberate split-brain bypasses in the strip pass
+
+The strip pass bails on "split-brain" items — top-level items
+reachable both from the residual chunk's exports and from a swapped
+package's bodies, where stripping would leave the residual and the
+upstream package each holding half of a shared value. Two bypasses
+deliberately weaken that bail:
+
+- **Multi-package items**: the split-brain bail fires only when the
+  item is reachable from exactly **one** swapped package
+  (`packages.len() == 1` in <../vendor/strip.rs>). An item shared by
+  two or more swapped packages has no single upstream home, so it is
+  retained in the residual chunk and effectively duplicated relative
+  to the upstream packages.
+- **Shareable helpers**: items classified `shareable_helper`
+  (syntactically stateless shapes — function declarations,
+  primitive-literal consts, function-valued consts, intrinsic
+  aliases, Vite preload-map cells) are exempt from the split-brain
+  bail and may be duplicated between the residual chunk and the
+  upstream package.
+
+Both bypasses share the same rationale and the same risk. Rationale:
+duplicating a stateless value is observationally harmless, and
+bailing would reject many real specs. Risk: if a "helper" actually
+carries state (a memo cache, a registry object, a closure over a
+mutable cell — or a multi-package item holding module-level state),
+duplication forks that state — the residual chunk and the upstream
+package each get their own instance, and identity checks or cache
+coherence between them silently break. The `shareable_helper`
+classifier is syntactic and cannot see state hidden behind a
+function value; treat new classifier shapes with suspicion.
+
+### Wrapper re-exports are init-time snapshots, not live bindings
+
+The full-swap wrapper shapes (`named_from_default`,
+`named_from_module_default`, `named_from_json_default` in
+<../vendor/wrappers.rs>) emit `export const <name> = <default>.<name>;`
+/ `export const <name> = <default>;` statements. These evaluate
+**once at wrapper-module init**. Real ESM named exports are live
+bindings; the wrapper's are snapshots. This is a documented
+precondition on the upstream package: its default export's
+properties must not be reassigned after module init, and consumers
+must not rely on live-binding semantics for the wrapped names.
+(JSON wrappers are immune — JSON modules are inert data.)
+
 ## Empty logical modules
 
 A spec entry that resolves to zero owned bindings and no re-exports

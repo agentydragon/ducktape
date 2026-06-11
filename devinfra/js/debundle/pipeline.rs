@@ -24,6 +24,7 @@ use vendor::{
     StripSwappedVendorExportsOptions, SwapVendorOptions, VendorResolution,
     apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps, apply_vendor_annotations,
     rename_vendor_exports, strip_swapped_vendor_exports_with_options, swap_vendor_chunks,
+    validate_partial_swap_consumers,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -473,6 +474,11 @@ fn run_partial_vendor_swaps(
         )?;
         artifact = strip_result.artifact;
         strip_stats = strip_result.manifest.per_chunk;
+        // Post-strip soundness gate: no retained file may still consume
+        // the stripped portion of a partially-swapped chunk's export
+        // surface (unrewritten named imports / re-exports, namespace
+        // imports, `export *`).
+        validate_partial_swap_consumers(&artifact, &spec.vendor, artifact_indexes)?;
     }
     Ok(PartialVendorSwapResult {
         artifact,

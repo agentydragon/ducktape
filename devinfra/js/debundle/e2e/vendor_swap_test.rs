@@ -271,7 +271,7 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
     run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-module-default-",
         chunk_source: "export { x as default };\nconst x = 0;\n",
-        wrapper_shape: "named_from_module_default",
+        wrapper_shape: Some("named_from_module_default"),
         upstream_source,
     })
 }
@@ -279,7 +279,8 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
 struct FullSwapFixtureArgs<'a> {
     temp_prefix: &'a str,
     chunk_source: &'a str,
-    wrapper_shape: &'a str,
+    /// `None` runs the plain (wrapper-less) swap path.
+    wrapper_shape: Option<&'a str>,
     upstream_source: &'a str,
 }
 
@@ -300,17 +301,23 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
         args.upstream_source,
     );
 
+    let mut vendor_mark = json!({
+        "level": "swap",
+        "identity": format!("{PACKAGE_NAME}/{SUBPATH}"),
+        "package": PACKAGE_NAME,
+        "version": PACKAGE_VERSION,
+        "subpath": SUBPATH,
+    });
+    if let Some(wrapper_shape) = args.wrapper_shape {
+        vendor_mark
+            .as_object_mut()
+            .expect("vendor mark is a JSON object")
+            .insert("wrapper_shape".to_string(), json!(wrapper_shape));
+    }
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
-            CHUNK_PATH: {
-                "level": "swap",
-                "identity": format!("{PACKAGE_NAME}/{SUBPATH}"),
-                "package": PACKAGE_NAME,
-                "version": PACKAGE_VERSION,
-                "subpath": SUBPATH,
-                "wrapper_shape": args.wrapper_shape,
-            },
+            CHUNK_PATH: vendor_mark,
         },
         "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "swap_vendor_chunks": {
@@ -493,7 +500,7 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
     run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-default-",
         chunk_source: args.chunk_source,
-        wrapper_shape: "named_from_default",
+        wrapper_shape: Some("named_from_default"),
         upstream_source: args.upstream_source,
     })
 }
@@ -1820,4 +1827,761 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     vendor.insert("symbols".into(), Value::Object(symbols));
 
     run_partial_swap_raw(ws, vendor, &[(args.package_name, &package_root)])
+}
+
+// ─── partial-swap consumer soundness ────────────────────────────────────
+//
+// The per-symbol rewrite handles `ImportDecl` consumers. Two other consumer
+// shapes can reference a partially-swapped chunk's export surface:
+// `export { x } from "<chunk>"` re-exports and `import * as M from
+// "<chunk>"` namespace imports. Re-exports of `named`/`default`/`namespace`
+// kind symbols are rewritten against the upstream package; everything else
+// (member-kind re-exports, namespace imports, `export *`) must make the
+// pipeline bail — the strip pass removes those names from the chunk's
+// export surface, so an unrewritten consumer either link-fails (re-export)
+// or silently reads `undefined` (namespace member).
+
+fn setup_partial_swap_consumer_fixture(
+    prefix: &str,
+    chunk_source: &str,
+    caller_source: &str,
+    package_name: &str,
+    version: &str,
+    subpath: &str,
+    upstream_source: &str,
+) -> (VendorTestWorkspace, PathBuf) {
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+    const CALLER_PATH: &str = "static/app.js";
+    let ws = VendorTestWorkspace::new(prefix);
+    ws.write_chunk(MEGACHUNK_PATH, chunk_source);
+    ws.write_chunk(CALLER_PATH, caller_source);
+    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{package_name}"),
+        package_name,
+        version,
+        subpath,
+        upstream_source,
+    );
+    (ws, package_root)
+}
+
+fn partial_swap_vendor(
+    identity: &str,
+    packages: Value,
+    symbols: Value,
+) -> serde_json::Map<String, Value> {
+    let mut vendor = serde_json::Map::new();
+    vendor.insert("level".into(), json!("partial_swap"));
+    vendor.insert("identity".into(), json!(identity));
+    vendor.insert("packages".into(), packages);
+    vendor.insert("symbols".into(), symbols);
+    vendor
+}
+
+fn emitted_app_root(fixture: &PartialSwapFixture) -> PathBuf {
+    fixture
+        .caller_emitted_path
+        .ancestors()
+        .nth(3)
+        .expect("app root above static/app/entry.js")
+        .to_path_buf()
+}
+
+/// Provide a minimal ESM `node_modules/<name>` in the emitted app root so
+/// node can resolve the bare package specifiers the swap rewrites emit.
+fn install_node_module(app_root: &Path, name: &str, version: &str, source: &str) {
+    write_text_file(
+        &app_root.join(format!("node_modules/{name}/package.json")),
+        &format!(
+            "{{ \"name\": \"{name}\", \"version\": \"{version}\", \"type\": \"module\", \"main\": \"index.js\" }}\n"
+        ),
+    );
+    write_text_file(
+        &app_root.join(format!("node_modules/{name}/index.js")),
+        source,
+    );
+}
+
+#[test]
+fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
+    // `export { e6 as zodBoolean } from "<chunk>"` of a kind=named swapped
+    // symbol must be rewritten to re-export the upstream package, exactly
+    // like ImportDecl consumers — otherwise the strip pass removes `e6`
+    // from the chunk's export surface while the re-export still references
+    // it, guaranteeing a module-link failure in the emitted tree.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-reexport-named-",
+        "export const e6 = () => \"UPSTREAM\";\nexport const keepMe = () => 7;\n",
+        "export { e6 as zodBoolean, keepMe } from \"../megachunk/entry.js\";\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let vendor = partial_swap_vendor(
+        "named re-export consumer fixture",
+        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs" } }),
+        json!({ "e6": { "package": "zod", "kind": "named", "upstream_export": "boolean" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("export { boolean as zodBoolean } from \"zod\""),
+        "re-export of swapped name should target the upstream package:\n{caller}",
+    );
+    assert!(
+        caller.contains("keepMe") && caller.contains("../megachunk/entry.js"),
+        "non-swapped re-export stays on the residual chunk:\n{caller}",
+    );
+    assert!(
+        !caller.contains("e6"),
+        "no re-export of the stripped chunk name may survive:\n{caller}",
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let probe_path = app_root.join("__run_reexport_named.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./static/app/entry.js\");\n\
+         console.log(`${m.zodBoolean()}:${m.keepMe()}`);\n",
+    );
+    assert_node_output(&probe_path, "UPSTREAM:7\n", "");
+}
+
+#[test]
+fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-reexport-default-",
+        "export const aQ = (...args) => args.join(\"+\");\nexport const keepMe = () => 7;\n",
+        "export { aQ as z, keepMe } from \"../megachunk/entry.js\";\n",
+        "clsx",
+        "2.1.1",
+        "dist/clsx.mjs",
+        "export default (...args) => args.join(\"+\");\n",
+    );
+    let vendor = partial_swap_vendor(
+        "default re-export consumer fixture",
+        json!({ "clsx": { "version": "2.1.1", "subpath": "dist/clsx.mjs" } }),
+        json!({ "aQ": { "package": "clsx", "kind": "default" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("clsx", &package_root)]);
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("export { default as z } from \"clsx\""),
+        "re-export of a kind=default symbol should forward the package default:\n{caller}",
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "clsx",
+        "2.1.1",
+        "export default (...args) => args.join(\"+\");\n",
+    );
+    let probe_path = app_root.join("__run_reexport_default.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./static/app/entry.js\");\n\
+         console.log(m.z(\"a\", \"b\"));\n",
+    );
+    assert_node_output(&probe_path, "a+b\n", "");
+}
+
+#[test]
+fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-reexport-namespace-",
+        "export const a = { useState: () => 1 };\nexport const keepMe = () => 7;\n",
+        "export { a as React, keepMe } from \"../megachunk/entry.js\";\n",
+        "react",
+        "18.3.1",
+        "index.js",
+        "export const useState = () => 1;\n",
+    );
+    let vendor = partial_swap_vendor(
+        "namespace re-export consumer fixture",
+        json!({ "react": { "version": "18.3.1", "subpath": "index.js" } }),
+        json!({ "a": { "package": "react", "kind": "namespace" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("react", &package_root)]);
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("export * as React from \"react\""),
+        "re-export of a kind=namespace symbol should forward the package namespace:\n{caller}",
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "react",
+        "18.3.1",
+        "export const useState = () => 1;\n",
+    );
+    let probe_path = app_root.join("__run_reexport_namespace.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./static/app/entry.js\");\n\
+         console.log(m.React.useState());\n",
+    );
+    assert_node_output(&probe_path, "1\n", "");
+}
+
+#[test]
+fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
+    // `import * as M from "<chunk>"` then `M.e6` — the strip pass removes
+    // `e6` from the chunk's export surface, so the member read would
+    // silently evaluate to `undefined` at runtime. The post-strip consumer
+    // gate must reject the spec instead of emitting the broken tree.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-namespace-consumer-",
+        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        "import * as M from \"../megachunk/entry.js\";\nexport const r = M.e6();\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const boolean = () => true;\n",
+    );
+    let vendor = partial_swap_vendor(
+        "namespace consumer fixture",
+        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
+        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject a namespace import of a partially-swapped chunk\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("namespace")
+            && fixture.result.stderr.contains("static/megachunk"),
+        "expected namespace-consumer gate diagnostic in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn partial_swap_bails_on_member_kind_reexport_from_consumer() {
+    // kind=member symbols rewrite references to `<namespace>.<export>`
+    // member accesses — that shape has no live re-export equivalent, so a
+    // re-export consumer of a member-kind symbol must hard-fail rather
+    // than silently survive the strip with a dangling export name.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-member-reexport-",
+        "export const e6 = () => true;\n",
+        "export { e6 as zodBoolean } from \"../megachunk/entry.js\";\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const boolean = () => true;\n",
+    );
+    let vendor = partial_swap_vendor(
+        "member re-export consumer fixture",
+        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
+        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject a member-kind re-export consumer\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("e6") && fixture.result.stderr.contains("re-export"),
+        "expected re-export gate diagnostic naming the swapped symbol:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn partial_swap_bails_on_export_star_from_partially_swapped_chunk() {
+    // `export * from "<chunk>"` re-exports whatever survives the strip —
+    // the swapped names silently vanish from the re-exporter's surface.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-export-star-",
+        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        "export * from \"../megachunk/entry.js\";\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const boolean = () => true;\n",
+    );
+    let vendor = partial_swap_vendor(
+        "export-star consumer fixture",
+        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
+        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+    );
+    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject `export *` from a partially-swapped chunk\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("export *")
+            && fixture.result.stderr.contains("static/megachunk"),
+        "expected export-star gate diagnostic in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+// ─── boundary_rename / suppress ─────────────────────────────────────────
+
+#[test]
+fn boundary_rename_rewrites_caller_imports_end_to_end() {
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    let ws = VendorTestWorkspace::new("vendor-boundary-rename-");
+    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
+    ws.write_chunk(
+        APP_PATH,
+        "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
+    );
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: { "level": "boundary_rename", "identity": "boundary rename fixture" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let caller =
+        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
+    assert!(
+        caller.contains("import { alpha as a }"),
+        "caller import should be rewritten to the vendor's public export name:\n{caller}",
+    );
+    let probe_path = ws.out_root.join("__run_boundary_rename.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "1\n", "");
+}
+
+#[test]
+fn boundary_rename_bails_when_mapping_key_is_a_real_export_of_another_local() {
+    // The boundary mapping is keyed by vendor-LOCAL name (`export { a as
+    // alpha }` → a→alpha). If the vendor ALSO genuinely exports the name
+    // `a` bound to a *different* local (`export { z as a }`), a caller's
+    // `import { a }` refers to local `z` — rewriting it to `import { alpha
+    // as a }` would silently rebind it to local `a`'s value. The stage must
+    // bail on the colliding shape.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    let ws = VendorTestWorkspace::new("vendor-boundary-rename-collision-");
+    ws.write_chunk(
+        VENDOR_PATH,
+        "const a = \"local-a\";\nconst z = \"local-z\";\nexport { a as alpha, z as a };\n",
+    );
+    ws.write_chunk(
+        APP_PATH,
+        "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
+    );
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: { "level": "boundary_rename", "identity": "boundary rename collision fixture" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[]);
+    assert!(
+        !result.status.success(),
+        "debundler must reject a boundary mapping key that collides with a real export\nstdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains("collides") && result.stderr.contains("`a`"),
+        "expected boundary-rename collision diagnostic in stderr:\n{}",
+        result.stderr,
+    );
+}
+
+#[test]
+fn suppress_vendor_chunk_passes_through_unchanged() {
+    // `level: suppress` is annotation-only: no boundary rename, no swap,
+    // no strip. The chunk and its callers must pass through untouched.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    let ws = VendorTestWorkspace::new("vendor-suppress-");
+    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
+    ws.write_chunk(
+        APP_PATH,
+        "import { alpha } from \"../vendor/entry.js\";\nconsole.log(alpha);\n",
+    );
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: { "level": "suppress", "identity": "suppress fixture" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
+        .expect("vendor chunk emitted");
+    assert!(
+        vendor.contains("export { a as alpha }"),
+        "suppressed vendor chunk's export surface must be unchanged:\n{vendor}",
+    );
+    let caller =
+        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
+    assert!(
+        caller.contains("import { alpha } from \"../vendor/entry.js\""),
+        "caller import of a suppressed chunk must be unchanged:\n{caller}",
+    );
+    let probe_path = ws.out_root.join("__run_suppress.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "1\n", "");
+}
+
+// ─── full swap: caller contract + export-shape validation ───────────────
+
+#[test]
+fn full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy() {
+    // `level: swap` removes the vendor chunk from the artifact; callers'
+    // imports of the removed chunk are intentionally left as-is in the
+    // plain `write_js_tree` output. The emitted tree is proxy-dependent:
+    // the live-proxy/import-map layer resolves the dangling specifier to
+    // the swapped package at serve time. This test pins that contract.
+    const CHUNK_PATH: &str = "static/lib-X.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "lib";
+    let ws = VendorTestWorkspace::new("vendor-full-swap-caller-");
+    ws.write_chunk(CHUNK_PATH, "export const ping = () => \"vendor\";\n");
+    ws.write_chunk(
+        APP_PATH,
+        "import { ping } from \"../lib-X/entry.js\";\nconsole.log(ping());\n",
+    );
+    ws.write_js_list(&format!("{CHUNK_PATH}\n{APP_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        "upstream",
+        PACKAGE_NAME,
+        "1.0.0",
+        "dist/index.mjs",
+        "export const ping = () => \"pkg\";\n",
+    );
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            CHUNK_PATH: {
+                "level": "swap",
+                "identity": "lib/dist/index.mjs",
+                "package": PACKAGE_NAME,
+                "version": "1.0.0",
+                "subpath": "dist/index.mjs",
+            },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    assert!(
+        !ws.out_root.join("app/static/lib-X").exists(),
+        "fully-swapped chunk must be removed from the emitted tree",
+    );
+    let caller =
+        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
+    assert!(
+        caller.contains("../lib-X/entry.js"),
+        "caller's import of the removed chunk is intentionally left dangling \
+         (resolved by the live-proxy/import-map at serve time):\n{caller}",
+    );
+}
+
+#[test]
+fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
+    // `export default x;` (ExportDefaultExpr) must participate in the
+    // no-wrapper export-shape check the same way `export { x as default }`
+    // does: if the upstream package has no default export, callers that
+    // import the chunk's default would break post-swap.
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-full-swap-default-expr-",
+        chunk_source: "const x = 0;\nexport default x;\n",
+        wrapper_shape: None,
+        upstream_source: "export const unrelated = 1;\n",
+    });
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject a default-exporting chunk swapped against an upstream without a default\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("export shape mismatch")
+            && fixture.result.stderr.contains("default"),
+        "expected export-shape mismatch naming `default` in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_default() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-full-swap-named-default-",
+        chunk_source: "const x = 0;\nexport { x as default };\n",
+        wrapper_shape: None,
+        upstream_source: "const d = 1;\nexport default d;\n",
+    });
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+}
+
+// ─── wrapper synthetic-local collisions ─────────────────────────────────
+
+#[test]
+fn named_from_default_wrapper_avoids_upstream_default_local_collision() {
+    // The wrapper hoists upstream's default into a synthetic local
+    // (historically `_d`). If the upstream module body already binds that
+    // name, naive injection produces a duplicate-declaration SyntaxError.
+    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+        upstream_source: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
+        chunk_source: "export { ping } from \"lib\";\n",
+    });
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let probe_path = fixture
+        .wrapper_path
+        .parent()
+        .expect("wrapper has parent dir")
+        .join("__probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./entry.js\");\nconsole.log(m.ping());\n",
+    );
+    assert_node_output(&probe_path, "taken\n", "");
+}
+
+#[test]
+fn named_from_module_default_wrapper_avoids_upstream_default_local_collision() {
+    let upstream_source = "const __vendor_default__ = \"taken\";\n\
+                           export default function getter() { return __vendor_default__; }\n";
+    let fixture = run_named_from_module_default_fixture(upstream_source);
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let probe_path = fixture
+        .wrapper_path
+        .parent()
+        .expect("wrapper has parent dir")
+        .join("__probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./entry.js\");\nconsole.log(m.default());\n",
+    );
+    assert_node_output(&probe_path, "taken\n", "");
+}
+
+// ─── named_from_module_default named-export verification ────────────────
+
+#[test]
+fn named_from_module_default_rejects_unverified_named_exports() {
+    // The wrapper emits `export const <name> = <default>;` for every
+    // vendor named export. That equation only holds when the chunk itself
+    // binds `<name>` to the same local as its default export. A genuine
+    // independent export (`export { y as other }`) must make the swap
+    // bail instead of silently re-exporting the upstream default under
+    // an unrelated name.
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-module-default-overclaim-",
+        chunk_source: "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
+        wrapper_shape: Some("named_from_module_default"),
+        upstream_source: "export default function f() { return \"pkg\"; }\n",
+    });
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject named exports that are not verified aliases of the chunk default\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("named-from-module-default")
+            && fixture.result.stderr.contains("other"),
+        "expected over-claim diagnostic naming `other` in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn named_from_module_default_accepts_verified_default_aliases() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-module-default-alias-",
+        chunk_source: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
+        wrapper_shape: Some("named_from_module_default"),
+        upstream_source: "export default function f() { return \"val\"; }\n",
+    });
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let probe_path = fixture
+        .wrapper_path
+        .parent()
+        .expect("wrapper has parent dir")
+        .join("__probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./entry.js\");\nconsole.log(m.alias === m.default);\n",
+    );
+    assert_node_output(&probe_path, "true\n", "");
+}
+
+// ─── named_from_json_default ────────────────────────────────────────────
+
+#[test]
+fn named_from_json_default_generates_named_pulls_from_json_keys() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-named-from-json-default-",
+        chunk_source: "export { version, flag } from \"lib\";\n",
+        wrapper_shape: Some("named_from_json_default"),
+        upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
+    });
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
+    assert!(
+        wrapper_source.contains("export const version = _d.version;")
+            && wrapper_source.contains("export const flag = _d.flag;")
+            && wrapper_source.contains("export default _d;"),
+        "JSON wrapper should pull each named export off the parsed default:\n{wrapper_source}",
+    );
+    let probe_path = fixture
+        .wrapper_path
+        .parent()
+        .expect("wrapper has parent dir")
+        .join("__probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./entry.js\");\n\
+         console.log(`${m.version}:${m.flag}:${m.default.version}`);\n",
+    );
+    assert_node_output(&probe_path, "1.2.3:true:1.2.3\n", "");
+}
+
+#[test]
+fn named_from_json_default_rejects_names_missing_from_json() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-named-from-json-default-missing-",
+        chunk_source: "export { missing } from \"lib\";\n",
+        wrapper_shape: Some("named_from_json_default"),
+        upstream_source: "{ \"version\": \"1.2.3\" }\n",
+    });
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject vendor named exports missing from the upstream JSON keys",
+    );
+    assert!(
+        fixture
+            .result
+            .stderr
+            .contains("named-from-json-default wrapper shape mismatch"),
+        "expected JSON wrapper shape mismatch in stderr:\n{}",
+        fixture.result.stderr,
+    );
 }
