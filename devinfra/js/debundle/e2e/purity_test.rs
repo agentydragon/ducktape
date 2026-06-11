@@ -949,6 +949,7 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
     //   declared_pure → cx() is Pure → b is Pure → no S-chain
     //   participation. Only edge: residual → b_module. DAG.
     let opts = FixtureOpts {
+        extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
 const b = cx();
@@ -1168,4 +1169,65 @@ export { a, b, c };
         &["const a"],
     );
     assert_entry_output(&fixture, "symbol1\n");
+}
+
+#[test]
+fn cross_module_pure_import_emits_no_s_cycle() {
+    // `wrap` is a pure HOF defined in a SEPARATE analyzed chunk and imported.
+    // Its three `wrap(...)` call sites split across two logical modules. With
+    // `wrap` opaque (`unknown_call`) the calls are side-effecting and the
+    // strict S-chain has cross-module edges both ways — a cycle the gate
+    // rejects (cf. `unsafe_iife_enum_builder_still_emits_s_cycle`). The
+    // program-level cross-module purity oracle resolves the imported `wrap`
+    // as pure, so no S edges are emitted and the build accepts.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { wrap } from "./vendorlib.js";
+const A = wrap(function () { return "a"; });
+const B = wrap(function () { return "b"; });
+const C = wrap(function () { return "c"; });
+console.log(A, B, C);
+export { A, B, C };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
+        )]),
+    );
+    // The build accepting (no S-cycle rejection) is the assertion; confirm the
+    // peel actually emitted the split modules.
+    assert!(fixture.entry_path.exists());
+}
+
+#[test]
+fn cross_module_impure_import_still_emits_s_cycle() {
+    // Same shape, but the imported `wrap` writes a global — impure. The oracle
+    // must propagate that impurity back to the call sites, so the interleaved
+    // modules still reject on the S-cycle (the oracle removes only genuine
+    // false-impurity, never real effects).
+    expect_rejection(
+        FixtureOpts::new(
+            r#"import { wrap } from "./vendorlib.js";
+const A = wrap(function () { return "a"; });
+const B = wrap(function () { return "b"; });
+const C = wrap(function () { return "c"; });
+console.log(A, B, C);
+export { A, B, C };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export function wrap(f) { globalThis.__sink = f; return { impl: f }; }\n",
+        )]),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
 }

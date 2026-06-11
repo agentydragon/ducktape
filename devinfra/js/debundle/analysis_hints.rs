@@ -8,6 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::purity::Purity;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
@@ -33,6 +35,11 @@ pub struct AnalysisHints {
     pub declared_pure_members: BTreeMap<String, BTreeSet<String>>,
     pub known_effects: BTreeMap<String, KnownEffect>,
     pub local_effect_policy: LocalEffectPolicy,
+    /// Cross-module purity verdicts for this chunk's imported function
+    /// bindings, keyed by local binding name. Produced by the program-level
+    /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
+    /// paths, where imported callees stay `unknown_call`.
+    pub imported_purities: BTreeMap<String, Purity>,
 }
 
 impl AnalysisHints {
@@ -43,6 +50,7 @@ impl AnalysisHints {
             declared_pure_members: BTreeMap::new(),
             known_effects: BTreeMap::new(),
             local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
+            imported_purities: BTreeMap::new(),
         }
     }
 }

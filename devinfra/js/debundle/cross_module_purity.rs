@@ -125,12 +125,21 @@ pub fn resolve_imported_purities(
 
     // Greatest-fixpoint: rebuild every module with the current cross-module
     // verdicts and demote any function export that is impure under them. A
-    // verdict only moves Pure → NotPure, so this terminates.
+    // verdict only moves Pure → NotPure, so this terminates. Modules whose
+    // resolved imported map did not change since their last build cannot
+    // produce new demotions, so they are skipped — this bounds the total
+    // rebuild work to (initial pass) + (one rebuild per demotion-affected
+    // module per round) instead of (all modules × rounds).
+    let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Purity>> = BTreeMap::new();
     loop {
         let mut changed = false;
         for (key, facts) in modules {
             let imported = facts.imported_purities(&export_purity);
+            if last_inputs.get(key) == Some(&imported) {
+                continue;
+            }
             let graph = facts.build_graph(&imported);
+            last_inputs.insert(key, imported);
             for (export_name, local) in &facts.exports {
                 let slot_key = (key.clone(), export_name.clone());
                 if !export_purity.contains_key(&slot_key) {

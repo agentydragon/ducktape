@@ -554,11 +554,7 @@ where
         &hints.declared_pure,
         &hints.declared_pure_new,
         &hints.declared_pure_members,
-        // CLEANUP(2026-06-11): pass the program-level cross-module purity
-        // oracle here once it is threaded through stage_one. The consumer
-        // arm in `classify_callee_call` already reads it; an empty map
-        // keeps the strictly per-chunk behavior until then.
-        &BTreeMap::new(),
+        &hints.imported_purities,
     );
     let local_effect_context =
         local_effects::LocalEffectContext::for_body(&body, hints.local_effect_policy);

@@ -526,6 +526,11 @@ pub struct FixtureOpts<'a> {
     /// `&["a1_eval"]`. Default empty — all admission checks enforced.
     pub admission_overrides: &'a [&'a str],
     pub extra_files: &'a [(&'a str, &'a str)],
+    /// Additional input chunks `(snapshot-relative path, source)` listed in
+    /// `js-files.txt` alongside the entry chunk. Unlike `extra_files`
+    /// (post-run runtime siblings), these are debundled artifact chunks the
+    /// transform analyzes — e.g. an import target for cross-chunk tests.
+    pub extra_chunks: &'a [(&'a str, &'a str)],
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -545,7 +550,15 @@ impl<'a> FixtureOpts<'a> {
             dataflow_aware_s_chain: false,
             admission_overrides: &[],
             extra_files: &[],
+            extra_chunks: &[],
         }
+    }
+
+    /// Add analyzed-but-not-materialized sibling chunks (see `extra_chunks`),
+    /// e.g. an import target whose exports feed the cross-module purity oracle.
+    pub fn with_extra_chunks(mut self, extra_chunks: &'a [(&'a str, &'a str)]) -> Self {
+        self.extra_chunks = extra_chunks;
+        self
     }
 
     /// Disable the named admission checks for this chunk via
@@ -893,8 +906,18 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
         write_text_file(&snapshot_root.join(rel_path), content);
     }
 
+    // `extra_chunks` are listed in js-files.txt so they are parsed and
+    // analyzed (their exports feed the cross-module oracle), unlike
+    // `extra_files` which are runtime-only siblings.
+    let mut js_list = format!("{entry_file}\n");
+    for (chunk_id, source) in opts.extra_chunks {
+        let chunk_file = format!("{chunk_id}.js");
+        write_text_file(&snapshot_root.join(&chunk_file), source);
+        js_list.push_str(&chunk_file);
+        js_list.push('\n');
+    }
     let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{entry_file}\n"));
+    write_text_file(&js_list_path, &js_list);
 
     FixtureSetup {
         root,

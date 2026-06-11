@@ -25,6 +25,10 @@ pub(super) struct ChunkContext<'a> {
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) report_out_dir: Option<&'a Path>,
+    /// Program-level cross-module purity verdicts, keyed by chunk name;
+    /// this chunk's entry (if any) lands in `AnalysisHints::imported_purities`.
+    pub(super) cross_module_purities:
+        &'a BTreeMap<String, BTreeMap<String, analysis::purity::Purity>>,
 }
 
 /// Spec-derived per-chunk inputs: logical-module layout, chunk
@@ -72,6 +76,7 @@ pub(super) fn materialize_logical_chunk(
         file,
         target_dir,
         report_out_dir,
+        cross_module_purities,
     } = context;
     let ChunkSpec {
         logical_modules,
@@ -179,7 +184,12 @@ pub(super) fn materialize_logical_chunk(
     timings.add("build_module_plans", build_module_plans_started.elapsed());
 
     let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
-        collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id))
+        let mut hints = collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id));
+        hints.imported_purities = cross_module_purities
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        hints
     });
     let line_index = time_phase!(timings, "build_source_line_index", {
         runtime_ast.line_index()

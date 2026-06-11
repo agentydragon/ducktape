@@ -38,6 +38,7 @@ mod anonymous;
 mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
+mod cross_module;
 mod exports;
 mod import_emit;
 mod imports_cross;
@@ -240,6 +241,11 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    // Program-level pass over ALL retained chunks (not just selected):
+    // cross-module purity verdicts for each chunk's imported function
+    // bindings, consumed per chunk via `AnalysisHints::imported_purities`.
+    let cross_module_purities =
+        cross_module::collect_cross_module_imported_purities(&artifact, &artifact_indexes);
 
     let artifact_ref: &ChunkBundle = &artifact;
     // SWC's `swc_common::GLOBALS` is a `scoped_tls` thread-local, so the
@@ -260,6 +266,7 @@ pub fn materialize_logical_modules(
                             file: options.file.as_deref(),
                             target_dir: &target_dir,
                             report_out_dir: report_out_dir.as_deref(),
+                            cross_module_purities: &cross_module_purities,
                         },
                         spec: ChunkSpec {
                             logical_modules,
