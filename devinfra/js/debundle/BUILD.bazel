@@ -157,6 +157,7 @@ rust_library(
     srcs = [
         "vendor/manifests.rs",
         "vendor/mod.rs",
+        "vendor/plan.rs",
         "vendor/strip.rs",
         "vendor/validate.rs",
         "vendor/wrappers.rs",

@@ -1,10 +1,9 @@
-//! Shared validate/resolve helpers for the vendor passes.
+//! Shared validate/resolve helpers for vendor-plan construction.
 //!
-//! `apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps`
-//! perform near-identical validation/resolution of their vendor marks;
-//! the shared pieces live here so the dispatchers shrink to
-//! mode-specific glue. Every helper takes a `stage` name so diagnostics
-//! keep their per-dispatcher prefix.
+//! The partial and bundled-partial plan phases perform near-identical
+//! validation/resolution of their vendor marks; the shared pieces live
+//! here so the phases shrink to mode-specific glue. Every helper takes
+//! a `stage` name so diagnostics keep their per-level prefix.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -12,15 +11,12 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path};
+use artifact::{ChunkBundle, ChunkId};
 use js_ast::ParsedJsModule;
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
 
 use crate::manifests::PartialSwapSymbolResolution;
-use crate::{
-    PartialSwapSymbolTarget, is_valid_identifier, read_installed_package_metadata,
-    resolve_package_subpath,
-};
+use crate::{is_valid_identifier, read_installed_package_metadata, resolve_package_subpath};
 
 /// Parse the vendor map key `<chunk_name>.js` into the chunk name.
 pub(crate) fn vendor_chunk_name(chunk_path: &str, stage: &str) -> Result<String> {
@@ -39,25 +35,6 @@ pub(crate) struct ResolvedVendorChunk {
     pub chunk_id: ChunkId,
     pub chunk_name: String,
     pub entry_file: String,
-}
-
-pub(crate) fn resolve_vendor_chunk(
-    artifact: &ChunkBundle,
-    stage: &str,
-    chunk_path: &str,
-) -> Result<ResolvedVendorChunk> {
-    let chunk_name = vendor_chunk_name(chunk_path, stage)?;
-    let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
-        format!("{stage} vendor entry {chunk_path} targets unknown chunk: {chunk_name}")
-    })?;
-    let entry_file = get_chunk_entry_path(artifact, chunk_id).with_context(|| {
-        format!("{stage} vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})")
-    })?;
-    Ok(ResolvedVendorChunk {
-        chunk_id,
-        chunk_name,
-        entry_file,
-    })
 }
 
 pub(crate) fn vendor_entry_ast<'a>(
@@ -226,35 +203,23 @@ pub(crate) fn resolve_partial_swap_package(
 }
 
 /// Build the wire-facing symbol resolutions (zero-initialized rewrite
-/// counts) and the in-memory rewrite targets from a mark's symbol map.
-pub(crate) fn build_partial_swap_symbol_tables(
+/// counts) from a mark's symbol map.
+pub(crate) fn build_partial_swap_symbol_resolutions(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
-) -> (
-    BTreeMap<String, PartialSwapSymbolResolution>,
-    BTreeMap<String, PartialSwapSymbolTarget>,
-) {
-    let mut symbol_resolutions = BTreeMap::new();
-    let mut chunk_targets = BTreeMap::new();
-    for (chunk_export, symbol) in symbols {
-        symbol_resolutions.insert(
-            chunk_export.clone(),
-            PartialSwapSymbolResolution {
-                package: symbol.package.clone(),
-                kind: symbol.kind,
-                upstream_export: symbol.upstream_export.clone(),
-                local: symbol.local.clone(),
-                references_rewritten: 0,
-            },
-        );
-        chunk_targets.insert(
-            chunk_export.clone(),
-            PartialSwapSymbolTarget {
-                package: symbol.package.clone(),
-                kind: symbol.kind,
-                upstream_export: symbol.upstream_export.clone(),
-                local: symbol.local.clone(),
-            },
-        );
-    }
-    (symbol_resolutions, chunk_targets)
+) -> BTreeMap<String, PartialSwapSymbolResolution> {
+    symbols
+        .iter()
+        .map(|(chunk_export, symbol)| {
+            (
+                chunk_export.clone(),
+                PartialSwapSymbolResolution {
+                    package: symbol.package.clone(),
+                    kind: symbol.kind,
+                    upstream_export: symbol.upstream_export.clone(),
+                    local: symbol.local.clone(),
+                    references_rewritten: 0,
+                },
+            )
+        })
+        .collect()
 }

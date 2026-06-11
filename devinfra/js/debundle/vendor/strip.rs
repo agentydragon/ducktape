@@ -15,11 +15,11 @@ use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, JsFile, JsFileAstParts, get_chunk_entry_path};
+use artifact::{ChunkBundle, JsFile, JsFileAstParts};
 use js_ast::ParsedJsModule;
-use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
+use spec::PartialSwapSymbol;
 
-use crate::validate::vendor_chunk_name;
+use crate::plan::VendorResolutionPlan;
 
 pub struct StripSwappedVendorExportsResult {
     pub artifact: ChunkBundle,
@@ -56,10 +56,42 @@ pub struct ChunkStripStats {
 /// byte-identical to pre-swap.
 pub fn strip_swapped_vendor_exports_with_options(
     mut artifact: ChunkBundle,
-    vendor: &BTreeMap<String, VendorMark>,
+    plan: &VendorResolutionPlan,
     options: StripSwappedVendorExportsOptions,
 ) -> Result<StripSwappedVendorExportsResult> {
-    let chunk_table = artifact.chunk_table.clone();
+    // Strip inputs come straight from the vendor plan: partial and
+    // bundled-partial entries, merged back into chunk-path order.
+    #[derive(Clone, Copy)]
+    struct StripSource<'a> {
+        chunk_path: &'a str,
+        chunk_name: &'a str,
+        chunk_id: ChunkId,
+        entry_file: &'a str,
+        symbols: &'a BTreeMap<String, PartialSwapSymbol>,
+    }
+    let sources: BTreeMap<&str, StripSource<'_>> = plan
+        .partial_swaps
+        .iter()
+        .map(|(chunk_id, partial)| StripSource {
+            chunk_path: &partial.chunk_path,
+            chunk_name: &partial.resolution.chunk_id,
+            chunk_id: *chunk_id,
+            entry_file: &partial.entry_file,
+            symbols: &partial.symbols,
+        })
+        .chain(
+            plan.bundled_partial_swaps
+                .iter()
+                .map(|(chunk_id, bundled)| StripSource {
+                    chunk_path: &bundled.chunk_path,
+                    chunk_name: &bundled.resolution.chunk_id,
+                    chunk_id: *chunk_id,
+                    entry_file: &bundled.entry_file,
+                    symbols: &bundled.symbols,
+                }),
+        )
+        .map(|source| (source.chunk_path, source))
+        .collect();
 
     // Phase 1 (sequential): pull every vendor entry's entry-file AST
     // out of the artifact and bundle the per-chunk inputs into a
@@ -67,29 +99,18 @@ pub fn strip_swapped_vendor_exports_with_options(
     // `&mut artifact`; doing the round-trip here means the actual
     // strip work can borrow only owned data and run in parallel.
     let mut jobs: Vec<StripJob<'_>> = Vec::new();
-    for (chunk_path, mark) in vendor {
-        let symbols = match &mark.level {
-            VendorLevel::PartialSwap(partial) => &partial.symbols,
-            VendorLevel::BundledPartialSwap(partial) => &partial.symbols,
-            _ => continue,
-        };
-
-        let chunk_name = vendor_chunk_name(chunk_path, "strip_swapped_vendor_exports")?;
-        let chunk_id = chunk_table.get(&chunk_name).with_context(|| {
-            format!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path} targets unknown chunk: {chunk_name}"
-            )
-        })?;
-        let entry_relative_file = get_chunk_entry_path(&artifact, chunk_id).with_context(|| {
-            format!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})"
-            )
-        })?;
-
+    for source in sources.values() {
+        let StripSource {
+            chunk_path,
+            chunk_name,
+            chunk_id,
+            entry_file,
+            symbols,
+        } = *source;
         let js_chunk = artifact.js_chunk_mut(chunk_id)?;
-        let file = js_chunk.remove_file(&entry_relative_file).with_context(|| {
+        let file = js_chunk.remove_file(entry_file).with_context(|| {
             format!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: entry file {entry_relative_file} missing from chunk {chunk_name}"
+                "strip_swapped_vendor_exports vendor entry {chunk_path}: entry file {entry_file} missing from chunk {chunk_name}"
             )
         })?;
         let (parts, ast) = file.into_ast_parts().with_context(|| {

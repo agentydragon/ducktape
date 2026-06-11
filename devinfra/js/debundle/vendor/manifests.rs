@@ -1,50 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use serde::Serialize;
 use swc_ecma_ast::Id;
 
 use artifact::ChunkBundle;
-use spec::{PartialSwapKind, VendorRole, WrapperShape};
+use spec::{PartialSwapKind, WrapperShape};
 
 pub(crate) trait PartialSwapResolutionSymbols {
     fn symbols_mut(&mut self) -> &mut BTreeMap<String, PartialSwapSymbolResolution>;
-}
-
-#[derive(Debug, Clone)]
-pub struct VendorAnnotationsManifest {
-    pub counts: VendorAnnotationCounts,
-    pub annotations: Vec<VendorAnnotationSummary>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VendorAnnotationCounts {
-    pub annotations: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct VendorAnnotationSummary {
-    pub chunk_path: String,
-    pub chunk_id: String,
-    pub identity: String,
-    pub level: VendorAnnotationLevel,
-    pub role: VendorRole,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub package: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub subpath: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VendorAnnotationLevel {
-    Suppress,
-    BoundaryRename,
-    Swap,
-    PartialSwap,
-    BundledPartialSwap,
 }
 
 #[derive(Debug, Clone)]
@@ -111,23 +74,17 @@ pub struct VendorResolutionCounts {
     pub swapped: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct SwapVendorOptions<'a> {
-    pub package_roots: &'a std::collections::HashMap<String, PathBuf>,
-    pub packages_root: &'a Option<PathBuf>,
-    pub output_manifest_path: Option<PathBuf>,
-    pub output_wrapper_dir: Option<PathBuf>,
-    pub write: bool,
-}
-
 pub struct ApplyPartialVendorSwapsResult {
     pub artifact: ChunkBundle,
-    pub manifest: PartialSwapResolutionManifest,
+    pub manifest: ResolutionManifest<ChunkPartialSwapResolution>,
 }
 
+/// Wire manifest of a partial-swap-family wave: per-chunk resolutions
+/// (projections of the vendor plan) keyed by chunk path, plus totals
+/// accumulated at application time.
 #[derive(Debug, Clone)]
-pub struct PartialSwapResolutionManifest {
-    pub resolutions: BTreeMap<String, ChunkPartialSwapResolution>,
+pub struct ResolutionManifest<R> {
+    pub resolutions: BTreeMap<String, R>,
     pub counts: PartialSwapResolutionCounts,
 }
 
@@ -171,22 +128,10 @@ pub struct PartialSwapResolutionCounts {
     pub references_rewritten: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct ApplyPartialVendorSwapsOptions<'a> {
-    pub package_roots: &'a std::collections::HashMap<String, PathBuf>,
-    pub packages_root: &'a Option<PathBuf>,
-}
-
 pub struct ApplyBundledPartialVendorSwapsResult {
     pub artifact: ChunkBundle,
-    pub manifest: BundledPartialSwapResolutionManifest,
+    pub manifest: ResolutionManifest<ChunkBundledPartialSwapResolution>,
     pub self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BundledPartialSwapResolutionManifest {
-    pub resolutions: BTreeMap<String, ChunkBundledPartialSwapResolution>,
-    pub counts: PartialSwapResolutionCounts,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,13 +165,4 @@ pub struct BundledPartialSwapPackageResolution {
     pub bundle_export: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_facade_path: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ApplyBundledPartialVendorSwapsOptions<'a> {
-    pub package_roots: &'a std::collections::HashMap<String, PathBuf>,
-    pub packages_root: &'a Option<PathBuf>,
-    pub output_manifest_path: Option<PathBuf>,
-    pub output_wrapper_dir: Option<PathBuf>,
-    pub write: bool,
 }

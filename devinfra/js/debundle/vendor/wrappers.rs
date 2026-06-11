@@ -234,46 +234,49 @@ pub(super) fn generate_named_from_module_default_wrapper(
     )
 }
 
-pub(super) fn write_wrapper_if_requested(
-    write: bool,
-    output_wrapper_dir: Option<&Path>,
+/// Absolute output path of a full-swap wrapper:
+/// `<output_wrapper_dir>/<chunk_id>/<entry_file>`.
+pub(super) fn wrapper_output_path(
+    output_wrapper_dir: &Path,
     chunk_id: &str,
     entry_file: &str,
-    source: &str,
-) -> Result<Option<PathBuf>> {
-    let Some(output_wrapper_dir) = output_wrapper_dir else {
-        return Ok(None);
-    };
-    let wrapper_abs_path = output_wrapper_dir
+) -> PathBuf {
+    output_wrapper_dir
         .join(path_from_module_path(chunk_id))
-        .join(path_from_module_path(entry_file));
-    if write {
-        if let Some(parent) = wrapper_abs_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&wrapper_abs_path, source)?;
+        .join(path_from_module_path(entry_file))
+}
+
+pub(super) fn write_planned_wrapper(abs_path: &Path, source: &str) -> Result<()> {
+    if let Some(parent) = abs_path.parent() {
+        fs::create_dir_all(parent)?;
     }
-    Ok(Some(wrapper_abs_path))
+    fs::write(abs_path, source)?;
+    Ok(())
 }
 
-pub(super) struct BundledGeneratedAssets {
+/// Bundle copy + per-package facades planned for a bundled partial
+/// swap: paths and generated sources, computed at plan time; written
+/// by `write_planned_bundled_assets` during the bundled wave.
+pub(super) struct PlannedBundledAssets {
+    pub(super) bundle_source_path: PathBuf,
     pub(super) bundle_abs_path: PathBuf,
-    pub(super) facades: BTreeMap<String, BundledGeneratedFacade>,
+    pub(super) bundle_source: String,
+    pub(super) facades: BTreeMap<String, PlannedFacade>,
 }
 
-pub(super) struct BundledGeneratedFacade {
+pub(super) struct PlannedFacade {
     pub(super) abs_path: PathBuf,
     pub(super) app_path: String,
+    pub(super) source: String,
 }
 
-pub(super) fn write_bundled_partial_swap_assets_if_requested(
-    write: bool,
+pub(super) fn plan_bundled_partial_swap_assets(
     output_wrapper_dir: Option<&Path>,
     chunk_id: &str,
     bundle_source_path: &Path,
-    bundle_source: &str,
+    bundle_source: String,
     packages: &BTreeMap<String, BundledPartialSwapPackage>,
-) -> Result<BundledGeneratedAssets> {
+) -> Result<PlannedBundledAssets> {
     let output_wrapper_dir = output_wrapper_dir.with_context(|| {
         format!(
             "bundled_partial_swap for chunk {chunk_id} requires swap_vendor_chunks.output_wrapper_dir"
@@ -283,18 +286,6 @@ pub(super) fn write_bundled_partial_swap_assets_if_requested(
     let abs_dir = output_wrapper_dir.join(&chunk_path);
     let app_dir = PathBuf::from("vendors/generated").join(&chunk_path);
     let bundle_abs_path = abs_dir.join("bundle.js");
-    if write {
-        if let Some(parent) = bundle_abs_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&bundle_abs_path, bundle_source).with_context(|| {
-            format!(
-                "copying bundled_partial_swap bundle {} to {}",
-                bundle_source_path.display(),
-                bundle_abs_path.display()
-            )
-        })?;
-    }
 
     let mut facades = BTreeMap::new();
     let mut slugs = BTreeMap::<String, String>::new();
@@ -306,29 +297,43 @@ pub(super) fn write_bundled_partial_swap_assets_if_requested(
             );
         }
         let file_name = format!("{slug}.js");
-        let abs_path = abs_dir.join(&file_name);
-        let app_path = app_dir.join(&file_name);
-        let facade_source = generate_bundled_partial_swap_facade(&package.bundle_export);
-        if write {
-            if let Some(parent) = abs_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&abs_path, facade_source)
-                .with_context(|| format!("writing {}", abs_path.display()))?;
-        }
         facades.insert(
             package_name.clone(),
-            BundledGeneratedFacade {
-                abs_path,
-                app_path: path_to_module_string(&app_path),
+            PlannedFacade {
+                abs_path: abs_dir.join(&file_name),
+                app_path: path_to_module_string(&app_dir.join(&file_name)),
+                source: generate_bundled_partial_swap_facade(&package.bundle_export),
             },
         );
     }
 
-    Ok(BundledGeneratedAssets {
+    Ok(PlannedBundledAssets {
+        bundle_source_path: bundle_source_path.to_path_buf(),
         bundle_abs_path,
+        bundle_source,
         facades,
     })
+}
+
+pub(super) fn write_planned_bundled_assets(assets: &PlannedBundledAssets) -> Result<()> {
+    if let Some(parent) = assets.bundle_abs_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&assets.bundle_abs_path, &assets.bundle_source).with_context(|| {
+        format!(
+            "copying bundled_partial_swap bundle {} to {}",
+            assets.bundle_source_path.display(),
+            assets.bundle_abs_path.display()
+        )
+    })?;
+    for facade in assets.facades.values() {
+        if let Some(parent) = facade.abs_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&facade.abs_path, &facade.source)
+            .with_context(|| format!("writing {}", facade.abs_path.display()))?;
+    }
+    Ok(())
 }
 
 fn generate_bundled_partial_swap_facade(bundle_export: &str) -> String {

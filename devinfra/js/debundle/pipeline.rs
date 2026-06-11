@@ -17,14 +17,13 @@ use lowering::{
 };
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
-use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
+use spec::{MaterializeLogicalModulesConfig, TransformSpec};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
-    ApplyBundledPartialVendorSwapsOptions, ApplyPartialVendorSwapsOptions,
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, ChunkStripStats,
-    StripSwappedVendorExportsOptions, SwapVendorOptions, VendorResolution,
-    apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps, apply_vendor_annotations,
+    StripSwappedVendorExportsOptions, VendorPlanOptions, VendorResolution, VendorResolutionPlan,
+    apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps, build_vendor_resolution_plan,
     rename_vendor_exports, strip_swapped_vendor_exports_with_options, swap_vendor_chunks,
     validate_partial_swap_consumers,
 };
@@ -177,8 +176,26 @@ pub fn run_transform_cli_with_options(
         Ok((rewrite_result.artifact, ()))
     })?;
 
+    // Single post-prepare vendor resolution pass: validates every mark
+    // and resolves boundary mappings, swap targets, and partial-swap
+    // symbol tables once. The vendor waves below consume this plan
+    // instead of re-resolving the spec mid-pipeline.
+    let swap_cfg = &spec.swap_vendor_chunks;
+    let vendor_plan = build_vendor_resolution_plan(
+        indexed.artifact(),
+        &spec.vendor,
+        &VendorPlanOptions {
+            package_roots: &cli.package_roots,
+            packages_root: &cli.packages_root,
+            output_manifest_path: swap_cfg.output_manifest_path.as_deref(),
+            output_wrapper_dir: swap_cfg.output_wrapper_dir.as_deref(),
+        },
+    )?;
+    let write_vendor_outputs = swap_cfg.write && !options.dry_run;
+
     let full_swap_outcome;
-    (indexed, full_swap_outcome) = run_full_vendor_swaps(indexed, &spec, cli, !options.dry_run)?;
+    (indexed, full_swap_outcome) =
+        run_full_vendor_swaps(indexed, &vendor_plan, write_vendor_outputs)?;
     vendor_report.full = full_swap_outcome.full_swap_resolutions;
     chunk_records.retain(|chunk| {
         !full_swap_outcome
@@ -242,7 +259,8 @@ pub fn run_transform_cli_with_options(
     }
 
     let partial_outcome;
-    (indexed, partial_outcome) = run_partial_vendor_swaps(indexed, &spec, cli, !options.dry_run)?;
+    (indexed, partial_outcome) =
+        run_partial_vendor_swaps(indexed, &vendor_plan, write_vendor_outputs)?;
     vendor_report.partial = partial_outcome.partial_swap_resolutions;
     vendor_report.bundled_partial = partial_outcome.bundled_partial_swap_resolutions;
     vendor_report.strip_stats = partial_outcome.strip_stats;
@@ -371,53 +389,29 @@ struct FullVendorSwapOutcome {
 
 fn run_full_vendor_swaps(
     mut indexed: IndexedArtifact,
-    spec: &TransformSpec,
-    cli: &TransformCli,
+    plan: &VendorResolutionPlan,
     write_outputs: bool,
 ) -> Result<(IndexedArtifact, FullVendorSwapOutcome)> {
     let mut full_swap_resolutions = BTreeMap::new();
     let mut removed_chunk_ids = BTreeSet::new();
-    if !spec.vendor.is_empty() {
-        apply_vendor_annotations(indexed.artifact(), &spec.vendor)?;
-        if spec
-            .vendor
-            .values()
-            .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
-        {
-            (indexed, _) = indexed.update(|artifact, indexes| {
-                let rename_result = rename_vendor_exports(artifact, &spec.vendor, indexes)?;
-                Ok((rename_result.artifact, ()))
+    if plan.has_boundary_renames() {
+        (indexed, _) = indexed.update(|artifact, indexes| {
+            let rename_result = rename_vendor_exports(artifact, plan, indexes)?;
+            Ok((rename_result.artifact, ()))
+        })?;
+    }
+    if plan.has_full_swaps() {
+        (indexed, (full_swap_resolutions, removed_chunk_ids)) =
+            indexed.update(|artifact, indexes| {
+                let swap_result = swap_vendor_chunks(artifact, plan, indexes, write_outputs)?;
+                Ok((
+                    swap_result.artifact,
+                    (
+                        swap_result.manifest.resolutions,
+                        swap_result.removed_chunk_ids,
+                    ),
+                ))
             })?;
-        }
-        if spec
-            .vendor
-            .values()
-            .any(|m| matches!(m.level, VendorLevel::Swap(_)))
-        {
-            let swap_cfg = &spec.swap_vendor_chunks;
-            (indexed, (full_swap_resolutions, removed_chunk_ids)) =
-                indexed.update(|artifact, indexes| {
-                    let swap_result = swap_vendor_chunks(
-                        artifact,
-                        &spec.vendor,
-                        indexes,
-                        SwapVendorOptions {
-                            package_roots: &cli.package_roots,
-                            packages_root: &cli.packages_root,
-                            output_manifest_path: swap_cfg.output_manifest_path.clone(),
-                            output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                            write: swap_cfg.write && write_outputs,
-                        },
-                    )?;
-                    Ok((
-                        swap_result.artifact,
-                        (
-                            swap_result.manifest.resolutions,
-                            swap_result.removed_chunk_ids,
-                        ),
-                    ))
-                })?;
-        }
     }
     Ok((
         indexed,
@@ -442,39 +436,21 @@ struct PartialVendorSwapOutcome {
 /// materialize-time (e.g. `anonymous_statements: match: "ee({...})"`).
 fn run_partial_vendor_swaps(
     mut indexed: IndexedArtifact,
-    spec: &TransformSpec,
-    cli: &TransformCli,
+    plan: &VendorResolutionPlan,
     write_outputs: bool,
 ) -> Result<(IndexedArtifact, PartialVendorSwapOutcome)> {
     let mut partial_swap_resolutions = BTreeMap::new();
     let mut bundled_partial_swap_resolutions = BTreeMap::new();
     let mut strip_stats = BTreeMap::new();
-    let has_partial_swaps = spec
-        .vendor
-        .values()
-        .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)));
-    let has_bundled_partial_swaps = spec
-        .vendor
-        .values()
-        .any(|m| matches!(m.level, VendorLevel::BundledPartialSwap(_)));
-    if !spec.vendor.is_empty() && (has_partial_swaps || has_bundled_partial_swaps) {
+    if plan.has_partial_swaps() || plan.has_bundled_partial_swaps() {
         let mut replacement_import_locals_by_chunk_path = BTreeMap::new();
-        if has_partial_swaps {
+        if plan.has_partial_swaps() {
             (indexed, partial_swap_resolutions) = indexed.update(|artifact, indexes| {
-                let partial_result = apply_partial_vendor_swaps(
-                    artifact,
-                    &spec.vendor,
-                    indexes,
-                    ApplyPartialVendorSwapsOptions {
-                        package_roots: &cli.package_roots,
-                        packages_root: &cli.packages_root,
-                    },
-                )?;
+                let partial_result = apply_partial_vendor_swaps(artifact, plan, indexes)?;
                 Ok((partial_result.artifact, partial_result.manifest.resolutions))
             })?;
         }
-        if has_bundled_partial_swaps {
-            let swap_cfg = &spec.swap_vendor_chunks;
+        if plan.has_bundled_partial_swaps() {
             (
                 indexed,
                 (
@@ -482,18 +458,8 @@ fn run_partial_vendor_swaps(
                     bundled_partial_swap_resolutions,
                 ),
             ) = indexed.update(|artifact, indexes| {
-                let bundled_result = apply_bundled_partial_vendor_swaps(
-                    artifact,
-                    &spec.vendor,
-                    indexes,
-                    ApplyBundledPartialVendorSwapsOptions {
-                        package_roots: &cli.package_roots,
-                        packages_root: &cli.packages_root,
-                        output_manifest_path: swap_cfg.output_manifest_path.clone(),
-                        output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                        write: swap_cfg.write && write_outputs,
-                    },
-                )?;
+                let bundled_result =
+                    apply_bundled_partial_vendor_swaps(artifact, plan, indexes, write_outputs)?;
                 Ok((
                     bundled_result.artifact,
                     (
@@ -506,7 +472,7 @@ fn run_partial_vendor_swaps(
         (indexed, strip_stats) = indexed.update(|artifact, _indexes| {
             let strip_result = strip_swapped_vendor_exports_with_options(
                 artifact,
-                &spec.vendor,
+                plan,
                 StripSwappedVendorExportsOptions {
                     replacement_import_locals_by_chunk_path,
                 },
@@ -517,7 +483,7 @@ fn run_partial_vendor_swaps(
         // the stripped portion of a partially-swapped chunk's export
         // surface (unrewritten named imports / re-exports, namespace
         // imports, `export *`).
-        validate_partial_swap_consumers(indexed.artifact(), &spec.vendor, indexed.indexes())?;
+        validate_partial_swap_consumers(indexed.artifact(), plan, indexed.indexes())?;
     }
     Ok((
         indexed,

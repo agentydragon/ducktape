@@ -12,7 +12,7 @@ The simulator (`realizability/esm_simulator.rs`), the incremental quotient + ove
 
 ### `vendor/mod.rs` further split
 
-Remaining: strip-specific helpers and annotation/identity logic could each lift out into their own modules alongside the already-extracted `vendor/{manifests,strip,validate,wrappers}.rs`.
+Remaining: strip-specific helpers and export/package-resolution helpers could each lift out into their own modules alongside the already-extracted `vendor/{manifests,plan,strip,validate,wrappers}.rs`.
 
 ### `purity/mod.rs` (~2570 lines) — remaining concerns
 
@@ -70,10 +70,6 @@ Domain graph (`graph.rs`) → rollback graph (`rollback_graph.rs`) → realizabi
 ### `pub(super)` everywhere in lowering/
 
 Nearly every struct field and function is `pub(super)`. This is "module-private exposed to the entire parent module" — everything accessible everywhere within `lowering/`. Fields should be `pub(super)` only on structs that are actually constructed/destructured across file boundaries.
-
-### Vendor manifest struct proliferation
-
-~26 manifest/counts/detail structs with similar shapes in `vendor/manifests.rs`. `PartialSwapResolutionManifest` and `BundledPartialSwapResolutionManifest` are field-for-field twins — a generic `ResolutionManifest<R>` collapses the pair. `PartialSwapSymbolTarget` (`vendor/mod.rs`) is likewise a field-for-field twin of `spec::PartialSwapSymbol`.
 
 ### `SourceImportResolution = Option<(String, String, String)>` (`plan_references.rs:41`)
 
@@ -169,6 +165,6 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 1. **Extract `gate_perf_counters` from `realizability/mod.rs`** — see the P0 item; needs the recording-API entanglement untangled first.
 
-2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and validate/resolve helpers extracted; remaining: strip-specific helpers, annotation/identity logic.
+2. **Continue splitting `vendor/mod.rs`** — manifests, plan, strip, wrappers, and validate/resolve helpers extracted; remaining: strip-specific helpers, export/package-resolution helpers.
 
 3. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong.
