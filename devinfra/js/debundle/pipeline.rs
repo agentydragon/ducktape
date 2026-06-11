@@ -6,8 +6,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use artifact::ArtifactIndexes;
-use artifact::ChunkBundle;
+use artifact::IndexedArtifact;
 use artifact::load_js_chunks;
 use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
@@ -163,20 +162,24 @@ pub fn run_transform_cli_with_options(
         .into_iter()
         .collect();
     let prepare_result = prepare_js_chunks(&spec, artifact)?;
-    let artifact_indexes = ArtifactIndexes::build(&prepare_result.artifact)?;
-
-    let rewrite_result =
-        rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes)?;
-    let mut artifact = rewrite_result.artifact;
     let counts = prepare_result.counts;
     let mut chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let full_swap_result =
-        run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli, !options.dry_run)?;
-    artifact = full_swap_result.artifact;
-    vendor_report.full = full_swap_result.full_swap_resolutions;
-    chunk_records.retain(|chunk| !full_swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
+    let mut indexed = IndexedArtifact::new(prepare_result.artifact)?;
+    (indexed, _) = indexed.update(|artifact, indexes| {
+        let rewrite_result = rewrite_chunk_entry_specifiers(artifact, indexes)?;
+        Ok((rewrite_result.artifact, ()))
+    })?;
+
+    let full_swap_outcome;
+    (indexed, full_swap_outcome) = run_full_vendor_swaps(indexed, &spec, cli, !options.dry_run)?;
+    vendor_report.full = full_swap_outcome.full_swap_resolutions;
+    chunk_records.retain(|chunk| {
+        !full_swap_outcome
+            .removed_chunk_ids
+            .contains(&chunk.chunk_id)
+    });
 
     let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
@@ -195,37 +198,43 @@ pub fn run_transform_cli_with_options(
             report_out_dir,
             target_dir,
         } = spec.materialize_logical_modules.clone();
-        let materialize_result = materialize_logical_modules(
-            artifact,
-            &spec.logical_modules,
-            &spec.chunk_renames,
-            &spec.unassigned_mode,
-            &spec.chunk_analysis_options,
-            MaterializeLogicalModulesOptions {
-                chunk_ids: materialise_chunk_ids,
-                file,
-                prune_other_chunks,
-                report_out_dir: if options.dry_run {
-                    None
-                } else {
-                    report_out_dir
+        // `materialize_logical_modules` derives its own per-run indexes
+        // internally (it prunes chunks first); the pipeline indexes are
+        // not consumed here, but the artifact mutates, so the update
+        // rebuilds them for the partial-swap stage below.
+        (indexed, _) = indexed.update(|artifact, _indexes| {
+            let materialize_result = materialize_logical_modules(
+                artifact,
+                &spec.logical_modules,
+                &spec.chunk_renames,
+                &spec.unassigned_mode,
+                &spec.chunk_analysis_options,
+                MaterializeLogicalModulesOptions {
+                    chunk_ids: materialise_chunk_ids,
+                    file,
+                    prune_other_chunks,
+                    report_out_dir: if options.dry_run {
+                        None
+                    } else {
+                        report_out_dir
+                    },
+                    target_dir,
                 },
-                target_dir,
-            },
-        )?;
-        artifact = materialize_result.artifact;
-        module_count = materialize_result.module_count;
-        selected_lowerings = materialize_result.selected_lowerings;
-        decomposition_by_chunk = materialize_result.decomposition_by_chunk;
-        unmatched_spec_claims = materialize_result.unmatched_spec_claims;
+            )?;
+            module_count = materialize_result.module_count;
+            selected_lowerings = materialize_result.selected_lowerings;
+            decomposition_by_chunk = materialize_result.decomposition_by_chunk;
+            unmatched_spec_claims = materialize_result.unmatched_spec_claims;
+            Ok((materialize_result.artifact, ()))
+        })?;
     }
 
-    let partial_result =
-        run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli, !options.dry_run)?;
-    artifact = partial_result.artifact;
-    vendor_report.partial = partial_result.partial_swap_resolutions;
-    vendor_report.bundled_partial = partial_result.bundled_partial_swap_resolutions;
-    vendor_report.strip_stats = partial_result.strip_stats;
+    let partial_outcome;
+    (indexed, partial_outcome) = run_partial_vendor_swaps(indexed, &spec, cli, !options.dry_run)?;
+    vendor_report.partial = partial_outcome.partial_swap_resolutions;
+    vendor_report.bundled_partial = partial_outcome.bundled_partial_swap_resolutions;
+    vendor_report.strip_stats = partial_outcome.strip_stats;
+    let artifact = indexed.into_artifact();
 
     write_vendor_swaps_report(
         spec.swap_vendor_chunks.write && !options.dry_run,
@@ -343,31 +352,30 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
-struct FullVendorSwapResult {
-    artifact: ChunkBundle,
+struct FullVendorSwapOutcome {
     full_swap_resolutions: BTreeMap<String, VendorResolution>,
     removed_chunk_ids: BTreeSet<String>,
 }
 
 fn run_full_vendor_swaps(
-    artifact: ChunkBundle,
-    artifact_indexes: &ArtifactIndexes,
+    mut indexed: IndexedArtifact,
     spec: &TransformSpec,
     cli: &TransformCli,
     write_outputs: bool,
-) -> Result<FullVendorSwapResult> {
-    let mut artifact = artifact;
+) -> Result<(IndexedArtifact, FullVendorSwapOutcome)> {
     let mut full_swap_resolutions = BTreeMap::new();
     let mut removed_chunk_ids = BTreeSet::new();
     if !spec.vendor.is_empty() {
-        apply_vendor_annotations(&artifact, &spec.vendor)?;
+        apply_vendor_annotations(indexed.artifact(), &spec.vendor)?;
         if spec
             .vendor
             .values()
             .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
         {
-            let rename_result = rename_vendor_exports(artifact, &spec.vendor, artifact_indexes)?;
-            artifact = rename_result.artifact;
+            (indexed, _) = indexed.update(|artifact, indexes| {
+                let rename_result = rename_vendor_exports(artifact, &spec.vendor, indexes)?;
+                Ok((rename_result.artifact, ()))
+            })?;
         }
         if spec
             .vendor
@@ -375,32 +383,40 @@ fn run_full_vendor_swaps(
             .any(|m| matches!(m.level, VendorLevel::Swap(_)))
         {
             let swap_cfg = &spec.swap_vendor_chunks;
-            let swap_result = swap_vendor_chunks(
-                artifact,
-                &spec.vendor,
-                artifact_indexes,
-                SwapVendorOptions {
-                    package_roots: &cli.package_roots,
-                    packages_root: &cli.packages_root,
-                    output_manifest_path: swap_cfg.output_manifest_path.clone(),
-                    output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                    write: swap_cfg.write && write_outputs,
-                },
-            )?;
-            artifact = swap_result.artifact;
-            full_swap_resolutions = swap_result.manifest.resolutions;
-            removed_chunk_ids = swap_result.removed_chunk_ids;
+            (indexed, (full_swap_resolutions, removed_chunk_ids)) =
+                indexed.update(|artifact, indexes| {
+                    let swap_result = swap_vendor_chunks(
+                        artifact,
+                        &spec.vendor,
+                        indexes,
+                        SwapVendorOptions {
+                            package_roots: &cli.package_roots,
+                            packages_root: &cli.packages_root,
+                            output_manifest_path: swap_cfg.output_manifest_path.clone(),
+                            output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
+                            write: swap_cfg.write && write_outputs,
+                        },
+                    )?;
+                    Ok((
+                        swap_result.artifact,
+                        (
+                            swap_result.manifest.resolutions,
+                            swap_result.removed_chunk_ids,
+                        ),
+                    ))
+                })?;
         }
     }
-    Ok(FullVendorSwapResult {
-        artifact,
-        full_swap_resolutions,
-        removed_chunk_ids,
-    })
+    Ok((
+        indexed,
+        FullVendorSwapOutcome {
+            full_swap_resolutions,
+            removed_chunk_ids,
+        },
+    ))
 }
 
-struct PartialVendorSwapResult {
-    artifact: ChunkBundle,
+struct PartialVendorSwapOutcome {
     partial_swap_resolutions: BTreeMap<String, ChunkPartialSwapResolution>,
     bundled_partial_swap_resolutions: BTreeMap<String, ChunkBundledPartialSwapResolution>,
     strip_stats: BTreeMap<String, ChunkStripStats>,
@@ -413,13 +429,11 @@ struct PartialVendorSwapResult {
 /// `binding_patches` / `logical_modules` selectors still rely on at
 /// materialize-time (e.g. `anonymous_statements: match: "ee({...})"`).
 fn run_partial_vendor_swaps(
-    artifact: ChunkBundle,
-    artifact_indexes: &ArtifactIndexes,
+    mut indexed: IndexedArtifact,
     spec: &TransformSpec,
     cli: &TransformCli,
     write_outputs: bool,
-) -> Result<PartialVendorSwapResult> {
-    let mut artifact = artifact;
+) -> Result<(IndexedArtifact, PartialVendorSwapOutcome)> {
     let mut partial_swap_resolutions = BTreeMap::new();
     let mut bundled_partial_swap_resolutions = BTreeMap::new();
     let mut strip_stats = BTreeMap::new();
@@ -434,58 +448,73 @@ fn run_partial_vendor_swaps(
     if !spec.vendor.is_empty() && (has_partial_swaps || has_bundled_partial_swaps) {
         let mut replacement_import_locals_by_chunk_path = BTreeMap::new();
         if has_partial_swaps {
-            let partial_result = apply_partial_vendor_swaps(
-                artifact,
-                &spec.vendor,
-                artifact_indexes,
-                ApplyPartialVendorSwapsOptions {
-                    package_roots: &cli.package_roots,
-                    packages_root: &cli.packages_root,
-                },
-            )?;
-            artifact = partial_result.artifact;
-            partial_swap_resolutions = partial_result.manifest.resolutions;
+            (indexed, partial_swap_resolutions) = indexed.update(|artifact, indexes| {
+                let partial_result = apply_partial_vendor_swaps(
+                    artifact,
+                    &spec.vendor,
+                    indexes,
+                    ApplyPartialVendorSwapsOptions {
+                        package_roots: &cli.package_roots,
+                        packages_root: &cli.packages_root,
+                    },
+                )?;
+                Ok((partial_result.artifact, partial_result.manifest.resolutions))
+            })?;
         }
         if has_bundled_partial_swaps {
             let swap_cfg = &spec.swap_vendor_chunks;
-            let bundled_result = apply_bundled_partial_vendor_swaps(
+            (
+                indexed,
+                (
+                    replacement_import_locals_by_chunk_path,
+                    bundled_partial_swap_resolutions,
+                ),
+            ) = indexed.update(|artifact, indexes| {
+                let bundled_result = apply_bundled_partial_vendor_swaps(
+                    artifact,
+                    &spec.vendor,
+                    indexes,
+                    ApplyBundledPartialVendorSwapsOptions {
+                        package_roots: &cli.package_roots,
+                        packages_root: &cli.packages_root,
+                        output_manifest_path: swap_cfg.output_manifest_path.clone(),
+                        output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
+                        write: swap_cfg.write && write_outputs,
+                    },
+                )?;
+                Ok((
+                    bundled_result.artifact,
+                    (
+                        bundled_result.self_rewrite_import_locals_by_chunk_path,
+                        bundled_result.manifest.resolutions,
+                    ),
+                ))
+            })?;
+        }
+        (indexed, strip_stats) = indexed.update(|artifact, _indexes| {
+            let strip_result = strip_swapped_vendor_exports_with_options(
                 artifact,
                 &spec.vendor,
-                artifact_indexes,
-                ApplyBundledPartialVendorSwapsOptions {
-                    package_roots: &cli.package_roots,
-                    packages_root: &cli.packages_root,
-                    output_manifest_path: swap_cfg.output_manifest_path.clone(),
-                    output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                    write: swap_cfg.write && write_outputs,
+                StripSwappedVendorExportsOptions {
+                    replacement_import_locals_by_chunk_path,
                 },
             )?;
-            artifact = bundled_result.artifact;
-            replacement_import_locals_by_chunk_path =
-                bundled_result.self_rewrite_import_locals_by_chunk_path;
-            bundled_partial_swap_resolutions = bundled_result.manifest.resolutions;
-        }
-        let strip_result = strip_swapped_vendor_exports_with_options(
-            artifact,
-            &spec.vendor,
-            StripSwappedVendorExportsOptions {
-                replacement_import_locals_by_chunk_path,
-            },
-        )?;
-        artifact = strip_result.artifact;
-        strip_stats = strip_result.manifest.per_chunk;
+            Ok((strip_result.artifact, strip_result.manifest.per_chunk))
+        })?;
         // Post-strip soundness gate: no retained file may still consume
         // the stripped portion of a partially-swapped chunk's export
         // surface (unrewritten named imports / re-exports, namespace
         // imports, `export *`).
-        validate_partial_swap_consumers(&artifact, &spec.vendor, artifact_indexes)?;
+        validate_partial_swap_consumers(indexed.artifact(), &spec.vendor, indexed.indexes())?;
     }
-    Ok(PartialVendorSwapResult {
-        artifact,
-        partial_swap_resolutions,
-        bundled_partial_swap_resolutions,
-        strip_stats,
-    })
+    Ok((
+        indexed,
+        PartialVendorSwapOutcome {
+            partial_swap_resolutions,
+            bundled_partial_swap_resolutions,
+            strip_stats,
+        },
+    ))
 }
 
 #[derive(Debug, Default, Serialize)]

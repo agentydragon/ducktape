@@ -1119,6 +1119,51 @@ impl ArtifactIndexes {
     }
 }
 
+/// A [`ChunkBundle`] paired with the [`ArtifactIndexes`] built from exactly
+/// that bundle.
+///
+/// The indexes are only reachable together with the artifact they were built
+/// from, and every mutation goes through [`IndexedArtifact::update`], which
+/// rebuilds the indexes from the mutated bundle. This makes it a type error
+/// to hold indexes that are older than the artifact — the pipeline-level
+/// stale-index bug class (consumers resolving imports against indexes built
+/// before materialize created module files or vendor swaps removed chunks).
+pub struct IndexedArtifact {
+    artifact: ChunkBundle,
+    indexes: ArtifactIndexes,
+}
+
+impl IndexedArtifact {
+    pub fn new(artifact: ChunkBundle) -> Result<Self> {
+        let indexes = ArtifactIndexes::build(&artifact)?;
+        Ok(Self { artifact, indexes })
+    }
+
+    pub fn artifact(&self) -> &ChunkBundle {
+        &self.artifact
+    }
+
+    /// Indexes matching the current artifact. Borrowing them keeps `self`
+    /// borrowed, so they cannot outlive the next [`Self::update`].
+    pub fn indexes(&self) -> &ArtifactIndexes {
+        &self.indexes
+    }
+
+    pub fn into_artifact(self) -> ChunkBundle {
+        self.artifact
+    }
+
+    /// Run an artifact mutation against the matching indexes, then rebuild
+    /// the indexes from the mutated bundle.
+    pub fn update<T>(
+        self,
+        mutate: impl FnOnce(ChunkBundle, &ArtifactIndexes) -> Result<(ChunkBundle, T)>,
+    ) -> Result<(Self, T)> {
+        let (artifact, value) = mutate(self.artifact, &self.indexes)?;
+        Ok((Self::new(artifact)?, value))
+    }
+}
+
 pub fn load_js_chunks(
     input_root: &Path,
     js_list_path: &Path,

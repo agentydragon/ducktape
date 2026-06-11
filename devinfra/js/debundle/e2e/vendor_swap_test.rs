@@ -920,6 +920,115 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
 }
 
 #[test]
+fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_path() {
+    // Regression for stale `ArtifactIndexes` reuse in the pipeline:
+    // `materialize_logical_modules` creates `pkg/util.js` inside chunk
+    // `static/app` and rewires the entry to `import { q } from
+    // "./pkg/util.js"`. Resolving that import against indexes built
+    // *before* materialization misses the new file in the
+    // output-path index and falls back to source-path resolution:
+    // `static/app.js` + `./pkg/util.js` → `static/pkg/util.js`,
+    // which collides with the partially-swapped vendor chunk. The
+    // partial-swap rewrite then misroutes the entry's import of its
+    // own materialized module to the vendor package. With indexes
+    // rebuilt post-materialize, the import resolves to the caller
+    // chunk itself and is skipped.
+    const VENDOR_PATH: &str = "static/pkg/util.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "obs";
+    const PACKAGE_VERSION: &str = "1.0.0";
+    const SUBPATH: &str = "index.js";
+
+    let ws = VendorTestWorkspace::new("vendor-partial-swap-materialized-collision-");
+    ws.write_chunk(
+        VENDOR_PATH,
+        "export const q = () => \"vendor\";\nexport const keep = () => 7;\n",
+    );
+    ws.write_chunk(
+        APP_PATH,
+        "const q = () => \"app\";\nexport function out() { return q(); }\n",
+    );
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        SUBPATH,
+        "export const q = () => \"package\";\n",
+    );
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: {
+                "level": "partial_swap",
+                "identity": "materialized sibling collision fixture",
+                "packages": {
+                    PACKAGE_NAME: {
+                        "namespace": "z",
+                        "version": PACKAGE_VERSION,
+                        "subpath": SUBPATH,
+                    },
+                },
+                "symbols": {
+                    "q": { "package": PACKAGE_NAME, "upstream_export": "q" },
+                },
+            },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "logical_modules": {
+            "static/app": {
+                "pkg/util": {
+                    "members": [
+                        { "name": "q", "selector": { "binding": { "name": "q" } } },
+                    ],
+                },
+            },
+        },
+        "unassigned_mode": {
+            "static/app": { "kind": "inline_in_entry" },
+        },
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let entry_path = ws.out_root.join("app/static/app/entry.js");
+    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
+    assert!(
+        entry.contains("pkg/util.js"),
+        "entry must keep importing its own materialized module:\n{entry}",
+    );
+    assert!(
+        !entry.contains(&format!("from \"{PACKAGE_NAME}\"")),
+        "entry's materialized-module import must not be misrouted to the vendor package:\n{entry}",
+    );
+
+    let probe_path = ws.out_root.join("__run_materialized_collision.mjs");
+    write_text_file(
+        &probe_path,
+        "const { out } = await import(\"./app/static/app/entry.js\");\nconsole.log(out());\n",
+    );
+    assert_node_output(&probe_path, "app\n", "");
+}
+
+#[test]
 fn partial_swap_namespace_kind_replaces_whole_import() {
     // Caller has `import { a as React } from "../megachunk/entry.js"`
     // where the chunk export `a` is the package's whole namespace
