@@ -112,9 +112,19 @@ spec:
             seccompProfile:
               type: RuntimeDefault
       volumes:
+        # cert-manager issues docker-ci-client into this namespace with the
+        # standard tls.* keys; project them to the ca.pem/cert.pem/key.pem names
+        # the docker CLI reads from DOCKER_CERT_PATH.
         - name: certs
           secret:
             secretName: docker-ci-client
             defaultMode: 0400
+            items:
+              - key: ca.crt
+                path: ca.pem
+              - key: tls.crt
+                path: cert.pem
+              - key: tls.key
+                path: key.pem
         - name: work
           emptyDir: {}

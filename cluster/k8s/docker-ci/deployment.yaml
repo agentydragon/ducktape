@@ -5,6 +5,10 @@ metadata:
   namespace: docker-ci
   labels:
     app.kubernetes.io/name: docker-ci
+  annotations:
+    # dockerd does not hot-reload its TLS material; bounce the long-lived daemon
+    # when cert-manager rotates the docker-ci-server-tls Secret.
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   strategy:
@@ -40,17 +44,8 @@ spec:
           volumeMounts:
             - name: docker-data
               mountPath: /var/lib/docker
-            - name: server-tls
-              mountPath: /certs/server-key.pem
-              subPath: server-key.pem
-              readOnly: true
-            - name: public-certs
-              mountPath: /certs/ca.pem
-              subPath: ca.pem
-              readOnly: true
-            - name: public-certs
-              mountPath: /certs/server-cert.pem
-              subPath: server-cert.pem
+            - name: certs
+              mountPath: /certs
               readOnly: true
           resources:
             requests:
@@ -84,9 +79,16 @@ spec:
         - name: docker-data
           emptyDir:
             sizeLimit: 30Gi
-        - name: server-tls
+        # cert-manager issues docker-ci-server-tls with the standard tls.* keys;
+        # project them to the ca.pem/server-cert.pem/server-key.pem names the
+        # dockerd --tls* flags above expect.
+        - name: certs
           secret:
             secretName: docker-ci-server-tls
-        - name: public-certs
-          configMap:
-            name: docker-ci-public-certs
+            items:
+              - key: ca.crt
+                path: ca.pem
+              - key: tls.crt
+                path: server-cert.pem
+              - key: tls.key
+                path: server-key.pem

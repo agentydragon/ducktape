@@ -13,15 +13,16 @@ spec:
   path: ./cluster/k8s/docker-ci
   prune: true
   wait: true
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: docker-ci
       namespace: docker-ci
   dependsOn:
-    # No storage dep now (emptyDir, not a CSI PVC) — only the Gateway for the TLSRoute.
+    # No storage dep (emptyDir, not a CSI PVC). Needs the Gateway for the
+    # TLSRoute, the cluster-internal-ca ClusterIssuer for the mTLS Certificates,
+    # and claude-rbac for the claude-sandbox namespace the client Certificate
+    # lives in.
     - name: gateway
+    - name: cert-manager-environment
+    - name: claude-rbac

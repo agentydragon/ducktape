@@ -44,15 +44,8 @@ py_library(
     name = "docker_mtls",
     testonly = True,
     srcs = ["docker_mtls.py"],
-    data = [
-        "//cluster/k8s/docker-ci/certs:ca.pem",
-        "//cluster/k8s/docker-ci/certs:client-cert.pem",
-    ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-    ],
+    deps = ["@pypi//pytest"],
 )
 
 py_library(

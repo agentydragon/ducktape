@@ -1,0 +1,49 @@
+# mTLS material for the docker-ci DinD daemon, issued by the cluster-internal CA
+# (cert-manager, ClusterIssuer cluster-internal-ca). Both leaves chain to
+# cluster-root-ca, so the daemon's --tlscacert (ca.crt) verifies the client and
+# the client's ca.pem verifies the server. cert-manager auto-rotates both: the
+# long-lived daemon picks up its rotation via the stakater reloader annotation on
+# the Deployment; the on-demand eval Job mounts the current client Secret per run.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: docker-ci-server
+  namespace: docker-ci
+spec:
+  secretName: docker-ci-server-tls
+  duration: 2160h # 90d
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  commonName: docker-ci.allegedly.works
+  dnsNames:
+    - docker-ci.allegedly.works # external RBE via the TLSRoute passthrough
+    - docker-ci.docker-ci.svc.cluster.local # in-cluster eval Job (#2074)
+  usages:
+    - server auth
+  issuerRef:
+    name: cluster-internal-ca
+    kind: ClusterIssuer
+---
+# Lives in claude-sandbox (where the on-demand eval Job runs) so its private key
+# never leaves the cluster — no SOPS export. The Job mounts this Secret directly.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: docker-ci-client
+  namespace: claude-sandbox
+spec:
+  secretName: docker-ci-client
+  duration: 2160h # 90d
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  commonName: docker-ci-client
+  usages:
+    - client auth
+  issuerRef:
+    name: cluster-internal-ca
+    kind: ClusterIssuer

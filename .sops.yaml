@@ -105,21 +105,6 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
-  # --- Docker CI mTLS keys (SOPS binary) ---
-  - path_regex: secrets/docker-ci/ca-key\.sops\.pem$
-    store_type: binary
-    key_groups:
-      - age:
-          - *admin
-  - path_regex: secrets/docker-ci/client-key\.sops\.pem$
-    store_type: binary
-    key_groups:
-      - age:
-          - *admin
-          - *claude-web
-          - *codex-cloud-agent
-          - *ci
-
   # --- CI secrets (admin + CI key) ---
   - path_regex: secrets/ci/.*\.sops\.yaml$
     key_groups:

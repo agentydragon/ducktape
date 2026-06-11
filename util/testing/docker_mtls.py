@@ -1,61 +1,38 @@
-"""pytest fixture for Docker mTLS cert assembly.
+"""pytest fixture for Docker mTLS cert assembly (dormant).
 
-Reads DUCKTAPE_DOCKER_CLIENT_KEY (base64-encoded PEM) from the environment and
-atomically sets DOCKER_HOST, DOCKER_TLS_VERIFY, and DOCKER_CERT_PATH so that
-docker.from_env() / aiodocker.Docker() pick up mTLS automatically.
+Sets DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH from a client key in
+DUCKTAPE_DOCKER_CLIENT_KEY so docker.from_env() / aiodocker.Docker() pick up mTLS
+to the docker-ci DinD automatically. Loaded into every `requires_docker` test via
+`-p util.testing.docker_mtls` (devinfra/python/defs.bzl).
 
-No-op when DUCKTAPE_DOCKER_CLIENT_KEY is not set (falls back to default Docker).
+CLEANUP(2026-06-11): This is the external-RBE path for `bbr test` against
+docker-ci, and it is NOT wired up — devinfra/secrets/_common.sh never exports
+DUCKTAPE_DOCKER_CLIENT_KEY (that block is commented out), so the fixture always
+no-ops. The in-cluster eval Job (loom/gym) reaches docker-ci over its own
+cert-manager-issued Secret and does not use this fixture.
 
-TODO: Once docker-ci is live, .envrc/web_setup.sh will pass the PEM via
-BBR_REMOTE_ARGS using secret-env-overrides-base64. That means bb remote handles
-the base64 encoding — this fixture should then read the raw PEM directly from the
-env var instead of base64-decoding it.
+The docker-ci PKI moved to cert-manager (cluster-internal-ca), so the old in-repo
+public certs and the SOPS-encrypted client key this fixture used to read were
+deleted. Reviving the path means: issue a clientAuth cert from cluster-internal-ca,
+export its cert + key (e.g. from the claude-sandbox `docker-ci-client` Secret) out
+to the RBE executors, and re-add the cert-dir assembly here. Delete this fixture
+(and the `-p util.testing.docker_mtls` wiring in devinfra/python/defs.bzl) if
+external-RBE docker-ci access is abandoned for good.
 """
 
 from __future__ import annotations
 
-import base64
 import os
-import shutil
-import stat
-from pathlib import Path
 
 import pytest
 
-from util.bazel.runfiles import get_required_path
-
-_RLOCATION_CA = "_main/cluster/k8s/docker-ci/certs/ca.pem"
-_RLOCATION_CLIENT_CERT = "_main/cluster/k8s/docker-ci/certs/client-cert.pem"
-
-_DOCKER_HOST = "tcp://docker-ci.allegedly.works:2376"
-
 
 @pytest.fixture(autouse=True)
-def docker_mtls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Assemble Docker mTLS cert dir and set all Docker env vars atomically."""
-    client_key_b64 = os.environ.get("DUCKTAPE_DOCKER_CLIENT_KEY")
-    if not client_key_b64:
-        return
-
-    client_key = base64.b64decode(client_key_b64).decode()
-
-    cert_dir = tmp_path / "docker-certs"
-    cert_dir.mkdir()
-
-    try:
-        ca_path = get_required_path(_RLOCATION_CA)
-        cert_path = get_required_path(_RLOCATION_CLIENT_CERT)
-    except RuntimeError:
-        pytest.skip("Docker mTLS certs not in runfiles")
-
-    # Docker expects exactly: ca.pem, cert.pem, key.pem
-    shutil.copy(ca_path, cert_dir / "ca.pem")
-    shutil.copy(cert_path, cert_dir / "cert.pem")
-
-    key_file = cert_dir / "key.pem"
-    key_file.write_text(client_key)
-    key_file.chmod(stat.S_IRUSR)
-
-    monkeypatch.setenv("DOCKER_CERT_PATH", str(cert_dir))
-    monkeypatch.setenv("DOCKER_HOST", _DOCKER_HOST)
-    monkeypatch.setenv("DOCKER_TLS_VERIFY", "1")
+def docker_mtls() -> None:
+    """No-op while the external-RBE docker-ci path is dormant (see module docstring)."""
+    if os.environ.get("DUCKTAPE_DOCKER_CLIENT_KEY"):
+        raise RuntimeError(
+            "DUCKTAPE_DOCKER_CLIENT_KEY is set but the docker_mtls fixture is "
+            "dormant: its cert plumbing was removed when docker-ci moved to "
+            "cert-manager. See the module docstring to revive it."
+        )

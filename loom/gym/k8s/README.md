@@ -8,30 +8,19 @@ no local DinD), hence the remote daemon. This README is just the run procedure.
 
 The Job reaches docker-ci by its in-cluster service name (`docker-ci.docker-ci.svc`),
 which `NO_PROXY` excludes — so it connects direct, bypassing the agent mitmproxy
-entirely. That requires the svc name in the docker-ci server cert SAN (see
-`cluster/k8s/docker-ci/README.md`'s rotation step).
+entirely. The docker-ci server cert carries that svc name as a SAN (cert-manager
+`cluster-internal-ca`; see `cluster/k8s/docker-ci/README.md`).
+
+The `docker-ci-client` mTLS Secret is issued straight into `claude-sandbox` by
+cert-manager (`cluster/k8s/docker-ci/certificates.yaml`) and mounted by the Job —
+no manual create-secret step. The client private key never leaves the cluster.
 
 Prereqs: `docker-ci` Running on OVH; the `ghcr.io/agentydragon/{loom-gym-eval,wayback-proxy,loom-gym-sandbox}`
-images published (on merge to `devel`); the docker-ci server cert carrying the svc
-SAN; and the reflected `litellm-master-key` + `claude-forgejo-credentials` secrets
-present in `claude-sandbox`.
+images published (on merge to `devel`); the `docker-ci-client` Secret present
+(cert-manager); and the reflected `litellm-master-key` + `claude-forgejo-credentials`
+secrets present in `claude-sandbox`.
 
-## 1. Create the docker-ci mTLS secret (the only non-manifest step)
-
-Public certs are in-repo; the client key is SOPS-encrypted (claude-web can decrypt).
-From the repo root in the devshell:
-
-```bash
-sops -d secrets/docker-ci/client-key.sops.pem > /tmp/dc-key.pem
-kubectl -n claude-sandbox create secret generic docker-ci-client \
-  --from-file=ca.pem=cluster/k8s/docker-ci/certs/ca.pem \
-  --from-file=cert.pem=cluster/k8s/docker-ci/certs/client-cert.pem \
-  --from-file=key.pem=/tmp/dc-key.pem \
-  --dry-run=client -o yaml | kubectl apply -f -
-rm -f /tmp/dc-key.pem
-```
-
-## 2. Run and fetch results
+## Run and fetch results
 
 ```bash
 kubectl apply -f loom/gym/k8s/eval-job.yaml

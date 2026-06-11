@@ -3,8 +3,7 @@
 # Not intended to be run directly — sourced by cli_env.sh, web_env.sh, ci_env.sh.
 #
 # Age recipients that can decrypt secrets in this file:
-#   buildbuddy.yaml:               admin, all user keys, claude-web, ci
-#   docker-ci/client-key.sops.pem: admin, claude-web, ci
+#   buildbuddy.yaml: admin, all user keys, claude-web, ci
 #
 # On failure, writes diagnostics to stderr. Scripts export vars directly
 # into the current shell — source them, don't eval their stdout.
@@ -111,24 +110,10 @@ try_export() {
 # BuildBuddy API key
 try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
 
-# TODO: Once docker-ci is working in cluster, put the decrypted PEM into
-# BBR_REMOTE_ARGS as:
-#   --remote_run_header=x-buildbuddy-platform.secret-env-overrides-base64=DUCKTAPE_DOCKER_CLIENT_KEY=<base64>
-# bb remote handles the base64 natively so no manual pre-encoding needed.
-# Update docker_mtls.py to read the raw PEM instead of base64-decoding.
-# Docker CI mTLS — only the base64-encoded client key.
-# Python code (docker_mtls fixture) assembles DOCKER_HOST / DOCKER_TLS_VERIFY /
-# DOCKER_CERT_PATH atomically from this single value.
-# _dk_file="$REPO_ROOT/secrets/docker-ci/client-key.sops.pem"
-# if [ -f "$_dk_file" ]; then
-#   _dk_stderr=$(mktemp)
-#   if _dk=$(sops -d "$_dk_file" 2>"$_dk_stderr"); then
-#     _dk_b64=$(printf '%s' "$_dk" | base64 -w0)
-#     printf 'export DUCKTAPE_DOCKER_CLIENT_KEY=%s\n' "$_dk_b64"
-#   else
-#     echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: sops decrypt failed: $(cat "$_dk_stderr")" >&2
-#   fi
-#   rm -f "$_dk_stderr"
-# else
-#   echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: file not found: $_dk_file" >&2
-# fi
+# CLEANUP(2026-06-11): The external-RBE docker-ci path is dormant. docker-ci's
+# PKI moved to cert-manager (cluster-internal-ca) and the SOPS client key was
+# deleted, so nothing exports DUCKTAPE_DOCKER_CLIENT_KEY and the docker_mtls
+# pytest fixture no-ops (util/testing/docker_mtls.py). Reviving `bbr test`
+# against docker-ci means issuing a clientAuth cert from cluster-internal-ca,
+# exporting cert+key to the RBE executors, and exporting DUCKTAPE_DOCKER_CLIENT_KEY
+# here (e.g. via BBR_REMOTE_ARGS secret-env-overrides). See the fixture docstring.
