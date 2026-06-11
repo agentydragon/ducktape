@@ -183,7 +183,12 @@ pub struct FactorizeProposal {
     /// contraction gate refuses cycle-creating merges, so no emitted
     /// class is cyclic by construction.
     pub status: PeelCandidateStatus,
-    /// `true` for atomic-DAG-closed proposal cells.
+    /// `true` when the proposal can be applied as a spec edit today:
+    /// `status` is `PeelableNow` (no outgoing constraining edges into
+    /// other residual cells) AND every anonymous owner is addressable.
+    /// `bindings assign --batch` rejects rows where this is `false`;
+    /// blocked-residual proposals need their closure grown (land the
+    /// referenced cells together) or manual co-location first.
     pub landable_today: bool,
     /// When this proposal extends an existing active module, this carries the
     /// active module id. `None` for fresh-module proposals.
@@ -908,9 +913,9 @@ fn build_proposal(
         class_lines
     };
     let AnonymousAddressability {
-        landable,
+        addressable,
         unaddressable_owner_ids,
-        notes,
+        mut notes,
     } = anonymous_addressability(&owner_idxs, graph, context);
     // Status reflects the cell-graph reality: outgoing constraining
     // edges into other residual cells mean this cell cannot be
@@ -920,6 +925,15 @@ fn build_proposal(
     } else {
         PeelCandidateStatus::PeelableNow
     };
+    // Landability derives from the SAME predicate as `status` (plus
+    // anonymous addressability) — a blocked-residual proposal cannot
+    // be landed alone, so it must not claim `landable_today`.
+    if status == PeelCandidateStatus::BlockedResidualDependency {
+        notes.push(
+            "reads other residual cells; land the referenced cells first or together".to_string(),
+        );
+    }
+    let landable_today = addressable && status == PeelCandidateStatus::PeelableNow;
     FactorizeProposal {
         proposed_module_id,
         owner_ids,
@@ -937,7 +951,7 @@ fn build_proposal(
         unaddressable_anonymous_owner_ids: unaddressable_owner_ids,
         landability_notes: notes,
         status,
-        landable_today: landable,
+        landable_today,
         extends_module_id,
         extension_owner_ids,
         merge_into,
@@ -946,7 +960,7 @@ fn build_proposal(
 
 #[derive(Debug, Clone)]
 struct AnonymousAddressability {
-    landable: bool,
+    addressable: bool,
     unaddressable_owner_ids: Vec<String>,
     notes: Vec<String>,
 }
@@ -985,7 +999,7 @@ fn anonymous_addressability(
     }
     unaddressable_owner_ids.sort();
     AnonymousAddressability {
-        landable: unaddressable_owner_ids.is_empty(),
+        addressable: unaddressable_owner_ids.is_empty(),
         unaddressable_owner_ids,
         notes: notes.into_iter().collect(),
     }
@@ -1159,6 +1173,71 @@ mod tests {
         );
     }
 
+    // A constraining owner edge between two residual cells that the
+    // quotient does NOT merge (no atomic-DAG edge, so pass-3
+    // reachability never contracts them and the greedy refuses
+    // orphan↔orphan merges) leaves the source cell blocked: landing it
+    // alone would route the read through `residual_entry` and trip the
+    // realizability gate. `landable_today` must agree with `status` —
+    // a `blocked_residual_dependency` proposal is never landable.
+    #[test]
+    fn cross_residual_cell_edges_block_landability() {
+        let a = residual_owner("a", 1, &["a"], 10);
+        let b = residual_owner("b", 2, &["b"], 10);
+        let edges = vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)];
+        let graph = graph_of(
+            vec![a.clone(), b.clone()],
+            edges,
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
+            vec![],
+        );
+        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let blocked = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids == vec!["a".to_string()])
+            .expect("singleton proposal for a");
+        assert_eq!(
+            blocked.status,
+            PeelCandidateStatus::BlockedResidualDependency
+        );
+        assert_eq!(blocked.edges_to_other_residual_cells, 1);
+        assert!(!blocked.landable_today, "{blocked:?}");
+        assert!(
+            blocked
+                .landability_notes
+                .iter()
+                .any(|note| note.contains("other residual cells")),
+            "expected cross-residual note: {blocked:?}",
+        );
+        let peelable = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids == vec!["b".to_string()])
+            .expect("singleton proposal for b");
+        assert_eq!(peelable.status, PeelCandidateStatus::PeelableNow);
+        assert!(peelable.landable_today, "{peelable:?}");
+        assert_eq!(
+            report.status_counts,
+            BTreeMap::from([
+                ("blocked_residual_dependency".to_string(), 1),
+                ("peelable_now".to_string(), 1),
+            ]),
+        );
+        // Size buckets count only the landable proposal as landable.
+        assert_eq!(
+            report.size_distributions.by_members,
+            vec![FactorizeSizeBucketCount {
+                bucket: "1".to_string(),
+                count: 2,
+                landable_count: 1,
+            }],
+        );
+    }
+
     #[test]
     fn edges_to_active_modules_count_outgoing_to_active_claims() {
         let a = active_owner("a", 1, &["a"], 10, "ui/x");
@@ -1283,6 +1362,13 @@ mod tests {
             "consumer's cross-reference must resolve to the extension's real id \
              (`extend:features/foo`), not a dangling `auto_partition_*`: {report:#?}",
         );
+        // The cross-class residual reference blocks `consumer`:
+        // status and landability are one predicate.
+        assert_eq!(
+            consumer.status,
+            PeelCandidateStatus::BlockedResidualDependency
+        );
+        assert!(!consumer.landable_today, "{consumer:?}");
 
         // Belt and suspenders: every cross-reference any proposal emits
         // must name a `proposed_module_id` that actually exists among

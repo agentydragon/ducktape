@@ -51,7 +51,10 @@ dispatch the integrator.
 2. Run `debundle modules propose` and `debundle graph-summary` to update
    progress metrics. Use `graph-summary --include-proposals` only when
    proposal and diagnostic counts are needed.
-3. Ask intake for dispatchable seeds.
+3. Ask intake for dispatchable seeds. Only `landable_today: true`
+   proposals are directly dispatchable; `blocked_residual_dependency`
+   rows need their closure grown (or manual co-location) before they
+   become lane-worker work.
 4. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 5. Integrate green worker branches in batches.
 6. Rerun gate, regen, and adapter smoke tests as required.

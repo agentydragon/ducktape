@@ -38,8 +38,10 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
 - Treat `modules propose` output as planning evidence. Only reviewed
-  binding-only fresh/extension rows can be fed to `bindings assign --batch`;
-  merge and anonymous-statement rows need the workflows in the shared guide.
+  landable (`landable_today: true`) binding-only fresh/extension rows can
+  be fed to `bindings assign --batch`; merge and anonymous-statement rows
+  need the workflows in the shared guide, and `blocked_residual_dependency`
+  rows need their closure grown or manual co-location first.
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded

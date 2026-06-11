@@ -1697,6 +1697,13 @@ views from that stable graph.
   unreachable: the quotient's contraction gate refuses cycle-creating
   merges, so no emitted class is cyclic by construction.
 
+`landable_today` derives from the same predicate as the status (plus
+anonymous-statement addressability): it is `true` only for
+`peelable_now` proposals whose anonymous owners are all addressable.
+A `blocked_residual_dependency` proposal is never `landable_today` —
+`bindings assign --batch` rejects it; grow the closure so the
+referenced cells land together, or co-locate them manually, first.
+
 Classes whose spec-edit size exceeds `--size-cap-lines` are not
 proposals at all — they surface as diagnostics with reason
 `exceeds_size_cap`.

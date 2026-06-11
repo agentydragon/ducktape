@@ -169,10 +169,6 @@ The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycl
 
 docs/design.md sketches a compact interned binding form (`BindingId(usize)` newtype + `BindingTable` of dense indices) and explicitly marks it **not implemented** — an aspirational optimization. Decide: implement it (it is also the natural fix for the BTree-keyed-by-cloned-`Id` hot paths flagged in CODE_REVIEW.md) or delete the passage so design.md describes only the real representation.
 
-### `landable_today` for proposals with cross-residual-cell edges
-
-`peel/factorize.rs` sets `status: BlockedResidualDependency` when a proposal has outgoing constraining edges into other residual cells, but `landable_today` still reflects only anonymous-statement addressability — such a proposal can carry `landable_today: true` while being un-promotable alone. Flipping landability would change the documented `bindings assign --batch` contract (it rejects rows with `landable_today: false`), so this is a deliberate maintainer decision, not an oversight.
-
 ### A11 intrinsic integrity: from observed assumption to checked precondition
 
 docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes) as relied on by observation — prototype pollution defeats every purity-whitelist admission argument and is not detected. A `compute_shadowed_globals`-style top-level scan over the analyzed chunks for `<Builtin>.prototype.<x> = ...` assignment shapes would convert the in-corpus half of the assumption into a checked precondition; pollution originating outside the analyzed chunks (host code, other bundles) necessarily stays an assumption.

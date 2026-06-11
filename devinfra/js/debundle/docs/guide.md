@@ -121,6 +121,13 @@ debundle bindings assign --batch selected-proposals.json --dry-run
 manual YAML after choosing the target. Rows with
 `anonymous_statement_owner_ids` need `anonymous_statements:` edits.
 
+Rows with `status: blocked_residual_dependency` are never
+`landable_today`: the cell reads other residual cells
+(`other_residual_cells_referenced`), so promoting it alone would trip
+the realizability gate. Grow the closure — assign the proposal
+together with the referenced cells in one batch — or co-locate the
+owners manually before assigning.
+
 For aggregate counts before drilling in:
 
 ```bash

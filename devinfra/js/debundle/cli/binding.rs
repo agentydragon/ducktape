@@ -449,8 +449,10 @@ fn proposal_batch_to_moves(proposals: Vec<BatchProposal>) -> Result<Vec<Move>> {
     if !rejected.is_empty() {
         bail!(
             "--batch modules-propose JSON contains proposals that `bindings assign` cannot apply \
-             directly:\n  - {}\nSelect only binding-only fresh/extension proposals, or handle \
-             `merge_into` / `anonymous_statement_owner_ids` rows with `modules merge` or manual YAML.",
+             directly:\n  - {}\nSelect only landable binding-only fresh/extension proposals; handle \
+             `merge_into` / `anonymous_statement_owner_ids` rows with `modules merge` or manual YAML, \
+             and grow `blocked_residual_dependency` rows to a landable closure (or co-locate the \
+             referenced cells manually) first.",
             rejected.join("\n  - ")
         );
     }

@@ -352,6 +352,72 @@ export { anchor, consumer_a, consumer_b };
 }
 
 #[test]
+fn blocked_residual_dependency_proposals_are_not_landable_today() {
+    // `consumer` reads `dep` at init (constraining edge). Under a size
+    // cap that admits each singleton but refuses the combined closure,
+    // the quotient keeps them as separate residual cells, so
+    // `consumer`'s cell retains an outgoing constraining edge into
+    // `dep`'s cell. Promoting `consumer` alone would route the read
+    // through `residual_entry` and trip the realizability gate —
+    // status is `blocked_residual_dependency` AND `landable_today`
+    // must be false (one predicate, not two): `bindings assign
+    // --batch` consumers must not burn a run on it. `dep` itself has
+    // no cross-residual edges and stays landable.
+    let chunk_source = r#"const anchor = "anchor";
+const dep = "secret";
+const consumer = dep + "/x";
+export { anchor, dep, consumer };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &no_claims(), 1).unwrap();
+
+    let blocked = report
+        .proposals
+        .iter()
+        .find(|p| p.binding_ids == vec!["consumer".to_string()])
+        .expect("factorizer should keep `{consumer}` as its own cell under the tight cap");
+    assert_eq!(
+        blocked.status,
+        analysis::PeelCandidateStatus::BlockedResidualDependency,
+        "{blocked:?}",
+    );
+    assert!(
+        !blocked.landable_today,
+        "cross-residual proposal must not claim landability; got {blocked:?}",
+    );
+    assert!(
+        blocked
+            .landability_notes
+            .iter()
+            .any(|note| note.contains("other residual cells")),
+        "expected cross-residual landability note: {blocked:?}",
+    );
+
+    let landable = report
+        .proposals
+        .iter()
+        .find(|p| p.binding_ids == vec!["dep".to_string()])
+        .expect("factorizer should keep `{dep}` as its own cell under the tight cap");
+    assert_eq!(
+        landable.status,
+        analysis::PeelCandidateStatus::PeelableNow,
+        "{landable:?}",
+    );
+    assert!(
+        landable.landable_today,
+        "edge-free residual cell must stay landable; got {landable:?}",
+    );
+}
+
+#[test]
 fn factorizer_splits_pure_symbol_declarator_from_impure_sibling() {
     let chunk_source = r#"const anchor = "anchor";
 class Something {}
