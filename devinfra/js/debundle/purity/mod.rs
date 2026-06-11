@@ -56,6 +56,22 @@ pub struct ChunkCodeGraph {
     /// no entry stays `unknown_call` as before. A body-local binding
     /// that shadows the import is not resolved through this map.
     imported_purities: BTreeMap<String, Purity>,
+    /// Bindings the author asserts are *fluent-trusted* roots
+    /// (`chunk_export_purity.<chunk>.fluent_exports`, projected onto
+    /// this chunk's local import bindings): every value reachable from
+    /// the root through static member reads and calls is itself
+    /// trusted — member reads on it are pure, calls of it are pure
+    /// (arguments still classified normally), and the result carries
+    /// the same trust. This is what admits builder/fluent APIs whose
+    /// chain receivers are call *results*, not bindings — e.g. zod's
+    /// `k.object({...}).optional().describe(...)` — which no
+    /// binding-keyed surface (`declared_pure_members`,
+    /// `imported_purities`) can ever reach. Seeded from
+    /// `AnalysisHints::fluent_bindings` and closed over chunk-top
+    /// `const X = <fluent chain>` declarations
+    /// (`collect_fluent_const_bindings`). Author-trust contract: see
+    /// docs/design.md A9.
+    fluent_bindings: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +133,7 @@ impl ChunkCodeGraph {
             declared_pure_new,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeSet::new(),
         )
     }
 
@@ -127,6 +144,7 @@ impl ChunkCodeGraph {
         declared_pure_new: &BTreeSet<String>,
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
         imported_purities: &BTreeMap<String, Purity>,
+        fluent_bindings: &BTreeSet<String>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
@@ -181,6 +199,7 @@ impl ChunkCodeGraph {
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings: collect_primitive_const_bindings(body),
             imported_purities: imported_purities.clone(),
+            fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
         };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
@@ -275,6 +294,13 @@ impl ChunkCodeGraph {
         self.declared_pure_members
             .get(recv)
             .is_some_and(|props| props.contains(prop))
+    }
+
+    /// Whether `name` is a fluent-trusted root (author-asserted via
+    /// `fluent_exports`, or a chunk-top `const` derived from one — see
+    /// `collect_fluent_const_bindings`).
+    pub(crate) fn is_fluent_binding(&self, name: &str) -> bool {
+        self.fluent_bindings.contains(name)
     }
 }
 
@@ -770,6 +796,81 @@ fn collect_primitive_const_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<S
         }
     }
     primitives
+}
+
+/// Close the author-asserted fluent roots (`seed`, the projected
+/// `fluent_exports` locals) over chunk-top `const X = <fluent chain>`
+/// declarations: `const Base = k.object({...})` makes `Base` a fluent
+/// root too, so `Base.extend({...})` downstream is admitted. `const`
+/// only — a `let`/`var` cell can be rebound to an untrusted value.
+///
+/// Only the *value class* is derived here (the value came out of the
+/// trusted API, so the author's deep-purity assertion covers it); the
+/// init's own evaluation effects — impure arguments anywhere in the
+/// chain — are classified separately at the declaration site by
+/// `classify_fluent_chain`. This mirrors the
+/// `primitive_const_bindings` value-class/evaluation split.
+///
+/// Fixpoint loop rather than a single forward pass so a chain rooted
+/// in a later-declared const (legal for lazily-evaluated references,
+/// and cheap to cover) still closes; bounded by one insertion per
+/// chunk-top const.
+fn collect_fluent_const_bindings(
+    body: &[TopLevelItemView<'_>],
+    seed: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut fluent = seed.clone();
+    if fluent.is_empty() {
+        return fluent;
+    }
+    loop {
+        let mut changed = false;
+        for item in body {
+            for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
+                if kind == VarDeclKind::Const
+                    && !fluent.contains(&name)
+                    && fluent_chain_root(init).is_some_and(|root| fluent.contains(root))
+                {
+                    fluent.insert(name);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    fluent
+}
+
+/// The root identifier of a fluent chain — a chain of static
+/// (non-computed) member reads, calls, and optional-chaining forms of
+/// those, hanging off a bare `Ident`. Returns `None` for any other
+/// shape: computed members are excluded because admitting the lookup
+/// would additionally require the key expression to be
+/// ToPropertyKey-safe, and `new` is excluded because construction off
+/// a fluent API is not part of the asserted contract (builder APIs
+/// chain calls, not constructors).
+fn fluent_chain_root(expr: &Expr) -> Option<&str> {
+    match strip_parens(expr) {
+        Expr::Ident(ident) => Some(ident.sym.as_ref()),
+        Expr::Member(member) => match &member.prop {
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => fluent_chain_root(&member.obj),
+            MemberProp::Computed(_) => None,
+        },
+        Expr::Call(call) => match &call.callee {
+            Callee::Expr(callee) => fluent_chain_root(callee),
+            _ => None,
+        },
+        Expr::OptChain(opt) => match &*opt.base {
+            OptChainBase::Member(member) => match &member.prop {
+                MemberProp::Ident(_) | MemberProp::PrivateName(_) => fluent_chain_root(&member.obj),
+                MemberProp::Computed(_) => None,
+            },
+            OptChainBase::Call(opt_call) => fluent_chain_root(&opt_call.callee),
+        },
+        _ => None,
+    }
 }
 
 /// Yield `(name, init)` pairs for every chunk-top single-declarator
@@ -2565,6 +2666,20 @@ fn classify_member_purity(
             }
         };
     }
+    // Member read on a fluent chain (`k.string().description`,
+    // including the bare-root `k.object` read inside a larger chain
+    // when classified standalone): the author's `fluent_exports`
+    // assertion covers member reads on the root and on every derived
+    // value. Static (non-computed) properties only — a computed read
+    // would additionally need a ToPropertyKey-safe key, so it falls
+    // through to the conservative verdict. The chain verdict carries
+    // any inner call-argument impurity.
+    if let MemberProp::Ident(_) | MemberProp::PrivateName(_) = &member.prop
+        && let Some(chain) =
+            classify_fluent_chain(&member.obj, shadowed, local_shadowed, declared_pure, graph)
+    {
+        return chain;
+    }
     let detail = match (member.obj.as_ref(), &member.prop) {
         (Expr::Ident(o), MemberProp::Ident(p)) => Some(format!("{}.{}", o.sym, p.sym)),
         _ => None,
@@ -2602,6 +2717,93 @@ fn classify_call_purity(
         declared_pure,
         graph,
     )
+}
+
+/// Classify `expr` as a fluent chain: `Some(purity)` when the
+/// expression is a chain of static member reads / calls rooted in a
+/// fluent-trusted binding (`ChunkCodeGraph::fluent_bindings`), `None`
+/// when it isn't a fluent chain at all (caller falls through to the
+/// regular arms).
+///
+/// The returned purity is the combined verdict of **every call
+/// argument throughout the chain** — the author's assertion covers
+/// the API's own functions and their results, not the evaluation of
+/// caller-supplied arguments, so
+/// `k.object(sideEffect()).describe("x")` must surface
+/// `sideEffect()`'s impurity even though the chain shape is trusted.
+/// Trust propagation mirrors `fluent_chain_root` exactly: static
+/// members and calls only — a computed member or `new` breaks the
+/// chain (falls back to the conservative classifier).
+///
+/// A body-local binding shadowing the root makes the called value a
+/// different value than the one the author annotated, so the chain is
+/// not trusted then (same rule as every other author-trust arm).
+fn classify_fluent_chain(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Option<Purity> {
+    match strip_parens(expr) {
+        Expr::Ident(ident)
+            if graph.is_fluent_binding(ident.sym.as_ref())
+                && !local_shadowed.contains(ident.sym.as_ref()) =>
+        {
+            Some(Purity::Pure)
+        }
+        Expr::Member(member) => match &member.prop {
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => {
+                classify_fluent_chain(&member.obj, shadowed, local_shadowed, declared_pure, graph)
+            }
+            MemberProp::Computed(_) => None,
+        },
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return None;
+            };
+            classify_fluent_chain(callee, shadowed, local_shadowed, declared_pure, graph).map(
+                |chain| {
+                    chain.worst(all_args_pure(
+                        &call.args,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    ))
+                },
+            )
+        }
+        Expr::OptChain(opt) => match &*opt.base {
+            OptChainBase::Member(member) => match &member.prop {
+                MemberProp::Ident(_) | MemberProp::PrivateName(_) => classify_fluent_chain(
+                    &member.obj,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                ),
+                MemberProp::Computed(_) => None,
+            },
+            OptChainBase::Call(opt_call) => classify_fluent_chain(
+                &opt_call.callee,
+                shadowed,
+                local_shadowed,
+                declared_pure,
+                graph,
+            )
+            .map(|chain| {
+                chain.worst(all_args_pure(
+                    &opt_call.args,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                ))
+            }),
+        },
+        _ => None,
+    }
 }
 
 /// Common backbone for `Expr::Call` and `OptChainBase::Call` —
@@ -2657,6 +2859,24 @@ fn classify_callee_call(
         && graph.is_declared_pure_member(recv, prop)
     {
         return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+    }
+    // Fluent chain rooted in an author-asserted `fluent_exports`
+    // binding: the callee may be arbitrarily deep
+    // (`k.object({...}).optional().describe`), where every
+    // intermediate receiver is a call *result* — unreachable by any
+    // binding-keyed arm above. `classify_fluent_chain` validated and
+    // carried every inner call's argument purity; this call's own
+    // args are still classified normally.
+    if let Some(chain) =
+        classify_fluent_chain(callee_expr, shadowed, local_shadowed, declared_pure, graph)
+    {
+        return chain.worst(all_args_pure(
+            args,
+            shadowed,
+            local_shadowed,
+            declared_pure,
+            graph,
+        ));
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;

@@ -1101,6 +1101,27 @@ member names`, it projects onto each importing chunk's local binding
   reached through a default/namespace import are blessed once on the
   defining vendor chunk.
 
+  `chunk_export_purity.<chunk>.fluent_exports` is the **deep** form, for
+  builder/fluent APIs whose chain receivers are call _results_ rather
+  than bindings — `z.object({...}).optional().describe(...)`. Every
+  binding-keyed surface above is structurally unable to reach link 2+
+  of such a chain (there is no binding to key on). A fluent assertion
+  makes the export a deep-purity root: static member reads and calls on
+  it, and on every value transitively derived from it through such
+  reads/calls, are pure — with call arguments still classified normally
+  at every link, so an impure argument anywhere in the chain keeps the
+  statement impure. The trust also closes over importer-side
+  `const X = <fluent chain>` derivations (`const Base = z.object(...)`,
+  later `Base.extend(...)`), `const` only since a `let`/`var` cell can
+  be rebound to an untrusted value. Computed members and `new` break
+  the chain conservatively. The contract is intentionally broad — it
+  covers the API's whole transitive fluent surface, including methods
+  that run author-registered callbacks (a schema's `.parse`) — so it is
+  only sound for exports whose derived-value methods are all
+  side-effect-free when invoked at module top level and whose values
+  the program does not monkey-patch. Same author-trust posture and
+  dangling-assertion handling as the two forms above.
+
 - **A10. Spec-declared local-effect annotations are
   author-trusted.** The spec format also admits an optional
   per-member `effect:` field for named helper bindings whose

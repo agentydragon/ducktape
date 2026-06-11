@@ -32,12 +32,8 @@ fn parse(source: &str) -> Module {
 
 fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
     AnalysisHints {
-        declared_pure: BTreeSet::new(),
-        declared_pure_new: BTreeSet::new(),
-        declared_pure_members: BTreeMap::new(),
         known_effects: BTreeMap::from([(name.to_string(), KnownEffect::TypescriptDecorateHelper)]),
-        local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
-        imported_purities: BTreeMap::new(),
+        ..AnalysisHints::default()
     }
 }
 

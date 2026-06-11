@@ -201,6 +201,11 @@ pub(super) fn materialize_logical_chunk(
                     .extend(members.iter().cloned());
             }
         }
+        // Definition-side `fluent_exports` assertions projected onto this
+        // chunk's local import bindings (deep-purity chain roots).
+        if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
+            hints.fluent_bindings.extend(fluent.iter().cloned());
+        }
         hints
     });
     let line_index = time_phase!(timings, "build_source_line_index", {

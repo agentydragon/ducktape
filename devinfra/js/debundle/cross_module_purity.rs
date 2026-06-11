@@ -78,6 +78,7 @@ impl ModulePurityFacts<'_> {
             &BTreeSet::new(),
             &BTreeMap::new(),
             imported,
+            &BTreeSet::new(),
         )
     }
 
@@ -238,6 +239,57 @@ pub fn resolve_asserted_member_purities(
                 })
                 .collect();
             (key.clone(), members)
+        })
+        .collect()
+}
+
+/// Project author-asserted fluent exports
+/// (`chunk_export_purity.<chunk>.fluent_exports`) onto each importing
+/// module's local binding names. Pure axiom projection — no fixpoint,
+/// same shape as `resolve_asserted_member_purities`: for every import
+/// `local → (module, export)` with a fluent assertion on
+/// `(module, export)`, the importing module receives `local` in its
+/// fluent set, which seeds the classifier's deep-purity chain arm
+/// (`ChunkCodeGraph::fluent_bindings`). Assertions naming a module or
+/// export the program doesn't have warn to stderr and are ignored.
+pub fn resolve_asserted_fluent_bindings(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_fluent: &BTreeMap<ModuleKey, BTreeSet<String>>,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    for (module, export_names) in asserted_fluent {
+        for export_name in export_names {
+            let known_export = modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export_name));
+            if !known_export {
+                eprintln!(
+                    "cross_module_purity: dangling fluent_exports assertion \
+                     {module}:{export_name} — no such analyzed module export; ignoring"
+                );
+            }
+        }
+    }
+    modules
+        .iter()
+        .map(|(key, facts)| {
+            let fluent: BTreeSet<String> = facts
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    let asserted = asserted_fluent
+                        .get(&target.module)?
+                        .contains(&target.export);
+                    // Only project assertions whose export actually exists in
+                    // the defining module (dangling ones warned above).
+                    (asserted
+                        && modules
+                            .get(&target.module)?
+                            .exports
+                            .contains_key(&target.export))
+                    .then(|| local.clone())
+                })
+                .collect();
+            (key.clone(), fluent)
         })
         .collect()
 }
@@ -484,6 +536,39 @@ mod tests {
             )]),
         )]);
         let resolved = resolve_asserted_member_purities(&modules, &asserted);
+        assert!(resolved["app"].is_empty());
+    }
+
+    #[test]
+    fn asserted_fluent_exports_project_onto_importer_locals() {
+        // The importer binds the export under its own local name `k`;
+        // the definition-side fluent assertion must land under THAT
+        // name, where the classifier's chain arm looks it up.
+        let app = parse("import { e4 as k } from \"vendor\";\nconst S = k.object({});");
+        let vendor = parse("const zod = makeZod();\nexport { zod as e4 };");
+        let modules = BTreeMap::from([
+            (
+                "app".to_string(),
+                facts(&app, &[("k", "vendor", "e4")], &[]),
+            ),
+            ("vendor".to_string(), facts(&vendor, &[], &[("e4", "zod")])),
+        ]);
+        let asserted = BTreeMap::from([("vendor".to_string(), BTreeSet::from(["e4".to_string()]))]);
+        let resolved = resolve_asserted_fluent_bindings(&modules, &asserted);
+        assert_eq!(resolved["app"], BTreeSet::from(["k".to_string()]));
+        assert!(resolved["vendor"].is_empty());
+    }
+
+    #[test]
+    fn dangling_fluent_assertion_is_ignored() {
+        let app = parse("const S = k.object({});");
+        let modules = BTreeMap::from([(
+            "app".to_string(),
+            facts(&app, &[("k", "vendor", "e4")], &[]),
+        )]);
+        // `vendor` is not analyzed at all — the assertion must not project.
+        let asserted = BTreeMap::from([("vendor".to_string(), BTreeSet::from(["e4".to_string()]))]);
+        let resolved = resolve_asserted_fluent_bindings(&modules, &asserted);
         assert!(resolved["app"].is_empty());
     }
 }

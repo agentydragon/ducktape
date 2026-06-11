@@ -128,6 +128,24 @@ pub struct ChunkExportPurity {
     /// member's `purity: pure` companion `declared_pure_members`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pure_members: BTreeMap<String, BTreeSet<String>>,
+    /// Export names the author asserts are **deeply** pure fluent-API
+    /// roots: member reads and calls on the export, *and on every value
+    /// transitively derived from it* through static member reads and
+    /// calls, have no observable side effects (call arguments are still
+    /// classified normally). This is the only surface that reaches
+    /// builder-style chains whose receivers are call results rather
+    /// than bindings — `z.object({...}).optional().describe(...)` —
+    /// which `pure_exports`/`pure_members` (binding-keyed) cannot.
+    ///
+    /// The assertion covers the API's **entire** transitive fluent
+    /// surface, including methods like a schema's `.parse(...)` that
+    /// run author-registered callbacks — assert only exports whose
+    /// derived-value methods are all side-effect-free when invoked at
+    /// module top level, and whose values the program does not
+    /// monkey-patch. Same author-trust contract as `pure_exports`
+    /// (docs/design.md A9).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub fluent_exports: BTreeSet<String>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the

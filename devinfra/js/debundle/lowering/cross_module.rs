@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::cross_module_purity::{
-    ModulePurityFacts, ResolvedImport, resolve_asserted_member_purities, resolve_imported_purities,
+    ModulePurityFacts, ResolvedImport, resolve_asserted_fluent_bindings,
+    resolve_asserted_member_purities, resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use artifact::{
@@ -55,6 +56,9 @@ pub(super) struct CrossModulePurities {
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisHints::declared_pure_members`.
     pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    /// Per-chunk fluent-trusted import binding names (deep-purity roots),
+    /// merged into `AnalysisHints::fluent_bindings`.
+    pub(super) fluent: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Per-chunk-name imported-binding purity maps for the whole artifact.
@@ -202,8 +206,14 @@ pub(super) fn collect_cross_module_imported_purities(
             .filter(|(_, assertion)| !assertion.pure_members.is_empty())
             .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_members.clone()))
             .collect();
+    let asserted_fluent: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.fluent_exports.is_empty())
+        .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
+        .collect();
     CrossModulePurities {
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
+        fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
     }
 }

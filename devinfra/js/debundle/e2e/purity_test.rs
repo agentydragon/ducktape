@@ -1266,3 +1266,61 @@ export { A, B, C };
     );
     assert!(fixture.entry_path.exists());
 }
+
+/// Zod-style schema-declaration entry: every statement is a fluent
+/// chain whose intermediate receivers are call RESULTS
+/// (`k.object({...}).describe(...)`), plus one `const`-derived root
+/// (`Base` → `.extend(...)`). No binding-keyed purity surface
+/// (`pure_exports`, `pure_members`, `imported_purities`) can admit
+/// link 2+ of these chains — there is no binding to key on.
+const FLUENT_CHAIN_ENTRY: &str = r#"import { e4 as k } from "./vendorlib.js";
+const Base = k.object({ id: 1 });
+const A = k.object({ a: 1 }).describe("a");
+const B = Base.extend({ b: 2 }).describe("b");
+const C = k.object({ c: 1 }).describe("c");
+console.log(A, B, C);
+export { A, B, C };
+"#;
+
+const FLUENT_VENDORLIB: &str = "const zodish = { object(shape) { return { shape, \
+describe(d) { return { shape: this.shape, d }; }, extend(more) { return zodish.object(more); \
+} }; } };\nexport { zodish as e4 };\n";
+
+#[test]
+fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
+    // Baseline pin: the chain receivers are call results, so every
+    // schema decl is impure (`unknown_call`/`unknown_member`) and the
+    // interleaved destinations S-cycle.
+    expect_rejection(
+        FixtureOpts::new(
+            FLUENT_CHAIN_ENTRY,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)]),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn asserted_fluent_export_chains_emit_no_s_cycle() {
+    // A definition-side `fluent_exports` assertion on the defining
+    // chunk projects onto the importer's `k` local; the chain arm then
+    // admits every link (including the `Base`-derived `.extend`
+    // chain), the schema decls classify pure, and the interleaved
+    // split realizes.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            FLUENT_CHAIN_ENTRY,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
+        .with_chunk_export_purity(&[("static/vendorlib", json!({ "fluent_exports": ["e4"] }))]),
+    );
+    assert!(fixture.entry_path.exists());
+}

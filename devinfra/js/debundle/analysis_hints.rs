@@ -40,6 +40,13 @@ pub struct AnalysisHints {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, Purity>,
+    /// Local binding names of this chunk that import an author-asserted
+    /// fluent export (`chunk_export_purity.<chunk>.fluent_exports`,
+    /// projected by `crate::cross_module_purity` onto importer locals).
+    /// The classifier treats them as deep-purity roots: member reads /
+    /// calls on them AND on values derived from them are pure. See
+    /// `ChunkCodeGraph::fluent_bindings`.
+    pub fluent_bindings: BTreeSet<String>,
 }
 
 impl AnalysisHints {
@@ -51,6 +58,7 @@ impl AnalysisHints {
             known_effects: BTreeMap::new(),
             local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
             imported_purities: BTreeMap::new(),
+            fluent_bindings: BTreeSet::new(),
         }
     }
 }

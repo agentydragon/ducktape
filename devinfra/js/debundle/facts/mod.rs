@@ -555,6 +555,7 @@ where
         &hints.declared_pure_new,
         &hints.declared_pure_members,
         &hints.imported_purities,
+        &hints.fluent_bindings,
     );
     let local_effect_context =
         local_effects::LocalEffectContext::for_body(&body, hints.local_effect_policy);

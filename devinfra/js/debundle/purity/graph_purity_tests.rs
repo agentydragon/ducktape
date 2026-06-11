@@ -1301,6 +1301,7 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         &BTreeSet::new(),
         &declared_pure_members,
         &BTreeMap::new(),
+        &BTreeSet::new(),
     );
     assert_eq!(graph.function_purity("f").map(|p| p.is_pure()), Some(false));
     assert_eq!(graph.function_purity("g").map(|p| p.is_pure()), Some(true));

@@ -118,6 +118,31 @@ fn classify_with_declared_pure_members(
         &BTreeSet::new(),
         &declared_pure_members,
         &BTreeMap::new(),
+        &BTreeSet::new(),
+    );
+    let var = match module.body.last().expect("non-empty body") {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+    };
+    let init = var.decls[0].init.as_deref().expect("init expected");
+    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+}
+
+/// Classify `expr_src` (appearing after `prefix` at chunk top) with
+/// `fluent` as the author-asserted fluent root bindings.
+fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) -> Purity {
+    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let fluent_bindings: BTreeSet<String> = fluent.iter().map(|s| (*s).to_string()).collect();
+    let graph = ChunkCodeGraph::build_full(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &fluent_bindings,
     );
     let var = match module.body.last().expect("non-empty body") {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
@@ -861,6 +886,160 @@ fn declared_pure_member_optional_chain_call_classifies_pure() {
     );
 }
 
+// --- Fluent-trusted chains (`fluent_exports`) ---------------------------
+
+#[test]
+fn fluent_root_direct_call_classifies_pure() {
+    // The root itself is callable under the deep-purity contract
+    // (`k({...})` — zod-style builders are invoked directly too).
+    assert!(
+        classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor";"#,
+            "k({ a: 1 })",
+            &["k"]
+        )
+        .is_pure()
+    );
+    // Without the assertion the same call is an unknown imported
+    // callee.
+    assert!(
+        !classify_with_fluent_bindings(r#"import { e4 as k } from "vendor";"#, "k({ a: 1 })", &[])
+            .is_pure()
+    );
+}
+
+#[test]
+fn fluent_chain_method_calls_classify_pure() {
+    // The receivers of `.optional()` / `.describe()` are call
+    // RESULTS, not bindings — no binding-keyed arm
+    // (`pure_members`, `imported_purities`) can ever admit them.
+    // The fluent contract follows the chain through arbitrary
+    // depth.
+    assert!(
+        classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor";"#,
+            r#"k.object({ a: 1 }).optional().describe("docs")"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_chain_impure_inner_argument_surfaces() {
+    // Soundness pin: the assertion covers the API's own functions
+    // and their results, NOT caller-supplied argument evaluation.
+    // An impure argument to an INNER chain link must keep the whole
+    // expression impure even though the outer call's args are pure.
+    assert!(
+        !classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor"; function io() { globalThis.x = 1; return {}; }"#,
+            r#"k.object(io()).describe("docs")"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_chain_member_read_classifies_pure() {
+    // Reading a property off a derived value (`.description` on a
+    // schema) is covered by the same deep contract.
+    assert!(
+        classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor";"#,
+            r#"k.string().description"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_chain_computed_member_breaks_the_chain() {
+    // Computed access would additionally require a
+    // ToPropertyKey-safe key; the chain conservatively stops there.
+    assert!(
+        !classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor"; const key = "object";"#,
+            r#"k[key]({ a: 1 })"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_chain_optional_chaining_classifies_pure() {
+    // `?.` only adds a null/undefined short-circuit on top of the
+    // member/call evaluation the contract already covers.
+    assert!(
+        classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor";"#,
+            r#"k.object({ a: 1 })?.describe?.("docs")"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_root_body_local_shadow_defeats_trust() {
+    // A body-local binding of the same name is a different value
+    // than the annotated import — the trust contract doesn't cover
+    // it (same rule as every other author-trust arm).
+    let module = parse(r#"import { e4 as k } from "vendor";"#);
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let graph = ChunkCodeGraph::build_full(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::from(["k".to_string()]),
+    );
+    let shadowing_call = parse(r#"const _ = k.object({ a: 1 });"#);
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = &shadowing_call.body[0] else {
+        panic!("expected var decl");
+    };
+    let init = var.decls[0].init.as_deref().expect("init expected");
+    let local_shadowed = BTreeSet::from(["k".to_string()]);
+    assert!(
+        !classify_expr_purity(init, &shadowed, &local_shadowed, &BTreeSet::new(), &graph).is_pure()
+    );
+}
+
+#[test]
+fn fluent_trust_propagates_through_const_derivations() {
+    // `const S = k.object({...})` makes `S` a fluent root too —
+    // `S.extend({...})` downstream is the standard zod base-schema
+    // reuse pattern.
+    assert!(
+        classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor"; const S = k.object({ a: 1 });"#,
+            r#"S.extend({ b: 2 })"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
+#[test]
+fn fluent_trust_does_not_propagate_through_let_rebindable_cells() {
+    // A `let` cell can be rebound to an untrusted value later, so
+    // derivation-closure is `const`-only.
+    assert!(
+        !classify_with_fluent_bindings(
+            r#"import { e4 as k } from "vendor"; let S = k.object({ a: 1 });"#,
+            r#"S.extend({ b: 2 })"#,
+            &["k"]
+        )
+        .is_pure()
+    );
+}
+
 // --- Object.{entries,keys,values,freeze,fromEntries} on plain data -----
 
 #[test]
@@ -1083,6 +1262,7 @@ fn classify_with_imported_purities(
         &BTreeSet::new(),
         &BTreeMap::new(),
         &imported_purities,
+        &BTreeSet::new(),
     );
     let var = match module.body.last().expect("non-empty body") {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
