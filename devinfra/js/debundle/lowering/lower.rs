@@ -192,11 +192,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // and "Lemma 2".
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
-    // Entry-body renames flow through a dedicated ledger: the
-    // chunk_renames entries staying in entry (Explicit) and the entry
-    // import-local mints (ImportInduced) submit Chunk-scope intents
-    // below; the sealed projection is the `body_renames` map the entry
-    // renamer applies. The two contributors' source sets are disjoint by
+    // Entry-side renames flow through ONE per-chunk ledger sealed once:
+    // the chunk_renames entries staying in entry (Explicit, Chunk scope),
+    // the entry import-local mints (ImportInduced, Chunk scope), and the
+    // auto-grown residual public exports (ImportInduced,
+    // EntryPublicExports scope — a separate namespace from local-binding
+    // renames). The Chunk-scope contributors' source sets are disjoint by
     // construction — chunk_renames seeding skips module-owned bindings,
     // mints fire only for module-owned bindings — so a seal conflict can
     // only come from one contributor disagreeing with itself.
@@ -205,8 +206,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // top-level names (root) and everything bound below them (nested).
     // Seal rejects chunk_renames targets colliding at the root level —
     // collecting every violation in one error — and asserts mints stayed
-    // clear of both levels; nested-capture facts come from the rename
-    // walk below.
+    // clear of both levels; nested-capture facts come from the read-only
+    // capture probe below.
     let entry_root_names = collect_occupied_local_names(&entry_body);
     let entry_nested_names = collect_nested_binding_names(&entry_body);
     let mut entry_ledger = RenameLedger::default();
@@ -223,12 +224,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // that collides with one of the chunk_renames' targets. Iterate
     // `chunk_renames` (a `HashMap`) in sorted order so the ledger's
     // intent order is stable.
-    // `entry_candidate_renames` mirrors the submitted intents so the
-    // rename walk below can run before seal and report precise capture
-    // facts into it; seal's Chunk projection reproduces this map exactly
-    // (debug-asserted below). The pre-seal walk is PR-4-deletable
-    // scaffolding, like the naturalizer's derive preview.
-    let mut entry_candidate_renames = BTreeMap::<String, String>::new();
     let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
     sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
     for (binding, export_name) in sorted_renames {
@@ -244,7 +239,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 contributor: CHUNK_RENAMES_CONTRIBUTOR,
             },
         });
-        entry_candidate_renames.insert(binding.clone(), export_name.clone());
     }
     // Mints must additionally avoid every nested binding name, or the
     // follow-up body rewrite could capture references meant to resolve
@@ -304,7 +298,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                         contributor: ENTRY_IMPORT_LOCAL_CONTRIBUTOR,
                     },
                 });
-                entry_candidate_renames.insert(local, fresh);
             }
         }
         entry_imports.push((
@@ -326,64 +319,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     timings.add("build_entry_imports", build_entry_imports_started.elapsed());
-    // Rename walk: apply the candidate map before seal so the visitor's
-    // scope stack reports precise capture facts (a target bound nested
-    // is harmless when the source is shadowed there — only the walk can
-    // decide that). When seal rejects below, the bail discards this
-    // (partially renamed) body with the whole run.
+    // Capture probe: a read-only walk of the un-renamed entry body with
+    // the pending Chunk-scope map, reporting the precise capture facts
+    // seal validates (a target bound nested is harmless when the source
+    // is shadowed there — only a scope-aware walk can decide that). The
+    // probe replaces the pre-seal trial application; the body is mutated
+    // only by the post-seal executor below.
+    let entry_candidate_renames = entry_ledger.pending_renames_by_name(&RenameScope::Chunk);
     let mut entry_captured = BTreeSet::new();
     if !entry_candidate_renames.is_empty() {
-        let rename_entry_body_started = Instant::now();
-        // Re-exports `export { local }` (without `from`) collapse `local`
-        // and the public exported name into a single ident. Renaming the
-        // orig would also rename the public name, breaking downstream
-        // consumers — so rewrite them to `export { fresh as local }`
-        // before the generic renamer visits the rest.
-        for item in entry_body.iter_mut() {
-            preserve_export_specifier_names(item, &entry_candidate_renames);
+        let probe_entry_captures_started = Instant::now();
+        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames);
+        for item in entry_body.iter() {
+            item.visit_with(&mut probe);
         }
-        let mut renamer = IdentifierRenamer::new(&entry_candidate_renames);
-        for item in entry_body.iter_mut() {
-            item.visit_mut_with(&mut renamer);
-        }
-        entry_captured = renamer.captured;
-        timings.add("rename_entry_body", rename_entry_body_started.elapsed());
-    }
-    // Seal the entry ledger: the single validation point for entry-body
-    // renames. Conflicting targets (target name already taken by a body
-    // local that isn't being renamed away, or chosen by another
-    // chunk_renames entry, invalid as an identifier, or captured by a
-    // nested binding per the walk above) bail here with every violation
-    // listed, rather than producing invalid JS silently. `body_renames`
-    // is the sealed Chunk-scope projection — exactly the map the
-    // pre-ledger code accumulated inline across the chunk_renames
-    // seeding and the import-local mint loop above.
-    let sealed_entry_renames = entry_ledger.seal(&SealValidation {
-        occupancy: BTreeMap::from([(
-            RenameScope::Chunk,
-            ScopeOccupancy::Body {
-                label: chunk_id.to_string(),
-                root: entry_root_names,
-                nested: entry_nested_names,
-                captured: entry_captured,
-            },
-        )]),
-        reserved: BTreeSet::new(),
-    })?;
-    let body_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
-    debug_assert_eq!(
-        body_renames, entry_candidate_renames,
-        "sealed entry renames diverged from the candidate map the pre-seal walk applied",
-    );
-    let entry_binding_renames = body_renames;
-    if !entry_imports.is_empty() {
-        let splice_entry_imports_started = Instant::now();
-        let tail = entry_body.split_off(import_insert_index);
-        entry_body.extend(entry_imports);
-        entry_body.extend(tail);
+        entry_captured = probe.captured;
         timings.add(
-            "splice_entry_imports",
-            splice_entry_imports_started.elapsed(),
+            "probe_entry_captures",
+            probe_entry_captures_started.elapsed(),
         );
     }
     // Naturalize every moved body up front and cache the per-plan
@@ -425,34 +378,29 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             body_facts_by_module.push(collect_module_body_facts(body));
         }
     });
-    time_phase!(timings, "entry_exports_and_trim", {
-        for export in entry_exports_for_moved_bindings(
-            declarations,
-            binding_assignment,
-            &entry_binding_renames,
-        ) {
-            entry_body.push(export);
-        }
-        // Auto-grow entry's export list for any residual binding a
-        // moved module body references. Without this, the per-module
-        // emit path below would surface a "moved module references
-        // residual entry binding(s) … not exported by entry"
-        // rejection — i.e. would refuse to emit valid JS — for any
-        // peel whose body happens to read a top-level binding that
-        // the upstream source didn't already `export {...}`.
-        // Emitting the export here makes the assignment importable
-        // by construction (see docs/design.md "Valid peels and atomic
-        // modules", importability clause). The grow set excludes
-        // names already in entry's source-level exports.
+    // Auto-grow entry's export list for any residual binding a
+    // moved module body references. Without this, the per-module
+    // emit path below would surface a "moved module references
+    // residual entry binding(s) … not exported by entry"
+    // rejection — i.e. would refuse to emit valid JS — for any
+    // peel whose body happens to read a top-level binding that
+    // the upstream source didn't already `export {...}`.
+    // Emitting the export makes the assignment importable
+    // by construction (see docs/design.md "Valid peels and atomic
+    // modules", importability clause). The grow set excludes
+    // names already in entry's source-level exports.
+    //
+    // The mints land in the chunk ledger's `EntryPublicExports` scope —
+    // a separate namespace from the Chunk-scope local renames — seeded
+    // with the source-level public names so the grown names suffix past
+    // them. Intents are keyed by the residual binding's ORIGINAL name;
+    // the emitted clause remaps to entry's post-rename local below.
+    time_phase!(timings, "collect_export_growth", {
         let entry_declared_names: HashSet<String> = entry_body
             .iter()
             .flat_map(|item| top_level_declaration_names(item).0)
             .collect();
-        // The ledger owns the public-name namespace: seed it with the
-        // source-level public names so `auto_grown_residual_exports`'
-        // mints suffix past them.
-        let mut export_ledger = RenameLedger::default();
-        export_ledger.seed_taken(
+        entry_ledger.seed_taken(
             RenameScope::EntryPublicExports,
             pre_existing_public_export_names.iter().cloned(),
         );
@@ -462,32 +410,97 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 declaration_by_name,
                 binding_assignment,
                 pre_existing_entry_exports,
-                entry_renames: &entry_binding_renames,
                 entry_declared_names: &entry_declared_names,
             },
             chunk_top_level_mark,
-            &mut export_ledger,
+            &mut entry_ledger,
         );
-        // The sealed map is keyed by the residual binding's original
-        // name; the emitted export clause is keyed by entry's
-        // post-rename local, so remap through `entry_binding_renames`
-        // at application. A single contributor over a set-deduped
-        // source set cannot produce a seal conflict; the occupancy
-        // check asserts the mints stayed clear of pre-existing public
-        // names.
-        let sealed_exports = export_ledger.seal(&SealValidation {
-            occupancy: BTreeMap::from([(
-                RenameScope::EntryPublicExports,
-                ScopeOccupancy::Body {
-                    label: chunk_id.to_string(),
-                    root: pre_existing_public_export_names.iter().cloned().collect(),
-                    nested: BTreeSet::new(),
-                    captured: BTreeSet::new(),
-                },
-            )]),
+    });
+    // Seal the chunk ledger: the single validation point for every
+    // entry-side rename. Chunk scope: conflicting targets (target name
+    // already taken by a body local that isn't being renamed away, or
+    // chosen by another chunk_renames entry, invalid as an identifier,
+    // or captured by a nested binding per the probe above) bail here
+    // with every violation listed, rather than producing invalid JS
+    // silently. EntryPublicExports scope: a single contributor over a
+    // set-deduped source set cannot conflict; the occupancy check
+    // asserts the mints stayed clear of pre-existing public names.
+    let sealed_entry_renames = time_phase!(timings, "seal_entry_ledger", {
+        entry_ledger.seal(&SealValidation {
+            occupancy: BTreeMap::from([
+                (
+                    RenameScope::Chunk,
+                    ScopeOccupancy::Body {
+                        label: chunk_id.to_string(),
+                        root: entry_root_names,
+                        nested: entry_nested_names,
+                        captured: entry_captured,
+                    },
+                ),
+                (
+                    RenameScope::EntryPublicExports,
+                    ScopeOccupancy::Body {
+                        label: chunk_id.to_string(),
+                        root: pre_existing_public_export_names.iter().cloned().collect(),
+                        nested: BTreeSet::new(),
+                        captured: BTreeSet::new(),
+                    },
+                ),
+            ]),
             reserved: BTreeSet::new(),
-        })?;
-        let auto_grow: BTreeMap<String, String> = sealed_exports
+        })
+    })?;
+    let entry_binding_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
+    debug_assert_eq!(
+        entry_binding_renames, entry_candidate_renames,
+        "sealed entry renames diverged from the pending map the capture probe walked",
+    );
+    // Execute once: the single rename pass over the entry body, applying
+    // the sealed Chunk-scope map. Re-exports `export { local }` (without
+    // `from`) collapse `local` and the public exported name into a single
+    // ident; renaming the orig would also rename the public name, so
+    // rewrite them to `export { fresh as local }` before the generic
+    // renamer visits the rest. The probe above already fed seal the walk's
+    // capture verdict, so a capture here means probe and executor diverged.
+    if !entry_binding_renames.is_empty() {
+        let rename_entry_body_started = Instant::now();
+        for item in entry_body.iter_mut() {
+            preserve_export_specifier_names(item, &entry_binding_renames);
+        }
+        let mut renamer = IdentifierRenamer::new(&entry_binding_renames);
+        for item in entry_body.iter_mut() {
+            item.visit_mut_with(&mut renamer);
+        }
+        debug_assert!(
+            renamer.captured.is_empty(),
+            "entry rename executor captured despite seal validation: {:?}",
+            renamer.captured,
+        );
+        timings.add("rename_entry_body", rename_entry_body_started.elapsed());
+    }
+    if !entry_imports.is_empty() {
+        let splice_entry_imports_started = Instant::now();
+        let tail = entry_body.split_off(import_insert_index);
+        entry_body.extend(entry_imports);
+        entry_body.extend(tail);
+        timings.add(
+            "splice_entry_imports",
+            splice_entry_imports_started.elapsed(),
+        );
+    }
+    time_phase!(timings, "entry_exports_and_trim", {
+        for export in entry_exports_for_moved_bindings(
+            declarations,
+            binding_assignment,
+            &entry_binding_renames,
+        ) {
+            entry_body.push(export);
+        }
+        // The sealed EntryPublicExports map is keyed by the residual
+        // binding's original name; the emitted export clause is keyed by
+        // entry's post-rename local, so remap through
+        // `entry_binding_renames` at application.
+        let auto_grow: BTreeMap<String, String> = sealed_entry_renames
             .scope_renames_by_name(&RenameScope::EntryPublicExports)
             .into_iter()
             .map(|(original, public_name)| {
@@ -779,7 +792,11 @@ fn lower_single_plan(
             entry_exports_by_original_local,
             RuntimeImportLookup {
                 imports: runtime_import_facts,
-                heuristic_renames: &local_renames.merged,
+                original_by_renamed: local_renames
+                    .merged
+                    .iter()
+                    .map(|(pre, post)| (post.clone(), pre.clone()))
+                    .collect(),
             },
         )
     });

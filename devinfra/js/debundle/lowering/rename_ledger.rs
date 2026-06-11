@@ -8,7 +8,7 @@
 //! pre-ledger code built so the existing application sites (the
 //! string-keyed rename visitors in `visitors.rs`) stay unchanged.
 //!
-//! ## Seal validation (PR 3 era)
+//! ## Seal validation
 //!
 //! Seal is the single validation point for ledger renames:
 //!
@@ -31,11 +31,13 @@
 //!   when the source is shadowed (or never referenced) inside that scope,
 //!   and the e2e suite pins valid specs of exactly that shape. A flat
 //!   occupied-name set cannot express this, so the caller supplies the
-//!   `(source, target)` pairs the rename visitor's scope stack actually
-//!   withheld ([`ScopeOccupancy::Body::captured`], from the visitor's
-//!   `captured` set on the pre-seal application/preview walk), and seal
-//!   turns them into the hard error. PR 4's executor folds this walk into
-//!   the execute pass itself.
+//!   `(source, target)` pairs a scope-aware walk of the **un-renamed**
+//!   body withholds ([`ScopeOccupancy::Body::captured`]): the read-only
+//!   `RenameCaptureProbe` over [`RenameLedger::pending_renames_by_name`]
+//!   for the entry body, the derive clone's candidate walk for module
+//!   bodies. Seal turns them into the hard error; the post-seal executor
+//!   `debug_assert!`s its own capture set is empty, pinning probe and
+//!   executor to one verdict.
 //!
 //! Scopes without an entry in `SealValidation::occupancy` get conflict
 //! validation only — used by the chunk-level explicit ledger sealed
@@ -57,45 +59,56 @@
 //! Adopted (decided 2026-06): once a chunk's ledger is sealed, no pass may
 //! move declarations between modules — structural moves (entry-body split,
 //! residual sweep, rebind folds, mini-factor synthesis) must all happen
-//! before collection finishes. In PR 1 the materializer already satisfies
-//! the collection side (intents are collected from the finalized
-//! `ChunkPlan`); the contract becomes mechanically enforceable when the
-//! execute-once pass lands (PR 4) and non-execute passes take `&Module`.
+//! before collection finishes. The materializer satisfies the collection
+//! side (intents are collected from the finalized `ChunkPlan`), and as of
+//! PR 4 every ledger executes post-seal only. Making the contract
+//! type-level (non-execute passes take `&Module`) is remaining work.
 //!
-//! ## Seal points (PR 3 era)
+//! ## Seal points (PR 4 era)
 //!
-//! Contributor derivation is still interleaved with application across
-//! the lowering pipeline — a later contributor derives from the AST state
-//! an earlier contributor's application produced — so each phase keeps
-//! its own ledger instance, but every instance now seals with occupancy
-//! validation and the application sites only assert seal's guarantee:
+//! Four ledger instances remain, and each follows the same discipline:
+//! collect every intent, seal once, then execute — the post-seal rename
+//! pass is the only mutation of the scope unit's AST, and no pre-seal
+//! trial application exists (capture facts come from read-only probes /
+//! the derive clone over the un-renamed body):
 //!
 //! - **Chunk explicit ledger** (`materialize_logical_chunk`): spec
 //!   `chunk_renames` + plan `export_name`s; conflict-validated only (the
 //!   post-split bodies its targets must avoid don't exist yet — its
 //!   intents are re-collected into the two ledgers below, which validate
 //!   occupancy). Sealed before factorization, which consumes the
-//!   Chunk-scope projection.
-//! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
-//!   in entry plus entry import-local mints; seal validates against
-//!   entry's post-split body occupancy.
+//!   Chunk-scope projection. It cannot merge downstream: its Chunk
+//!   projection is an input to plan building and factorization, which
+//!   run before the post-split bodies exist.
+//! - **Chunk ledger** (`lower_chunk`): the chunk_renames entries staying
+//!   in entry plus entry import-local mints (`Chunk` scope) AND the
+//!   auto-grown residual public exports (`EntryPublicExports` scope —
+//!   PR 4 absorbed the former export-growth ledger). One seal validates
+//!   entry's post-split body occupancy (capture facts from the read-only
+//!   `RenameCaptureProbe`) and the public-export namespace; one executor
+//!   pass applies the Chunk map to the entry body.
 //! - **Per-module naturalize ledger** (`naturalize_module_body`): the
 //!   plan's export_name renames (Explicit), free-source return-object
 //!   aliases (Heuristic, `Module` scope), and bound-source scope-local
 //!   heuristics (Heuristic, `Function` scope) — one seal resolves
 //!   explicit-vs-heuristic priority, the module-level target-collision
-//!   rule ([`merge_module_renames`]), and per-scope occupancy.
+//!   rule ([`merge_module_renames`]), and per-scope occupancy. The
+//!   executor (sealed module-wide walk + `SealedScopeRenameApplier`) is
+//!   the only mutation of the real body; derivation runs on a scratch
+//!   clone of the un-renamed body (see below for why the clone stays).
 //! - **Per-plan import ledger** (`lower_single_plan`): cross-module +
-//!   residual-entry import-local mints; collection needs the
-//!   post-naturalize body facts, so it cannot merge into the naturalize
-//!   ledger until PR 4's execute-once pass removes the intermediate
-//!   application.
-//! - **Export-growth ledger** (`lower_chunk`): auto-grown residual public
-//!   exports (`EntryPublicExports` scope). Collection needs the moved
-//!   bodies' post-naturalize facts and the sealed entry renames, so it
-//!   stays a separate instance until PR 4.
+//!   residual-entry import-local mints. It cannot merge into the
+//!   naturalize ledger because of a cross-module phase ordering, not
+//!   mere code shape: collection needs this module's post-naturalize
+//!   body facts AND entry's grown export list, which itself needs every
+//!   module's post-naturalize facts — so the naturalize seal would have
+//!   to stay open across a chunk-wide phase whose inputs require the
+//!   naturalize application to have already run. Breaking the cycle
+//!   means planning references off un-renamed facts plus sealed-map
+//!   reasoning at import emission (PR 5 candidate; changes mint seeding
+//!   and is not behavior-preserving in suffix-mint corner cases).
 //!
-//! What still validates at the application site (PR 4 scope):
+//! What still validates at the application site (PR 5 candidates):
 //!
 //! - The free-alias subtree-capture filter
 //!   (`naturalize.rs::drop_subtree_captured_targets`): free aliases apply
@@ -108,13 +121,23 @@
 //!   (`lower_single_plan`'s `cross_module_chunk_renames` pass): the
 //!   entry-side seal validates against entry's body only; a target can
 //!   still collide inside a moved body, and that application keeps its
-//!   reachable bail.
-//! - The derive-phase preview in `naturalize_module_body` (the scratch
+//!   reachable bail. It also cannot fold into the per-plan import
+//!   ledger's seal: the two maps deliberately compose *sequentially*
+//!   (an import-local mint may rename `x → y$1` precisely because the
+//!   chunk-rename target `y` was taken, and the cross map's `x → y`
+//!   must then no-op), while one seal's priority rule would resolve the
+//!   pair to the explicit target and desync body refs from the emitted
+//!   import local.
+//! - The derive-phase clone in `naturalize_module_body` (the scratch
 //!   clone + `validated_bound` / `drop_subtree_captured_targets` /
 //!   [`merge_module_renames`] pre-computation): the per-scope derive
-//!   cascade needs each scope's fired map before enclosing scopes derive;
-//!   seal re-derives the same decisions from the submitted facts, and the
-//!   preview is deleted with PR 4's executor.
+//!   cascade needs each enclosing scope's subtree name facts to reflect
+//!   the nested scopes' fired renames (the application is
+//!   scope-sensitive — a flat set transformation of the sealed nested
+//!   maps over the un-renamed facts both over- and under-suppresses),
+//!   so the clone walk is the precise fact source. Seal re-derives the
+//!   same decisions from the submitted facts; the clone never touches
+//!   the real body.
 //!
 //! ## Hygiene boundary
 //!
@@ -125,14 +148,17 @@
 //! seal output is projected back to bare syms at the query boundary
 //! (`*_by_name`) because the post-#2052 application visitors are still
 //! string-keyed; the projection asserts that no two hygiene contexts share
-//! a sym within one scope. PR 4's executor consumes `Id`s directly and
-//! deletes the projection.
+//! a sym within one scope. An `Id`-keyed executor that deletes the
+//! projection is remaining (PR 5) work.
 //!
 //! `Function`-scope heuristic sources are function-local bindings whose
 //! hygiene context the string-keyed derivation never resolves; they are
-//! keyed by `(sym, SyntaxContext::empty())` until PR 4's executor keys
-//! application by real `Id`s. Within one function scope a sym maps to at
-//! most one rename, so the empty-context encoding cannot collide.
+//! keyed by `(sym, SyntaxContext::empty())` until the executor keys
+//! application by real `Id`s (remaining work — the post-#2052 visitors
+//! are string-keyed, and re-keying them is entangled with emitting
+//! import/export decls under real contexts instead of `new_no_ctxt`).
+//! Within one function scope a sym maps to at most one rename, so the
+//! empty-context encoding cannot collide.
 //!
 //! ## Contributor inventory
 //!
@@ -411,6 +437,37 @@ impl RenameLedger {
             }
             suffix += 1;
         }
+    }
+
+    /// Pre-seal projection of the collected intents for `scope`: per
+    /// source sym, the highest-priority proposed target (same-priority
+    /// disagreement resolves arbitrarily here — seal is the validator
+    /// and hard-errors on it before any output is consumed). Callers use
+    /// this to run the read-only capture probe over the un-renamed body
+    /// so seal receives reference-precise capture facts without a trial
+    /// application; on a successful seal the projection equals the
+    /// sealed by-name map (debug-asserted at the call sites).
+    pub fn pending_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
+        let mut best: BTreeMap<String, (Atom, RenamePriority)> = BTreeMap::new();
+        for intent in &self.intents {
+            if intent.scope != *scope {
+                continue;
+            }
+            let priority = intent.origin.priority();
+            match best.entry(intent.from.0.to_string()) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert((intent.to.clone(), priority));
+                }
+                std::collections::btree_map::Entry::Occupied(mut slot) => {
+                    if priority > slot.get().1 {
+                        slot.insert((intent.to.clone(), priority));
+                    }
+                }
+            }
+        }
+        best.into_iter()
+            .map(|(from, (to, _))| (from, to.to_string()))
+            .collect()
     }
 
     /// Validate and freeze the collected intents.
@@ -714,8 +771,9 @@ fn validate_function_scope(
 /// distinct bindings into a duplicate decl as soon as both happen to live
 /// in the same scope. This is the module-level target-collision rule
 /// seal applies to free-source aliases; `naturalize_module_body` calls it
-/// directly for the derive-phase preview (`free_allowed`), which is
-/// deleted with PR 4's executor.
+/// directly for the derive-phase preview (`free_allowed`) on the scratch
+/// clone (see the module doc's "Seal points" section for why the clone
+/// stays).
 pub fn merge_module_renames(
     mut explicit: BTreeMap<String, String>,
     heuristic: BTreeMap<String, String>,

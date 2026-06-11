@@ -72,13 +72,21 @@ origin, priority }`, scopes Chunk/Module/Function, **keyed by hygiene
    service. _(Landed 2026-06; see TODO.md's "PR 3 landed" entry and the
    "Seal points" section of `lowering/rename_ledger.rs` for what stays at
    the application sites until PR 4.)_
-4. Execute once: one visitor pass (the post-#2052 rename visitor becomes the
-   executor) updating export tables, `runtime_imports`, `binding_comments`,
-   and cross-module indexes in lockstep.
+4. Execute once: the post-seal rename pass is the only mutation per scope
+   unit; capture facts reach seal from the un-renamed tree. _(Landed
+   2026-06: read-only `RenameCaptureProbe` + `pending_renames_by_name`
+   replace the pre-seal trial walks, the export-growth ledger merged into
+   `lower_chunk`'s chunk ledger, and `plan_references`' reverse `.find`
+   became the sealed map's inverse projection. The naturalizer's derive
+   clone, the per-plan import ledger, and `cross_module_chunk_renames`'
+   separate application stay with documented reasons — see TODO.md's
+   "PR 4 landed" entry and `rename_ledger.rs` "Seal points".)_
 5. Cleanup: delete the defensive era (`captured` sets,
-   `drop_subtree_captured_targets` where dominated, `merged`/`module_scope`
-   split, reverse lookups). Afterwards the #2045 class is unrepresentable
-   and aggressive auto-naturalization becomes safe to build.
+   `drop_subtree_captured_targets` where dominated, reverse lookups) and
+   attack PR 4's documented blockers (import-ledger merge,
+   `Id`-keyed executor deleting the `*_by_name` projection). Afterwards
+   the #2045 class is unrepresentable and aggressive auto-naturalization
+   becomes safe to build.
 
 ## Track C — vendor-into-emission collapse (weeks 2–3)
 

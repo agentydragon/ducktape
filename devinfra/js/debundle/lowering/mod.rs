@@ -104,7 +104,9 @@ use runtime_imports::{
     record_runtime_imports, runtime_reimport_specifier,
 };
 use util::normalize_optional_relative_dir;
-use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
+use visitors::{
+    IdentifierRenamer, RenameAndShorthandNaturalizer, RenameCaptureProbe, ShorthandNaturalizer,
+};
 
 macro_rules! time_phase {
     ($timings:expr, $name:expr, $body:block) => {{

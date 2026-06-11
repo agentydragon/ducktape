@@ -310,7 +310,11 @@ pub(super) struct ExportGrowthFacts<'a> {
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
-    pub(super) entry_renames: &'a BTreeMap<String, String>,
+    /// ORIGINAL (pre-rename) names declared at the top level of the
+    /// post-split entry body. Collection runs before the entry rename
+    /// executor, so candidates are checked under their original names;
+    /// the seal's injectivity guarantees on the Chunk-scope map make
+    /// this equivalent to checking the post-rename declared set.
     pub(super) entry_declared_names: &'a HashSet<String>,
 }
 
@@ -324,7 +328,6 @@ pub(super) fn auto_grown_residual_exports(
         declaration_by_name,
         binding_assignment,
         pre_existing_entry_exports,
-        entry_renames,
         entry_declared_names,
     } = facts;
     let mut needed = BTreeSet::<String>::new();
@@ -363,10 +366,6 @@ pub(super) fn auto_grown_residual_exports(
     // `EntryExport.{local_name, exported_name}`, so the mint is
     // invisible to the moved body.
     for name in needed {
-        let final_local = entry_renames
-            .get(&name)
-            .cloned()
-            .unwrap_or_else(|| name.clone());
         // Only grow exports for bindings the final entry body
         // actually declares. A chunk-declared binding whose
         // declaring statement was claimed into a non-entry
@@ -378,7 +377,7 @@ pub(super) fn auto_grown_residual_exports(
         // `missing_residual_exports`, which
         // `residual_entry_imports_for_moved_body` rejects
         // loudly instead of emitting broken JS.
-        if !entry_declared_names.contains(&final_local) {
+        if !entry_declared_names.contains(&name) {
             continue;
         }
         let public_name = ledger.mint(RenameScope::EntryPublicExports, &name);

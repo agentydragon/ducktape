@@ -373,6 +373,147 @@ macro_rules! impl_rename_helpers {
     };
 }
 
+/// Read-only mirror of the renaming visitors: walks the same reference
+/// sites with the same shadow tracking, but instead of mutating it only
+/// records the `(source, target)` pairs the rename map would withhold
+/// (target shadowed at a reference of the un-shadowed source). This is
+/// how seal receives reference-precise capture facts from the
+/// **un-renamed** tree — the executor (the single post-seal rename pass)
+/// then `debug_assert!`s that its own `captured` set is empty, pinning
+/// the probe and the executor to the same verdict.
+///
+/// MUST stay traversal-identical to `impl_rename_visit_mut!`: every site
+/// the mutating visitors consult the rename map at, the probe consults
+/// it at too, with the same scope pushes.
+pub(super) struct RenameCaptureProbe<'a> {
+    renames: &'a BTreeMap<String, String>,
+    targets: BTreeSet<String>,
+    scopes: RenameScopeStack,
+    /// See [`IdentifierRenamer::captured`].
+    pub(super) captured: BTreeSet<(String, String)>,
+}
+
+impl<'a> RenameCaptureProbe<'a> {
+    pub(super) fn new(renames: &'a BTreeMap<String, String>) -> Self {
+        Self {
+            renames,
+            targets: rename_targets(renames),
+            scopes: RenameScopeStack::default(),
+            captured: BTreeSet::new(),
+        }
+    }
+
+    impl_rename_helpers!();
+
+    /// Consult the rename map for `name` exactly like the mutating
+    /// visitors do (recording a capture when the target is shadowed),
+    /// discarding the would-be target.
+    fn probe(&mut self, name: &str) {
+        if self.scopes.is_shadowed(name) {
+            return;
+        }
+        let _ = self.rename_target_for(name);
+    }
+}
+
+impl Visit for RenameCaptureProbe<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.probe(ident.sym.as_ref());
+    }
+
+    fn visit_import_named_specifier(&mut self, spec: &ImportNamedSpecifier) {
+        // Mirror: the mutating visitor only consults the map for the
+        // local; `imported` is a public name, never renamed.
+        self.probe(spec.local.sym.as_ref());
+    }
+
+    fn visit_prop_name(&mut self, prop_name: &PropName) {
+        if let PropName::Computed(computed) = prop_name {
+            computed.visit_children_with(self);
+        }
+    }
+
+    fn visit_member_prop(&mut self, member_prop: &MemberProp) {
+        if let MemberProp::Computed(computed) = member_prop {
+            computed.visit_children_with(self);
+        }
+    }
+
+    fn visit_prop(&mut self, prop: &Prop) {
+        let Prop::Shorthand(ident) = prop else {
+            prop.visit_children_with(self);
+            return;
+        };
+        self.probe(ident.sym.as_ref());
+    }
+
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        let ObjectPatProp::Assign(assign) = prop else {
+            prop.visit_children_with(self);
+            return;
+        };
+        if let Some(value) = &assign.value {
+            value.visit_with(self);
+        }
+        self.probe(assign.key.id.sym.as_ref());
+    }
+
+    fn visit_labeled_stmt(&mut self, labeled: &LabeledStmt) {
+        labeled.body.visit_with(self);
+    }
+
+    fn visit_break_stmt(&mut self, _break_stmt: &BreakStmt) {}
+
+    fn visit_continue_stmt(&mut self, _continue_stmt: &ContinueStmt) {}
+
+    fn visit_named_export(&mut self, named: &NamedExport) {
+        if named.src.is_none() {
+            named.specifiers.visit_with(self);
+        }
+    }
+
+    fn visit_export_named_specifier(&mut self, spec: &ExportNamedSpecifier) {
+        spec.orig.visit_with(self);
+    }
+
+    fn visit_function(&mut self, function: &Function) {
+        let scope =
+            shadowed_by_params(function.params.iter().map(|p| &p.pat), &self.rename_names());
+        self.with_rename_scope(scope, |s| function.visit_children_with(s));
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        let scope = shadowed_by_params(arrow.params.iter(), &self.rename_names());
+        self.with_rename_scope(scope, |s| arrow.visit_children_with(s));
+    }
+
+    fn visit_constructor(&mut self, constructor: &Constructor) {
+        let params = constructor.params.iter().filter_map(|p| match p {
+            ParamOrTsParamProp::Param(param) => Some(&param.pat),
+            ParamOrTsParamProp::TsParamProp(_) => None,
+        });
+        let scope = shadowed_by_params(params, &self.rename_names());
+        self.with_rename_scope(scope, |s| constructor.visit_children_with(s));
+    }
+
+    fn visit_catch_clause(&mut self, clause: &CatchClause) {
+        let scope = match &clause.param {
+            Some(pat) => {
+                let mut out = BTreeSet::new();
+                collect_shadowed_by_pat(pat, &self.rename_names(), &mut out);
+                out
+            }
+            None => BTreeSet::new(),
+        };
+        self.with_rename_scope(scope, |s| clause.visit_children_with(s));
+    }
+
+    fn visit_block_stmt(&mut self, block: &BlockStmt) {
+        let scope = shadowed_by_block_decls(&block.stmts, &self.rename_names());
+        self.with_rename_scope(scope, |s| block.visit_children_with(s));
+    }
+}
+
 pub(super) struct IdentifierRenamer<'a> {
     pub(super) renames: &'a BTreeMap<String, String>,
     targets: BTreeSet<String>,

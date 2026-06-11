@@ -36,9 +36,11 @@
 //! (`Function` scope, submitted raw with each deriving subtree's name
 //! facts) — share one per-module [`RenameLedger`], and its seal is the
 //! single validation point: explicit-vs-heuristic priority, target
-//! collisions, and occupancy. `SealedScopeRenameApplier` replays the
-//! sealed per-scope maps onto the real body; the application sites only
-//! `debug_assert!` seal's no-capture guarantee.
+//! collisions, and occupancy. Derivation (and the capture probe for the
+//! module-wide map) runs on a scratch clone of the un-renamed body; the
+//! real body is mutated only by the post-seal executor (sealed
+//! module-wide walk + `SealedScopeRenameApplier`), whose application
+//! sites only `debug_assert!` seal's no-capture guarantee.
 
 use swc_common::Span;
 
@@ -155,33 +157,13 @@ pub(super) fn naturalize_module_body(
     // reserved set before the ledger can seal (sealing also waits for the
     // derive pass's Function-scope intents). `merge_module_renames` is
     // the same rule seal applies, so the preview and the sealed output
-    // agree; the preview is deleted with PR 4's execute-once pass.
+    // agree.
     let merged_preview = merge_module_renames(plan_driven.clone(), free_heuristic);
     let free_effective: BTreeMap<String, String> = merged_preview
         .iter()
         .filter(|(local, _)| !plan_driven.contains_key(*local))
         .map(|(local, target)| (local.clone(), target.clone()))
         .collect();
-
-    // Module-wide pass: plan-driven renames + shorthand collapse when the
-    // plan renames anything, shorthand collapse alone otherwise. The walk
-    // runs before seal so the visitor's scope stack reports precise
-    // capture facts (a target bound nested is harmless when the source is
-    // shadowed there — only the walk can decide that); seal turns them
-    // into the hard error, and its bail discards this (partially renamed)
-    // body with the whole pipeline run before anything is emitted.
-    let mut plan_captured = BTreeSet::new();
-    if plan_driven.is_empty() {
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut ShorthandNaturalizer);
-        }
-    } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven);
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut naturalizer);
-        }
-        plan_captured = naturalizer.captured;
-    }
 
     // Names a scope-local rename must never target: anything the plan or a
     // free rename reads or writes module-wide. Renaming a scope's binding
@@ -192,16 +174,36 @@ pub(super) fn naturalize_module_body(
         reserved.insert(from.clone());
         reserved.insert(to.clone());
     }
-    // Derive pass: run the scoped heuristic machinery over a scratch
-    // clone of the body. It performs exactly the pre-ledger
-    // derive-and-apply walk — outer scopes derive against subtrees
-    // that already carry their nested scopes' renames — but the
-    // mutations land on the clone; the real body is only renamed by the
-    // sealed-output applier below. Each scope's raw candidates are
-    // submitted as Function-scope intents together with the deriving
-    // subtree's name facts, which seal validates them against. The clone
-    // is deleted with PR 4's execute-once pass.
+    // Derive clone: a scratch copy of the UN-renamed body that the
+    // module-wide candidate walk and the per-scope derive pass run on.
+    // The real body is mutated only by the post-seal executor below.
+    //
+    // The candidate plan-driven walk on the clone doubles as the capture
+    // probe for the Module scope: its scope stack reports the precise
+    // capture facts seal validates (a target bound nested is harmless
+    // when the source is shadowed there). The derive pass then performs
+    // exactly the pre-ledger derive-and-apply walk — outer scopes derive
+    // against subtrees that already carry their nested scopes' renames —
+    // submitting each scope's raw candidates as Function-scope intents
+    // together with the deriving subtree's name facts. The clone cannot
+    // be replaced by reasoning over the un-renamed tree alone: outer
+    // scopes' subtree facts (bound/mention sets) must reflect the nested
+    // scopes' fired renames, and a flat set transformation of the sealed
+    // nested maps cannot reproduce the scope-sensitive application the
+    // clone walk performs (see TODO.md "Rename pipeline", PR-5 notes).
     let mut derive_body = body.to_vec();
+    let mut plan_captured = BTreeSet::new();
+    if plan_driven.is_empty() {
+        for item in derive_body.iter_mut() {
+            item.visit_mut_with(&mut ShorthandNaturalizer);
+        }
+    } else {
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven);
+        for item in derive_body.iter_mut() {
+            item.visit_mut_with(&mut naturalizer);
+        }
+        plan_captured = naturalizer.captured;
+    }
     let mut occupancy = BTreeMap::new();
     let mut deriver = ScopedHeuristicNaturalizer {
         free_allowed: &free_effective,
@@ -225,10 +227,32 @@ pub(super) fn naturalize_module_body(
         occupancy,
         reserved,
     })?;
-    // Apply pass: replay the sealed per-scope maps onto the real body in
-    // the same order the derive pass fired them (children first), so each
-    // scope's map applies to the same intermediate tree state the
-    // derivation validated against.
+    // Execute: the single mutation of the real body, entirely from the
+    // sealed output. Layer 1 applies the sealed module-wide explicit map
+    // (plus shorthand collapse); layer 2 replays the sealed per-scope
+    // heuristic maps in the same order the derive pass fired them
+    // (children first), so each scope's map applies to the same
+    // intermediate tree state the derivation validated against.
+    let module_scope = sealed.module_explicit_renames_by_name(module);
+    debug_assert_eq!(
+        module_scope, plan_driven,
+        "sealed module-wide explicit renames diverged from the candidate map the derive clone applied",
+    );
+    if module_scope.is_empty() {
+        for item in body.iter_mut() {
+            item.visit_mut_with(&mut ShorthandNaturalizer);
+        }
+    } else {
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&module_scope);
+        for item in body.iter_mut() {
+            item.visit_mut_with(&mut naturalizer);
+        }
+        debug_assert!(
+            naturalizer.captured.is_empty(),
+            "module-wide renames captured despite seal validation: {:?}",
+            naturalizer.captured,
+        );
+    }
     let mut applier = SealedScopeRenameApplier { sealed: &sealed };
     for item in body.iter_mut() {
         item.visit_mut_with(&mut applier);
@@ -236,7 +260,7 @@ pub(super) fn naturalize_module_body(
 
     Ok(NaturalizedRenames {
         merged: sealed.module_renames_by_name(module),
-        module_scope: sealed.module_explicit_renames_by_name(module),
+        module_scope,
     })
 }
 
@@ -251,7 +275,9 @@ pub(super) fn naturalize_module_body(
 /// exactly the pre-ledger derive-and-apply order. The clone mutation
 /// uses a local preview of seal's rules ([`Self::validated_bound`] +
 /// `drop_subtree_captured_targets`), so the clone and the sealed output
-/// agree; the preview is deleted with PR 4's execute-once pass.
+/// agree. The clone is what makes the enclosing scopes' subtree facts
+/// reflect nested fired renames precisely — see the ledger module doc's
+/// "Seal points" for why set-level reasoning can't replace it.
 /// Free-source renames fire only when they survived the module-global
 /// collision rules (`free_allowed`). A rename derived from one scope
 /// never leaks into a sibling/parent scope, and

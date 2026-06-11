@@ -300,6 +300,28 @@ guarantee; what still validates at application (and the remaining seal
 points PR 4 collapses) is inventoried in `rename_ledger.rs`'s module-doc
 "Seal points" section.
 
+**PR 4 landed (2026-06):** collect → seal → execute-once per ledger.
+No pre-seal trial application remains: capture facts reach seal from
+the **un-renamed** tree (the read-only `RenameCaptureProbe` over
+`RenameLedger::pending_renames_by_name` for the entry body; the derive
+clone's candidate walk for module bodies), the post-seal rename pass is
+the only mutation of each scope unit's AST, and the hand-maintained
+candidate-map mirrors are gone. The export-growth ledger merged into
+`lower_chunk`'s chunk ledger (one seal validates `Chunk` +
+`EntryPublicExports` together), collapsing five ledger instances to
+four. `plan_module_reference_needs`' linear reverse `.find` over the
+heuristic rename map is replaced by the sealed map's inverse projection
+(`RuntimeImportLookup::original_by_renamed`; injective by seal's
+target-collision rules). Documented blockers that stay (see
+`rename_ledger.rs` "Seal points"): the naturalizer's derive clone
+(enclosing scopes' subtree facts must reflect nested fired renames —
+scope-sensitive, not expressible as set transformations of sealed
+maps), the per-plan import ledger (collection needs post-naturalize
+facts plus entry's grown exports, which need every module's facts —
+a cross-module phase cycle), and `cross_module_chunk_renames`' separate
+application (it composes _sequentially_ with import-local mints; a
+single seal's priority rule would mis-resolve `x → y$1` vs `x → y`).
+
 Decisions taken (formerly the open-questions subsection below):
 
 1. **Same-priority conflicts are hard errors at seal**, naming both
@@ -314,19 +336,22 @@ Decisions taken (formerly the open-questions subsection below):
 
 Remaining PRs:
 
-- **PR 4 — execute once**: one visitor pass (the post-#2052 rename
-  visitor becomes the executor) updating the AST, export tables,
-  `runtime_imports`, `binding_comments`, and cross-module indexes in
-  lockstep, keyed by hygiene `Id` (deleting the seal-output string
-  projection, the pre-seal rename walks that feed capture facts to
-  seal, the naturalizer's derive-phase preview, and the remaining
-  per-phase ledger instances).
-- **PR 5 — cleanup**: delete the defensive era (`captured` sets,
-  `drop_subtree_captured_targets` where dominated, `merged`/`module_scope`
-  split, reverse lookups); afterwards the #2045 class is
-  unrepresentable.
+- **PR 5 — cleanup + the deep cuts PR 4 documented**: delete the
+  defensive era where seal's guarantee dominates (`captured` sets on
+  the executors, `drop_subtree_captured_targets` where dominated by
+  seal's subtree validation); attack the documented blockers — merge
+  the per-plan import ledger by planning references off un-renamed
+  body facts plus sealed-map reasoning at import emission (mind the
+  mint-seeding suffix-mint corner cases), fold
+  `cross_module_chunk_renames` into the sealed pipeline without
+  breaking its sequential composition with import-local mints, and key
+  the executor by hygiene `Id` end-to-end (deleting the seal-output
+  `*_by_name` string projection — requires emitting import/export
+  decls under real contexts instead of `new_no_ctxt`). The
+  `merged`/`module_scope` split stays as long as free-source aliases
+  apply function-locally while their intents live at `Module` scope.
 
-The architecture sketch below remains the reference for PRs 4–5.
+The architecture sketch below remains the reference for PR 5.
 
 The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer
