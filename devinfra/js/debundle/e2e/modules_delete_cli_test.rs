@@ -40,6 +40,10 @@ fn delete_empty_module_succeeds() {
             "--modules",
             root.to_str().unwrap(),
             "ui/empty.yaml",
+            // Stdout is a pipe here, which would default to JSON;
+            // pin the human text rendering explicitly.
+            "--format",
+            "text",
         ])
         .output()
         .expect("spawn debundle");
@@ -133,6 +137,8 @@ fn delete_multiple_atomic_all_succeed() {
             "a.yaml",
             "b.yaml",
             "c.yaml",
+            "--format",
+            "text",
         ])
         .output()
         .expect("spawn debundle");
@@ -166,6 +172,8 @@ fn dry_run_prints_verdict_without_deleting() {
             root.to_str().unwrap(),
             "ui/empty.yaml",
             "--dry-run",
+            "--format",
+            "text",
         ])
         .output()
         .expect("spawn debundle");

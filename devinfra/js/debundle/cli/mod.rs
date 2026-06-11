@@ -3,6 +3,7 @@ pub mod comment;
 pub mod edit_gate;
 pub mod gate;
 pub mod module;
+pub mod outcome;
 pub mod yaml_edit;
 
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use crate::comment::{
 use crate::edit_gate::Gate;
 use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
+use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
@@ -621,152 +623,87 @@ fn deprecation_notice(old: &str, new: &str) {
 /// exactly one field. Module paths and logical module ids resolve
 /// through the same owner-graph/spec claim path as other structured
 /// IDs, so binding members and anonymous statements stay in sync.
-pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> SelectionArgs {
+pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionArgs> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("owner:") {
-        return selection_with_owner(id);
+        return Ok(SelectionArgs {
+            owner_id: Some(id.to_string()),
+            ..SelectionArgs::default()
+        });
     }
     if id.starts_with("logical:") {
-        return selection_with_module(id);
+        return Ok(SelectionArgs {
+            module_id: Some(id.to_string()),
+            ..SelectionArgs::default()
+        });
     }
     if id.starts_with("atomic:") {
-        return selection_with_unit(id);
+        return Ok(SelectionArgs {
+            unit_id: Some(id.to_string()),
+            ..SelectionArgs::default()
+        });
     }
     if id.starts_with("diagnostic:") {
-        return selection_with_diagnostic(id);
+        return Ok(SelectionArgs {
+            diagnostic_id: Some(id.to_string()),
+            ..SelectionArgs::default()
+        });
     }
     // Module-path detection: try resolving `<modules>/<id>.yaml`.
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
-    if let Some(module_path) = resolve_id_as_module_path(id, modules_root) {
-        return selection_with_module_path(&module_path);
+    if let Some(module_path) = resolve_id_as_module_path(id, modules_root)? {
+        return Ok(SelectionArgs {
+            module_path: Some(module_path),
+            ..SelectionArgs::default()
+        });
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
-        return selection_with_proposal(id);
+        return Ok(SelectionArgs {
+            proposal_id: Some(id.to_string()),
+            ..SelectionArgs::default()
+        });
     }
     // Fall through: treat as a binding name (minified or readable).
-    selection_with_binding(id)
+    Ok(SelectionArgs {
+        binding_id: Some(id.to_string()),
+        ..SelectionArgs::default()
+    })
 }
 
-fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Option<String> {
+fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
     let module_id = id.strip_suffix(".yaml").unwrap_or(id);
     let candidate = modules_root.join(format!("{module_id}.yaml"));
     if candidate.is_file() {
-        return Some(module_id.to_string());
+        return Ok(Some(module_id.to_string()));
     }
     if module_id.contains('/') {
-        return None;
+        return Ok(None);
     }
 
     let filename = format!("{module_id}.yaml");
     let mut matches = collect_module_files(modules_root)
-        .ok()?
+        .with_context(|| format!("walking modules tree {}", modules_root.display()))?
         .into_iter()
         .filter(|path| {
             path.file_name()
                 .is_some_and(|name| name == filename.as_str())
         })
         .map(|path| module_path_from_file(&path, modules_root));
-    let first = matches.next()?;
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
     if matches.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    Some(first)
-}
-
-fn selection_with_owner(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: Some(value.to_string()),
-        module_path: None,
-        module_id: None,
-        binding_id: None,
-        proposal_id: None,
-        unit_id: None,
-        diagnostic_id: None,
-    }
-}
-
-fn selection_with_module(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: None,
-        module_id: Some(value.to_string()),
-        binding_id: None,
-        proposal_id: None,
-        unit_id: None,
-        diagnostic_id: None,
-    }
-}
-
-fn selection_with_module_path(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: Some(value.to_string()),
-        module_id: None,
-        binding_id: None,
-        proposal_id: None,
-        unit_id: None,
-        diagnostic_id: None,
-    }
-}
-
-fn selection_with_unit(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: None,
-        module_id: None,
-        binding_id: None,
-        proposal_id: None,
-        unit_id: Some(value.to_string()),
-        diagnostic_id: None,
-    }
-}
-
-fn selection_with_diagnostic(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: None,
-        module_id: None,
-        binding_id: None,
-        proposal_id: None,
-        unit_id: None,
-        diagnostic_id: Some(value.to_string()),
-    }
-}
-
-fn selection_with_proposal(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: None,
-        module_id: None,
-        binding_id: Some(String::new()),
-        proposal_id: Some(value.to_string()),
-        unit_id: None,
-        diagnostic_id: None,
-    }
-}
-
-fn selection_with_binding(value: &str) -> SelectionArgs {
-    SelectionArgs {
-        owner_id: None,
-        module_path: None,
-        module_id: None,
-        binding_id: Some(value.to_string()),
-        proposal_id: None,
-        unit_id: None,
-        diagnostic_id: None,
-    }
+    Ok(Some(first))
 }
 
 fn run_describe(args: DescribeArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
-    let mut selection = dispatch_id_selection(&args.id, &args.common.modules_root);
-    // selection_with_proposal stuffs a sentinel binding_id; clear it.
-    if selection.proposal_id.is_some() {
-        selection.binding_id = None;
-    }
+    let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
     let inner = ExplainArgs {
         common: args.common,
         selection,
@@ -782,10 +719,7 @@ fn run_describe(args: DescribeArgs) -> Result<()> {
 
 fn run_show_source(args: ShowSourceArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
-    let mut selection = dispatch_id_selection(&args.id, &args.common.modules_root);
-    if selection.proposal_id.is_some() {
-        selection.binding_id = None;
-    }
+    let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
     let inner = SourceSliceArgs {
         common: args.common,
         selection,
@@ -1003,27 +937,22 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
         args.dry_run,
         args.no_verify,
     )?;
-    let format = OutputFormat::resolve(args.format);
-    match format {
+    match OutputFormat::resolve(args.format) {
         OutputFormat::Text => {
+            let file = out
+                .outcome
+                .files_written
+                .first()
+                .map(|f| format!(" ({f})"))
+                .unwrap_or_default();
             println!(
-                "{}: {} -> {} ({})",
-                out.action,
-                out.old_readable.as_deref().unwrap_or(&out.binding_name),
+                "{}: {} -> {}{file}",
+                out.outcome.action,
+                out.old_readable.as_deref().unwrap_or(&out.binding),
                 out.new_readable,
-                out.file.display()
             );
         }
-        OutputFormat::Json | OutputFormat::Ndjson => {
-            let payload = serde_json::json!({
-                "action": out.action,
-                "binding": out.binding_name,
-                "old_readable": out.old_readable,
-                "new_readable": out.new_readable,
-                "file": out.file.display().to_string(),
-            });
-            println!("{}", serde_json::to_string_pretty(&payload)?);
-        }
+        format => print_outcome_json(&out, format)?,
     }
     Ok(())
 }
@@ -1052,7 +981,13 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         args.owner_graph_path.as_deref(),
         args.source_root.as_deref(),
     )?;
-    let out = run_bindings_assign(&args.modules_root, moves, args.dry_run, gate)?;
+    let out = match run_bindings_assign(&args.modules_root, moves, args.dry_run, gate) {
+        Ok(out) => out,
+        Err(err) => {
+            emit_gate_rejection_json("assign", args.format, &err);
+            return Err(err);
+        }
+    };
     let format = OutputFormat::resolve(args.format);
     print_assign_outcome(&out, format)
 }
@@ -1063,7 +998,13 @@ fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
         args.owner_graph_path.as_deref(),
         args.source_root.as_deref(),
     )?;
-    let out = run_bindings_unassign(&args.modules_root, args.syms, args.dry_run, gate)?;
+    let out = match run_bindings_unassign(&args.modules_root, args.syms, args.dry_run, gate) {
+        Ok(out) => out,
+        Err(err) => {
+            emit_gate_rejection_json("unassign", args.format, &err);
+            return Err(err);
+        }
+    };
     let format = OutputFormat::resolve(args.format);
     print_unassign_outcome(&out, format)
 }
@@ -1073,17 +1014,15 @@ fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result
         OutputFormat::Text => {
             println!(
                 "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
-                out.action,
+                out.outcome.action,
                 out.unassigned,
-                out.files_written.len(),
-                out.files_deleted.len()
+                out.outcome.files_written.len(),
+                out.outcome.files_deleted.len()
             );
+            Ok(())
         }
-        OutputFormat::Json | OutputFormat::Ndjson => {
-            println!("{}", serde_json::to_string_pretty(out)?);
-        }
+        format => print_outcome_json(out, format),
     }
-    Ok(())
 }
 
 fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
@@ -1091,17 +1030,15 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
         OutputFormat::Text => {
             println!(
                 "{}: {} move(s); {} file(s) written, {} file(s) deleted",
-                out.action,
+                out.outcome.action,
                 out.moves_applied,
-                out.files_written.len(),
-                out.files_deleted.len()
+                out.outcome.files_written.len(),
+                out.outcome.files_deleted.len()
             );
+            Ok(())
         }
-        OutputFormat::Json | OutputFormat::Ndjson => {
-            println!("{}", serde_json::to_string_pretty(out)?);
-        }
+        format => print_outcome_json(out, format),
     }
-    Ok(())
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
@@ -1647,7 +1584,7 @@ mod tests {
             "members: []\n",
         );
 
-        let selection = super::dispatch_id_selection("auto_partition_0499", &modules_root);
+        let selection = super::dispatch_id_selection("auto_partition_0499", &modules_root).unwrap();
 
         assert_eq!(
             selection.module_path.as_deref(),
@@ -1711,28 +1648,28 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let modules = tmp.path().to_path_buf();
         std::fs::create_dir_all(&modules).unwrap();
-        let sel = super::dispatch_id_selection("owner:42", &modules);
+        let sel = super::dispatch_id_selection("owner:42", &modules).unwrap();
         assert_eq!(sel.owner_id.as_deref(), Some("owner:42"));
     }
 
     #[test]
     fn dispatch_id_logical_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("logical:7", tmp.path());
+        let sel = super::dispatch_id_selection("logical:7", tmp.path()).unwrap();
         assert_eq!(sel.module_id.as_deref(), Some("logical:7"));
     }
 
     #[test]
     fn dispatch_id_atomic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("atomic:7", tmp.path());
+        let sel = super::dispatch_id_selection("atomic:7", tmp.path()).unwrap();
         assert_eq!(sel.unit_id.as_deref(), Some("atomic:7"));
     }
 
     #[test]
     fn dispatch_id_diagnostic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path());
+        let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path()).unwrap();
         assert_eq!(
             sel.diagnostic_id.as_deref(),
             Some("diagnostic:size_cap_0001")
@@ -1742,7 +1679,7 @@ mod tests {
     #[test]
     fn dispatch_id_proposal_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("auto_partition_0042", tmp.path());
+        let sel = super::dispatch_id_selection("auto_partition_0042", tmp.path()).unwrap();
         assert_eq!(sel.proposal_id.as_deref(), Some("auto_partition_0042"));
     }
 
@@ -1752,14 +1689,14 @@ mod tests {
         let modules = tmp.path();
         std::fs::create_dir_all(modules.join("runtime")).unwrap();
         std::fs::write(modules.join("runtime/plugins.yaml"), "members: []\n").unwrap();
-        let sel = super::dispatch_id_selection("runtime/plugins", modules);
+        let sel = super::dispatch_id_selection("runtime/plugins", modules).unwrap();
         assert_eq!(sel.module_path.as_deref(), Some("runtime/plugins"));
     }
 
     #[test]
     fn dispatch_id_binding_otherwise() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("XOe", tmp.path());
+        let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
         assert_eq!(sel.binding_id.as_deref(), Some("XOe"));
     }
 

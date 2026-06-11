@@ -25,6 +25,7 @@ use spec::ModulePath;
 use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
+use crate::outcome::{GateOutcome, MutationOutcome};
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// A chunk-top binding's public identity: the minified hygiene name
@@ -243,16 +244,17 @@ pub fn run_bindings_list(
 // `bindings rename`
 // ---------------------------------------------------------------------
 
-/// Outcome of a rename. Currently just confirms which file and index
-/// were touched; downstream callers may want to use the file path to
-/// produce a diff in a future iteration.
-#[derive(Debug, Clone)]
+/// Outcome of a rename. Shares the [`MutationOutcome`] core with the
+/// other four mutating verbs; the touched file (when any) is
+/// `outcome.files_written`.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RenameOutcome {
-    pub file: PathBuf,
-    pub binding_name: String,
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
+    /// Minified binding name of the renamed member.
+    pub binding: String,
     pub old_readable: Option<String>,
     pub new_readable: String,
-    pub action: &'static str,
 }
 
 /// Rename a single binding's readable `name:` without moving it.
@@ -292,17 +294,30 @@ pub fn rename_binding(
     } else if dry_run {
         "dry-run"
     } else {
-        "renamed"
+        "applied"
     };
     if changed && !dry_run {
         write_yaml_if_semantic_changed(&hit.file, &doc)?;
     }
     Ok(RenameOutcome {
-        file: hit.file,
-        binding_name: hit.name.minified().to_string(),
+        outcome: MutationOutcome {
+            verb: "rename",
+            action,
+            gate: if no_verify {
+                GateOutcome::Skipped
+            } else {
+                GateOutcome::NamesOnly
+            },
+            files_written: if changed {
+                vec![hit.file.display().to_string()]
+            } else {
+                Vec::new()
+            },
+            files_deleted: Vec::new(),
+        },
+        binding: hit.name.minified().to_string(),
         old_readable,
         new_readable: new.to_string(),
-        action,
     })
 }
 
@@ -383,10 +398,9 @@ struct BatchProposal {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AssignOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
     pub moves_applied: usize,
-    pub files_written: Vec<String>,
-    pub files_deleted: Vec<String>,
-    pub action: &'static str,
 }
 
 /// Parse a positional `<sym>:<module>[:<readable>]` triple.
@@ -596,10 +610,14 @@ pub fn run_bindings_assign(
     let plan: Vec<PlannedMove> = by_identity.into_values().collect();
     if plan.is_empty() {
         return Ok(AssignOutcome {
+            outcome: MutationOutcome {
+                verb: "assign",
+                action: "noop",
+                gate: GateOutcome::NotRequired,
+                files_written: Vec::new(),
+                files_deleted: Vec::new(),
+            },
             moves_applied: 0,
-            files_written: Vec::new(),
-            files_deleted: Vec::new(),
-            action: "noop",
         });
     }
 
@@ -704,10 +722,14 @@ pub fn run_bindings_assign(
 
     let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
+        outcome: MutationOutcome {
+            verb: "assign",
+            action: if dry_run { "dry-run" } else { "applied" },
+            gate: gate.outcome(),
+            files_written,
+            files_deleted,
+        },
         moves_applied: plan.len(),
-        files_written,
-        files_deleted,
-        action: if dry_run { "dry-run" } else { "applied" },
     })
 }
 
@@ -883,15 +905,13 @@ fn members_seq(doc: &Value) -> Option<&Vec<Value>> {
 // `bindings unassign`
 // ---------------------------------------------------------------------
 
-/// Outcome of an unassign batch. Mirrors [`AssignOutcome`] so the CLI
-/// printer can share a renderer if desired; the field set is
-/// deliberately the same shape.
+/// Outcome of an unassign batch. Mirrors [`AssignOutcome`]: the
+/// shared [`MutationOutcome`] core plus the verb-specific count.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UnassignOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
     pub unassigned: usize,
-    pub files_written: Vec<String>,
-    pub files_deleted: Vec<String>,
-    pub action: &'static str,
 }
 
 /// Remove one or more bindings from their current modules atomically.
@@ -935,10 +955,14 @@ pub fn run_bindings_unassign(
     }
     if plan.is_empty() {
         return Ok(UnassignOutcome {
+            outcome: MutationOutcome {
+                verb: "unassign",
+                action: "noop",
+                gate: GateOutcome::NotRequired,
+                files_written: Vec::new(),
+                files_deleted: Vec::new(),
+            },
             unassigned: 0,
-            files_written: Vec::new(),
-            files_deleted: Vec::new(),
-            action: "noop",
         });
     }
 
@@ -973,10 +997,14 @@ pub fn run_bindings_unassign(
 
     let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
+        outcome: MutationOutcome {
+            verb: "unassign",
+            action: if dry_run { "dry-run" } else { "applied" },
+            gate: gate.outcome(),
+            files_written,
+            files_deleted,
+        },
         unassigned: plan.len(),
-        files_written,
-        files_deleted,
-        action: if dry_run { "dry-run" } else { "applied" },
     })
 }
 
@@ -1198,7 +1226,7 @@ mod tests {
 
         let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
 
-        assert_eq!(out.action, "unchanged");
+        assert_eq!(out.outcome.action, "unchanged");
         assert_eq!(read(root, "m.yaml"), original);
     }
 
@@ -1331,7 +1359,7 @@ mod tests {
             readable: None,
         }];
         let out = run_bindings_assign(root, moves, true, Gate::NamesOnly).unwrap();
-        assert_eq!(out.action, "dry-run");
+        assert_eq!(out.outcome.action, "dry-run");
         assert!(root.join("src.yaml").exists(), "src not deleted");
         let original = read(root, "src.yaml");
         assert!(original.contains("XOe"), "src unchanged");

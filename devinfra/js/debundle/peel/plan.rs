@@ -223,7 +223,7 @@ pub struct SourceSliceArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, ClapArgs)]
+#[derive(Debug, Clone, Default, ClapArgs)]
 pub struct SelectionArgs {
     /// Select one owner id from `owner_graph.json`.
     #[arg(long = "owner-id")]

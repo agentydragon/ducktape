@@ -250,6 +250,23 @@ rust_test(
     ],
 )
 
+# Machine-consumable outcome contract for the five spec-mutating
+# verbs: `--format json` success outcomes share one schema core
+# (verb/action/gate/files_written/files_deleted), gate rejections
+# print structured JSON on stdout, and rejection artifacts land as
+# siblings of `--graph` where `gate list/describe` read them.
+rust_test(
+    name = "cli_mutation_outcome_test",
+    srcs = ["cli_mutation_outcome_test.rs"],
+    crate_root = "cli_mutation_outcome_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
 # Edit-gate parity with `debundle run` for source_match member
 # selectors and binding_groups: claims the gate cannot model by
 # binding name alone must still partition (or hard-error), never

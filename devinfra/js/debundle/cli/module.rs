@@ -25,9 +25,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
+use peel::OutputFormat;
 use serde_yaml::{Mapping, Value};
 
 use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
+use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 use crate::yaml_edit::{read_yaml, write_yaml_body_if_semantic_changed};
 
 /// Top-level `debundle module ...` argument shape.
@@ -75,6 +77,10 @@ pub struct MergeArgs {
     /// values when the gate checks anonymous statement selectors.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 /// Summary returned by [`merge_modules`].
@@ -84,6 +90,24 @@ pub struct MergeSummary {
     pub target: PathBuf,
     /// Absolute paths of source files that were merged in and deleted.
     pub merged_sources: Vec<PathBuf>,
+}
+
+/// `modules merge` outcome: the shared [`MutationOutcome`] core
+/// (target in `files_written`, deleted sources in `files_deleted`)
+/// plus the merge target path.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MergeOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
+    pub target: String,
+}
+
+/// `modules delete` outcome: just the shared core (deleted paths in
+/// `files_deleted`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeleteOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
 }
 
 impl MergeSummary {
@@ -134,6 +158,10 @@ pub struct DeleteArgs {
     /// values when the gate checks anonymous statement selectors.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 /// Summary returned by [`delete_modules`].
@@ -195,7 +223,7 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
         merge.owner_graph_path.as_deref(),
         merge.source_root.as_deref(),
     )?;
-    gate.check(&merge.modules_root, || {
+    if let Err(err) = gate.check(&merge.modules_root, || {
         let target_abs = resolve_module_file(&merge.modules_root, &merge.target);
         let source_abs: Vec<PathBuf> = merge
             .sources
@@ -203,24 +231,55 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
             .map(|p| resolve_module_file(&merge.modules_root, p))
             .collect();
         post_merge_spec(&merge.modules_root, &target_abs, &source_abs)
-    })?;
+    }) {
+        emit_gate_rejection_json("merge", merge.format, &err);
+        return Err(err);
+    }
 
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
-    if merge.dry_run {
+    let (summary, action) = if merge.dry_run {
         // Dry-run shape preview: load each file to confirm shape
         // before reporting the action. The full validate+write
         // pass would be the same minus the final `fs::write` /
         // `fs::remove_file`.
-        let summary = preview_merge(&merge.modules_root, &merge.target, &sources)?;
-        println!(
-            "dry-run: would merge {} source(s) into {}",
-            summary.merged_sources.len(),
-            summary.target.display()
-        );
-        return Ok(());
+        (
+            preview_merge(&merge.modules_root, &merge.target, &sources)?,
+            "dry-run",
+        )
+    } else {
+        (
+            merge_modules(&merge.modules_root, &merge.target, &sources)?,
+            "applied",
+        )
+    };
+    let merge_outcome = MergeOutcome {
+        outcome: MutationOutcome {
+            verb: "merge",
+            action,
+            gate: gate.outcome(),
+            files_written: vec![summary.target.display().to_string()],
+            files_deleted: summary
+                .merged_sources
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+        },
+        target: summary.target.display().to_string(),
+    };
+    match OutputFormat::resolve(merge.format) {
+        OutputFormat::Text => {
+            if merge.dry_run {
+                println!(
+                    "dry-run: would merge {} source(s) into {}",
+                    summary.merged_sources.len(),
+                    summary.target.display()
+                );
+            } else {
+                println!("{}", summary.summary_line());
+            }
+        }
+        format => print_outcome_json(&merge_outcome, format)?,
     }
-    let summary = merge_modules(&merge.modules_root, &merge.target, &sources)?;
-    println!("{}", summary.summary_line());
     Ok(())
 }
 
@@ -428,19 +487,45 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     // anonymous statements, so removing it leaves the partition
     // unchanged). For non-empty `--force` deletions we run the full
     // gate against the post-delete partition.
-    if !all_empty {
+    let gate_outcome = if all_empty {
+        GateOutcome::NotRequired
+    } else {
         let gate = Gate::from_cli(
             args.no_verify,
             args.owner_graph_path.as_deref(),
             args.source_root.as_deref(),
         )?;
-        gate.check(&args.modules_root, || {
+        if let Err(err) = gate.check(&args.modules_root, || {
             post_delete_spec(&args.modules_root, &paths_abs)
-        })?;
-    }
+        }) {
+            emit_gate_rejection_json("delete", args.format, &err);
+            return Err(err);
+        }
+        gate.outcome()
+    };
 
     let summary = delete_modules(&paths_abs, args.dry_run)?;
-    println!("{}", summary.summary_line());
+    let delete_outcome = DeleteOutcome {
+        outcome: MutationOutcome {
+            verb: "delete",
+            action: if summary.dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            gate: gate_outcome,
+            files_written: Vec::new(),
+            files_deleted: summary
+                .deleted
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+        },
+    };
+    match OutputFormat::resolve(args.format) {
+        OutputFormat::Text => println!("{}", summary.summary_line()),
+        format => print_outcome_json(&delete_outcome, format)?,
+    }
     Ok(())
 }
 
@@ -764,6 +849,7 @@ mod tests {
             force: false,
             owner_graph_path: None,
             source_root: None,
+            format: Some(OutputFormat::Text),
         };
         run_delete(args).expect("bare path resolves to the .yaml file");
         assert!(

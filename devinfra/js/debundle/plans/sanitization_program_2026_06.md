@@ -139,6 +139,11 @@ documented `gate list/describe` follow-up works; split
 `DEBUNDLE_SOURCE_ROOT`'s double meaning; `.ok()?` swallow and sentinel-hack
 fixes.
 
+_Status (2026-06-11): landed — structured rejections + shared
+`MutationOutcome` schema (`cli/outcome.rs`), rejection artifacts on
+edit-gate and `run --dry-run` rejections, `DEBUNDLE_TREE_SOURCE_ROOT`
+split, `.ok()?` and sentinel fixes. TODO section removed._
+
 ## Track F — test infrastructure (week 3)
 
 1. **Randomized differentials**: proptest-generated owner graphs +

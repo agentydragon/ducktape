@@ -21,26 +21,44 @@
 //! `post_delete_spec`, `post_assign_spec`) and then calls
 //! `gate_post_edit_partition` which is the single entry point
 //! responsible for verdict + diagnostic rendering. The function bails
-//! with an `anyhow::Error` carrying the same `render_cycle_summary` /
-//! `render_atomic_unit_conflict_summary` text the materializer emits
-//! when its own gate rejects, so authors see one consistent
-//! diagnostic regardless of whether the rejection came from `debundle
-//! run` or a CLI edit verb.
+//! with a [`GateRejection`] error carrying the same
+//! `render_cycle_summary` / `render_atomic_unit_conflict_summary`
+//! text the materializer emits when its own gate rejects, so authors
+//! see one consistent diagnostic regardless of whether the rejection
+//! came from `debundle run` or a CLI edit verb. The error also
+//! carries a machine-readable [`GateRejectionReport`] payload (the
+//! same `BlockingSccEntry` / `AtomicUnitConflictReport` projections
+//! the pipeline writes to disk), which the CLI dispatchers serialize
+//! to stdout when a JSON format is selected.
+//!
+//! On rejection the gate also writes the same on-disk artifacts the
+//! pipeline writes — `cycles.json` / `atomic_unit_conflicts.json` as
+//! siblings of the supplied `owner_graph.json` (the location
+//! `debundle gate list/describe` reads by default) — so the
+//! documented `gate` follow-up queries work after an edit-gate or
+//! `--dry-run` rejection. Stale artifacts from a previous rejection
+//! are removed when the gate passes (or when the rejection kind
+//! changes), keeping `gate list` consistent with the latest verdict.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ::gate::{render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization};
+use ::gate::{
+    BlockingSccEntry, render_atomic_unit_conflict_summary, render_cycle_summary,
+    validate_factorization,
+};
 use analysis::{
-    AtomicUnit, AtomicUnitConflict, ConflictingClaim, ModuleId, OwnerGraph, OwnerGraphReport,
-    OwnerId, Partition, compute_atomic_units,
+    AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleId,
+    OwnerGraph, OwnerGraphReport, OwnerId, Partition, compute_atomic_units,
 };
 use anonymous_resolution::{
     AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,
     resolve_member_selector_claims,
 };
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 use serde_yaml::Value;
 use spec::{AnonymousStatementSelector, ModulePath};
 use spec_modules::{
@@ -95,6 +113,16 @@ impl<'a> Gate<'a> {
         !matches!(self, Self::Skip)
     }
 
+    /// The [`GateOutcome`] label a successful edit reports for this
+    /// validation mode.
+    pub fn outcome(&self) -> crate::outcome::GateOutcome {
+        match self {
+            Self::Run { .. } => crate::outcome::GateOutcome::Passed,
+            Self::NamesOnly => crate::outcome::GateOutcome::NamesOnly,
+            Self::Skip => crate::outcome::GateOutcome::Skipped,
+        }
+    }
+
     /// Run the realizability + atom-split gate against the post-edit
     /// spec when this is [`Gate::Run`]. `post_spec` is lazy so
     /// skipped gates don't pay for spec assembly.
@@ -110,6 +138,75 @@ impl<'a> Gate<'a> {
             Self::NamesOnly | Self::Skip => Ok(()),
         }
     }
+}
+
+/// Machine-readable projection of a realizability-gate rejection.
+/// Reuses the canonical wire shapes the pipeline writes on rejection
+/// (`cycles.json` → [`BlockingSccEntry`], `atomic_unit_conflicts.json`
+/// → [`AtomicUnitConflictReport`]) — there is no parallel schema.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GateRejectionReport {
+    /// The post-edit spec splits one or more atomic units across
+    /// destination modules.
+    AtomSplit {
+        conflicts: Vec<AtomicUnitConflictReport>,
+    },
+    /// The post-edit module quotient carries blocking SCCs; each entry
+    /// names the SCC's module paths and the binding-pair cut edges.
+    UnrealizableCycles {
+        blocking_sccs: Vec<BlockingSccEntry>,
+    },
+}
+
+/// Error returned by [`gate_post_edit_partition`] on rejection. The
+/// `Display` text is the terse one-line verdict (the blame report has
+/// already gone to stderr); `report` is the structured payload CLI
+/// dispatchers serialize to stdout under a JSON format.
+#[derive(Debug)]
+pub struct GateRejection {
+    pub report: GateRejectionReport,
+    message: &'static str,
+}
+
+impl fmt::Display for GateRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.message)
+    }
+}
+
+impl std::error::Error for GateRejection {}
+
+/// Write a rejection artifact next to `owner_graph_path` — the
+/// default location `debundle gate list/describe/cut` resolves
+/// (`GateCommonArgs::resolved_cycles_path`).
+fn write_rejection_artifact<T: Serialize>(
+    owner_graph_path: &Path,
+    filename: &str,
+    value: &T,
+) -> Result<()> {
+    let path = rejection_artifact_path(owner_graph_path, filename);
+    fs::write(&path, serde_json::to_string_pretty(value)?)
+        .with_context(|| format!("writing {}", path.display()))
+}
+
+/// Remove a stale rejection artifact so `gate list` reflects the
+/// latest gate verdict (a missing `cycles.json` is the documented
+/// clean state). A pass clears both artifacts; each rejection kind
+/// clears the other kind's file.
+fn remove_rejection_artifact(owner_graph_path: &Path, filename: &str) -> Result<()> {
+    let path = rejection_artifact_path(owner_graph_path, filename);
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("removing stale {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn rejection_artifact_path(owner_graph_path: &Path, filename: &str) -> PathBuf {
+    owner_graph_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(filename)
 }
 
 #[derive(Debug, Clone)]
@@ -397,18 +494,50 @@ pub fn gate_post_edit_partition(
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
+        let conflicts = AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path);
+        write_rejection_artifact(
+            owner_graph_path,
+            output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+            &conflicts,
+        )?;
+        remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
         let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
-        bail!("realizability gate rejected the edit (atom-split)");
+        return Err(GateRejection {
+            report: GateRejectionReport::AtomSplit { conflicts },
+            message: "realizability gate rejected the edit (atom-split)",
+        }
+        .into());
     }
 
     // Check 2 — module-quotient cycles.
     let report = validate_factorization(&owner_graph, &partition, &module_path);
     if !report.cycles.is_empty() {
+        let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
+        write_rejection_artifact(
+            owner_graph_path,
+            output_layout::CYCLES_REPORT,
+            &blocking_sccs,
+        )?;
+        remove_rejection_artifact(
+            owner_graph_path,
+            output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+        )?;
         let summary = render_cycle_summary(&report.cycles);
         eprintln!("error: post-edit spec is unrealizable:\n{summary}");
-        bail!("realizability gate rejected the edit");
+        return Err(GateRejection {
+            report: GateRejectionReport::UnrealizableCycles { blocking_sccs },
+            message: "realizability gate rejected the edit",
+        }
+        .into());
     }
+    // Pass: clear stale rejection artifacts from a previous rejected
+    // edit/run so `gate list` reports the documented clean state.
+    remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
+    remove_rejection_artifact(
+        owner_graph_path,
+        output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
+    )?;
     Ok(())
 }
 

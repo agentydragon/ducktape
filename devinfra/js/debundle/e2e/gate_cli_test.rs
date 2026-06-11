@@ -21,11 +21,11 @@ use std::process::Command;
 
 use debundle_e2e_support::*;
 
-/// Reject a two-module at-init cycle through the real pipeline:
+/// A two-module at-init cycle the gate must reject:
 /// `mod_x = {A, D}` where `D = wrap(C)` reads `C` from `mod_y`, and
 /// `mod_y = {B, C}` where `B = wrap(A)` reads `A` from `mod_x`.
-fn rejected_cycle_fixture() -> RejectedFixture {
-    run_rejection_fixture(FixtureOpts::new(
+fn cycle_fixture_opts() -> FixtureOpts<'static> {
+    FixtureOpts::new(
         r#"function wrap(x) { return { ref: x }; }
 const A = "a";
 const B = wrap(A);
@@ -38,7 +38,11 @@ export { A, B, C, D };
             logical_module("mod_x", &[Member::new("A"), Member::new("D")]),
             logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
         ],
-    ))
+    )
+}
+
+fn rejected_cycle_fixture() -> RejectedFixture {
+    run_rejection_fixture(cycle_fixture_opts())
 }
 
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
@@ -208,6 +212,51 @@ fn gate_unknown_id_fails_cleanly() {
     assert!(
         stderr.contains("no blocking SCC with id 99"),
         "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn dry_run_rejection_materializes_gate_artifacts() {
+    // `debundle run --dry-run` keeps the no-output contract on the
+    // accept path, but a gate rejection must still write
+    // owner_graph.json + cycles.json at the standard report location
+    // so the documented `gate list/describe` follow-up works on the
+    // rejection that was just reported.
+    let rejected = run_dry_run_rejection_fixture(cycle_fixture_opts());
+    assert!(
+        !rejected.out_root.join("app").exists(),
+        "dry-run must not emit the JS tree"
+    );
+
+    let parsed = gate_json(&[
+        "gate",
+        "list",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
+
+    let parsed = gate_json(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    let modules: BTreeSet<&str> = parsed["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert_eq!(modules, BTreeSet::from(["mod_x", "mod_y"]), "{parsed}");
+    assert!(
+        !parsed["evidence"].as_array().unwrap().is_empty(),
+        "describe must recompute evidence from the dry-run owner graph: {parsed}"
     );
 }
 

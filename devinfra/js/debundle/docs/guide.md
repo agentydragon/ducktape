@@ -19,6 +19,11 @@ export DEBUNDLE_OUT=<debundle-output-root>
 
 Flags win when both are set. Use this for one-off overrides.
 
+`DEBUNDLE_SOURCE_ROOT` feeds only the query commands' `--source-root`
+(the upstream snapshot root). `debundle run --tree-source-root` — the
+spec-tree compile root — reads the separate `DEBUNDLE_TREE_SOURCE_ROOT`,
+since the two roots are different directories in real corpora.
+
 If remote execution downloads only minimal outputs, request full outputs
 so side files are local:
 

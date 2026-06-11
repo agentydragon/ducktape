@@ -24,7 +24,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) chunk_id: &'a str,
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
-    pub(super) report_out_dir: Option<&'a Path>,
+    pub(super) report_emission: &'a ReportEmission,
     /// Program-level cross-module purity output; this chunk's entries land
     /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
     pub(super) cross_module_purities: &'a super::cross_module::CrossModulePurities,
@@ -74,7 +74,7 @@ pub(super) fn materialize_logical_chunk(
         chunk_id,
         file,
         target_dir,
-        report_out_dir,
+        report_emission,
         cross_module_purities,
     } = context;
     let ChunkSpec {
@@ -318,7 +318,7 @@ pub(super) fn materialize_logical_chunk(
     });
     validate_and_emit_reports(
         chunk_id,
-        report_out_dir,
+        report_emission,
         &factorization,
         &factorization_report,
         &mut timings,
@@ -532,13 +532,28 @@ fn collect_analysis_hints(
 /// Write per-chunk validation reports (owner graph, atomic-unit
 /// conflicts, cycles) and bail with a human-readable summary when
 /// the spec is unrealizable.
+///
+/// Under [`ReportEmission::OnRejection`] (the `debundle run
+/// --dry-run` mode) the accept path writes nothing, but a rejection
+/// still writes `owner_graph.json` plus the rejection evidence so
+/// the documented `debundle gate list/describe` follow-up works.
 fn validate_and_emit_reports(
     chunk_id: &str,
-    report_out_dir: Option<&Path>,
+    report_emission: &ReportEmission,
     factorization: &ChunkFactorization,
     factorization_report: &::gate::FactorizationReport,
     timings: &mut PhaseTimings,
 ) -> Result<()> {
+    let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
+        || !factorization_report.cycles.is_empty();
+    // Full mode writes the owner graph unconditionally; OnRejection
+    // writes it only alongside rejection evidence (`gate describe`
+    // recomputes per-edge blame from it).
+    let report_out_dir = if rejected {
+        report_emission.rejection_dir()
+    } else {
+        report_emission.full_dir()
+    };
     if let Some(report_out_dir) = report_out_dir {
         let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
             factorization.owner_graph_report()

@@ -32,12 +32,16 @@ Mutating commands validate by default: `bindings assign`, `bindings
 unassign`, `modules merge`, and `modules delete` (of non-empty
 modules, with `--force`) run the realizability gate; `bindings
 rename` runs name-collision detection. `--dry-run` previews,
-`--no-verify` skips. Read-only commands accept `--format
-text|json|ndjson` (default `text` on tty, `json` on pipe).
+`--no-verify` skips. Read-only and mutating commands accept
+`--format text|json|ndjson` (default `text` on tty, `json` on pipe);
+the five mutating verbs share one JSON outcome schema, and gate
+rejections print a structured rejection object on stdout (see
+`docs/cli.md`).
 
 Common arg paths accept env-var defaults (`DEBUNDLE_GRAPH`,
-`DEBUNDLE_MODULES`, `DEBUNDLE_SOURCE_ROOT`, `DEBUNDLE_OUT`). Set them
-once per session.
+`DEBUNDLE_MODULES`, `DEBUNDLE_SOURCE_ROOT`, `DEBUNDLE_OUT`;
+`run --tree-source-root` reads the separate
+`DEBUNDLE_TREE_SOURCE_ROOT`). Set them once per session.
 
 ## Getting started
 

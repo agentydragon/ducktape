@@ -11,7 +11,10 @@ use artifact::load_js_chunks;
 use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
-use lowering::{MaterializeLogicalModulesOptions, UnmatchedSpecClaim, materialize_logical_modules};
+use lowering::{
+    MaterializeLogicalModulesOptions, ReportEmission, UnmatchedSpecClaim,
+    materialize_logical_modules,
+};
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
@@ -61,7 +64,9 @@ pub struct TransformArgs {
     #[arg(long = "tree-vendor-marks")]
     pub tree_vendor_marks: Option<PathBuf>,
     /// Root for source-relative paths embedded in the tree-shaped config YAML.
-    #[arg(long = "tree-source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    /// Deliberately NOT `DEBUNDLE_SOURCE_ROOT`: that env var is the query
+    /// commands' upstream-snapshot root, a different directory in real corpora.
+    #[arg(long = "tree-source-root", env = "DEBUNDLE_TREE_SOURCE_ROOT")]
     pub tree_source_root: Option<PathBuf>,
     /// Output root used when compiling tree-shaped authoring sources.
     #[arg(long = "out-root", env = "DEBUNDLE_OUT")]
@@ -214,10 +219,16 @@ pub fn run_transform_cli_with_options(
                     chunk_ids: materialise_chunk_ids,
                     file,
                     prune_other_chunks,
-                    report_out_dir: if options.dry_run {
-                        None
-                    } else {
-                        report_out_dir
+                    // Dry-run keeps the no-output contract on the
+                    // accept path but still materializes rejection
+                    // evidence (owner graph + cycles/conflicts) at the
+                    // same reports/tree/<chunk>/ location a real run
+                    // uses, so `debundle gate list/describe` works on
+                    // the rejection that was just reported.
+                    report_emission: match report_out_dir {
+                        Some(dir) if options.dry_run => ReportEmission::OnRejection(dir),
+                        Some(dir) => ReportEmission::Full(dir),
+                        None => ReportEmission::None,
                     },
                     target_dir,
                 },

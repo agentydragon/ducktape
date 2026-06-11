@@ -650,6 +650,9 @@ pub struct Fixture {
 pub struct RejectedFixture {
     pub stderr: String,
     pub report_root: PathBuf,
+    /// The `write_js_tree` output root, exposed so dry-run callers can
+    /// assert the no-output contract (only `reports/` may exist).
+    pub out_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -734,12 +737,25 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, required_substring
 }
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &[])
+}
+
+/// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
+/// Dry-run skips all emitted-JS and accept-path report writes but
+/// still materializes rejection evidence (`owner_graph.json` +
+/// `cycles.json` / `atomic_unit_conflicts.json`) under the standard
+/// per-chunk report layout.
+pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--dry-run"])
+}
+
+fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform(&spec_path);
+    let result = spawn_transform_with_args(&spec_path, extra_args);
     assert!(
         !result.status.success(),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
@@ -749,6 +765,7 @@ pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     RejectedFixture {
         stderr: result.stderr,
         report_root: setup.report_root,
+        out_root: setup.out_root,
         _root: setup.root,
     }
 }
@@ -1075,6 +1092,21 @@ pub struct CommandResult {
 
 fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
+}
+
+fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
+    let bin = debundler_path();
+    let mut command = Command::new(&bin);
+    command.arg("run").arg("--spec").arg(spec_path);
+    command.args(extra_args);
+    let output = command
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
 }
 
 /// Run `debundle run --spec <path> [--package-root <name>=<dir> ...]` and return its

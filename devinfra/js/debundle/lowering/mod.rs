@@ -209,12 +209,47 @@ pub struct RequestedLogicalModule {
     pub residual: bool,
 }
 
+/// Where (and when) per-chunk validation reports are written.
+#[derive(Debug, Clone)]
+pub enum ReportEmission {
+    /// No reports.
+    None,
+    /// Write every per-chunk report (owner graph, modules report,
+    /// rejection evidence) under this root. The directory is prepared
+    /// (must be empty) up front.
+    Full(PathBuf),
+    /// Write reports only when the realizability gate rejects. Used by
+    /// `debundle run --dry-run`: the accept path writes nothing (the
+    /// no-output contract), but a rejection still materializes
+    /// `owner_graph.json` + `cycles.json` / `atomic_unit_conflicts.json`
+    /// so the documented `debundle gate list/describe` follow-up works.
+    OnRejection(PathBuf),
+}
+
+impl ReportEmission {
+    /// Root for accept-path reports (owner graph, modules report).
+    pub fn full_dir(&self) -> Option<&Path> {
+        match self {
+            Self::Full(dir) => Some(dir),
+            Self::None | Self::OnRejection(_) => None,
+        }
+    }
+
+    /// Root for rejection evidence (written on gate rejection).
+    pub fn rejection_dir(&self) -> Option<&Path> {
+        match self {
+            Self::Full(dir) | Self::OnRejection(dir) => Some(dir),
+            Self::None => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
     pub chunk_ids: Vec<String>,
     pub file: Option<String>,
     pub prune_other_chunks: bool,
-    pub report_out_dir: Option<PathBuf>,
+    pub report_emission: ReportEmission,
     pub target_dir: String,
 }
 
@@ -240,10 +275,8 @@ pub fn materialize_logical_modules(
         }
     }
 
-    let mut report_out_dir = None;
-    if let Some(dir) = &options.report_out_dir {
+    if let Some(dir) = options.report_emission.full_dir() {
         prepare_output_dir(dir)?;
-        report_out_dir = Some(dir.clone());
     }
 
     if options.prune_other_chunks {
@@ -277,7 +310,7 @@ pub fn materialize_logical_modules(
                             chunk_id,
                             file: options.file.as_deref(),
                             target_dir: &target_dir,
-                            report_out_dir: report_out_dir.as_deref(),
+                            report_emission: &options.report_emission,
                             cross_module_purities: &cross_module_purities,
                         },
                         spec: ChunkSpec {
@@ -296,7 +329,7 @@ pub fn materialize_logical_modules(
     let mut applied = Vec::<SelectedModuleLowering>::new();
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
     for chunk_result in &chunk_results {
-        if let Some(report_out_dir) = &report_out_dir {
+        if let Some(report_out_dir) = options.report_emission.full_dir() {
             write_chunk_report_json(
                 report_out_dir,
                 artifact.chunk_table.name(chunk_result.chunk_id),

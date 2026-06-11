@@ -12,8 +12,8 @@ on-stderr convention as the rest of ducktape.
 ## Convention: validate-by-default for mutating commands
 
 Every command that **modifies the spec** (`bindings assign`,
-`bindings unassign`, `bindings rename`, `modules merge`) runs
-validation **by default** before
+`bindings unassign`, `bindings rename`, `modules merge`,
+`modules delete`) runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's
 factorization (anything that moves a binding between modules), that
 means the full realizability gate; for renames, it means name-
@@ -35,8 +35,12 @@ the gate would reject and you want to inspect the intermediate
 state without committing to it.
 
 `debundle run --dry-run` is separate: it runs pipeline parse/facts/gate
-checks and skips all emitted JS and report writes. There is no
-`debundle run --no-verify`.
+checks and skips emitted-JS and accept-path report writes. A gate
+rejection still writes `owner_graph.json` plus the rejection evidence
+(`cycles.json` / `atomic_unit_conflicts.json`) under
+`reports/tree/<chunk>/`, so `gate list` / `gate describe` work on the
+rejection that was just reported. There is no `debundle run
+--no-verify`.
 
 Read-only commands (queries, listings, source slicing) take
 neither flag — they have no side effects.
@@ -114,13 +118,13 @@ the right primitive.
 
 ### Quotient queries
 
-| Command                                                                                | Mutates? | Function                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no       | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.)                                                                                                                                                                                 |
-| `debundle cluster <sym>`                                                               | no       | List the module-quotient neighbors of a binding's owner. `<sym>` may be passed positionally or as `--binding <sym>`. Each neighbor (and the home module) is reported as both its interned `logical:N` id and its human path `label`, so output is legible without a second `describe`.                                                                 |
-| `debundle gate list`                                                                   | no       | List every blocking SCC in `cycles.json`. One row per entry: id, modules count, cut size. (Streaming via `--format ndjson`.) A missing `cycles.json` is the clean state — the pipeline writes it only on rejection — so it reports zero blocking SCCs (`[]`) and exits 0, distinct from a present-but-malformed file (which errors).                   |
-| `debundle gate describe <id> [--binding <sym>]`                                        | no       | Full picture for one blocking SCC: modules list, cut, plus the per-edge evidence recomputed on demand from `owner_graph.json` and the SCC's module set. Renders the same per-binding-pair blame view the realizability gate emits to stderr at rejection time. `--binding` narrows evidence to one symbol's contribution (handy for 1000-module SCCs). |
-| `debundle gate cut <id>`                                                               | no       | Just the cut edges for one blocking SCC. The actionable subset — spec authors read this to pick which back-edge to break.                                                                                                                                                                                                                              |
+| Command                                                                                | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no       | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.)                                                                                                                                                                                                                            |
+| `debundle cluster <sym>`                                                               | no       | List the module-quotient neighbors of a binding's owner. `<sym>` may be passed positionally or as `--binding <sym>`. Each neighbor (and the home module) is reported as both its interned `logical:N` id and its human path `label`, so output is legible without a second `describe`.                                                                                                            |
+| `debundle gate list`                                                                   | no       | List every blocking SCC in `cycles.json`. One row per entry: id, modules count, cut size. (Streaming via `--format ndjson`.) A missing `cycles.json` is the clean state — the pipeline and the edit gate write it only on rejection, and a passing edit gate clears a stale one — so it reports zero blocking SCCs (`[]`) and exits 0, distinct from a present-but-malformed file (which errors). |
+| `debundle gate describe <id> [--binding <sym>]`                                        | no       | Full picture for one blocking SCC: modules list, cut, plus the per-edge evidence recomputed on demand from `owner_graph.json` and the SCC's module set. Renders the same per-binding-pair blame view the realizability gate emits to stderr at rejection time. `--binding` narrows evidence to one symbol's contribution (handy for 1000-module SCCs).                                            |
+| `debundle gate cut <id>`                                                               | no       | Just the cut edges for one blocking SCC. The actionable subset — spec authors read this to pick which back-edge to break.                                                                                                                                                                                                                                                                         |
 
 The `gate` namespace names what is rejecting: the realizability
 gate. It complements `scc` (which lists every quotient SCC,
@@ -164,6 +168,12 @@ flag and an env var; the flag wins if both are set.
 | `--modules <dir>`     | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                                                |
 | `--source-root <dir>` | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes. Needed by `show-source`, by `describe` for IDs that resolve to a source location, and by `modules propose` to annotate anonymous-statement selector addressability. |
 
+`debundle run --tree-source-root` (the spec-tree compile root for
+source-relative paths in the tree-shaped config) reads its own env
+var, `DEBUNDLE_TREE_SOURCE_ROOT` — deliberately **not**
+`DEBUNDLE_SOURCE_ROOT`, because the two roots are different
+directories in real corpora (spec tree vs. upstream snapshot).
+
 Setting all three env vars in the shell once per session lets
 commands run without repeating the flags:
 
@@ -197,12 +207,29 @@ selection itself is a proposal/diagnostic id or `--include-proposals`
 is passed. Proposal-derived JSON fields are omitted when the factorizer
 is skipped.
 
-Mutating commands (`bindings assign`, `bindings unassign`,
-`bindings rename`, `modules merge`, `modules delete`) print a
-one-line "ok" / "would change N
-files" / "rejected" result. Combined with `--dry-run` they
-currently print only the verdict; a structured diff (post-mutation
-YAML preview) is a documented TODO in the codebase but not in v1.
+The five mutating verbs (`bindings assign`, `bindings unassign`,
+`bindings rename`, `modules merge`, `modules delete`) take the same
+`--format` flag with the same tty/pipe default. Under `text` they
+print a one-line "ok" / "would change N files" / "rejected" result.
+Under a JSON format each verb prints **one outcome object** sharing
+a common schema core:
+
+| Field           | Values                                                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `verb`          | `assign` \| `unassign` \| `rename` \| `merge` \| `delete`                                                                         |
+| `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                     |
+| `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the partition); success outcomes only |
+| `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                      |
+| `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                      |
+
+Verb-specific fields flatten in alongside the core: `moves_applied`
+(assign), `unassigned` (unassign), `binding` / `old_readable` /
+`new_readable` (rename), `target` (merge). Gate rejections replace
+the success object with a structured rejection object — see
+"Rejection diagnostics" below. Combined with `--dry-run` the outcome
+reports only the verdict and planned file set; a structured diff
+(post-mutation YAML preview) is a documented TODO in the codebase
+but not in v1.
 
 ## Batch atomicity (`bindings assign`)
 
@@ -344,8 +371,24 @@ the existing binding holding the name, the binding the rename
 would have given it.
 
 Both diagnostic shapes go to stderr; the command exits non-zero.
-With `--format json` the diagnostic is also serialized to stdout
-as a structured object so machine readers can parse it.
+Under a JSON format (explicit `--format json|ndjson`, or stdout is a
+pipe) a realizability-gate rejection additionally prints one
+structured object on stdout so machine readers don't scrape the
+prose: `{verb, action: "rejected", rejection}`, where
+`rejection.kind` is `atom_split` (with `conflicts`, the canonical
+`AtomicUnitConflictReport` projection) or `unrealizable_cycles`
+(with `blocking_sccs`, the canonical `BlockingSccEntry` projection).
+These are the **same wire shapes** `atomic_unit_conflicts.json` /
+`cycles.json` carry — there is no parallel rejection schema.
+
+Edit-gate rejections (including `--dry-run` probes) also write those
+artifacts to disk as siblings of `--graph` — the default location
+`gate list` / `gate describe` / `gate cut` read — so the documented
+follow-up queries work on the rejection that was just reported. A
+subsequent edit that passes the gate clears the stale artifacts.
+`debundle run` (and `run --dry-run`) writes the same files under
+`reports/tree/<chunk>/`, which is the same sibling-of-`owner_graph.json`
+layout.
 
 ## Out of scope
 

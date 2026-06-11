@@ -70,7 +70,7 @@ fn rename_round_trip_validates_then_writes() {
         "members:\n  - selector: { binding: { name: XOe } }\n",
     );
     let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
-    assert_eq!(out.action, "renamed");
+    assert_eq!(out.outcome.action, "applied");
     let body = read(root, "m.yaml");
     let doc: Value = serde_yaml::from_str(&body).unwrap();
     assert_eq!(doc["members"][0]["name"].as_str(), Some("PluginSettings"));
@@ -83,7 +83,7 @@ fn rename_dry_run_skips_write() {
     let body0 = "members:\n  - selector: { binding: { name: XOe } }\n";
     write(root, "m.yaml", body0);
     let out = rename_binding(root, "XOe", "PluginSettings", true, false).unwrap();
-    assert_eq!(out.action, "dry-run");
+    assert_eq!(out.outcome.action, "dry-run");
     assert_eq!(read(root, "m.yaml"), body0);
 }
 
