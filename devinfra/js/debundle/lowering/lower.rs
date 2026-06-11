@@ -15,8 +15,10 @@ use super::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
 };
-use super::scope_names::{collect_local_binding_names, collect_occupied_local_names};
-use super::util::{is_valid_js_identifier, remaining_item_after_selection};
+use super::scope_names::{
+    collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
+};
+use super::util::remaining_item_after_selection;
 use super::*;
 use crate::time_phase;
 
@@ -190,16 +192,25 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // and "Lemma 2".
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
-    let mut occupied = collect_occupied_local_names(&entry_body);
-    // Entry-body renames flow through a dedicated ledger: the accepted
-    // chunk_renames entries (Explicit) and the entry import-local mints
-    // (ImportInduced) submit Chunk-scope intents below; the sealed
-    // projection is the `body_renames` map the entry renamer applies.
-    // The two contributors' source sets are disjoint by construction —
-    // chunk_renames seeding skips module-owned bindings, mints fire only
-    // for module-owned bindings — so a seal conflict can only come from
-    // one contributor disagreeing with itself.
+    // Entry-body renames flow through a dedicated ledger: the
+    // chunk_renames entries staying in entry (Explicit) and the entry
+    // import-local mints (ImportInduced) submit Chunk-scope intents
+    // below; the sealed projection is the `body_renames` map the entry
+    // renamer applies. The two contributors' source sets are disjoint by
+    // construction — chunk_renames seeding skips module-owned bindings,
+    // mints fire only for module-owned bindings — so a seal conflict can
+    // only come from one contributor disagreeing with itself.
+    //
+    // Occupancy facts for seal validation: the post-split entry body's
+    // top-level names (root) and everything bound below them (nested).
+    // Seal rejects chunk_renames targets colliding at the root level —
+    // collecting every violation in one error — and asserts mints stayed
+    // clear of both levels; nested-capture facts come from the rename
+    // walk below.
+    let entry_root_names = collect_occupied_local_names(&entry_body);
+    let entry_nested_names = collect_nested_binding_names(&entry_body);
     let mut entry_ledger = RenameLedger::default();
+    entry_ledger.seed_taken(RenameScope::Chunk, entry_root_names.iter().cloned());
     // Submit `chunk_renames` intents for bindings staying in entry's
     // body (not claimed by any logical module). Bindings owned by a
     // logical module take their rename from the module plan via the
@@ -207,64 +218,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // bindings are silently dropped here (the logical-module rename
     // wins).
     //
-    // Each accepted target name is reserved in `occupied` before the
-    // import-disambiguation pass runs, so a later cross-module
-    // import doesn't mint a fresh local that collides with one of
-    // the chunk_renames' targets. Conflicting targets (target name
-    // already taken by a body local that isn't being renamed away,
-    // or by another chunk_renames entry, or invalid as an
-    // identifier) bail rather than producing invalid JS silently.
-    let mut renamed_away = BTreeSet::<String>::new();
-    for binding in chunk_renames.keys() {
-        if is_module_owned(binding) {
-            continue;
-        }
-        renamed_away.insert(binding.clone());
-    }
-    // Iterate `chunk_renames` (a `HashMap`) in sorted order so the
-    // collected error list and the ledger's intent order are stable.
-    // Collect every violation rather than `bail!`ing on the first one
-    // so a spec author sees the full set in one round-trip; the
-    // "duplicate target" branch in particular only surfaces after
-    // `occupied.insert` returned false, so the earlier-rename whose
-    // target was duplicated is implied by the sort order.
+    // Each target name is claimed before the import-disambiguation pass
+    // runs, so a later cross-module import doesn't mint a fresh local
+    // that collides with one of the chunk_renames' targets. Iterate
+    // `chunk_renames` (a `HashMap`) in sorted order so the ledger's
+    // intent order is stable.
+    // `entry_candidate_renames` mirrors the submitted intents so the
+    // rename walk below can run before seal and report precise capture
+    // facts into it; seal's Chunk projection reproduces this map exactly
+    // (debug-asserted below). The pre-seal walk is PR-4-deletable
+    // scaffolding, like the naturalizer's derive preview.
+    let mut entry_candidate_renames = BTreeMap::<String, String>::new();
     let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
     sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
-    let mut errors = Vec::<String>::new();
     for (binding, export_name) in sorted_renames {
         if is_module_owned(binding) {
             continue;
         }
-        if !is_valid_js_identifier(export_name) {
-            errors.push(format!(
-                "chunk_renames target {export_name} for binding {binding} is not a valid JS identifier",
-            ));
-            continue;
-        }
-        if export_name != binding {
-            // A body local that's also being renamed away vacates
-            // its slot in `occupied` — it's safe to reuse. Anything
-            // else still in `occupied` would collide.
-            let target_already_taken =
-                occupied.contains(export_name) && !renamed_away.contains(export_name);
-            if target_already_taken {
-                errors.push(format!(
-                    "chunk_renames target {export_name} for binding {binding} collides with an existing top-level local",
-                ));
-                continue;
-            }
-        }
-        if !occupied.insert(export_name.clone()) && export_name != binding {
-            // `occupied.insert` returns false if already present;
-            // for the rename-to-self case (export_name == binding)
-            // that's expected. For any other case the target was
-            // already chosen by a previous chunk_renames entry —
-            // duplicate target.
-            errors.push(format!(
-                "chunk_renames target {export_name} for binding {binding} duplicates an earlier rename target",
-            ));
-            continue;
-        }
+        entry_ledger.claim(RenameScope::Chunk, export_name);
         entry_ledger.submit(RenameIntent {
             scope: RenameScope::Chunk,
             from: top_level_id(binding, chunk_top_level_mark),
@@ -273,11 +244,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 contributor: CHUNK_RENAMES_CONTRIBUTOR,
             },
         });
+        entry_candidate_renames.insert(binding.clone(), export_name.clone());
     }
-    if !errors.is_empty() {
-        bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
-    }
-    occupied.extend(collect_local_binding_names(&entry_body));
+    // Mints must additionally avoid every nested binding name, or the
+    // follow-up body rewrite could capture references meant to resolve
+    // to the import.
+    entry_ledger.seed_taken(RenameScope::Chunk, collect_local_binding_names(&entry_body));
     for (module_index, plan) in module_plans.iter().enumerate() {
         // Drop bindings that don't exist anywhere (no entry in
         // `binding_assignment`). Bindings owned by another plan stay
@@ -310,7 +282,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             continue;
         }
         let mut emit_renames = BTreeMap::<String, String>::new();
-        let resolved = disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
+        let resolved = disambiguate_import_locals(
+            &live_bindings,
+            &mut entry_ledger,
+            RenameScope::Chunk,
+            &mut emit_renames,
+        );
         // A rename only propagates to consumer-body references when the
         // moved decl actually belongs to this plan. Plans that listed a
         // binding without owning the decl emit a dangling import; the
@@ -327,6 +304,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                         contributor: ENTRY_IMPORT_LOCAL_CONTRIBUTOR,
                     },
                 });
+                entry_candidate_renames.insert(local, fresh);
             }
         }
         entry_imports.push((
@@ -348,13 +326,13 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     timings.add("build_entry_imports", build_entry_imports_started.elapsed());
-    // Seal the entry ledger: `body_renames` is its Chunk-scope projection
-    // — exactly the map the pre-ledger code accumulated inline across the
-    // chunk_renames seeding and the import-local mint loop above.
-    let sealed_entry_renames = entry_ledger.seal()?;
-    let body_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
-    let entry_binding_renames = body_renames.clone();
-    if !body_renames.is_empty() {
+    // Rename walk: apply the candidate map before seal so the visitor's
+    // scope stack reports precise capture facts (a target bound nested
+    // is harmless when the source is shadowed there — only the walk can
+    // decide that). When seal rejects below, the bail discards this
+    // (partially renamed) body with the whole run.
+    let mut entry_captured = BTreeSet::new();
+    if !entry_candidate_renames.is_empty() {
         let rename_entry_body_started = Instant::now();
         // Re-exports `export { local }` (without `from`) collapse `local`
         // and the public exported name into a single ident. Renaming the
@@ -362,27 +340,42 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         // consumers — so rewrite them to `export { fresh as local }`
         // before the generic renamer visits the rest.
         for item in entry_body.iter_mut() {
-            preserve_export_specifier_names(item, &body_renames);
+            preserve_export_specifier_names(item, &entry_candidate_renames);
         }
-        let mut renamer = IdentifierRenamer::new(&body_renames);
+        let mut renamer = IdentifierRenamer::new(&entry_candidate_renames);
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
-        if !renamer.captured.is_empty() {
-            // A rename target was bound in a scope where the (un-shadowed)
-            // source is referenced — applying it would capture the
-            // reference. A pre-check can't decide this precisely (a target
-            // bound nested is harmless when the source is shadowed in that
-            // same scope), so the visitor detects it at the exact reference
-            // and we reject here. The body is partially renamed at this
-            // point; bailing discards the run before anything is emitted.
-            bail!(
-                "chunk_renames for chunk {chunk_id} would be captured by a nested binding: {:?}",
-                renamer.captured,
-            );
-        }
+        entry_captured = renamer.captured;
         timings.add("rename_entry_body", rename_entry_body_started.elapsed());
     }
+    // Seal the entry ledger: the single validation point for entry-body
+    // renames. Conflicting targets (target name already taken by a body
+    // local that isn't being renamed away, or chosen by another
+    // chunk_renames entry, invalid as an identifier, or captured by a
+    // nested binding per the walk above) bail here with every violation
+    // listed, rather than producing invalid JS silently. `body_renames`
+    // is the sealed Chunk-scope projection — exactly the map the
+    // pre-ledger code accumulated inline across the chunk_renames
+    // seeding and the import-local mint loop above.
+    let sealed_entry_renames = entry_ledger.seal(&SealValidation {
+        occupancy: BTreeMap::from([(
+            RenameScope::Chunk,
+            ScopeOccupancy::Body {
+                label: chunk_id.to_string(),
+                root: entry_root_names,
+                nested: entry_nested_names,
+                captured: entry_captured,
+            },
+        )]),
+        reserved: BTreeSet::new(),
+    })?;
+    let body_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
+    debug_assert_eq!(
+        body_renames, entry_candidate_renames,
+        "sealed entry renames diverged from the candidate map the pre-seal walk applied",
+    );
+    let entry_binding_renames = body_renames;
     if !entry_imports.is_empty() {
         let splice_entry_imports_started = Instant::now();
         let tail = entry_body.split_off(import_insert_index);
@@ -455,14 +448,20 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             .iter()
             .flat_map(|item| top_level_declaration_names(item).0)
             .collect();
+        // The ledger owns the public-name namespace: seed it with the
+        // source-level public names so `auto_grown_residual_exports`'
+        // mints suffix past them.
         let mut export_ledger = RenameLedger::default();
+        export_ledger.seed_taken(
+            RenameScope::EntryPublicExports,
+            pre_existing_public_export_names.iter().cloned(),
+        );
         auto_grown_residual_exports(
             &body_facts_by_module,
             &ExportGrowthFacts {
                 declaration_by_name,
                 binding_assignment,
                 pre_existing_entry_exports,
-                pre_existing_public_export_names,
                 entry_renames: &entry_binding_renames,
                 entry_declared_names: &entry_declared_names,
             },
@@ -473,8 +472,21 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         // name; the emitted export clause is keyed by entry's
         // post-rename local, so remap through `entry_binding_renames`
         // at application. A single contributor over a set-deduped
-        // source set cannot produce a seal conflict.
-        let sealed_exports = export_ledger.seal()?;
+        // source set cannot produce a seal conflict; the occupancy
+        // check asserts the mints stayed clear of pre-existing public
+        // names.
+        let sealed_exports = export_ledger.seal(&SealValidation {
+            occupancy: BTreeMap::from([(
+                RenameScope::EntryPublicExports,
+                ScopeOccupancy::Body {
+                    label: chunk_id.to_string(),
+                    root: pre_existing_public_export_names.iter().cloned().collect(),
+                    nested: BTreeSet::new(),
+                    captured: BTreeSet::new(),
+                },
+            )]),
+            reserved: BTreeSet::new(),
+        })?;
         let auto_grow: BTreeMap<String, String> = sealed_exports
             .scope_renames_by_name(&RenameScope::EntryPublicExports)
             .into_iter()
@@ -773,16 +785,21 @@ fn lower_single_plan(
     });
     // Import-local mints for this plan's body flow through a per-plan
     // ledger (scope: this plan's `Module`, origin: `ImportInduced`);
-    // the sealed projection below is the rename map the body renamer
-    // applies.
+    // the ledger's taken-name set is seeded with every name bound
+    // anywhere in the body so mints stay capture-free, and the sealed
+    // projection below is the rename map the body renamer applies.
     let module = ModuleId::logical(index);
+    let module_local_names = collect_local_binding_names(&body);
     let mut import_ledger = RenameLedger::default();
+    import_ledger.seed_taken(
+        RenameScope::Module(module),
+        module_local_names.iter().cloned(),
+    );
     let mut import_rename_sink = ImportLocalRenameSink {
         module,
         chunk_top_level_mark,
         ledger: &mut import_ledger,
     };
-    let mut module_import_locals = collect_local_binding_names(&body);
     // All intra-chunk imports (cross-module binding imports, phantom
     // side-effect imports, and the residual-entry import) are
     // collected as `(target ModuleId, decl)` pairs and ordered by ONE
@@ -797,7 +814,6 @@ fn lower_single_plan(
             &plan.target_file,
             cross_module_imports_by_provider,
             factorization,
-            &mut module_import_locals,
             &mut import_rename_sink,
         )
     });
@@ -819,30 +835,41 @@ fn lower_single_plan(
             &plan.target_file,
             residual_entry_imports,
             missing_residual_exports,
-            &mut module_import_locals,
             &mut import_rename_sink,
         )
     })?;
     // Seal the per-plan import ledger; the Module-scope projection is
     // the import-local rename map the pre-ledger code accumulated
-    // across the two minting passes above.
-    let module_import_renames = import_ledger.seal()?.module_renames_by_name(module);
+    // across the two minting passes above. Seal asserts the mints
+    // stayed clear of every name bound anywhere in the body.
+    let module_import_renames = import_ledger
+        .seal(&SealValidation {
+            occupancy: BTreeMap::from([(
+                RenameScope::Module(module),
+                ScopeOccupancy::Body {
+                    label: plan.id.clone(),
+                    root: BTreeSet::new(),
+                    nested: module_local_names,
+                    captured: BTreeSet::new(),
+                },
+            )]),
+            reserved: BTreeSet::new(),
+        })?
+        .module_renames_by_name(module);
     if !module_import_renames.is_empty() {
         let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
-        if !renamer.captured.is_empty() {
-            // Import-local renames are minted against every name bound
-            // anywhere in the body (`collect_local_binding_names`), so a
-            // capture here is an internal invariant violation, not a
-            // user-facing spec error.
-            bail!(
-                "materialize_logical_modules: import-local renames for module {} were captured by a nested binding: {:?}. This is an internal invariant violation in import-local minting.",
-                plan.id,
-                renamer.captured,
-            );
-        }
+        // Import-local renames are minted from the ledger's taken set,
+        // which seal validated against every name bound anywhere in the
+        // body — a capture here would mean seal's guarantee broke.
+        debug_assert!(
+            renamer.captured.is_empty(),
+            "import-local renames for module {} captured despite seal validation: {:?}",
+            plan.id,
+            renamer.captured,
+        );
     }
     // Re-import any source-chunk import-specifier-bound locals that
     // moved code in `body` references but no top-level decl

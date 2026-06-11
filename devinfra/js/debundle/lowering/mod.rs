@@ -94,7 +94,10 @@ use plan_references::{
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
 use plans::{LogicalRequest, MemberRequest, ModulePlan, logical_requests_for_chunk};
-use rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope, SealedRenames};
+use rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+    SealedRenames, merge_module_renames,
+};
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,

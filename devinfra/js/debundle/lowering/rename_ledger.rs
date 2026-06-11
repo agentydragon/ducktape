@@ -8,14 +8,49 @@
 //! pre-ledger code built so the existing application sites (the
 //! string-keyed rename visitors in `visitors.rs`) stay unchanged.
 //!
-//! Current seal validation: no two same-priority intents may disagree on
-//! one `(scope, from)` binding's target — a hard error naming both
-//! contributors. A higher-priority intent (explicit > import-induced >
-//! heuristic) silently wins over a disagreeing lower-priority one.
-//! Target-occupancy / capture validation still happens at the application
-//! sites (`naturalize_module_body`'s root-collision pre-check, the
-//! visitors' `captured` sets); moving it into seal against scope-accurate
-//! occupied sets is PR 3. The single execute pass is PR 4.
+//! ## Seal validation (PR 3 era)
+//!
+//! Seal is the single validation point for ledger renames:
+//!
+//! - **Conflicts**: no two same-priority intents may disagree on one
+//!   `(scope, from)` binding's target — a hard error naming both
+//!   contributors. A higher-priority intent (explicit > import-induced >
+//!   heuristic) silently wins over a disagreeing lower-priority one.
+//! - **Target occupancy**: callers pass per-scope [`ScopeOccupancy`]
+//!   facts in [`SealValidation`]; seal rejects targets the scope already
+//!   binds. Explicit intents failing validation are hard errors carrying
+//!   the same messages the pre-ledger application-site checks raised
+//!   (`invalid chunk_renames spec`, `collides with an existing top-level
+//!   local`, `would be captured by a nested binding`, …). Heuristic
+//!   intents failing validation are dropped silently (over-suppression is
+//!   acceptable; capture is not). Import-induced intents are minted by
+//!   the ledger itself against the same occupancy, so a failure is an
+//!   internal invariant violation.
+//! - **Capture facts, not conservative sets**: capture is
+//!   reference-precise — a target bound in a nested scope is harmless
+//!   when the source is shadowed (or never referenced) inside that scope,
+//!   and the e2e suite pins valid specs of exactly that shape. A flat
+//!   occupied-name set cannot express this, so the caller supplies the
+//!   `(source, target)` pairs the rename visitor's scope stack actually
+//!   withheld ([`ScopeOccupancy::Body::captured`], from the visitor's
+//!   `captured` set on the pre-seal application/preview walk), and seal
+//!   turns them into the hard error. PR 4's executor folds this walk into
+//!   the execute pass itself.
+//!
+//! Scopes without an entry in `SealValidation::occupancy` get conflict
+//! validation only — used by the chunk-level explicit ledger sealed
+//! before lowering, whose intents are re-collected and occupancy-checked
+//! by the downstream ledgers once the post-split bodies exist.
+//!
+//! ## Name minting
+//!
+//! The ledger owns "names taken in scope": callers seed each scope's
+//! taken set from the body's occupied names ([`RenameLedger::seed_taken`]
+//! / [`RenameLedger::claim`]) and request fresh names with
+//! [`RenameLedger::mint`], which suffix-mints `base$N` past collisions
+//! (decided 2026-06: the `$N` scheme stays; readability is a later
+//! naturalizer concern). Import-local disambiguation (`import_emit.rs`)
+//! and public-export growth (`exports.rs`) mint through the ledger.
 //!
 //! ## Contract: no structural moves between seal and execute
 //!
@@ -27,19 +62,59 @@
 //! `ChunkPlan`); the contract becomes mechanically enforceable when the
 //! execute-once pass lands (PR 4) and non-execute passes take `&Module`.
 //!
-//! ## Seal points (PR 2 era)
+//! ## Seal points (PR 3 era)
 //!
-//! Contributor derivation is interleaved with application across the
-//! lowering pipeline — a later contributor derives from the AST state an
-//! earlier contributor's application produced (heuristics read the
-//! post-plan-rename body; import-local minting reads the post-naturalize
-//! body) — so PR 2 seals at phase boundaries: each former private rename
-//! map is its own ledger instance, collected and sealed exactly where
-//! that map used to be complete, with the application site consuming the
-//! sealed projection. The instances are listed in the contributor
-//! inventory below. PR 3 (minting as a ledger service, seal-time
-//! occupancy validation) and PR 4 (execute once) collapse them toward a
-//! single collect → seal → execute pass.
+//! Contributor derivation is still interleaved with application across
+//! the lowering pipeline — a later contributor derives from the AST state
+//! an earlier contributor's application produced — so each phase keeps
+//! its own ledger instance, but every instance now seals with occupancy
+//! validation and the application sites only assert seal's guarantee:
+//!
+//! - **Chunk explicit ledger** (`materialize_logical_chunk`): spec
+//!   `chunk_renames` + plan `export_name`s; conflict-validated only (the
+//!   post-split bodies its targets must avoid don't exist yet — its
+//!   intents are re-collected into the two ledgers below, which validate
+//!   occupancy). Sealed before factorization, which consumes the
+//!   Chunk-scope projection.
+//! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
+//!   in entry plus entry import-local mints; seal validates against
+//!   entry's post-split body occupancy.
+//! - **Per-module naturalize ledger** (`naturalize_module_body`): the
+//!   plan's export_name renames (Explicit), free-source return-object
+//!   aliases (Heuristic, `Module` scope), and bound-source scope-local
+//!   heuristics (Heuristic, `Function` scope) — one seal resolves
+//!   explicit-vs-heuristic priority, the module-level target-collision
+//!   rule ([`merge_module_renames`]), and per-scope occupancy.
+//! - **Per-plan import ledger** (`lower_single_plan`): cross-module +
+//!   residual-entry import-local mints; collection needs the
+//!   post-naturalize body facts, so it cannot merge into the naturalize
+//!   ledger until PR 4's execute-once pass removes the intermediate
+//!   application.
+//! - **Export-growth ledger** (`lower_chunk`): auto-grown residual public
+//!   exports (`EntryPublicExports` scope). Collection needs the moved
+//!   bodies' post-naturalize facts and the sealed entry renames, so it
+//!   stays a separate instance until PR 4.
+//!
+//! What still validates at the application site (PR 4 scope):
+//!
+//! - The free-alias subtree-capture filter
+//!   (`naturalize.rs::drop_subtree_captured_targets`): free aliases apply
+//!   function-locally while their intents live at `Module` scope; seal
+//!   checks them against the deriving subtree's bound names when the
+//!   derive pass submits `Function`-scope copies, but the module-level
+//!   occupancy of free-alias targets is not checked (matching pre-ledger
+//!   behavior).
+//! - `chunk_renames` applied to *moved module bodies*
+//!   (`lower_single_plan`'s `cross_module_chunk_renames` pass): the
+//!   entry-side seal validates against entry's body only; a target can
+//!   still collide inside a moved body, and that application keeps its
+//!   reachable bail.
+//! - The derive-phase preview in `naturalize_module_body` (the scratch
+//!   clone + `validated_bound` / `drop_subtree_captured_targets` /
+//!   [`merge_module_renames`] pre-computation): the per-scope derive
+//!   cascade needs each scope's fired map before enclosing scopes derive;
+//!   seal re-derives the same decisions from the submitted facts, and the
+//!   preview is deleted with PR 4's executor.
 //!
 //! ## Hygiene boundary
 //!
@@ -61,44 +136,38 @@
 //!
 //! ## Contributor inventory
 //!
-//! All rename contributors submit intents (PR 2):
+//! All rename contributors submit intents (PR 2) and all validation is
+//! seal-time (PR 3):
 //!
 //! - Spec `chunk_renames` — `chunk_renames.rs::collect_chunk_renames`
-//!   (scope: `Chunk`, origin: `Explicit`; chunk ledger sealed in
-//!   `materialize_logical_chunk`).
+//!   (scope: `Chunk`, origin: `Explicit`; chunk explicit ledger, then
+//!   re-collected into the entry ledger which validates occupancy).
 //! - Plan-driven spec `export_name`s —
 //!   `naturalize.rs::collect_plan_export_rename_intents` (scope:
-//!   `Module`, origin: `Explicit`; same chunk ledger).
-//! - Heuristic bound-source scope-local renames — `naturalize.rs`:
-//!   `collect_naturalization_renames_from_pattern`,
-//!   `collect_naturalization_renames_from_constructor`, and root-bound
-//!   return-object aliases, derived per function-like node by
-//!   `ScopedHeuristicNaturalizer` over a scratch clone of the module body
-//!   (scope: `Function`, origin: `Heuristic`); the per-module ledger seals
-//!   in `naturalize_module_body` and `SealedScopeRenameApplier` replays
-//!   the sealed per-scope maps onto the real body.
-//! - Heuristic free-source return-object aliases — `naturalize.rs`:
-//!   `collect_free_alias_renames_from_item`, submitted per deriving
+//!   `Module`, origin: `Explicit`; chunk explicit ledger, then
+//!   re-collected into the per-module naturalize ledger which validates
+//!   occupancy).
+//! - Heuristic bound-source scope-local renames — `naturalize.rs`,
+//!   derived per function-like node by `ScopedHeuristicNaturalizer`
+//!   (scope: `Function`, origin: `Heuristic`); raw candidates are
+//!   submitted with the deriving subtree's name facts and seal applies
+//!   the validity rules ([`ScopeOccupancy::Subtree`]).
+//! - Heuristic free-source return-object aliases — `naturalize.rs::
+//!   collect_free_alias_renames_from_item`, submitted per deriving
 //!   function (scope: `Module`, origin: `Heuristic`; same per-module
-//!   ledger). The module-global target-collision rule
-//!   (`drop_target_collisions`) still runs at application; moving it into
-//!   seal is PR 3.
+//!   ledger; the module-global target-collision rule runs at seal via
+//!   [`merge_module_renames`]).
 //! - Import-local disambiguation (fresh-local `$N` minting) —
-//!   `import_emit.rs`: `disambiguate_import_locals`,
-//!   `disambiguate_residual_entry_import_locals`, `mint_unique_name`.
-//!   The entry-side call site in `lower.rs::lower_chunk` submits into the
-//!   entry-body ledger (scope: `Chunk`, origin: `ImportInduced`); the
-//!   module-side call sites `imports_cross.rs::cross_module_imports_for_plan`
-//!   and `imports_cross.rs::residual_entry_imports_for_moved_body` submit
-//!   into the per-plan import ledger sealed in `lower_single_plan`
-//!   (scope: `Module`, origin: `ImportInduced`) — this is the
-//!   cross-module rename application to moved bodies. Minting itself
-//!   becomes a ledger service in PR 3; decided 2026-06: the `$N` suffix
-//!   scheme stays as-is (readability is a later naturalizer concern).
+//!   `import_emit.rs::disambiguate_*` mint through
+//!   [`RenameLedger::mint`]. The entry-side call site in
+//!   `lower.rs::lower_chunk` submits into the entry ledger (scope:
+//!   `Chunk`, origin: `ImportInduced`); the module-side call sites in
+//!   `imports_cross.rs` submit into the per-plan import ledger (scope:
+//!   `Module`, origin: `ImportInduced`).
 //! - Collision-resolving public-name minting —
-//!   `exports.rs::auto_grown_residual_exports` (suffix-mints a grown
-//!   public export past pre-existing public names; scope:
-//!   `EntryPublicExports`, origin: `ImportInduced`; sealed in
+//!   `exports.rs::auto_grown_residual_exports` (mints a grown public
+//!   export past pre-existing public names via [`RenameLedger::mint`];
+//!   scope: `EntryPublicExports`, origin: `ImportInduced`; sealed in
 //!   `lower_chunk`'s export-growth phase).
 //!
 //! Vendor boundary renames (`vendor/`) run in a separate pipeline stage on
@@ -112,6 +181,8 @@ use anyhow::{Result, bail};
 use swc_atoms::Atom;
 use swc_common::Span;
 use swc_ecma_ast::Id;
+
+use super::util::is_valid_js_identifier;
 
 /// Identity of one function-like deriving scope (function / arrow /
 /// constructor): the node's source span in the chunk AST. The per-scope
@@ -137,6 +208,9 @@ impl From<Span> for FunctionScopeId {
 /// Where a rename applies. Intents in one scope are invisible to queries
 /// for any other scope — the ledger rejects cross-scope leakage by
 /// construction.
+///
+/// Variant order matters for seal: `Module` validates before `Function`
+/// (the free-alias survival check reads the Module-scope survivors).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RenameScope {
     /// Bindings staying in the chunk's residual entry body.
@@ -231,11 +305,66 @@ pub struct RenameIntent {
     pub origin: RenameOrigin,
 }
 
-/// Accumulates [`RenameIntent`]s during the collect phase; consumed by
+/// Per-scope name-occupancy facts seal validates rename targets against.
+#[derive(Debug)]
+pub enum ScopeOccupancy {
+    /// `Chunk` / `Module` / `EntryPublicExports` scopes: occupancy of one
+    /// emitted body (or public-export namespace).
+    Body {
+        /// Identity used in error messages: the chunk id for `Chunk`
+        /// scope, the plan id for `Module` scopes.
+        label: String,
+        /// Names bound at the scope's root (top) level. An explicit
+        /// rename target colliding here is a hard error unless the name
+        /// is vacated — i.e. it is itself the source of another explicit
+        /// rename in the same scope.
+        root: BTreeSet<String>,
+        /// Names bound strictly below the root level
+        /// (`scope_names::collect_nested_binding_names`). Ledger-minted
+        /// targets must avoid them (mints claim from a taken set seeded
+        /// with both levels; a collision is an internal invariant
+        /// violation).
+        nested: BTreeSet<String>,
+        /// `(source, target)` pairs the rename visitor's scope stack
+        /// withheld on the pre-seal application/preview walk of this
+        /// scope's body: the target was shadowed at a reference of the
+        /// un-shadowed source, so applying the rename would capture.
+        /// Seal turns these into the hard "would be captured by a
+        /// nested binding" error.
+        captured: BTreeSet<(String, String)>,
+    },
+    /// `Function` scopes: the deriving subtree's name facts, mirroring
+    /// the pre-ledger `validated_bound` / `drop_subtree_captured_targets`
+    /// checks.
+    Subtree {
+        /// Names bound anywhere under the deriving node. Classifies each
+        /// intent (bound-source vs free-source) and rejects free-alias
+        /// targets the subtree binds.
+        bound: BTreeSet<String>,
+        /// Every value/binding identifier sym mentioned in the subtree.
+        /// Bound-source heuristic targets must be absent from it.
+        mentions: BTreeSet<String>,
+    },
+}
+
+/// Validation context for [`RenameLedger::seal`]. Scopes absent from
+/// `occupancy` get conflict/priority validation only.
+#[derive(Debug, Default)]
+pub struct SealValidation {
+    pub occupancy: BTreeMap<RenameScope, ScopeOccupancy>,
+    /// Names the module-wide renames reserve (sources + targets of the
+    /// module's explicit + surviving free renames). `Function`-scope
+    /// bound-source heuristic targets must avoid them.
+    pub reserved: BTreeSet<String>,
+}
+
+/// Accumulates [`RenameIntent`]s during the collect phase and owns the
+/// per-scope taken-name sets behind [`Self::mint`]; consumed by
 /// [`Self::seal`].
 #[derive(Debug, Default)]
 pub struct RenameLedger {
     intents: Vec<RenameIntent>,
+    taken: BTreeMap<RenameScope, BTreeSet<String>>,
 }
 
 impl RenameLedger {
@@ -243,13 +372,62 @@ impl RenameLedger {
         self.intents.push(intent);
     }
 
-    /// Validate and freeze the collected intents. Per `(scope, from)`
-    /// group, the highest-priority intents must agree on one target —
-    /// disagreement at equal priority is a hard error naming every
-    /// contributor on each side. Lower-priority disagreement loses
-    /// silently. Identical duplicates collapse. Every conflict in the
-    /// ledger is reported in one error, not just the first.
-    pub fn seal(self) -> Result<SealedRenames> {
+    /// Seed `scope`'s taken-name set with names [`Self::mint`] must avoid
+    /// (the body's occupied names, pre-existing public exports, …).
+    pub fn seed_taken(&mut self, scope: RenameScope, names: impl IntoIterator<Item = String>) {
+        self.taken.entry(scope).or_default().extend(names);
+    }
+
+    /// Claim `name` in `scope` so later mints avoid it; returns whether
+    /// the name was newly claimed.
+    pub fn claim(&mut self, scope: RenameScope, name: &str) -> bool {
+        self.taken
+            .entry(scope)
+            .or_default()
+            .insert(name.to_string())
+    }
+
+    /// Mint a fresh name in `scope`: `base` itself when it is a usable
+    /// identifier and untaken, else the first untaken `base$N`. The
+    /// minted name is claimed.
+    ///
+    /// A reserved word (`default`, `class`, `await`, …) used verbatim as
+    /// a local would surface straight into an emitted `import {...}` /
+    /// `export {...}` clause and produce un-parseable JS. Suffixing turns
+    /// it into a valid identifier (`default$1`), so only offer `base`
+    /// directly when it is a usable identifier. `$`-suffixed candidates
+    /// are always valid, so the loop below always terminates with a
+    /// parseable name.
+    pub fn mint(&mut self, scope: RenameScope, base: &str) -> String {
+        let taken = self.taken.entry(scope).or_default();
+        if is_valid_js_identifier(base) && taken.insert(base.to_string()) {
+            return base.to_string();
+        }
+        let mut suffix = 1usize;
+        loop {
+            let candidate = format!("{base}${suffix}");
+            if taken.insert(candidate.clone()) {
+                return candidate;
+            }
+            suffix += 1;
+        }
+    }
+
+    /// Validate and freeze the collected intents.
+    ///
+    /// Conflict resolution per `(scope, from)` group: the highest-priority
+    /// intents must agree on one target — disagreement at equal priority
+    /// is a hard error naming every contributor on each side.
+    /// Lower-priority disagreement loses silently. Identical duplicates
+    /// collapse. Every conflict in the ledger is reported in one error,
+    /// not just the first.
+    ///
+    /// Target validation runs per scope against `validation.occupancy`
+    /// (see the module doc's "Seal validation" section): explicit
+    /// failures are hard errors reproducing the pre-ledger messages,
+    /// heuristic failures are silent drops, import-induced failures are
+    /// internal invariant violations.
+    pub fn seal(self, validation: &SealValidation) -> Result<SealedRenames> {
         let mut groups: BTreeMap<(RenameScope, Id), Vec<RenameIntent>> = BTreeMap::new();
         for intent in self.intents {
             groups
@@ -257,7 +435,8 @@ impl RenameLedger {
                 .or_default()
                 .push(intent);
         }
-        let mut by_scope: BTreeMap<RenameScope, BTreeMap<Id, Atom>> = BTreeMap::new();
+        let mut by_scope: BTreeMap<RenameScope, BTreeMap<Id, (Atom, RenamePriority)>> =
+            BTreeMap::new();
         let mut conflicts = Vec::new();
         for ((scope, from), intents) in groups {
             let top_priority = intents
@@ -304,7 +483,7 @@ impl RenameLedger {
             by_scope
                 .entry(scope)
                 .or_default()
-                .insert(from, (*to).clone());
+                .insert(from, ((*to).clone(), top_priority));
         }
         if !conflicts.is_empty() {
             bail!(
@@ -312,17 +491,269 @@ impl RenameLedger {
                 conflicts.join("\n  - "),
             );
         }
-        Ok(SealedRenames { by_scope })
+
+        // Target validation, scope by scope. `Module` scopes validate
+        // before `Function` scopes (RenameScope variant order), so the
+        // free-alias survival check below sees the Module survivors.
+        let mut surviving_module_heuristics = BTreeSet::<(String, String)>::new();
+        let mut sealed: BTreeMap<RenameScope, BTreeMap<Id, (Atom, RenamePriority)>> =
+            BTreeMap::new();
+        for (scope, winners) in by_scope {
+            let kept = match validation.occupancy.get(&scope) {
+                None => winners,
+                Some(ScopeOccupancy::Body {
+                    label,
+                    root,
+                    nested,
+                    captured,
+                }) => validate_body_scope(&scope, label, root, nested, captured, winners)?,
+                Some(ScopeOccupancy::Subtree { bound, mentions }) => validate_function_scope(
+                    bound,
+                    mentions,
+                    &validation.reserved,
+                    &surviving_module_heuristics,
+                    winners,
+                ),
+            };
+            if matches!(scope, RenameScope::Module(_)) {
+                for (from, (to, priority)) in &kept {
+                    if *priority == RenamePriority::Heuristic {
+                        surviving_module_heuristics.insert((from.0.to_string(), to.to_string()));
+                    }
+                }
+            }
+            if !kept.is_empty() {
+                sealed.insert(scope, kept);
+            }
+        }
+        Ok(SealedRenames { by_scope: sealed })
     }
 }
 
+/// Target validation for `Chunk` / `Module` / `EntryPublicExports`
+/// scopes. Explicit intents replay the pre-ledger application-site
+/// checks (hard errors, same messages); import-induced intents assert
+/// the mint invariant; heuristic intents (free-source aliases) get the
+/// [`merge_module_renames`] target-collision rule — their occupancy is
+/// deliberately NOT checked here, matching pre-ledger behavior (they
+/// apply function-locally; the subtree check runs on their
+/// `Function`-scope copies).
+fn validate_body_scope(
+    scope: &RenameScope,
+    label: &str,
+    root: &BTreeSet<String>,
+    nested: &BTreeSet<String>,
+    captured: &BTreeSet<(String, String)>,
+    mut winners: BTreeMap<Id, (Atom, RenamePriority)>,
+) -> Result<BTreeMap<Id, (Atom, RenamePriority)>> {
+    let chunk_style = matches!(scope, RenameScope::Chunk);
+    // Sources of explicit renames vacate their root-level slot: a target
+    // equal to another explicit rename's source is allowed past the
+    // root-collision check (the binding is being renamed away) — but
+    // only at the root level; a same-named nested binding stays
+    // occupied. Chunk-style validation still reports such targets as
+    // duplicates (the pre-ledger loop's growing occupied set already
+    // held every root name), while module-style validation has no
+    // duplicate-against-root rule, so chain/swap renames are allowed.
+    let vacated: BTreeSet<String> = winners
+        .iter()
+        .filter(|(_, (_, priority))| *priority == RenamePriority::Explicit)
+        .map(|(from, _)| from.0.to_string())
+        .collect();
+    let mut errors = Vec::new();
+    // Chunk-style: grows with accepted targets so an earlier accepted
+    // target occupies the name for later entries (sorted-by-source
+    // order, matching the pre-ledger loop). Module-style: tracks rename
+    // targets only, so two explicit renames sharing one target surface
+    // (plan building already rejects duplicate export names; this is the
+    // seal-side guarantee).
+    let mut taken: BTreeSet<String> = if chunk_style {
+        root.iter().cloned().collect()
+    } else {
+        BTreeSet::new()
+    };
+    for (from, (to, priority)) in &winners {
+        if *priority != RenamePriority::Explicit {
+            continue;
+        }
+        let from = from.0.as_ref();
+        let to = to.as_ref();
+        if chunk_style && !is_valid_js_identifier(to) {
+            errors.push(format!(
+                "chunk_renames target {to} for binding {from} is not a valid JS identifier",
+            ));
+            continue;
+        }
+        let occupied_for_collision = if chunk_style { &taken } else { root };
+        if to != from && occupied_for_collision.contains(to) && !vacated.contains(to) {
+            errors.push(if chunk_style {
+                format!(
+                    "chunk_renames target {to} for binding {from} collides with an existing top-level local",
+                )
+            } else {
+                format!(
+                    "rename of binding {from} to {to} collides with another top-level binding in the module body",
+                )
+            });
+            continue;
+        }
+        if !taken.insert(to.to_string()) && to != from {
+            errors.push(if chunk_style {
+                format!(
+                    "chunk_renames target {to} for binding {from} duplicates an earlier rename target",
+                )
+            } else {
+                format!(
+                    "rename of binding {from} to {to} duplicates another rename target in the module",
+                )
+            });
+            continue;
+        }
+    }
+    if !errors.is_empty() {
+        if chunk_style {
+            bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
+        }
+        bail!(
+            "invalid renames for module {label}:\n  - {}",
+            errors.join("\n  - "),
+        );
+    }
+    // Capture facts the caller's rename walk observed: applying these
+    // renames would make a reference resolve to a nested binding of the
+    // target name. The pre-seal walk's mutation is discarded with the
+    // whole run by this bail.
+    if !captured.is_empty() {
+        if chunk_style {
+            bail!(
+                "chunk_renames for chunk {label} would be captured by a nested binding: {captured:?}",
+            );
+        }
+        bail!("renames for module {label} would be captured by a nested binding: {captured:?}",);
+    }
+    for (from, (to, priority)) in &winners {
+        if *priority == RenamePriority::ImportInduced
+            && (root.contains(to.as_ref()) || nested.contains(to.as_ref()))
+        {
+            bail!(
+                "internal invariant violation: ledger-minted rename target {to} for binding {} collides with an occupied name in {scope}; minting must claim from the scope's seeded taken set",
+                from.0,
+            );
+        }
+    }
+    // Heuristic (free-source) target collisions: drop losers silently.
+    let explicit_by_name: BTreeMap<String, String> = winners
+        .iter()
+        .filter(|(_, (_, priority))| *priority != RenamePriority::Heuristic)
+        .map(|(from, (to, _))| (from.0.to_string(), to.to_string()))
+        .collect();
+    let heuristic_by_name: BTreeMap<String, String> = winners
+        .iter()
+        .filter(|(_, (_, priority))| *priority == RenamePriority::Heuristic)
+        .map(|(from, (to, _))| (from.0.to_string(), to.to_string()))
+        .collect();
+    if !heuristic_by_name.is_empty() {
+        let merged = merge_module_renames(explicit_by_name, heuristic_by_name);
+        winners.retain(|from, (to, priority)| {
+            *priority != RenamePriority::Heuristic
+                || merged.get(from.0.as_ref()).map(String::as_str) == Some(to.as_ref())
+        });
+    }
+    Ok(winners)
+}
+
+/// Target validation for `Function` scopes, replaying the pre-ledger
+/// per-scope heuristic rules. An intent whose source the subtree binds is
+/// a bound-source rename (`validated_bound` rules: target unique among
+/// the scope's bound-source targets, unreserved, absent from the
+/// subtree's mentions, not another bound source). An intent whose source
+/// the subtree does NOT bind is a free-source alias copy: its target must
+/// not be bound in the subtree and its `(from, to)` pair must have
+/// survived Module-scope validation. Failures drop silently
+/// (over-suppression is acceptable for heuristics).
+fn validate_function_scope(
+    bound: &BTreeSet<String>,
+    mentions: &BTreeSet<String>,
+    reserved: &BTreeSet<String>,
+    surviving_module_heuristics: &BTreeSet<(String, String)>,
+    mut winners: BTreeMap<Id, (Atom, RenamePriority)>,
+) -> BTreeMap<Id, (Atom, RenamePriority)> {
+    let bound_sources: BTreeSet<String> = winners
+        .keys()
+        .map(|from| from.0.to_string())
+        .filter(|sym| bound.contains(sym))
+        .collect();
+    let mut bound_target_counts = BTreeMap::<String, usize>::new();
+    for (from, (to, _)) in &winners {
+        if bound.contains(from.0.as_ref()) {
+            *bound_target_counts.entry(to.to_string()).or_default() += 1;
+        }
+    }
+    winners.retain(|from, (to, priority)| {
+        if *priority != RenamePriority::Heuristic {
+            return true;
+        }
+        let to = to.as_ref();
+        if bound.contains(from.0.as_ref()) {
+            bound_target_counts.get(to).copied() == Some(1)
+                && !reserved.contains(to)
+                && !mentions.contains(to)
+                && !bound_sources.contains(to)
+        } else {
+            !bound.contains(to)
+                && surviving_module_heuristics.contains(&(from.0.to_string(), to.to_string()))
+        }
+    });
+    winners
+}
+
+/// Merge `heuristic` into `explicit`, dropping any heuristic mapping
+/// whose source `explicit` already renames, whose target `explicit`
+/// claims, or whose target is shared with another effective heuristic
+/// source. Two sources renamed onto the same target would collapse
+/// distinct bindings into a duplicate decl as soon as both happen to live
+/// in the same scope. This is the module-level target-collision rule
+/// seal applies to free-source aliases; `naturalize_module_body` calls it
+/// directly for the derive-phase preview (`free_allowed`), which is
+/// deleted with PR 4's executor.
+pub fn merge_module_renames(
+    mut explicit: BTreeMap<String, String>,
+    heuristic: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    // Only effective heuristic mappings (sources not already renamed by
+    // `explicit`) contribute to the collision count. Counting skipped
+    // entries inflates counts[target] and can drop unrelated heuristic
+    // mappings that have only one effective claimant.
+    let mut counts = BTreeMap::<String, usize>::new();
+    for target in explicit.values() {
+        *counts.entry(target.clone()).or_default() += 1;
+    }
+    for (source, target) in &heuristic {
+        if explicit.contains_key(source) {
+            continue;
+        }
+        *counts.entry(target.clone()).or_default() += 1;
+    }
+    for (source, target) in heuristic {
+        if explicit.contains_key(&source) {
+            continue;
+        }
+        if counts.get(&target).copied().unwrap_or(0) > 1 {
+            continue;
+        }
+        explicit.insert(source, target);
+    }
+    explicit
+}
+
 /// The validated, read-only output of [`RenameLedger::seal`]: per scope,
-/// the final `from → to` mapping. Queries reproduce exactly the maps the
-/// pre-ledger code built so the existing application sites consume them
-/// unchanged.
+/// the final `from → to` mapping (with the winning priority retained so
+/// origin-split queries can separate plan-driven renames from
+/// heuristics). Queries reproduce exactly the maps the pre-ledger code
+/// built so the existing application sites consume them unchanged.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SealedRenames {
-    by_scope: BTreeMap<RenameScope, BTreeMap<Id, Atom>>,
+    by_scope: BTreeMap<RenameScope, BTreeMap<Id, (Atom, RenamePriority)>>,
 }
 
 impl SealedRenames {
@@ -335,16 +766,28 @@ impl SealedRenames {
             .collect()
     }
 
-    /// One module's plan-driven renames projected to bare names, sorted —
-    /// the `plan_driven` map `naturalize_module_body` consumes
-    /// (pre-ledger: derived inline from `plan.bindings`).
+    /// One module's renames projected to bare names, sorted — plan-driven
+    /// and surviving free-source heuristics merged (pre-ledger: the
+    /// `NaturalizedRenames::merged` map).
     pub fn module_renames_by_name(&self, module: ModuleId) -> BTreeMap<String, String> {
         self.scope_renames_by_name(&RenameScope::Module(module))
     }
 
+    /// One module's *explicit* (plan-driven) renames only — the map
+    /// export locals and binding-comment keys remap through (heuristic
+    /// entries are scope-local and never rename a top-level declaration).
+    pub fn module_explicit_renames_by_name(&self, module: ModuleId) -> BTreeMap<String, String> {
+        self.scope_renames_at_priority(&RenameScope::Module(module), RenamePriority::Explicit)
+    }
+
     /// Typed per-scope view (tests, the future execute-once pass).
-    pub fn scope_renames(&self, scope: &RenameScope) -> Option<&BTreeMap<Id, Atom>> {
-        self.by_scope.get(scope)
+    pub fn scope_renames(&self, scope: &RenameScope) -> Option<BTreeMap<Id, Atom>> {
+        self.by_scope.get(scope).map(|renames| {
+            renames
+                .iter()
+                .map(|(from, (to, _))| (from.clone(), to.clone()))
+                .collect()
+        })
     }
 
     /// Project one scope's sealed renames onto bare syms for the
@@ -355,11 +798,30 @@ impl SealedRenames {
     /// for `Function`), so that cannot happen; assert rather than silently
     /// merge if it ever does.
     pub fn scope_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
+        self.scope_renames_by_name_filtered(scope, |_| true)
+    }
+
+    fn scope_renames_at_priority(
+        &self,
+        scope: &RenameScope,
+        priority: RenamePriority,
+    ) -> BTreeMap<String, String> {
+        self.scope_renames_by_name_filtered(scope, |p| p == priority)
+    }
+
+    fn scope_renames_by_name_filtered(
+        &self,
+        scope: &RenameScope,
+        keep: impl Fn(RenamePriority) -> bool,
+    ) -> BTreeMap<String, String> {
         let Some(renames) = self.by_scope.get(scope) else {
             return BTreeMap::new();
         };
         let mut by_name = BTreeMap::new();
-        for (from, to) in renames {
+        for (from, (to, priority)) in renames {
+            if !keep(*priority) {
+                continue;
+            }
             let previous = by_name.insert(from.0.to_string(), to.to_string());
             assert!(
                 previous.is_none(),
@@ -390,11 +852,51 @@ mod tests {
         }
     }
 
+    fn names(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    fn body_occupancy(scope: RenameScope, root: &[&str], nested: &[&str]) -> SealValidation {
+        body_occupancy_with_captures(scope, root, nested, &[])
+    }
+
+    fn body_occupancy_with_captures(
+        scope: RenameScope,
+        root: &[&str],
+        nested: &[&str],
+        captured: &[(&str, &str)],
+    ) -> SealValidation {
+        SealValidation {
+            occupancy: BTreeMap::from([(
+                scope,
+                ScopeOccupancy::Body {
+                    label: "spec_x".to_string(),
+                    root: names(root),
+                    nested: names(nested),
+                    captured: captured
+                        .iter()
+                        .map(|(from, to)| (from.to_string(), to.to_string()))
+                        .collect(),
+                },
+            )]),
+            reserved: BTreeSet::new(),
+        }
+    }
+
     const A: RenameOrigin = RenameOrigin::Explicit {
         contributor: "contributor_a",
     };
     const B: RenameOrigin = RenameOrigin::Explicit {
         contributor: "contributor_b",
+    };
+    const HEURISTIC: RenameOrigin = RenameOrigin::Heuristic {
+        contributor: "scope-local heuristic naturalizer",
+    };
+    const FREE: RenameOrigin = RenameOrigin::Heuristic {
+        contributor: "return-object alias (free source)",
+    };
+    const MINT: RenameOrigin = RenameOrigin::ImportInduced {
+        contributor: "entry import-local disambiguation",
     };
 
     #[test]
@@ -402,7 +904,10 @@ mod tests {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "first", A));
         ledger.submit(intent(RenameScope::Chunk, "a", "second", B));
-        let message = ledger.seal().unwrap_err().to_string();
+        let message = ledger
+            .seal(&SealValidation::default())
+            .unwrap_err()
+            .to_string();
         assert!(message.contains("contributor_a"), "{message}");
         assert!(message.contains("contributor_b"), "{message}");
         assert!(message.contains("`first`"), "{message}");
@@ -416,7 +921,10 @@ mod tests {
         ledger.submit(intent(RenameScope::Chunk, "a", "second", B));
         ledger.submit(intent(RenameScope::Chunk, "b", "third", A));
         ledger.submit(intent(RenameScope::Chunk, "b", "fourth", B));
-        let message = ledger.seal().unwrap_err().to_string();
+        let message = ledger
+            .seal(&SealValidation::default())
+            .unwrap_err()
+            .to_string();
         assert!(message.contains("binding `a`"), "{message}");
         assert!(message.contains("binding `b`"), "{message}");
     }
@@ -426,7 +934,7 @@ mod tests {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "readable", A));
         ledger.submit(intent(RenameScope::Chunk, "a", "readable", B));
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.chunk_renames_by_name(),
             HashMap::from([("a".to_string(), "readable".to_string())]),
@@ -445,7 +953,7 @@ mod tests {
             },
         ));
         ledger.submit(intent(RenameScope::Chunk, "a", "explicit_name", A));
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.chunk_renames_by_name(),
             HashMap::from([("a".to_string(), "explicit_name".to_string())]),
@@ -467,7 +975,7 @@ mod tests {
             },
         ));
         ledger.submit(intent(module_scope, "e", "registry", A));
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.module_renames_by_name(ModuleId::logical(0)),
             BTreeMap::from([("e".to_string(), "registry".to_string())]),
@@ -475,7 +983,7 @@ mod tests {
         assert!(sealed.chunk_renames_by_name().is_empty());
         assert_eq!(
             sealed.scope_renames(&function_scope),
-            Some(&BTreeMap::from([(id("e"), Atom::from("value"))])),
+            Some(BTreeMap::from([(id("e"), Atom::from("value"))])),
         );
         assert_eq!(sealed.scope_renames(&RenameScope::Chunk), None);
     }
@@ -495,7 +1003,7 @@ mod tests {
             "y",
             A,
         ));
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.module_renames_by_name(ModuleId::logical(0)),
             BTreeMap::from([("a".to_string(), "x".to_string())]),
@@ -534,7 +1042,10 @@ mod tests {
         for i in intents.iter().rev() {
             reverse.submit(i.clone());
         }
-        assert_eq!(forward.seal().unwrap(), reverse.seal().unwrap());
+        assert_eq!(
+            forward.seal(&SealValidation::default()).unwrap(),
+            reverse.seal(&SealValidation::default()).unwrap(),
+        );
     }
 
     #[test]
@@ -549,7 +1060,7 @@ mod tests {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "readable", A));
         ledger.submit(intent(RenameScope::EntryPublicExports, "a", "a$1", mint));
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.scope_renames_by_name(&RenameScope::Chunk),
             BTreeMap::from([("a".to_string(), "readable".to_string())]),
@@ -572,7 +1083,10 @@ mod tests {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "x", "x$1", cross));
         ledger.submit(intent(module, "x", "x$2", residual));
-        let message = ledger.seal().unwrap_err().to_string();
+        let message = ledger
+            .seal(&SealValidation::default())
+            .unwrap_err()
+            .to_string();
         assert!(
             message.contains("cross-module import-local disambiguation"),
             "{message}"
@@ -585,17 +1099,14 @@ mod tests {
 
     #[test]
     fn function_scope_projection_returns_per_scope_string_maps() {
-        let heuristic = RenameOrigin::Heuristic {
-            contributor: "scope-local heuristic naturalizer",
-        };
         let outer = RenameScope::Function(FunctionScopeId { lo: 1, hi: 100 });
         let inner = RenameScope::Function(FunctionScopeId { lo: 10, hi: 20 });
         let mut ledger = RenameLedger::default();
         // Sibling/nested scopes reusing one minified spelling with
         // different targets are independent renames (#2045) — no conflict.
-        ledger.submit(intent(outer, "e", "value", heuristic));
-        ledger.submit(intent(inner, "e", "registry", heuristic));
-        let sealed = ledger.seal().unwrap();
+        ledger.submit(intent(outer, "e", "value", HEURISTIC));
+        ledger.submit(intent(inner, "e", "registry", HEURISTIC));
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.scope_renames_by_name(&outer),
             BTreeMap::from([("e".to_string(), "value".to_string())]),
@@ -624,10 +1135,434 @@ mod tests {
             to: Atom::from("second"),
             origin: B,
         });
-        let sealed = ledger.seal().unwrap();
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
             sealed.scope_renames(&RenameScope::Module(ModuleId::logical(0))),
-            Some(&BTreeMap::from([(other_ctxt, Atom::from("second"))])),
+            Some(BTreeMap::from([(other_ctxt, Atom::from("second"))])),
+        );
+    }
+
+    // --- minting ---
+
+    #[test]
+    fn mint_returns_base_when_untaken_and_suffixes_past_collisions() {
+        let mut ledger = RenameLedger::default();
+        ledger.seed_taken(RenameScope::Chunk, ["taken".to_string()]);
+        assert_eq!(ledger.mint(RenameScope::Chunk, "fresh"), "fresh");
+        // The minted name is claimed: a second request suffixes.
+        assert_eq!(ledger.mint(RenameScope::Chunk, "fresh"), "fresh$1");
+        assert_eq!(ledger.mint(RenameScope::Chunk, "fresh"), "fresh$2");
+        assert_eq!(ledger.mint(RenameScope::Chunk, "taken"), "taken$1");
+    }
+
+    #[test]
+    fn mint_never_offers_a_reserved_word_verbatim() {
+        let mut ledger = RenameLedger::default();
+        assert_eq!(ledger.mint(RenameScope::Chunk, "default"), "default$1");
+    }
+
+    #[test]
+    fn mint_taken_sets_are_per_scope() {
+        let mut ledger = RenameLedger::default();
+        ledger.seed_taken(RenameScope::Chunk, ["name".to_string()]);
+        assert_eq!(ledger.mint(RenameScope::Chunk, "name"), "name$1");
+        assert_eq!(
+            ledger.mint(RenameScope::Module(ModuleId::logical(0)), "name"),
+            "name",
+        );
+    }
+
+    #[test]
+    fn claim_reserves_a_name_for_later_mints() {
+        let mut ledger = RenameLedger::default();
+        assert!(ledger.claim(RenameScope::Chunk, "readable"));
+        assert!(!ledger.claim(RenameScope::Chunk, "readable"));
+        assert_eq!(ledger.mint(RenameScope::Chunk, "readable"), "readable$1");
+    }
+
+    // --- explicit occupancy validation (hard errors) ---
+
+    #[test]
+    fn chunk_explicit_target_colliding_with_root_binding_is_a_hard_error() {
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "delta", A));
+        let message = ledger
+            .seal(&body_occupancy(RenameScope::Chunk, &["a", "delta"], &[]))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("invalid chunk_renames spec"), "{message}");
+        assert!(
+            message.contains("collides with an existing top-level local"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn chunk_explicit_violations_surface_together() {
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "alpha", "1-bad-ident", A));
+        ledger.submit(intent(RenameScope::Chunk, "bravo", "delta", A));
+        ledger.submit(intent(RenameScope::Chunk, "charlie", "shared", A));
+        ledger.submit(intent(RenameScope::Chunk, "delta", "shared", A));
+        let message = ledger
+            .seal(&body_occupancy(
+                RenameScope::Chunk,
+                &["alpha", "bravo", "charlie", "delta"],
+                &[],
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("not a valid JS identifier"), "{message}");
+        assert!(
+            message.contains("collides with an existing top-level local"),
+            "{message}"
+        );
+        assert!(
+            message.contains("duplicates an earlier rename target"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn chunk_chain_rename_onto_vacated_name_reports_duplicate() {
+        // Chain renames a→b, b→c at Chunk scope: `b`'s vacated root slot
+        // routes the violation past the "collides" branch, but the
+        // growing occupied set (which holds every root name) still
+        // reports it — the pre-ledger loop's exact semantics.
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
+        ledger.submit(intent(RenameScope::Chunk, "b", "c", A));
+        let message = ledger
+            .seal(&body_occupancy(RenameScope::Chunk, &["a", "b"], &[]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("duplicates an earlier rename target"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn module_swap_renames_are_allowed_via_vacating() {
+        // Module-scope explicit renames may swap two bindings' names:
+        // each target's root slot is vacated by the other rename, and
+        // module-style validation has no duplicate-against-root rule.
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "b", A));
+        ledger.submit(intent(module, "b", "a", A));
+        let sealed = ledger
+            .seal(&body_occupancy(module, &["a", "b"], &[]))
+            .unwrap();
+        assert_eq!(
+            sealed.module_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([
+                ("a".to_string(), "b".to_string()),
+                ("b".to_string(), "a".to_string()),
+            ]),
+        );
+    }
+
+    #[test]
+    fn observed_capture_facts_are_a_hard_error() {
+        // The caller's rename walk reports `(source, target)` pairs the
+        // scope stack withheld; seal rejects with the pre-ledger message.
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
+        let message = ledger
+            .seal(&body_occupancy_with_captures(
+                RenameScope::Chunk,
+                &["a", "f"],
+                &["b"],
+                &[("a", "b")],
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("captured by a nested binding"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn nested_bound_target_without_observed_capture_is_allowed() {
+        // Reference-precision: a target bound only in a nested scope
+        // where the source is shadowed (or never referenced) does not
+        // capture — the rename walk reports no pair, so seal accepts.
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
+        let sealed = ledger
+            .seal(&body_occupancy(RenameScope::Chunk, &["a", "f"], &["b"]))
+            .unwrap();
+        assert_eq!(
+            sealed.chunk_renames_by_name(),
+            HashMap::from([("a".to_string(), "b".to_string())]),
+        );
+    }
+
+    #[test]
+    fn module_explicit_target_colliding_with_root_binding_is_a_hard_error() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "readable", A));
+        let message = ledger
+            .seal(&body_occupancy(module, &["a", "readable"], &[]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("invalid renames for module spec_x"),
+            "{message}"
+        );
+        assert!(
+            message.contains(
+                "rename of binding a to readable collides with another top-level binding"
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn minted_target_colliding_with_occupancy_is_an_invariant_error() {
+        // Mints come from the ledger's own taken set; a collision means
+        // the caller seeded the wrong occupancy — an internal bug, not a
+        // spec error.
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "x", "x$1", MINT));
+        let message = ledger
+            .seal(&body_occupancy(RenameScope::Chunk, &["x", "x$1"], &[]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("internal invariant violation"),
+            "{message}"
+        );
+    }
+
+    // --- heuristic drop policies ---
+
+    #[test]
+    fn module_heuristics_sharing_a_target_are_both_dropped() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "shared", FREE));
+        ledger.submit(intent(module, "b", "shared", FREE));
+        ledger.submit(intent(module, "c", "unique", FREE));
+        let sealed = ledger.seal(&body_occupancy(module, &[], &[])).unwrap();
+        assert_eq!(
+            sealed.module_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([("c".to_string(), "unique".to_string())]),
+        );
+    }
+
+    #[test]
+    fn module_heuristic_targeting_an_explicit_target_is_dropped() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "winner", A));
+        ledger.submit(intent(module, "b", "winner", FREE));
+        let sealed = ledger.seal(&body_occupancy(module, &["a"], &[])).unwrap();
+        assert_eq!(
+            sealed.module_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([("a".to_string(), "winner".to_string())]),
+        );
+        assert_eq!(
+            sealed.module_explicit_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([("a".to_string(), "winner".to_string())]),
+        );
+    }
+
+    #[test]
+    fn module_explicit_query_excludes_heuristic_survivors() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "plan_name", A));
+        ledger.submit(intent(module, "t", "options", FREE));
+        let sealed = ledger.seal(&body_occupancy(module, &["a"], &[])).unwrap();
+        assert_eq!(
+            sealed.module_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([
+                ("a".to_string(), "plan_name".to_string()),
+                ("t".to_string(), "options".to_string()),
+            ]),
+        );
+        assert_eq!(
+            sealed.module_explicit_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([("a".to_string(), "plan_name".to_string())]),
+        );
+    }
+
+    // --- Function-scope occupancy (validated_bound replay) ---
+
+    fn function_validation(
+        scope: RenameScope,
+        bound: &[&str],
+        mentions: &[&str],
+        reserved: &[&str],
+    ) -> SealValidation {
+        SealValidation {
+            occupancy: BTreeMap::from([(
+                scope,
+                ScopeOccupancy::Subtree {
+                    bound: names(bound),
+                    mentions: names(mentions),
+                },
+            )]),
+            reserved: names(reserved),
+        }
+    }
+
+    #[test]
+    fn bound_source_heuristic_dropped_when_target_mentioned_in_subtree() {
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(scope, "e", "value", HEURISTIC));
+        let sealed = ledger
+            .seal(&function_validation(scope, &["e"], &["e", "value"], &[]))
+            .unwrap();
+        assert!(sealed.scope_renames_by_name(&scope).is_empty());
+    }
+
+    #[test]
+    fn bound_source_heuristic_dropped_when_target_reserved_module_wide() {
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(scope, "e", "options", HEURISTIC));
+        let sealed = ledger
+            .seal(&function_validation(scope, &["e"], &["e"], &["options"]))
+            .unwrap();
+        assert!(sealed.scope_renames_by_name(&scope).is_empty());
+    }
+
+    #[test]
+    fn bound_source_heuristics_sharing_a_target_are_both_dropped() {
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(scope, "e", "value", HEURISTIC));
+        ledger.submit(intent(scope, "n", "value", HEURISTIC));
+        ledger.submit(intent(scope, "k", "kept", HEURISTIC));
+        let sealed = ledger
+            .seal(&function_validation(
+                scope,
+                &["e", "n", "k"],
+                &["e", "n", "k"],
+                &[],
+            ))
+            .unwrap();
+        assert_eq!(
+            sealed.scope_renames_by_name(&scope),
+            BTreeMap::from([("k".to_string(), "kept".to_string())]),
+        );
+    }
+
+    #[test]
+    fn bound_source_heuristic_dropped_when_target_is_another_source() {
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(scope, "e", "n", HEURISTIC));
+        ledger.submit(intent(scope, "n", "fresh", HEURISTIC));
+        let sealed = ledger
+            .seal(&function_validation(scope, &["e", "n"], &["e", "n"], &[]))
+            .unwrap();
+        assert_eq!(
+            sealed.scope_renames_by_name(&scope),
+            BTreeMap::from([("n".to_string(), "fresh".to_string())]),
+        );
+    }
+
+    #[test]
+    fn free_alias_copy_dropped_when_target_bound_in_subtree() {
+        // Free-source aliases (source NOT bound in the subtree) are
+        // exempt from the mentions rule but must not target a name the
+        // subtree binds.
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "t", "options", FREE));
+        ledger.submit(intent(scope, "t", "options", FREE));
+        let mut validation = function_validation(scope, &["options"], &["t", "options"], &[]);
+        validation.occupancy.insert(
+            module,
+            ScopeOccupancy::Body {
+                label: "spec_x".to_string(),
+                root: BTreeSet::new(),
+                nested: BTreeSet::new(),
+                captured: BTreeSet::new(),
+            },
+        );
+        let sealed = ledger.seal(&validation).unwrap();
+        // The Module-scope intent survives (merged-map bridge); the
+        // Function-scope application copy is suppressed.
+        assert_eq!(
+            sealed.module_renames_by_name(ModuleId::logical(0)),
+            BTreeMap::from([("t".to_string(), "options".to_string())]),
+        );
+        assert!(sealed.scope_renames_by_name(&scope).is_empty());
+    }
+
+    #[test]
+    fn free_alias_copy_survives_when_target_only_mentioned() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let scope = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "t", "options", FREE));
+        ledger.submit(intent(scope, "t", "options", FREE));
+        let mut validation = function_validation(scope, &[], &["t", "options"], &[]);
+        validation.occupancy.insert(
+            module,
+            ScopeOccupancy::Body {
+                label: "spec_x".to_string(),
+                root: BTreeSet::new(),
+                nested: BTreeSet::new(),
+                captured: BTreeSet::new(),
+            },
+        );
+        let sealed = ledger.seal(&validation).unwrap();
+        assert_eq!(
+            sealed.scope_renames_by_name(&scope),
+            BTreeMap::from([("t".to_string(), "options".to_string())]),
+        );
+    }
+
+    #[test]
+    fn free_alias_copy_dropped_when_module_intent_lost_collision() {
+        // Two deriving functions free-alias different sources onto one
+        // target: both Module-scope intents drop (target collision), so
+        // both Function-scope application copies must drop too.
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let f1 = RenameScope::Function(FunctionScopeId { lo: 1, hi: 9 });
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "t", "options", FREE));
+        ledger.submit(intent(module, "u", "options", FREE));
+        ledger.submit(intent(f1, "t", "options", FREE));
+        let mut validation = function_validation(f1, &[], &["t"], &[]);
+        validation.occupancy.insert(
+            module,
+            ScopeOccupancy::Body {
+                label: "spec_x".to_string(),
+                root: BTreeSet::new(),
+                nested: BTreeSet::new(),
+                captured: BTreeSet::new(),
+            },
+        );
+        let sealed = ledger.seal(&validation).unwrap();
+        assert!(
+            sealed
+                .module_renames_by_name(ModuleId::logical(0))
+                .is_empty()
+        );
+        assert!(sealed.scope_renames_by_name(&f1).is_empty());
+    }
+
+    #[test]
+    fn scopes_without_occupancy_skip_target_validation() {
+        // The chunk-level explicit ledger seals before the post-split
+        // bodies exist; its intents are occupancy-validated downstream.
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "delta", A));
+        let sealed = ledger.seal(&SealValidation::default()).unwrap();
+        assert_eq!(
+            sealed.chunk_renames_by_name(),
+            HashMap::from([("a".to_string(), "delta".to_string())]),
         );
     }
 }

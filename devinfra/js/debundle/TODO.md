@@ -269,25 +269,43 @@ and every application site consumes a sealed projection — heuristic
 bound-source per-scope renames (`Function` scope; derived by
 `ScopedHeuristicNaturalizer` over a scratch clone, replayed by
 `SealedScopeRenameApplier`), heuristic free-source return-object aliases
-(`Module` scope, per deriving function; `drop_target_collisions` still
-runs at application until PR 3), entry- and module-side import-local
-mints (`Chunk` / `Module` scope, `ImportInduced`; minting itself stays
-in `import_emit.rs` until PR 3), and auto-grown residual public-export
-minting (new `EntryPublicExports` scope). Because contributor derivation
-still depends on earlier contributors' application, PR 2 seals at phase
-boundaries — one ledger instance per former private map (see the "Seal
-points" section of `rename_ledger.rs`'s module doc); PRs 3–4 collapse
-them into a single collect → seal → execute pass. Two previously
-silent last-write-wins shapes are now seal-time hard errors: two
-deriving functions free-aliasing one source to different targets, and
-two import-local mints disagreeing on one binding.
+(`Module` scope, per deriving function), entry- and module-side
+import-local mints (`Chunk` / `Module` scope, `ImportInduced`), and
+auto-grown residual public-export minting (new `EntryPublicExports`
+scope). Because contributor derivation still depends on earlier
+contributors' application, PR 2 seals at phase boundaries — one ledger
+instance per former private map. Two previously silent last-write-wins
+shapes are now seal-time hard errors: two deriving functions
+free-aliasing one source to different targets, and two import-local
+mints disagreeing on one binding.
+
+**PR 3 landed (2026-06):** seal is the single validation point.
+`RenameLedger::seal` takes per-scope occupancy facts (`SealValidation` /
+`ScopeOccupancy`: root vs nested binding names from `scope_names.rs`,
+the rename walk's observed capture pairs, deriving-subtree bound/mention
+sets for `Function` scopes) and applies all target validation there:
+explicit failures reproduce the pre-ledger hard errors (`invalid
+chunk_renames spec`, `collides with an existing top-level local`,
+`captured by a nested binding`, …), heuristic failures drop silently
+(over-suppression OK, capture never), import-induced failures are
+internal invariant violations. Cross-priority disagreement resolves
+silently by priority; same-priority disagreement stays a hard error.
+`$N` minting is a ledger service (`mint` / `seed_taken` / `claim` own
+the per-scope taken sets; `import_emit.rs` and `exports.rs` request
+mints). The per-module naturalize ledger absorbed the plan-driven
+explicit renames, so one seal resolves explicit-vs-heuristic priority,
+the module-global target-collision rule (`merge_module_renames`), and
+occupancy. Application sites now only `debug_assert!` seal's no-capture
+guarantee; what still validates at application (and the remaining seal
+points PR 4 collapses) is inventoried in `rename_ledger.rs`'s module-doc
+"Seal points" section.
 
 Decisions taken (formerly the open-questions subsection below):
 
 1. **Same-priority conflicts are hard errors at seal**, naming both
    contributors — silent suppression is the trap the ledger closes.
-2. **The `$N`-suffix minting scheme stays as-is** when
-   `disambiguate_import_locals`' minting becomes a ledger service (PR 3);
+2. **The `$N`-suffix minting scheme stays as-is** now that
+   `disambiguate_import_locals`' minting is a ledger service (PR 3);
    readability is a separate, later naturalizer concern.
 3. **Structural-mutation contract: no structural moves between seal and
    execute.** Most moves already happen pre-seal (the materializer seals
@@ -296,21 +314,19 @@ Decisions taken (formerly the open-questions subsection below):
 
 Remaining PRs:
 
-- **PR 3 — seal**: move target-occupancy/capture validation (and the
-  free-source `drop_target_collisions` rule) into seal against
-  scope-accurate occupied sets; `_N`/`$N` minting becomes a ledger
-  service; collapse the per-phase ledger instances toward one.
 - **PR 4 — execute once**: one visitor pass (the post-#2052 rename
   visitor becomes the executor) updating the AST, export tables,
   `runtime_imports`, `binding_comments`, and cross-module indexes in
   lockstep, keyed by hygiene `Id` (deleting the seal-output string
-  projection).
+  projection, the pre-seal rename walks that feed capture facts to
+  seal, the naturalizer's derive-phase preview, and the remaining
+  per-phase ledger instances).
 - **PR 5 — cleanup**: delete the defensive era (`captured` sets,
   `drop_subtree_captured_targets` where dominated, `merged`/`module_scope`
   split, reverse lookups); afterwards the #2045 class is
   unrepresentable.
 
-The architecture sketch below remains the reference for PRs 3–5.
+The architecture sketch below remains the reference for PRs 4–5.
 
 The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer

@@ -15,31 +15,36 @@
 //!   returned merged map because `plan_module_reference_needs`
 //!   reverse-resolves the post-rename name through it to emit the
 //!   runtime reimport (`import { t as options }`), and they keep the
-//!   module-global target-uniqueness rule (`drop_target_collisions`) —
-//!   two of them onto one target would collide in module scope.
+//!   module-global target-uniqueness rule
+//!   (`rename_ledger::merge_module_renames`, applied at seal) — two of
+//!   them onto one target would collide in module scope.
 //!
 //! - **Bound sources** (destructured params, constructor
 //!   `this.x = param` assignments, return-object aliases of the
 //!   function's own root bindings) rename a binding owned by a single
-//!   scope. `ScopedHeuristicNaturalizer` derives and validates them per
-//!   deriving scope, with no module-global uniqueness requirement: two
-//!   sibling scopes reusing the same minified spelling (`e` → `value`
-//!   here, `e` → `registry` there) are independent renames (#2045).
-//!   They stay out of the returned map so a scope-local rename can
-//!   never remap an unrelated top-level export or runtime reimport
-//!   that happens to share the spelling.
+//!   scope. `ScopedHeuristicNaturalizer` derives them per deriving scope,
+//!   with no module-global uniqueness requirement: two sibling scopes
+//!   reusing the same minified spelling (`e` → `value` here,
+//!   `e` → `registry` there) are independent renames (#2045). They stay
+//!   out of the returned map so a scope-local rename can never remap an
+//!   unrelated top-level export or runtime reimport that happens to
+//!   share the spelling.
 //!
-//! Both heuristic families submit intents into a per-module
-//! [`RenameLedger`] sealed before any heuristic rename is applied
-//! (free sources at `Module` scope, bound sources at `Function` scope);
-//! `SealedScopeRenameApplier` replays the sealed per-scope maps onto the
-//! real body, and the returned merged map is rebuilt from the sealed
-//! Module-scope intents.
+//! All three contributor families — the plan's explicit `export_name`
+//! renames (re-collected from the chunk ledger's sealed projection),
+//! free-source aliases (`Module` scope), and bound-source heuristics
+//! (`Function` scope, submitted raw with each deriving subtree's name
+//! facts) — share one per-module [`RenameLedger`], and its seal is the
+//! single validation point: explicit-vs-heuristic priority, target
+//! collisions, and occupancy. `SealedScopeRenameApplier` replays the
+//! sealed per-scope maps onto the real body; the application sites only
+//! `debug_assert!` seal's no-capture guarantee.
 
 use swc_common::Span;
 
 use super::scope_names::{
-    BindingNameCollector, collect_binding_names_in, collect_occupied_local_names,
+    BindingNameCollector, collect_binding_names_in, collect_nested_binding_names,
+    collect_occupied_local_names,
 };
 use super::util::is_valid_js_identifier;
 use super::*;
@@ -91,8 +96,10 @@ pub(super) const PLAN_EXPORT_NAME_CONTRIBUTOR: &str = "logical_module member exp
 pub(super) const FREE_ALIAS_CONTRIBUTOR: &str = "return-object alias (free source)";
 pub(super) const SCOPED_HEURISTIC_CONTRIBUTOR: &str = "scope-local heuristic naturalizer";
 
-/// `plan_driven` is this plan's sealed Module-scope rename map
-/// (`SealedRenames::module_renames_by_name`); sorted (`BTreeMap`)
+/// `plan_driven` is this plan's sealed Module-scope rename map from the
+/// chunk explicit ledger (`SealedRenames::module_renames_by_name`),
+/// re-collected into the per-module ledger so its targets are
+/// occupancy-validated against this body at seal; sorted (`BTreeMap`)
 /// iteration keeps the rename-precedence the visitor applies when two
 /// locals compete for the same target independent of hash seed.
 pub(super) fn naturalize_module_body(
@@ -102,16 +109,29 @@ pub(super) fn naturalize_module_body(
     plan_driven: BTreeMap<String, String>,
     chunk_top_level_mark: swc_common::Mark,
 ) -> Result<NaturalizedRenames> {
-    // Both heuristic contributors submit into this per-module ledger,
-    // sealed below before any heuristic rename is applied.
-    // `free_heuristic` is the derive-phase scratch view of the same
-    // Module-scope intents: the bound-source derive pass needs the
-    // module-global collision rules resolved before the ledger can seal
-    // (sealing also waits for the derive pass's Function-scope intents).
+    // Occupancy facts for seal-time target validation, computed against
+    // the pre-rename body (intents are keyed by original names).
+    let root_names = collect_occupied_local_names(body);
+    let nested_names = collect_nested_binding_names(body);
+    // One per-module ledger holds every naturalization contributor:
+    // plan-driven explicit renames, free-source aliases, and the
+    // bound-source per-scope heuristics submitted by the derive pass
+    // below. A single seal resolves explicit-vs-heuristic priority,
+    // target collisions, and occupancy.
+    let mut ledger = RenameLedger::default();
+    for (from, to) in &plan_driven {
+        ledger.submit(RenameIntent {
+            scope: RenameScope::Module(module),
+            from: top_level_id(from, chunk_top_level_mark),
+            to: to.as_str().into(),
+            origin: RenameOrigin::Explicit {
+                contributor: PLAN_EXPORT_NAME_CONTRIBUTOR,
+            },
+        });
+    }
     // Free aliases are submitted per deriving function, so two functions
     // aliasing one free source to different targets — previously a
-    // silent last-write-wins on this map — are a seal-time conflict.
-    let mut ledger = RenameLedger::default();
+    // silent last-write-wins — are a seal-time conflict.
     let mut per_function_free = Vec::<BTreeMap<String, String>>::new();
     for item in body.iter() {
         collect_free_alias_renames_from_item(item, &mut per_function_free);
@@ -130,72 +150,37 @@ pub(super) fn naturalize_module_body(
             free_heuristic.insert(from, to);
         }
     }
-    // The merged map is what callers read back as the local-name → readable
-    // lookup (runtime-reimport bridge, export remapping). Plan-driven names
-    // are top-level module bindings and rename module-wide (suppressed in
-    // any subtree that re-binds them); free heuristic names rename only
-    // within the function that derived them, via the scoped pass below.
-    let merged = drop_target_collisions(plan_driven.clone(), free_heuristic);
-    let plan_driven_effective: BTreeMap<String, String> = merged
-        .iter()
-        .filter(|(local, _)| plan_driven.contains_key(*local))
-        .map(|(local, target)| (local.clone(), target.clone()))
-        .collect();
-    let free_effective: BTreeMap<String, String> = merged
+    // Derive-phase preview of seal's module-level rules: the bound-source
+    // derive pass needs the surviving free set (`free_allowed`) and the
+    // reserved set before the ledger can seal (sealing also waits for the
+    // derive pass's Function-scope intents). `merge_module_renames` is
+    // the same rule seal applies, so the preview and the sealed output
+    // agree; the preview is deleted with PR 4's execute-once pass.
+    let merged_preview = merge_module_renames(plan_driven.clone(), free_heuristic);
+    let free_effective: BTreeMap<String, String> = merged_preview
         .iter()
         .filter(|(local, _)| !plan_driven.contains_key(*local))
         .map(|(local, target)| (local.clone(), target.clone()))
         .collect();
 
     // Module-wide pass: plan-driven renames + shorthand collapse when the
-    // plan renames anything, shorthand collapse alone otherwise.
-    if plan_driven_effective.is_empty() {
+    // plan renames anything, shorthand collapse alone otherwise. The walk
+    // runs before seal so the visitor's scope stack reports precise
+    // capture facts (a target bound nested is harmless when the source is
+    // shadowed there — only the walk can decide that); seal turns them
+    // into the hard error, and its bail discards this (partially renamed)
+    // body with the whole pipeline run before anything is emitted.
+    let mut plan_captured = BTreeSet::new();
+    if plan_driven.is_empty() {
         for item in body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        // Validate plan-driven targets against the body's top-level scope
-        // before any mutation: renaming a declaration onto a name another
-        // top-level binding already uses produces a duplicate declaration
-        // (a load-time SyntaxError). A top-level binding that is itself
-        // renamed away vacates its slot and is allowed. Nested-scope target
-        // collisions are NOT pre-checked here — a target bound in a nested
-        // scope is harmless unless the un-shadowed source is referenced
-        // inside that scope, which the renamer detects precisely at the
-        // reference (see the `captured` check below).
-        let root_names = collect_occupied_local_names(body);
-        let mut errors = Vec::new();
-        for (from, to) in &plan_driven_effective {
-            if root_names.contains(to) && !plan_driven_effective.contains_key(to) {
-                errors.push(format!(
-                    "rename of binding {from} to {to} collides with another top-level binding in the module body",
-                ));
-            }
-        }
-        if !errors.is_empty() {
-            bail!(
-                "invalid renames for module {}:\n  - {}",
-                plan.id,
-                errors.join("\n  - "),
-            );
-        }
-
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven_effective);
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
-        if !naturalizer.captured.is_empty() {
-            // A rename target was bound in a scope where the un-shadowed
-            // source is referenced — applying it would make the renamed
-            // reference resolve to the inner binding. The body is
-            // partially renamed at this point; the bail discards the
-            // whole pipeline run before anything is emitted.
-            bail!(
-                "renames for module {} would be captured by a nested binding: {:?}",
-                plan.id,
-                naturalizer.captured,
-            );
-        }
+        plan_captured = naturalizer.captured;
     }
 
     // Names a scope-local rename must never target: anything the plan or a
@@ -203,28 +188,43 @@ pub(super) fn naturalize_module_body(
     // onto one of these would capture module-level references inside the
     // scope (or collide with the free rename applied in the same scope).
     let mut reserved = BTreeSet::<String>::new();
-    for (from, to) in plan_driven.iter().chain(merged.iter()) {
+    for (from, to) in plan_driven.iter().chain(merged_preview.iter()) {
         reserved.insert(from.clone());
         reserved.insert(to.clone());
     }
     // Derive pass: run the scoped heuristic machinery over a scratch
     // clone of the body. It performs exactly the pre-ledger
-    // derive-and-apply walk — outer scopes validate against subtrees
+    // derive-and-apply walk — outer scopes derive against subtrees
     // that already carry their nested scopes' renames — but the
     // mutations land on the clone; the real body is only renamed by the
-    // sealed-output applier below. Each fired per-scope map is submitted
-    // as Function-scope intents. The clone is deleted with PR 4's
-    // execute-once pass.
+    // sealed-output applier below. Each scope's raw candidates are
+    // submitted as Function-scope intents together with the deriving
+    // subtree's name facts, which seal validates them against. The clone
+    // is deleted with PR 4's execute-once pass.
     let mut derive_body = body.to_vec();
+    let mut occupancy = BTreeMap::new();
     let mut deriver = ScopedHeuristicNaturalizer {
         free_allowed: &free_effective,
         reserved: &reserved,
         ledger: &mut ledger,
+        occupancy: &mut occupancy,
     };
     for item in derive_body.iter_mut() {
         item.visit_mut_with(&mut deriver);
     }
-    let sealed = ledger.seal()?;
+    occupancy.insert(
+        RenameScope::Module(module),
+        ScopeOccupancy::Body {
+            label: plan.id.clone(),
+            root: root_names,
+            nested: nested_names,
+            captured: plan_captured,
+        },
+    );
+    let sealed = ledger.seal(&SealValidation {
+        occupancy,
+        reserved,
+    })?;
     // Apply pass: replay the sealed per-scope maps onto the real body in
     // the same order the derive pass fired them (children first), so each
     // scope's map applies to the same intermediate tree state the
@@ -235,11 +235,8 @@ pub(super) fn naturalize_module_body(
     }
 
     Ok(NaturalizedRenames {
-        // The merged map consumers read is rebuilt from the sealed
-        // Module-scope (free-source) intents — identical to the derive
-        // scratch `merged` whenever seal succeeded.
-        merged: drop_target_collisions(plan_driven, sealed.module_renames_by_name(module)),
-        module_scope: plan_driven_effective,
+        merged: sealed.module_renames_by_name(module),
+        module_scope: sealed.module_explicit_renames_by_name(module),
     })
 }
 
@@ -247,12 +244,15 @@ pub(super) fn naturalize_module_body(
 /// clone of the module body and, at each function/constructor/arrow,
 /// derives that node's own heuristic renames (param destructure aliases,
 /// return-object aliases, `this.x = param` constructor assignments),
-/// validates them, submits the fired map as Function-scope intents, and
-/// rewrites the (clone's) subtree so enclosing scopes validate against
-/// the post-rename nested state — exactly the pre-ledger
-/// derive-and-apply order. Bound-source renames fire when their readable
-/// target passes the per-scope safety checks in [`Self::validated_bound`];
-/// free-source renames fire when they survived the module-global
+/// submits the raw candidates as Function-scope intents together with
+/// the subtree's name facts (seal validates them via
+/// [`ScopeOccupancy::Subtree`]), and rewrites the (clone's) subtree so
+/// enclosing scopes derive against the post-rename nested state —
+/// exactly the pre-ledger derive-and-apply order. The clone mutation
+/// uses a local preview of seal's rules ([`Self::validated_bound`] +
+/// `drop_subtree_captured_targets`), so the clone and the sealed output
+/// agree; the preview is deleted with PR 4's execute-once pass.
+/// Free-source renames fire only when they survived the module-global
 /// collision rules (`free_allowed`). A rename derived from one scope
 /// never leaks into a sibling/parent scope, and
 /// `RenameAndShorthandNaturalizer`'s nested shadow-suppression still
@@ -265,8 +265,11 @@ struct ScopedHeuristicNaturalizer<'a> {
     /// Module-wide rename sources and targets (plan-driven + free); a
     /// scope-local rename must not target any of them.
     reserved: &'a BTreeSet<String>,
-    /// Sink for the fired per-scope maps (Function-scope intents).
+    /// Sink for the per-scope raw candidates (Function-scope intents).
     ledger: &'a mut RenameLedger,
+    /// Sink for each deriving subtree's name facts; passed to seal so it
+    /// can validate the scope's intents.
+    occupancy: &'a mut BTreeMap<RenameScope, ScopeOccupancy>,
 }
 
 /// Replays the sealed Function-scope heuristic renames onto the real
@@ -451,16 +454,27 @@ fn collect_pat_binding_names(pat: &Pat, out: &mut BTreeSet<String>) {
 }
 
 impl ScopedHeuristicNaturalizer<'_> {
-    /// Record one deriving scope's fired rename map as Function-scope
-    /// intents. The sources are function-local bindings whose hygiene
+    /// Record one deriving scope's raw candidates as Function-scope
+    /// intents together with the subtree facts seal validates them
+    /// against. The sources are function-local bindings whose hygiene
     /// context the string-keyed derivation never resolves; the
     /// string-era key is encoded as the empty `SyntaxContext` (the
     /// sealed by-name projection is what the apply pass consumes; see
     /// the ledger module doc's hygiene-boundary section).
-    fn submit_scope_intents(&mut self, span: Span, local: &BTreeMap<String, String>) {
-        for (from, to) in local {
+    fn submit_scope_intents(
+        &mut self,
+        span: Span,
+        bound: &BTreeMap<String, String>,
+        free: &BTreeMap<String, String>,
+        facts: SubtreeNameFacts,
+    ) {
+        if bound.is_empty() && free.is_empty() {
+            return;
+        }
+        let scope = RenameScope::Function(span.into());
+        for (from, to) in free.iter().chain(bound.iter()) {
             self.ledger.submit(RenameIntent {
-                scope: RenameScope::Function(span.into()),
+                scope,
                 from: (from.as_str().into(), SyntaxContext::empty()),
                 to: to.as_str().into(),
                 origin: RenameOrigin::Heuristic {
@@ -468,6 +482,13 @@ impl ScopedHeuristicNaturalizer<'_> {
                 },
             });
         }
+        self.occupancy.insert(
+            scope,
+            ScopeOccupancy::Subtree {
+                bound: facts.bound,
+                mentions: facts.mentions,
+            },
+        );
     }
 
     /// Per-scope safety checks for bound-source renames. A rename fires
@@ -551,14 +572,14 @@ where
         .collect()
 }
 
-/// Invariant check after a heuristic scope-local rename pass: the
-/// subtree pre-filter must have made captures impossible. A non-empty
-/// `captured` set means the body is partially renamed — crash loudly
-/// rather than emit a miscompile.
+/// Debug-time invariant check after a heuristic scope-local rename pass:
+/// seal's per-scope target validation (target absent from the subtree's
+/// mentions / bound names) makes captures impossible. A non-empty
+/// `captured` set means seal's guarantee was violated.
 fn assert_no_heuristic_capture(renamer: &RenameAndShorthandNaturalizer<'_>) {
-    assert!(
+    debug_assert!(
         renamer.captured.is_empty(),
-        "heuristic rename captured despite subtree pre-filter: {:?}",
+        "heuristic rename captured despite seal validation: {:?}",
         renamer.captured,
     );
 }
@@ -593,18 +614,19 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         }
         let mut free = BTreeMap::new();
         self.classify_function_aliases(function, &facts, &mut bound, &mut free);
-        // Free-source aliases get no `mentions` pre-check from
-        // `validated_bound`, so drop any whose target the subtree binds:
-        // applying one would be suppressed only inside the re-binding
-        // scope, tripping the capture assert below on a partially renamed
-        // body. (Bound-source renames are already covered — `validated_bound`
-        // rejects targets the subtree so much as mentions.)
-        let mut local = drop_subtree_captured_targets(free, &*function);
-        local.extend(self.validated_bound(bound, &facts));
+        // Preview of seal's per-scope rules, deciding what fires on this
+        // clone. Free-source aliases get no `mentions` check, but any
+        // whose target the subtree binds is dropped: applying one would
+        // be suppressed only inside the re-binding scope, leaving a
+        // partially renamed body. (Bound-source renames are covered by
+        // `validated_bound`, which rejects targets the subtree so much
+        // as mentions.)
+        let mut local = drop_subtree_captured_targets(free.clone(), &*function);
+        local.extend(self.validated_bound(bound.clone(), &facts));
+        self.submit_scope_intents(function.span, &bound, &free, facts);
         if local.is_empty() {
             return;
         }
-        self.submit_scope_intents(function.span, &local);
         // Params and the root body share this function's scope, where the
         // renamed name is bound exactly once and every reference resolves to
         // it. Drive past the root param/block scope (visiting params and the
@@ -623,11 +645,11 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         for param in &arrow.params {
             collect_naturalization_renames_from_pattern(param, &mut bound);
         }
-        let local = self.validated_bound(bound, &facts);
+        let local = self.validated_bound(bound.clone(), &facts);
+        self.submit_scope_intents(arrow.span, &bound, &BTreeMap::new(), facts);
         if local.is_empty() {
             return;
         }
-        self.submit_scope_intents(arrow.span, &local);
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
@@ -642,11 +664,11 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         let facts = collect_subtree_name_facts(&*constructor);
         let mut bound = BTreeMap::new();
         collect_naturalization_renames_from_constructor(constructor, &mut bound);
-        let local = self.validated_bound(bound, &facts);
+        let local = self.validated_bound(bound.clone(), &facts);
+        self.submit_scope_intents(constructor.span, &bound, &BTreeMap::new(), facts);
         if local.is_empty() {
             return;
         }
-        self.submit_scope_intents(constructor.span, &local);
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
@@ -654,41 +676,6 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         rename_root_body(&mut renamer, constructor.body.as_mut());
         assert_no_heuristic_capture(&renamer);
     }
-}
-
-/// Merge `heuristic` into `plan_driven`, dropping any heuristic mapping
-/// whose target is either already claimed by `plan_driven` or shared with
-/// another heuristic source. Two sources renamed onto the same target
-/// would collapse distinct bindings into a duplicate decl as soon as both
-/// happen to live in the same scope.
-pub(super) fn drop_target_collisions(
-    mut plan_driven: BTreeMap<String, String>,
-    heuristic: BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    // Only effective heuristic mappings (locals not already in plan_driven)
-    // contribute to the collision count. Counting skipped entries inflates
-    // counts[target] and can drop unrelated heuristic mappings that have only
-    // one effective claimant.
-    let mut counts = BTreeMap::<String, usize>::new();
-    for target in plan_driven.values() {
-        *counts.entry(target.clone()).or_default() += 1;
-    }
-    for (local, target) in &heuristic {
-        if plan_driven.contains_key(local) {
-            continue;
-        }
-        *counts.entry(target.clone()).or_default() += 1;
-    }
-    for (local, target) in heuristic {
-        if plan_driven.contains_key(&local) {
-            continue;
-        }
-        if counts.get(&target).copied().unwrap_or(0) > 1 {
-            continue;
-        }
-        plan_driven.insert(local, target);
-    }
-    plan_driven
 }
 
 /// Collect a top-level item's free-source return-object aliases: renames
