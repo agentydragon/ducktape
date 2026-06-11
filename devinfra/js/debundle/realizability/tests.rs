@@ -85,6 +85,64 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
     );
 }
 
+/// The touching-filtered reference predicate
+/// (`plans/incremental_gate_unification.md` §2): an SCC diagnosis is
+/// kept only when the queried module participates in it. A module
+/// outside every diagnosis sees a realizable verdict even though the
+/// full verdict is unrealizable.
+#[test]
+fn touching_filter_keeps_only_diagnoses_involving_the_queried_module() {
+    // Mutual eager cycle between mod 1 and mod 2; owner 2 (`const c`)
+    // is an unrelated clean module 3.
+    let source = "const a = b + 1; const b = a + 1; const c = 1;";
+    let owner_graph = parse_and_build(source);
+    let mut partition = Partition::new(&owner_graph, module_id(0));
+    partition.set(OwnerId(0), module_id(1));
+    partition.set(OwnerId(1), module_id(2));
+    partition.set(OwnerId(2), module_id(3));
+    assert!(!check_realizability(&owner_graph, &partition).is_realizable());
+    let touching_cycle = check_realizability_touching(&owner_graph, &partition, module_id(1));
+    assert!(
+        !touching_cycle.is_realizable(),
+        "module 1 is in the SCC; the diagnosis must survive the filter: {touching_cycle:#?}",
+    );
+    let touching_clean = check_realizability_touching(&owner_graph, &partition, module_id(3));
+    assert!(
+        touching_clean.is_realizable(),
+        "module 3 touches no diagnosis; pre-existing violations \
+         elsewhere must not surface: {touching_clean:#?}",
+    );
+}
+
+/// Clause-2 side of the touching filter: a cross-module rebind is
+/// kept iff the queried module is one of its endpoints.
+#[test]
+fn touching_filter_keeps_only_cross_rebinds_at_the_queried_module() {
+    // owner_0: let a = 1 (residual). owner_1: a = 2 (mod 1 — a
+    // cross-module top-level rebinding write). owner_2: const z
+    // (mod 2, unrelated).
+    let source = "let a = 1; a = 2; const z = 3;";
+    let owner_graph = parse_and_build(source);
+    let mut partition = Partition::new(&owner_graph, module_id(0));
+    partition.set(OwnerId(1), module_id(1));
+    partition.set(OwnerId(2), module_id(2));
+    let full = check_realizability(&owner_graph, &partition);
+    assert!(
+        !full.cross_rebinds.is_empty(),
+        "fixture must produce a cross-module rebind: {full:#?}",
+    );
+    let touching_writer = check_realizability_touching(&owner_graph, &partition, module_id(1));
+    assert!(
+        !touching_writer.cross_rebinds.is_empty(),
+        "module 1 is the rebind's writer side: {touching_writer:#?}",
+    );
+    let touching_clean = check_realizability_touching(&owner_graph, &partition, module_id(2));
+    assert!(
+        touching_clean.is_realizable(),
+        "module 2 is on neither rebind endpoint: {touching_clean:#?}",
+    );
+}
+
 /// A pure lazy-read cycle (mutual references inside function
 /// bodies) is realizable: ESM evaluates the lazy side first, no
 /// TDZ. Verdict must be empty even when the modules form a cycle

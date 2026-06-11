@@ -192,6 +192,130 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
     assert_ne!(q.class_of(b1_idx), q.class_of(b2_idx));
 }
 
+// ---------- Gate-ladder pinning tests (plans/incremental_gate_unification.md §7.3). ----------
+//
+// These pin the module-level gate predicate decided in the plan's §2.
+// They assert the DESIRED behavior, which the current class-level
+// PK/cone gate gets wrong, so they are `#[ignore]`d until PR 4 of the
+// plan's §8 cuts the boolean gate over to the realizability ladder and
+// un-ignores them. The current (wrong) behavior is pinned by the
+// differential harness's divergence catalog in
+// `peel/gate_differential_test.rs`. The third §7.3 case — preservation
+// of `seed_skips_unrealizable_spec_module_contraction_and_reports` —
+// is the existing (non-ignored) test above.
+
+/// §2's atomic-unit anomaly: a 3-owner atomic unit whose members form
+/// a constraining cycle `a → b → c → a` exists precisely because its
+/// members MUST co-locate, and the module-level predicate accepts the
+/// contractions (all three owners project to the residual module, so
+/// every merge is a delta-free no-op). The current class-level gate
+/// rejects them: the class graph is `!is_dag` from construction, the
+/// cone-DFS fallback finds the pre-existing (transient) path
+/// `b → c → a`, and the unit cannot seed.
+#[test]
+#[ignore = "gate ladder PR 4 (plans/incremental_gate_unification.md §8): the \
+            class-level cycle gate over-rejects merges internal to the residual \
+            module; un-ignore when check_merge_boolean routes through the ladder"]
+fn seed_co_locates_constraining_cycle_atomic_unit() {
+    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
+    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
+    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
+        owner_edge("edge:2", "owner:c", "owner:a", DepKind::EagerUse, true),
+    ];
+    let unit = atomic_unit_for("atomic:0", &[&a, &b, &c]);
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone()],
+        edges,
+        vec![unit],
+        vec![],
+    );
+    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000);
+    assert!(
+        rejected.is_empty(),
+        "atomic-unit contractions internal to the residual module are \
+         delta-free no-ops under the module-level predicate and must \
+         not be rejected: {rejected:?}",
+    );
+    let a_idx = q.owner_idx_of("owner:a").unwrap();
+    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    let c_idx = q.owner_idx_of("owner:c").unwrap();
+    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
+    assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
+}
+
+/// §1's Pass-2 blindness: a merge that closes an asymmetric I-SCC
+/// (eager forward, lazy back) where the `EsmEvaluationSimulator`
+/// proves TDZ must be rejected AT THE MERGE, with
+/// `EsmEvaluationTdz`-backed evidence. The current hot gate sees only
+/// constraining class edges, accepts, and commits; the only backstop
+/// is `build_seed_quotient`'s post-seed `PostSeedUnrealizableScc`
+/// report, which does not undo the merge.
+///
+/// Shape: pre-existing module `ui/x` = {x}; residual-pile owners `r`
+/// (stays) and `h` (the merge candidate). `x` eager-reads `r`'s
+/// binding (constraining `M → R`); `r` lazily reads `h`'s binding
+/// (intra-residual pre-merge, becomes the lazy back-edge `R → M` once
+/// `h` is promoted into `ui/x`). The post-merge I-SCC `{M, R}`
+/// carries a constraining pair targeting residual — the DFS root
+/// evaluates last, so `M`'s eager read of `r`'s binding TDZs.
+#[test]
+#[ignore = "gate ladder PR 4 (plans/incremental_gate_unification.md §8): the \
+            hot boolean gate is blind to Pass-2 (EsmEvaluationTdz) rejections; \
+            un-ignore when check_merge_boolean routes through the ladder"]
+fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
+    let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
+    let r = residual_owner("owner:r", 2, &["BindingR"], 5);
+    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:x", "owner:r", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:r", "owner:h", DepKind::LazyUse, false),
+    ];
+    let report = graph_of(
+        vec![x.clone(), r.clone(), h.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&x]),
+            atomic_unit_for("atomic:1", &[&r]),
+            atomic_unit_for("atomic:2", &[&h]),
+        ],
+        vec![],
+    );
+    let groups = vec![make_module_group("ui/x", vec![0])];
+    let (mut q, group_ids) =
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let cx = group_ids[0];
+    let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
+
+    // The pre-merge state is realizable; the merge alone closes the
+    // TDZ cycle, so the gate must reject it.
+    assert!(q.realizability_verdict().is_realizable());
+    assert!(
+        !q.merge_preserves_invariants(cx, ch),
+        "merging owner:h into ui/x closes the asymmetric I-cycle \
+         {{ui/x, residual}} with a TDZ'ing constraining pair; the \
+         boolean gate must reject",
+    );
+    let evidence = q
+        .would_be_cycles_after_contract(cx, ch)
+        .expect("diagnostic gate must surface the Pass-2 rejection");
+    let evidence_owners: Vec<&str> = evidence
+        .cycles
+        .iter()
+        .flat_map(|cycle| cycle.owner_ids.iter().map(String::as_str))
+        .collect();
+    assert!(
+        evidence_owners.contains(&"owner:x"),
+        "evidence must mention the eager reader: {evidence_owners:?}",
+    );
+    assert!(
+        q.contract(cx, ch).is_err(),
+        "contract must refuse to commit the TDZ-closing merge",
+    );
+}
+
 #[test]
 fn seed_atomic_unit_contractions_never_rejected_on_well_formed_input() {
     // Regression guard: across a handful of well-formed fixtures,

@@ -295,6 +295,40 @@ pub fn check_realizability(
     verdict
 }
 
+/// Touching-filtered form of [`check_realizability`]: the same pure
+/// from-scratch verdict, restricted to diagnoses involving `module`.
+///
+/// This is the gate ladder's **reference predicate**
+/// (`plans/incremental_gate_unification.md` §2): a speculative merge
+/// with post-merge module `M` is acceptable iff
+/// `check_realizability_touching(owner_graph, post_partition, M)`
+/// `.is_realizable()`. Pre-existing violations not touching `M` are
+/// intentionally ignored, matching
+/// [`RealizabilityIndex::verdict_after_moving_owners_touching`]'s
+/// semantics on both the hot and diagnostic paths.
+///
+/// Differential-harness / oracle use only — `O(N + M)` per call, far
+/// too slow for the proposer's per-pop gate.
+pub fn check_realizability_touching(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    module: ModuleId,
+) -> RealizabilityVerdict {
+    let full = check_realizability(owner_graph, partition);
+    RealizabilityVerdict {
+        unrealizable_sccs: full
+            .unrealizable_sccs
+            .into_iter()
+            .filter(|scc| scc.modules.contains(&module))
+            .collect(),
+        cross_rebinds: full
+            .cross_rebinds
+            .into_iter()
+            .filter(|rebind| rebind.from == module || rebind.to == module)
+            .collect(),
+    }
+}
+
 /// Mutable index over a working partition. The single shared
 /// implementation of the three-clause predicate, exposed in the
 /// transactional shape docs/design.md "Realizability primitive" prescribes.

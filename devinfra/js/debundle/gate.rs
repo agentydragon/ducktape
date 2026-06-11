@@ -23,7 +23,7 @@ pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
     CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
     SccDiagnosis, SccRejection, SccTimingReporter, check_realizability,
-    record_gate_diagnostic_translation,
+    check_realizability_touching, record_gate_diagnostic_translation,
 };
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
