@@ -27,7 +27,7 @@ struct EdgeJournalEntry<N> {
 /// of debundle owner/module semantics; callers layer evidence and
 /// domain-specific labels on top.
 #[derive(Debug, Clone)]
-pub(crate) struct RollbackDiGraph<N> {
+pub struct RollbackDiGraph<N> {
     edge_counts: BTreeMap<(N, N), usize>,
     out_edges: BTreeMap<N, BTreeSet<N>>,
     in_edges: BTreeMap<N, BTreeSet<N>>,

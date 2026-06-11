@@ -43,9 +43,11 @@ use analysis::graph::{OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 
+mod condensation_order;
 mod esm_simulator;
 mod incremental_quotient;
 
+pub use condensation_order::CondensationOrder;
 use esm_simulator::EsmEvaluationSimulator;
 pub use incremental_quotient::{DeltaHandle, PartitionDelta};
 use incremental_quotient::{IncrementalQuotient, JournalEntry, QuotientOverlay};

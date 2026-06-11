@@ -307,6 +307,7 @@ rust_library(
         "chunk_factorization.rs",
         "esm_import_order.rs",
         "gate.rs",
+        "realizability/condensation_order.rs",
         "realizability/esm_simulator.rs",
         "realizability/incremental_quotient.rs",
         "realizability/mod.rs",
