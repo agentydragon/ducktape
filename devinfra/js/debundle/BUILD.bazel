@@ -557,6 +557,7 @@ rust_library(
         "lowering/ordinal.rs",
         "lowering/plan_references.rs",
         "lowering/plans.rs",
+        "lowering/rename_ledger.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
         "lowering/scope_names.rs",
@@ -586,6 +587,12 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
+)
+
+rust_test(
+    name = "lowering_test",
+    crate = ":lowering",
+    edition = "2024",
 )
 
 rust_library(

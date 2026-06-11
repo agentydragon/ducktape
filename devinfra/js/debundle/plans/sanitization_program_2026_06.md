@@ -57,7 +57,11 @@ rename-pinning e2e tests:
 1. Types + inventory: `RenameLedger` of `RenameIntent { scope, from, to,
 origin, priority }`, scopes Chunk/Module/Function, **keyed by hygiene
    `Id`** (post-#2042 contexts are why string keys breed bugs). Adopt the
-   "no structural moves between seal and execute" contract.
+   "no structural moves between seal and execute" contract. _(Landed
+   2026-06: `lowering/rename_ledger.rs`, including the seal-time
+   same-priority conflict check and the two explicit contributors —
+   spec `chunk_renames` + plan `export_name`s; see TODO.md's rename
+   pipeline section for decisions and the remaining ladder.)_
 2. Collect: convert contributors (spec `export_name`s, bound/free
    heuristics, import-local `_N` minting, `chunk_renames`, cross-module,
    collision resolution) one at a time to emit intents.

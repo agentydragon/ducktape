@@ -49,6 +49,7 @@ mod naturalize;
 mod ordinal;
 mod plan_references;
 mod plans;
+pub mod rename_ledger;
 mod rewrite_runtime;
 mod runtime_imports;
 mod scope_names;
@@ -83,12 +84,13 @@ use materialize::{
     ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
     materialize_logical_chunk,
 };
-use naturalize::{NaturalizedRenames, naturalize_module_body};
+use naturalize::{NaturalizedRenames, collect_plan_export_rename_intents, naturalize_module_body};
 use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
 use plans::{LogicalRequest, MemberRequest, ModulePlan, logical_requests_for_chunk};
+use rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope, SealedRenames};
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,

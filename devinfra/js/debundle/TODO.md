@@ -254,8 +254,48 @@ Scope-aware down-payments have landed in `lowering/visitors.rs` /
   scope-local heuristic renames can no longer remap a top-level export
   specifier or orphan a member comment.
 
-The collect→validate→execute **ledger/intent-buffer** architecture below
-remains the open work.
+**PR 1 landed (2026-06):** `lowering/rename_ledger.rs` holds the intent
+buffer — `RenameLedger` accumulating `RenameIntent { scope, from: Id, to,
+origin }` with scopes `Chunk | Module(ModuleId) | Function(span)` and
+priority derived from origin (explicit > import-induced > heuristic).
+`seal()` hard-errors when same-priority intents disagree on one binding's
+target (naming both contributors) and projects the surviving intents into
+the same maps the pre-ledger code built. The two explicit contributors
+are converted (spec `chunk_renames`; plan-driven `export_name`s); the
+remaining-contributor inventory lives in `rename_ledger.rs`'s module doc.
+
+Decisions taken (formerly the open-questions subsection below):
+
+1. **Same-priority conflicts are hard errors at seal**, naming both
+   contributors — silent suppression is the trap the ledger closes.
+2. **The `$N`-suffix minting scheme stays as-is** when
+   `disambiguate_import_locals`' minting becomes a ledger service (PR 3);
+   readability is a separate, later naturalizer concern.
+3. **Structural-mutation contract: no structural moves between seal and
+   execute.** Most moves already happen pre-seal (the materializer seals
+   after `ChunkPlan` finalization); the `&Module` type-level barrier for
+   non-execute passes lands with the execute-once pass.
+
+Remaining PRs:
+
+- **PR 2 — collect**: convert the remaining contributors (heuristic
+  bound/free, import-local disambiguation, cross-module renames,
+  collision resolution) to submit intents; worklist in
+  `rename_ledger.rs`.
+- **PR 3 — seal**: move target-occupancy/capture validation into seal
+  against scope-accurate occupied sets; `_N`/`$N` minting becomes a
+  ledger service.
+- **PR 4 — execute once**: one visitor pass (the post-#2052 rename
+  visitor becomes the executor) updating the AST, export tables,
+  `runtime_imports`, `binding_comments`, and cross-module indexes in
+  lockstep, keyed by hygiene `Id` (deleting the seal-output string
+  projection).
+- **PR 5 — cleanup**: delete the defensive era (`captured` sets,
+  `drop_subtree_captured_targets` where dominated, `merged`/`module_scope`
+  split, reverse lookups); afterwards the #2045 class is
+  unrepresentable.
+
+The architecture sketch below remains the reference for PRs 2–5.
 
 The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer
@@ -299,65 +339,17 @@ defensive reverse-lookups and path sanitizers can become ordinary
 mapping/path-building code once the final mapping makes body ASTs,
 runtime imports, and report tables agree before planning runs.
 
-Prerequisite work before designing the pipeline:
+Remaining prerequisite work (the contributor inventory and the scope
+model landed with PR 1 — see `lowering/rename_ledger.rs`):
 
-1. Inventory every current rename contributor in `lowering/` and
-   adjacent files. Examples already known:
-   `collect_return_object_alias_renames` and
-   `collect_naturalization_renames_from_function` in
-   `lowering/naturalize.rs`; `RenameAndShorthandNaturalizer` and
-   `naturalize_object_literal_shorthand` in `lowering/visitors.rs`;
-   `disambiguate_import_locals` in `lowering/util.rs`; the chunk-level
-   `chunk_renames` map that flows out of factorize; and any
-   collision-resolution code path that mutates `module_import_renames`
-   at the orchestration site. Capture each contributor's _kind_
-   (explicit / heuristic / collision / chunk-level), _scope_ (function
-   / module / chunk / cross-chunk), and _current side-effect surface_.
-
-2. Inventory every downstream consumer that today reads identifier
+1. Inventory every downstream consumer that today reads identifier
    names off the AST or off pre-rename fact maps. Same call sites that
    currently need defensive bridging.
 
-3. Decide on the scope model. Per-function naturalizer renames don't
-   need to be visible at chunk scope; chunk_renames don't need to
-   reach per-function naturalizer collection. The intent buffer should
-   reject cross-scope writes by construction.
-
-4. Design must not block on landing small defensive fixes. Land them
+2. Design must not block on landing small defensive fixes. Land them
    case by case as bugs are discovered. Removing redundant defensive
    patches is part of the pipeline-landing cleanup, not the architecture
    work itself.
-
-Likely multiple PRs.
-
-### RenameLedger (PR2) open questions
-
-Before implementing the pipeline above, pin these three design questions:
-
-1. **Conflict policy for same-priority heuristic disagreements.** When
-   two heuristic contributors propose conflicting renames at the same
-   priority (e.g. `collect_return_object_alias_renames` says `sA →
-propKeyA` and `collect_naturalization_renames_from_function` says
-   `sA → propKeyB`), does the ledger panic at seal citing both
-   submitters, or silently suppress the lower one? Default proposal:
-   panic loudly, with both contributors named in the error — silent
-   suppression is the trap PR2 is meant to close.
-2. **Disambiguation name minter.** `disambiguate_import_locals` today
-   appends `_1`, `_2`, ... suffixes until a free name is found. When
-   that becomes a `RenameLedger` method (so the ledger owns "what
-   names are taken in this chunk"), does the scheme stay as-is, or
-   switch to something more readable (`name_from_module`, etc.)?
-   Default proposal: keep `_N` scheme; readability is a separate
-   concern best handled by a later naturalizer pass.
-3. **Structural mutations during COLLECT.** Today
-   `materialize_logical_modules` moves declarations between modules
-   in-place during the collect phase. Tighten the contract to either:
-   - "no structural moves between seal and execute" (pragmatic — most
-     moves already happen pre-seal, and the type-level barrier
-     `&Module` in non-execute passes lands cleanly), or
-   - "all structural moves pre-COLLECT" (cleaner architecturally but
-     requires reordering the materializer to compute a final body
-     order before any rename intents are submitted).
 
 ## CLI scripting surface
 

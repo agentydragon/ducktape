@@ -178,14 +178,6 @@ pub(super) fn materialize_logical_chunk(
     )?;
     timings.add("build_module_plans", build_module_plans_started.elapsed());
 
-    let chunk_renames_map = time_phase!(timings, "collect_chunk_renames", {
-        chunk_renames
-            .get(chunk_id)
-            .map(collect_chunk_renames)
-            .transpose()
-    })?
-    .unwrap_or_default();
-
     let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
         collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id))
     });
@@ -246,6 +238,21 @@ pub(super) fn materialize_logical_chunk(
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
     } = builder.finalize();
+    // Plan structure is final — collect the explicit rename contributors
+    // into the chunk's rename ledger and seal it. Seal hard-errors when
+    // same-priority intents disagree on one binding's target; the sealed
+    // output feeds the same application sites the pre-ledger maps fed
+    // (Chunk scope → `chunk_renames_map` below, Module scope → the
+    // per-plan naturalize pass in `lower_chunk`).
+    let sealed_renames = time_phase!(timings, "seal_rename_ledger", {
+        let mut ledger = RenameLedger::default();
+        if let Some(renames) = chunk_renames.get(chunk_id) {
+            collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
+        }
+        collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
+        ledger.seal()
+    })?;
+    let chunk_renames_map = sealed_renames.chunk_renames_by_name();
     let (logical_modules, default_destination) =
         time_phase!(timings, "project_factorization_modules", {
             project_factorization_modules_with_sentinel(
@@ -314,6 +321,7 @@ pub(super) fn materialize_logical_chunk(
             },
             spec_facts: LowerChunkSpecFacts {
                 runtime_import_facts: &runtime_import_facts,
+                sealed_renames: &sealed_renames,
                 chunk_renames: &chunk_renames_map,
                 pre_existing_entry_exports: &pre_existing_entry_exports,
                 pre_existing_public_export_names: &pre_existing_public_export_names,

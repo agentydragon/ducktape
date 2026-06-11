@@ -1,7 +1,10 @@
 //! Naturalization: rewrite body identifiers to readable names + collapse
-//! `{ x: x }` shorthand. Combines plan-driven renames (from spec) with
-//! heuristic renames derived from the AST (return-object aliases,
-//! destructure unpacks, constructor `this.x = param` mappings).
+//! `{ x: x }` shorthand. Combines plan-driven renames (spec `export_name`s,
+//! collected into the rename ledger by
+//! [`collect_plan_export_rename_intents`] and arriving here as the sealed
+//! Module-scope map) with heuristic renames derived from the AST
+//! (return-object aliases, destructure unpacks, constructor
+//! `this.x = param` mappings).
 //!
 //! `naturalize_module_body` is the public entry. Heuristic renames are
 //! split by what their source name resolves to:
@@ -46,22 +49,46 @@ pub(super) struct NaturalizedRenames {
     pub(super) module_scope: BTreeMap<String, String>,
 }
 
+/// Collect each plan's spec-driven `export_name` renames into the ledger
+/// (scope: that plan's [`ModuleId`], origin: `Explicit`). Applies the same
+/// filter the pre-ledger `plan_driven` map applied: self-renames and
+/// non-identifier targets never become intents. Iterates `plan.bindings`
+/// (a `HashMap`) in sorted order so the ledger's intent order — and any
+/// seal-time diagnostics — don't vary by hash seed.
+pub(super) fn collect_plan_export_rename_intents(
+    module_plans: &[ModulePlan],
+    chunk_top_level_mark: swc_common::Mark,
+    ledger: &mut RenameLedger,
+) {
+    for (index, plan) in module_plans.iter().enumerate() {
+        let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
+        sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
+        for (local, exported) in sorted_bindings {
+            if local != exported && is_valid_js_identifier(exported) {
+                ledger.submit(RenameIntent {
+                    scope: RenameScope::Module(ModuleId::logical(index)),
+                    from: top_level_id(local, chunk_top_level_mark),
+                    to: exported.as_str().into(),
+                    origin: RenameOrigin::Explicit {
+                        contributor: PLAN_EXPORT_NAME_CONTRIBUTOR,
+                    },
+                });
+            }
+        }
+    }
+}
+
+pub(super) const PLAN_EXPORT_NAME_CONTRIBUTOR: &str = "logical_module member export_name";
+
+/// `plan_driven` is this plan's sealed Module-scope rename map
+/// (`SealedRenames::module_renames_by_name`); sorted (`BTreeMap`)
+/// iteration keeps the rename-precedence the visitor applies when two
+/// locals compete for the same target independent of hash seed.
 pub(super) fn naturalize_module_body(
     body: &mut [ModuleItem],
     plan: &ModulePlan,
+    plan_driven: BTreeMap<String, String>,
 ) -> Result<NaturalizedRenames> {
-    let mut plan_driven = BTreeMap::<String, String>::new();
-    // Stable iteration over `plan.bindings` (a HashMap) so the order
-    // renames land in `plan_driven` — and thus the rename-precedence the
-    // visitor applies when two locals compete for the same target —
-    // doesn't vary by hash seed.
-    let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
-    sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
-    for (local, exported) in sorted_bindings {
-        if local != exported && is_valid_js_identifier(exported) {
-            plan_driven.insert(local.clone(), exported.clone());
-        }
-    }
     let mut free_heuristic = BTreeMap::<String, String>::new();
     for item in body.iter() {
         collect_free_alias_renames_from_item(item, &mut free_heuristic);

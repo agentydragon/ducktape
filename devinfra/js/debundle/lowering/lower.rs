@@ -67,7 +67,13 @@ pub(super) struct LowerChunkPlan<'a> {
 /// emission time. Held in `LowerChunkInputs::spec_facts`.
 pub(super) struct LowerChunkSpecFacts<'a> {
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
-    /// In-place renames from `TransformSpec::chunk_renames`. Applied
+    /// The chunk's sealed rename ledger (explicit contributors collected
+    /// and conflict-validated in `materialize_logical_chunk`). The
+    /// per-plan naturalize pass below queries its Module-scope maps;
+    /// `chunk_renames` is its Chunk-scope projection.
+    pub(super) sealed_renames: &'a SealedRenames,
+    /// In-place renames from `TransformSpec::chunk_renames` — the sealed
+    /// ledger's Chunk-scope projection. Applied
     /// to bindings staying in entry's body — i.e. those *not* in
     /// `binding_assignment`. Bindings claimed by a logical module
     /// take their rename from the module plan; entries here for
@@ -126,6 +132,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     } = plan;
     let LowerChunkSpecFacts {
         runtime_import_facts,
+        sealed_renames,
         chunk_renames,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
@@ -379,7 +386,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     time_phase!(timings, "module.naturalize_body", {
         for (index, plan) in module_plans.iter().enumerate() {
             let mut body = std::mem::take(&mut selected_by_module[index]);
-            let renames = naturalize_module_body(&mut body, plan)?;
+            let plan_driven = sealed_renames.module_renames_by_name(ModuleId::logical(index));
+            let renames = naturalize_module_body(&mut body, plan, plan_driven)?;
             naturalized_bodies.push(body);
             local_renames_by_module.push(renames);
         }
