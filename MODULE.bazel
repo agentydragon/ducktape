@@ -515,7 +515,16 @@ pip.parse(
     python_version = "3.13",
     requirements_lock = "//homeassistant:requirements.txt",
 )
-use_repo(pip, "pypi", "pypi_homeassistant")
+
+# Separate pip hub for the Tana LiteLLM proxy appliance. LiteLLM's proxy extra
+# pins package versions that conflict with unrelated repo-wide Python deps, so
+# keep the production proxy image in its own resolver universe.
+pip.parse(
+    hub_name = "pypi_tana_litellm_proxy",
+    python_version = "3.13",
+    requirements_lock = "//tana/litellm_proxy:requirements.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant", "pypi_tana_litellm_proxy")
 
 # Type stubs for mypy - extracts types-* and *-stubs packages from requirements
 # and provides them to the mypy aspect for per-target stub inclusion.
