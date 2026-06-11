@@ -309,6 +309,7 @@ rust_library(
         "esm_import_order.rs",
         "gate.rs",
         "realizability/condensation_order.rs",
+        "realizability/condensation_order_proptest.rs",
         "realizability/esm_simulator.rs",
         "realizability/incremental_quotient.rs",
         "realizability/mod.rs",
@@ -336,6 +337,7 @@ rust_test(
     crate = ":gate",
     edition = "2024",
     deps = [
+        "@crates//:proptest",
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_parser",
@@ -580,6 +582,7 @@ rust_library(
         "lowering/plan_references.rs",
         "lowering/plans.rs",
         "lowering/rename_ledger.rs",
+        "lowering/rename_ledger_proptest.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
         "lowering/scope_names.rs",
@@ -615,6 +618,7 @@ rust_test(
     name = "lowering_test",
     crate = ":lowering",
     edition = "2024",
+    deps = ["@crates//:proptest"],
 )
 
 rust_library(

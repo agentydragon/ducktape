@@ -130,6 +130,14 @@ fixes.
    `check_realizability`, with an _independent_ reference partition builder
    (the flagship differential currently shares the kernel's own
    projection); cover the gate-residual promotion transition.
+   _Status (2026-06)_: proptest is wired into the Rust/Bazel build
+   (`@crates//:proptest`) and the first property suites landed —
+   `realizability/condensation_order_proptest.rs` (digraph
+   mutation/overlay sequences vs `tarjan_scc` brute force) and
+   `lowering/rename_ledger_proptest.rs` (public seal contract). The
+   remaining F1 step is migrating the gate-differential harness
+   (`peel/gate_differential_test.rs`) to proptest strategies,
+   scheduled with gate-ladder PR 4+.
 2. **Lemma pinning**: named tests for Lemmas 1/3/4/5 (only Lemma 2 has
    them); extend the #2071 Node-differential to a fixture sweep.
 3. **Excalidraw public smoke** (TODO's big standing item): the

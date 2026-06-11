@@ -104,7 +104,7 @@
 //! Vendor boundary renames (`vendor/`) run in a separate pipeline stage on
 //! different artifacts and are out of this ledger's scope.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use analysis::ModuleId;
@@ -266,14 +266,15 @@ impl RenameLedger {
                 .max()
                 .expect("groups hold at least one intent");
             // Distinct targets proposed at the top priority, each with the
-            // (sorted, deduped) contributors proposing it.
-            let mut by_target: BTreeMap<&Atom, Vec<RenameOrigin>> = BTreeMap::new();
+            // (sorted, deduped) contributors proposing it — a BTreeSet so
+            // the rendered conflict is independent of submission order.
+            let mut by_target: BTreeMap<&Atom, BTreeSet<RenameOrigin>> = BTreeMap::new();
             for intent in &intents {
                 if intent.origin.priority() == top_priority {
-                    let origins = by_target.entry(&intent.to).or_default();
-                    if !origins.contains(&intent.origin) {
-                        origins.push(intent.origin);
-                    }
+                    by_target
+                        .entry(&intent.to)
+                        .or_default()
+                        .insert(intent.origin);
                 }
             }
             if by_target.len() > 1 {

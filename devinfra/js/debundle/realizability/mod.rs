@@ -44,6 +44,8 @@ use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 
 mod condensation_order;
+#[cfg(test)]
+mod condensation_order_proptest;
 mod esm_simulator;
 mod incremental_quotient;
 

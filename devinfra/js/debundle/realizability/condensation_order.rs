@@ -1023,24 +1023,28 @@ fn effective_count<N: Copy + Ord>(
     base.edge_count(from, to) as isize + overlay.get(&(from, to)).copied().unwrap_or(0)
 }
 
+/// Brute-force reference implementations shared by the pinned-seed
+/// xorshift suites below and the proptest differential suite
+/// (`condensation_order_proptest.rs`).
 #[cfg(test)]
-mod tests {
+pub(super) mod test_support {
     use std::collections::{BTreeMap, BTreeSet};
 
     use petgraph::algo::tarjan_scc;
     use petgraph::graphmap::DiGraphMap;
 
-    use super::*;
+    use super::CondensationOrder;
+    use crate::rollback_graph::RollbackDiGraph;
 
     /// Sentinel for the identified `{u, v}` node in the brute-force
     /// reference graphs.
     const MERGED: usize = usize::MAX;
 
-    fn no_overlay() -> BTreeMap<(usize, usize), isize> {
+    pub fn no_overlay() -> BTreeMap<(usize, usize), isize> {
         BTreeMap::new()
     }
 
-    fn graph(edges: &[(usize, usize)]) -> RollbackDiGraph<usize> {
+    pub fn graph(edges: &[(usize, usize)]) -> RollbackDiGraph<usize> {
         let mut graph = RollbackDiGraph::new();
         for &(a, b) in edges {
             graph.increment_edge(a, b);
@@ -1048,41 +1052,22 @@ mod tests {
         graph
     }
 
-    /// Build a fresh `CondensationOrder` that has seen every edge of
-    /// `base` via `insert_edge` (after a forced initial rebuild on an
-    /// empty graph, so the incremental insertion path is exercised).
-    fn order_via_inserts(base: &RollbackDiGraph<usize>) -> CondensationOrder<usize> {
-        let mut order = CondensationOrder::new();
-        let empty = RollbackDiGraph::<usize>::new();
-        // Force the initial rebuild on the empty graph so subsequent
-        // insert_edge calls run the incremental PK path, not rebuild.
-        assert!(!order.is_in_multi_scc(&empty, 0));
-        let mut shadow = RollbackDiGraph::new();
-        for (a, b) in base.edge_pairs() {
-            for _ in 0..base.edge_count(a, b) {
-                shadow.increment_edge(a, b);
-                order.insert_edge(&shadow, a, b);
-            }
-        }
-        order
-    }
-
     /// Test-side contraction-alias mirror, independent of the
     /// structure's internal union-find.
     #[derive(Clone, Default)]
-    struct TestAlias {
+    pub struct TestAlias {
         parent: BTreeMap<usize, usize>,
     }
 
     impl TestAlias {
-        fn find(&self, mut x: usize) -> usize {
+        pub fn find(&self, mut x: usize) -> usize {
             while let Some(&p) = self.parent.get(&x) {
                 x = p;
             }
             x
         }
 
-        fn union(&mut self, winner: usize, loser: usize) {
+        pub fn union(&mut self, winner: usize, loser: usize) {
             let rw = self.find(winner);
             let rl = self.find(loser);
             if rw != rl {
@@ -1114,7 +1099,7 @@ mod tests {
     /// the effective graph with `u`'s and `v`'s alias classes
     /// identified into a sentinel node; true iff the sentinel's SCC
     /// has size ≥ 2.
-    fn brute_would_join(
+    pub fn brute_would_join(
         base: &RollbackDiGraph<usize>,
         alias: &TestAlias,
         overlay: &BTreeMap<(usize, usize), isize>,
@@ -1159,7 +1144,7 @@ mod tests {
 
     /// Assert `is_in_multi_scc` matches the brute-force partition for
     /// every node in the universe.
-    fn assert_multi_matches_brute(
+    pub fn assert_multi_matches_brute(
         order: &mut CondensationOrder<usize>,
         base: &RollbackDiGraph<usize>,
         alias: &TestAlias,
@@ -1175,6 +1160,33 @@ mod tests {
                 "{context}: is_in_multi_scc({n}) diverges from tarjan",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::test_support::*;
+    use super::*;
+
+    /// Build a fresh `CondensationOrder` that has seen every edge of
+    /// `base` via `insert_edge` (after a forced initial rebuild on an
+    /// empty graph, so the incremental insertion path is exercised).
+    fn order_via_inserts(base: &RollbackDiGraph<usize>) -> CondensationOrder<usize> {
+        let mut order = CondensationOrder::new();
+        let empty = RollbackDiGraph::<usize>::new();
+        // Force the initial rebuild on the empty graph so subsequent
+        // insert_edge calls run the incremental PK path, not rebuild.
+        assert!(!order.is_in_multi_scc(&empty, 0));
+        let mut shadow = RollbackDiGraph::new();
+        for (a, b) in base.edge_pairs() {
+            for _ in 0..base.edge_count(a, b) {
+                shadow.increment_edge(a, b);
+                order.insert_edge(&shadow, a, b);
+            }
+        }
+        order
     }
 
     #[test]

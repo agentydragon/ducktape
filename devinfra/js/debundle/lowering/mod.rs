@@ -50,6 +50,8 @@ mod ordinal;
 mod plan_references;
 mod plans;
 pub mod rename_ledger;
+#[cfg(test)]
+mod rename_ledger_proptest;
 mod rewrite_runtime;
 mod runtime_imports;
 mod scope_names;
