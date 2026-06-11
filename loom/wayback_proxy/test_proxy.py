@@ -24,7 +24,14 @@ from yarl import URL
 
 from loom.wayback_proxy import fake_ia
 from loom.wayback_proxy.addon import HEALTH_HOST, WaybackAddon
-from loom.wayback_proxy.proxy import Config, WaybackResolver, parse_web_path, pick_capture, ts_allowed
+from loom.wayback_proxy.proxy import (
+    Config,
+    WaybackResolver,
+    parse_web_path,
+    pick_available_capture,
+    pick_capture,
+    ts_allowed,
+)
 
 AS_OF_TS = "20200601235959"
 
@@ -95,6 +102,13 @@ async def test_https_request_is_served_without_rewriting_to_http(fetch: Fetch) -
     result = await fetch("https://example.com/")
     assert result.status == 200
     assert result.body == fake_ia.EXAMPLE_BODY
+    assert result.headers["X-Wayback-Timestamp"] == fake_ia.GOOD_TS
+
+
+async def test_normal_lookup_uses_availability_not_cdx(fetch: Fetch) -> None:
+    result = await fetch(fake_ia.CDX_FAILS_BUT_AVAILABLE_URL)
+    assert result.status == 200
+    assert result.body == fake_ia.CDX_FAILS_BUT_AVAILABLE_BODY
     assert result.headers["X-Wayback-Timestamp"] == fake_ia.GOOD_TS
 
 
@@ -226,6 +240,49 @@ def test_pick_capture() -> None:
     assert pick_capture(rows) == ("20200101000000", "https://b/")
 
 
+def test_pick_available_capture() -> None:
+    payload = {
+        "archived_snapshots": {
+            "closest": {
+                "status": "200",
+                "available": True,
+                "url": "http://web.archive.org/web/20200101000000/https://example.com/?q=1",
+                "timestamp": "20200101000000",
+            }
+        }
+    }
+    assert pick_available_capture(payload, AS_OF_TS) == ("20200101000000", "https://example.com/?q=1")
+
+
+def test_pick_available_capture_rejects_future_closest() -> None:
+    payload = {
+        "archived_snapshots": {
+            "closest": {
+                "status": "200",
+                "available": True,
+                "url": f"http://web.archive.org/web/{fake_ia.TOO_NEW_TS}/https://example.com/",
+                "timestamp": fake_ia.TOO_NEW_TS,
+            }
+        }
+    }
+    assert pick_available_capture(payload, AS_OF_TS) is None
+
+
+def test_pick_available_capture_ignores_unavailable() -> None:
+    assert pick_available_capture({"archived_snapshots": {}}, AS_OF_TS) is None
+    payload = {
+        "archived_snapshots": {
+            "closest": {
+                "status": "404",
+                "available": False,
+                "url": "http://web.archive.org/web/20200101000000/https://example.com/",
+                "timestamp": "20200101000000",
+            }
+        }
+    }
+    assert pick_available_capture(payload, AS_OF_TS) is None
+
+
 def test_config_requires_as_of(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WAYBACK_AS_OF", raising=False)
     with pytest.raises(RuntimeError, match="WAYBACK_AS_OF"):
@@ -235,6 +292,20 @@ def test_config_requires_as_of(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_config_as_of_ts() -> None:
     config = Config(as_of=date(2020, 6, 1), upstream="https://web.archive.org", port=8080)
     assert config.as_of_ts == AS_OF_TS
+
+
+def test_config_uses_archive_org_for_direct_availability() -> None:
+    config = Config(as_of=date(2020, 6, 1), upstream="https://web.archive.org", port=8080)
+    assert config.availability_base == "https://archive.org"
+
+
+def test_config_from_env_uses_cache_for_availability(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WAYBACK_AS_OF", "2020-06-01")
+    monkeypatch.setenv("WAYBACK_UPSTREAM", "http://wayback-cache.local:8080")
+    monkeypatch.delenv("WAYBACK_AVAILABILITY_UPSTREAM", raising=False)
+    config = Config.from_env()
+    assert config.upstream == "http://wayback-cache.local:8080"
+    assert config.availability_base == "http://wayback-cache.local:8080"
 
 
 if __name__ == "__main__":

@@ -1,12 +1,13 @@
 """Canned Internet Archive stand-in for wayback proxy tests.
 
-Implements just enough of the CDX API (``/cdx/search/cdx`` with ``url``,
-``to``, ``limit=-1``, ``output=json``) and the ``/web/<ts><modifier>/<url>``
-replay endpoint, from a literal capture table. Deliberately independent of
-proxy.py — this module is the test oracle pinning what we believe IA does:
-header-row CDX JSON, empty body when no captures match, ``Memento-Datetime``
-on replayed captures (including archived 404s), 302 timestamp
-canonicalization, and captured live-web redirects.
+Implements just enough of the Availability API (``/wayback/available``), the
+CDX API (``/cdx/search/cdx`` with ``url``, ``to``, ``limit=-1``,
+``output=json``), and the ``/web/<ts><modifier>/<url>`` replay endpoint, from a
+literal capture table. Deliberately independent of proxy.py — this module is
+the test oracle pinning what we believe IA does: Availability's single closest
+snapshot JSON, header-row CDX JSON, empty CDX body when no captures match,
+``Memento-Datetime`` on replayed captures (including archived 404s), 302
+timestamp canonicalization, and captured live-web redirects.
 
 Runs in the test process: in-process for test_proxy.py, bound on 0.0.0.0 for
 the compose e2e (the proxy container reaches it via host.docker.internal).
@@ -22,6 +23,7 @@ from datetime import date
 from aiohttp import web
 
 CDX_PATH = "/cdx/search/cdx"
+AVAILABILITY_PATH = "/wayback/available"
 CDX_HEADER = ["urlkey", "timestamp", "original", "mimetype", "statuscode", "digest", "length"]
 MEMENTO_HEADER = {"Memento-Datetime": "Wed, 15 Jan 2020 10:30:00 GMT"}
 
@@ -65,6 +67,11 @@ GONE_BODY = b"not found, as of 2020\n"
 # CDX itself fails for this URL (tests 503 -> 502 mapping).
 CDX_BROKEN_URL = "http://cdx-broken.example/"
 
+# CDX fails for this URL, but Availability succeeds. Proves normal browsing does
+# not touch CDX on the happy path.
+CDX_FAILS_BUT_AVAILABLE_URL = "http://available-only.example/"
+CDX_FAILS_BUT_AVAILABLE_BODY = b"served without touching cdx\n"
+
 
 @dataclass(frozen=True)
 class Replay:
@@ -82,6 +89,7 @@ CDX_CAPTURES: dict[str, list[tuple[str, str]]] = {
     DRIFT_URL: [(DRIFT_LISTED_TS, DRIFT_URL)],
     MOVED_URL: [(GOOD_TS, MOVED_URL)],
     GONE_URL: [(GOOD_TS, GONE_URL)],
+    CDX_FAILS_BUT_AVAILABLE_URL: [(GOOD_TS, CDX_FAILS_BUT_AVAILABLE_URL)],
 }
 
 # Replay table: (timestamp, original URL) -> response.
@@ -94,6 +102,7 @@ REPLAYS: dict[tuple[str, str], Replay] = {
     (TOO_NEW_TS, DRIFT_URL): Replay(body=b"post-as_of content that must never be served\n"),
     (GOOD_TS, MOVED_URL): Replay(redirect_to=MOVED_TARGET),
     (GOOD_TS, GONE_URL): Replay(status=404, body=GONE_BODY),
+    (GOOD_TS, CDX_FAILS_BUT_AVAILABLE_URL): Replay(body=CDX_FAILS_BUT_AVAILABLE_BODY),
 }
 
 
@@ -112,7 +121,7 @@ def _captures_for(url: str) -> list[tuple[str, str]]:
 
 def _cdx_response(request: web.BaseRequest) -> web.Response:
     url = request.query["url"]
-    if url == CDX_BROKEN_URL:
+    if url in (CDX_BROKEN_URL, CDX_FAILS_BUT_AVAILABLE_URL):
         return web.Response(status=503, text="CDX is having a bad day\n")
     to_ts = request.query.get("to", "99999999999999").ljust(14, "9")
     matching = [capture for capture in _captures_for(url) if capture[0] <= to_ts]
@@ -127,8 +136,46 @@ def _cdx_response(request: web.BaseRequest) -> web.Response:
     return web.Response(body=json.dumps(rows).encode(), content_type="application/json")
 
 
+def _availability_response(request: web.BaseRequest) -> web.Response:
+    url = request.query["url"]
+    timestamp = request.query.get("timestamp", "99999999999999").ljust(14, "9")
+    captures = _captures_for(url)
+
+    # The real API appears to center "closest" around the requested timestamp,
+    # not necessarily "newest <= timestamp"; force the future-only fixture to
+    # exercise the proxy's own future-timestamp guard and CDX fallback.
+    matching = [capture for capture in captures if capture[0] <= timestamp]
+    if not matching and captures:
+        matching = [captures[0]]
+
+    # Model Availability being less expressive than CDX: archived non-200
+    # captures may not be returned as "available", so the proxy must fall back to
+    # CDX to preserve historical 404/500 semantics.
+    if url == GONE_URL or not matching:
+        payload = {"url": url, "archived_snapshots": {}}
+        return web.Response(body=json.dumps(payload).encode(), content_type="application/json")
+
+    ts, original = matching[-1]
+    payload = {
+        "url": url,
+        "archived_snapshots": {
+            "closest": {
+                "status": "200",
+                "available": True,
+                "url": f"http://web.archive.org/web/{ts}/{original}",
+                "timestamp": ts,
+            }
+        },
+    }
+    return web.Response(
+        body=json.dumps(payload).encode(), content_type="application/json", headers={"x-rl": "0", "x-na": "0"}
+    )
+
+
 async def handle(request: web.BaseRequest) -> web.StreamResponse:
     raw_path = request.raw_path
+    if raw_path.startswith(AVAILABILITY_PATH):
+        return _availability_response(request)
     if raw_path.startswith(CDX_PATH):
         return _cdx_response(request)
     if (match := _WEB_RE.match(raw_path)) is not None:

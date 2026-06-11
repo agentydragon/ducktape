@@ -39,9 +39,11 @@ Three layers: `agent → per-agent proxy → shared cache → web.archive.org`.
 
 1. **Per-agent date-clamping proxy** ("time machine"). A plain HTTP proxy
    configured with one task's `as_of`. For any requested URL it resolves the
-   newest capture ≤ `as_of` (CDX `to=`), serves the `id_` raw bytes (no IA
-   banner/rewriting), follows IA's 302 timestamp-canonicalization internally,
-   and returns 404 when no pre-`as_of` capture exists. Existing piece:
+   newest capture ≤ `as_of` through the Wayback Availability API first, falls
+   back to clamped CDX when Availability cannot represent the case cleanly,
+   serves the `id_` raw bytes (no IA banner/rewriting), follows IA's 302
+   timestamp-canonicalization internally, and returns 404 when no pre-`as_of`
+   capture exists. Existing piece:
    [WaybackProxy](https://github.com/richardg867/WaybackProxy) is exactly
    this shape (built so retro browsers can browse the web of a configured
    date). Run it as the sidecar with its date pinned per instance and its
@@ -53,13 +55,16 @@ Three layers: `agent → per-agent proxy → shared cache → web.archive.org`.
 2. **Shared pull-through cache** (cluster service `wayback-cache`). Dumb
    two-tier nginx: tier 1 is a PVC-backed `proxy_cache` (snapshot content at
    a fixed 14-digit timestamp is immutable → effectively infinite validity,
+   Availability/CDX metadata is cached with long TTLs, and
    `proxy_cache_lock` collapses concurrent misses); misses forward to a
    loopback-only tier 2 where **every request is by construction a cold
-   miss**, so a `limit_req` token bucket there paces exactly the traffic IA
-   sees while cache hits are never throttled. Contact User-Agent on the
-   upstream hop. Draft manifests exist (namespace / pvc / configmap-generated
-   nginx.conf / deployment / service / flux-kustomization), parked pending
-   go-ahead; the config essence:
+   miss**, so `limit_req` token buckets pace exactly the traffic IA sees while
+   cache hits are never throttled. `/wayback/available` routes to
+   `archive.org`; replay/CDX routes to `web.archive.org`; the origin class is
+   part of the cache key. Contact User-Agent on the upstream hop. Draft
+   manifests exist (namespace / pvc / configmap-generated nginx.conf /
+   deployment / service / flux-kustomization), parked pending go-ahead; the
+   config essence:
 
    ```nginx
    proxy_cache_path /cache keys_zone=wayback:64m max_size=18g inactive=3650d;

@@ -1,14 +1,15 @@
 # loom/gym TODO
 
-- **Internet Archive throttling — the eval runs but IA fails ~⅓ of cold fetches.**
-  The eval now works end-to-end in `claude-sandbox`, but archive.org returns
-  ~900-950 HTTP `502`/`504` per run on cold CDX-index queries, producing ~8-13
-  `nan` (no-answer) samples. Static mitigations (keepalive pool, CDX TTL,
-  concurrency cap) were proven via metrics to shuffle the failure mode without
-  reducing volume. Findings, the metrics/observability runbook, operational
-  gotchas (broken `exec`/`port-forward`, cluster access via SOPS JWT, docker-ci
-  network pool, Flux source lag), and the prioritized next plan (availability-API
-  clamp → signal capture → adaptive backoff → self-hosted shard) are written up in
+- **Internet Archive throttling — deploy and measure the Availability-first path.**
+  The eval works end-to-end in `claude-sandbox`, but archive.org returned ~900-950
+  HTTP `502`/`504` per run on cold CDX-index queries, producing ~8-13 `nan`
+  (no-answer) samples. The proxy now resolves normal URLs through
+  `archive.org/wayback/available` first, falls back to clamped CDX only when
+  Availability cannot preserve semantics, and the cache routes/logs
+  `/wayback/available` separately from replay/CDX. After rollout, run another
+  33-task eval and compare CDX volume, IA `502`/`504`, `x-rl`/`Retry-After`, and
+  `nan` count. Findings, the metrics/observability runbook, operational gotchas,
+  and next steps (adaptive backoff → self-hosted shard) are in
   <../plans/wayback_ia_throttling.md>.
 
 - **Rename `baseline_llm.py`.** Once the bare one-shot LLM scaffold is gone, the

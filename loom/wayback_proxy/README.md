@@ -1,8 +1,10 @@
 # Wayback proxy — date-clamped web access for sandboxed agents
 
 The per-agent "time machine" from the [wayback proxy plan](../plans/wayback_proxy.md):
-a forward proxy that answers every URL with the newest Internet Archive
-capture at-or-before `WAYBACK_AS_OF`, served as raw `id_` bytes. No capture at
+a forward proxy that answers every URL with the newest Internet Archive capture
+at-or-before `WAYBACK_AS_OF`, served as raw `id_` bytes. Normal URLs resolve via
+the Wayback Availability API first, with CDX as a fallback for cases Availability
+does not represent cleanly (for example archived non-200 captures). No capture at
 or before the cutoff → 404. Explicit `web.archive.org/web/<ts>/…` requests are
 clamped (`ts ≤ as_of`), CDX queries get their `to=` bound clamped, and redirect
 hops are re-clamped (IA canonicalizes toward the _closest_ capture, which can
@@ -58,9 +60,12 @@ docker compose down -v
 ```
 
 Knobs (compose env interpolation): `WAYBACK_AS_OF` (ISO date, default
-`2020-06-01`), `WAYBACK_UPSTREAM` (default `https://web.archive.org`).
-`WAYBACK_CONFDIR` (default `~/.mitmproxy`) is where the CA is generated; the
-demo points it at a volume shared read-only with the agent.
+`2020-06-01`), `WAYBACK_UPSTREAM` (replay/CDX upstream, default
+`https://web.archive.org`), `WAYBACK_AVAILABILITY_UPSTREAM` (Availability API
+upstream; defaults to `https://archive.org` in direct-IA mode and to
+`WAYBACK_UPSTREAM` when a shared cache is configured). `WAYBACK_CONFDIR`
+(default `~/.mitmproxy`) is where the CA is generated; the demo points it at a
+volume shared read-only with the agent.
 
 ## Using the shared cluster cache
 
@@ -87,8 +92,9 @@ bbr test //loom/wayback_proxy:test_proxy        # addon semantics vs canned fake
 bbr test //loom/wayback_proxy:test_compose_e2e  # the compose demo, end to end (Docker)
 ```
 
-`fake_ia.py` pins the IA contract the proxy relies on (CDX header-row JSON,
-scheme-insensitive urlkey matching, empty body on no matches, `Memento-Datetime`
-on replays, 302 timestamp canonicalization, captured live-web redirects).
+`fake_ia.py` pins the IA contract the proxy relies on (Availability JSON, CDX
+header-row JSON, scheme-insensitive urlkey matching, empty CDX body on no
+matches, `Memento-Datetime` on replays, 302 timestamp canonicalization, captured
+live-web redirects).
 `test_compose_e2e.py` proves both http and https fetches resolve to the clamped
 capture while direct egress stays physically blocked.

@@ -2,7 +2,8 @@
 
 Status as of **2026-06-11**. Handoff for whoever next works on making the
 `loom/gym` eval's archived web access reliable. Companion to
-<wayback_proxy.md> (the proxy design) and <../gym/TODO.md>.
+<wayback_proxy.md> (the proxy design), <archive_org_apis.md> (API notes), and
+<../gym/TODO.md>.
 
 ## TL;DR
 
@@ -98,8 +99,10 @@ hostname_blocked` (a hard block, distinct from the cluster's
 
 Replace the CDX `/cdx/search/cdx` timestamp clamp in `loom/wayback_proxy/` with
 `archive.org/wayback/available?url=<url>&timestamp=<YYYYMMDDhhmmss>`. This
-sidesteps the rate-limited, mostly-failing CDX endpoint entirely (the dominant
-source of the `502`s). Implementation lives in `loom/wayback_proxy/proxy.py` /
+sidesteps the rate-limited, mostly-failing CDX endpoint for the common path (the
+dominant source of the `502`s). CDX should remain as a clamped passthrough and
+fallback for cases Availability cannot represent cleanly, such as archived
+non-200 captures. Implementation lives in `loom/wayback_proxy/proxy.py` /
 `addon.py` (the date-clamp logic) + tests (`test_proxy.py`, `fake_ia.py`).
 
 Verify before committing:
@@ -114,6 +117,11 @@ Verify before committing:
 - its rate limits / `x-rl` behavior under the eval's volume (it may have its own
   limits — measure, don't assume).
 
+Implementation note: the intended shape is Availability-first for normal URLs,
+strict timestamp validation in the proxy, and CDX fallback only when
+Availability is unavailable/future or cannot preserve current semantics (for
+example archived non-200 captures).
+
 ### 2. Capture IA's signal headers on the cache (cheap; do before #3)
 
 Add `$upstream_http_x_rl`, `$upstream_http_retry_after`, `$upstream_http_x_na` to
@@ -122,6 +130,11 @@ the wayback-cache nginx access log (a `log_format` addition) and/or the exporter
 **after** an eval finishes (rolling the cache mid-run drops in-flight fetches).
 Then one run tells us definitively whether IA sends a retry/limit signal on the
 `502`/CDX path we actually fail on. This is the "measure before tuning" step.
+
+Implementation note: the cache log/exporter should split metrics by `origin`
+(`archive.org` vs `web.archive.org`) and include the low-cardinality signal
+headers so the post-rollout eval can distinguish Availability pressure from
+replay/CDX pressure.
 
 ### 3. Adaptive backoff / respect-signal (after #2's data)
 

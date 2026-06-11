@@ -40,11 +40,8 @@ async def amain(config: Config, manifest: TextIO) -> None:
     logger.info(
         "wayback proxy: as_of=%s upstream=%s port=%d confdir=%s", config.as_of, config.upstream, config.port, ca_dir
     )
-    # Authorization rides on every request; the proxy only ever GETs `upstream`
-    # (off-archive redirects are returned to the client, never followed).
-    headers = {"Authorization": config.upstream_auth} if config.upstream_auth is not None else {}
     # Total timeout rides out wayback-cache limit_req delays (burst 60 @ 30r/m).
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300), headers=headers) as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
         resolver = WaybackResolver(config, session, manifest)
         options = Options(listen_host="0.0.0.0", listen_port=config.port, confdir=str(ca_dir))
         master = DumpMaster(options, with_termlog=False, with_dumper=False)
