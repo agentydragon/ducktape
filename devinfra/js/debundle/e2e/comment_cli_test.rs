@@ -80,11 +80,14 @@ fn binding_comment_set_read_clear_roundtrip() {
     )
     .unwrap();
     assert_eq!(set.action, "set");
-    assert_eq!(set.comment, "acquires plugin settings");
+    assert_eq!(set.comment.as_deref(), Some("acquires plugin settings"));
 
     let read_out = apply_binding_comment(root, "XOe", CommentMode::Read, false).unwrap();
     assert_eq!(read_out.action, "read");
-    assert_eq!(read_out.comment, "acquires plugin settings");
+    assert_eq!(
+        read_out.comment.as_deref(),
+        Some("acquires plugin settings")
+    );
 
     let body = read(root, "runtime/plugins.yaml");
     let doc: Value = serde_yaml::from_str(&body).unwrap();
@@ -120,14 +123,14 @@ fn module_comment_set_read_clear_roundtrip() {
     )
     .unwrap();
     assert_eq!(set.action, "set");
-    assert_eq!(set.comment, "plugin glue layer");
+    assert_eq!(set.comment.as_deref(), Some("plugin glue layer"));
 
     let body = read(root, "runtime/plugins.yaml");
     let doc: Value = serde_yaml::from_str(&body).unwrap();
     assert_eq!(doc["comment"].as_str(), Some("plugin glue layer"));
 
     let read_out = apply_module_comment(root, "runtime/plugins", CommentMode::Read, false).unwrap();
-    assert_eq!(read_out.comment, "plugin glue layer");
+    assert_eq!(read_out.comment.as_deref(), Some("plugin glue layer"));
 
     let cleared = apply_module_comment(root, "runtime/plugins", CommentMode::Clear, false).unwrap();
     assert_eq!(cleared.action, "cleared");
@@ -193,7 +196,7 @@ fn edit_mode_uses_fake_editor() {
     }
 
     assert_eq!(out.action, "set");
-    assert_eq!(out.comment, "from-fake-editor");
+    assert_eq!(out.comment.as_deref(), Some("from-fake-editor"));
     let body = read(root, "m.yaml");
     let doc: Value = serde_yaml::from_str(&body).unwrap();
     assert_eq!(
