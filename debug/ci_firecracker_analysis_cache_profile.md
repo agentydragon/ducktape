@@ -310,3 +310,253 @@ Validation performed:
 bazelisk build //devinfra/buildbuddy_cli:bbapi --config=rbe --remote_download_outputs=toplevel
 bazelisk test //devinfra/buildbuddy_cli:bbapi_test --config=rbe
 ```
+
+## Post-Merge Data Collection
+
+This section supersedes the earlier progress-line-only interpretation. After PR #2013 was
+squash-merged, the runner probe started producing enough data to separate:
+
+- Firecracker snapshot / VM-local state reuse;
+- Bazel server and analysis-cache state;
+- action-cache and remote-execution time;
+- workflow-level scoping decisions.
+
+### Process
+
+Current worktree:
+
+- `/tmp/ducktape-ci-build-profile-analysis`
+- branch `codex/ci-build-profile-analysis`
+- base `origin/devel` at `3aa49bba4`
+
+The collector is an investigation helper, not a production CI path:
+
+- `devinfra/ci/collect_bazel_ci_profiles.py`
+- Bazel target: `//devinfra/ci:collect_bazel_ci_profiles_bin`
+- test target: `//devinfra/ci:test_collect_bazel_ci_profiles`
+
+Canonical output is JSON. The Markdown aggregate is only a derived view for quick reading.
+
+```bash
+python3 devinfra/ci/collect_bazel_ci_profiles.py \
+  --out /tmp/ci-build-profile-data/runs \
+  --write-md \
+  27312660728 27312715510 27312766911 27313187627 27313474860
+```
+
+Primary outputs:
+
+- `/tmp/ci-build-profile-data/runs/aggregate.json`
+- `/tmp/ci-build-profile-data/runs/<run-id>/summary.json`
+- `/tmp/ci-build-profile-data/runs/<run-id>/profiles/*.command.profile.json`
+- `/tmp/ci-build-profile-data/runs/<run-id>/probes/probe-*.tgz`
+
+The collector uses GitHub logs only for missing linkage and probe markers:
+
+- GitHub run/job metadata;
+- child Bazel invocation IDs printed in the job log;
+- `CI_VM_PROBE_*` summary and CAS digest lines.
+
+Bazel analysis counters come from raw BES JSON, not GitHub progress text. Specifically:
+
+- `buildMetrics.packageMetrics.packagesLoaded`;
+- `buildMetrics.targetMetrics.targetsConfigured`;
+- `buildMetrics.targetMetrics.targetsConfiguredNotIncludingAspects`;
+- `buildMetrics.timingMetrics.analysisPhaseTimeInMs`;
+- `buildMetrics.timingMetrics.executionPhaseTimeInMs`;
+- `buildMetrics.buildGraphMetrics.*` Skyframe value counts;
+- `buildMetrics.actionSummary.*` cache and runner counts.
+
+The older GitHub progress field `0 targets configured` can be misleading. In this sample,
+three runs printed progress `0`, while BES reported `1442`, `1305`, and `1307` configured
+targets. Treat progress scraping as a fallback only.
+
+### Runs Sampled
+
+| GH run        | PR    | head       | changed area                     | `bazel-ci / Test & Build`                   |
+| ------------- | ----- | ---------- | -------------------------------- | ------------------------------------------- |
+| `27312660728` | #2018 | `c7f37af3` | CI probe upload robustness       | `bazel test //...` then `bazel build //...` |
+| `27312715510` | #2019 | `22a51802` | monitoring YAML                  | same                                        |
+| `27312766911` | #2020 | `a8f35bf1` | Flux sparse checkout docs/config | same                                        |
+| `27313187627` | #2019 | `b6874430` | monitoring YAML                  | same                                        |
+| `27313474860` | #2021 | `e9307e50` | Rust debundle matching           | same                                        |
+
+The workflow is not changed-file scoped. `.github/workflows/ci.yml` runs `bazel-ci` for every
+PR, and `.github/workflows/bazel-ci.yml` unconditionally runs:
+
+```bash
+bazel test --keep_going $RBE_FLAGS //...
+bazel build --keep_going $RBE_FLAGS //...
+```
+
+`release` and `push-images` are present in the main CI graph but skipped for PRs. For the
+sampled PRs, changed files did not prune the requested Bazel target set; caching was the only
+thing limiting executed work.
+
+### Aggregate Profile
+
+| run           | title                                              | test elapsed | critical | BES pkg | BES cfg | BES analysis | build BES cfg | probe              |
+| ------------- | -------------------------------------------------- | -----------: | -------: | ------: | ------: | -----------: | ------------: | ------------------ |
+| `27312660728` | Report CI probe upload digest robustly             |       56.06s |   49.16s |       3 |    1442 |        5.37s |             0 | prev=no servers=1  |
+| `27312715510` | monitoring: alert on control-plane disk contention |       48.31s |   43.24s |       0 |       0 |        4.08s |             0 | prev=yes servers=1 |
+| `27312766911` | flux: narrow GitRepository sparse checkout         |       53.73s |   42.89s |       1 |    1305 |        5.51s |             0 | prev=yes servers=1 |
+| `27313187627` | monitoring: alert on control-plane disk contention |       48.61s |   42.57s |       1 |    1307 |        4.89s |             0 | prev=yes servers=1 |
+| `27313474860` | Optimize debundle wildcard source matching         |       63.40s |   53.74s |       0 |       0 |        4.07s |             0 | prev=yes servers=1 |
+
+Aggregate timing summary:
+
+- test elapsed median: 53.73s, range 48.31-63.40s;
+- test critical path median: 43.24s, range 42.57-53.74s;
+- test BES analysis phase median: 4.89s, range 4.07-5.51s;
+- test BES configured targets: 0, 0, 1305, 1307, 1442;
+- build child configured targets: 0 for all sampled runs;
+- build child still spends about 3.2-4.7s in Bazel analysis/dirty-check overhead.
+
+This is not a cold analysis-cache wipe. It is also not "no reanalysis". The best read is:
+
+- the Bazel server is usually present before the first command;
+- much of the graph survives, because packages loaded are 0-3 and some runs configure 0 targets;
+- the first `bazel test //...` still does incremental Skyframe work, and in three of five runs
+  BES reports about 1.3k-1.4k configured targets;
+- the second `bazel build //...` in the same runner is consistently warm at 0 configured targets.
+
+### Slow Critical Path
+
+The Chrome profiles are already decompressed and viewable in `chrome://tracing` or Perfetto.
+For example:
+
+- `/tmp/ci-build-profile-data/runs/27313474860/profiles/test-073180ce-9980-4ef8-946c-6bdc6d866fdc.command.profile.json`
+- `/tmp/ci-build-profile-data/runs/27312715510/profiles/test-0699b9de-8abd-41d8-b0a1-b3c19d8ad2c6.command.profile.json`
+
+Wall-time category coverage for the first `bazel test //...` child:
+
+| run           | action processing | remote cache check | remote execution | remote process |
+| ------------- | ----------------: | -----------------: | ---------------: | -------------: |
+| `27312660728` |            49.42s |              0.73s |           48.77s |         48.37s |
+| `27312715510` |            43.30s |              0.00s |           42.08s |         41.68s |
+| `27312766911` |            44.89s |              0.33s |           44.15s |         43.71s |
+| `27313187627` |            42.90s |              0.34s |           42.56s |         42.14s |
+| `27313474860` |            56.51s |              4.90s |           56.18s |         55.79s |
+
+Repeated slow actions:
+
+| target                                                           | runs | median |    max |
+| ---------------------------------------------------------------- | ---: | -----: | -----: |
+| `//devinfra/claude/claude_hook/container_e2e:test_container_e2e` |    5 | 42.88s | 53.71s |
+| `//devinfra/claude/claude_hook:test_mailbox_delivery_e2e`        |    5 | 43.24s | 51.34s |
+
+For #2021, the Rust debundle file changes also caused expected Rust compile misses:
+
+- `//devinfra/js/debundle:pipeline_test`: 32.75s;
+- `//devinfra/js/debundle:peel_test`: 19.60s;
+- `//devinfra/js/debundle:cli_test`: 17.69s.
+
+So the reason `test //...` is slow despite caching is not primarily package loading or target
+configuration. In these runs it is a small number of long remote test actions that execute on
+every PR, plus expected compilation work for affected Rust changes.
+
+### Firecracker Reuse
+
+Firecracker resume is positively observed in the post-merge data:
+
+- four of five sampled PR runs had `previous_run_log=yes` at `before-test`;
+- all five had one Bazel server already running before the first Bazel command;
+- probe bundles for `27313187627` and `27313474860` contain `previous/probes.jsonl` and
+  `previous/proc/...`, so previous local probe data survived into the resumed VM state.
+
+Do not compare only parsed wall-clock start times for reused processes. In `27313474860`, the
+current and previous procfs snapshots both show Bazel PID `556`, command-line SHA
+`56155ea2454ca2de312ad77c04e3edc6e36bd27f1aeeaef2348dcb57239b7307`, and raw
+`/proc/<pid>/stat` `start_ticks=1525`. The derived timestamp changed because `/proc/stat`
+`btime` changed across the resumed snapshot. The raw procfs files in the bundle are the source
+of truth.
+
+The data also suggests snapshot fan-out. Runs `27312715510` and `27312766911` overlapped in
+wall time, but both reported:
+
+- `boot_id=4fffe60d-e234-480e-a1d2-3e1da9940eb9`;
+- `previous_run_log=yes`;
+- similar `before-test` uptimes: 1108.69s and 1111.11s.
+
+A single VM cannot run both overlapping jobs. This matches BuildBuddy's snapshot-sharing source:
+
+- `proto/firecracker.proto:98-108`: a snapshot key without `snapshot_id` means newest matching
+  snapshot;
+- `proto/firecracker.proto:153-156`: VM metadata ID is preserved across resume/pause cycles of
+  a snapshot;
+- `proto/firecracker.proto:215-218`: each use of a snapshot receives a unique `snapshot_id`;
+- `enterprise/server/remote_execution/containers/firecracker/firecracker.go:835-857`: with
+  chunked snapshot sharing, `runnerID` is removed from the key and BuildBuddy loads a snapshot
+  according to the read policy;
+- `server/util/platform/platform.go:219-226`: `snapshot-read-policy=newest` uses the newest
+  snapshot and remote manifests for remotely cached snapshots;
+- `enterprise/server/remote_execution/containers/firecracker/firecracker_test.go:722-789`:
+  upstream tests intentionally load the same base snapshot into multiple VMs, then verify that
+  new VMs use the newest saved snapshot.
+
+Conclusion: same-snapshot resume into multiple future VMs is an intended BuildBuddy mode when
+chunked/remote snapshot sharing is enabled. The overlapping CI data is consistent with that.
+
+### Explicit Linkage Artifact
+
+The first collection pass still used GitHub logs to discover child Bazel invocation IDs and probe
+bundle digests. This branch now adds a machine-readable linkage record emitted by the
+`.github/actions/bb-remote` composite action and uploaded by `.github/workflows/bazel-ci.yml` as
+a GitHub Actions artifact named:
+
+```text
+bazel-ci-linkage-${{ github.run_id }}-${{ github.run_attempt }}
+```
+
+The action tees local `bb remote` output to a runner-local log, parses that log with
+`devinfra/ci/emit_bb_remote_linkage.py`, writes JSON under `$RUNNER_TEMP`, and exposes the JSON
+path as an action output. The upload step runs with `if: always()`, so the record should still be
+available for failing CI runs as long as the composite action starts.
+
+Current schema shape:
+
+```json
+{
+  "schema": "ducktape.bb_remote_linkage.v1",
+  "github": {
+    "run_id": "27313474860",
+    "run_attempt": "1",
+    "job": "bazel-ci"
+  },
+  "buildbuddy": {
+    "runner_invocation_id": "...",
+    "bazel_invocations": [
+      { "role": "test", "invocation_id": "073180ce-9980-4ef8-946c-6bdc6d866fdc" },
+      { "role": "build", "invocation_id": "1e2e8f3e-e3bd-4d13-a280-037fd3c324bb" }
+    ],
+    "probe_cas": [{ "digest": "/compressed-blobs/zstd/..." }]
+  }
+}
+```
+
+GitHub does not expose the numeric job database ID directly inside the running job. The linkage
+record includes `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and `GITHUB_JOB`; tools that need the
+numeric job ID can map it through `gh run view`.
+
+This does not remove every use of logs yet. The collector still uses old logs for pre-linkage
+runs and for human progress fallback fields. But child invocation discovery and probe CAS linkage
+can now come from the JSON artifact on future runs. The same domain split should be reflected in
+`bbapi`: BES metrics, build tool logs, CAS artifacts, target logs, and workflow linkage are
+different domains and should not all look like fake artifacts.
+
+### Data Sufficiency
+
+Five post-merge PR runs are enough for the qualitative answer:
+
+- Firecracker resume: yes.
+- Snapshot fan-out: likely and source-supported.
+- Analysis cache: not flushed wholesale, but not perfectly quiescent either; first `test //...`
+  still does incremental analysis/Skyframe work.
+- Slow critical path: remote execution of a small number of long tests, not analysis.
+- Workflow scoping: not changed-file scoped; PRs still request `//...`.
+
+For rates and distributions, collect more:
+
+- 20-30 PR/devel runs across several hours or days;
+- at least one controlled no-op PR or rerun after probe digest upload was fixed;
+- action-level miss attribution for the two repeatedly executed Claude hook E2E tests.

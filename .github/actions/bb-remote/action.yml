@@ -59,11 +59,26 @@ inputs:
     description: "Runner vCPU count (EstimatedComputeUnits)"
     required: false
     default: "4"
+  linkage_roles:
+    description: >
+      Optional comma-separated role names for child Bazel invocations in the
+      emitted linkage JSON, e.g. "test,build".
+    required: false
+    default: ""
+
+outputs:
+  log_path:
+    description: "Path to the captured bb remote log on the GitHub Actions runner"
+    value: ${{ steps.bb-remote.outputs.log_path }}
+  linkage_json_path:
+    description: "Path to the emitted bb remote linkage JSON on the GitHub Actions runner"
+    value: ${{ steps.bb-remote.outputs.linkage_json_path }}
 
 runs:
   using: composite
   steps:
     - name: bb remote
+      id: bb-remote
       shell: bash
       env:
         INPUT_ARGS: ${{ inputs.args }}
@@ -72,6 +87,7 @@ runs:
         INPUT_RBE_IMAGE: ${{ inputs.rbe_image }}
         INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
+        INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
       run: |
         set -euo pipefail
 
@@ -81,6 +97,14 @@ runs:
         if [[ -z "$INPUT_ARGS" && -z "$INPUT_SCRIPT" ]]; then
           echo "::error::bb-remote: one of 'args' or 'script' must be set"; exit 1
         fi
+
+        safe_job="${GITHUB_JOB:-job}"
+        safe_job="${safe_job//[^A-Za-z0-9_.-]/_}"
+        LOG_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.log"
+        LINKAGE_JSON_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-linkage-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.json"
+        mkdir -p "$(dirname "$LOG_PATH")"
+        echo "log_path=$LOG_PATH" >> "$GITHUB_OUTPUT"
+        echo "linkage_json_path=$LINKAGE_JSON_PATH" >> "$GITHUB_OUTPUT"
 
         ENV_ARGS=()
         while IFS= read -r line; do
@@ -116,20 +140,42 @@ runs:
         if [[ -n "$INPUT_SCRIPT" ]]; then
           # Forward RBE_IMAGE so the script can interpolate it into Bazel flags.
           ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_IMAGE=${RBE_IMAGE}")
-          bb remote \
-            "${RUNNER_EXEC_PROPS[@]}" \
-            "${ENV_ARGS[@]}" \
-            "${BB_IMAGE_ARGS[@]}" \
+          BB_REMOTE_COMMAND=(
+            bb remote
+            "${RUNNER_EXEC_PROPS[@]}"
+            "${ENV_ARGS[@]}"
+            "${BB_IMAGE_ARGS[@]}"
             --script="$INPUT_SCRIPT"
+          )
         else
           BAZEL_IMAGE_ARGS=(--remote_default_exec_properties="container-image=docker://${RBE_IMAGE}")
-          # shellcheck disable=SC2086 # word-splitting on $INPUT_ARGS is intended
-          bb remote \
-            "${RUNNER_EXEC_PROPS[@]}" \
-            "${ENV_ARGS[@]}" \
-            "${BB_IMAGE_ARGS[@]}" \
-            $INPUT_ARGS \
-            --config=rbe \
-            --config=ci \
+          # shellcheck disable=SC2206 # word-splitting on $INPUT_ARGS is intended
+          INPUT_ARGS_ARRAY=($INPUT_ARGS)
+          BB_REMOTE_COMMAND=(
+            bb remote
+            "${RUNNER_EXEC_PROPS[@]}"
+            "${ENV_ARGS[@]}"
+            "${BB_IMAGE_ARGS[@]}"
+            "${INPUT_ARGS_ARRAY[@]}"
+            --config=rbe
+            --config=ci
             "${BAZEL_IMAGE_ARGS[@]}"
+          )
         fi
+
+        set +e
+        "${BB_REMOTE_COMMAND[@]}" 2>&1 | tee "$LOG_PATH"
+        BB_REMOTE_STATUS=${PIPESTATUS[0]}
+        set -e
+
+        LINKAGE_STATUS=0
+        python3 devinfra/ci/emit_bb_remote_linkage.py \
+          --log "$LOG_PATH" \
+          --out "$LINKAGE_JSON_PATH" \
+          --roles "$INPUT_LINKAGE_ROLES" \
+          --bb-remote-exit-code "$BB_REMOTE_STATUS" || LINKAGE_STATUS=$?
+
+        if [[ "$BB_REMOTE_STATUS" -eq 0 && "$LINKAGE_STATUS" -ne 0 ]]; then
+          exit "$LINKAGE_STATUS"
+        fi
+        exit "$BB_REMOTE_STATUS"

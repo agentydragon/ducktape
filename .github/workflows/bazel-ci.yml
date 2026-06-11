@@ -53,9 +53,11 @@ jobs:
       #   devinfra/debug/bb_remote_peers_exhausted.md.
       # `&&` matches the previous step ordering: build runs only if test passed.
       - name: Test + Build + lint
+        id: bb-remote
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
+          linkage_roles: test,build
           script: |
             set -euo pipefail
             RBE_FLAGS="--config=rbe --config=ci --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
@@ -72,3 +74,11 @@ jobs:
               probe_bb_runner after-test && \
               bazel build --keep_going $RBE_FLAGS //... && \
               probe_bb_runner after-build
+
+      - name: Upload BuildBuddy linkage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-ci-linkage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.bb-remote.outputs.linkage_json_path }}
+          if-no-files-found: warn

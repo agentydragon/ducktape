@@ -75,6 +75,18 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+py_library(
+    name = "collect_bazel_ci_profiles",
+    srcs = ["collect_bazel_ci_profiles.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "emit_bb_remote_linkage",
+    srcs = ["emit_bb_remote_linkage.py"],
+    visibility = ["//:__subpackages__"],
+)
+
 # === Binaries ===
 
 py_binary(
@@ -101,6 +113,18 @@ py_binary(
     deps = [":bb_runner_probe"],
 )
 
+py_binary(
+    name = "collect_bazel_ci_profiles_bin",
+    main_module = "devinfra.ci.collect_bazel_ci_profiles",
+    deps = [":collect_bazel_ci_profiles"],
+)
+
+py_binary(
+    name = "emit_bb_remote_linkage_bin",
+    main_module = "devinfra.ci.emit_bb_remote_linkage",
+    deps = [":emit_bb_remote_linkage"],
+)
+
 py_test(
     name = "test_release_metadata",
     srcs = ["test_release_metadata.py"],
@@ -115,6 +139,24 @@ py_test(
     srcs = ["test_bb_runner_probe.py"],
     deps = [
         ":bb_runner_probe",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect_bazel_ci_profiles",
+    srcs = ["test_collect_bazel_ci_profiles.py"],
+    deps = [
+        ":collect_bazel_ci_profiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_emit_bb_remote_linkage",
+    srcs = ["test_emit_bb_remote_linkage.py"],
+    deps = [
+        ":emit_bb_remote_linkage",
         "@pypi//pytest_bazel",
     ],
 )
