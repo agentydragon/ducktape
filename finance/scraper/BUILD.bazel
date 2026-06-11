@@ -35,12 +35,11 @@ py_binary(
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
-# ca-certificates apt layer (@trixie_evidence): pygit2's Settings() eagerly loads
-# libgit2's OpenSSL cert locations from the system trust store at *import* time, so
-# `import pygit2` raises GitError on the bare slim base (no CA bundle) before the
-# scraper does anything. The certs are needed only to satisfy that init — libgit2
-# push targets in-cluster Forgejo over plain HTTP, and the upstream HTTPS GETs use
-# certifi via httpx (see http_fetch).
+# ca-certificates apt layer (@trixie_ca_certificates): pygit2's Settings()
+# eagerly loads libgit2's OpenSSL cert locations from the system trust store at
+# *import* time, so `import pygit2` raises GitError on the bare slim base before
+# the scraper does anything. The upstream HTTPS GETs still use certifi via httpx
+# (see http_fetch).
 aspect_py_binary(
     name = "evidence_image_bin",
     main = "scrape.py",
@@ -65,7 +64,7 @@ oci_image(
     },
     tars = [
         ":layers",
-        "@trixie_evidence//:flat",
+        "@trixie_ca_certificates//:flat",
     ],
     user = "1000:1000",
 )

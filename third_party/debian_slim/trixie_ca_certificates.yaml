@@ -1,0 +1,21 @@
+# Shared ca-certificates layer for debian:trixie-slim images.
+# pygit2 eagerly initializes libgit2's OpenSSL cert locations at import time from
+# the system trust store, so without a CA bundle `import pygit2` raises GitError
+# before application code can configure libgit2.
+# The Python interpreter + app come from the rules_py image layers, not from apt.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_ca_certificates//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "ca-certificates"

@@ -333,13 +333,12 @@ apt.install(
     manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
 )
 
-# Augur evidence scraper image: ca-certificates on debian:trixie-slim so
-# `import pygit2` can initialize libgit2's OpenSSL cert locations (it fails the
-# whole process at import without a system CA bundle).
+# Shared ca-certificates layer for debian:trixie-slim images that import
+# pygit2; pygit2 initializes libgit2's OpenSSL cert locations at import time.
 apt.install(
-    name = "trixie_evidence",
-    lock = "//finance/scraper:trixie_evidence.lock.json",
-    manifest = "//finance/scraper:trixie_evidence.yaml",
+    name = "trixie_ca_certificates",
+    lock = "//third_party/debian_slim:trixie_ca_certificates.lock.json",
+    manifest = "//third_party/debian_slim:trixie_ca_certificates.yaml",
 )
 
 # loom/gym forecasting-eval driver: ca-certificates on debian:bookworm-slim so
@@ -352,7 +351,7 @@ apt.install(
     lock = "//loom/gym:bookworm_loom_gym_eval.lock.json",
     manifest = "//loom/gym:bookworm_loom_gym_eval.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_evidence", "trixie_jwt_rotation")
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

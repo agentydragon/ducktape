@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
@@ -379,7 +380,7 @@ py_image_layer(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     cmd = [
         "--host",
         "0.0.0.0",
@@ -406,6 +407,7 @@ oci_image(
     tars = [
         ":server_image_layers",
         "//finance/augur/fit/calibrated:trained_vecm_image_layer",
+        "@trixie_ca_certificates//:flat",
     ],
 )
 
@@ -413,6 +415,14 @@ oci_load(
     name = "image_load",
     image = ":image",
     repo_tags = ["augur:dev"],
+)
+
+build_test(
+    name = "image_build_test",
+    targets = [
+        ":image",
+        ":image.digest",
+    ],
 )
 
 py_library(
