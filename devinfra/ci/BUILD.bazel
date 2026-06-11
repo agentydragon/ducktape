@@ -85,7 +85,6 @@ py_library(
     name = "emit_bb_remote_linkage",
     srcs = ["emit_bb_remote_linkage.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
 )
 
 # === Binaries ===

@@ -1,12 +1,9 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pydantic>=2.0"]
-# ///
 """Emit machine-readable linkage for a GitHub Actions `bb remote` step."""
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import json
 import os
@@ -15,8 +12,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
 RUNNER_INVOCATION_RE = re.compile(
@@ -24,58 +19,31 @@ RUNNER_INVOCATION_RE = re.compile(
 )
 BAZEL_INVOCATION_RE = re.compile(r"Invocation ID: (?P<id>[0-9a-f-]{36})")
 PROBE_CAS_RE = re.compile(r"CI_VM_PROBE_CAS (?P<rest>.*)")
+BUILD_TOOL_LOG_NAMES = ["command.profile.gz", "critical path", "elapsed time", "process stats"]
 
 
-class BazelInvocation(BaseModel):
-    index: int
-    role: str
-    invocation_id: str
-    build_tool_log_names: list[str]
-
-
-class ProbeCas(BaseModel):
-    digest: str | None = None
-    missing_digest: str | None = None
-    raw: str | None = None
-
-
-class ParsedLog(BaseModel):
+@dataclasses.dataclass(frozen=True)
+class ParsedLog:
     runner_invocation_id: str | None
     runner_invocation_url: str | None
-    bazel_invocations: list[BazelInvocation]
-    probe_cas: list[ProbeCas]
+    bazel_invocations: list[dict[str, Any]]
+    probe_cas: list[dict[str, str]]
     warnings: list[str]
 
 
-class GitHubLinkage(BaseModel):
-    server_url: str | None
-    repository: str | None
-    workflow: str | None
-    run_id: str | None
-    run_attempt: str | None
-    job: str | None
-    event_name: str | None
-    ref: str | None
-    sha: str | None
-    head_ref: str | None
-    base_ref: str | None
-
-
-class BuildBuddyLinkage(BaseModel):
-    runner_invocation_id: str | None
-    runner_invocation_url: str | None
-    bazel_invocations: list[BazelInvocation]
-    probe_cas: list[ProbeCas]
-
-
-class LinkageRecord(BaseModel):
-    schema_version: str = Field(default="ducktape.bb_remote_linkage.v1", serialization_alias="schema")
-    created_at: str
-    github: GitHubLinkage
-    buildbuddy: BuildBuddyLinkage
-    bb_remote_exit_code: int | None
-    source_log_path: str
-    warnings: list[str]
+GITHUB_ENV_KEYS = [
+    ("server_url", "GITHUB_SERVER_URL"),
+    ("repository", "GITHUB_REPOSITORY"),
+    ("workflow", "GITHUB_WORKFLOW"),
+    ("run_id", "GITHUB_RUN_ID"),
+    ("run_attempt", "GITHUB_RUN_ATTEMPT"),
+    ("job", "GITHUB_JOB"),
+    ("event_name", "GITHUB_EVENT_NAME"),
+    ("ref", "GITHUB_REF"),
+    ("sha", "GITHUB_SHA"),
+    ("head_ref", "GITHUB_HEAD_REF"),
+    ("base_ref", "GITHUB_BASE_REF"),
+]
 
 
 def strip_ansi(line: str) -> str:
@@ -90,7 +58,7 @@ def parse_log(text: str, roles: list[str]) -> ParsedLog:
     runner_invocation_id = None
     runner_invocation_url = None
     bazel_invocation_ids: list[str] = []
-    probe_cas: list[ProbeCas] = []
+    probe_cas: list[dict[str, str]] = []
 
     for raw in text.splitlines():
         line = strip_ansi(raw)
@@ -108,27 +76,22 @@ def parse_log(text: str, roles: list[str]) -> ParsedLog:
             if rest.startswith("digest="):
                 digest = rest.removeprefix("digest=")
                 if digest:
-                    probe_cas.append(ProbeCas(digest=digest))
+                    probe_cas.append({"digest": digest})
                 else:
-                    probe_cas.append(ProbeCas(missing_digest="empty"))
+                    probe_cas.append({"missing_digest": "empty"})
             elif rest.startswith("missing_digest="):
-                probe_cas.append(ProbeCas(missing_digest=rest.removeprefix("missing_digest=")))
+                probe_cas.append({"missing_digest": rest.removeprefix("missing_digest=")})
             else:
-                probe_cas.append(ProbeCas(raw=rest))
+                probe_cas.append({"raw": rest})
 
-    bazel_invocations: list[BazelInvocation] = []
+    bazel_invocations: list[dict[str, Any]] = []
     for i, invocation_id in enumerate(bazel_invocation_ids):
         role = roles[i] if i < len(roles) else f"command-{i}"
         bazel_invocations.append(
-            BazelInvocation(
-                index=i,
-                role=role,
-                invocation_id=invocation_id,
-                build_tool_log_names=["command.profile.gz", "critical path", "elapsed time", "process stats"],
-            )
+            {"index": i, "role": role, "invocation_id": invocation_id, "build_tool_log_names": BUILD_TOOL_LOG_NAMES}
         )
 
-    warnings = []
+    warnings: list[str] = []
     if runner_invocation_id is None:
         warnings.append("runner invocation id not found")
     if not bazel_invocations:
@@ -143,36 +106,39 @@ def parse_log(text: str, roles: list[str]) -> ParsedLog:
     )
 
 
+def github_linkage(env: Mapping[str, str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for output_key, env_key in GITHUB_ENV_KEYS:
+        value = env.get(env_key)
+        if value is not None:
+            result[output_key] = value
+    return result
+
+
+def buildbuddy_linkage(parsed: ParsedLog) -> dict[str, Any]:
+    result: dict[str, Any] = {"bazel_invocations": parsed.bazel_invocations, "probe_cas": parsed.probe_cas}
+    if parsed.runner_invocation_id is not None:
+        result["runner_invocation_id"] = parsed.runner_invocation_id
+    if parsed.runner_invocation_url is not None:
+        result["runner_invocation_url"] = parsed.runner_invocation_url
+    return result
+
+
 def build_record(
     *, log_text: str, log_path: Path, roles: list[str], env: Mapping[str, str], bb_remote_exit_code: int | None
 ) -> dict[str, Any]:
     parsed = parse_log(log_text, roles)
-    record = LinkageRecord(
-        created_at=datetime.datetime.now(datetime.UTC).isoformat(),
-        github=GitHubLinkage(
-            server_url=env.get("GITHUB_SERVER_URL"),
-            repository=env.get("GITHUB_REPOSITORY"),
-            workflow=env.get("GITHUB_WORKFLOW"),
-            run_id=env.get("GITHUB_RUN_ID"),
-            run_attempt=env.get("GITHUB_RUN_ATTEMPT"),
-            job=env.get("GITHUB_JOB"),
-            event_name=env.get("GITHUB_EVENT_NAME"),
-            ref=env.get("GITHUB_REF"),
-            sha=env.get("GITHUB_SHA"),
-            head_ref=env.get("GITHUB_HEAD_REF"),
-            base_ref=env.get("GITHUB_BASE_REF"),
-        ),
-        buildbuddy=BuildBuddyLinkage(
-            runner_invocation_id=parsed.runner_invocation_id,
-            runner_invocation_url=parsed.runner_invocation_url,
-            bazel_invocations=parsed.bazel_invocations,
-            probe_cas=parsed.probe_cas,
-        ),
-        bb_remote_exit_code=bb_remote_exit_code,
-        source_log_path=str(log_path),
-        warnings=parsed.warnings,
-    )
-    return record.model_dump(mode="json", by_alias=True, exclude_none=True)
+    record: dict[str, Any] = {
+        "schema": "ducktape.bb_remote_linkage.v1",
+        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "github": github_linkage(env),
+        "buildbuddy": buildbuddy_linkage(parsed),
+        "source_log_path": str(log_path),
+        "warnings": parsed.warnings,
+    }
+    if bb_remote_exit_code is not None:
+        record["bb_remote_exit_code"] = bb_remote_exit_code
+    return record
 
 
 def parser() -> argparse.ArgumentParser:

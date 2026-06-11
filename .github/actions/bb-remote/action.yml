@@ -169,7 +169,7 @@ runs:
         set -e
 
         LINKAGE_STATUS=0
-        uv run --no-project devinfra/ci/emit_bb_remote_linkage.py \
+        python3 devinfra/ci/emit_bb_remote_linkage.py \
           --log "$LOG_PATH" \
           --out "$LINKAGE_JSON_PATH" \
           --roles "$INPUT_LINKAGE_ROLES" \
