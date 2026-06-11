@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pydantic>=2.0"]
+# ///
 """Emit machine-readable linkage for a GitHub Actions `bb remote` step."""
 
 from __future__ import annotations
