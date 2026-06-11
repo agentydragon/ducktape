@@ -20,6 +20,14 @@ pub enum LocalEffectPolicy {
     #[default]
     KnownEffectsOnly,
     VendorPrune,
+    /// Recognize whole-statement local property writes —
+    /// `X.prop = <pure>;` where `X` is a chunk-top declared binding —
+    /// as a local effect on `X` instead of a globally-ordered side
+    /// effect. Opt-in via
+    /// `chunk_analysis_options.<chunk>.local_property_effects`; see
+    /// that field's doc (`spec::OwnerGraphOptions`) for the soundness
+    /// precondition the spec author accepts.
+    LocalPropertyWrites,
 }
 
 #[derive(Debug, Clone, Default)]

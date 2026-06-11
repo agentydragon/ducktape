@@ -949,6 +949,7 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
     //   declared_pure → cx() is Pure → b is Pure → no S-chain
     //   participation. Only edge: residual → b_module. DAG.
     let opts = FixtureOpts {
+        local_property_effects: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";
@@ -1323,4 +1324,80 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
         .with_chunk_export_purity(&[("static/vendorlib", json!({ "fluent_exports": ["e4"] }))]),
     );
     assert!(fixture.entry_path.exists());
+}
+
+/// React annotation idiom: each component declaration is followed by
+/// a `displayName` data-property write. The writes are anonymous
+/// statements (no declared bindings) whose only effect is on the
+/// component binding directly above them.
+const ANNOTATION_WRITE_ENTRY: &str = r#"function A() { return 1; }
+A.displayName = "A";
+function B() { return 2; }
+B.displayName = "B";
+function C() { return 3; }
+C.displayName = "C";
+console.log(A, B, C);
+export { A, B, C };
+"#;
+
+/// The natural spec for [`ANNOTATION_WRITE_ENTRY`]: each component
+/// goes to its module WITH its annotation write (anonymous-statement
+/// claims). Both policy tests share it; only the flag differs.
+fn annotation_write_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module_with_anon(
+            "mod_a",
+            &[Member::new("A"), Member::new("C")],
+            &[r#"A.displayName = "A";"#, r#"C.displayName = "C";"#],
+        ),
+        logical_module_with_anon("mod_b", &[Member::new("B")], &[r#"B.displayName = "B";"#]),
+    ]
+}
+
+#[test]
+fn annotation_property_writes_without_policy_emit_s_cycle() {
+    // Baseline pin: under the default policy every `X.displayName = …`
+    // is an `assign_or_update` impure statement; the S-chain forces
+    // their source order across the interleaved destinations
+    // (mod_a → mod_b → mod_a), which cycles — even though each write
+    // is claimed right next to its component.
+    expect_rejection(
+        FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules()),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn annotation_property_writes_with_policy_co_locate_and_realize() {
+    // Same spec, flag on: the writes classify Pure with a LocalEffect
+    // on their component binding; the claims agree with the forced
+    // co-location, only `console.log` remains impure, no S-cycle.
+    let fixture = run_fixture(
+        FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules())
+            .with_local_property_effects(),
+    );
+    assert!(fixture.entry_path.exists());
+}
+
+#[test]
+fn annotation_property_write_cannot_be_split_from_its_declarer() {
+    // Constraint-preservation pin: the policy scopes the effect, it
+    // does not erase it. Claiming the write into a DIFFERENT module
+    // than its target binding still conflicts — the LocalEffect edge
+    // forces co-location with the declarer.
+    expect_rejection(
+        FixtureOpts::new(
+            ANNOTATION_WRITE_ENTRY,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module_with_anon(
+                    "mod_b",
+                    &[Member::new("B")],
+                    &[r#"A.displayName = "A";"#],
+                ),
+            ],
+        )
+        .with_local_property_effects(),
+        &["atomic", "cycle", "co-locate"],
+    );
 }

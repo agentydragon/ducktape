@@ -7,10 +7,17 @@ use swc_ecma_ast::*;
 
 use super::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::analysis_hints::LocalEffectPolicy;
+use crate::purity::{ChunkCodeGraph, classify_expr_purity};
 
 #[derive(Debug, Default)]
 pub(crate) struct LocalEffectContext {
-    vendor_prune_declared_bindings: BTreeSet<Id>,
+    /// Chunk-top declared binding names. Populated under both
+    /// non-default policies: `VendorPrune` uses it to scope its
+    /// recognizers' write targets, `LocalPropertyWrites` to require
+    /// the written-through root to be chunk-declared (a property
+    /// write through an *import* mutates another module's value and
+    /// stays a globally-ordered effect).
+    declared_bindings: BTreeSet<Id>,
     vendor_prune_commonjs_module_bindings: BTreeSet<Id>,
     vendor_prune_intrinsic_local_effect_callees: BTreeSet<Id>,
 }
@@ -20,14 +27,19 @@ impl LocalEffectContext {
         body: &[TopLevelItemView<'_>],
         local_effect_policy: LocalEffectPolicy,
     ) -> Self {
-        if local_effect_policy != LocalEffectPolicy::VendorPrune {
-            return Self::default();
-        }
         let mut context = Self::default();
+        if local_effect_policy == LocalEffectPolicy::KnownEffectsOnly {
+            return context;
+        }
         for item in body {
             context
-                .vendor_prune_declared_bindings
+                .declared_bindings
                 .extend(collect_declared_names(item.as_module_item()));
+        }
+        if local_effect_policy != LocalEffectPolicy::VendorPrune {
+            return context;
+        }
+        for item in body {
             context
                 .vendor_prune_commonjs_module_bindings
                 .extend(vendor_prune_commonjs_module_bindings(item.as_module_item()));
@@ -45,6 +57,109 @@ impl LocalEffectContext {
 
     pub(crate) fn local_effect_targets(&self, item: &ModuleItem) -> BTreeSet<Id> {
         vendor_prune_local_effect_targets(item, self)
+    }
+
+    /// Recognize a whole-statement local property write under
+    /// `LocalEffectPolicy::LocalPropertyWrites`: an expression
+    /// statement that is one `X.prop = <pure-rhs>` assignment (or a
+    /// comma-sequence of such), every member-path segment a static
+    /// non-`__proto__` name, every root `X` a chunk-top declared
+    /// binding, every RHS classifier-Pure. Returns the set of written
+    /// roots (the statement's local-effect targets), or empty when any
+    /// part of the statement falls outside that shape — partial
+    /// recognition would under-account the unrecognized remainder's
+    /// effects, so it's all or nothing (same contract as the
+    /// VendorPrune recognizers).
+    ///
+    /// The RHS check uses the strict expression classifier rather than
+    /// the vendor recognizers' structural `namespace_iife_local_init_is_pure`
+    /// — a getter-bearing RHS read (`X.a = Y.b`) must disqualify, and
+    /// the classifier is the component that proves that.
+    pub(crate) fn local_property_write_targets(
+        &self,
+        item: &ModuleItem,
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        graph: &ChunkCodeGraph,
+    ) -> BTreeSet<Id> {
+        let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
+            return BTreeSet::new();
+        };
+        let mut targets = BTreeSet::new();
+        if self.collect_local_property_writes(
+            &expr_stmt.expr,
+            shadowed,
+            declared_pure,
+            graph,
+            &mut targets,
+        ) && !targets.is_empty()
+        {
+            targets
+        } else {
+            BTreeSet::new()
+        }
+    }
+
+    fn collect_local_property_writes(
+        &self,
+        expr: &Expr,
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        graph: &ChunkCodeGraph,
+        targets: &mut BTreeSet<Id>,
+    ) -> bool {
+        match strip_parens(expr) {
+            Expr::Seq(seq) => seq.exprs.iter().all(|expr| {
+                self.collect_local_property_writes(expr, shadowed, declared_pure, graph, targets)
+            }),
+            // Plain `=` only: a compound assignment (`+=` etc.) also
+            // READS the property, and a read on a written-through (so
+            // non-PlainData) object may fire a getter.
+            Expr::Assign(assign) if assign.op == AssignOp::Assign => {
+                let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+                    return false;
+                };
+                let Some(root) = static_member_write_root(member) else {
+                    return false;
+                };
+                if !self.declared_bindings.contains(&root) {
+                    return false;
+                }
+                if !classify_expr_purity(
+                    &assign.right,
+                    shadowed,
+                    &BTreeSet::new(),
+                    declared_pure,
+                    graph,
+                )
+                .is_pure()
+                {
+                    return false;
+                }
+                targets.insert(root);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The root identifier of a member-write target whose every path
+/// segment (including the final written property) is a static name
+/// and none is `__proto__` (a `__proto__` write rewires the prototype
+/// chain — not a plain data-property effect on the root). `None` for
+/// computed non-literal segments or a non-`Ident` root.
+fn static_member_write_root(member: &MemberExpr) -> Option<Id> {
+    if static_member_name(&member.prop)
+        .as_deref()
+        .is_none_or(|prop| prop == "__proto__")
+    {
+        return None;
+    }
+    match strip_parens(&member.obj) {
+        Expr::Ident(root) => Some(root.to_id()),
+        Expr::Member(inner) => static_member_write_root(inner),
+        _ => None,
     }
 }
 
@@ -360,14 +475,12 @@ fn vendor_prune_expr_local_effect_targets(
 ) -> BTreeSet<Id> {
     match strip_parens(expr) {
         Expr::Assign(assign) => {
-            let mut recorder =
-                LocalEffectRecorder::new(&local_effect_context.vendor_prune_declared_bindings);
+            let mut recorder = LocalEffectRecorder::new(&local_effect_context.declared_bindings);
             record_assign_target(&assign.left, &mut recorder);
             recorder.local_effects
         }
         Expr::Update(update) => {
-            let mut recorder =
-                LocalEffectRecorder::new(&local_effect_context.vendor_prune_declared_bindings);
+            let mut recorder = LocalEffectRecorder::new(&local_effect_context.declared_bindings);
             record_update_target(&update.arg, &mut recorder);
             recorder.local_effects
         }
@@ -436,10 +549,7 @@ fn vendor_prune_inline_namespace_iife_target(
         return None;
     }
     let target = local_namespace_iife_arg_target(&call.args[0].expr)?;
-    if !local_effect_context
-        .vendor_prune_declared_bindings
-        .contains(&target)
-    {
+    if !local_effect_context.declared_bindings.contains(&target) {
         return None;
     }
     let Callee::Expr(callee) = &call.callee else {

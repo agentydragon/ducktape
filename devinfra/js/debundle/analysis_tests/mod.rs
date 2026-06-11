@@ -418,6 +418,95 @@ fn vendor_prune_policy_records_static_object_local_effects() {
     assert!(vendor_facts[1].purity.is_pure());
 }
 
+/// Analyze under `LocalEffectPolicy::LocalPropertyWrites`.
+fn analyze_facts_with_property_writes(module: &Module) -> Vec<StatementFacts> {
+    let hints = AnalysisHints {
+        local_effect_policy: LocalEffectPolicy::LocalPropertyWrites,
+        ..AnalysisHints::default()
+    };
+    analyze_facts_with_hints(module, &hints)
+}
+
+#[test]
+fn local_property_writes_policy_scopes_annotation_write_to_declarer() {
+    // The React annotation idiom: `C.displayName = "..."` right after
+    // the component declaration. Under the policy the write is a local
+    // effect on `C` (statement classifies Pure, LocalEffect edge keeps
+    // it co-located with the declarer); under the default policy it
+    // stays a globally-ordered impure statement.
+    let module = parse(r#"function C() { return 1; } C.displayName = "C";"#);
+    let default_facts = analyze_facts(&module);
+    assert!(default_facts[1].local_effects.is_empty());
+    assert!(!default_facts[1].purity.is_pure());
+
+    let facts = analyze_facts_with_property_writes(&module);
+    assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("C")]));
+    assert!(facts[1].purity.is_pure());
+}
+
+#[test]
+fn local_property_writes_policy_handles_comma_sequences_and_nested_paths() {
+    // Minified annotation runs comma-join writes; a nested static
+    // path (`C.propTypes.id`) still roots at `C`.
+    let module = parse(
+        r#"function C() { return 1; } function D() { return 2; }
+(C.displayName = "C", D.propTypes.id = 1);"#,
+    );
+    let facts = analyze_facts_with_property_writes(&module);
+    assert_eq!(
+        facts[2].local_effects,
+        BTreeSet::from([test_id("C"), test_id("D")])
+    );
+    assert!(facts[2].purity.is_pure());
+}
+
+#[test]
+fn local_property_writes_policy_rejects_disqualifying_shapes() {
+    // Each statement must fall back to the conservative path: compound
+    // assignment (reads the property — getter risk on a
+    // written-through object), impure RHS, computed non-literal key,
+    // `__proto__` segment (prototype rewiring, not a data-property
+    // effect), and a write through an IMPORT (mutates another module's
+    // value — must stay globally ordered).
+    let module = parse(
+        r#"import { ext } from "./other.js";
+function C() { return 1; }
+const key = "k";
+C.count += 1;
+C.x = io();
+C[key] = 1;
+C.__proto__.hack = 1;
+ext.tag = "t";"#,
+    );
+    let facts = analyze_facts_with_property_writes(&module);
+    for (ordinal, label) in [
+        (3, "compound assignment"),
+        (4, "impure RHS"),
+        (5, "computed non-literal key"),
+        (6, "__proto__ segment"),
+        (7, "import-rooted write"),
+    ] {
+        assert!(
+            facts[ordinal].local_effects.is_empty(),
+            "{label} must not be recognized"
+        );
+        assert!(
+            !facts[ordinal].purity.is_pure(),
+            "{label} must stay conservatively impure"
+        );
+    }
+}
+
+#[test]
+fn local_property_writes_policy_admits_string_literal_computed_key() {
+    // A string-literal computed key (`C["k"]`) is a static name —
+    // same admission as the vendor recognizers' `static_member_name`.
+    let module = parse(r#"function C() { return 1; } C["k"] = 1;"#);
+    let facts = analyze_facts_with_property_writes(&module);
+    assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("C")]));
+    assert!(facts[1].purity.is_pure());
+}
+
 #[test]
 fn vendor_prune_policy_records_intrinsic_alias_local_effects() {
     let module = parse(

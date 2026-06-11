@@ -758,12 +758,7 @@ fn assemble_statement_facts(
         cell_writes_summarizable,
         dataflow_summarizable,
     } = structural;
-    let local_effects = collect_local_effects(
-        item,
-        &hints.known_effects,
-        local_effect_context,
-        hints.local_effect_policy,
-    );
+    let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
     let purity = item_purity(
         item,
         kind,
@@ -1025,16 +1020,28 @@ fn item_purity(
 
 fn collect_local_effects(
     item: &ModuleItem,
-    known_effects: &BTreeMap<String, KnownEffect>,
+    shadowed: &BTreeSet<&'static str>,
+    hints: &AnalysisHints,
+    graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
-    local_effect_policy: LocalEffectPolicy,
 ) -> BTreeSet<Id> {
     let mut out = BTreeSet::new();
-    if let Some(target) = recognized_local_effect_target(item, known_effects) {
+    if let Some(target) = recognized_local_effect_target(item, &hints.known_effects) {
         out.insert(target);
     }
-    if local_effect_policy == LocalEffectPolicy::VendorPrune {
-        out.extend(local_effect_context.local_effect_targets(item));
+    match hints.local_effect_policy {
+        LocalEffectPolicy::KnownEffectsOnly => {}
+        LocalEffectPolicy::VendorPrune => {
+            out.extend(local_effect_context.local_effect_targets(item));
+        }
+        LocalEffectPolicy::LocalPropertyWrites => {
+            out.extend(local_effect_context.local_property_write_targets(
+                item,
+                shadowed,
+                &hints.declared_pure,
+                graph,
+            ));
+        }
     }
     out
 }

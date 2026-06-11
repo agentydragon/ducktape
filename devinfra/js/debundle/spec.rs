@@ -186,6 +186,35 @@ pub struct OwnerGraphOptions {
     /// suppresses anything.
     #[serde(default, skip_serializing_if = "AdmissionOverrides::is_empty")]
     pub admission_overrides: AdmissionOverrides,
+    /// Classify whole-statement local property writes —
+    /// `X.prop = <pure-rhs>;` (or a comma-sequence of such) where `X`
+    /// is a chunk-top declared binding — as a *local effect on `X`*
+    /// instead of a globally-ordered side effect. The statement leaves
+    /// the S-chain and instead gets a bidirectional `LocalEffect` edge
+    /// to `X`'s declaring statement, forcing co-location with the
+    /// declaration (so the write still cannot be split away from `X`).
+    /// This is the React annotation idiom — `C.displayName = "…"`,
+    /// `C.defaultProps = {…}` — which is otherwise an
+    /// `assign_or_update` impurity that chains otherwise-unrelated
+    /// statements into one atomic unit.
+    ///
+    /// **Soundness precondition (author-audited):** all writes to `X`
+    /// co-locate with `X`'s declaration, and a cross-module reader of
+    /// `X` observes them only after `X`'s module fully initializes
+    /// (ESM import ordering) — i.e. the reader sees the *post-write*
+    /// value. That is behavior-preserving exactly when no top-level
+    /// statement destined to a different module reads the written
+    /// property *textually before* the write in the original chunk.
+    /// Annotation writes placed directly after the declaration they
+    /// annotate (the idiom this targets) satisfy this by construction;
+    /// a chunk that read-then-writes an annotated binding's property
+    /// across destinations does not, and must not enable this flag.
+    /// Statements containing anything beyond such writes (compound
+    /// assignment, computed non-literal keys, `__proto__` segments,
+    /// impure RHS, non-chunk-top targets) keep the conservative
+    /// classification regardless of this flag.
+    #[serde(default)]
+    pub local_property_effects: bool,
 }
 
 /// One named input-chunk admission check, identified by the

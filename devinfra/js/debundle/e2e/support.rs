@@ -527,6 +527,11 @@ pub struct FixtureOpts<'a> {
     /// (`chunk_analysis_options.<chunk>.admission_overrides`), e.g.
     /// `&["a1_eval"]`. Default empty — all admission checks enforced.
     pub admission_overrides: &'a [&'a str],
+    /// Opt into local-property-write effect scoping for this chunk
+    /// (`chunk_analysis_options.<chunk>.local_property_effects`).
+    /// Default `false` — property writes stay globally-ordered side
+    /// effects.
+    pub local_property_effects: bool,
     pub extra_files: &'a [(&'a str, &'a str)],
     /// Additional input chunks `(snapshot-relative path, source)` listed in
     /// `js-files.txt` alongside the entry chunk. Unlike `extra_files`
@@ -555,6 +560,7 @@ impl<'a> FixtureOpts<'a> {
             unassigned_mode: unassigned_mode_catchall_file(None),
             dataflow_aware_s_chain: false,
             admission_overrides: &[],
+            local_property_effects: false,
             extra_files: &[],
             extra_chunks: &[],
             chunk_export_purity: &[],
@@ -586,6 +592,13 @@ impl<'a> FixtureOpts<'a> {
     /// `chunk_analysis_options:` in YAML.
     pub fn with_dataflow_aware_s_chain(mut self) -> Self {
         self.dataflow_aware_s_chain = true;
+        self
+    }
+
+    /// Enable local-property-write effect scoping for this chunk (see
+    /// the `local_property_effects` field).
+    pub fn with_local_property_effects(mut self) -> Self {
+        self.local_property_effects = true;
         self
     }
 
@@ -982,6 +995,9 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
     let mut analysis_options = serde_json::Map::new();
     if opts.dataflow_aware_s_chain {
         analysis_options.insert("dataflow_aware_s_chain".to_string(), Value::Bool(true));
+    }
+    if opts.local_property_effects {
+        analysis_options.insert("local_property_effects".to_string(), Value::Bool(true));
     }
     if !opts.admission_overrides.is_empty() {
         analysis_options.insert(

@@ -1154,6 +1154,24 @@ member names`, it projects onto each importing chunk's local binding
   same review burden as `purity: "pure"`; the difference is that the
   trusted claim is local target mutation, not absence of effects.
 
+  `chunk_analysis_options.<chunk>.local_property_effects` is the
+  chunk-wide structural sibling of the same idea, for plain
+  data-property annotation writes rather than helper calls: a whole
+  statement of the shape `X.prop = <pure-rhs>;` (or a comma-sequence of
+  such), where every member-path segment is a static non-`__proto__`
+  name and `X` is a chunk-top declared binding, is classified as a
+  local effect on `X` instead of a globally-ordered side effect — the
+  React `C.displayName = "…"` / `C.defaultProps = {…}` idiom. The
+  statement gets the same target-local co-location edge as the
+  decorator helper (it cannot be split away from `X`'s declaration) and
+  leaves the side-effect chain. Anything outside the shape — compound
+  assignment, computed non-literal key, impure RHS, a write through an
+  import — keeps conservative classification. The flag's soundness
+  precondition (no cross-destination top-level read of an annotated
+  binding's properties textually before the write) is documented on the
+  spec field and is the author's audit obligation, like every entry in
+  this section.
+
 - **A11. Intrinsic integrity: the chunk runs with unmodified
   built-in prototypes and intrinsics.** Every purity-whitelist
   admission argument cites ECMA-262 behavior of the _standard_

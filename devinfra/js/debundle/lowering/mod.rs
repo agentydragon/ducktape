@@ -10,7 +10,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect,
+    AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
     LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, OwnerId, RedundantPurityHint, top_level_id,
 };

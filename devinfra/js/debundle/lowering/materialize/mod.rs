@@ -182,6 +182,12 @@ pub(super) fn materialize_logical_chunk(
     )?;
     timings.add("build_module_plans", build_module_plans_started.elapsed());
 
+    // Fetched before hints assembly: `local_property_effects` selects
+    // the facts pass's local-effect policy, which travels in the hints.
+    let owner_graph_options = chunk_analysis_options
+        .get(chunk_id)
+        .copied()
+        .unwrap_or_default();
     let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
         let mut hints = collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id));
         hints.imported_purities = cross_module_purities
@@ -206,6 +212,9 @@ pub(super) fn materialize_logical_chunk(
         if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
             hints.fluent_bindings.extend(fluent.iter().cloned());
         }
+        if owner_graph_options.local_property_effects {
+            hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
+        }
         hints
     });
     let line_index = time_phase!(timings, "build_source_line_index", {
@@ -213,10 +222,6 @@ pub(super) fn materialize_logical_chunk(
     });
     // Stage A: spec-independent analysis (facts + owner graph +
     // structural atomic units). See `stage_one/mod.rs` for the composer.
-    let owner_graph_options = chunk_analysis_options
-        .get(chunk_id)
-        .copied()
-        .unwrap_or_default();
     // A3 admission resolver: where does a dynamic-import specifier in
     // this chunk's entry land? Same artifact resolution the specifier
     // rewriter uses; `SameChunk` marks a debundled internal module.

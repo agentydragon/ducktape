@@ -619,6 +619,7 @@ fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import()
     // The entry import must therefore be `B as entryHelper`, not
     // `B as vendorHelper`.
     let opts = FixtureOpts {
+        local_property_effects: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { o as B } from "./vendor.js";

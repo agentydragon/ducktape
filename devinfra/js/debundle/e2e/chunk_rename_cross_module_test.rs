@@ -29,6 +29,7 @@ fn chunk_rename_propagates_into_peeled_module_body() {
     // The renaming MUST propagate to b_module.js: its import line
     // and its `const b = cx();` callsite both need the new alias.
     let opts = FixtureOpts {
+        local_property_effects: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";

@@ -227,6 +227,19 @@ import of one of these names disables its global treatment chunk-wide.
 See `docs/design.md` → "Emission modes" for the precise dataflow-aware
 emission rule (including the write-after-read edges).
 
+The second such pass is local-property-write effect scoping, opted into
+per chunk via `chunk_analysis_options.<chunk_id>.local_property_effects`.
+A whole statement of the shape `X.prop = <pure-rhs>;` (or a
+comma-sequence of such) where `X` is a chunk-top declared binding — the
+React `C.displayName = "…"` annotation idiom — classifies as a local
+effect on `X` (Pure + a bidirectional `LocalEffect` co-location edge to
+`X`'s declaration) instead of joining the S-chain. Statements outside
+the shape (compound assignment, computed non-literal keys, `__proto__`
+segments, impure RHS, writes through imports) keep the conservative
+classification. The author-audited precondition is documented on the
+spec field (`spec::OwnerGraphOptions::local_property_effects`) and in
+`docs/design.md` → A10.
+
 ## Input-chunk admission checks
 
 Every materialized chunk is screened against the statically checkable
