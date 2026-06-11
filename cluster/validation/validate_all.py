@@ -38,7 +38,7 @@ from cluster.validation.checks import (
 from cluster.validation.cluster import parse_cluster
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.flux import validate_flux_build
+from cluster.validation.flux import check_flux_bootstrap_auth, validate_flux_build
 from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.helm_templates import validate_helm_templates
 from cluster.validation.image_automation import check_image_automation_webhook
@@ -86,6 +86,7 @@ async def validate(
     errors.extend(validate_dependencies(cluster, root))
     errors.extend(check_controller_health_checks(cluster, root))
     errors.extend(check_image_automation_webhook(cluster))
+    errors.extend(check_flux_bootstrap_auth(cluster, root))
 
     if not skip_flux_build:
         errors.extend(await validate_flux_build(root))

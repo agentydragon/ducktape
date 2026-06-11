@@ -89,6 +89,38 @@ class ImageRepositoryResource(K8sResource):
     """Flux `ImageRepository` — only its name is needed."""
 
 
+class SecretRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = ""
+
+
+class FluxSourceRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    kind: str = "GitRepository"
+    name: str = ""
+    namespace: str | None = None
+
+
+class GitRepositorySpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    url: str = ""
+    provider: str | None = None
+    secret_ref: SecretRef | None = None
+
+
+class GitRepositoryResource(K8sResource):
+    spec: GitRepositorySpec = Field(default_factory=GitRepositorySpec)
+
+
+class ImageUpdateAutomationSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    source_ref: FluxSourceRef = Field(default_factory=FluxSourceRef)
+
+
+class ImageUpdateAutomationResource(K8sResource):
+    spec: ImageUpdateAutomationSpec = Field(default_factory=ImageUpdateAutomationSpec)
+
+
 class _ImageRepositoryRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     name: str = ""
@@ -119,6 +151,8 @@ class ReceiverResource(K8sResource):
 
 
 _KIND_MODELS: dict[str, type[K8sResource]] = {
+    "GitRepository": GitRepositoryResource,
+    "ImageUpdateAutomation": ImageUpdateAutomationResource,
     "HelmRelease": HelmReleaseResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,

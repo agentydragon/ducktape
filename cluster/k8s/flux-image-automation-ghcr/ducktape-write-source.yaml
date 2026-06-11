@@ -1,0 +1,17 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: ducktape-write
+  namespace: flux-system
+  annotations:
+    description: "Authenticated ducktape checkout for image automation pushes. The root flux-system GitRepository stays anonymous so Terraform can cold-bootstrap Flux before this SOPS-managed GitHub App Secret exists."
+spec:
+  interval: 1m
+  provider: github
+  ref:
+    branch: devel
+  secretRef:
+    name: ducktape-automation-github-app
+  sparseCheckout:
+    - cluster/k8s/
+  url: https://github.com/agentydragon/ducktape.git

@@ -170,9 +170,12 @@ py_test(
         ":cluster",
         ":dependencies",
         ":flux",
+        ":k8s",
+        ":kustomize",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -285,12 +288,14 @@ py_test(
     srcs = ["test_cluster_integration.py"],
     data = [
         "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_bootstrap_files",
         "@multitool//tools/kustomize",
     ],
     deps = [
         ":checks",
         ":cluster",
         ":dependencies",
+        ":flux",
         ":health_checks",
         ":image_automation",
         ":kustomize",

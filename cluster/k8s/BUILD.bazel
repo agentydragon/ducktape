@@ -4,7 +4,10 @@ filegroup(
         "flux-system/gotk-components.yaml",
         "flux-system/gotk-sync.yaml",
     ],
-    visibility = ["//cluster/terraform/main:__pkg__"],
+    visibility = [
+        "//cluster/terraform/main:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
 )
 
 filegroup(

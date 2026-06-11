@@ -26,6 +26,7 @@ from cluster.validation.checks import (
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.flux import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
@@ -88,6 +89,12 @@ def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
     raw-YAML-walking bug.
     """
     errors = check_image_automation_webhook(cluster)
+    assert not errors, "\n".join(errors)
+
+
+def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Cold bootstrap sources must not depend on Flux-decrypted auth; write sources must."""
+    errors = check_flux_bootstrap_auth(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 

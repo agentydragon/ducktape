@@ -7,11 +7,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m0s
-  provider: github
   ref:
     branch: devel
-  secretRef:
-    name: ducktape-automation-github-app
   sparseCheckout:
     - cluster/k8s/
     - tf/gitops/

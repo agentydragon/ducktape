@@ -5,7 +5,8 @@ resources:
   # gotk-components.yaml instead of overlay-only patches.
   - gotk-components.yaml
   # Keep root GitRepository fields that must survive raw Terraform bootstrap
-  # applies, such as auth and sparseCheckout, in gotk-sync.yaml.
+  # applies in gotk-sync.yaml. Runtime GitHub App auth belongs on separate
+  # Flux-managed sources because the Secret below is SOPS-decrypted by Flux.
   - gotk-sync.yaml
   - ducktape-automation-github-app.sops.yaml
 patches:

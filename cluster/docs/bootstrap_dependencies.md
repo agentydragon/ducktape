@@ -57,19 +57,19 @@ No downstream regeneration needed — these are read-only inputs.
 Encrypted with admin age key (L0). These are the source of truth for
 secrets that Flux and tofu consume.
 
-| File                                                      | Contents                                                                   | Depends On                                                     | Depended On By                                                                                       |
-| --------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `secrets/nebula/ca.crt`                                   | Nebula CA public cert (plaintext)                                          | None                                                           | L2: tofu node cert signing; L7: NixOS workers, ansible                                               |
-| `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)                                           | Admin age key                                                  | L2: tofu node cert signing                                                                           |
-| `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)                                          | Admin age key + host age key, or admin-only for mobile clients | L7: NixOS worker nebula mesh, ansible, mobile import generation                                      |
-| `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)                                           | None                                                           | L7: NixOS worker nebula mesh, ansible, mobile import generation                                      |
-| `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)                                             | Admin age key + cluster-secrets + ci                           | L5: Flux git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
-| `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                     |
-| `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                  | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                   |
-| `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)                                             | Admin age key + user age keys                                  | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                    |
-| `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                           | L7: kubelet TLS on NixOS workers                                                                     |
-| `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                  | L7: kubelet TLS bootstrap on NixOS workers                                                           |
-| `cluster/k8s/**/*.sops.yaml` (27 files)                   | App credentials (API keys, tokens)                                         | Admin age key + cluster age key                                | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                        |
+| File                                                      | Contents                                                                   | Depends On                                                     | Depended On By                                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `secrets/nebula/ca.crt`                                   | Nebula CA public cert (plaintext)                                          | None                                                           | L2: tofu node cert signing; L7: NixOS workers, ansible                                                             |
+| `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)                                           | Admin age key                                                  | L2: tofu node cert signing                                                                                         |
+| `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)                                          | Admin age key + host age key, or admin-only for mobile clients | L7: NixOS worker nebula mesh, ansible, mobile import generation                                                    |
+| `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)                                           | None                                                           | L7: NixOS worker nebula mesh, ansible, mobile import generation                                                    |
+| `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)                                             | Admin age key + cluster-secrets + ci                           | L6: Flux private/write git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
+| `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                                   |
+| `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                  | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                                 |
+| `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)                                             | Admin age key + user age keys                                  | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                                  |
+| `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                           | L7: kubelet TLS on NixOS workers                                                                                   |
+| `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                  | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
+| `cluster/k8s/**/*.sops.yaml` (27 files)                   | App credentials (API keys, tokens)                                         | Admin age key + cluster age key                                | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
 
 **If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
 to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
@@ -164,18 +164,27 @@ the bootstrap manifests. Or delete the `flux-system` namespace and re-run Phase 
 
 ### GitHub App authentication (runtime)
 
-The root `flux-system` GitRepository reads the public `ducktape` repo
-anonymously, so cold-start bootstrap does not require local access to the
-GitHub App private key. Flux then decrypts the SOPS-encrypted GitHub App Secret
-and uses it for private/write paths: the private `gaffer-private` GitRepository
-and image update automation pushes. The in-cluster Secret
-`flux-system/ducktape-automation-github-app` holds `githubAppID`,
-`githubAppInstallationID`, and `githubAppPrivateKey` — sourced from
-`secrets/ducktape-automation.<date>.private-key.sops.pem` and committed as a
-SOPS-encrypted Secret manifest at
+The raw Terraform bootstrap manifests must not depend on the GitHub App Secret:
+the root `flux-system` GitRepository reads the public `ducktape` repo
+anonymously, so cold-start bootstrap only needs network access to GitHub and the
+Terraform-created SOPS age Secret. After the root Kustomization starts
+reconciling, Flux decrypts the SOPS-encrypted GitHub App Secret and uses it for
+private/write paths:
+
+- `GitRepository/ducktape-write` in
+  `cluster/k8s/flux-image-automation-ghcr/ducktape-write-source.yaml` is the
+  authenticated checkout used by `ImageUpdateAutomation/all-images` to push
+  image-pin commits back to `ducktape/devel`.
+- `GitRepository/gaffer-private` in `cluster/k8s/gaffer-private-source/source.yaml`
+  uses the same Secret for private repo reads and image automation pushes to
+  `gaffer-private/main`.
+
+The in-cluster Secret `flux-system/ducktape-automation-github-app` holds
+`githubAppID`, `githubAppInstallationID`, and `githubAppPrivateKey` — sourced
+from `secrets/ducktape-automation.<date>.private-key.sops.pem` and committed as
+a SOPS-encrypted Secret manifest at
 `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml` (encrypted
-to admin + cluster-secrets recipients). Image-update-automation pushes to
-`gaffer-private` ride on the same Secret.
+to admin + cluster-secrets recipients).
 
 **If the App PEM is rotated**: regenerate the App's private key in GitHub UI,
 overwrite `secrets/ducktape-automation.<date>.private-key.sops.pem` (bump the
