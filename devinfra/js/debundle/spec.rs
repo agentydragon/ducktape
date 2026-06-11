@@ -119,6 +119,15 @@ pub struct ChunkExportPurity {
     /// see into.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub pure_exports: BTreeSet<String>,
+    /// Member names on an exported namespace-like object whose *calls*
+    /// the author asserts have no observable side effects, keyed by the
+    /// export name. Covers CJS-interop namespace exports whose factories
+    /// are reached as member calls at the importer (`ns.forwardRef(...)`):
+    /// each importing chunk's local binding for the export receives the
+    /// member set, feeding the same member-call trust arm as a spec
+    /// member's `purity: pure` companion `declared_pure_members`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pure_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the

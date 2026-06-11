@@ -18,6 +18,7 @@ export const b = 2;
 #[test]
 fn catchall_keeps_unclaimed_bindings_in_residual() {
     let opts = FixtureOpts {
+        chunk_export_purity: &[],
         extra_chunks: &[],
         source: FIXTURE_SOURCE,
         logical_modules: vec![],
@@ -46,6 +47,7 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
 #[test]
 fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
     let opts = FixtureOpts {
+        chunk_export_purity: &[],
         extra_chunks: &[],
         source: FIXTURE_SOURCE,
         logical_modules: vec![],

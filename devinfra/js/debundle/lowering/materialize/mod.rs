@@ -25,10 +25,9 @@ pub(super) struct ChunkContext<'a> {
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) report_out_dir: Option<&'a Path>,
-    /// Program-level cross-module purity verdicts, keyed by chunk name;
-    /// this chunk's entry (if any) lands in `AnalysisHints::imported_purities`.
-    pub(super) cross_module_purities:
-        &'a BTreeMap<String, BTreeMap<String, analysis::purity::Purity>>,
+    /// Program-level cross-module purity output; this chunk's entries land
+    /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
+    pub(super) cross_module_purities: &'a super::cross_module::CrossModulePurities,
 }
 
 /// Spec-derived per-chunk inputs: logical-module layout, chunk
@@ -186,9 +185,22 @@ pub(super) fn materialize_logical_chunk(
     let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
         let mut hints = collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id));
         hints.imported_purities = cross_module_purities
+            .bindings
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        // Definition-side `pure_members` assertions projected onto this
+        // chunk's local import bindings; merged (not overwritten) so spec
+        // member annotations and cross-module assertions coexist.
+        if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
+            for (binding, members) in member_sets {
+                hints
+                    .declared_pure_members
+                    .entry(binding.clone())
+                    .or_default()
+                    .extend(members.iter().cloned());
+            }
+        }
         hints
     });
     let line_index = time_phase!(timings, "build_source_line_index", {

@@ -193,6 +193,55 @@ pub fn resolve_imported_purities(
         .collect()
 }
 
+/// Project author-asserted pure members of exported namespace-like objects
+/// (`chunk_export_purity.<chunk>.pure_members`) onto each importing module's
+/// local binding names. Pure axiom projection — no fixpoint: for every import
+/// `local → (module, export)` with an assertion on `(module, export)`, the
+/// importing module receives `local → member set`, which feeds the classifier's
+/// member-call trust arm (`declared_pure_members`). Assertions naming a module
+/// or export the program doesn't have warn to stderr and are ignored.
+pub fn resolve_asserted_member_purities(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    for (module, by_export) in asserted_members {
+        for export_name in by_export.keys() {
+            let known_export = modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export_name));
+            if !known_export {
+                eprintln!(
+                    "cross_module_purity: dangling pure_members assertion \
+                     {module}:{export_name} — no such analyzed module export; ignoring"
+                );
+            }
+        }
+    }
+    modules
+        .iter()
+        .map(|(key, facts)| {
+            let members: BTreeMap<String, BTreeSet<String>> = facts
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    let asserted = asserted_members
+                        .get(&target.module)?
+                        .get(&target.export)?
+                        .clone();
+                    // Only project assertions whose export actually exists in
+                    // the defining module (dangling ones warned above).
+                    modules
+                        .get(&target.module)?
+                        .exports
+                        .contains_key(&target.export)
+                        .then(|| (local.clone(), asserted))
+                })
+                .collect();
+            (key.clone(), members)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,5 +434,56 @@ mod tests {
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
         assert!(resolve_imported_purities(&modules, &asserted)["app"]["forwardRef"].is_pure());
+    }
+
+    #[test]
+    fn asserted_pure_members_project_onto_importer_locals() {
+        // The defining chunk exports an interop namespace object; the
+        // importer binds it locally as `b`. A definition-side member
+        // assertion lands on the importer under ITS local name.
+        let app = parse("import { reactns as b } from \"vendor\";\nconst C = b.forwardRef(x);");
+        let vendor = parse("const ns = makeInterop();\nexport { ns as reactns };");
+        let modules = BTreeMap::from([
+            (
+                "app".to_string(),
+                facts(&app, &[("b", "vendor", "reactns")], &[]),
+            ),
+            (
+                "vendor".to_string(),
+                facts(&vendor, &[], &[("reactns", "ns")]),
+            ),
+        ]);
+        let asserted = BTreeMap::from([(
+            "vendor".to_string(),
+            BTreeMap::from([(
+                "reactns".to_string(),
+                BTreeSet::from(["forwardRef".to_string(), "memo".to_string()]),
+            )]),
+        )]);
+        let resolved = resolve_asserted_member_purities(&modules, &asserted);
+        assert_eq!(
+            resolved["app"]["b"],
+            BTreeSet::from(["forwardRef".to_string(), "memo".to_string()])
+        );
+        assert!(resolved["vendor"].is_empty());
+    }
+
+    #[test]
+    fn dangling_member_assertion_is_ignored() {
+        let app = parse("const C = b.forwardRef(x);");
+        let modules = BTreeMap::from([(
+            "app".to_string(),
+            facts(&app, &[("b", "vendor", "reactns")], &[]),
+        )]);
+        // `vendor` is not analyzed at all — the assertion must not project.
+        let asserted = BTreeMap::from([(
+            "vendor".to_string(),
+            BTreeMap::from([(
+                "reactns".to_string(),
+                BTreeSet::from(["forwardRef".to_string()]),
+            )]),
+        )]);
+        let resolved = resolve_asserted_member_purities(&modules, &asserted);
+        assert!(resolved["app"].is_empty());
     }
 }

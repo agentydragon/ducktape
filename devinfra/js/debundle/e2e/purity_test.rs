@@ -949,6 +949,7 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
     //   declared_pure → cx() is Pure → b is Pure → no S-chain
     //   participation. Only edge: residual → b_module. DAG.
     let opts = FixtureOpts {
+        chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
@@ -1230,4 +1231,38 @@ export { A, B, C };
         )]),
         &["cycle", "mod_a", "mod_b", "side-effect"],
     );
+}
+
+#[test]
+fn asserted_pure_namespace_member_calls_emit_no_s_cycle() {
+    // CJS-interop shape: the importer binds a namespace-like export of another
+    // chunk as `ns` and reaches the factory as a MEMBER call, `ns.make(...)`.
+    // Inference can't see `make` is pure (the namespace object is opaque), so
+    // the three calls split across modules would S-cycle. A definition-side
+    // `chunk_export_purity.pure_members` assertion on the defining chunk's
+    // export projects onto the importer's `ns` local and admits the calls.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { reactish as ns } from "./vendorlib.js";
+const A = ns.make(function () { return "a"; });
+const B = ns.make(function () { return "b"; });
+const C = ns.make(function () { return "c"; });
+console.log(A, B, C);
+export { A, B, C };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "const reactish = { make(f) { return { impl: f }; } };\nexport { reactish };\n",
+        )])
+        .with_chunk_export_purity(&[(
+            "static/vendorlib",
+            json!({ "pure_members": { "reactish": ["make"] } }),
+        )]),
+    );
+    assert!(fixture.entry_path.exists());
 }

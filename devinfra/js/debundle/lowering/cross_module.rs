@@ -6,7 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::cross_module_purity::{ModulePurityFacts, ResolvedImport, resolve_imported_purities};
+use analysis::cross_module_purity::{
+    ModulePurityFacts, ResolvedImport, resolve_asserted_member_purities, resolve_imported_purities,
+};
 use analysis::purity::Purity;
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ExportAliasRecord, ImportRecord, ImportSpecifierKind,
@@ -46,6 +48,15 @@ struct ReparsedEntry {
     export_aliases: Vec<ExportAliasRecord>,
 }
 
+/// Output of the program-level purity pass, keyed by chunk name.
+pub(super) struct CrossModulePurities {
+    /// Per-chunk imported-binding verdicts (`AnalysisHints::imported_purities`).
+    pub(super) bindings: BTreeMap<String, BTreeMap<String, Purity>>,
+    /// Per-chunk pure-member sets for imported namespace-like bindings,
+    /// merged into `AnalysisHints::declared_pure_members`.
+    pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+}
+
 /// Per-chunk-name imported-binding purity maps for the whole artifact.
 /// A chunk whose entry can neither be reused (retained AST) nor re-parsed
 /// stays opaque: its exports get no verdicts and imports of it stay
@@ -54,7 +65,7 @@ pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
-) -> BTreeMap<String, BTreeMap<String, Purity>> {
+) -> CrossModulePurities {
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
     // refinement, and an unparseable chunk degrades to today's conservative
@@ -185,5 +196,14 @@ pub(super) fn collect_cross_module_imported_purities(
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
         .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_exports.clone()))
         .collect();
-    resolve_imported_purities(&modules, &asserted_pure)
+    let asserted_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> =
+        chunk_export_purity
+            .iter()
+            .filter(|(_, assertion)| !assertion.pure_members.is_empty())
+            .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_members.clone()))
+            .collect();
+    CrossModulePurities {
+        bindings: resolve_imported_purities(&modules, &asserted_pure),
+        members: resolve_asserted_member_purities(&modules, &asserted_members),
+    }
 }

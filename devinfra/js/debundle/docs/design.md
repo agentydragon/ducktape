@@ -1061,6 +1061,15 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   lives instead of at each call site. Same author-trust contract;
   dangling assertions (no such analyzed export) warn and are ignored.
 
+  `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
+  CJS-interop namespace exports whose factories are reached as member
+  calls at the importer (`ns.forwardRef(...)`). Keyed `export name →
+member names`, it projects onto each importing chunk's local binding
+  for that export and feeds the same member-call trust arm as a spec
+  member's `declared_pure_members` — so React's `forwardRef`/`memo`
+  reached through a default/namespace import are blessed once on the
+  defining vendor chunk.
+
 - **A10. Spec-declared local-effect annotations are
   author-trusted.** The spec format also admits an optional
   per-member `effect:` field for named helper bindings whose

@@ -309,6 +309,8 @@ struct TransformSpecFixture<'a> {
     unassigned_mode: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     chunk_analysis_options: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    chunk_export_purity: BTreeMap<String, Value>,
     materialize_logical_modules: MaterializeLogicalModulesFixture<'a>,
     write_js_tree: WriteJsTreeFixture<'a>,
 }
@@ -531,6 +533,10 @@ pub struct FixtureOpts<'a> {
     /// (post-run runtime siblings), these are debundled artifact chunks the
     /// transform analyzes — e.g. an import target for cross-chunk tests.
     pub extra_chunks: &'a [(&'a str, &'a str)],
+    /// `chunk_export_purity` entries as `(defining chunk_id, JSON assertion)`,
+    /// where the JSON is a `{ "pure_exports": [...], "pure_members": {...} }`
+    /// object. Default empty.
+    pub chunk_export_purity: &'a [(&'a str, Value)],
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -551,6 +557,7 @@ impl<'a> FixtureOpts<'a> {
             admission_overrides: &[],
             extra_files: &[],
             extra_chunks: &[],
+            chunk_export_purity: &[],
         }
     }
 
@@ -558,6 +565,12 @@ impl<'a> FixtureOpts<'a> {
     /// e.g. an import target whose exports feed the cross-module purity oracle.
     pub fn with_extra_chunks(mut self, extra_chunks: &'a [(&'a str, &'a str)]) -> Self {
         self.extra_chunks = extra_chunks;
+        self
+    }
+
+    /// Attach `chunk_export_purity` author assertions (see the field).
+    pub fn with_chunk_export_purity(mut self, entries: &'a [(&'a str, Value)]) -> Self {
+        self.chunk_export_purity = entries;
         self
     }
 
@@ -963,6 +976,12 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         chunk_analysis_options.insert(chunk_id.to_string(), Value::Object(analysis_options));
     }
 
+    let chunk_export_purity: BTreeMap<String, Value> = opts
+        .chunk_export_purity
+        .iter()
+        .map(|(chunk, assertion)| ((*chunk).to_string(), assertion.clone()))
+        .collect();
+
     TransformSpecFixture {
         inputs: TransformInputsFixture {
             input_root: &setup.snapshot_root,
@@ -972,6 +991,7 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         chunk_renames,
         unassigned_mode,
         chunk_analysis_options,
+        chunk_export_purity,
         materialize_logical_modules: MaterializeLogicalModulesFixture {
             prune_other_chunks: false,
             report_out_dir: &setup.report_root,
