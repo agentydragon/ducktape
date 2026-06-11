@@ -2,6 +2,18 @@
 # Allows: DNS, cluster-internal traffic, kube-apiserver, mitmproxy port 8080.
 # Blocks: direct external internet access.
 #
+# KNOWN GAP (intentionally left open for now; may be closed later):
+# This constrains egress from the sandbox *pods*, but not what a sandboxed agent
+# can launch elsewhere. Cluster-internal traffic is allowed (below), so an agent
+# that can reach the docker-ci DinD — and obtain its mTLS client cert — can
+# `docker run` a container there whose egress is NOT forced through mitmproxy.
+# Such a container has unrestricted internet access, so a sandboxed agent can use
+# it to fetch/exfiltrate outside the proxy, defeating this egress control. Closing
+# it means either denying sandbox pods access to docker-ci, or running agent
+# workloads on a locked-down "docker-for-agents" daemon that forces every
+# container's egress through mitmproxy. See also loom/gym/TODO.md (the loom eval's
+# per-sandbox archive clamp rests on the same assumption).
+#
 # To add a new sandbox namespace, add it to the namespaces list below
 # and add the corresponding mitmproxy-ca-cert SOPS secret + Kyverno
 # injection (already handled by inject-mitmproxy ClusterPolicy).
