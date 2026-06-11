@@ -516,16 +516,14 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
         )
 
     tool_chunks = [chunk for chunk in chunks if chunk.get("tool_use") is not None]
-    assert len(tool_chunks) == 2
-    initial_tool_use = tool_chunks[0]["tool_use"]
-    assert initial_tool_use is not None
-    assert initial_tool_use["function"]["arguments"] == ""
-    tool_use = tool_chunks[1]["tool_use"]
+    assert len(tool_chunks) == 1
+    tool_use = tool_chunks[0]["tool_use"]
     assert tool_use is not None
     assert tool_use["id"] == "call-1"
     assert tool_use["type"] == "function"
     assert tool_use["function"]["name"] == "lookup_demo_fact"
     assert json.loads(tool_use["function"]["arguments"]) == {"topic": "tana-litellm-tool"}
+    assert chunks[-1]["finish_reason"] == "tool_calls"
     assert chunks[-1]["usage"] == {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9}
     assert seen_bodies[0]["isStreaming"] is True
     assert seen_bodies[0]["args"]["userContext"] == "Ask Tana"
@@ -539,6 +537,143 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
     }
     assert "cache_control" not in json.dumps(seen_bodies[0])
     assert seen_bodies[0]["dynamicTools"][0]["runtime"] == "client"
+
+
+def test_client_streams_zero_arg_tool_call_from_llm_proxy_next() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+                b'"toolName":"list_projects","input":{}}\n'
+                b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n'
+            ),
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
+        chunks = list(
+            client.stream_completion(
+                "claude-test",
+                [{"role": "user", "content": "list projects"}],
+                {"tools": [{"type": "function", "function": {"name": "list_projects"}}]},
+            )
+        )
+
+    tool_chunks = [chunk for chunk in chunks if chunk.get("tool_use") is not None]
+    assert len(tool_chunks) == 1
+    tool_use = tool_chunks[0]["tool_use"]
+    assert tool_use is not None
+    assert tool_use["function"]["name"] == "list_projects"
+    assert json.loads(tool_use["function"]["arguments"]) == {}
+    assert chunks[-1]["finish_reason"] == "tool_calls"
+
+
+def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+                b'"toolName":"echo_tool","input":{}}\n'
+                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+                b'"toolName":"echo_tool","input":{"value":"hi"}}\n'
+                b'data: {"type":"finish","messageMetadata":{"finishReason":"stop",'
+                b'"usage":{"inputTokens":4,"outputTokens":5}}}\n'
+            ),
+        )
+
+    original_custom_provider_map = list(litellm.custom_provider_map)
+    original_provider_list = list(litellm.provider_list)
+    original_custom_providers = list(litellm._custom_providers)
+    original_model_list_set = set(litellm.model_list_set)
+
+    async def collect_events() -> list[dict[str, Any]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            register_litellm_provider(TanaLiteLLM(client))
+            stream = await litellm.anthropic.messages.acreate(
+                model="tana/claude-test",
+                max_tokens=64,
+                stream=True,
+                messages=[{"role": "user", "content": "call echo_tool"}],
+                tools=[
+                    {
+                        "name": "echo_tool",
+                        "description": "Echo a value.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"value": {"type": "string"}},
+                            "required": ["value"],
+                        },
+                    }
+                ],
+            )
+            raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
+            return [_decode_anthropic_sse_event(event) for event in raw_events]
+
+    try:
+        events = asyncio.run(collect_events())
+    finally:
+        litellm.custom_provider_map = original_custom_provider_map
+        litellm.provider_list = original_provider_list
+        litellm._custom_providers = original_custom_providers
+        litellm.model_list_set = original_model_list_set
+
+    started_blocks: set[int] = set()
+    stopped_blocks: set[int] = set()
+    for event in events:
+        event_type = event.get("type")
+        index = event.get("index")
+        if event_type == "content_block_start":
+            assert isinstance(index, int)
+            started_blocks.add(index)
+        if event_type == "content_block_delta":
+            assert isinstance(index, int)
+            assert index in started_blocks
+            assert index not in stopped_blocks
+        if event_type == "content_block_stop":
+            assert isinstance(index, int)
+            stopped_blocks.add(index)
+
+    tool_starts = [
+        event
+        for event in events
+        if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
+    ]
+    tool_deltas = [
+        event
+        for event in events
+        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "input_json_delta"
+    ]
+    message_deltas = [event for event in events if event.get("type") == "message_delta"]
+    assert len(tool_starts) == 1
+    assert tool_starts[0]["content_block"] == {"type": "tool_use", "id": "call-1", "name": "echo_tool", "input": {}}
+    assert len(tool_deltas) == 1
+    assert json.loads(tool_deltas[0]["delta"]["partial_json"]) == {"value": "hi"}
+    assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
+
+
+def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:
+    if isinstance(event, dict):
+        return event
+    event_text = event.decode("utf-8") if isinstance(event, (bytes, bytearray)) else str(event)
+    for line in event_text.splitlines():
+        if line.startswith("data:"):
+            return cast(dict[str, Any], json.loads(line.removeprefix("data:").strip()))
+    raise AssertionError(f"Anthropic stream event is missing data line: {event_text!r}")
 
 
 def test_reads_refresh_token_from_kubernetes_secret_json() -> None:

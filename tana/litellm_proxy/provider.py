@@ -877,117 +877,174 @@ def _parse_tana_response(response: httpx.Response) -> TanaChatResult:
 
 
 def _parse_tana_stream_lines(lines: Iterator[str]) -> Iterator[GenericStreamingChunk]:
+    parser = _TanaStreamParser()
     for line in lines:
-        yield from _parse_tana_stream_line(line)
+        yield from parser.parse_line(line)
+    yield from parser.finish()
 
 
 async def _parse_tana_stream_lines_async(lines: AsyncIterator[str]) -> AsyncIterator[GenericStreamingChunk]:
+    parser = _TanaStreamParser()
     async for line in lines:
-        for chunk in _parse_tana_stream_line(line):
+        for chunk in parser.parse_line(line):
             yield chunk
+    for chunk in parser.finish():
+        yield chunk
 
 
 def _parse_tana_stream_line(line: str) -> list[GenericStreamingChunk]:
-    stripped = line.strip()
-    if not stripped:
+    parser = _TanaStreamParser()
+    chunks = parser.parse_line(line)
+    chunks.extend(parser.finish())
+    return chunks
+
+
+class _TanaStreamParser:
+    def __init__(self) -> None:
+        self._pending_tool_calls: dict[str, dict[str, Any]] = {}
+
+    def parse_line(self, line: str) -> list[GenericStreamingChunk]:
+        return self._parse_line(line)
+
+    def finish(self) -> list[GenericStreamingChunk]:
+        return self._flush_tool_call_chunks()
+
+    def _parse_line(self, line: str) -> list[GenericStreamingChunk]:
+        stripped = line.strip()
+        if not stripped:
+            return []
+
+        if stripped.startswith("data:"):
+            payload = stripped.removeprefix("data:").strip()
+            if payload == "[DONE]":
+                return []
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError:
+                return []
+            if isinstance(data, Mapping):
+                return self._stream_chunks_from_event(data)
+            return []
+
+        if stripped.startswith(("d:", "e:")):
+            try:
+                data = json.loads(stripped[2:])
+            except json.JSONDecodeError:
+                return []
+            if not isinstance(data, Mapping):
+                return []
+            tool_chunks = self._flush_tool_call_chunks()
+            finish_reason = _stream_finish_reason(str(data.get("finishReason") or "stop"), bool(tool_chunks))
+            return [
+                *tool_chunks,
+                _stream_chunk(is_finished=True, finish_reason=finish_reason, usage=_normalize_stream_usage(data)),
+            ]
+
+        if stripped.startswith("0:"):
+            try:
+                text = json.loads(stripped[2:])
+            except json.JSONDecodeError:
+                return []
+            if isinstance(text, str) and text:
+                return [_stream_chunk(text=text)]
+
         return []
 
-    if stripped.startswith("data:"):
-        payload = stripped.removeprefix("data:").strip()
-        if payload == "[DONE]":
-            return []
-        try:
-            data = json.loads(payload)
-        except json.JSONDecodeError:
-            return []
-        if isinstance(data, Mapping):
-            return _stream_chunks_from_event(data)
-        return []
+    def _stream_chunks_from_event(self, data: Mapping[str, Any]) -> list[GenericStreamingChunk]:
+        event_type = data.get("type")
+        chunks: list[GenericStreamingChunk] = []
+        emitted_tools = False
 
-    if stripped.startswith(("d:", "e:")):
-        try:
-            data = json.loads(stripped[2:])
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(data, Mapping):
-            return []
-        finish_reason = str(data.get("finishReason") or "stop")
-        return [_stream_chunk(is_finished=True, finish_reason=finish_reason, usage=_normalize_stream_usage(data))]
+        if event_type == "text-delta":
+            delta = data.get("delta")
+            if isinstance(delta, str) and delta:
+                chunks.append(_stream_chunk(text=delta))
 
-    if stripped.startswith("0:"):
-        try:
-            text = json.loads(stripped[2:])
-        except json.JSONDecodeError:
-            return []
-        if isinstance(text, str) and text:
-            return [_stream_chunk(text=text)]
+        if event_type in {"tool-input-available", "tool-input-error"}:
+            self._remember_tool_calls([data])
+            emitted_tools = True
 
-    return []
+        if event_type == "error":
+            error_text = data.get("errorText") or data.get("message") or data.get("error")
+            raise TanaProxyError(f"Tana streaming error: {error_text or json.dumps(data, ensure_ascii=False)}")
 
-
-def _stream_chunks_from_event(data: Mapping[str, Any]) -> list[GenericStreamingChunk]:
-    event_type = data.get("type")
-    chunks: list[GenericStreamingChunk] = []
-    emitted_tools = False
-
-    if event_type == "text-delta":
-        delta = data.get("delta")
-        if isinstance(delta, str) and delta:
-            chunks.append(_stream_chunk(text=delta))
-
-    if event_type in {"tool-input-available", "tool-input-error"}:
-        chunks.extend(_tool_call_stream_chunks([data]))
-        emitted_tools = True
-
-    if event_type == "error":
-        error_text = data.get("errorText") or data.get("message") or data.get("error")
-        raise TanaProxyError(f"Tana streaming error: {error_text or json.dumps(data, ensure_ascii=False)}")
-
-    if event_type == "finish":
-        message_metadata = data.get("messageMetadata")
-        if isinstance(message_metadata, Mapping):
-            chunks.extend(_tool_call_stream_chunks(message_metadata.get("toolCalls")))
-            provider_fields: dict[str, Any] = {}
-            _copy_if_set(message_metadata, provider_fields, "providerMetadata", "tana_providerMetadata")
-            _copy_if_set(message_metadata, provider_fields, "warnings", "tana_warnings")
-            _copy_if_set(message_metadata, provider_fields, "response", "tana_response")
-            finish_reason = str(data.get("finishReason") or message_metadata.get("finishReason") or "stop")
-            chunks.append(
-                _stream_chunk(
-                    is_finished=True,
-                    finish_reason=finish_reason,
-                    usage=_normalize_stream_usage(message_metadata),
-                    provider_specific_fields=provider_fields or None,
+        if event_type == "finish":
+            message_metadata = data.get("messageMetadata")
+            if isinstance(message_metadata, Mapping):
+                self._remember_tool_calls(message_metadata.get("toolCalls"))
+                tool_chunks = self._flush_tool_call_chunks()
+                chunks.extend(tool_chunks)
+                provider_fields: dict[str, Any] = {}
+                _copy_if_set(message_metadata, provider_fields, "providerMetadata", "tana_providerMetadata")
+                _copy_if_set(message_metadata, provider_fields, "warnings", "tana_warnings")
+                _copy_if_set(message_metadata, provider_fields, "response", "tana_response")
+                finish_reason = _stream_finish_reason(
+                    str(data.get("finishReason") or message_metadata.get("finishReason") or "stop"), bool(tool_chunks)
                 )
-            )
-        else:
-            chunks.append(
-                _stream_chunk(
-                    is_finished=True,
-                    finish_reason=str(data.get("finishReason") or "stop"),
-                    usage=_normalize_stream_usage(data),
+                chunks.append(
+                    _stream_chunk(
+                        is_finished=True,
+                        finish_reason=finish_reason,
+                        usage=_normalize_stream_usage(message_metadata),
+                        provider_specific_fields=provider_fields or None,
+                    )
                 )
-            )
+            else:
+                tool_chunks = self._flush_tool_call_chunks()
+                chunks.extend(tool_chunks)
+                finish_reason = _stream_finish_reason(str(data.get("finishReason") or "stop"), bool(tool_chunks))
+                chunks.append(
+                    _stream_chunk(is_finished=True, finish_reason=finish_reason, usage=_normalize_stream_usage(data))
+                )
+            return chunks
+
+        if not emitted_tools:
+            self._remember_tool_calls([data])
+        self._remember_tool_calls(data.get("toolCalls"))
         return chunks
 
-    if not emitted_tools:
-        chunks.extend(_tool_call_stream_chunks([data]))
-    chunks.extend(_tool_call_stream_chunks(data.get("toolCalls")))
-    return chunks
+    def _remember_tool_calls(self, value: Any) -> None:
+        if value is None:
+            return
+        raw_tool_calls = value if isinstance(value, list) else list(value) if isinstance(value, tuple) else [value]
+        for raw_tool_call in raw_tool_calls:
+            if not isinstance(raw_tool_call, Mapping):
+                continue
+            normalized = _normalize_tana_tool_call(raw_tool_call)
+            if normalized is None:
+                continue
+            tool_call_id = str(normalized["toolCallId"])
+            self._pending_tool_calls[tool_call_id] = _merge_tana_tool_call(
+                self._pending_tool_calls.get(tool_call_id), normalized
+            )
+
+    def _flush_tool_call_chunks(self) -> list[GenericStreamingChunk]:
+        chunks: list[GenericStreamingChunk] = []
+        for index, tool_call in enumerate(self._pending_tool_calls.values()):
+            chunk = _openai_tool_call_chunk(tool_call, index, streaming_delta=False)
+            if chunk is not None:
+                chunks.append(_stream_chunk(tool_use=chunk))
+        self._pending_tool_calls.clear()
+        return chunks
 
 
-def _tool_call_stream_chunks(value: Any) -> list[GenericStreamingChunk]:
-    if value is None:
-        return []
-    raw_tool_calls = value if isinstance(value, list) else list(value) if isinstance(value, tuple) else [value]
-    chunks: list[GenericStreamingChunk] = []
-    for index, raw_tool_call in enumerate(raw_tool_calls):
-        if not isinstance(raw_tool_call, Mapping):
+def _merge_tana_tool_call(existing: Mapping[str, Any] | None, new: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(existing or {})
+    for key, value in new.items():
+        if value is None:
             continue
-        tool_call = _openai_tool_call_chunk(raw_tool_call, index, streaming_delta=True)
-        if tool_call is not None:
-            chunks.append(_stream_chunk(tool_use=tool_call))
-    return chunks
+        if key == "input" and key in merged and _is_empty_json_object(value) and not _is_empty_json_object(merged[key]):
+            continue
+        merged[key] = value
+    if "input" not in merged:
+        merged["input"] = {}
+    return merged
+
+
+def _stream_finish_reason(finish_reason: str, has_tool_calls: bool) -> str:
+    if has_tool_calls and finish_reason in {"", "stop", "end_turn"}:
+        return "tool_calls"
+    return finish_reason
 
 
 def _openai_tool_call_chunk(
