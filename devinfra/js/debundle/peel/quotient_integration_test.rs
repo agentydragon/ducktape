@@ -1042,7 +1042,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
     //
     // Pins commit 5's wiring: the index's committed partition stays
     // synchronized with the kernel's class projection across both
-    // committed mutations and speculative push/undo queries. RED if
+    // committed mutations and speculative overlay queries. RED if
     // the index is forked from the kernel; GREEN when the wiring is
     // correct.
     use peel::quotient::{ClassId, PartitionGroup};

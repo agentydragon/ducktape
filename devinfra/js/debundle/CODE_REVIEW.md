@@ -142,7 +142,7 @@ The `e2e/support.rs` helper asserts against a literal `./static/app/entry.js`, s
 
 ### Differential coverage gaps in the incremental-quotient tests
 
-`peel/quotient_integration_test.rs` checks the incremental index against references that share too much code with the system under test: most verdict comparisons use the kernel's own `project_partition` output as the reference partition (blind to projection bugs), and only `replay_partition` rebuilds a quotient independently — and it compares only `cycle_set()`. Also missing: randomized merge/partition sequences (current corpora are fixed, ≤6 owners) and differential coverage of the gate-residual promotion transition (whose multi-target fallback in `peel/quotient.rs` is otherwise unexercised — see the unreachable-fallback item in ARCHITECTURE_BACKLOG.md).
+`peel/quotient_integration_test.rs` checks the incremental index against references that share too much code with the system under test: most verdict comparisons use the kernel's own `project_partition` output as the reference partition (blind to projection bugs), and only `replay_partition` rebuilds a quotient independently — and it compares only `cycle_set()`. Also missing: randomized merge/partition sequences (current corpora are fixed, ≤6 owners) and differential coverage of the gate-residual promotion transition.
 
 ### Only Lemma 2 has a named pinning test
 

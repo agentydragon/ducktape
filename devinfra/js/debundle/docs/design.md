@@ -453,9 +453,11 @@ pure function:
   index's current state.
 - Each push records its inverse on a journal. Callers undo deltas in LIFO
   order to back out of a hypothetical or failed exploration. The peel
-  kernel (`peel/quotient.rs`) drives this push/undo machinery for its
-  speculative merge queries; `peel/factorize.rs` is a renderer over the
-  kernel's quotient and never touches the journal directly.
+  kernel (`peel/quotient.rs`) pushes committed merge deltas permanently
+  (journal truncated via `commit`); its speculative merge queries read the
+  index through the non-mutating overlay path instead. `peel/factorize.rs`
+  is a renderer over the kernel's quotient and never touches the journal
+  directly.
 - Candidate peel checks use the same push/read/undo API as other
   hypothetical questions, but read only SCCs and rebinds touching the fresh
   destination. A new directed edge `u -> v` can create a cycle exactly when
@@ -552,15 +554,15 @@ needs owner-level cycle evidence — computes the merge's post-state
 ModuleId via `projected_winner_module_after_merge` (mirroring the
 gate-residual override `project_partition` would apply), then routes
 through the index's `verdict_after_moving_owners_touching`. That
-fast path applies a per-edge overlay on the maintained graphs
-without mutating them and reads only SCCs touching the hypothetical
-destination — `O(|cone|)` per query, not `O(|V| + |E|)`. A scoped
-push/verdict/undo fallback exists for multi-target moves, but it is
-currently unreachable: `compute_merge_deltas` only ever emits
-`MoveOwners` deltas targeting the single post-merge module, so every
-speculative query takes the single-target fast path. The fallback is
-stale pending a code decision (delete it, or keep it against future
-delta shapes).
+path applies a per-edge overlay on the maintained graphs without
+mutating them and reads only SCCs touching the hypothetical
+destination — `O(|cone|)` per query, not `O(|V| + |E|)`. Speculative
+deltas are single-target by construction: a merge contracts two
+classes into one, so `compute_merge_deltas` only ever emits
+`MoveOwners` deltas targeting the single post-merge module.
+`realizability_cycles_after_contract` asserts this invariant; a
+future non-merge speculative mutation must implement a multi-target
+overlay deliberately rather than inherit the merge path.
 
 The kernel's `ClassId ↔ ModuleId` mapping (`class_module_id`) is
 maintained alongside the index. Initialization assigns each

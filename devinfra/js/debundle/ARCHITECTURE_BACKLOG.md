@@ -165,10 +165,6 @@ Remaining known approximation: the simulator roots at `partition.residual()` (th
 
 The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycle` (a constraining-only Pearce–Kelly walk over the kernel-maintained `TopoOrder` + class adjacency in `peel/quotient.rs`), with `build_seed_quotient`'s post-seed `check_realizability` pass as the backstop for asymmetric I-cycles. docs/design.md §"Why not Pearce–Kelly verbatim" documents this as the current trade-off. The open question: route the hot gate through the `RealizabilityIndex` (one source of truth, slower per query) vs. keep the PK gate (fast, but a second decision-making derived structure the kernel must keep consistent).
 
-### `peel/quotient.rs` multi-target merge fallback is unreachable
-
-`realizability_cycles_after_contract` keeps a scoped push/verdict/undo fallback for merges whose deltas target multiple modules, but `compute_merge_deltas` only ever emits deltas targeting the single post-merge module, so the `single_target` fast path always wins and the fallback is dead code (the design note that motivated it is stale). Either delete the fallback and the multi-target framing in the module docs, or implement a transition that actually produces multi-target deltas — decide.
-
 ### `BindingId`/`BindingTable` interning: implement or delete
 
 docs/design.md sketches a compact interned binding form (`BindingId(usize)` newtype + `BindingTable` of dense indices) and explicitly marks it **not implemented** — an aspirational optimization. Decide: implement it (it is also the natural fix for the BTree-keyed-by-cloned-`Id` hot paths flagged in CODE_REVIEW.md) or delete the passage so design.md describes only the real representation.

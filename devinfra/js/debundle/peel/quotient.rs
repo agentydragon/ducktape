@@ -56,9 +56,9 @@
 //! contract, the kernel pushes a `PartitionDelta::MoveOwners` for the
 //! loser class's owners onto the index; the index updates only the
 //! quotient edge buckets incident to the moved owners. Per query,
-//! the kernel uses `verdict_after_moving_owners_touching` for
-//! single-target moves or a scoped push/undo for the rare
-//! multi-target case (gate-residual collapse transitions).
+//! the kernel uses `verdict_after_moving_owners_touching` — every
+//! speculative merge delta targets the single post-merge module
+//! (asserted in `realizability_cycles_after_contract`).
 //!
 //! See docs/design.md "Peel planner unification (Track A) → Cost and the
 //! upgrade path" for the per-merge cost analysis and the references
@@ -318,10 +318,10 @@ pub struct QuotientGraph {
     /// Synced to the kernel's current class projection after every
     /// committed mutation (`contract`, `from_report*`). Speculative
     /// queries (`merge_preserves_invariants`,
-    /// `would_be_cycles_after_contract`) push deltas via
-    /// `verdict_after_moving_owners_touching` (single-target moves)
-    /// or scoped push/undo (multi-target). See the module-level
-    /// docstring's "Cost of the unified gate" section.
+    /// `would_be_cycles_after_contract`) read it non-mutatingly via
+    /// `verdict_after_moving_owners_touching` (all speculative moves
+    /// are single-target). See the module-level docstring's "Cost of
+    /// the unified gate" section.
     realizability_index: RealizabilityIndex,
     /// Cached `class_id -> module_id` mapping mirroring what
     /// `project_partition(None)` would assign. Maintained alongside
@@ -705,8 +705,8 @@ impl QuotientGraph {
     /// State mutation: this hot boolean path does not materialize
     /// diagnostic evidence, so the persistent realizability index is
     /// not touched. `would_be_cycles_after_contract` remains the
-    /// diagnostic path and performs scoped push/undo work when it
-    /// needs owner-level cycle evidence.
+    /// diagnostic path and reads the index through the non-mutating
+    /// overlay query when it needs owner-level cycle evidence.
     pub fn merge_preserves_invariants(&mut self, c1: ClassId, c2: ClassId) -> bool {
         self.check_merge_boolean(c1, c2)
     }
@@ -778,8 +778,8 @@ impl QuotientGraph {
         if self.merge_creates_new_constraining_cycle(c1, c2) {
             // Use the persistent realizability index to materialize
             // the cycle's owner_ids / classes for the diagnostic.
-            // The index handles the push/undo dance internally so
-            // its committed partition is restored on return.
+            // The overlay query reads the index without mutating it,
+            // so its committed partition is untouched.
             let merged_class = if c1 < c2 { c1 } else { c2 };
             let detailed = self.realizability_cycles_after_contract(c1, c2);
             let new_cycles: Vec<CycleClassSet> = detailed
@@ -979,8 +979,8 @@ impl QuotientGraph {
         // The deltas above are committed — nothing will undo them —
         // so drop their rollback state. Without this, the index's
         // journals grow without bound across the greedy's committed
-        // merges (speculative push/undo pairs are balanced and leave
-        // no entries behind).
+        // merges (speculative queries read through the non-mutating
+        // overlay and never touch the journal).
         self.realizability_index.commit();
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
@@ -1273,71 +1273,55 @@ impl QuotientGraph {
     }
 
     /// Incremental hypothetical query: cycle evidence after merging
-    /// `(c1, c2)`, without committing the merge. Uses the persistent
-    /// realizability index's `verdict_after_moving_owners_touching`
-    /// fast path when the merge is a single-target move (all deltas
-    /// share the same post-merge `ModuleId`), falling back to a
-    /// scoped push/verdict/undo for the rare multi-target case (e.g.,
-    /// gate-residual promotion transitions). The fast path avoids
-    /// mutating the index's graphs and reads only SCCs touching the
-    /// target module, which is the key cost saving on gaffer-scale
-    /// inputs.
+    /// `(c1, c2)`, without committing the merge. Routes through the
+    /// persistent realizability index's
+    /// `verdict_after_moving_owners_touching` overlay path: every
+    /// delta moves owners into the single post-merge `ModuleId`, so
+    /// the index's graphs are never mutated and only SCCs touching
+    /// the target module are read — the key cost saving on
+    /// gaffer-scale inputs.
     fn realizability_cycles_after_contract(&mut self, c1: ClassId, c2: ClassId) -> CycleEvidence {
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
-        let single_target = deltas.iter().all(|d| match d {
-            PartitionDelta::MoveOwners { to, .. } => *to == post_module,
-        });
-        if single_target {
-            let mut owners: Vec<OwnerId> = Vec::new();
-            for d in &deltas {
-                let PartitionDelta::MoveOwners { owners: o, .. } = d;
-                owners.extend(o.iter().copied());
-            }
-            owners.sort();
-            owners.dedup();
-            let verdict = self
-                .realizability_index
-                .verdict_after_moving_owners_touching(&self.owner_graph, &owners, post_module);
-            let owner_count = self.owner_ids.len().min(self.owner_graph.num_nodes());
-            let owners_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
-            let owner_modules: Vec<ModuleId> = (0..owner_count)
-                .map(|i| {
-                    let id = OwnerId(i);
-                    if owners_set.contains(&id) {
-                        post_module
-                    } else {
-                        self.realizability_index.partition().of(id)
-                    }
-                })
-                .collect();
-            return self.translate_verdict_with_owner_modules(
-                &verdict,
-                &owner_modules,
-                Some((c1, c2)),
-            );
+        // Producing invariant: `compute_merge_deltas` only ever emits
+        // `MoveOwners` into the single post-merge module.
+        assert!(
+            deltas.iter().all(|d| match d {
+                PartitionDelta::MoveOwners { to, .. } => *to == post_module,
+            }),
+            "speculative deltas are single-target by construction (merges contract \
+             two classes into one); implement a multi-target overlay deliberately \
+             before adding a non-merge mutation"
+        );
+        let mut owners: Vec<OwnerId> = Vec::new();
+        for d in &deltas {
+            let PartitionDelta::MoveOwners { owners: o, .. } = d;
+            owners.extend(o.iter().copied());
         }
-        // Multi-target fallback: push deltas, snapshot verdict +
-        // per-owner module, then undo.
-        let mut handles = Vec::with_capacity(deltas.len());
-        for delta in deltas {
-            handles.push(self.realizability_index.push(&self.owner_graph, delta));
-        }
-        let verdict = self.realizability_index.verdict();
+        owners.sort();
+        owners.dedup();
+        let verdict = self
+            .realizability_index
+            .verdict_after_moving_owners_touching(&self.owner_graph, &owners, post_module);
         let owner_count = self.owner_ids.len().min(self.owner_graph.num_nodes());
-        let post_push_modules: Vec<ModuleId> = (0..owner_count)
-            .map(|owner_idx| self.realizability_index.partition().of(OwnerId(owner_idx)))
+        let owners_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
+        let owner_modules: Vec<ModuleId> = (0..owner_count)
+            .map(|i| {
+                let id = OwnerId(i);
+                if owners_set.contains(&id) {
+                    post_module
+                } else {
+                    self.realizability_index.partition().of(id)
+                }
+            })
             .collect();
-        for handle in handles.into_iter().rev() {
-            self.realizability_index.undo(&self.owner_graph, handle);
-        }
-        self.translate_verdict_with_owner_modules(&verdict, &post_push_modules, Some((c1, c2)))
+        self.translate_verdict_with_owner_modules(&verdict, &owner_modules, Some((c1, c2)))
     }
 
     /// `translate_verdict_to_evidence` parameterized by an explicit
-    /// per-owner ModuleId vector. Used by speculative queries that
-    /// read the post-push verdict but commit the undo before the
-    /// translation runs.
+    /// per-owner ModuleId vector. Used by speculative queries whose
+    /// verdict comes from a non-mutating overlay, so the index's
+    /// partition never reflects the hypothetical move.
     ///
     /// Perf (#12prime): the naive translation iterated all
     /// `self.owner_ids` per SCC — O(K * num_owners), ~10% self in
