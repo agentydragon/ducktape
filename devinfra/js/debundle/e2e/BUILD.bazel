@@ -84,6 +84,7 @@ _STANDARD_E2E_DEPS = [
         "runtime_tdz_on_imported_class_test",
         "accepted_spec_runs_under_node_test",
         "lemma_two_rescued_asymmetric_cycle_test",
+        "asymmetric_non_residual_cycle_test",
         "mediator_reaches_asymmetric_cycle_test",
         "namespace_aggregator_split_tdz_test",
         "spec_comments_test",
