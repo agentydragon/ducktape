@@ -59,6 +59,11 @@ spec:
             - http://litellm.litellm.svc.cluster.local:4000
             - --task-filter
             - manifold-
+            # Cap concurrent samples (one docker sandbox each) well under docker-ci's
+            # ~31-network address pool, leaving margin against orphaned networks from
+            # any interrupted run.
+            - --max-samples
+            - "8"
             - --wayback-upstream
             - http://wayback-cache.wayback-cache.svc.cluster.local:8080
             - --log-dir

@@ -64,6 +64,13 @@ def main() -> None:
     )
     parser.add_argument("--log-dir", type=Path, required=True, help="Inspect eval log directory.")
     parser.add_argument("--message-limit", type=int, default=80, help="Max conversation turns per sample.")
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Max samples to run concurrently (one docker sandbox each). Bounds docker-ci "
+        "network-pool usage; unset uses the Inspect default.",
+    )
     args = parser.parse_args()
     api_key = os.environ.get(args.api_key_env) or Path("/tmp/litellm_key").read_text().strip()
 
@@ -93,6 +100,7 @@ def main() -> None:
         log_dir=str(args.log_dir),
         display="plain",
         message_limit=args.message_limit,
+        max_samples=args.max_samples,
         # A transient per-sample failure (e.g. a flaky DNS/connection to the model
         # endpoint) should drop that sample, not abort the whole run.
         fail_on_error=False,
