@@ -518,7 +518,7 @@ OwnerReportIndex)` reconstructs the typed IR from the JSON wire
    and avoids diagnostic evidence generation.
 4. `cycle_set()` also runs the unified gate per call.
 
-#### Cost and the upgrade path
+#### Cost and the tier ladder
 
 A from-scratch `check_realizability` call is `O(|V| + |E|)`. The
 kernel's merge-candidate greedy queries it `O(|V|)` times per round,
@@ -540,31 +540,60 @@ the I-graph adjacency, the `EsmEvaluationSimulator` per-pair bucket,
 and the cross-rebind set incrementally, touching only quotient edge
 buckets incident to the moved owners.
 
-Speculative queries split into two tiers. The hot boolean gate —
-`merge_preserves_invariants`, called once per candidate by the
-greedy's pop loop — does **not** touch the realizability index at
-all: it answers via `merge_creates_new_constraining_cycle`, a
-constraining-only Pearce–Kelly walk over the kernel-maintained
-`TopoOrder` and class adjacency (with a localized cone-DFS fallback
-when the class graph already contains cycles). Asymmetric I-cycles
-that the constraining-only walk cannot see are caught by
-`build_seed_quotient`'s post-seed `check_realizability` backstop
-over the final partition.
+Speculative queries — the hot boolean gate
+(`merge_preserves_invariants`, called once per candidate by the
+greedy's pop loop) and the diagnostic path
+(`would_be_cycles_after_contract`) — are one evaluation: the
+index's tier ladder
+(`ladder_decision_after_moving_owners_touching`), entered with the
+merge's post-state ModuleId from
+`projected_winner_module_after_merge` (mirroring the gate-residual
+override `project_partition` would apply) and the `±edge` overlay
+from `compute_merge_deltas`. Each tier either decides — provably
+equal to the full `check_realizability` verdict, restricted to
+diagnoses touching the post-merge module — or escalates:
 
-The diagnostic tier — `would_be_cycles_after_contract`, when it
-needs owner-level cycle evidence — computes the merge's post-state
-ModuleId via `projected_winner_module_after_merge` (mirroring the
-gate-residual override `project_partition` would apply), then routes
-through the index's `verdict_after_moving_owners_touching`. That
-path applies a per-edge overlay on the maintained graphs without
-mutating them and reads only SCCs touching the hypothetical
-destination — `O(|cone|)` per query, not `O(|V| + |E|)`. Speculative
-deltas are single-target by construction: a merge contracts two
-classes into one, so `compute_merge_deltas` only ever emits
-`MoveOwners` deltas targeting the single post-merge module.
-`realizability_cycles_after_contract` asserts this invariant; a
-future non-merge speculative mutation must implement a multi-target
-overlay deliberately rather than inherit the merge path.
+- **Tier 0 — delta-free short-circuit.** No deltas (both classes
+  already project to the post-merge module, e.g. merges inside the
+  gate-residual pile): post-state == pre-state, so accept iff the
+  cached pre-state touching verdict is clean.
+- **Tier 1 — constraining condensation order.** A maintained
+  `CondensationOrder` over the module-level constraining graph (a
+  union-find of SCC membership plus a Pearce–Kelly topological
+  order over the condensation DAG): reject iff the post-merge
+  module's constraining SCC is multi-module — an `O(α)` find, or a
+  PK window-DFS over the overlay-patched effective adjacency,
+  `O(|Δ|)` — or a clause-2 cross-rebind touches it. A tier-1
+  reject is exactly the `MutualConstrainingCycle` clause of the
+  full verdict; a pass establishes Pass 1 is clean and escalates.
+- **Tier 2 — I-graph condensation order.** A second
+  `CondensationOrder` over the I-graph (constraining ∪ lazy): if
+  the post-merge module's I-SCC is not multi-module, or contains
+  no effective constraining pair, Pass 2 is vacuous — accept.
+  When the overlay removes an edge internal to a multi-module
+  I-SCC (the one case where the maintained union-find is
+  stale-coarse), the tier falls back to the exact per-query
+  `OverlayGraphView::scc_containing` bidirectional DFS.
+- **Tier 3 — scoped ESM simulator.** The shared
+  `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject
+  iff any TDZ pair. This is the same code `check_realizability`'s
+  Pass 2 executes — drift is impossible by construction.
+
+The tiers are short-circuits whose skip conditions are theorems
+about the predicate, not a second decision procedure. The boolean
+gate is the ladder with evidence materialization elided;
+`would_be_cycles_after_contract` is the same ladder, materializing
+owner-level evidence (through the index's non-mutating
+`verdict_after_moving_owners_touching` overlay) only on a reject —
+one entry point, two output shapes. Each query reads SCCs touching
+the hypothetical destination only — `O(|cone|)`, not
+`O(|V| + |E|)`. Speculative deltas are single-target by
+construction: a merge contracts two classes into one, so
+`compute_merge_deltas` only ever emits `MoveOwners` deltas
+targeting the single post-merge module; the ladder dispatch asserts
+this invariant, and a future non-merge speculative mutation must
+implement a multi-target overlay deliberately rather than inherit
+the merge path.
 
 The kernel's `ClassId ↔ ModuleId` mapping (`class_module_id`) is
 maintained alongside the index. Initialization assigns each
@@ -583,8 +612,8 @@ in sync.
 #### References
 
 The incremental realizability path draws on the following lines of
-research; cited here so the trade-offs in "Cost and the upgrade
-path" and "Why not Pearce-Kelly verbatim" can be cross-checked
+research; cited here so the trade-offs in "Cost and the tier
+ladder" and "Why not Pearce-Kelly verbatim" can be cross-checked
 against the primary sources.
 
 - **Bender, Fineman, Gilbert, Tarjan.** _Incremental Cycle
@@ -624,25 +653,27 @@ which is structurally closer to the bounded-cone local-search
 algorithms from pointer-analysis literature (Fähndrich–Foster–
 Su–Aiken; Hardekopf–Lin).
 
-The kernel does maintain its own derived state alongside the index —
-this is a deliberate, documented trade-off, not an accident:
+Pearce–Kelly's core does survive — as the heart of the
+realizability crate's `CondensationOrder` (window DFS, window Kahn,
+epoch visited-marks), re-keyed from kernel classes to condensation
+nodes of the index's maintained module graphs, with a union-find
+for SCC membership so the PK order lives over a structure that
+stays a DAG by construction even when the underlying graph is
+cyclic. Contraction monotonicity — vertex identification only ever
+coarsens the SCC partition — is what licenses a plain
+non-rollbackable union-find instead of full dynamic-SCC machinery
+(kernel-side index mutation is commit-only); committed removals
+internal to a multi-module SCC mark the membership stale-coarse and
+trigger tier 2's exact-DFS fallback rather than an eager split.
 
-- The Pearce–Kelly `TopoOrder` plus the class adjacency
-  (`out_edges`), which back the hot boolean merge gate
-  `merge_creates_new_constraining_cycle`. This is
-  **decision-making** derived state: the greedy accepts or rejects
-  merges on its answer, with the post-seed `check_realizability`
-  pass as the backstop for asymmetric I-cycles the constraining-only
-  walk cannot see.
-- The advisory `cached_cycles` heuristic on `rank_candidate`, which
-  is cache-not-source-of-truth.
-
-The "no bespoke parallel walks" invariant elsewhere in this document
-is therefore relaxed here for performance: routing the hot gate
-through the index would restore one source of truth at a per-query
-cost the greedy cannot currently afford. Whether to route through
-the index or keep the PK gate is an open question tracked in
-`ARCHITECTURE_BACKLOG.md`.
+The kernel itself maintains **no** decision-making derived order or
+cycle state: the gate ladder lives inside the index ("Cost and the
+tier ladder" above), so the "no bespoke parallel walks" invariant
+holds here too — one source of truth for accept/reject.
+`rank_candidate`'s cycle-reduction key byte reads the same
+maintained condensation through an `O(α)` union-find probe
+(`modules_share_constraining_multi_scc`) instead of an advisory
+cache.
 
 ## At-init call promotion
 

@@ -40,13 +40,16 @@ perf baseline for the program.
    only after untangling its index entanglement — see CODE_REVIEW). Pure
    moves, no behavior change; makes the wished-for boundaries
    compiler-enforced and shrinks rebuild times.
-3. **Decision batch (maintainer, ≤1h total).** Two calls remain open and
-   gate later tracks: PK-gate vs realizability-index for the peel kernel;
-   delete-or-implement the unreachable multi-target fallback in
-   `peel/quotient.rs`. Both have backlog entries with the trade-offs.
-   (Decided 2026-06: `landable_today` for cross-residual proposals —
-   blocked rows are not landable, implemented; `BindingId` interning —
-   deferred, perf-triggered, see the backlog's decided-state note.)
+3. **Decision batch (maintainer, ≤1h total). _(Done 2026-06.)_** All
+   four calls are closed: PK-gate vs realizability-index — resolved by
+   the gate-ladder series (`plans/incremental_gate_unification.md`,
+   tombstoned; PRs #2087/#2090/#2095/#2102 plus the perf-validation
+   doc-sync pass), which routed the hot gate through the index's tier
+   ladder and deleted the kernel PK walk; the unreachable multi-target
+   fallback in `peel/quotient.rs` — deleted in #2102 (single-target
+   assert in its place); `landable_today` for cross-residual proposals
+   — blocked rows are not landable, implemented; `BindingId` interning
+   — deferred, perf-triggered, see the backlog's decided-state note.
 
 ## Track B — RenameLedger (weeks 1–2)
 
@@ -139,8 +142,10 @@ fixes.
    mutation/overlay sequences vs `tarjan_scc` brute force) and
    `lowering/rename_ledger_proptest.rs` (public seal contract). The
    remaining F1 step is migrating the gate-differential harness
-   (`peel/gate_differential_test.rs`) to proptest strategies,
-   scheduled with gate-ladder PR 4+.
+   (`peel/gate_differential_test.rs`) from its deterministic xorshift
+   sweep to proptest strategies — unblocked now that the gate-ladder
+   series has landed (the harness already asserts strict
+   gate-vs-reference equality post-cutover).
 2. **Lemma pinning**: named tests for Lemmas 1/3/4/5 (only Lemma 2 has
    them); extend the #2071 Node-differential to a fixture sweep.
 3. **Excalidraw public smoke** (TODO's big standing item): the

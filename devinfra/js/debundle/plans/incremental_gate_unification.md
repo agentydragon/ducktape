@@ -1,5 +1,46 @@
 # Incremental gate unification: an exact and fast merge gate
 
+> **TOMBSTONE (2026-06-11): completed.** All five PRs landed —
+> #2087 (predicate pinning + reference), #2090 (`CondensationOrder`),
+> #2095 (tier ladder in the index), #2102 (cutover + deletions:
+> `peel/topo_order.rs`, `cone_dfs_creates_new_cycle`, the
+> `cached_cycles` family, and the multi-target fallback are gone),
+> and the PR 5 perf-validation/doc-sync pass. The ladder decides the
+> hot gate; docs/design.md ("Cost and the tier ladder", "Why not
+> Pearce–Kelly verbatim") describes the landed shape and
+> `perf/proposer.md` carries the post-cutover baseline (1.9–4.3×
+> faster than the PK gate on the synthetic gaffer-scale corpora,
+> tier-3 hits zero, byte-identical proposals). The body below is
+> retained as design history only.
+>
+> Open-question resolutions:
+>
+> 1. **Atomic-unit anomaly** — confirmed and fixed: the
+>    deterministic fixtures in `peel/gate_differential_test.rs` pin
+>    the residual-pile over-rejection and its tier-0 fix; whether a
+>    real corpus ever hit it is moot now that the predicate is exact.
+> 2. **Inter-cell cycle policing** — still open, deliberately not
+>    re-encoded in the gate. `peel/factorize.rs`'s
+>    `BlockedResidualDependency` status polices mutually-cyclic
+>    residual cells downstream; if that proves insufficient at
+>    `bindings assign` time, the factorizer needs a render-time
+>    cell-DAG check (a proposal-shape invariant, not a realizability
+>    one).
+> 3. **Diff envelope for the corpus gate** — resolved empirically:
+>    PR 4's e2e/corpus diffs all traced to the cataloged semantic
+>    fixes, and the PR 5 synthetic-corpus comparison is
+>    byte-identical pre↔post. Gaffer-scale diff review happens at the
+>    next private re-peel.
+> 4. **Tier-3 worst case** — accepted and measured: zero tier-3
+>    builds on the synthetic corpora, single digits on the historical
+>    fixture. Revisit only with a profile, per `perf/proposer.md`'s
+>    optimization policy.
+> 5. **`rank_candidate` byte 0** — decided in PR 4: the `O(α)` DSU
+>    probe (`modules_share_constraining_multi_scc`) replaced the
+>    stale cache; ranked-order drift on already-unrealizable seeds is
+>    accepted (rationale at the `rank_candidate` key-byte comment in
+>    `peel/quotient.rs`).
+
 Design for replacing the peel kernel's hot boolean merge gate — today a
 constraining-only Pearce–Kelly walk that is blind to Pass-2 — with a
 tier-laddered evaluation of the realizability primitive itself: exactly

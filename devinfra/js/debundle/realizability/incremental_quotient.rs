@@ -338,8 +338,8 @@ impl<'a> OverlayGraphView<'a> {
         let overlay_empty = self.delta.is_empty();
         // Classify each overlay entry as addition vs removal in
         // the effective graph. Cheap: linear in `delta.len()`
-        // which is small by design (<50 in practice; see
-        // tana measurements in `perf/proposer.md`).
+        // which is small by design (<50 in practice; see the
+        // corpus-shape notes in `perf/proposer.md`).
         let mut additions = 0usize;
         let mut removals = 0usize;
         for &(from, to) in self.delta.keys() {

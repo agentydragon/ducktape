@@ -7,51 +7,67 @@ items are deleted.
 
 ## Current state
 
-`modules propose --format json` against the tana `78d928dca7` fixture,
-source-built `-c opt` binary, 2026-05-27:
+The gate-ladder cutover (`plans/incremental_gate_unification.md`,
+PRs #2087/#2090/#2095/#2102) routed the hot boolean merge gate
+through the `RealizabilityIndex`'s tier ladder and deleted the
+kernel-side Pearce–Kelly walk, cone-DFS fallback, and
+`cached_cycles` machinery.
 
-| Metric                     |  Value |
-| -------------------------- | -----: |
-| Wall                       |  3.54s |
-| Proposals                  |     93 |
-| `scc_containing` calls     |     10 |
-| `scc_containing` wall      | 0.041s |
-| `verdict_touching` calls   |      5 |
-| Overlay simulator rebuilds |      5 |
-| Overlay simulator wall     | 0.148s |
-| Diagnostic translations    |      6 |
+The historical baseline corpus (a private downstream fixture, 9709
+owners, measured at 3.54s pre-cutover) is not available to public
+CI. The reproducible public stand-in is the synthetic corpus from
+`perf/gen_synth_corpus.py` (10k statements, seed 1; 10051 owners /
+22019 edges — same scale and shape class). Post-cutover validation
+numbers, `-c opt` binaries, interleaved pre/post runs on one host,
+2026-06-11:
 
-The proposer-latency problem is fixed. A source `fastbuild` binary
-measured 124.31s on the same workload; **never use `fastbuild` numbers
-for Rust wall comparisons** — always build `-c opt`.
+| Corpus variant                                          | Pre-cutover wall | Post-cutover wall | Proposals |
+| ------------------------------------------------------- | ---------------: | ----------------: | --------: |
+| fully residual (`--claim-blocks 0`)                     |         6.7–8.0s |          3.5–3.8s |      1216 |
+| 62 claimed modules (`--claim-blocks 62`, 2461 bindings) |        9.4–10.7s |          2.2–2.3s |       933 |
 
-Gate diagnostics are **not** the active wall problem: SCC lookup,
-simulator rebuild, and diagnostic translation counts are all single
-digits. The next proposer optimization must start from a fresh
-optimized profile, not from pre-fix gate counters.
+Proposal output is byte-identical pre↔post on both variants (the
+cutover's semantic fixes only bite on the cataloged corner shapes —
+none occur in either corpus). Gate-ladder tier distribution
+(`DEBUNDLE_TIMING=1`, post-cutover binary):
+
+| Variant  | Queries | Tier 0 accept | Tier 1 reject | Tier 2 accept | Tier 3 | Tier 1+2 wall |
+| -------- | ------: | ------------: | ------------: | ------------: | -----: | ------------: |
+| residual |    8834 |          8834 |             0 |             0 |      0 |        0.000s |
+| claimed  |    9944 |          6644 |           753 |          2547 |      0 |        0.265s |
+
+This is well inside the plan's ship budget (wall within noise of the
+pre-cutover number; tier-3 simulator builds in single digits;
+tier-1+2 cumulative ≤ 2× the old PK-gate hot path): the post-cutover
+proposer is 1.9× faster on the fully-residual shape and 4.3× faster
+on the claimed shape, tier-3 never fired, and overlay simulator
+rebuilds and `scc_containing` calls were both zero.
+
+**Never use `fastbuild` numbers for Rust wall comparisons** — always
+build `-c opt` (a `fastbuild` binary measured 35× slower on the
+historical fixture).
 
 The hot path asks a boolean question and avoids diagnostic-evidence
-generation:
+generation; the diagnostic path is the same ladder with evidence
+materialization enabled:
 
 ```text
 greedy_merge_to_convergence
 └── merge_preserves_invariants
     └── check_merge_boolean
-        └── would_violate_cycle_gate_after_contract
-            └── merge_creates_new_constraining_cycle
-```
+        └── ladder_decision_for_merge
+            └── realizability_index::ladder_decision_after_moving_owners_touching
+                ├── tier 0: delta-free → cached pre-state verdict
+                ├── tier 1: constraining CondensationOrder (DSU + PK window-DFS)
+                ├── tier 2: I-graph CondensationOrder (scc_containing fallback
+                │           on removal-inside-SCC overlays)
+                └── tier 3: shared EsmEvaluationSimulator over the I-SCC
 
-The full verdict/evidence path remains for `contract` and explicit
-diagnostic queries:
-
-```text
 contract / explicit diagnostic query
 └── would_be_cycles_after_contract
+    ├── ladder_decision_for_merge          (accept → no evidence)
     └── realizability_index::verdict_after_moving_owners_touching
-        └── verdict_with_overlay_touching(to, &overlay)
-            ├── constraining_graph.scc_containing(to)
-            ├── i_graph_view.scc_containing(to)
-            └── build_simulator / translate_verdict_with_owner_modules
+        └── build_simulator / translate_verdict_with_owner_modules
 ```
 
 ## Optimization policy
@@ -88,6 +104,11 @@ cousin `verdict_touching`:
    owner-module vector size, unrealizable-SCC count.
 7. Base-graph snapshot rebuilds: opt-in shadow `tarjan_scc` over each
    stale base graph to estimate snapshot+clone designs.
+8. Gate-ladder per-tier counters: decision counts per
+   `LadderDecision` variant (tier-0 accept/reject, tier-1
+   cycle/rebind reject, tier-2 accepts, tier-3 accept/reject) plus
+   per-tier cumulative wall under `DEBUNDLE_TIMING=1` — the "gate
+   ladder:" / "ladder wall:" stderr lines.
 
 When `DEBUNDLE_TIMING` is unset, normal runs pay only the cheap counter
 path (atomic increments + bounded integer histograms): no
@@ -103,19 +124,22 @@ hot-path hypothesis; keep cheap `O(1)` counters ungated and gate only
 timing / report output / extra traversals behind
 `gate_perf_counters::enabled()`.
 
-How to run:
+How to run (on the reproducible synthetic corpus; substitute your own
+`GRAPH`/`MODULES` for a real corpus):
 
 ```bash
 direnv exec . bash -lc 'bazelisk build //devinfra/js/debundle:debundle \
     -c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1 \
     --remote_download_outputs=toplevel'
+BIN=./bazel-out/k8-opt/bin/devinfra/js/debundle/debundle
 
-GRAPH=/path/to/owner_graph.json
-MODULES=/path/to/spec/modules
+python3 devinfra/js/debundle/perf/gen_synth_corpus.py \
+    --out /tmp/synth --statements 10000 --seed 1 --claim-blocks 62
+"$BIN" run --spec /tmp/synth/spec.json
 
-DEBUNDLE_TIMING=1 ./bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
-    modules propose \
-    --modules "$MODULES" --graph "$GRAPH" --format json \
+DEBUNDLE_TIMING=1 "$BIN" modules propose \
+    --graph /tmp/synth/out/reports/tree/static/app/owner_graph.json \
+    --modules /tmp/synth/modules --format json \
     > /tmp/propose.json 2> /tmp/timing.txt
 cat /tmp/timing.txt
 ```
@@ -131,44 +155,12 @@ If proposer wall becomes material again, collect a fresh optimized
 profile and fresh `DEBUNDLE_TIMING=1` report and treat that as the new
 source of truth for choosing work.
 
-### #2 — Broaden the boolean gate into `RealizabilityIndex` (conditional)
-
-Only if a fresh profile shows simulator/diagnostic work hot outside the
-quotient cycle gate. Add a
-`would_remain_realizable_after_moving_owners_touching`-style boolean
-query and short-circuit in order:
-
-- cross-gate rebind touching the post-move target rejects;
-- constraining SCC containing the target with size >= 2 rejects;
-- I-SCC size < 2 accepts;
-- I-SCC without an effective constraining pair accepts;
-- only then build/run the simulator.
-
-Keep the full verdict/evidence path as the diagnostics path and as a
-debug oracle.
-
-### #3 — Incremental SCC maintenance on the gate view (conditional)
-
-Only if a fresh profile shows `scc_containing` hot again. See the
-"Conditional SCC gate design" appendix for the V1.5 / V2 designs. The
-narrow snapshot+clone design works iff `base SCCs <= ~1000` and overlay
-`delta.len()` is much smaller than 50; tana's observed shape fits.
-Prefer the broader class-aware gate boundary if it stays reviewable —
-it also removes projection and diagnostic overhead.
-
 ### #4 — Skip `build_simulator` rebuild when inputs are unchanged (conditional)
 
 `build_simulator` has a strict-zero fast path (`overlay_is_simulator_noop`).
 A looser check could reuse the base simulator when the overlay's
 `i_delta` adds no new `(from, to)` pair and only references base edges
 that remain positive. Verify against a fresh profile first.
-
-### #5 — Incrementalize `rebuild_class_to_cycle_indices` (corner case)
-
-`update_cycle_cache_after_merge` calls `rebuild_class_to_cycle_indices`
-after every merge, which clears `class_to_cycle_indices` and re-walks
-the entire `cached_cycles` vec — `O(sum of cycle sizes)` per merge. Only
-matters when `cached_cycles` is non-empty. Defer until profiles show it.
 
 ### #6 — `sync_index_after_merge` to the persistent realizability index
 
@@ -256,104 +248,7 @@ Tighten before the next large peel loop:
 - Do not revive the base-SCC cache + overlay-short-circuit approach. The
   proposer queries the move destination `to`, and candidate overlay
   edges are incident to `to`, so the overlay touches the queried SCC in
-  the representative workload.
-
----
-
-## Appendix: Conditional SCC gate design
-
-Future-plan reference for `OverlayGraphView::scc_containing` and related
-proposer gate work. **Not an active implementation plan** — current
-optimized tana proposer wall is 3.54s and gate diagnostics are not the
-bottleneck. Do not implement incremental SCC maintenance unless a fresh
-optimized profile shows `scc_containing` hot again.
-
-The narrow SCC target replaces this per-query shape:
-
-```text
-O(reachable_forward(to) + reachable_reverse(to))
-```
-
-with an affected-region query over a maintained quotient view:
-
-```text
-O(D + R)
-```
-
-where `D` is the overlay size / moved-owner incident-edge count for one
-candidate and `R` is the target-specific reachable region. Worst-case
-`R` is still the whole quotient graph, so this is a better
-parameterization, not a better theoretical bound.
-
-### V1.5: targeted condensation reachability
-
-Keeps a per-base-graph snapshot:
-
-```rust
-struct BaseSnapshot {
-    sccs: Vec<Vec<ModuleId>>,
-    scc_of: HashMap<ModuleId, usize>,
-    condensation_mult: HashMap<(usize, usize), u32>,
-    condensation_out: Vec<Vec<usize>>,
-    condensation_in: Vec<Vec<usize>>,
-}
-```
-
-Per query: map `to` and overlay endpoints to base SCCs (synthetic
-singleton SCCs for absent endpoints); project module-edge deltas into
-SCC-edge deltas; if an overlay removal zeroes an edge inside one base
-SCC, fall back to the full DFS (the base SCC may split); run forward and
-reverse reachability from `target_scc` over effective condensation
-edges; intersect visited sets and materialize member modules. Lowest-risk
-SCC-only design — keeps the module-projection model, needs only localized
-query changes.
-
-### V2: owner-SCC index plus partition view
-
-The owner graph is constant during `modules propose`; only its
-projection through the current module partition changes. V2 computes
-owner SCCs once and maintains a partition view:
-
-```rust
-struct OwnerSccIndex {
-    owner_sccs: Vec<Vec<OwnerId>>,
-    owner_scc_of: HashMap<OwnerId, usize>,
-    cross_scc_out: Vec<Vec<usize>>,
-    cross_scc_in: Vec<Vec<usize>>,
-}
-
-struct PartitionView {
-    member_count: Vec<HashMap<ModuleId, u32>>,
-    multi_module_sccs: HashSet<usize>,
-    owner_sccs_per_module: HashMap<ModuleId, HashSet<usize>>,
-}
-```
-
-Every owner move updates `PartitionView` in the same push/undo lifecycle
-as `RealizabilityIndex`. Per-overlay queries apply a temporary diff, run
-bidirectional BFS through represented owner SCCs, and materialize the
-target component's modules. Faster steady state than V1.5, but more
-maintenance surface.
-
-### Edge cases to cover
-
-- Overlay endpoints absent from the base graph.
-- Overlay removals that can split one base SCC.
-- Duplicate owner moves in one candidate overlay.
-- Push/undo rollback of `PartitionView` and any boolean index state.
-- Multi-target / non-standard gate transitions that cannot be modeled as
-  one post-merge target module — fall back to scoped push/verdict/undo
-  or model explicitly.
-- Diagnostic drift: boolean pass/reject must stay byte-identical to the
-  full verdict path for emitted proposals and reported blockers.
-
-### Tests and gates before shipping any SCC design
-
-- Unit tests for empty overlays, absent endpoints, base-internal
-  edge-removal fallback, duplicate moves, and rollback.
-- Oracle tests comparing boolean results with the full verdict path
-  across synthetic graphs and the tana fixture.
-- Corpus gate: `modules propose --format json` byte-identical against
-  current head.
-- Benchmark gate: optimized wall improves by >= 3s averaged across
-  interleaved runs, or the change does not ship as a perf fix.
+  the representative workload. The landed `CondensationOrder` ladder
+  (tiers 1–2) is the maintained-SCC design that works here — it answers
+  the gate from the condensation and only falls back to
+  `OverlayGraphView::scc_containing` on removal-inside-SCC overlays.
