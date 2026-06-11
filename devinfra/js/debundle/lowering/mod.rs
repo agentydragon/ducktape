@@ -148,7 +148,8 @@ pub struct MaterializeLogicalModulesResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct UnmatchedSpecClaim {
     pub chunk_id: String,
-    pub module_id: String,
+    /// Claiming module, by canonical [`spec::ModulePath`].
+    pub module_path: spec::ModulePath,
     pub binding_name: String,
     pub export_name: String,
 }
@@ -177,17 +178,18 @@ pub struct ChunkModulesCounts {
 pub struct FinalModuleContent {
     pub binding_names: Vec<String>,
     pub file: String,
-    pub id: String,
     pub member_names: Vec<String>,
-    pub path: String,
+    /// Canonical [`spec::ModulePath`] (the report is per-chunk, so
+    /// the chunk is implicit).
+    pub path: spec::ModulePath,
     pub owner_ids: Vec<String>,
     pub residual: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestedLogicalModule {
-    pub id: String,
-    pub target_path: String,
+    /// Canonical [`spec::ModulePath`] of the requested target.
+    pub target_path: spec::ModulePath,
     pub residual: bool,
 }
 

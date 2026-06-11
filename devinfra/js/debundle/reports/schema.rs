@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use swc_atoms::Atom;
 
+use crate::factor_assembly::AtomicUnitConflict;
+use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{DepKind, StatementKind, StatementOrdinal};
 
@@ -238,6 +240,60 @@ pub struct AtomicUnitEdgeReport {
     pub edge_kinds: Vec<DepKind>,
     pub owner_edge_ids: Vec<String>,
     pub constrains_init_order: bool,
+}
+
+/// Wire shape for `atomic_unit_conflicts.json` (one entry per
+/// conflicting atomic unit). Projects the in-memory
+/// [`AtomicUnitConflict`] onto the shared entity-key formats: owners
+/// as `"owner:N"` strings (joining `owner_graph.json`'s `nodes[].id`)
+/// and modules as canonical [`spec::ModulePath`]s (joining the module
+/// table's `path`). The raw `OwnerId` / `ModuleId` indices never hit
+/// the wire.
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicUnitConflictReport {
+    /// Members as `"owner:N"` keys, sorted by owner id.
+    pub members: Vec<String>,
+    pub claims: Vec<ConflictingClaimReport>,
+    pub causes: Vec<DepKind>,
+}
+
+/// One claim row in [`AtomicUnitConflictReport`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictingClaimReport {
+    /// Claiming owner as an `"owner:N"` key.
+    pub owner: String,
+    pub binding_names: Vec<Atom>,
+    /// Claimed destination, by canonical [`spec::ModulePath`].
+    pub module: spec::ModulePath,
+}
+
+impl AtomicUnitConflictReport {
+    pub fn from_conflicts(
+        conflicts: &[AtomicUnitConflict],
+        module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
+    ) -> Vec<Self> {
+        conflicts
+            .iter()
+            .map(|conflict| Self {
+                members: conflict
+                    .members
+                    .iter()
+                    .copied()
+                    .map(crate::reports::owner_key)
+                    .collect(),
+                claims: conflict
+                    .claims
+                    .iter()
+                    .map(|claim| ConflictingClaimReport {
+                        owner: crate::reports::owner_key(claim.owner),
+                        binding_names: claim.binding_names.clone(),
+                        module: module_path(claim.module),
+                    })
+                    .collect(),
+                causes: conflict.causes.iter().copied().collect(),
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]

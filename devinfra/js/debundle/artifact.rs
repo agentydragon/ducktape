@@ -267,8 +267,22 @@ pub struct RootLogicalModulesSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkLogicalModulesSummary {
-    pub module_ids: Vec<String>,
+    /// Canonical [`spec::ModulePath`] per materialized module (the
+    /// chunk is implicit — this summary is per-chunk).
+    pub module_paths: Vec<spec::ModulePath>,
     pub target_dir: String,
+}
+
+/// Chunk-qualified canonical module reference for tree-level
+/// (cross-chunk) reports. Per-chunk reports denote a module by bare
+/// [`spec::ModulePath`] (their chunk is implicit); tree-wide reports
+/// qualify the same canonical path with its chunk id. There is no
+/// third spelling — the in-process `"<chunk_id>::<path>"` id never
+/// hits the wire.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct ModuleRef {
+    pub chunk_id: String,
+    pub path: spec::ModulePath,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,11 +291,21 @@ pub struct SelectedModuleLowering {
     pub chunk_id: String,
     pub exported_names: Vec<String>,
     pub file: String,
-    pub id: String,
     pub owner_ids: Vec<String>,
     pub residual: bool,
     pub target_file: String,
     pub target_path: String,
+}
+
+impl SelectedModuleLowering {
+    /// The module this lowering materialized, as a [`ModuleRef`].
+    pub fn module_ref(&self) -> ModuleRef {
+        ModuleRef {
+            chunk_id: self.chunk_id.clone(),
+            path: spec::ModulePath::parse(&self.target_path, "")
+                .expect("lowering target_path is a canonical module path"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -315,7 +339,8 @@ pub struct ChunkDecompositionOutput {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkValidationSummary {
     pub status: &'static str,
-    pub linker_order: Vec<String>,
+    /// Linker evaluation order, by canonical [`spec::ModulePath`].
+    pub linker_order: Vec<spec::ModulePath>,
 }
 
 /// One semantic owner-edge fact projected onto emitted module files.
@@ -422,10 +447,10 @@ pub struct OutputFileMetric {
     pub role: OutputRole,
     pub bytes: usize,
     pub lines: usize,
+    /// The materialized module emitted to this file, when the file is
+    /// a module (entry/runtime/other files carry `None`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_path: Option<String>,
+    pub module: Option<ModuleRef>,
 }
 
 impl OutputMetrics {
@@ -467,7 +492,9 @@ pub struct DirectoryManifestIndex {
     pub directories: Vec<String>,
     pub files: Vec<String>,
     pub chunks: Vec<String>,
-    pub modules: Vec<String>,
+    /// Modules whose emitted file lives under this directory, as
+    /// chunk-qualified [`ModuleRef`]s.
+    pub modules: Vec<ModuleRef>,
     pub defined_symbols: BTreeMap<String, usize>,
     pub loc: usize,
     pub incoming: DirectoryBoundarySummary,
@@ -491,10 +518,10 @@ pub struct FileDependencyManifest {
     pub lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chunk_id: Option<String>,
+    /// The materialized module emitted to this file, when the file is
+    /// a module, as a chunk-qualified [`ModuleRef`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_path: Option<String>,
+    pub module: Option<ModuleRef>,
     pub incoming: FileBoundarySummary,
     pub outgoing: FileBoundarySummary,
 }
@@ -528,7 +555,7 @@ pub struct DirectoryDependencyEdgeManifest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDecompositionMetrics {
-    pub module_id: String,
+    pub module: ModuleRef,
     pub loc: usize,
     pub exported_symbol_count: usize,
     pub is_residual: bool,
@@ -552,15 +579,16 @@ impl DecompositionMetrics {
         let mut total_defined = 0usize;
 
         for lowering in lowerings {
+            let module_ref = lowering.module_ref();
             let loc: usize = file_metrics
                 .iter()
-                .filter(|f| f.module_id.as_deref() == Some(&lowering.id))
+                .filter(|f| f.module.as_ref() == Some(&module_ref))
                 .map(|f| f.lines)
                 .sum();
             total_exported += lowering.exported_names.len();
             total_defined += lowering.binding_names.len();
             per_module.push(ModuleDecompositionMetrics {
-                module_id: lowering.id.clone(),
+                module: module_ref,
                 loc,
                 exported_symbol_count: lowering.exported_names.len(),
                 is_residual: lowering.residual,
@@ -1248,9 +1276,9 @@ fn build_directory_dependency_manifests(
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     file_metrics: &[OutputFileMetric],
 ) -> Vec<DirectoryManifestIndex> {
-    let loc_by_module_id: BTreeMap<&str, usize> = file_metrics
+    let loc_by_module: BTreeMap<&ModuleRef, usize> = file_metrics
         .iter()
-        .filter_map(|metric| Some((metric.module_id.as_deref()?, metric.lines)))
+        .filter_map(|metric| Some((metric.module.as_ref()?, metric.lines)))
         .collect();
     let mut directories = BTreeMap::<String, DirectoryAccumulator>::new();
 
@@ -1275,14 +1303,12 @@ fn build_directory_dependency_manifests(
     for decomposition in decomposition_by_chunk.values() {
         for lowering in &decomposition.selected_module_lowerings {
             let file = join_module_path(&[&lowering.chunk_id, &lowering.target_file]);
-            let loc = loc_by_module_id
-                .get(lowering.id.as_str())
-                .copied()
-                .unwrap_or(0);
+            let module_ref = lowering.module_ref();
+            let loc = loc_by_module.get(&module_ref).copied().unwrap_or(0);
             let ancestors = memoize_ancestors(&mut ancestors_cache, &file).to_vec();
             for dir in ancestors {
                 let accumulator = directories.entry(dir).or_default();
-                accumulator.module_ids.insert(lowering.id.clone());
+                accumulator.modules.insert(module_ref.clone());
                 for binding_name in &lowering.binding_names {
                     let symbol = format!("{file}#{binding_name}");
                     *accumulator.defined_symbols.entry(symbol).or_default() += 1;
@@ -1391,8 +1417,7 @@ fn build_file_dependency_manifests(
                 bytes: metric.bytes,
                 lines: metric.lines,
                 chunk_id: metric.file.split('/').next().map(str::to_string),
-                module_id: metric.module_id.clone(),
-                module_path: metric.module_path.clone(),
+                module: metric.module.clone(),
                 incoming: boundary.incoming.into_file_summary(),
                 outgoing: boundary.outgoing.into_file_summary(),
             }
@@ -1405,7 +1430,7 @@ struct DirectoryAccumulator {
     directories: BTreeSet<String>,
     files: BTreeSet<String>,
     chunk_ids: BTreeSet<String>,
-    module_ids: BTreeSet<String>,
+    modules: BTreeSet<ModuleRef>,
     defined_symbols: BTreeMap<String, usize>,
     loc: usize,
     incoming: DirectionalDirectoryAccumulator,
@@ -1434,7 +1459,7 @@ impl DirectoryAccumulator {
             directories: self.directories.into_iter().collect(),
             files: self.files.into_iter().collect(),
             chunks: self.chunk_ids.into_iter().collect(),
-            modules: self.module_ids.into_iter().collect(),
+            modules: self.modules.into_iter().collect(),
             defined_symbols: self.defined_symbols,
             loc: self.loc,
             incoming,
@@ -1778,8 +1803,7 @@ fn output_file_metric(
         role,
         bytes: rendered.len(),
         lines: rendered.lines().count(),
-        module_id: lowering.map(|lowering| lowering.id.clone()),
-        module_path: lowering.map(|lowering| lowering.target_path.clone()),
+        module: lowering.map(SelectedModuleLowering::module_ref),
     })
 }
 

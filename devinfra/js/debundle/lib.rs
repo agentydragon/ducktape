@@ -67,10 +67,10 @@ pub use realizability::{
     record_gate_diagnostic_translation,
 };
 pub use reports::schema::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,
-    FactorizeDiagnosticReason, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
-    QuotientEdgeReport, QuotientSccReport, SourceLocation,
+    AtomicGraphReport, AtomicUnitConflictReport, AtomicUnitEdgeReport, AtomicUnitReport,
+    BindingReport, ConflictingClaimReport, EdgeRoleReport, FactorizeDiagnosticReason, LineRange,
+    ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+    OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport, QuotientSccReport, SourceLocation,
 };
 pub use stage_one::{
     RebindFold, StageOneAnalysis, compute_rebind_folds, compute_stage_one_analysis,

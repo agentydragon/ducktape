@@ -89,13 +89,27 @@ impl ChunkAnalysis {
             .unwrap_or_else(|| binding.0.clone())
     }
 
-    /// Render `id` to a human-readable label (used in cycle reports).
-    pub fn module_name(&self, id: ModuleId) -> String {
+    /// Canonical module identity for `id` — the [`spec::ModulePath`]
+    /// every wire artifact (`owner_graph.json` module table,
+    /// `cycles.json`, `atomic_unit_conflicts.json`) and diagnostic
+    /// uses to denote this module. Parses the in-process
+    /// `LogicalModule.id` (`"<chunk_id>::<path>"`) down to the clean
+    /// path; panics on an out-of-range id or unparseable identity —
+    /// both are pipeline bugs, not user errors.
+    pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
         let LogicalModuleIndex(idx) = id.0;
-        self.logical_modules
-            .get(idx)
-            .map(|m| m.id.clone())
-            .unwrap_or_else(|| format!("<module#{idx}>"))
+        let module = self.logical_modules.get(idx).unwrap_or_else(|| {
+            panic!(
+                "ModuleId logical:{idx} out of range ({} logical modules)",
+                self.logical_modules.len()
+            )
+        });
+        spec::ModulePath::parse(&module.id, &self.chunk_id).unwrap_or_else(|e| {
+            panic!(
+                "logical module logical:{idx} has unparseable identity {:?}: {e}",
+                module.id
+            )
+        })
     }
 
     /// Which logical module owns a binding, if any.

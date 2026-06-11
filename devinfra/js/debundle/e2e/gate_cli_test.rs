@@ -1,282 +1,207 @@
-//! E2e for `debundle gate {list,describe,cut}` against a synthetic
-//! `owner_graph.json` + `cycles.json` pair. Exercises the binary,
-//! so the env-var / flag plumbing is covered alongside the report
-//! shapes.
+//! E2e for `debundle gate {list,describe,cut}` against REAL pipeline
+//! artifacts. A spec with a cross-module at-init cycle is rejected by
+//! `debundle run`, which writes `owner_graph.json` + `cycles.json`
+//! under the report root; the gate CLI is then exercised against
+//! those files.
+//!
+//! Driving the real materializer (instead of a hand-written JSON
+//! pair) pins the cross-file join contract: `gate describe`'s
+//! evidence recompute resolves each owner's destination `ModuleKey`
+//! through the owner graph's module table to the same canonical
+//! `ModulePath` the `cycles.json` `modules` entries carry. A
+//! vocabulary drift between the two files (e.g. the historical
+//! `"<chunk_id>::<path>"` spelling leaking into `cycles.json`) makes
+//! the join come up empty — and fails the non-empty-evidence
+//! assertions here.
 
+use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle")
-}
+use debundle_e2e_support::*;
 
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
-
-/// Two-module cycle `mod_a <-> mod_b`. Each module has a single
-/// owner; the edge from `mod_a` to `mod_b` is at-init on binding
-/// `b1` and the reverse is at-init on `a1`. Both endpoints are
-/// in the SCC, so `gate describe 0` should recompute exactly two
-/// evidence edges.
-fn synthetic_graph_json() -> String {
-    serde_json::json!({
-        "chunk_id": "static/app",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "source_location": null,
-                "declared_bindings": [
-                    { "binding": "a1", "export_name": "a1" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "mod_a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "source_location": null,
-                "declared_bindings": [
-                    { "binding": "b1", "export_name": "b1" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "mod_b"
-            }
+/// Reject a two-module at-init cycle through the real pipeline:
+/// `mod_x = {A, D}` where `D = wrap(C)` reads `C` from `mod_y`, and
+/// `mod_y = {B, C}` where `B = wrap(A)` reads `A` from `mod_x`.
+fn rejected_cycle_fixture() -> RejectedFixture {
+    run_rejection_fixture(FixtureOpts::new(
+        r#"function wrap(x) { return { ref: x }; }
+const A = "a";
+const B = wrap(A);
+const C = "c";
+const D = wrap(C);
+console.log(B.ref, D.ref);
+export { A, B, C, D };
+"#,
+        vec![
+            logical_module("mod_x", &[Member::new("A"), Member::new("D")]),
+            logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
         ],
-        "edges": [
-            {
-                "id": "e0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "b1",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "e1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_use",
-                "binding": "a1",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": {
-            "nodes": [
-                { "key": "mod_a", "path": "mod_a", "residual": false },
-                { "key": "mod_b", "path": "mod_b", "residual": false }
-            ],
-            "edges": [],
-            "sccs": []
-        },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
+    ))
 }
 
-/// Trimmed `cycles.json` shape: one blocking SCC with `id`, `modules`,
-/// and `cut`. Mirrors what the materializer writes after the wire-shape
-/// trim (no `evidence` field).
-fn synthetic_cycles_json() -> String {
-    serde_json::json!([
-        {
-            "id": 0,
-            "modules": ["mod_a", "mod_b"],
-            "cut": [
-                {
-                    "from": "mod_a",
-                    "to": "mod_b",
-                    "statement_ordinal": 0,
-                    "binding": "b1",
-                    "from_binding": "a1",
-                    "kind": "eager_use"
-                }
-            ]
-        }
-    ])
-    .to_string()
-}
-
-struct Fixture {
-    _dir: tempfile::TempDir,
-    graph_path: PathBuf,
-    modules_root: PathBuf,
-}
-
-fn fixture_with_default_cycles_layout() -> Fixture {
-    // Default `cycles.json` location: sibling of `--graph`. Place
-    // both under the same parent dir so `gate ...` resolves cycles.json
-    // without an explicit `--cycles` flag.
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("reports/static/app/owner_graph.json");
-    let cycles_path = dir.path().join("reports/static/app/cycles.json");
-    let modules_root = dir.path().join("modules");
-    fs::create_dir_all(&modules_root).unwrap();
-    write(&graph_path, &synthetic_graph_json());
-    write(&cycles_path, &synthetic_cycles_json());
-    Fixture {
-        _dir: dir,
-        graph_path,
-        modules_root,
-    }
+fn graph_path(rejected: &RejectedFixture) -> PathBuf {
+    rejected.report_root.join("static/app/owner_graph.json")
 }
 
 fn run_gate(args: &[&str]) -> std::process::Output {
-    Command::new(debundle_binary())
+    Command::new(debundler_path())
         .args(args)
         .output()
         .expect("spawn debundle")
 }
 
+fn gate_json(args: &[&str]) -> serde_json::Value {
+    let out = run_gate(args);
+    assert!(
+        out.status.success(),
+        "gate {:?} exit: stderr={}",
+        args,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("gate output is JSON")
+}
+
 #[test]
 fn gate_list_reports_each_blocking_scc() {
-    let fx = fixture_with_default_cycles_layout();
-    let out = run_gate(&[
+    let rejected = rejected_cycle_fixture();
+    let parsed = gate_json(&[
         "gate",
         "list",
         "--graph",
-        fx.graph_path.to_str().unwrap(),
-        "--modules",
-        fx.modules_root.to_str().unwrap(),
+        graph_path(&rejected).to_str().unwrap(),
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "gate list exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let entries = parsed["blocking_sccs"].as_array().unwrap();
-    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.len(), 1, "{parsed}");
     assert_eq!(entries[0]["id"].as_u64(), Some(0));
     assert_eq!(entries[0]["module_count"].as_u64(), Some(2));
-    assert_eq!(entries[0]["cut_count"].as_u64(), Some(1));
+    assert!(entries[0]["cut_count"].as_u64().unwrap() >= 1, "{parsed}");
 }
 
 #[test]
-fn gate_cut_returns_the_actionable_edges() {
-    let fx = fixture_with_default_cycles_layout();
-    let out = run_gate(&[
-        "gate",
-        "cut",
-        "0",
-        "--graph",
-        fx.graph_path.to_str().unwrap(),
-        "--modules",
-        fx.modules_root.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(
-        out.status.success(),
-        "gate cut exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["id"].as_u64(), Some(0));
-    let cut = parsed["cut"].as_array().unwrap();
-    assert_eq!(cut.len(), 1);
-    assert_eq!(cut[0]["from"].as_str(), Some("mod_a"));
-    assert_eq!(cut[0]["to"].as_str(), Some("mod_b"));
-    assert_eq!(cut[0]["kind"].as_str(), Some("eager_use"));
-}
-
-#[test]
-fn gate_describe_recomputes_evidence_from_owner_graph() {
-    let fx = fixture_with_default_cycles_layout();
-    let out = run_gate(&[
+fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
+    let rejected = rejected_cycle_fixture();
+    let parsed = gate_json(&[
         "gate",
         "describe",
         "0",
         "--graph",
-        fx.graph_path.to_str().unwrap(),
-        "--modules",
-        fx.modules_root.to_str().unwrap(),
+        graph_path(&rejected).to_str().unwrap(),
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "gate describe exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(parsed["id"].as_u64(), Some(0));
-    let modules = parsed["modules"].as_array().unwrap();
-    assert_eq!(modules.len(), 2);
+    let modules: BTreeSet<&str> = parsed["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        modules,
+        BTreeSet::from(["mod_x", "mod_y"]),
+        "SCC modules are canonical ModulePaths: {parsed}"
+    );
+    // The unified-identity contract: cycles.json modules and the
+    // recomputed evidence both use clean canonical paths — no
+    // interned `logical:N` keys, no `<chunk_id>::<path>` spelling.
     let evidence = parsed["evidence"].as_array().unwrap();
-    // Two intra-SCC cross-module owner edges; both should be in
-    // the recomputed evidence (cycles.json carries no evidence
-    // — the CLI recomputed it from owner_graph.json).
-    assert_eq!(evidence.len(), 2, "{parsed}");
+    assert!(
+        !evidence.is_empty(),
+        "evidence recompute joined zero owner-graph edges against the SCC modules — \
+         the two files speak different module vocabularies: {parsed}"
+    );
+    for e in evidence {
+        for endpoint in [&e["from"], &e["to"]] {
+            let path = endpoint.as_str().unwrap();
+            assert!(
+                modules.contains(path),
+                "evidence endpoint {path} outside SCC modules {modules:?}: {e}"
+            );
+            assert!(
+                !path.contains("::") && !path.starts_with("logical:"),
+                "evidence endpoint {path} is not a canonical ModulePath: {e}"
+            );
+        }
+    }
+    // Both directions of the at-init cycle appear, naming the
+    // bindings whose reads forced it.
     assert!(
         evidence
             .iter()
-            .any(|e| e["from"] == "mod_a" && e["to"] == "mod_b" && e["binding"] == "b1"),
-        "evidence missing mod_a -> mod_b: {parsed}"
+            .any(|e| e["from"] == "mod_y" && e["to"] == "mod_x" && e["binding"] == "A"),
+        "evidence missing mod_y -> mod_x via A: {parsed}"
     );
     assert!(
         evidence
             .iter()
-            .any(|e| e["from"] == "mod_b" && e["to"] == "mod_a" && e["binding"] == "a1"),
-        "evidence missing mod_b -> mod_a: {parsed}"
+            .any(|e| e["from"] == "mod_x" && e["to"] == "mod_y" && e["binding"] == "C"),
+        "evidence missing mod_x -> mod_y via C: {parsed}"
     );
 }
 
 #[test]
 fn gate_describe_binding_filter_narrows_evidence_to_one_symbol() {
-    let fx = fixture_with_default_cycles_layout();
-    let out = run_gate(&[
+    let rejected = rejected_cycle_fixture();
+    let parsed = gate_json(&[
         "gate",
         "describe",
         "0",
         "--graph",
-        fx.graph_path.to_str().unwrap(),
-        "--modules",
-        fx.modules_root.to_str().unwrap(),
+        graph_path(&rejected).to_str().unwrap(),
         "--binding",
-        "a1",
+        "A",
         "--format",
         "json",
     ]);
-    assert!(out.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let evidence = parsed["evidence"].as_array().unwrap();
-    // `a1` is the source binding for mod_a -> mod_b AND the target
-    // binding for mod_b -> mod_a; both rows are kept.
-    assert_eq!(evidence.len(), 2);
+    assert!(!evidence.is_empty(), "{parsed}");
     for e in evidence {
         assert!(
-            e["binding"] == "a1" || e["from_binding"] == "a1",
+            e["binding"] == "A" || e["from_binding"] == "A",
             "binding filter kept an unrelated row: {e}"
         );
     }
 }
 
 #[test]
+fn gate_cut_returns_the_actionable_edges() {
+    let rejected = rejected_cycle_fixture();
+    let parsed = gate_json(&[
+        "gate",
+        "cut",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(parsed["id"].as_u64(), Some(0));
+    let cut = parsed["cut"].as_array().unwrap();
+    assert!(!cut.is_empty(), "{parsed}");
+    for e in cut {
+        for endpoint in [&e["from"], &e["to"]] {
+            let path = endpoint.as_str().unwrap();
+            assert!(
+                path == "mod_x" || path == "mod_y",
+                "cut endpoint {path} outside the SCC: {e}"
+            );
+        }
+    }
+}
+
+#[test]
 fn gate_unknown_id_fails_cleanly() {
-    let fx = fixture_with_default_cycles_layout();
+    let rejected = rejected_cycle_fixture();
     let out = run_gate(&[
         "gate",
         "describe",
         "99",
         "--graph",
-        fx.graph_path.to_str().unwrap(),
-        "--modules",
-        fx.modules_root.to_str().unwrap(),
+        graph_path(&rejected).to_str().unwrap(),
     ]);
     assert!(!out.status.success(), "describe 99 should fail");
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -288,59 +213,35 @@ fn gate_unknown_id_fails_cleanly() {
 
 #[test]
 fn gate_cycles_override_picks_up_custom_path() {
-    // Put cycles.json somewhere other than the graph's sibling and
+    // Move the real cycles.json away from the graph's sibling and
     // make sure `--cycles` finds it.
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("reports/static/app/owner_graph.json");
-    let cycles_path = dir.path().join("elsewhere/cycles.json");
-    let modules_root = dir.path().join("modules");
-    fs::create_dir_all(&modules_root).unwrap();
-    write(&graph_path, &synthetic_graph_json());
-    write(&cycles_path, &synthetic_cycles_json());
+    let rejected = rejected_cycle_fixture();
+    let sibling = rejected.report_root.join("static/app/cycles.json");
+    let moved = rejected.report_root.join("elsewhere/cycles.json");
+    fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    fs::rename(&sibling, &moved).unwrap();
 
-    let out = run_gate(&[
+    let parsed = gate_json(&[
         "gate",
         "list",
         "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules_root.to_str().unwrap(),
+        graph_path(&rejected).to_str().unwrap(),
         "--cycles",
-        cycles_path.to_str().unwrap(),
+        moved.to_str().unwrap(),
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "gate list with --cycles exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
-}
 
-#[test]
-fn gate_list_runs_without_modules_flag() {
-    // `--modules` is optional (gate reads nothing from it). Omitting
-    // it — and clearing the env fallback — must still succeed.
-    let fx = fixture_with_default_cycles_layout();
-    let out = Command::new(debundle_binary())
-        .args([
-            "gate",
-            "list",
-            "--graph",
-            fx.graph_path.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .env_remove("DEBUNDLE_MODULES")
-        .output()
-        .expect("spawn debundle");
-    assert!(
-        out.status.success(),
-        "gate list without --modules exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
+    // With cycles.json gone from the default location and no
+    // `--cycles`, the gate reads the clean state: zero blocking SCCs.
+    let parsed = gate_json(&[
+        "gate",
+        "list",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 0);
 }

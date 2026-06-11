@@ -324,21 +324,22 @@ rust_test(
     ],
 )
 
-# `debundle gate {list,describe,cut}` against a synthetic
-# owner_graph.json + cycles.json fixture pair. Covers the trimmed
-# wire shape, evidence-recompute from owner_graph.json, the
-# `--binding` filter, `--cycles` override, and error handling for
-# unknown ids.
+# `debundle gate {list,describe,cut}` against REAL pipeline
+# artifacts: a cyclic spec is rejected by `debundle run`, then the
+# gate CLI is exercised against the owner_graph.json + cycles.json it
+# wrote. Pins the canonical-ModulePath join between the two files
+# (non-empty recomputed evidence), the `--binding` filter, `--cycles`
+# override, and error handling for unknown ids.
 rust_test(
     name = "gate_cli_test",
     srcs = ["gate_cli_test.rs"],
     crate_root = "gate_cli_test.rs",
-    data = ["//devinfra/js/debundle"],
-    edition = "2024",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    edition = "2024",
+    deps = _STANDARD_E2E_DEPS,
 )
 
 # `debundle scc` filters + `debundle cluster` neighbors against a

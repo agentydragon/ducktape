@@ -84,10 +84,10 @@ pub(super) fn materialized_chunk_artifact(
         })
         .collect();
     let logical_modules = ChunkLogicalModulesSummary {
-        module_ids: report
+        module_paths: report
             .final_module_contents
             .iter()
-            .map(|module| module.id.clone())
+            .map(|module| module.path.clone())
             .collect(),
         target_dir: target_dir.to_string(),
     };

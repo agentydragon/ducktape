@@ -29,11 +29,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use analysis::{
-    BlockingSccEntry, CycleEdge, DepKind, EdgeRoleReport, OwnerGraphReport, StatementOrdinal,
+    BlockingSccEntry, CycleEdge, DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport,
+    StatementOrdinal,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use serde::Serialize;
+use spec::ModulePath;
 use swc_atoms::Atom;
 
 /// Top-level `debundle gate ...` argument node.
@@ -150,7 +152,7 @@ pub struct GateListReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct GateDescribeReport {
     pub id: usize,
-    pub modules: Vec<String>,
+    pub modules: Vec<ModulePath>,
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
     /// recomputed from `owner_graph.json` + `modules` (the wire
@@ -243,7 +245,7 @@ fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entry = find_entry(&entries, args.id)?;
     let graph = load_graph(&args.common)?;
 
-    let mut evidence = recompute_evidence(&graph, &entry.modules);
+    let mut evidence = recompute_evidence(&graph, &entry.modules)?;
     if let Some(binding) = &args.binding {
         evidence.retain(|e| edge_touches_binding(e, binding));
     }
@@ -409,14 +411,35 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 /// evidence count may differ by a small number of rows from the
 /// pre-trim value. The per-binding-pair blame view (the surface
 /// spec authors actually read) is unaffected.
-fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<CycleEdge> {
-    // Owner id -> destination module key. The cycles.json `modules`
-    // entries are precisely these interned module keys.
-    let owner_module: HashMap<&str, &str> = graph
+///
+/// Join contract: `cycles.json` denotes modules by canonical
+/// [`ModulePath`]; each owner's `destination` is an interned
+/// [`ModuleKey`] that resolves to its path through the owner graph's
+/// module table (`module_graph.nodes`). A destination key missing
+/// from the table is a malformed owner graph and errors.
+fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Result<Vec<CycleEdge>> {
+    // Module table: interned key -> canonical path.
+    let path_by_key: HashMap<&ModuleKey, &ModulePath> = graph
+        .quotient
         .nodes
         .iter()
-        .map(|n| (n.id.as_str(), n.destination.as_str()))
+        .map(|entry| (&entry.key, &entry.path))
         .collect();
+    // Owner id -> canonical module path of its destination.
+    let owner_module: HashMap<&str, &ModulePath> = graph
+        .nodes
+        .iter()
+        .map(|n| {
+            let path = path_by_key.get(&n.destination).copied().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "owner {} has destination {} with no module-table entry",
+                    n.id,
+                    n.destination
+                )
+            })?;
+            Ok((n.id.as_str(), path))
+        })
+        .collect::<Result<_>>()?;
     // Owner id -> first declared binding (matches the heuristic
     // `from_binding_by_ordinal` builds in validation.rs).
     let owner_first_binding: HashMap<&str, Atom> = graph
@@ -441,10 +464,10 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<Cycle
         })
         .collect();
 
-    let scc_modules: BTreeSet<&str> = modules.iter().map(|s| s.as_str()).collect();
+    let scc_modules: BTreeSet<&ModulePath> = modules.iter().collect();
 
     let mut out = Vec::new();
-    let mut seen_sequenced_pairs: BTreeSet<(&str, &str)> = BTreeSet::new();
+    let mut seen_sequenced_pairs: BTreeSet<(&ModulePath, &ModulePath)> = BTreeSet::new();
     for edge in &graph.edges {
         let Some(&from_mod) = owner_module.get(edge.source.as_str()) else {
             continue;
@@ -491,8 +514,8 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<Cycle
             .cloned()
             .or_else(|| owner_first_binding.get(edge.source.as_str()).cloned());
         out.push(CycleEdge {
-            from: from_mod.to_string(),
-            to: to_mod.to_string(),
+            from: from_mod.clone(),
+            to: to_mod.clone(),
             statement_ordinal: edge.statement_ordinal,
             binding: edge.binding.clone(),
             from_binding,
@@ -515,14 +538,14 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<Cycle
                 b.kind,
             ))
     });
-    out
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct BlamePairKey {
     from_label: String,
-    from: String,
-    to: String,
+    from: ModulePath,
+    to: ModulePath,
     to_label: String,
 }
 
@@ -559,7 +582,15 @@ mod tests {
         BindingReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
     };
-    use report_fixtures::module_ref;
+    use report_fixtures::{module_ref, module_table};
+
+    fn module_path(path: &str) -> ModulePath {
+        ModulePath::parse(path, "").unwrap()
+    }
+
+    fn module_paths(paths: &[&str]) -> Vec<ModulePath> {
+        paths.iter().copied().map(module_path).collect()
+    }
 
     fn owner_node(
         id: &str,
@@ -567,9 +598,10 @@ mod tests {
         bindings: &[&str],
         module_label: &str,
     ) -> OwnerGraphNodeReport {
-        // The destination key string is the module label so
-        // `recompute_evidence`'s `owner_module` lookup matches the SCC
-        // `modules` entries (which are these same keys).
+        // The destination key string is the module's path (the
+        // `report_fixtures` convention), so the module table built by
+        // `quotient_for` resolves it to the same `ModulePath` the SCC
+        // `modules` entries carry.
         OwnerGraphNodeReport {
             id: id.to_string(),
             statement_ordinal: StatementOrdinal(statement_ordinal),
@@ -607,9 +639,13 @@ mod tests {
         }
     }
 
-    fn empty_quotient() -> OwnerGraphQuotientReport {
+    /// Quotient carrying only the module table for the given
+    /// destination keys — `recompute_evidence` resolves owner
+    /// destinations through it.
+    fn quotient_for(module_labels: &[&str]) -> OwnerGraphQuotientReport {
+        let keys: Vec<ModuleKey> = module_labels.iter().map(|l| module_ref(l)).collect();
         OwnerGraphQuotientReport {
-            nodes: Vec::new(),
+            nodes: module_table(keys.iter()),
             edges: Vec::new(),
             sccs: Vec::new(),
         }
@@ -639,21 +675,21 @@ mod tests {
                 // mod_a -> mod_c (NOT in SCC — should be filtered out)
                 owner_edge("e2", "owner:0", "owner:2", DepKind::EagerUse, Some("c"), 0),
             ],
-            quotient: empty_quotient(),
+            quotient: quotient_for(&["mod_a", "mod_b", "mod_c"]),
             atomic_graph: empty_atomic_graph(),
         };
         let evidence =
-            super::recompute_evidence(&graph, &["mod_a".to_string(), "mod_b".to_string()]);
+            super::recompute_evidence(&graph, &module_paths(&["mod_a", "mod_b"])).unwrap();
         assert_eq!(evidence.len(), 2, "{evidence:#?}");
         assert!(
             evidence
                 .iter()
-                .any(|e| e.from == "mod_a" && e.to == "mod_b")
+                .any(|e| e.from == module_path("mod_a") && e.to == module_path("mod_b"))
         );
         assert!(
             evidence
                 .iter()
-                .any(|e| e.from == "mod_b" && e.to == "mod_a")
+                .any(|e| e.from == module_path("mod_b") && e.to == module_path("mod_a"))
         );
         // Source binding labels come from the source owner's first
         // declared binding.
@@ -678,10 +714,10 @@ mod tests {
                 Some("b"),
                 0,
             )],
-            quotient: empty_quotient(),
+            quotient: quotient_for(&["mod_a"]),
             atomic_graph: empty_atomic_graph(),
         };
-        let evidence = super::recompute_evidence(&graph, &["mod_a".to_string()]);
+        let evidence = super::recompute_evidence(&graph, &module_paths(&["mod_a"])).unwrap();
         assert!(evidence.is_empty(), "{evidence:#?}");
     }
 
@@ -703,11 +739,11 @@ mod tests {
                 Some("b"),
                 0,
             )],
-            quotient: empty_quotient(),
+            quotient: quotient_for(&["mod_a", "mod_b"]),
             atomic_graph: empty_atomic_graph(),
         };
         let evidence =
-            super::recompute_evidence(&graph, &["mod_a".to_string(), "mod_b".to_string()]);
+            super::recompute_evidence(&graph, &module_paths(&["mod_a", "mod_b"])).unwrap();
         assert_eq!(evidence.len(), 1);
         assert_eq!(evidence[0].kind, DepKind::LazyUse);
     }
@@ -743,8 +779,8 @@ mod tests {
     #[test]
     fn edge_touches_binding_matches_either_endpoint() {
         let edge = CycleEdge {
-            from: "mod_a".to_string(),
-            to: "mod_b".to_string(),
+            from: module_path("mod_a"),
+            to: module_path("mod_b"),
             statement_ordinal: StatementOrdinal(0),
             binding: Some(Atom::from("target")),
             from_binding: Some(Atom::from("source")),

@@ -48,13 +48,16 @@ fn residual() -> ModuleId {
     ModuleId::logical(usize::MAX)
 }
 
-fn render(id: ModuleId) -> String {
+/// Canonical-path renderer for `validate_factorization`: the residual
+/// sentinel renders as `residual`, explicit modules as `mod_<idx>`.
+fn render(id: ModuleId) -> spec::ModulePath {
     let LogicalModuleIndex(idx) = id.0;
-    if idx == usize::MAX {
-        "<residual>".to_string()
+    let raw = if idx == usize::MAX {
+        "residual".to_string()
     } else {
         format!("mod_{idx}")
-    }
+    };
+    spec::ModulePath::parse(&raw, "").unwrap()
 }
 
 fn member_bindings(members: &[BindingReport]) -> Vec<String> {
@@ -1016,7 +1019,7 @@ fn validate_surfaces_linker_order_for_acyclic_spec() {
     let pos = |name: &str| -> usize {
         order
             .iter()
-            .position(|m| m == name)
+            .position(|m| m.as_str() == name)
             .unwrap_or_else(|| panic!("module {name} not in {order:?}"))
     };
     assert!(
@@ -1186,7 +1189,7 @@ fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)
                 .logical_module(LogicalModuleIndex(idx))
             {
                 Some(m) if m.residual => "<residual>".to_string(),
-                _ => render(dest),
+                _ => render(dest).to_string(),
             };
             (key, label)
         })

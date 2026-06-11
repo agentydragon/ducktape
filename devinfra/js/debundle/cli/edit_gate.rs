@@ -42,10 +42,10 @@ use anonymous_resolution::{
 };
 use anyhow::{Context, Result, bail};
 use serde_yaml::Value;
-use spec::AnonymousStatementSelector;
+use spec::{AnonymousStatementSelector, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
-    read_module_claims,
+    module_path_from_file, read_module_claims,
 };
 
 /// How a spec-mutating CLI verb validates its edit. Replaces the
@@ -341,19 +341,28 @@ pub fn gate_post_edit_partition(
     )?;
 
     // ModuleId assignment: residual at logical:0, every surviving
-    // spec module gets a fresh logical:N starting at 1. The label
-    // map keeps the renderer's diagnostic readable — we use each
-    // module's chunk-relative path as its `module_name` callback
-    // output.
+    // spec module gets a fresh logical:N starting at 1. The path map
+    // renders diagnostics with the same canonical [`ModulePath`]
+    // every wire artifact uses (the module YAML's path relative to
+    // the modules root, `.yaml` stripped).
     let residual = ModuleId::logical(0);
     let mut of: Vec<ModuleId> = vec![residual; owner_graph.num_nodes()];
-    let mut module_label_by_id: HashMap<ModuleId, String> =
-        [(residual, "<residual>".to_string())].into_iter().collect();
+    let mut module_path_by_id: HashMap<ModuleId, ModulePath> = [(
+        residual,
+        ModulePath::parse("residual", "").expect("residual is a canonical path"),
+    )]
+    .into_iter()
+    .collect();
     let mut next_idx = 1usize;
     for (module_idx, module) in post_spec.modules.iter().enumerate() {
         let mid = ModuleId::logical(next_idx);
         next_idx += 1;
-        module_label_by_id.insert(mid, module.path.to_string_lossy().into_owned());
+        let raw = module_path_from_file(&module.path, modules_root);
+        module_path_by_id.insert(
+            mid,
+            ModulePath::parse(&raw, "")
+                .with_context(|| format!("module YAML {} path", module.path.display()))?,
+        );
         for name in module
             .claims
             .bindings
@@ -370,11 +379,13 @@ pub fn gate_post_edit_partition(
     }
     let partition = Partition::from_assignments(of, residual);
 
-    let module_name = |m: ModuleId| {
-        module_label_by_id
-            .get(&m)
-            .cloned()
-            .unwrap_or_else(|| format!("logical:{}", m.0.0))
+    let module_path = |m: ModuleId| {
+        module_path_by_id.get(&m).cloned().unwrap_or_else(|| {
+            panic!(
+                "module id logical:{} not assigned by the post-edit spec",
+                m.0.0
+            )
+        })
     };
 
     // Check 1 — atom splits. Run before cycles so the diagnostic
@@ -386,13 +397,13 @@ pub fn gate_post_edit_partition(
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
-        let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_name);
+        let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
         bail!("realizability gate rejected the edit (atom-split)");
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_factorization(&owner_graph, &partition, &module_name);
+    let report = validate_factorization(&owner_graph, &partition, &module_path);
     if !report.cycles.is_empty() {
         let summary = render_cycle_summary(&report.cycles);
         eprintln!("error: post-edit spec is unrealizable:\n{summary}");

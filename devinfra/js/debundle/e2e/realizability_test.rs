@@ -441,14 +441,18 @@ export { A, B };
     assert_eq!(by_file["entry.js"]["role"], "top_level_entry");
     assert_eq!(by_file["entry.js"]["bytes"], entry.0);
     assert_eq!(by_file["modules/mod_a.js"]["role"], "named_module");
-    assert_eq!(by_file["modules/mod_a.js"]["module_path"], "mod_a");
+    assert_eq!(by_file["modules/mod_a.js"]["module"]["path"], "mod_a");
+    assert_eq!(
+        by_file["modules/mod_a.js"]["module"]["chunk_id"],
+        "static/app"
+    );
     assert_eq!(by_file["modules/mod_a.js"]["bytes"], named.0);
     assert_eq!(
         by_file["modules/residual/unhandled.js"]["role"],
         "residual_module",
     );
     assert_eq!(
-        by_file["modules/residual/unhandled.js"]["module_path"],
+        by_file["modules/residual/unhandled.js"]["module"]["path"],
         "residual/unhandled",
     );
     assert_eq!(
@@ -469,7 +473,7 @@ export { A, B };
     assert!(root_files.iter().any(|file| {
         file["file"] == "static/app/modules/mod_a.js"
             && file["role"] == "named_module"
-            && file["module_path"] == "mod_a"
+            && file["module"]["path"] == "mod_a"
     }));
 }
 

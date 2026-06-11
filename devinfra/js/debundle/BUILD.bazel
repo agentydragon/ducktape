@@ -78,6 +78,7 @@ rust_library(
         ":analysis",
         ":js_ast",
         ":output_layout",
+        ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:relative-path",

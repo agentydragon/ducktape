@@ -238,7 +238,8 @@ impl ChunkPlanBuilder {
                 // resolve, so the missing claim is a no-op here).
                 self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                     chunk_id: ctx.chunk_id.to_string(),
-                    module_id: request.id.clone(),
+                    module_path: spec::ModulePath::parse(&request.target_path, "")
+                        .expect("request target_path is a canonical module path"),
                     binding_name: binding.clone(),
                     export_name: export_name.clone(),
                 });

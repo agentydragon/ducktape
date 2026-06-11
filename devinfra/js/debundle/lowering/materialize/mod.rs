@@ -331,8 +331,8 @@ pub(super) fn materialize_logical_chunk(
         requested_logical_modules: requests
             .iter()
             .map(|request| RequestedLogicalModule {
-                id: request.id.clone(),
-                target_path: request.target_path.clone(),
+                target_path: spec::ModulePath::parse(&request.target_path, "")
+                    .expect("request target_path is a canonical module path"),
                 residual: request.residual,
             })
             .collect(),
@@ -501,18 +501,26 @@ fn validate_and_emit_reports(
     }
     if !factorization_report.atomic_unit_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
+            // Project onto the wire shape: owners as `"owner:N"`,
+            // modules as canonical `ModulePath` — the same entity
+            // keys `owner_graph.json` uses, so the file joins
+            // against the owner graph without string surgery.
+            let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
+                &factorization_report.atomic_unit_conflicts,
+                &|id| factorization.analysis.module_path(id),
+            );
             time_phase!(timings, "write_atomic_unit_conflicts_report", {
                 write_chunk_report_json(
                     report_out_dir,
                     chunk_id,
                     ATOMIC_UNIT_CONFLICTS_REPORT,
-                    &factorization_report.atomic_unit_conflicts,
+                    &wire,
                 )
             })?;
         }
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
-            &|id| factorization.analysis.module_name(id),
+            &|id| factorization.analysis.module_path(id),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
@@ -582,9 +590,9 @@ fn build_final_module_report(
             FinalModuleContent {
                 binding_names,
                 file: plan.target_file.clone(),
-                id: plan.id.clone(),
                 member_names,
-                path: plan.target_path.clone(),
+                path: spec::ModulePath::parse(&plan.target_path, "")
+                    .expect("plan target_path is a canonical module path"),
                 owner_ids,
                 residual: !plan.explicit,
             }

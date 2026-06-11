@@ -135,6 +135,31 @@ spelled one identity five ways — and the parallel `sccs[].labels` are
 gone. Residual-ness is read from the table's authoritative `residual`
 flag, never inferred from a key string.
 
+## Module identity everywhere else: `ModulePath` / `ModuleRef`
+
+Every artifact outside `owner_graph.json` denotes modules by
+canonical `ModulePath` — never by interned key, and never by the
+in-process `"<chunk_id>::<path>"` spelling (`LogicalModule.id`,
+which exists only in memory). Per-chunk files use the bare path (the
+chunk is implicit); tree-wide files qualify it with the chunk id as
+a `ModuleRef { chunk_id, path }` object.
+
+| File                         | Module-identity fields                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `cycles.json` (per chunk)    | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
+| `atomic_unit_conflicts.json` | `claims[].module` — `ModulePath` (owners are `"owner:N"` strings)                        |
+| `modules.json` (per chunk)   | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
+| tree `index.json` (per dir)  | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
+| chunk summary `linker_order` | `ModulePath`                                                                             |
+| stderr rejection summaries   | every module named in cycle / atom-split / unmatched-claim blocks                        |
+
+Cross-file join recipe (what `debundle gate describe` does): resolve
+each owner's `destination` key through the owner graph's module table
+to its `path`, then intersect those paths with the SCC's
+`cycles.json` `modules` set. Both sides carry the same canonical
+`ModulePath` values, so the join is plain equality — no prefix
+stripping or string surgery.
+
 ## Related documents
 
 - `docs/design.md` §"Two classes of atom" — the realizability theorem

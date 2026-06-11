@@ -8,6 +8,7 @@ use crate::factor_assembly::AtomicUnitConflict;
 use crate::graph::{EndpointView, OwnerEdgeId, partition_endpoints};
 use crate::partition::Partition;
 use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
+use spec::ModulePath;
 use swc_atoms::Atom;
 
 use crate::{DepKind, ModuleId, OwnerGraph, StatementOrdinal};
@@ -26,7 +27,7 @@ pub struct FactorizationReport {
     /// (validation rejects). Captured here so debug tooling can
     /// see the linker's evaluation order without re-running
     /// materialization. See docs/design.md "Lemma 2".
-    pub linker_order: Vec<String>,
+    pub linker_order: Vec<ModulePath>,
     /// Clause-2 violations (cross-destination rebinding writes) from
     /// the realizability verdict, rendered for diagnostics. A
     /// rebinding write and the binding it reassigns belong to one
@@ -45,7 +46,7 @@ pub struct FactorizationReport {
 /// `cut` / `lazy_closure` rows the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
-    pub modules: Vec<String>,
+    pub modules: Vec<ModulePath>,
     /// Spec-author-actionable cut: realizability-constraining
     /// (`at-init` or `side-effect`) reasons whose removal (by
     /// co-locating each binding pair into one module) lifts the
@@ -87,8 +88,13 @@ pub struct BlockingSccEntry {
     /// the CLI `gate describe`/`cut` commands resolve `<id>` against
     /// this index.
     pub id: usize,
-    /// Every module in the unrealizable SCC.
-    pub modules: Vec<String>,
+    /// Every module in the unrealizable SCC, by canonical
+    /// [`ModulePath`] — the same value as the owner-graph module
+    /// table's `path`, so consumers join `cycles.json` against
+    /// `owner_graph.json` by resolving destination keys through the
+    /// table (see `docs/wire_format.md` §"one canonical module
+    /// identity").
+    pub modules: Vec<ModulePath>,
     /// The actionable subset for spec authors: removing any of these
     /// edges (by co-locating the binding pair into one module) works
     /// toward breaking the SCC. See [`CycleReport::cut`] for the
@@ -120,8 +126,10 @@ impl BlockingSccEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CycleEdge {
-    pub from: String,
-    pub to: String,
+    /// Source module, by canonical [`ModulePath`].
+    pub from: ModulePath,
+    /// Target module, by canonical [`ModulePath`].
+    pub to: ModulePath,
     pub statement_ordinal: StatementOrdinal,
     /// Target binding being read (declared in `to`'s module). `None`
     /// for sequenced edges (no symbol).
@@ -328,10 +336,10 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 pub fn validate_factorization(
     owner_graph: &OwnerGraph,
     partition: &Partition,
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> FactorizationReport {
     let verdict = check_realizability(owner_graph, partition);
-    let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_name);
+    let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
         return FactorizationReport {
             cycles: Vec::new(),
@@ -365,7 +373,7 @@ pub fn validate_factorization(
                         owner_graph,
                         partition,
                         &diagnosis.constraining_owner_edges,
-                        module_name,
+                        module_path,
                         &from_binding_by_ordinal,
                     ),
                     Vec::new(),
@@ -378,20 +386,20 @@ pub fn validate_factorization(
                         owner_graph,
                         partition,
                         diagnosis.constraining_owner_edges.iter().copied(),
-                        module_name,
+                        module_path,
                         &from_binding_by_ordinal,
                     ),
                     lazy_closure_edges(
                         owner_graph,
                         partition,
                         &diagnosis.modules,
-                        module_name,
+                        module_path,
                         &from_binding_by_ordinal,
                     ),
                 ),
             };
             CycleReport {
-                modules: diagnosis.modules.iter().copied().map(module_name).collect(),
+                modules: diagnosis.modules.iter().copied().map(module_path).collect(),
                 cut,
                 lazy_closure,
             }
@@ -410,7 +418,7 @@ pub fn validate_factorization(
 fn render_cross_rebinds(
     owner_graph: &OwnerGraph,
     verdict: &RealizabilityVerdict,
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> Vec<String> {
     verdict
         .cross_rebinds
@@ -423,9 +431,9 @@ fn render_cross_rebinds(
             };
             format!(
                 "{} --{}--> {} (binding `{}`)",
-                module_name(rebind.from),
+                module_path(rebind.from),
                 dep_kind_short(edge.reason.kind),
-                module_name(rebind.to),
+                module_path(rebind.to),
                 binding,
             )
         })
@@ -443,7 +451,7 @@ fn cycle_edges_for(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     edge_ids: impl IntoIterator<Item = OwnerEdgeId>,
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let mut out: Vec<CycleEdge> = edge_ids
@@ -453,8 +461,8 @@ fn cycle_edges_for(
             let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)
                 .expect("verdict owner-edge provenance is cross-module in the gate view");
             CycleEdge {
-                from: module_name(from),
-                to: module_name(to),
+                from: module_path(from),
+                to: module_path(to),
                 statement_ordinal: edge.reason.statement_ordinal,
                 binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
                 from_binding: from_binding_by_ordinal
@@ -491,7 +499,7 @@ fn lazy_closure_edges(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     modules: &BTreeSet<ModuleId>,
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let lazy_edge_ids = owner_graph.iter_edges().filter_map(|edge| {
@@ -508,7 +516,7 @@ fn lazy_closure_edges(
         owner_graph,
         partition,
         lazy_edge_ids,
-        module_name,
+        module_path,
         from_binding_by_ordinal,
     )
 }
@@ -516,11 +524,11 @@ fn lazy_closure_edges(
 /// Render a human-readable summary of atomic-unit conflicts for
 /// inclusion in the materializer's bail message. One block per
 /// conflict listing the unit's members and each member's claim. The
-/// `module_name` callback renders [`ModuleId`]s as the strings the
-/// spec author recognizes (e.g. `mod_0`, `<residual_entry>`).
+/// `module_path` callback resolves [`ModuleId`]s to the canonical
+/// [`ModulePath`]s the spec author recognizes.
 pub fn render_atomic_unit_conflict_summary(
     conflicts: &[AtomicUnitConflict],
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> String {
     let mut out = String::new();
     for (idx, c) in conflicts.iter().enumerate() {
@@ -537,7 +545,7 @@ pub fn render_atomic_unit_conflict_summary(
         let mut conflicting_modules: Vec<String> = c
             .claims
             .iter()
-            .map(|claim| module_name(claim.module))
+            .map(|claim| module_path(claim.module).to_string())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
@@ -565,7 +573,7 @@ pub fn render_atomic_unit_conflict_summary(
                 "    - {}{} → {}\n",
                 crate::reports::owner_key(claim.owner),
                 names,
-                module_name(claim.module),
+                module_path(claim.module),
             ));
         }
     }
@@ -595,7 +603,7 @@ fn compute_realizability_cut(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     constraining_owner_edges: &[OwnerEdgeId],
-    module_name: &dyn Fn(ModuleId) -> String,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
@@ -630,7 +638,7 @@ fn compute_realizability_cut(
         owner_graph,
         partition,
         cut_edge_ids,
-        module_name,
+        module_path,
         from_binding_by_ordinal,
     )
 }

@@ -274,10 +274,10 @@ pub fn run_transform_cli_with_options(
         let mut lines = String::new();
         for claim in &unmatched_spec_claims {
             lines.push_str(&format!(
-                "  - chunk {chunk_id}: module {module_id} claims binding `{binding}` (export `{export}`); \
+                "  - chunk {chunk_id}: module {module_path} claims binding `{binding}` (export `{export}`); \
                  no top-level declaration with that name exists in the chunk.\n",
                 chunk_id = claim.chunk_id,
-                module_id = claim.module_id,
+                module_path = claim.module_path,
                 binding = claim.binding_name,
                 export = claim.export_name,
             ));

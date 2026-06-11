@@ -681,9 +681,22 @@ pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
 /// an honest identity test.
 ///
 /// [`parse`]: ModulePath::parse
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ModulePath(String);
+
+/// Deserialization routes through [`ModulePath::parse`] (with no
+/// chunk-id prefix to strip) so wire data can't construct a
+/// non-canonical value — `parse` stays the only constructor.
+impl<'de> serde::Deserialize<'de> for ModulePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        ModulePath::parse(&raw, "").map_err(serde::de::Error::custom)
+    }
+}
 
 impl ModulePath {
     /// Normalize an untrusted module identifier into canonical form.

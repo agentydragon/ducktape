@@ -966,7 +966,6 @@ fn build_module_output(
         chunk_id: context.chunk_id.to_string(),
         exported_names,
         file: context.entry_file.to_string(),
-        id: plan.id.clone(),
         owner_ids,
         residual: !plan.explicit,
         target_file: plan.target_file.clone(),

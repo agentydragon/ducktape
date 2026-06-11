@@ -419,21 +419,11 @@ pub(crate) fn module_id_from_key(key: &ModuleKey) -> Option<ModuleId> {
 }
 
 /// Build the module-table entry for `id`: the single place its
-/// canonical [`spec::ModulePath`] and residual flag are recorded. The
-/// path comes from the module's `LogicalModule.id` (the production
-/// `<chunk>::<path>` spelling), normalized through `ModulePath::parse`.
+/// canonical [`spec::ModulePath`] and residual flag are recorded.
 pub(crate) fn module_entry(factorization: &ChunkFactorization, id: ModuleId) -> ModuleEntry {
-    let chunk_id = &factorization.analysis.chunk_id;
-    let raw = factorization.analysis.module_name(id);
-    let path = spec::ModulePath::parse(&raw, chunk_id).unwrap_or_else(|e| {
-        panic!(
-            "module {} has unparseable identity {raw:?}: {e}",
-            module_key(id)
-        )
-    });
     ModuleEntry {
         key: module_key(id),
-        path,
+        path: factorization.analysis.module_path(id),
         residual: is_residual_destination(factorization, id),
     }
 }
