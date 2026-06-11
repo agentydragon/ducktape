@@ -12,6 +12,9 @@ spec:
     branch: devel
   secretRef:
     name: ducktape-automation-github-app
+  sparseCheckout:
+    - cluster/k8s/
+    - tf/gitops/
   url: https://github.com/agentydragon/ducktape.git
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
