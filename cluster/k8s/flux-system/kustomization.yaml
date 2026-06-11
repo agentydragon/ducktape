@@ -16,6 +16,22 @@ patches:
       kind: GitRepository
       name: flux-system
     patch: |
+      # Bootstrap is deliberately two-stage:
+      # 1. cluster/terraform/main applies gotk-sync.yaml with anonymous HTTPS,
+      #    because ducktape is public and the GitHub App Secret is itself SOPS
+      #    encrypted in this repository.
+      # 2. Once the root Kustomization can fetch the repo, it decrypts
+      #    ducktape-automation-github-app.sops.yaml and this patch switches the
+      #    root GitRepository to GitHub App auth. ImageUpdateAutomation/all-images
+      #    uses this GitRepository for writes, and Flux has no separate push
+      #    credential field for the automation object.
+      - op: add
+        path: /spec/provider
+        value: github
+      - op: add
+        path: /spec/secretRef
+        value:
+          name: ducktape-automation-github-app
       - op: add
         path: /spec/sparseCheckout
         value:
