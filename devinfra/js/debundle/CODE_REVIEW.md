@@ -6,14 +6,9 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
-### `realizability.rs` (~3300 lines) — largest file in the crate
+### `realizability/mod.rs` — remaining `gate_perf_counters` extraction
 
-Four separable concerns plus a large test module live in one file. Suggested split:
-
-- `gate_perf_counters` (a ~490-line `pub mod` near the end) → its own module. Caveat from a prior attempt: the counters are entangled with index internals — `use super::*`, `pub(super)` recording APIs called from inside `RealizabilityIndex` query methods, and shadow state (`IncrementalQuotient::base_snapshot_stale`) that exists only for the timing path. A clean move needs that coupling untangled first (e.g. a narrow recording trait), not just a file move.
-- `EsmEvaluationSimulator` + `EsmIGraph` → `esm_simulator.rs` (the shared import ordering itself already lives in `esm_import_order.rs`).
-- `IncrementalQuotient` + the overlay machinery → its own file.
-- The `#[cfg(test)]` module (~950 lines) → a sibling test file.
+The simulator (`realizability/esm_simulator.rs`), the incremental quotient + overlay machinery (`realizability/incremental_quotient.rs`), and the test module (`realizability/tests.rs`) are split out. Remaining: `gate_perf_counters` (a ~490-line `pub mod` in `realizability/mod.rs`) → its own module. Caveat (re-confirmed 2026-06 during the split): the counters are entangled with index internals — `use super::*`, `pub(super)` recording APIs/statics called from inside `RealizabilityIndex` and `IncrementalQuotient` query methods, and shadow state (`IncrementalQuotient::base_snapshot_stale`) that exists only for the timing path. A clean move needs that coupling untangled first (e.g. a narrow recording trait), not just a file move.
 
 ### `vendor/mod.rs` further split
 
@@ -79,7 +74,7 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 ### `BTreeMap`/`BTreeSet` as default collection in hot-path graph structures
 
-`rollback_graph.rs`, `artifact.rs`, `realizability.rs` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
+`rollback_graph.rs`, `artifact.rs`, `realizability/` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
 
 ### `StatementFacts` (facts/mod.rs) — ~18 fields, triple-repeated position pattern
 
@@ -90,11 +85,11 @@ The eager/lazy/first-order shape repeats three times — reads (`eager_reads`/`l
 
 ### `DepKind` 6-way split vs primary constraining/non-constraining axis
 
-Callers in realizability.rs, validation.rs, facts/mod.rs frequently partition into constraining vs non-constraining via `constrains_init_order()`. Make this a first-class type distinction.
+Callers in realizability/, validation.rs, facts/mod.rs frequently partition into constraining vs non-constraining via `constrains_init_order()`. Make this a first-class type distinction.
 
 ### Three-layer edge representation
 
-Domain graph (`graph.rs`) → rollback graph (`rollback_graph.rs`) → realizability index (`realizability.rs`) all represent "edges between things" at different granularities with different semantics. The bridging code is fragile. Consider a unified edge model or explicit conversion layers.
+Domain graph (`graph.rs`) → rollback graph (`rollback_graph.rs`) → realizability index (`realizability/`) all represent "edges between things" at different granularities with different semantics. The bridging code is fragile. Consider a unified edge model or explicit conversion layers.
 
 ### `pub(super)` everywhere in lowering/
 
@@ -204,7 +199,7 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 ## Top Highest-Impact Actions
 
-1. **Split `realizability.rs`** — see the P0 item; largest file in the crate at ~3265 lines.
+1. **Extract `gate_perf_counters` from `realizability/mod.rs`** — see the P0 item; needs the recording-API entanglement untangled first.
 
 2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and partial-swap dispatchers extracted; remaining: strip-specific helpers, annotation/identity logic.
 
