@@ -37,6 +37,10 @@ path.
 
 ## Encapsulation + module boundaries
 
+### `:analysis` is a Bazel god-crate
+
+The `analysis` `rust_library` (`BUILD.bazel`) compiles ~29 srcs spanning the owner graph (`graph.rs`), the realizability gate (`realizability.rs`), fact extraction (`facts/`), purity (`purity/`), admission (`chunk_admission.rs`), validation, reports, and `stage_one` as one crate. Module boundaries inside it are convention-only; splitting along the existing directory seams would make them compiler-enforced and cut incremental rebuild scope.
+
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
 
 `chunk_factorization.rs::ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:
@@ -149,6 +153,8 @@ After the rename, `chunk_analysis::ChunkAnalysis` (IR) and `artifact::ChunkAnaly
 
 **Decision needed**: whether the report types are auto-derivable from IR types, or whether they intentionally diverge (e.g. the report has fields the IR doesn't, like `parser: ParserOptionsRecord` for reproducibility).
 
+A related collapse with zero wire change is available today: `artifact.rs::ChunkManifest::from_analysis` copies `ChunkAnalysisReport` into `ChunkManifest` field-by-field; embedding the report struct with `#[serde(flatten)]` removes one duplication layer while keeping the serialized shape identical.
+
 ### Gate simulator ↔ materializer import-order sharing (RESOLVED)
 
 The historical drift surface — the emitter placed phantom side-effect imports first in each emitted module while the simulator sorted ALL of a module's I-successors in one `linker_position` list, residual's missing universal entry imports, and the `usize::MAX` tie-break mismatch — is resolved: both sides now consume one shared ordering implementation, `esm_import_order::EsmImportOrder` (`sort_entry_imports` / `sort_module_imports`), built from the canonical `ChunkConstrainingEdgeSet`. The emitter renders the entry's per-plan import list (named imports for binding-owning plans, side-effect-only imports for binding-less plans) and each module's merged intra-chunk import list (binding + phantom + residual-entry, one sort) from it; the simulator (`realizability::EsmIGraph`) uses the same two sorts as DFS neighbor order, with residual fanning out to every I-graph module exactly as the emitted entry does. Do not reintroduce per-side ordering rules — encode any ordering requirement in `EsmImportOrder` so both sides inherit it.
@@ -158,6 +164,22 @@ Remaining known approximation: the simulator roots at `partition.residual()` (th
 ### Should the kernel's merge gate route through the realizability index?
 
 The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycle` (a constraining-only Pearce–Kelly walk over the kernel-maintained `TopoOrder` + class adjacency in `peel/quotient.rs`), with `build_seed_quotient`'s post-seed `check_realizability` pass as the backstop for asymmetric I-cycles. docs/design.md §"Why not Pearce–Kelly verbatim" documents this as the current trade-off. The open question: route the hot gate through the `RealizabilityIndex` (one source of truth, slower per query) vs. keep the PK gate (fast, but a second decision-making derived structure the kernel must keep consistent).
+
+### `peel/quotient.rs` multi-target merge fallback is unreachable
+
+`realizability_cycles_after_contract` keeps a scoped push/verdict/undo fallback for merges whose deltas target multiple modules, but `compute_merge_deltas` only ever emits deltas targeting the single post-merge module, so the `single_target` fast path always wins and the fallback is dead code (the design note that motivated it is stale). Either delete the fallback and the multi-target framing in the module docs, or implement a transition that actually produces multi-target deltas — decide.
+
+### `BindingId`/`BindingTable` interning: implement or delete
+
+docs/design.md sketches a compact interned binding form (`BindingId(usize)` newtype + `BindingTable` of dense indices) and explicitly marks it **not implemented** — an aspirational optimization. Decide: implement it (it is also the natural fix for the BTree-keyed-by-cloned-`Id` hot paths flagged in CODE_REVIEW.md) or delete the passage so design.md describes only the real representation.
+
+### `landable_today` for proposals with cross-residual-cell edges
+
+`peel/factorize.rs` sets `status: BlockedResidualDependency` when a proposal has outgoing constraining edges into other residual cells, but `landable_today` still reflects only anonymous-statement addressability — such a proposal can carry `landable_today: true` while being un-promotable alone. Flipping landability would change the documented `bindings assign --batch` contract (it rejects rows with `landable_today: false`), so this is a deliberate maintainer decision, not an oversight.
+
+### A11 intrinsic integrity: from observed assumption to checked precondition
+
+docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes) as relied on by observation — prototype pollution defeats every purity-whitelist admission argument and is not detected. A `compute_shadowed_globals`-style top-level scan over the analyzed chunks for `<Builtin>.prototype.<x> = ...` assignment shapes would convert the in-corpus half of the assumption into a checked precondition; pollution originating outside the analyzed chunks (host code, other bundles) necessarily stays an assumption.
 
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 

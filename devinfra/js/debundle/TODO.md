@@ -187,7 +187,16 @@ Still to do:
 ## Performance
 
 Proposer-gate, `debundle run`, and materialize-stage performance work
-all live in <perf/proposer.md>.
+all live in <perf/proposer.md>. Known lowering-side items not yet in
+that log:
+
+- `JsChunk::{get_file,get_file_mut,remove_file}` (`artifact.rs`) are
+  linear scans over `files`, so passes that touch every file go O(n²)
+  per chunk. A path-keyed index fixes it.
+- `split_entry_body` (`lowering/lower.rs`) clones every retained
+  statement out of the chunk AST even though the chunk body is
+  replaced wholesale afterward; a draining/move-based split avoids
+  the full-AST clone.
 
 ## Factorize / atomic-DAG docs drift
 
@@ -349,6 +358,43 @@ propKeyA` and `collect_naturalization_renames_from_function` says
    - "all structural moves pre-COLLECT" (cleaner architecturally but
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
+
+## CLI scripting surface
+
+Work items on the machine-consumable CLI contract (distinct from the
+dogfood findings in <CLI_DOGFOOD.md>):
+
+- **Structured rejection diagnostics for edit-gate failures.**
+  `bindings {assign,unassign}` and `modules {merge,delete}` render
+  gate rejections as a prose blame report on stderr
+  (`cli/edit_gate.rs`) and bail; even with `--format json` there is
+  no machine-readable rejection payload on stdout, so agents scrape
+  stderr. Emit the blame report as JSON on stdout when a JSON format
+  is selected.
+- **`--format` parity for the five mutating verbs.**
+  `bindings {assign,unassign,rename}` take `--format`;
+  `modules {merge,delete}` print only a fixed summary line
+  (`cli/module.rs`). Define one outcome schema shared by all five.
+- **Edit-gate rejections leave no `cycles.json`.** The pipeline
+  writes `cycles.json` on gate rejection, but edit-gate rejections
+  (including `--dry-run` probes) write nothing, so
+  `debundle gate list`/`gate describe` cannot be pointed at the
+  failure that was just reported.
+- **`DEBUNDLE_SOURCE_ROOT` double meaning.** The same env var feeds
+  `run --tree-source-root` (spec-tree compile root, `pipeline.rs`)
+  and the query commands' `--source-root` (upstream snapshot root
+  for source-backed selectors). The two roots are different
+  directories in real corpora; one of the flags should get its own
+  env var.
+- **`resolve_id_as_module_path` swallows I/O errors.** The
+  `cli/mod.rs` helper applies `.ok()?` to the modules-tree walk, so
+  a failing `collect_module_files` silently degrades a module-path
+  id into a binding-name guess. Surface the error.
+- **`selection_with_*` sentinel hack.** `selection_with_proposal`
+  (`cli/mod.rs`) stuffs a sentinel empty-string `binding_id` that
+  `run_describe` must remember to clear. Make `SelectionArgs`
+  selection an enum (one variant per id kind) so the sentinel
+  disappears.
 
 ## CLI usability
 

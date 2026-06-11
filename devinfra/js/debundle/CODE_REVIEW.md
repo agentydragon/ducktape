@@ -6,14 +6,14 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
-### `realizability.rs` (~3265 lines) — largest file in the crate
+### `realizability.rs` (~3300 lines) — largest file in the crate
 
 Four separable concerns plus a large test module live in one file. Suggested split:
 
-- `gate_perf_counters` (~lines 1858–2343) → its own module.
-- `EsmEvaluationSimulator` + `EsmIGraph` → `esm_simulator.rs`.
+- `gate_perf_counters` (a ~490-line `pub mod` near the end) → its own module. Caveat from a prior attempt: the counters are entangled with index internals — `use super::*`, `pub(super)` recording APIs called from inside `RealizabilityIndex` query methods, and shadow state (`IncrementalQuotient::base_snapshot_stale`) that exists only for the timing path. A clean move needs that coupling untangled first (e.g. a narrow recording trait), not just a file move.
+- `EsmEvaluationSimulator` + `EsmIGraph` → `esm_simulator.rs` (the shared import ordering itself already lives in `esm_import_order.rs`).
 - `IncrementalQuotient` + the overlay machinery → its own file.
-- The `#[cfg(test)]` module (~920 lines, from line 2345) → a sibling test file.
+- The `#[cfg(test)]` module (~950 lines) → a sibling test file.
 
 ### `vendor/mod.rs` further split
 
@@ -28,13 +28,21 @@ Whitelist tables already in `purity/whitelists.rs`; long PlainData /
 scanning, and TS enum IIFE recognition still live in `mod.rs` —
 could be sub-split further if it keeps growing.
 
-### `facts/mod.rs` (1357 lines, 2 concerns)
+### `facts/mod.rs` (~1930 lines, 2 concerns)
 
 `StatementFacts` carries many derivable `BTreeSet<Id>` sets that every construction site must keep mutually consistent — see the canonical "### `StatementFacts`" item under P3.
 
 ---
 
 ## P1 — Major Duplication
+
+### Partial-swap validation near-duplication in `vendor/mod.rs`
+
+`apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps` each carry a ~250-line validate/resolve block that differs only in manifest type and bundled-vs-unbundled wiring. Lift shared validate/resolve helpers into a `vendor/validate.rs` so the two dispatchers shrink to mode-specific glue.
+
+### Two parallel top-level fact extractors
+
+`program_analysis.rs::analyze_program_shallow` (import/export records, owner records, side-effect ordinals, rewritable-specifier booleans) keeps its own top-level traversal and declaration classification (`classify_top_level_decl`) alongside the `facts/` walk the analysis pipeline uses. The two rule sets can drift independently; fold the shallow extractor into the facts traversal or derive its records from `StatementFacts`.
 
 ### Test fixture builders in peel/ remaining duplicates
 
@@ -43,6 +51,15 @@ could be sub-split further if it keeps growing.
 ---
 
 ## P2 — Structural Issues
+
+### `graph.rs` — silent-skip hazards
+
+- `build_owner_graph_with` populates `binding_owner` with plain inserts, so duplicate top-level declarations (legal JS: two `var x;`, two `function f() {}`) silently resolve last-insert-wins and earlier declarators get no incoming edges. Detect duplicates and error (or model multi-owner bindings explicitly).
+- `OwnerGraph::from_report` silently `continue`s past edges whose endpoints don't resolve in the node table. A malformed or version-skewed `owner_graph.json` loses edges without a diagnostic — and the planner-side gate then reasons over a weaker graph. Make unresolvable endpoints a hard error (strict mapping).
+
+### `cli/mod.rs` — still a grab-bag (~1800 lines)
+
+After the module/binding/comment/gate extractions, `cli/mod.rs` still hosts the full `scc` and `cluster` command implementations plus their text renderers (`run_scc`, `render_scc_text`, `run_cluster`, `render_cluster_text`) alongside arg structs and dispatch. Move them to sibling modules like the other commands.
 
 ### `lowering/lower.rs` — monolithic function (partially extracted)
 
@@ -64,9 +81,12 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 `rollback_graph.rs`, `artifact.rs`, `realizability.rs` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
 
-### `StatementFacts` (facts/mod.rs) — ~10 BTreeSet<Id> fields
+### `StatementFacts` (facts/mod.rs) — ~18 fields, triple-repeated position pattern
 
-`declared`, `eager_reads`, `eager_rebinds`, `lazy_reads`, `lazy_rebinds`, `first_order_lazy_reads`, `first_order_lazy_rebinds`, `local_effects`, `at_init_calls`, `body_calls`, `first_order_body_calls`. Several are derivable (e.g. the `first_order_*` sets are subsets of their parent). Every construction site must keep the sets mutually consistent. Consider computing derived sets on demand or using a builder that enforces invariants.
+The eager/lazy/first-order shape repeats three times — reads (`eager_reads`/`lazy_reads`/`first_order_lazy_reads`), rebinds (`eager_rebinds`/`lazy_rebinds`/`first_order_lazy_rebinds`), and calls (`at_init_calls`/`body_calls`/`first_order_body_calls`). A `PositionBucketed<T> { eager, lazy, first_order_lazy }` cuts 9 fields to 3 and makes the "first-order ⊆ lazy" subset invariants structural instead of per-construction-site discipline. Two related cleanups:
+
+- The internal `StructuralStatementFacts` spells the same sets in a different vocabulary and renames field-by-field mid-pipeline (`at_init_reads`→`eager_reads`, `at_init_writes`→`eager_rebinds`, `lazy_calls`→`body_calls`, `first_order_lazy_calls`→`first_order_body_calls`). Unify on one vocabulary.
+- The `effects` summary is assembled at construction from the other sets plus the global read/write scans; its `Binding`-cell half restates `declared`/`eager_reads`/`eager_rebinds`, leaving only the `GlobalProp` half as new information. Consider deriving it on demand.
 
 ### `DepKind` 6-way split vs primary constraining/non-constraining axis
 
@@ -82,7 +102,15 @@ Nearly every struct field and function is `pub(super)`. This is "module-private 
 
 ### Vendor manifest struct proliferation
 
-~15 manifest/counts/detail structs with similar shapes in `vendor.rs`. `PartialSwapResolutionManifest` and `BundledPartialSwapResolutionManifest` are nearly structurally identical. Consider a parameterized base type.
+~26 manifest/counts/detail structs with similar shapes in `vendor/manifests.rs`. `PartialSwapResolutionManifest` and `BundledPartialSwapResolutionManifest` are field-for-field twins — a generic `ResolutionManifest<R>` collapses the pair. `PartialSwapSymbolTarget` (`vendor/mod.rs`) is likewise a field-for-field twin of `spec::PartialSwapSymbol`.
+
+### Stringly chunk identity in vendor code
+
+Vendor passes juggle `String` chunk names against the typed `ChunkId` index: `vendor/mod.rs` resolves names through `chunk_table` to a `ChunkId`, then stores the _name_ back into fields and locals called `chunk_id`. The double meaning invites mixups; thread the typed `ChunkId` and convert to names only at message/wire boundaries.
+
+### `ChunkAnalysis` pub inputs + private derived caches
+
+`chunk_analysis.rs` exposes `facts`, `bindings`, `logical_modules`, `chunk_renames`, `owner_graph` as `pub` fields while `build()` precomputes private lookup tables (`owner_report_ids_by_binding`, `binding_lookup_by_id`) from them. Mutating a pub field after construction silently stales the caches. Privatize the inputs behind accessors so the staleness hazard is unrepresentable.
 
 ### `SourceImportResolution = Option<(String, String, String)>` (`plan_references.rs:41`)
 
@@ -99,6 +127,26 @@ Every test in `purity_test.rs`, `object_plain_data_calls_test.rs`, `pure_members
 ### `accepted_spec_runs_under_node_test.rs` — `★ RED test` markers
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
+
+### `logical_module_with_*` constructor sprawl in `e2e/support.rs`
+
+Six `logical_module_with_*` variants (binding groups, comment, anon, anon-alpha, anon-alpha-wildcards, anon-comment) plus the base `logical_module` differ only in which optional pieces they populate. A small builder replaces the family.
+
+### `assert_generated_module_after_entry_script` hardcodes the entry path
+
+The `e2e/support.rs` helper asserts against a literal `./static/app/entry.js`, so fixtures built with `with_chunk_id` can't use it. Derive the expected specifier from the fixture's chunk id.
+
+### Whitespace OR-chain assertions
+
+`e2e/comma_list_owner_split_test.rs` asserts emitted-code shapes via chains like `contains("{ x, y }") || contains("{x, y}") || contains("{x,y}")`. Parse and compare AST (or normalize whitespace) instead of enumerating printer styles.
+
+### Differential coverage gaps in the incremental-quotient tests
+
+`peel/quotient_integration_test.rs` checks the incremental index against references that share too much code with the system under test: most verdict comparisons use the kernel's own `project_partition` output as the reference partition (blind to projection bugs), and only `replay_partition` rebuilds a quotient independently — and it compares only `cycle_set()`. Also missing: randomized merge/partition sequences (current corpora are fixed, ≤6 owners) and differential coverage of the gate-residual promotion transition (whose multi-target fallback in `peel/quotient.rs` is otherwise unexercised — see the unreachable-fallback item in ARCHITECTURE_BACKLOG.md).
+
+### Only Lemma 2 has a named pinning test
+
+docs/design.md proves Lemmas 1–5; only Lemma 2 appears in a test name (`e2e/lemma_two_rescued_asymmetric_cycle_test.rs`). Lemmas 1/3/4/5 — notably Lemma 4's lazy-read argument — have no named tripwire test that would fail if the proved property is weakened. Add one pinning e2e per lemma.
 
 ---
 
