@@ -14,6 +14,7 @@ use crate::binding::{
 use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
+use crate::edit_gate::Gate;
 use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use anyhow::{Context, Result};
@@ -987,43 +988,26 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    // Enforce the same "graph or no-verify" policy `modules merge`
-    // / `modules delete --force` use, so all three mutating verbs
-    // refuse silently-skipping the realizability gate.
-    if !args.no_verify && args.owner_graph_path.is_none() {
-        anyhow::bail!(
-            "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
-        );
-    }
-    let out = run_bindings_assign(
-        &args.modules_root,
-        moves,
-        args.dry_run,
+    // `Gate::from_cli` is the shared "graph or no-verify" policy
+    // every mutating verb uses; no verb can silently skip the
+    // realizability gate.
+    let gate = Gate::from_cli(
         args.no_verify,
         args.owner_graph_path.as_deref(),
         args.source_root.as_deref(),
     )?;
+    let out = run_bindings_assign(&args.modules_root, moves, args.dry_run, gate)?;
     let format = OutputFormat::resolve(args.format);
     print_assign_outcome(&out, format)
 }
 
 fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
-    // Mirror the "graph or no-verify" policy `bindings assign` /
-    // `modules merge` / `modules delete --force` use, so every
-    // mutating verb refuses silently-skipping the realizability gate.
-    if !args.no_verify && args.owner_graph_path.is_none() {
-        anyhow::bail!(
-            "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
-        );
-    }
-    let out = run_bindings_unassign(
-        &args.modules_root,
-        args.syms,
-        args.dry_run,
+    let gate = Gate::from_cli(
         args.no_verify,
         args.owner_graph_path.as_deref(),
         args.source_root.as_deref(),
     )?;
+    let out = run_bindings_unassign(&args.modules_root, args.syms, args.dry_run, gate)?;
     let format = OutputFormat::resolve(args.format);
     print_unassign_outcome(&out, format)
 }

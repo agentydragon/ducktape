@@ -531,7 +531,7 @@ pub struct AnonymousStatement {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BindingGroup {
     pub source_match: SourceMatch,

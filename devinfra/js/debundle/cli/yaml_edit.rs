@@ -34,7 +34,14 @@ pub fn write_yaml_body_if_semantic_changed(path: &Path, doc: &Value, body: Strin
     if !yaml_semantically_changed(path, doc)? {
         return Ok(false);
     }
-    fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;
+    // Write-temp-then-rename so a crash mid-write can never leave a
+    // truncated module YAML behind. The sibling `.yaml.tmp` name keeps
+    // the temp file on the same filesystem (rename stays atomic) and
+    // outside `collect_module_files`' `*.yaml` filter.
+    let tmp = path.with_extension("yaml.tmp");
+    fs::write(&tmp, body).with_context(|| format!("writing {}", tmp.display()))?;
+    fs::rename(&tmp, path)
+        .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;
     Ok(true)
 }
 

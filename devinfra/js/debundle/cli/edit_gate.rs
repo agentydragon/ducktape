@@ -27,7 +27,7 @@
 //! diagnostic regardless of whether the rejection came from `debundle
 //! run` or a CLI edit verb.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,9 +36,81 @@ use analysis::{
     OwnerId, Partition, compute_atomic_units, render_atomic_unit_conflict_summary,
     render_cycle_summary, validate_factorization,
 };
-use anonymous_resolution::{AnonymousStatementClaimSet, resolve_anonymous_statement_claims};
+use anonymous_resolution::{
+    AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,
+    resolve_member_selector_claims,
+};
 use anyhow::{Context, Result, bail};
-use spec_modules::{ModuleClaims, collect_module_files, is_module_yaml, read_module_claims};
+use serde_yaml::Value;
+use spec::AnonymousStatementSelector;
+use spec_modules::{
+    ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
+    read_module_claims,
+};
+
+/// How a spec-mutating CLI verb validates its edit. Replaces the
+/// `(no_verify: bool, owner_graph_path: Option<&Path>)` pair whose
+/// `(false, None)` combination used to silently skip the
+/// realizability gate.
+#[derive(Debug, Clone, Copy)]
+pub enum Gate<'a> {
+    /// Run name-collision checks and the post-edit realizability +
+    /// atom-split gate against this owner graph.
+    Run {
+        graph: &'a Path,
+        /// Root used to resolve relative `source_location.source_path`
+        /// values when the gate resolves source-backed selectors.
+        source_root: Option<&'a Path>,
+    },
+    /// Run name-collision checks but no graph-backed gate. Not
+    /// constructible via [`Gate::from_cli`] (the dispatcher requires
+    /// `--graph` or `--no-verify`); for library callers that have no
+    /// owner graph.
+    NamesOnly,
+    /// `--no-verify`: skip all validation.
+    Skip,
+}
+
+impl<'a> Gate<'a> {
+    /// The single "graph or `--no-verify`" policy every spec-mutating
+    /// verb shares.
+    pub fn from_cli(
+        no_verify: bool,
+        graph: Option<&'a Path>,
+        source_root: Option<&'a Path>,
+    ) -> Result<Self> {
+        if no_verify {
+            return Ok(Self::Skip);
+        }
+        match graph {
+            Some(graph) => Ok(Self::Run { graph, source_root }),
+            None => bail!(
+                "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
+            ),
+        }
+    }
+
+    /// Whether name-collision validation runs.
+    pub fn verify_names(&self) -> bool {
+        !matches!(self, Self::Skip)
+    }
+
+    /// Run the realizability + atom-split gate against the post-edit
+    /// spec when this is [`Gate::Run`]. `post_spec` is lazy so
+    /// skipped gates don't pay for spec assembly.
+    pub fn check(
+        &self,
+        modules_root: &Path,
+        post_spec: impl FnOnce() -> Result<PostEditSpec>,
+    ) -> Result<()> {
+        match self {
+            Self::Run { graph, source_root } => {
+                gate_post_edit_partition(graph, modules_root, *source_root, &post_spec()?)
+            }
+            Self::NamesOnly | Self::Skip => Ok(()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PostEditModule {
@@ -121,82 +193,38 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
     Ok(PostEditSpec { modules })
 }
 
-/// Build the post-unassign spec view in memory. Drops the named
-/// bindings from each `(source_module_abs, binding_name)` pair so the
-/// resulting partition has them fall through to residual (the default
-/// when an owner isn't claimed by any spec module). Source modules
-/// that drain to zero members get dropped from the returned spec,
-/// mirroring the auto-delete behavior in `run_bindings_unassign`.
+/// Build the post-edit spec view from in-memory module docs — the
+/// exact post-batch state `bindings assign` / `bindings unassign`
+/// will write. Each doc is parsed through the same `ModuleFile` →
+/// `module_claims` path `debundle run`'s spec loading uses, so plain
+/// binding members, `source_match` members, `binding_groups:`, and
+/// `anonymous_statements:` all contribute the same claims to the gate
+/// that they would contribute to a run over the written spec.
 ///
-/// This is structurally `post_assign_spec` with no insertions — but a
-/// distinct entry point is worth having because the call sites read
-/// differently and the gate diagnostic ("owners go to residual") is
-/// the actionable lens for `unassign`. Used by `bindings unassign`.
-pub fn post_unassign_spec(
-    modules_root: &Path,
-    removals: &[(PathBuf, String)],
+/// `deleted_module_paths` lists the module paths (keys of `docs`) the
+/// writer will delete on apply (drained move sources); they drop out
+/// of the gate's view so the gate runs against the same module set
+/// the post-write spec will have.
+pub fn post_edit_spec_from_docs(
+    docs: &BTreeMap<String, (PathBuf, Value)>,
+    deleted_module_paths: &BTreeSet<String>,
 ) -> Result<PostEditSpec> {
-    let mut by_path: std::collections::BTreeMap<PathBuf, ModuleClaims> = Default::default();
-    for file in collect_module_files(modules_root)? {
-        by_path.insert(file.clone(), read_gate_claims(&file)?);
-    }
-    for (path, name) in removals {
-        if let Some(claims) = by_path.get_mut(path) {
-            claims.bindings.remove(name);
+    let mut modules: Vec<PostEditModule> = Vec::new();
+    for (module_path, (file, doc)) in docs {
+        if deleted_module_paths.contains(module_path) {
+            continue;
         }
-    }
-    let modules: Vec<PostEditModule> = by_path
-        .into_iter()
-        // Drained modules drop out of the gate's view — the writer
-        // path deletes them on apply, so the gate should run against
-        // the same module set the post-write spec will have.
-        .filter(|(_, claims)| !claims.is_empty())
-        .map(|(path, claims)| PostEditModule { path, claims })
-        .collect();
-    Ok(PostEditSpec { modules })
-}
-
-/// Build the post-assign spec view from the current modules tree
-/// minus a set of (binding-name, current-source-module) pairs to
-/// remove, plus a list of (binding-name, destination-module) pairs to
-/// insert. Used by `bindings assign` to feed the gate the in-memory
-/// post-batch state.
-///
-/// `removals` and `insertions` are keyed by absolute module-file
-/// path. Destinations missing from the on-disk tree are synthesized as
-/// new empty modules so the gate sees the same module-id space the
-/// post-write spec will have. Source modules that drain to zero
-/// members get dropped from the returned spec (mirroring the auto-
-/// delete behavior in `run_bindings_assign`).
-pub fn post_assign_spec(
-    modules_root: &Path,
-    removals: &[(PathBuf, String)],
-    insertions: &[(PathBuf, String)],
-) -> Result<PostEditSpec> {
-    let mut by_path: std::collections::BTreeMap<PathBuf, ModuleClaims> = Default::default();
-    for file in collect_module_files(modules_root)? {
-        by_path.insert(file.clone(), read_gate_claims(&file)?);
-    }
-    for (path, name) in removals {
-        if let Some(claims) = by_path.get_mut(path) {
-            claims.bindings.remove(name);
+        let module: ModuleFile = serde_yaml::from_value(doc.clone())
+            .with_context(|| format!("parsing module {}", file.display()))?;
+        let claims = module_claims(module)?;
+        if claims.is_empty() {
+            continue;
         }
+        modules.push(PostEditModule {
+            path: file.clone(),
+            claims,
+        });
     }
-    for (path, name) in insertions {
-        by_path
-            .entry(path.clone())
-            .or_default()
-            .bindings
-            .insert(name.clone());
-    }
-    let modules: Vec<PostEditModule> = by_path
-        .into_iter()
-        // Drained modules drop out of the gate's view — the writer
-        // path deletes them on apply, so the gate should run against
-        // the same module set the post-write spec will have.
-        .filter(|(_, claims)| !claims.is_empty())
-        .map(|(path, claims)| PostEditModule { path, claims })
-        .collect();
     Ok(PostEditSpec { modules })
 }
 
@@ -268,6 +296,50 @@ pub fn gate_post_edit_partition(
         &claim_sets,
     )?;
 
+    // Member-form `source_match` claims. `binding_groups:` entries
+    // expand into per-binding member selectors through the same
+    // expansion the run pipeline's member assembly applies
+    // (`source_match::binding_group_member_selectors`), then resolve
+    // source-backed to the chunk-top binding names they claim. A
+    // selector the gate cannot resolve (missing chunk source,
+    // unmatched/ambiguous selector) is a hard error — the claimed
+    // owner must never silently fall to residual.
+    let expanded_member_selectors: Vec<BTreeSet<AnonymousStatementSelector>> =
+        js_ast::with_swc_globals(|| {
+            post_spec
+                .modules
+                .iter()
+                .map(|module| {
+                    let mut selectors = module.claims.member_selectors.clone();
+                    let request_id = module.path.to_string_lossy();
+                    for group in &module.claims.binding_groups {
+                        for (_, selector) in
+                            source_match::binding_group_member_selectors(&request_id, group)?
+                        {
+                            selectors.insert(selector);
+                        }
+                    }
+                    Ok(selectors)
+                })
+                .collect::<Result<_>>()
+        })?;
+    let member_claim_sets: Vec<MemberSelectorClaimSet<'_>> = post_spec
+        .modules
+        .iter()
+        .zip(&expanded_member_selectors)
+        .map(|(module, selectors)| MemberSelectorClaimSet {
+            module_path: &module.path,
+            selectors,
+        })
+        .collect();
+    let member_bindings_by_module = resolve_member_selector_claims(
+        &owner_graph_report,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        &member_claim_sets,
+    )?;
+
     // ModuleId assignment: residual at logical:0, every surviving
     // spec module gets a fresh logical:N starting at 1. The label
     // map keeps the renderer's diagnostic readable — we use each
@@ -282,7 +354,12 @@ pub fn gate_post_edit_partition(
         let mid = ModuleId::logical(next_idx);
         next_idx += 1;
         module_label_by_id.insert(mid, module.path.to_string_lossy().into_owned());
-        for name in &module.claims.bindings {
+        for name in module
+            .claims
+            .bindings
+            .iter()
+            .chain(&member_bindings_by_module[module_idx])
+        {
             if let Some(&owner) = owner_by_binding_name.get(name) {
                 of[owner.0] = mid;
             }

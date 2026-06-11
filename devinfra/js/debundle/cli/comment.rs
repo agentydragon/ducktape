@@ -40,7 +40,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 use serde_yaml::Value;
+use spec::ModulePath;
 
+use crate::binding::resolve_unambiguous;
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// Args for `debundle bindings comment <sym> [...]`.
@@ -250,36 +252,10 @@ pub fn apply_binding_comment(
     mode: CommentMode,
     dry_run: bool,
 ) -> Result<CommentOutcome> {
-    let matches = find_binding_matches(modules_root, sym)?;
-    let hit = match matches.len() {
-        0 => bail!(
-            "no binding named \"{sym}\" found under {}",
-            modules_root.display()
-        ),
-        1 => matches.into_iter().next().expect("len==1"),
-        _ => {
-            let locations: Vec<String> = matches
-                .iter()
-                .map(|m| {
-                    format!(
-                        "  {} (binding={}, name={})",
-                        m.file.display(),
-                        m.binding_name,
-                        m.readable_name.as_deref().unwrap_or("-")
-                    )
-                })
-                .collect();
-            bail!(
-                "ambiguous binding identifier \"{sym}\": {} matches:\n{}",
-                matches.len(),
-                locations.join("\n")
-            );
-        }
-    };
-
-    let BindingMatch {
-        file, member_index, ..
-    } = hit;
+    // Same `<sym>` resolution (and refusal shape on zero/ambiguous
+    // matches) as `bindings assign` / `bindings rename`.
+    let hit = resolve_unambiguous(modules_root, sym)?;
+    let (file, member_index) = (hit.file, hit.member_index);
     let mut doc = read_yaml(&file)?;
     let current: Option<String> = current_member_comment(&doc, member_index)?;
 
@@ -331,56 +307,6 @@ pub fn apply_binding_comment(
         action,
         path: file,
     })
-}
-
-#[derive(Debug, Clone)]
-struct BindingMatch {
-    file: PathBuf,
-    member_index: usize,
-    binding_name: String,
-    readable_name: Option<String>,
-}
-
-fn find_binding_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
-    let files = collect_yaml_files(modules_root)?;
-    let mut out = Vec::new();
-    for file in files {
-        let doc = read_yaml(&file)?;
-        let Some(members) = doc.as_mapping().and_then(|m| m.get(yk("members"))) else {
-            continue;
-        };
-        let Some(seq) = members.as_sequence() else {
-            continue;
-        };
-        for (idx, member) in seq.iter().enumerate() {
-            let Some(map) = member.as_mapping() else {
-                continue;
-            };
-            let binding_name = map
-                .get(yk("selector"))
-                .and_then(Value::as_mapping)
-                .and_then(|s| s.get(yk("binding")))
-                .and_then(Value::as_mapping)
-                .and_then(|b| b.get(yk("name")))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let readable_name = map
-                .get(yk("name"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let binding_match = binding_name.as_deref() == Some(sym);
-            let readable_match = readable_name.as_deref() == Some(sym);
-            if binding_match || readable_match {
-                out.push(BindingMatch {
-                    file: file.clone(),
-                    member_index: idx,
-                    binding_name: binding_name.unwrap_or_default(),
-                    readable_name,
-                });
-            }
-        }
-    }
-    Ok(out)
 }
 
 fn current_member_comment(doc: &Value, index: usize) -> Result<Option<String>> {
@@ -443,7 +369,7 @@ pub fn apply_module_comment(
     mode: CommentMode,
     dry_run: bool,
 ) -> Result<CommentOutcome> {
-    let file = module_path_to_yaml(modules_root, module);
+    let file = module_path_to_yaml(modules_root, module)?;
     if !file.exists() {
         bail!("module YAML not found: {}", file.display());
     }
@@ -500,12 +426,15 @@ pub fn apply_module_comment(
     })
 }
 
-fn module_path_to_yaml(modules_root: &Path, module: &str) -> PathBuf {
-    let mut rel = PathBuf::from(module);
-    if rel.extension().and_then(|s| s.to_str()) != Some("yaml") {
-        rel.set_extension("yaml");
-    }
-    modules_root.join(rel)
+/// Resolve a module-path argument to its on-disk YAML through the
+/// same [`ModulePath::parse`] canonicalization (lowercasing) the spec
+/// pipeline applies, so `UI/Widgets` and `ui/widgets` address the
+/// same file.
+fn module_path_to_yaml(modules_root: &Path, module: &str) -> Result<PathBuf> {
+    let raw = module.strip_suffix(".yaml").unwrap_or(module);
+    let canonical =
+        ModulePath::parse(raw, "").map_err(|err| anyhow!("invalid module path: {err}"))?;
+    Ok(modules_root.join(format!("{canonical}.yaml")))
 }
 
 fn current_module_comment(doc: &Value) -> Option<String> {
@@ -536,26 +465,6 @@ fn set_module_comment(doc: &mut Value, value: Option<String>) -> Result<()> {
 
 fn yk(s: &str) -> Value {
     Value::String(s.to_string())
-}
-
-fn collect_yaml_files(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    collect_into(root, &mut out)?;
-    out.sort();
-    Ok(out)
-}
-
-fn collect_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let entry = entry.with_context(|| format!("walking {}", root.display()))?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_into(&path, out)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-            out.push(path);
-        }
-    }
-    Ok(())
 }
 
 /// Spawn the user's editor on a tempfile pre-populated with `current`.

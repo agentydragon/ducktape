@@ -27,7 +27,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_yaml::{Mapping, Value};
 
-use crate::edit_gate::{gate_post_edit_partition, post_delete_spec, post_merge_spec};
+use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
 use crate::yaml_edit::{read_yaml, write_yaml_body_if_semantic_changed};
 
 /// Top-level `debundle module ...` argument shape.
@@ -189,27 +189,21 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
             "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
         );
-    } else {
-        let owner_graph_path = merge.owner_graph_path.as_deref().ok_or_else(|| {
-            anyhow!(
-                "realizability gate requires --graph (path to owner_graph.json) or \
-                 --no-verify"
-            )
-        })?;
+    }
+    let gate = Gate::from_cli(
+        merge.no_verify,
+        merge.owner_graph_path.as_deref(),
+        merge.source_root.as_deref(),
+    )?;
+    gate.check(&merge.modules_root, || {
         let target_abs = resolve_module_file(&merge.modules_root, &merge.target);
         let source_abs: Vec<PathBuf> = merge
             .sources
             .iter()
             .map(|p| resolve_module_file(&merge.modules_root, p))
             .collect();
-        let post_spec = post_merge_spec(&merge.modules_root, &target_abs, &source_abs)?;
-        gate_post_edit_partition(
-            owner_graph_path,
-            &merge.modules_root,
-            merge.source_root.as_deref(),
-            &post_spec,
-        )?;
-    }
+        post_merge_spec(&merge.modules_root, &target_abs, &source_abs)
+    })?;
 
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
     if merge.dry_run {
@@ -274,6 +268,7 @@ pub fn merge_modules(
     let mut target_doc = read_yaml_or_empty(&target_abs)?;
     let mut existing_names = collect_member_names(&target_doc, &target_abs)?;
     let mut merged_source_labels: Vec<String> = Vec::new();
+    let mut merged_comments: Vec<String> = Vec::new();
 
     for src in &source_abs {
         let src_doc = read_yaml(src)?;
@@ -288,9 +283,42 @@ pub fn merge_modules(
                 );
             }
         }
+        let label = display_relative(modules_root, src);
         splice_sequence(&mut target_doc, "members", &src_doc, src)?;
         splice_sequence(&mut target_doc, "anonymous_statements", &src_doc, src)?;
-        merged_source_labels.push(display_relative(modules_root, src));
+        // `binding_groups:` entries are claims just like `members:` —
+        // deleting the source file without carrying them would
+        // silently unclaim their owners on the next `debundle run`.
+        splice_sequence(&mut target_doc, "binding_groups", &src_doc, src)?;
+        // Source module comments concatenate into the target's
+        // module-level `comment:` with a `--- from <source>:` divider
+        // (docs/cli.md § "Comments").
+        if let Some(comment) = src_doc
+            .as_mapping()
+            .and_then(|m| m.get(Value::String("comment".into())))
+            .and_then(Value::as_str)
+            .filter(|comment| !comment.trim().is_empty())
+        {
+            merged_comments.push(format!("--- from {label}:\n{}", comment.trim_end()));
+        }
+        merged_source_labels.push(label);
+    }
+
+    if !merged_comments.is_empty() {
+        let mapping = target_doc
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow!("target YAML is not a mapping; cannot merge comments"))?;
+        let combined: Vec<String> = mapping
+            .get(Value::String("comment".into()))
+            .and_then(Value::as_str)
+            .map(|existing| existing.trim_end().to_string())
+            .into_iter()
+            .chain(merged_comments)
+            .collect();
+        mapping.insert(
+            Value::String("comment".into()),
+            Value::String(combined.join("\n")),
+        );
     }
 
     let mut body = String::new();
@@ -400,20 +428,15 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     // anonymous statements, so removing it leaves the partition
     // unchanged). For non-empty `--force` deletions we run the full
     // gate against the post-delete partition.
-    if !args.no_verify && !all_empty {
-        let owner_graph_path = args.owner_graph_path.as_deref().ok_or_else(|| {
-            anyhow!(
-                "realizability gate requires --graph (path to owner_graph.json) for \
-                 non-empty module deletion, or pass --no-verify"
-            )
-        })?;
-        let post_spec = post_delete_spec(&args.modules_root, &paths_abs)?;
-        gate_post_edit_partition(
-            owner_graph_path,
-            &args.modules_root,
+    if !all_empty {
+        let gate = Gate::from_cli(
+            args.no_verify,
+            args.owner_graph_path.as_deref(),
             args.source_root.as_deref(),
-            &post_spec,
         )?;
+        gate.check(&args.modules_root, || {
+            post_delete_spec(&args.modules_root, &paths_abs)
+        })?;
     }
 
     let summary = delete_modules(&paths_abs, args.dry_run)?;

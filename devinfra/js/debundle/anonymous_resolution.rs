@@ -22,6 +22,128 @@ pub struct AnonymousStatementClaimSet<'a> {
     pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
+/// Member-form `selector.source_match` claims (including expanded
+/// `binding_groups:` entries) for one module. Resolved by
+/// [`resolve_member_selector_claims`] into the chunk-top binding
+/// names they claim.
+#[derive(Debug, Clone, Copy)]
+pub struct MemberSelectorClaimSet<'a> {
+    pub module_path: &'a Path,
+    pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
+}
+
+/// Resolve member-form `source_match` selectors to the chunk-top
+/// binding names they claim, by matching each selector against the
+/// chunk sources referenced by `graph`'s `source_location` data —
+/// the same source-backed matching (`source_match`) the run
+/// pipeline's member materialization applies. Each selector must
+/// match exactly one declared binding across all chunk sources;
+/// zero or multiple matches are hard errors, as is unresolvable
+/// chunk source — the caller (the CLI edit gate) must never
+/// silently treat a source_match-claimed owner as residual.
+///
+/// Bindings resolved to import specifiers are skipped: they refer
+/// to upstream symbols, not chunk-top owners (same exclusion as
+/// `spec_modules::load_active_claims`).
+pub fn resolve_member_selector_claims(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    claims_by_module: &[MemberSelectorClaimSet<'_>],
+) -> Result<Vec<BTreeSet<String>>> {
+    js_ast::with_swc_globals(|| {
+        resolve_member_selector_claims_in_globals(
+            graph,
+            owner_graph_path,
+            modules_root,
+            source_root,
+            claims_by_module,
+        )
+    })
+}
+
+fn resolve_member_selector_claims_in_globals(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    claims_by_module: &[MemberSelectorClaimSet<'_>],
+) -> Result<Vec<BTreeSet<String>>> {
+    let mut out = vec![BTreeSet::<String>::new(); claims_by_module.len()];
+    if claims_by_module
+        .iter()
+        .all(|claims| claims.selectors.is_empty())
+    {
+        return Ok(out);
+    }
+
+    let source_paths: BTreeSet<String> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.source_location.as_ref())
+        .map(|location| location.source_path.clone())
+        .collect();
+    if source_paths.is_empty() {
+        bail!(
+            "spec contains members[].selector.source_match claims, but owner_graph.json has no \
+             source_location data; cannot resolve source_match selectors"
+        );
+    }
+
+    let mut parsed_by_source = BTreeMap::new();
+    for source_path in &source_paths {
+        let resolved =
+            resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
+        let source = fs::read_to_string(&resolved)
+            .with_context(|| format!("reading source file {}", resolved.display()))?;
+        let parsed = js_ast::parse_js_module(source_path, &source)
+            .with_context(|| format!("parsing source file {}", resolved.display()))?;
+        parsed_by_source.insert(source_path.clone(), parsed);
+    }
+
+    for (module_idx, claims) in claims_by_module.iter().enumerate() {
+        let request_id = claims.module_path.to_string_lossy();
+        for selector in claims.selectors {
+            let mut matches = Vec::new();
+            for parsed in parsed_by_source.values() {
+                matches.extend(source_match::member_binding_candidates(
+                    &parsed.module,
+                    &request_id,
+                    selector,
+                )?);
+            }
+            match matches.as_slice() {
+                [single] => {
+                    if !matches!(single.kind, Some(spec::BindingSourceKind::ImportSpecifier)) {
+                        out[module_idx].insert(single.binding_name.clone());
+                    }
+                }
+                [] => bail!(
+                    "module {} members[].selector.source_match did not match any top-level \
+                     declaration in the chunk sources:\n{}",
+                    claims.module_path.display(),
+                    selector.match_source,
+                ),
+                multiple => bail!(
+                    "module {} members[].selector.source_match is ambiguous — matched {} \
+                     declarations ({}); refine the selector:\n{}",
+                    claims.module_path.display(),
+                    multiple.len(),
+                    multiple
+                        .iter()
+                        .map(|binding| binding.binding_name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    selector.match_source,
+                ),
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 pub fn resolve_anonymous_statement_claims(
     graph: &OwnerGraphReport,
     owner_graph_path: &Path,

@@ -643,10 +643,12 @@ rust_library(
     deps = [
         ":analysis",
         ":anonymous_resolution",
+        ":js_ast",
         ":output_layout",
         ":peel",
         ":pipeline",
         ":selector_debt",
+        ":source_match",
         ":spec",
         ":spec_modules",
         ":spec_stats",

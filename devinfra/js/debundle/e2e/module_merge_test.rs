@@ -299,3 +299,102 @@ fn deprecated_module_merge_alias_still_works_with_warning() {
         "expected deprecation warning, got stderr: {stderr}"
     );
 }
+
+#[test]
+fn merge_carries_binding_groups_into_target() {
+    // `binding_groups:` entries are claims just like `members:` —
+    // destroying them with the source file silently unclaims their
+    // owners on the next `debundle run`.
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "target.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    );
+    write(
+        root,
+        "src.yaml",
+        "binding_groups:\n  - source_match:\n      match: 'const x = 1;'\n    exports: { x: ExportedX }\nmembers: []\n",
+    );
+
+    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
+
+    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    let groups = doc["binding_groups"]
+        .as_sequence()
+        .unwrap_or_else(|| panic!("binding_groups must be carried into the target: {merged}"));
+    assert_eq!(groups.len(), 1, "merged={merged}");
+    assert_eq!(
+        groups[0]["exports"]["x"].as_str(),
+        Some("ExportedX"),
+        "merged={merged}"
+    );
+}
+
+#[test]
+fn merge_concatenates_module_comments_with_divider() {
+    // docs/cli.md promises: `modules merge` concatenates source-module
+    // comments into the target's module-level `comment:` with a
+    // `--- from <source>:` divider.
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "target.yaml",
+        "comment: target overview\nmembers:\n  - selector: { binding: { name: a } }\n",
+    );
+    write(
+        root,
+        "src1.yaml",
+        "comment: src1 notes\nmembers:\n  - selector: { binding: { name: b } }\n",
+    );
+    write(
+        root,
+        "src2.yaml",
+        "members:\n  - selector: { binding: { name: c } }\n",
+    );
+
+    merge_modules(
+        root,
+        Path::new("target.yaml"),
+        &[Path::new("src1.yaml"), Path::new("src2.yaml")],
+    )
+    .unwrap();
+
+    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    let comment = doc["comment"].as_str().expect("merged comment present");
+    assert!(comment.contains("target overview"), "comment={comment}");
+    assert!(comment.contains("--- from src1.yaml:"), "comment={comment}");
+    assert!(comment.contains("src1 notes"), "comment={comment}");
+    assert!(
+        !comment.contains("src2.yaml"),
+        "comment-less sources add no divider: {comment}"
+    );
+}
+
+#[test]
+fn merge_into_uncommented_target_adopts_source_comment_with_divider() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "target.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    );
+    write(
+        root,
+        "src.yaml",
+        "comment: src notes\nmembers:\n  - selector: { binding: { name: b } }\n",
+    );
+
+    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
+
+    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    let comment = doc["comment"].as_str().expect("merged comment present");
+    assert!(comment.contains("--- from src.yaml:"), "comment={comment}");
+    assert!(comment.contains("src notes"), "comment={comment}");
+}

@@ -118,6 +118,18 @@ observed. (The `owner:<id>`-in-spec-notes framing that used to live here was
 stale — no such mechanism exists; `owner:N` ids are machine-generated graph
 keys and a `describe`/`show-source` input, not a spec authoring hint.)
 
+## Coverage views ignore `source_match` member claims
+
+The CLI edit gate now resolves `members[].selector.source_match` and
+`binding_groups:` claims through the same source-backed path `debundle run`
+uses (`spec_modules::ModuleClaims::{member_selectors,binding_groups}` +
+`anonymous_resolution::resolve_member_selector_claims`). The read-only
+coverage/describe views in `peel/plan.rs` still consume only
+`claims.bindings` + `claims.anonymous_selectors`, so a module whose members
+are claimed via `source_match` under-reports in `debundle coverage` /
+`describe <module>`. Diagnostics-only (no soundness impact); wire the same
+resolution through those views when it next matters.
+
 ## Structural selector language
 
 `source_match` and same-module `binding_groups` exist, but the selector

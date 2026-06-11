@@ -21,9 +21,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
+use spec::ModulePath;
 use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
 
-use crate::edit_gate::{gate_post_edit_partition, post_assign_spec, post_unassign_spec};
+use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// A chunk-top binding's public identity: the minified hygiene name
@@ -116,14 +117,7 @@ pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>>
             let Some(map) = member.as_mapping() else {
                 continue;
             };
-            let minified = map
-                .get(yk("selector"))
-                .and_then(Value::as_mapping)
-                .and_then(|s| s.get(yk("binding")))
-                .and_then(Value::as_mapping)
-                .and_then(|b| b.get(yk("name")))
-                .and_then(Value::as_str)
-                .map(str::to_string);
+            let minified = member_minified_name(map);
             let readable_name = map
                 .get(yk("name"))
                 .and_then(Value::as_str)
@@ -290,8 +284,8 @@ pub fn rename_binding(
         }
     }
     let mut doc = read_yaml(&hit.file)?;
-    let old_readable = current_readable_name(&doc, hit.member_index)?;
-    set_readable_name(&mut doc, hit.member_index, new)?;
+    let old_readable = current_readable_name(&doc, &hit.file, hit.member_index)?;
+    set_readable_name(&mut doc, &hit.file, hit.member_index, new)?;
     let changed = yaml_semantically_changed(&hit.file, &doc)?;
     let action = if !changed {
         "unchanged"
@@ -336,32 +330,16 @@ fn find_readable_collisions(
             let Some(map) = member.as_mapping() else {
                 continue;
             };
-            let readable = map
-                .get(yk("name"))
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let binding_name = map
-                .get(yk("selector"))
-                .and_then(Value::as_mapping)
-                .and_then(|s| s.get(yk("binding")))
-                .and_then(Value::as_mapping)
-                .and_then(|b| b.get(yk("name")))
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            // Binding-name fallback: a member without an explicit
-            // readable name keeps the minified name as its public
-            // identity. A rename target that matches that minified
-            // name is still a clash.
-            let effective = if readable.is_empty() {
-                binding_name
-            } else {
-                readable
-            };
-            if effective == new_readable {
+            // `member_effective_name` applies the binding-name
+            // fallback: a member without an explicit readable name
+            // keeps the minified name as its public identity, so a
+            // rename target that matches that minified name is still
+            // a clash. `bindings assign` shares the same predicate.
+            if member_effective_name(map).as_deref() == Some(new_readable) {
                 clashes.push(format!(
                     "  {} (binding={}, module={})",
                     file.display(),
-                    binding_name,
+                    member_minified_name(map).unwrap_or_default(),
                     module_path
                 ));
             }
@@ -416,6 +394,14 @@ pub fn parse_move_triple(s: &str) -> Result<Move> {
     let parts: Vec<&str> = s.splitn(3, ':').collect();
     if parts.len() < 2 {
         bail!("expected `<sym>:<module>[:<readable>]`, got {s:?} (one colon at minimum)");
+    }
+    // splitn(3) leaves any further `:` inside the third field; the
+    // documented contract (same as `bindings rename`) is that
+    // `<readable>` may not contain `:`.
+    if let Some(readable) = parts.get(2)
+        && readable.contains(':')
+    {
+        bail!("<readable> may not contain `:` (got {s:?}); use --batch JSON for edge cases");
     }
     Ok(Move {
         sym: parts[0].to_string(),
@@ -524,39 +510,89 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 /// are deleted unless they carry a module-level `comment:`.
 ///
 /// Contract:
-///   * Last-wins for duplicate `sym` in the batch (with a stderr warn).
+///   * Moves are deduplicated on **resolved member identity** (the
+///     member's source file + index): a batch carrying both the
+///     minified and readable spelling of one member collapses to a
+///     single move. Two moves for the same member with contradictory
+///     destinations or readable names are rejected.
+///   * Destination module paths are canonicalized via
+///     [`spec::ModulePath::parse`] (lowercased), so `UI/Widgets` and
+///     `ui/widgets` resolve to the same file.
 ///   * Destination modules are auto-created.
-///   * Source modules drained are deleted iff they have no
-///     module-level `comment:` AND no remaining
-///     `anonymous_statements:`.
-///   * When `owner_graph_path` is `Some` and `no_verify` is `false`,
-///     the unified realizability gate
-///     ([`crate::edit_gate::gate_post_edit_partition`]) runs against
-///     the in-memory post-batch spec; cycle or atom-split rejections
-///     bail before any file is written. Pass `None` to skip the gate
-///     (collision detection still runs); the CLI dispatcher requires
-///     `--graph` unless `--no-verify` is set.
+///   * Only modules that were sources of a move in THIS batch are
+///     swept after draining, and only when they have no module-level
+///     `comment:`, no remaining `anonymous_statements:`, and no
+///     `binding_groups:`.
+///   * [`Gate::Run`] runs the unified realizability gate
+///     ([`crate::edit_gate::gate_post_edit_partition`]) against the
+///     in-memory post-batch spec; cycle or atom-split rejections
+///     bail before any file is written. [`Gate::NamesOnly`] keeps
+///     collision detection; [`Gate::Skip`] (`--no-verify`) skips
+///     everything. The CLI dispatcher requires `--graph` unless
+///     `--no-verify` is set ([`Gate::from_cli`]).
 pub fn run_bindings_assign(
     modules_root: &Path,
     moves: Vec<Move>,
     dry_run: bool,
-    no_verify: bool,
-    owner_graph_path: Option<&Path>,
-    source_root: Option<&Path>,
+    gate: Gate<'_>,
 ) -> Result<AssignOutcome> {
-    // Step 1: dedupe moves (last-wins per sym).
-    let mut by_sym: BTreeMap<String, Move> = BTreeMap::new();
+    // Step 1: locate each move's member and canonicalize its
+    // destination. Identity is the resolved (source module, member
+    // index) slot: `<sym>` accepts both the minified and readable
+    // spelling, so a raw-string dedupe would let both spellings of
+    // one member produce two plan entries for one slot — the second
+    // extraction would then splice a null sentinel into the spec.
+    let mut by_identity: BTreeMap<(String, usize), PlannedMove> = BTreeMap::new();
     for m in moves {
-        if let Some(prev) = by_sym.insert(m.sym.clone(), m.clone()) {
-            eprintln!(
-                "warning: duplicate sym {:?} in batch; later move ({:?}) wins over earlier \
-                 ({:?})",
-                m.sym, m.module, prev.module
-            );
+        let hit = resolve_unambiguous(modules_root, &m.sym)?;
+        let dest_module = canonical_module_path(&m.module)?;
+        let planned = PlannedMove {
+            req: Move {
+                sym: m.sym,
+                module: dest_module,
+                readable: m.readable,
+            },
+            source_module: hit.module_path.clone(),
+            source_index: hit.member_index,
+        };
+        match by_identity.entry((hit.module_path, hit.member_index)) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(planned);
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                let prev = slot.get_mut();
+                if prev.req.module != planned.req.module {
+                    bail!(
+                        "batch contains contradictory destinations for the same member: {:?} \
+                         -> {:?} vs {:?} -> {:?}",
+                        prev.req.sym,
+                        prev.req.module,
+                        planned.req.sym,
+                        planned.req.module,
+                    );
+                }
+                match (&prev.req.readable, &planned.req.readable) {
+                    (Some(a), Some(b)) if a != b => bail!(
+                        "batch contains contradictory readable names for the same member: \
+                         {:?} -> {:?} vs {:?} -> {:?}",
+                        prev.req.sym,
+                        a,
+                        planned.req.sym,
+                        b,
+                    ),
+                    (None, Some(_)) => prev.req.readable = planned.req.readable,
+                    _ => {}
+                }
+                eprintln!(
+                    "warning: batch contains duplicate moves for one member ({:?} / {:?}); \
+                     collapsed",
+                    prev.req.sym, planned.req.sym,
+                );
+            }
         }
     }
-    let moves: Vec<Move> = by_sym.into_values().collect();
-    if moves.is_empty() {
+    let plan: Vec<PlannedMove> = by_identity.into_values().collect();
+    if plan.is_empty() {
         return Ok(AssignOutcome {
             moves_applied: 0,
             files_written: Vec::new(),
@@ -568,44 +604,16 @@ pub fn run_bindings_assign(
     // Step 2: load every module YAML once.
     let mut docs = load_module_docs(modules_root)?;
 
-    // Step 3: locate each sym's current home + the member entry.
-    let mut plan: Vec<PlannedMove> = Vec::new();
-    for m in &moves {
-        let hit = resolve_unambiguous(modules_root, &m.sym)?;
-        plan.push(PlannedMove {
-            req: m.clone(),
-            source_module: hit.module_path.clone(),
-            source_index: hit.member_index,
-        });
-    }
-
-    // Step 4: detect destination duplicate-binding claims.
-    //
-    // After all moves are applied, each (module, binding_name)
-    // pair must be unique. Compute the target set.
-    let mut planned_destinations: BTreeMap<(String, String), &PlannedMove> = BTreeMap::new();
-    for p in &plan {
-        let key = (p.req.module.clone(), p.req.sym.clone());
-        if let Some(prev) = planned_destinations.insert(key.clone(), p) {
-            bail!(
-                "duplicate-claim: two moves both want binding {} in module {}: previous \
-                 from {}, latest from {}",
-                key.1,
-                key.0,
-                prev.source_module,
-                p.source_module
-            );
-        }
-    }
-
-    // Step 5: pull each member out of its source doc.
+    // Step 3: pull each member out of its source doc (and rename if
+    // requested). `take_member` leaves a `Null` sentinel so indices
+    // stay stable across multiple takes from one module; collapse
+    // them once every take has run.
     let mut pulled: BTreeMap<String, Value> = BTreeMap::new();
-    // First pass: extract each (and rename if requested).
     for p in &plan {
-        let Some((_, doc)) = docs.get_mut(&p.source_module) else {
+        let Some((file, doc)) = docs.get_mut(&p.source_module) else {
             bail!("source module {:?} not in tree", p.source_module);
         };
-        let mut member = take_member(doc, p.source_index)?;
+        let mut member = take_member(doc, file, p.source_index)?;
         if let Some(new_readable) = &p.req.readable {
             if let Some(map) = member.as_mapping_mut() {
                 map.insert(yk("name"), Value::String(new_readable.clone()));
@@ -613,20 +621,21 @@ pub fn run_bindings_assign(
         }
         pulled.insert(p.req.sym.clone(), member);
     }
-    // Second pass: re-key source docs so the member sequence is
-    // contiguous (drop the now-removed entries). `take_member` left
-    // a sentinel `Null`; collapse them.
     for (_, (_, doc)) in docs.iter_mut() {
         collapse_null_members(doc);
     }
 
-    // Step 6: collision detection for renames (basic).
-    if !no_verify {
+    // Step 4: collision detection for renames, sharing the same
+    // effective-identity predicate `bindings rename` uses: an
+    // unrenamed member's minified binding name is its public
+    // identity, so a rename target that matches it is a clash.
+    if gate.verify_names() {
         for p in &plan {
             let Some(new_readable) = &p.req.readable else {
                 continue;
             };
-            // The check is against the post-state docs.
+            // The check is against the post-state docs (the moved
+            // members sit in `pulled`, so no self-exclusion needed).
             let mut hits = Vec::new();
             for (mp, (file, doc)) in &docs {
                 let Some(seq) = members_seq(doc) else {
@@ -636,31 +645,24 @@ pub fn run_bindings_assign(
                     let Some(map) = member.as_mapping() else {
                         continue;
                     };
-                    let readable = map
-                        .get(yk("name"))
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    if readable == new_readable {
+                    if member_effective_name(map).as_deref() == Some(new_readable) {
                         hits.push(format!("  {} ({}@{})", file.display(), mp, idx));
                     }
                 }
             }
-            // Also check the pulled bin: another move might write the
-            // same readable name to a different destination.
-            let mut pulled_hits = 0usize;
-            for (other_sym, member) in &pulled {
-                if other_sym == &p.req.sym {
-                    continue;
-                }
-                if member
-                    .as_mapping()
-                    .and_then(|m| m.get(yk("name")))
-                    .and_then(Value::as_str)
-                    == Some(new_readable.as_str())
-                {
-                    pulled_hits += 1;
-                }
-            }
+            // Also check the pulled bin: another move might carry the
+            // same effective name to a different destination.
+            let pulled_hits = pulled
+                .iter()
+                .filter(|(other_sym, _)| *other_sym != &p.req.sym)
+                .filter(|(_, member)| {
+                    member
+                        .as_mapping()
+                        .and_then(member_effective_name)
+                        .as_deref()
+                        == Some(new_readable)
+                })
+                .count();
             if !hits.is_empty() || pulled_hits > 0 {
                 bail!(
                     "name collision: rename of {:?} -> {:?} collides with existing entries:\n\
@@ -674,40 +676,8 @@ pub fn run_bindings_assign(
         }
     }
 
-    // Step 6.5: realizability + atom-split gate against the
-    // post-batch spec. Runs the same check `debundle modules merge`
-    // / `debundle modules delete --force` use, so all three mutating
-    // verbs share one rejection signal (cycles + atom-split). Skip
-    // when `--no-verify` is set; bail when `owner_graph_path` is
-    // missing — the CLI dispatcher enforces "graph or no-verify".
-    if !no_verify {
-        if let Some(graph_path) = owner_graph_path {
-            let removals: Vec<(PathBuf, String)> = plan
-                .iter()
-                .map(|p| {
-                    (
-                        modules_root.join(format!("{}.yaml", p.source_module)),
-                        p.req.sym.clone(),
-                    )
-                })
-                .collect();
-            let insertions: Vec<(PathBuf, String)> = plan
-                .iter()
-                .map(|p| {
-                    (
-                        modules_root.join(format!("{}.yaml", p.req.module)),
-                        p.req.sym.clone(),
-                    )
-                })
-                .collect();
-            let post_spec = post_assign_spec(modules_root, &removals, &insertions)?;
-            gate_post_edit_partition(graph_path, modules_root, source_root, &post_spec)?;
-        }
-    }
-
-    // Step 7: splice into destinations (auto-create missing).
+    // Step 5: splice into destinations (auto-create missing).
     for p in &plan {
-        // Resolve destination doc (create if absent).
         let dest_path = p.req.module.clone();
         if !docs.contains_key(&dest_path) {
             let mut map = Mapping::new();
@@ -720,64 +690,22 @@ pub fn run_bindings_assign(
         push_member(doc, member)?;
     }
 
-    // Step 8: identify drained-but-not-deleted source modules
-    // (keep modules whose module-level `comment:` is set or that
-    // still carry anonymous_statements).
-    let mut to_delete: Vec<String> = Vec::new();
-    for (mp, (_, doc)) in &docs {
-        if is_residual_module_path(mp) {
-            continue;
-        }
-        let members_empty = members_seq(doc).is_none_or(|s| s.is_empty());
-        if !members_empty {
-            continue;
-        }
-        let has_comment = doc
-            .as_mapping()
-            .and_then(|m| m.get(yk("comment")))
-            .is_some();
-        let has_anon = doc
-            .as_mapping()
-            .and_then(|m| m.get(yk("anonymous_statements")))
-            .and_then(Value::as_sequence)
-            .is_some_and(|s| !s.is_empty());
-        if !has_comment && !has_anon {
-            // Only delete if this module was actually a source of a
-            // move (i.e. we drained it just now). New empty modules
-            // we just created should not be deleted; but the order
-            // of operations means destinations always get >=1 push,
-            // so members_empty would be false for them.
-            to_delete.push(mp.clone());
-        }
-    }
+    // Step 6: identify drained move-source modules to sweep.
+    let move_sources: BTreeSet<String> = plan.iter().map(|p| p.source_module.clone()).collect();
+    let to_delete = drained_source_modules(&docs, &move_sources);
 
-    let mut files_written: Vec<String> = Vec::new();
-    let mut files_deleted: Vec<String> = Vec::new();
-    let action = if dry_run { "dry-run" } else { "applied" };
-    for (mp, (file, doc)) in &docs {
-        if to_delete.contains(mp) {
-            if !dry_run && file.exists() {
-                fs::remove_file(file).with_context(|| format!("rm {}", file.display()))?;
-            }
-            files_deleted.push(file.display().to_string());
-            continue;
-        }
-        let changed = yaml_semantically_changed(file, doc)?;
-        if changed && !dry_run {
-            if let Some(parent) = file.parent() {
-                fs::create_dir_all(parent).ok();
-            }
-            write_yaml_if_semantic_changed(file, doc)?;
-        }
-        if changed {
-            files_written.push(file.display().to_string());
-        }
-    }
+    // Step 7: realizability + atom-split gate against the in-memory
+    // post-batch docs — the same `ModuleFile` claims model `debundle
+    // run` loads, so source_match members and binding_groups gate
+    // identically. Runs before any file is written.
+    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+
+    let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
         moves_applied: plan.len(),
         files_written,
         files_deleted,
-        action,
+        action: if dry_run { "dry-run" } else { "applied" },
     })
 }
 
@@ -788,14 +716,126 @@ struct PlannedMove {
     source_index: usize,
 }
 
-fn take_member(doc: &mut Value, index: usize) -> Result<Value> {
+/// Canonicalize a destination module path through the same
+/// [`ModulePath::parse`] normalization the spec pipeline applies
+/// (lowercasing, traversal rejection), so `UI/Widgets` and
+/// `ui/widgets` cannot fork into two case-variant files.
+fn canonical_module_path(raw: &str) -> Result<String> {
+    Ok(ModulePath::parse(raw, "")
+        .map_err(|err| anyhow!("invalid destination module: {err}"))?
+        .as_str()
+        .to_string())
+}
+
+/// A member's effective public identity: the readable `name:` when
+/// set, else the minified `selector.binding.name`. `bindings rename`
+/// and `bindings assign` share this predicate so both treat an
+/// unrenamed member's minified name as a claimed identity.
+fn member_effective_name(map: &Mapping) -> Option<String> {
+    if let Some(name) = map
+        .get(yk("name"))
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+    {
+        return Some(name.to_string());
+    }
+    member_minified_name(map)
+}
+
+fn member_minified_name(map: &Mapping) -> Option<String> {
+    map.get(yk("selector"))
+        .and_then(Value::as_mapping)
+        .and_then(|s| s.get(yk("binding")))
+        .and_then(Value::as_mapping)
+        .and_then(|b| b.get(yk("name")))
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+/// Move-source modules drained to zero members that are safe to
+/// auto-delete. Only modules that were sources of the current batch
+/// are considered — a pre-existing empty module shell is not this
+/// command's business — and a drained source survives when it still
+/// carries a module-level `comment:`, `anonymous_statements:`, or
+/// `binding_groups:` (all of which are spec content the sweep must
+/// not destroy).
+fn drained_source_modules(
+    docs: &BTreeMap<String, (PathBuf, Value)>,
+    move_sources: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    move_sources
+        .iter()
+        .filter(|mp| {
+            if is_residual_module_path(mp) {
+                return false;
+            }
+            let Some((_, doc)) = docs.get(*mp) else {
+                return false;
+            };
+            let Some(map) = doc.as_mapping() else {
+                return false;
+            };
+            let members_empty = members_seq(doc).is_none_or(|s| s.is_empty());
+            let keeps_content = map.get(yk("comment")).is_some()
+                || [yk("anonymous_statements"), yk("binding_groups")]
+                    .iter()
+                    .any(|key| {
+                        map.get(key)
+                            .and_then(Value::as_sequence)
+                            .is_some_and(|s| !s.is_empty())
+                    });
+            members_empty && !keeps_content
+        })
+        .cloned()
+        .collect()
+}
+
+/// Persist the post-batch docs: write every surviving changed file
+/// FIRST, then delete the drained sources — so an interrupted batch
+/// can never lose a member that was not yet spliced into its
+/// destination on disk.
+fn apply_doc_changes(
+    docs: &BTreeMap<String, (PathBuf, Value)>,
+    to_delete: &BTreeSet<String>,
+    dry_run: bool,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let mut files_written: Vec<String> = Vec::new();
+    let mut files_deleted: Vec<String> = Vec::new();
+    for (mp, (file, doc)) in docs {
+        if to_delete.contains(mp) {
+            continue;
+        }
+        let changed = yaml_semantically_changed(file, doc)?;
+        if changed && !dry_run {
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+            write_yaml_if_semantic_changed(file, doc)?;
+        }
+        if changed {
+            files_written.push(file.display().to_string());
+        }
+    }
+    for mp in to_delete {
+        let (file, _) = &docs[mp];
+        if !dry_run && file.exists() {
+            fs::remove_file(file).with_context(|| format!("rm {}", file.display()))?;
+        }
+        files_deleted.push(file.display().to_string());
+    }
+    Ok((files_written, files_deleted))
+}
+
+fn take_member(doc: &mut Value, file: &Path, index: usize) -> Result<Value> {
     let seq = doc
         .as_mapping_mut()
         .and_then(|m| m.get_mut(yk("members")))
         .and_then(Value::as_sequence_mut)
-        .ok_or_else(|| anyhow!("module YAML missing members sequence"))?;
+        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
     if index >= seq.len() {
-        bail!("member index {index} out of range");
+        bail!("member index {index} out of range in {}", file.display());
     }
     // Replace with null so collapse_null_members can compact the
     // sequence after every batch take has run.
@@ -854,45 +894,44 @@ pub struct UnassignOutcome {
 
 /// Remove one or more bindings from their current modules atomically.
 /// Source modules drained of members are deleted unless they carry a
-/// module-level `comment:` or remaining `anonymous_statements:` —
-/// same drain rule as `run_bindings_assign`.
+/// module-level `comment:`, remaining `anonymous_statements:`, or
+/// `binding_groups:` — same drain rule as `run_bindings_assign`.
 ///
 /// After unassign, the bindings fall through to residual (the default
 /// when an owner isn't claimed by any spec module's `members:`). The
 /// realizability + atom-split gate runs against the post-batch spec
 /// the same way `bindings assign` does. The CLI dispatcher enforces
-/// the "graph or no-verify" policy.
+/// the "graph or no-verify" policy ([`Gate::from_cli`]).
 ///
 /// Contract:
-///   * Dedupe by sym (warn on duplicates; later wins).
 ///   * Each sym must resolve to exactly one member via
-///     [`resolve_unambiguous`].
-///   * Source modules drained are deleted iff they have no
-///     module-level `comment:` AND no remaining
-///     `anonymous_statements:`.
-///   * When `owner_graph_path` is `Some` and `no_verify` is `false`,
-///     the gate runs against the in-memory post-batch spec; cycle or
+///     [`resolve_unambiguous`]; syms are deduplicated on the resolved
+///     member identity (warn on duplicates), so the minified and
+///     readable spelling of one member collapse to one removal.
+///   * Only modules that were sources of a removal in THIS batch are
+///     swept after draining.
+///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or
 ///     atom-split rejections bail before any file is written.
 pub fn run_bindings_unassign(
     modules_root: &Path,
     syms: Vec<String>,
     dry_run: bool,
-    no_verify: bool,
-    owner_graph_path: Option<&Path>,
-    source_root: Option<&Path>,
+    gate: Gate<'_>,
 ) -> Result<UnassignOutcome> {
-    // Step 1: dedupe syms (later-wins isn't meaningful here, just
-    // dedupe; warn so authors don't ship typos as silent duplicates).
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut syms_unique: Vec<String> = Vec::new();
+    // Step 1: resolve each sym and dedupe on member identity (same
+    // rule as `run_bindings_assign` — both spellings of one member
+    // are one removal).
+    let mut plan: BTreeMap<(String, usize), String> = BTreeMap::new();
     for s in syms {
-        if !seen.insert(s.clone()) {
-            eprintln!("warning: duplicate sym {s:?} in batch; ignoring repeat");
-            continue;
+        let hit = resolve_unambiguous(modules_root, &s)?;
+        if let Some(prev) = plan.insert((hit.module_path, hit.member_index), s.clone()) {
+            eprintln!(
+                "warning: duplicate sym in batch ({prev:?} / {s:?} resolve to one member); \
+                 ignoring repeat"
+            );
         }
-        syms_unique.push(s);
     }
-    if syms_unique.is_empty() {
+    if plan.is_empty() {
         return Ok(UnassignOutcome {
             unassigned: 0,
             files_written: Vec::new(),
@@ -904,109 +943,39 @@ pub fn run_bindings_unassign(
     // Step 2: load every module YAML once.
     let mut docs = load_module_docs(modules_root)?;
 
-    // Step 3: locate each sym's current home + the member entry.
-    let mut plan: Vec<PlannedUnassign> = Vec::new();
-    for s in &syms_unique {
-        let hit = resolve_unambiguous(modules_root, s)?;
-        plan.push(PlannedUnassign {
-            sym: s.clone(),
-            source_module: hit.module_path.clone(),
-            source_index: hit.member_index,
-        });
-    }
-
-    // Step 4: gate the post-batch spec (cycles + atom-split). Runs
-    // before any mutation. CLI dispatcher enforces "graph or
-    // no-verify" so reaching here without a graph + with !no_verify
-    // would be a programmer error.
-    if !no_verify {
-        if let Some(graph_path) = owner_graph_path {
-            let removals: Vec<(PathBuf, String)> = plan
-                .iter()
-                .map(|p| {
-                    (
-                        modules_root.join(format!("{}.yaml", p.source_module)),
-                        p.sym.clone(),
-                    )
-                })
-                .collect();
-            let post_spec = post_unassign_spec(modules_root, &removals)?;
-            gate_post_edit_partition(graph_path, modules_root, source_root, &post_spec)?;
-        }
-    }
-
-    // Step 5: drop each member from its source doc. Same null-sentinel
+    // Step 3: drop each member from its source doc. Same null-sentinel
     // + collapse-after pattern `run_bindings_assign` uses so multiple
     // unassigns from the same module don't shift indices mid-pass.
-    for p in &plan {
-        let Some((_, doc)) = docs.get_mut(&p.source_module) else {
-            bail!("source module {:?} not in tree", p.source_module);
+    for (source_module, source_index) in plan.keys() {
+        let Some((file, doc)) = docs.get_mut(source_module) else {
+            bail!("source module {source_module:?} not in tree");
         };
-        let _ = take_member(doc, p.source_index)?;
+        take_member(doc, file, *source_index)?;
     }
     for (_, (_, doc)) in docs.iter_mut() {
         collapse_null_members(doc);
     }
 
-    // Step 6: identify drained-but-not-deleted source modules.
-    let mut to_delete: Vec<String> = Vec::new();
-    for (mp, (_, doc)) in &docs {
-        if is_residual_module_path(mp) {
-            continue;
-        }
-        let members_empty = members_seq(doc).is_none_or(|s| s.is_empty());
-        if !members_empty {
-            continue;
-        }
-        let has_comment = doc
-            .as_mapping()
-            .and_then(|m| m.get(yk("comment")))
-            .is_some();
-        let has_anon = doc
-            .as_mapping()
-            .and_then(|m| m.get(yk("anonymous_statements")))
-            .and_then(Value::as_sequence)
-            .is_some_and(|s| !s.is_empty());
-        if !has_comment && !has_anon {
-            to_delete.push(mp.clone());
-        }
-    }
+    // Step 4: identify drained move-source modules to sweep.
+    let move_sources: BTreeSet<String> = plan
+        .keys()
+        .map(|(source_module, _)| source_module.clone())
+        .collect();
+    let to_delete = drained_source_modules(&docs, &move_sources);
 
-    let mut files_written: Vec<String> = Vec::new();
-    let mut files_deleted: Vec<String> = Vec::new();
-    let action = if dry_run { "dry-run" } else { "applied" };
-    for (mp, (file, doc)) in &docs {
-        if to_delete.contains(mp) {
-            if !dry_run && file.exists() {
-                fs::remove_file(file).with_context(|| format!("rm {}", file.display()))?;
-            }
-            files_deleted.push(file.display().to_string());
-            continue;
-        }
-        let changed = yaml_semantically_changed(file, doc)?;
-        if changed && !dry_run {
-            if let Some(parent) = file.parent() {
-                fs::create_dir_all(parent).ok();
-            }
-            write_yaml_if_semantic_changed(file, doc)?;
-        }
-        if changed {
-            files_written.push(file.display().to_string());
-        }
-    }
+    // Step 5: gate the in-memory post-batch spec (cycles +
+    // atom-split) before any file is written. Built from the mutated
+    // docs through the run pipeline's claims model, so source_match
+    // members and binding_groups in surviving modules stay claimed.
+    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+
+    let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
         unassigned: plan.len(),
         files_written,
         files_deleted,
-        action,
+        action: if dry_run { "dry-run" } else { "applied" },
     })
-}
-
-#[derive(Debug, Clone)]
-struct PlannedUnassign {
-    sym: String,
-    source_module: String,
-    source_index: usize,
 }
 
 // ---------------------------------------------------------------------
@@ -1019,15 +988,15 @@ fn yk(s: &str) -> Value {
     Value::String(s.to_string())
 }
 
-fn current_readable_name(doc: &Value, index: usize) -> Result<Option<String>> {
+fn current_readable_name(doc: &Value, file: &Path, index: usize) -> Result<Option<String>> {
     let seq = doc
         .as_mapping()
         .and_then(|m| m.get(yk("members")))
         .and_then(Value::as_sequence)
-        .ok_or_else(|| anyhow!("module YAML missing members sequence"))?;
+        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
     let member = seq
         .get(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range"))?;
+        .ok_or_else(|| anyhow!("member index {index} out of range in {}", file.display()))?;
     Ok(member
         .as_mapping()
         .and_then(|m| m.get(yk("name")))
@@ -1035,18 +1004,18 @@ fn current_readable_name(doc: &Value, index: usize) -> Result<Option<String>> {
         .map(str::to_string))
 }
 
-fn set_readable_name(doc: &mut Value, index: usize, name: &str) -> Result<()> {
+fn set_readable_name(doc: &mut Value, file: &Path, index: usize, name: &str) -> Result<()> {
     let seq = doc
         .as_mapping_mut()
         .and_then(|m| m.get_mut(yk("members")))
         .and_then(Value::as_sequence_mut)
-        .ok_or_else(|| anyhow!("module YAML missing members sequence"))?;
+        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
     let member = seq
         .get_mut(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range"))?;
+        .ok_or_else(|| anyhow!("member index {index} out of range in {}", file.display()))?;
     let map = member
         .as_mapping_mut()
-        .ok_or_else(|| anyhow!("member entry is not a mapping"))?;
+        .ok_or_else(|| anyhow!("member entry is not a mapping in {}", file.display()))?;
     map.insert(yk("name"), Value::String(name.to_string()));
     Ok(())
 }
@@ -1286,7 +1255,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, false, false, None, None).unwrap();
+        let out = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
         assert_eq!(out.moves_applied, 1);
         assert!(!root.join("src.yaml").exists(), "source should be deleted");
         let dest = read(root, "dest.yaml");
@@ -1315,7 +1284,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        run_bindings_assign(root, moves, false, false, None, None).unwrap();
+        run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
         assert!(root.join("src.yaml").exists(), "src kept due to comment");
         let src = read(root, "src.yaml");
         let doc: Value = serde_yaml::from_str(&src).unwrap();
@@ -1337,7 +1306,7 @@ mod tests {
             module: "runtime/plugins".into(),
             readable: Some("PluginSettings".into()),
         }];
-        run_bindings_assign(root, moves, false, false, None, None).unwrap();
+        run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
         assert!(root.join("runtime/plugins.yaml").exists());
         let body = read(root, "runtime/plugins.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
@@ -1359,7 +1328,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, true, false, None, None).unwrap();
+        let out = run_bindings_assign(root, moves, true, Gate::NamesOnly).unwrap();
         assert_eq!(out.action, "dry-run");
         assert!(root.join("src.yaml").exists(), "src not deleted");
         let original = read(root, "src.yaml");

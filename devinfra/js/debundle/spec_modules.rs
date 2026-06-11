@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatement, AnonymousStatementSelector, BindingGroup, BindingSourceKind, Member,
-    ModulePath,
+    MemberSelectorSpec, ModulePath,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,20 +54,37 @@ pub struct BindingPatchesFile {
 pub struct ModuleClaims {
     pub bindings: BTreeSet<String>,
     pub anonymous_selectors: BTreeSet<AnonymousStatementSelector>,
+    /// Member-form `selector.source_match` selectors. These claim a
+    /// chunk-top binding the same way `bindings` entries do, but
+    /// the binding name is only known after source-backed
+    /// resolution (the run pipeline's `resolve_source_match` /
+    /// the edit gate's `resolve_member_selector_claims`).
+    pub member_selectors: BTreeSet<AnonymousStatementSelector>,
+    /// Raw `binding_groups:` entries — sugar for several member
+    /// `source_match` selectors. Expanded by
+    /// `source_match::binding_group_member_selectors` (the same
+    /// expansion the run pipeline applies) by consumers that need
+    /// the per-binding claims.
+    pub binding_groups: Vec<BindingGroup>,
 }
 
 impl ModuleClaims {
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty() && self.anonymous_selectors.is_empty()
+        !self.has_claims()
     }
 
     pub fn has_claims(&self) -> bool {
-        !self.bindings.is_empty() || !self.anonymous_selectors.is_empty()
+        !self.bindings.is_empty()
+            || !self.anonymous_selectors.is_empty()
+            || !self.member_selectors.is_empty()
+            || !self.binding_groups.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
         self.bindings.extend(other.bindings);
         self.anonymous_selectors.extend(other.anonymous_selectors);
+        self.member_selectors.extend(other.member_selectors);
+        self.binding_groups.extend(other.binding_groups);
     }
 }
 
@@ -134,10 +151,16 @@ pub fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
     let mut claims = ModuleClaims::default();
     for member in module.members {
-        if let Some(binding) = member.selector.binding {
-            claims.bindings.insert(binding.name);
+        match member.selector.selected()? {
+            MemberSelectorSpec::Binding(binding) => {
+                claims.bindings.insert(binding.name);
+            }
+            MemberSelectorSpec::SourceMatch(selector) => {
+                claims.member_selectors.insert(selector);
+            }
         }
     }
+    claims.binding_groups = module.binding_groups;
     for statement in module.anonymous_statements {
         claims.anonymous_selectors.insert(statement.selector()?);
     }

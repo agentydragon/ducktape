@@ -7,7 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
-use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchIdentifierMode};
+use spec::{
+    AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
+    SourceMatch, SourceMatchIdentifierMode,
+};
 use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
@@ -64,6 +67,121 @@ pub fn source_match_declared_binding_names(
         .flat_map(declared_bindings)
         .map(|binding| binding.binding_name)
         .collect())
+}
+
+/// Expand one `binding_groups[]` entry into `(export_name,
+/// member-form selector)` pairs — each selector is the group's
+/// `source_match` with `target_binding` set to one selector-local
+/// binding. This is the single expansion both the run pipeline's
+/// member assembly (`lowering::build_members`) and the CLI edit gate
+/// consume, so the two always agree on which owners a binding group
+/// claims.
+pub fn binding_group_member_selectors(
+    request_id: &str,
+    group: &BindingGroup,
+) -> Result<Vec<(String, AnonymousStatementSelector)>> {
+    if group.source_match.target_binding.is_some() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].source_match must not include \
+             `target_binding`; use the `exports` keys to choose selector-local bindings"
+        );
+    }
+    let exports = effective_binding_group_exports(group, request_id)?;
+    Ok(exports
+        .into_iter()
+        .map(|(target_binding, export_name)| {
+            let mut selector = group.source_match.selector();
+            selector.target_binding = Some(target_binding);
+            (export_name, selector)
+        })
+        .collect())
+}
+
+fn effective_binding_group_exports(
+    group: &BindingGroup,
+    request_id: &str,
+) -> Result<BTreeMap<String, String>> {
+    let mut exports = match &group.adopt_names {
+        BindingGroupAdoptNames::None | BindingGroupAdoptNames::All(false) => BTreeMap::new(),
+        BindingGroupAdoptNames::All(true) => {
+            let names = declared_selector_binding_names(group, request_id)?;
+            names
+                .into_iter()
+                .map(|name| (name.clone(), name))
+                .collect::<BTreeMap<_, _>>()
+        }
+        BindingGroupAdoptNames::Names(names) => {
+            let declared = declared_selector_binding_names(group, request_id)?;
+            let declared_set = declared.into_iter().collect::<BTreeSet<_>>();
+            let mut adopted = BTreeMap::new();
+            for name in names {
+                if !declared_set.contains(name) {
+                    bail!(
+                        "logical_module {request_id}: binding_groups[].adopt_names entry \
+                         `{name}` is not declared by source_match.match"
+                    );
+                }
+                if adopted.insert(name.clone(), name.clone()).is_some() {
+                    bail!(
+                        "logical_module {request_id}: binding_groups[].adopt_names repeats \
+                         `{name}`"
+                    );
+                }
+            }
+            adopted
+        }
+    };
+    exports.extend(group.exports.clone());
+    if exports.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[] must include non-empty `exports` \
+             or `adopt_names`"
+        );
+    }
+    Ok(exports)
+}
+
+fn declared_selector_binding_names(group: &BindingGroup, request_id: &str) -> Result<Vec<String>> {
+    let names = source_match_declared_binding_names(request_id, &group.source_match)?;
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for name in &names {
+        if !seen.insert(name.clone()) {
+            duplicates.insert(name.clone());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].source_match declares duplicate \
+             selector-local binding names: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    if names.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].adopt_names found no declared \
+             bindings in source_match.match"
+        );
+    }
+    Ok(names)
+}
+
+/// All member-binding candidates a member-form selector matches in
+/// `runtime_module`, without the exactly-one arbitration
+/// [`resolve_member_binding`] applies. Used by callers that
+/// aggregate matches across several source files (the CLI edit
+/// gate) before deciding uniqueness.
+pub fn member_binding_candidates(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<ResolvedMemberBinding>> {
+    Ok(
+        find_member_binding_matches(runtime_module, request_id, selector)?
+            .into_iter()
+            .map(|matched| matched.binding)
+            .collect(),
+    )
 }
 
 pub fn resolve_anonymous_statement_body_index(

@@ -238,6 +238,23 @@ rust_test(
     ],
 )
 
+# Edit-gate parity with `debundle run` for source_match member
+# selectors and binding_groups: claims the gate cannot model by
+# binding name alone must still partition (or hard-error), never
+# silently fall to residual. Shells out to the built binary against
+# synthetic owner_graph.json + chunk-source fixtures.
+rust_test(
+    name = "edit_gate_source_match_cli_test",
+    srcs = ["edit_gate_source_match_cli_test.rs"],
+    crate_root = "edit_gate_source_match_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
 # CLI verbs `debundle bindings comment` + `debundle modules comment`:
 # YAML `comment:` field edits including a fake-`$EDITOR` flow. Calls
 # the library's public Rust entry points directly.
