@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - mitmproxy-ca-key.sops.yaml
   - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
   - cnp-cloud-api-egress.yaml
   - ccnp-sandbox-proxy-egress.yaml
 configMapGenerator:
