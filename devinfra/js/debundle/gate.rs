@@ -24,6 +24,7 @@ pub use realizability::{
     CondensationOrder, CrossRebindEdge, DeltaHandle, LadderDecision, PartitionDelta,
     RealizabilityIndex, RealizabilityVerdict, SccDiagnosis, SccRejection, SccTimingReporter,
     check_realizability, check_realizability_touching, record_gate_diagnostic_translation,
+    simulated_evaluation_post_order,
 };
 pub use rollback_graph::RollbackDiGraph;
 pub use validation::{

@@ -333,6 +333,26 @@ pub fn check_realizability_touching(
     }
 }
 
+/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
+/// partition's emitted module tree: lower index = body evaluates
+/// earlier; modules unreachable from residual are absent. Exposed for
+/// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
+/// that compare this prediction against the evaluation order Node
+/// actually produces for the emitted tree.
+pub fn simulated_evaluation_post_order(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+) -> BTreeMap<ModuleId, usize> {
+    let canonical = chunk_constraining_module_edges(owner_graph, partition);
+    let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+    EsmEvaluationSimulator::build(
+        &canonical.i_successors,
+        &constraining_pairs,
+        partition.residual(),
+    )
+    .post_order
+}
+
 /// Mutable index over a working partition. The single shared
 /// implementation of the three-clause predicate, exposed in the
 /// transactional shape docs/design.md "Realizability primitive" prescribes.

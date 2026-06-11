@@ -133,38 +133,8 @@ export { A, B, readB };
     assert_entry_output(&fixture, "a-value-postfix\n");
 }
 
-#[test]
-fn accepts_cycle_when_all_back_edges_are_lazy() {
-    // mod_a owns A and readB; readB() lazily reads B.
-    // mod_b owns B and readA; readA() lazily reads A.
-    // No cross-module read fires at-init: when the linker
-    // evaluates either module, no top-level statement reaches
-    // into the other one. The function bodies only run *after*
-    // both modules finish evaluating — no TDZ.
-    //
-    // The SCC in the imports graph `I` is `{mod_a, mod_b}`, but
-    // it carries no at-init (`R`) and no side-effect (`S`)
-    // cross-module edges — only `L` edges. The realizability
-    // gate must accept this spec; rejecting would over-restrict
-    // the realizable subset of `I ∪ S` cycles.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
-const B = "b-value";
-function readA() { return A; }
-function readB() { return B; }
-console.log(readA(), readB());
-export { A, B, readA, readB };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B"), Member::new("readA")]),
-        ],
-    ));
-    // ESM evaluates both modules to completion before the
-    // residual entry's `console.log(readA(), readB())` fires;
-    // both function bodies see fully-assigned bindings.
-    assert_entry_output(&fixture, "a-value b-value\n");
-}
+// The mutual lazy-only cycle acceptance (Lemma 4's named pin) lives
+// in `lemma_four_lazy_read_cycle_test`.
 
 #[test]
 fn owner_graph_report_is_written_for_successful_specs() {
@@ -655,26 +625,8 @@ export { a1, a2, b1 };
     );
 }
 
-// --- Acyclic specs and cross-module init order ----------------------------
-
-#[test]
-fn init_call_order_respects_cross_module_dependency() {
-    // mod_a owns x1 + x2 (x2 reads y.id at-init); mod_b owns y.
-    // R-edge mod_a → mod_b; ESM linker evaluates mod_b first.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const x1 = { id: "x1" };
-const y = { id: "k" };
-const x2 = { [y.id]: "v" };
-console.log(x1.id, y.id, x2[y.id]);
-export { x1, y, x2 };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("x1"), Member::new("x2")]),
-            logical_module("mod_b", &[Member::new("y")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "x1 k v\n");
-}
+// Acyclic cross-module at-init read correctness (Lemma 3's named
+// pin) lives in `lemma_three_at_init_read_test`.
 
 // --- Side-effect ordering (`S`) ------------------------------------------
 

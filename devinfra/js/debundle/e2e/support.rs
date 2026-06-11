@@ -895,6 +895,50 @@ pub fn assert_generated_module_after_entry_script(
     assert_generated_module_script(out_root, &wrapped, expected_stdout);
 }
 
+/// Append a marker print to each listed emitted module file, run the
+/// entry under Node, and return the order in which the instrumented
+/// module bodies finished evaluating — the observable ECMA-262
+/// Phase-2 evaluation post-order (docs/design.md "Lemma 1").
+///
+/// `modules` are logical-module paths under the chunk's `modules/`
+/// directory; the special name `"entry"` resolves to the chunk's
+/// `entry.js` — the ESM DFS root, which hosts residual's unclaimed
+/// anonymous statements and corresponds to the gate simulator's
+/// residual node. The instrumentation happens after the debundler
+/// has run, so it perturbs neither the analyzed graph nor the
+/// realizability verdict — but it does mutate the emitted files, so
+/// run `assert_entry_output`-style checks before calling this.
+pub fn node_module_evaluation_order(fixture: &Fixture, modules: &[&str]) -> Vec<String> {
+    const MARKER: &str = "__module_eval__:";
+    for label in modules {
+        let rel_path = if *label == "entry" {
+            format!("{}/entry.js", fixture.chunk_id)
+        } else {
+            format!("{}/modules/{label}.js", fixture.chunk_id)
+        };
+        let path = fixture.out_root.join(&rel_path);
+        let mut code = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read emitted module {rel_path}: {err}"));
+        code.push_str(&format!("\nconsole.log(\"{MARKER}{label}\");\n"));
+        fs::write(&path, code).unwrap();
+    }
+    let result = run_node_script(&fixture.entry_path);
+    assert!(
+        result.status.success(),
+        "node {} exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.entry_path.display(),
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    result
+        .stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix(MARKER))
+        .map(str::to_string)
+        .collect()
+}
+
 pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &str) {
     let result = run_node_script(path);
     assert!(

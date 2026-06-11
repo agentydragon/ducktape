@@ -94,7 +94,11 @@ _STANDARD_E2E_DEPS = [
         "runtime_tdz_on_imported_class_test",
         "accepted_spec_runs_under_node_test",
         "gate_rejection_scopes_to_bad_scc_test",
+        "lemma_one_linker_post_order_test",
         "lemma_two_rescued_asymmetric_cycle_test",
+        "lemma_three_at_init_read_test",
+        "lemma_four_lazy_read_cycle_test",
+        "lemma_five_side_effect_order_test",
         "asymmetric_non_residual_cycle_test",
         "mediator_reaches_asymmetric_cycle_test",
         "namespace_aggregator_split_tdz_test",
@@ -128,6 +132,26 @@ _STANDARD_E2E_DEPS = [
         "s_chain_dataflow_soundness_test",
     ]
 ]
+
+# Node-differential sweep: drives the real pipeline per fixture, then
+# compares the gate simulator's predicted evaluation post-order
+# (`gate::simulated_evaluation_post_order`) against the emitted tree's
+# actual Node evaluation order. Needs `:analysis` (owner graph,
+# partition) and `:gate` (the simulator) on top of the standard deps.
+rust_test(
+    name = "simulator_node_differential_sweep_test",
+    srcs = ["simulator_node_differential_sweep_test.rs"],
+    crate_root = "simulator_node_differential_sweep_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = _STANDARD_E2E_DEPS + [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:gate",
+    ],
+)
 
 # The factorizer-landability e2e test calls into the factorizer library
 # directly alongside the standard fixture pipeline.

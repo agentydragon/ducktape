@@ -103,10 +103,6 @@ The `e2e/support.rs` helper asserts against a literal `./static/app/entry.js`, s
 
 `peel/quotient_integration_test.rs` checks the incremental index against references that share too much code with the system under test: most verdict comparisons use the kernel's own `project_partition` output as the reference partition (blind to projection bugs), and only `replay_partition` rebuilds a quotient independently — and it compares only `cycle_set()`. Also missing: randomized merge/partition sequences (current corpora are fixed, ≤6 owners) and differential coverage of the gate-residual promotion transition.
 
-### Only Lemma 2 has a named pinning test
-
-docs/design.md proves Lemmas 1–5; only Lemma 2 appears in a test name (`e2e/lemma_two_rescued_asymmetric_cycle_test.rs`). Lemmas 1/3/4/5 — notably Lemma 4's lazy-read argument — have no named tripwire test that would fail if the proved property is weakened. Add one pinning e2e per lemma.
-
 ---
 
 ## Data Shape Smells

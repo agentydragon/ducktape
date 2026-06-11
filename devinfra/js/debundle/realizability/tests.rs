@@ -301,6 +301,11 @@ fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
 /// `mod_schemas`' body evaluates before `mod_ids`'. Emitter and
 /// simulator both consume `EsmImportOrder`, so this pin guards
 /// the shared-ordering contract from the gate side.
+///
+/// This pin keeps the hand-derived expected order at the unit level;
+/// `e2e/simulator_node_differential_sweep_test` generalizes it into a
+/// live differential (simulator prediction vs instrumented Node run)
+/// across the accepted asymmetric / phantom / tie-break family.
 #[test]
 fn simulator_post_order_matches_emitted_evaluation_order() {
     // owner_0: const schemas_target = "v"      (mod_schemas)

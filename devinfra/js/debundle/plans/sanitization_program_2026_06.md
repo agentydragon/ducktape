@@ -175,6 +175,12 @@ split, `.ok()?` and sentinel fixes. TODO section removed._
    gate-vs-reference equality post-cutover).
 2. **Lemma pinning**: named tests for Lemmas 1/3/4/5 (only Lemma 2 has
    them); extend the #2071 Node-differential to a fixture sweep.
+   _Status (2026-06-11): landed — one named pinning e2e per lemma
+   (`e2e/lemma_{one,three,four,five}_\*\_test.rs` alongside the existing
+Lemma 2 pin) and the Node-differential sweep
+(`e2e/simulator_node_differential_sweep_test.rs`: simulator-predicted
+   post-order vs instrumented Node evaluation order across the accepted
+   asymmetric / phantom / tie-break family)._
 3. **Excalidraw public smoke** (TODO's big standing item): the
    realistic-corpus CI layer the fix wave repeatedly found missing
    (`props/frontend/debundle` no longer exists). Build the Bazel-managed
