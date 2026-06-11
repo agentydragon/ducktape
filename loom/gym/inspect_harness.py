@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 from collections import defaultdict
 from collections.abc import Sequence
@@ -62,9 +63,25 @@ DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
 # proxy's upstream HTTPS to the cache/IA validate. Elsewhere it's just the host's
 # normal public trust — mounting it is a harmless no-op. The agent container
 # never gets it (its only route is the proxy, whose own MITM CA it already
-# trusts); only the proxy's outbound hop needs it.
+# trusts); only the proxy's outbound hop needs it. Only mounted when the daemon
+# is local (see `_docker_daemon_is_local`): a host bind-mount can't resolve on a
+# remote daemon's filesystem.
 HOST_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 _PROXY_EGRESS_CA = "/etc/ssl/proxy-egress-ca.crt"
+
+
+def _docker_daemon_is_local() -> bool:
+    """Whether the Docker daemon shares this process's filesystem (local socket).
+
+    The egress-CA host bind-mount below only resolves when daemon and client share
+    a filesystem. Against a remote daemon (`DOCKER_HOST=tcp://…`, e.g. the in-cluster
+    `docker-ci` DinD) the bind-mount references a path that doesn't exist daemon-side,
+    so it must be skipped — and in-cluster the proxy reaches the cache over a
+    publicly-valid cert that its own default trust already validates.
+    """
+    host = os.environ.get("DOCKER_HOST", "")
+    return host == "" or host.startswith("unix://")
+
 
 AGENT_CA = "/wayback-ca/mitmproxy-ca-cert.pem"
 # Probe through the proxy itself (mitmproxy has no origin-form endpoint): the
@@ -116,7 +133,8 @@ def _sandbox_compose(
     proxy_volumes = ["wayback-ca:/wayback-ca"]
     # Mount the host CA bundle into the proxy when present so its upstream HTTPS
     # validates behind a TLS-inspecting egress proxy (the agent never sees it).
-    if HOST_CA_BUNDLE.is_file():
+    # Skipped against a remote daemon, where a host bind-mount cannot resolve.
+    if HOST_CA_BUNDLE.is_file() and _docker_daemon_is_local():
         proxy_env["SSL_CERT_FILE"] = _PROXY_EGRESS_CA
         proxy_env["REQUESTS_CA_BUNDLE"] = _PROXY_EGRESS_CA
         proxy_volumes.append(f"{HOST_CA_BUNDLE}:{_PROXY_EGRESS_CA}:ro")

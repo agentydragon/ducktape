@@ -136,6 +136,28 @@ def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> 
     assert set(proxy["networks"]) == {"sandbox", "egress"}
 
 
+def test_egress_ca_mount_skipped_for_remote_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The proxy's egress-CA is a host bind-mount, so it only resolves when the
+    # daemon shares our filesystem. Against a remote daemon (DOCKER_HOST=tcp://,
+    # e.g. the in-cluster docker-ci DinD) it must be omitted, or the proxy fails
+    # to start on a path that doesn't exist daemon-side.
+    ca = tmp_path / "ca.crt"
+    ca.write_text("x")
+    monkeypatch.setattr("loom.gym.inspect_harness.HOST_CA_BUNDLE", ca)
+
+    monkeypatch.setenv("DOCKER_HOST", "tcp://docker-ci.allegedly.works:2376")
+    remote = yaml.safe_load(write_sandbox_compose(tmp_path, date(2020, 2, 1), "http://up:9999").read_text())
+    remote_proxy = remote["services"]["proxy"]
+    assert all("proxy-egress-ca" not in volume for volume in remote_proxy["volumes"])
+    assert "SSL_CERT_FILE" not in remote_proxy["environment"]
+
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    local = yaml.safe_load(write_sandbox_compose(tmp_path, date(2020, 2, 1), "http://up:9999").read_text())
+    local_proxy = local["services"]["proxy"]
+    assert f"{ca}:/etc/ssl/proxy-egress-ca.crt:ro" in local_proxy["volumes"]
+    assert local_proxy["environment"]["SSL_CERT_FILE"] == "/etc/ssl/proxy-egress-ca.crt"
+
+
 def test_no_archive_compose_is_route_less(tmp_path: Path) -> None:
     # archive=False yields a single no-network service: no proxy, no networks
     # block, so the agent must forecast from /data and its own knowledge.
