@@ -39,7 +39,7 @@
 //! Rendered as `"<chunk_id>:<owner_file>:<ordinal>"` for human-readable
 //! diffing across runs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
@@ -91,6 +91,7 @@ pub struct IdentifierRenameQueue {
 pub fn compute_identifier_rename_queue(
     artifact: &ChunkBundle,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<IdentifierRenameQueue> {
     // Per-chunk, per-file: walk the final AST to identify top-level
     // declarations whose names still match input-bundle names, then
@@ -105,6 +106,12 @@ pub fn compute_identifier_rename_queue(
     let mut interest_names_by_chunk = HashMap::<String, HashSet<String>>::new();
 
     for chunk_id_interned in artifact.list_chunk_ids() {
+        // Emission-set exclusion: fully vendor-swapped chunks are not
+        // emitted, so they contribute neither queue sites nor
+        // reference counts.
+        if excluded_chunk_ids.contains(&chunk_id_interned) {
+            continue;
+        }
         let chunk_id = artifact.chunk_table.name(chunk_id_interned);
         let chunk = artifact.js_chunk(chunk_id_interned)?;
         let input_names = input_names_by_chunk
@@ -146,6 +153,9 @@ pub fn compute_identifier_rename_queue(
     // resolves imports onto a stable cross-chunk binding identity, fold
     // that in here so a "names everywhere" symbol shows its true fanout.
     for chunk_id_interned in artifact.list_chunk_ids() {
+        if excluded_chunk_ids.contains(&chunk_id_interned) {
+            continue;
+        }
         let chunk_id = artifact.chunk_table.name(chunk_id_interned);
         let chunk = artifact.js_chunk(chunk_id_interned)?;
         let Some(of_interest) = interest_names_by_chunk.get(chunk_id) else {

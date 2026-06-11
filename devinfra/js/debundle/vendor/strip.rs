@@ -1,40 +1,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::{
-    AnalysisHints, ChunkId, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk,
-};
-use anyhow::{Context, Result, bail};
+use analysis::{AnalysisHints, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk};
+use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, GLOBALS, SourceMap};
+use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, JsFile, JsFileAstParts};
-use js_ast::ParsedJsModule;
 use spec::PartialSwapSymbol;
-
-use crate::plan::VendorResolutionPlan;
-
-pub struct StripSwappedVendorExportsResult {
-    pub artifact: ChunkBundle,
-    pub manifest: StripSwappedVendorExportsManifest,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct StripSwappedVendorExportsOptions {
-    pub replacement_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct StripSwappedVendorExportsManifest {
-    pub per_chunk: BTreeMap<String, ChunkStripStats>,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkStripStats {
@@ -42,181 +20,6 @@ pub struct ChunkStripStats {
     pub stripped_export_specifiers: usize,
     pub dropped_top_level_items: usize,
     pub retained_top_level_items: usize,
-}
-
-/// Per-chunk pass that drops swapped names from the vendor entry's
-/// trailing `export { … }` block (Phase 1) and sweeps top-level
-/// bindings that are no longer reachable from the residual export
-/// surface plus retained side-effect statements (Phase 2).
-///
-/// Runs after the consumer-side rewrites (lowering construction + the
-/// pass-through emission rewriter) — every consumer already imports
-/// each swapped name from upstream,
-/// so the chunk's residual `export { … }` entries for those names
-/// are dead weight. Without this pass the on-disk vendor blob stays
-/// byte-identical to pre-swap.
-pub fn strip_swapped_vendor_exports_with_options(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    options: StripSwappedVendorExportsOptions,
-) -> Result<StripSwappedVendorExportsResult> {
-    // Strip inputs come straight from the vendor plan: partial and
-    // bundled-partial entries, merged back into chunk-path order.
-    #[derive(Clone, Copy)]
-    struct StripSource<'a> {
-        chunk_path: &'a str,
-        chunk_name: &'a str,
-        chunk_id: ChunkId,
-        entry_file: &'a str,
-        symbols: &'a BTreeMap<String, PartialSwapSymbol>,
-    }
-    let sources: BTreeMap<&str, StripSource<'_>> = plan
-        .partial_swaps
-        .iter()
-        .map(|(chunk_id, partial)| StripSource {
-            chunk_path: &partial.chunk_path,
-            chunk_name: &partial.resolution.chunk_id,
-            chunk_id: *chunk_id,
-            entry_file: &partial.entry_file,
-            symbols: &partial.symbols,
-        })
-        .chain(
-            plan.bundled_partial_swaps
-                .iter()
-                .map(|(chunk_id, bundled)| StripSource {
-                    chunk_path: &bundled.chunk_path,
-                    chunk_name: &bundled.resolution.chunk_id,
-                    chunk_id: *chunk_id,
-                    entry_file: &bundled.entry_file,
-                    symbols: &bundled.symbols,
-                }),
-        )
-        .map(|source| (source.chunk_path, source))
-        .collect();
-
-    // Phase 1 (sequential): pull every vendor entry's entry-file AST
-    // out of the artifact and bundle the per-chunk inputs into a
-    // `StripJob`. `remove_file`/`insert_file` on `ChunkBundle` need
-    // `&mut artifact`; doing the round-trip here means the actual
-    // strip work can borrow only owned data and run in parallel.
-    let mut jobs: Vec<StripJob<'_>> = Vec::new();
-    for source in sources.values() {
-        let StripSource {
-            chunk_path,
-            chunk_name,
-            chunk_id,
-            entry_file,
-            symbols,
-        } = *source;
-        let js_chunk = artifact.js_chunk_mut(chunk_id)?;
-        let file = js_chunk.remove_file(entry_file).with_context(|| {
-            format!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: entry file {entry_file} missing from chunk {chunk_name}"
-            )
-        })?;
-        let (parts, ast) = file.into_ast_parts().with_context(|| {
-            format!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: chunk {chunk_name} entry has no AST"
-            )
-        })?;
-
-        let replacement_import_locals = options
-            .replacement_import_locals_by_chunk_path
-            .get(chunk_path)
-            .cloned()
-            .unwrap_or_default();
-
-        jobs.push(StripJob {
-            chunk_path,
-            chunk_id,
-            symbols,
-            replacement_import_locals,
-            parts,
-            ast,
-        });
-    }
-
-    // Phase 2 (parallel): per-job strip work is pure data transformation —
-    // each job owns its `parts`/`ast` and reads only its own `symbols` and
-    // `replacement_import_locals`. No two jobs target the same chunk_id
-    // (vendor is a BTreeMap keyed by chunk_path, and chunk_path -> chunk_id
-    // is injective via `vendor_chunk_name`), so collecting outputs
-    // back into the artifact in Phase 3 doesn't risk write-write races.
-    //
-    // `swc_common::GLOBALS` is a `scoped_tls` thread-local that does NOT
-    // carry into rayon worker threads. The strip path currently doesn't
-    // mint fresh marks, but `Id` comparisons and any future swc work
-    // expect a live `Globals`; capture the parent thread's globals and
-    // re-set inside each worker, mirroring `lowering/mod.rs` and
-    // `lower_chunk`.
-    let outputs: Vec<StripOutput> = GLOBALS.with(|globals| -> Result<Vec<StripOutput>> {
-        jobs.into_par_iter()
-            .map(|job| GLOBALS.set(globals, || strip_one_job(job)))
-            .collect()
-    })?;
-
-    // Phase 3 (sequential): re-insert the stripped entry files and
-    // collect per-chunk stats in `vendor` iteration order (preserved by
-    // `Vec::into_par_iter().collect()`).
-    let mut per_chunk = BTreeMap::new();
-    for output in outputs {
-        let StripOutput {
-            chunk_path,
-            chunk_id,
-            parts,
-            ast,
-            stats,
-        } = output;
-        let js_chunk = artifact.js_chunk_mut(chunk_id)?;
-        js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
-        per_chunk.insert(chunk_path, stats);
-    }
-
-    Ok(StripSwappedVendorExportsResult {
-        artifact,
-        manifest: StripSwappedVendorExportsManifest { per_chunk },
-    })
-}
-
-struct StripJob<'a> {
-    chunk_path: &'a str,
-    chunk_id: ChunkId,
-    symbols: &'a BTreeMap<String, PartialSwapSymbol>,
-    replacement_import_locals: BTreeSet<Id>,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-}
-
-struct StripOutput {
-    chunk_path: String,
-    chunk_id: ChunkId,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-    stats: ChunkStripStats,
-}
-
-fn strip_one_job(job: StripJob<'_>) -> Result<StripOutput> {
-    let StripJob {
-        chunk_path,
-        chunk_id,
-        symbols,
-        replacement_import_locals,
-        parts,
-        mut ast,
-    } = job;
-    let stats = strip_one_chunk_with_replacement_imports(
-        &mut ast.module,
-        symbols,
-        chunk_path,
-        &replacement_import_locals,
-    )?;
-    Ok(StripOutput {
-        chunk_path: chunk_path.to_string(),
-        chunk_id,
-        parts,
-        ast,
-        stats,
-    })
 }
 
 #[cfg(test)]
@@ -228,7 +31,15 @@ fn strip_one_chunk(
     strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
 }
 
-fn strip_one_chunk_with_replacement_imports(
+/// Residual strip for one partially-swapped vendor entry: drops
+/// swapped names from the entry's `export { … }` surface (Phase 1) and
+/// sweeps top-level bindings no longer reachable from the residual
+/// export surface plus retained side-effect statements (Phase 2).
+/// Runs as the final step of the vendor residual composition
+/// (`vendor::emission::emit_vendor_residual`) — every consumer already
+/// imports each swapped name from upstream, so the entry's residual
+/// `export { … }` entries for those names are dead weight.
+pub(crate) fn strip_one_chunk_with_replacement_imports(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,

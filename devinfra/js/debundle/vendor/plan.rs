@@ -8,13 +8,14 @@
 //! symbol/package shape, installed-package versions, consumer-shape
 //! classification) and records the resolved decisions: boundary
 //! mappings, full-swap wrapper text and output paths, partial/bundled
-//! swap symbol tables and facade targets, plus the wire-facing
-//! resolution projections the vendor manifests are built from. The
-//! application sites (`swap_vendor_chunks`, lowering's import
-//! construction, the pass-through emission rewriter, the bundled
-//! self-rewrite, strip) consume the plan instead of re-resolving marks
-//! mid-pipeline; application (directive rewrites, file writes, chunk
-//! removal, strip) stays at those sites.
+//! swap symbol tables and facade targets, full-swap caller import
+//! alignment, plus the wire-facing resolution projections the vendor
+//! manifests are built from. The application sites (lowering's import
+//! construction and the emission rewrites — the pass-through directive
+//! pass and the per-chunk vendor residual composition) consume the
+//! plan instead of re-resolving marks mid-pipeline; application
+//! (directive rewrites, residual computation, file writes) stays at
+//! those sites.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -86,10 +87,6 @@ pub struct VendorResolutionPlan {
 impl VendorResolutionPlan {
     pub fn has_boundary_renames(&self) -> bool {
         !self.boundary_renames.is_empty()
-    }
-
-    pub fn has_full_swaps(&self) -> bool {
-        !self.full_swaps.is_empty()
     }
 
     pub fn has_partial_swaps(&self) -> bool {
@@ -166,16 +163,34 @@ impl VendorResolutionPlan {
     }
 
     /// Output-tree path (`<chunk_name>/<entry_file>`) of a fully-swapped
-    /// chunk's entry. The chunk is removed from the artifact by
-    /// `swap_vendor_chunks`, so index resolution cannot canonicalize
-    /// directives that keep targeting it (the live-proxy dangling-import
-    /// contract); construction and the pass-through rewriter consult
-    /// this instead.
+    /// chunk's entry. Directives that keep targeting the excluded chunk
+    /// (the live-proxy dangling-import contract) canonicalize against
+    /// this recorded path; construction and the pass-through rewriter
+    /// consult it when index resolution misses.
     pub fn full_swap_target_path(&self, chunk: ChunkId) -> Option<String> {
         self.full_swaps
             .iter()
             .find(|swap| swap.chunk_id == chunk)
             .map(|swap| join_module_path(&[&swap.resolution.chunk_id, &swap.resolution.entry_file]))
+    }
+
+    /// Chunks excluded from the emission set: fully-swapped chunks stay
+    /// in the `ChunkBundle` (nothing removes them; the owner graph
+    /// never contained vendor chunks) but `write_js_tree` / harness
+    /// emission and the emission-output validations skip them
+    /// (vendor_into_emission §2.5).
+    pub fn full_swap_chunk_ids(&self) -> BTreeSet<ChunkId> {
+        self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
+    }
+
+    /// Wire-facing full-swap resolutions keyed by chunk path — the
+    /// `full` section of the combined vendor swaps report, projected
+    /// straight from the plan.
+    pub fn full_swap_resolutions(&self) -> BTreeMap<String, VendorResolution> {
+        self.full_swaps
+            .iter()
+            .map(|swap| (swap.resolution.chunk_path.clone(), swap.resolution.clone()))
+            .collect()
     }
 
     pub fn is_suppressed(&self, chunk: ChunkId) -> bool {
@@ -240,12 +255,11 @@ pub(crate) struct BoundaryRenamePlan {
 
 pub(crate) struct FullSwapPlan {
     pub(crate) chunk_id: ChunkId,
-    /// The chunk's export surface, consumed by the swap wave's
-    /// import-alignment check (which runs post-rename against the
-    /// then-current indexes).
+    /// The chunk's export surface, consumed by the plan-time caller
+    /// import-alignment check.
     pub(crate) vendor_exports: BTreeSet<String>,
-    /// Generated wrapper text + absolute output path; written during
-    /// the swap wave when writes are enabled.
+    /// Generated wrapper text + absolute output path; written at emit
+    /// when writes are enabled.
     pub(crate) wrapper: Option<PlannedWrapper>,
     /// Wire-facing resolution projected from this plan entry.
     pub(crate) resolution: VendorResolution,
@@ -333,7 +347,43 @@ pub fn build_vendor_resolution_plan(
         suppressed,
     };
     validate_consumer_shapes(artifact, references, &plan)?;
+    validate_full_swap_import_alignment(artifact, references, &plan)?;
     Ok(plan)
+}
+
+/// Full-swap caller import alignment: every named import any caller
+/// directs at a fully-swapped chunk must name an export the chunk
+/// actually declares. Runs at plan time over the prepare-time manifest
+/// import index — the same inputs the former swap stage checked.
+fn validate_full_swap_import_alignment(
+    artifact: &ChunkBundle,
+    references: &ArtifactIndexes,
+    plan: &VendorResolutionPlan,
+) -> Result<()> {
+    let chunk_table = &artifact.chunk_table;
+    for swap in &plan.full_swaps {
+        for import in references.manifest_imports_targeting_chunk(swap.chunk_id) {
+            for imported_name in &import.named_imports {
+                if swap.vendor_exports.contains(imported_name) {
+                    continue;
+                }
+                bail!(
+                    "swap_vendor_chunks vendor entry {} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {} (known: [{}])",
+                    swap.resolution.chunk_path,
+                    chunk_table.name(import.caller_chunk_id),
+                    import.caller_file,
+                    imported_name,
+                    swap.resolution.chunk_id,
+                    swap.vendor_exports
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Plan-time consumer gate (vendor_into_emission §3.2): enumerate every
@@ -394,12 +444,9 @@ fn validate_consumer_shapes(
     }
     let chunk_table = &artifact.chunk_table;
     let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
-    // Full-swap chunks are removed from the artifact before any
-    // consumer rewrite runs; their files are never emitted, so their
-    // directives are not consumers (the post-strip scan never saw them
-    // either).
-    let full_swap_chunks: BTreeSet<ChunkId> =
-        plan.full_swaps.iter().map(|swap| swap.chunk_id).collect();
+    // Full-swap chunks are excluded from the emission set; their files
+    // are never emitted, so their directives are not consumers.
+    let full_swap_chunks = plan.full_swap_chunk_ids();
     for chunk_artifact in &artifact.chunks {
         let caller_chunk_id = chunk_artifact.chunk_id;
         if full_swap_chunks.contains(&caller_chunk_id) {

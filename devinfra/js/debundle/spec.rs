@@ -84,10 +84,10 @@ pub struct TransformSpec {
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 
     // --- per-stage configuration ---
-    /// Output configuration for `swap_vendor_chunks`. The stage runs
-    /// whenever `vendor` contains any `level: swap` entries; this field
-    /// only adds output paths and a `write` toggle. All inner fields
-    /// have defaults, so omitting `swap_vendor_chunks` is identical to
+    /// Output configuration for vendor swap emission outputs (wrappers,
+    /// facade bundles, the combined manifest); this field only adds
+    /// output paths and a `write` toggle. All inner fields have
+    /// defaults, so omitting `swap_vendor_chunks` is identical to
     /// supplying an empty object.
     #[serde(default)]
     pub swap_vendor_chunks: SwapVendorChunksConfig,

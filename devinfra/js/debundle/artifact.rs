@@ -832,14 +832,6 @@ impl ChunkBundle {
         Ok(&mut self.chunk_mut(chunk_id)?.js)
     }
 
-    pub fn remove_chunk(&mut self, chunk_id: ChunkId) -> Option<ChunkArtifact> {
-        let index = self
-            .chunks
-            .iter()
-            .position(|chunk| chunk.chunk_id == chunk_id)?;
-        Some(self.chunks.remove(index))
-    }
-
     pub fn retain_chunks(&mut self, mut keep: impl FnMut(ChunkId) -> bool) {
         self.chunks.retain(|chunk| keep(chunk.chunk_id));
     }
@@ -1230,6 +1222,7 @@ pub fn materialize_artifact_scripts(
     app_root: &Path,
     report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<MaterializedScripts> {
     let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
     // Per-chunk materialization is pure data-parallel: each call reads
@@ -1246,12 +1239,15 @@ pub fn materialize_artifact_scripts(
     // `JsFileBody::Ast` calls `emit_js_module_with_comments`, which drives
     // the swc emitter. Capture the parent thread's globals and re-set
     // inside each worker closure — mirrors `lower_chunk` and
-    // `vendor::strip::strip_swapped_vendor_exports_with_options`.
+    // `vendor::emission::apply_emission_rewrites`.
     let file_metrics: Vec<OutputFileMetric> = GLOBALS
         .with(|globals| -> Result<Vec<_>> {
             artifact
                 .list_chunk_ids()
                 .into_par_iter()
+                // Emission-set exclusion: fully vendor-swapped chunks
+                // stay in the bundle but are not emitted.
+                .filter(|chunk_id| !excluded_chunk_ids.contains(chunk_id))
                 .map(|chunk_id| {
                     GLOBALS.set(globals, || {
                         materialize_chunk_scripts(

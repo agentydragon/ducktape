@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -18,9 +18,15 @@ pub struct WriteTreeInput<'a> {
     pub out_dir: &'a Path,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
+    /// Chunk records of the emission set — the caller drops records of
+    /// excluded chunks before passing them in.
     pub chunk_records: &'a [ArtifactChunkRecord],
     pub module_count: usize,
     pub decomposition_by_chunk: &'a HashMap<ChunkId, ChunkDecompositionOutput>,
+    /// Chunks excluded from the emission set (fully vendor-swapped):
+    /// their files are not written and they contribute nothing to the
+    /// rename queue.
+    pub excluded_chunk_ids: &'a BTreeSet<ChunkId>,
 }
 
 pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
@@ -35,6 +41,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         &layout.app_root(),
         &layout.tree_root(),
         input.decomposition_by_chunk,
+        input.excluded_chunk_ids,
     )?;
 
     let decomposition_metrics = if input.lowerings.is_empty() {
@@ -46,7 +53,11 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         ))
     };
 
-    let queue = compute_identifier_rename_queue(input.artifact, input.decomposition_by_chunk)?;
+    let queue = compute_identifier_rename_queue(
+        input.artifact,
+        input.decomposition_by_chunk,
+        input.excluded_chunk_ids,
+    )?;
     write_queue(&layout.rename_queue_report(), &queue)?;
     let manifest = ArtifactManifest {
         counts: input.counts.clone(),

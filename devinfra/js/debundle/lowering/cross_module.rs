@@ -65,10 +65,17 @@ pub(super) struct CrossModulePurities {
 /// A chunk whose entry can neither be reused (retained AST) nor re-parsed
 /// stays opaque: its exports get no verdicts and imports of it stay
 /// unresolved (`unknown_call`), exactly as before this pass existed.
+///
+/// `excluded_chunks` (fully vendor-swapped chunks excluded from the
+/// emission set) stay opaque to the oracle: an excluded chunk's body
+/// is replaced by the upstream package at serve time, so verdicts
+/// derived from the bundle copy would assert purity about code that is
+/// never emitted. Imports of such chunks stay `unknown_call`.
 pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
+    excluded_chunks: &BTreeSet<ChunkId>,
 ) -> CrossModulePurities {
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -76,6 +83,9 @@ pub(super) fn collect_cross_module_imported_purities(
     // behavior rather than failing the build.
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
+        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
+            continue;
+        }
         let entry_file = &chunk_artifact.analysis.entry_file;
         let Some(file) = chunk_artifact.js.get_file(entry_file) else {
             continue;
@@ -112,6 +122,9 @@ pub(super) fn collect_cross_module_imported_purities(
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
+        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
+            continue;
+        }
         let chunk_name = artifact.chunk_table.name(chunk_artifact.chunk_id);
         let entry_file = &chunk_artifact.analysis.entry_file;
         let retained_ast = chunk_artifact

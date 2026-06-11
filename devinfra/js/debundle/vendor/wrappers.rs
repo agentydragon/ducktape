@@ -256,7 +256,7 @@ pub(super) fn write_planned_wrapper(abs_path: &Path, source: &str) -> Result<()>
 
 /// Bundle copy + per-package facades planned for a bundled partial
 /// swap: paths and generated sources, computed at plan time; written
-/// by `write_planned_bundled_assets` during the bundled wave.
+/// by `write_planned_bundled_assets` at emit.
 pub(super) struct PlannedBundledAssets {
     pub(super) bundle_source_path: PathBuf,
     pub(super) bundle_abs_path: PathBuf,

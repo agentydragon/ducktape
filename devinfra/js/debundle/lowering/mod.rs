@@ -309,10 +309,14 @@ pub fn materialize_logical_modules(
     // Program-level pass over ALL retained chunks (not just selected):
     // cross-module purity verdicts for each chunk's imported function
     // bindings, consumed per chunk via `AnalysisHints::imported_purities`.
+    // Fully-swapped vendor chunks stay opaque — they are excluded from
+    // the emission set and their bodies are replaced by the upstream
+    // package, so they must not contribute purity facts.
     let cross_module_purities = cross_module::collect_cross_module_imported_purities(
         &artifact,
         &artifact_indexes,
         chunk_export_purity,
+        &vendor_plan.full_swap_chunk_ids(),
     );
 
     let artifact_ref: &ChunkBundle = &artifact;

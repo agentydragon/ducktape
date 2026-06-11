@@ -130,6 +130,7 @@ rust_test(
 rust_library(
     name = "vendor",
     srcs = [
+        "vendor/emission.rs",
         "vendor/manifests.rs",
         "vendor/mod.rs",
         "vendor/passthrough.rs",

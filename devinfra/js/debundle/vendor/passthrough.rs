@@ -1,8 +1,11 @@
 //! Unified pass-through emission rewriter (vendor_into_emission §2.4,
 //! PR 4): the single position-preserving directive rewriter for files
 //! that are emitted without lowering — chunk entries (including
-//! materialized chunks' residual entries) and runtime files. One wave
-//! performs, per file:
+//! materialized chunks' residual entries) and runtime files. Driven by
+//! `vendor::emission::apply_emission_rewrites`, which applies it to
+//! non-vendor pass-through files as a wave and to vendor-chunk files
+//! as the first step of the per-chunk residual composition. Per file
+//! it performs:
 //!
 //! * **Specifier canonicalization** (the old always-on stage 0):
 //!   relative `import` / `export … from` / `export *` / `import()` /
@@ -27,19 +30,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Context, Result, bail};
-use rayon::prelude::*;
-use swc_common::GLOBALS;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, ImportReferenceKind, JsFile,
-    JsFileAstParts, join_module_path, list_chunk_file_paths, module_path_dirname,
-    relative_module_path,
+    ArtifactIndexes, ChunkId, ChunkTable, ImportReferenceKind, join_module_path,
+    module_path_dirname, relative_module_path,
 };
 use binding_targets::module_export_name;
-use js_ast::{ParsedJsModule, set_str_value, str_value};
+use js_ast::{set_str_value, str_value};
 use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
@@ -49,126 +48,23 @@ use crate::{
     make_namespace_reexport, new_url_expr, resolve_partial_swap_import_target,
 };
 
-pub struct PassthroughRewriteResult {
-    pub artifact: ChunkBundle,
-    /// (swapped chunk, chunk export) → count of consumer references
-    /// rewritten in pass-through files; folded into the partial-swap
-    /// manifests' `references_rewritten` alongside lowering's
-    /// construction-time counts.
-    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
+pub(crate) struct PassthroughContext<'a> {
+    pub(crate) plan: &'a VendorResolutionPlan,
+    pub(crate) references: &'a ArtifactIndexes,
+    pub(crate) chunk_table: &'a ChunkTable,
+    pub(crate) materialized_index: &'a MaterializedOutputChunkIndex,
 }
 
-pub fn rewrite_passthrough_directives(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
-) -> Result<PassthroughRewriteResult> {
-    let chunk_table = artifact.chunk_table.clone();
-    let materialized_index = MaterializedOutputChunkIndex::build(&chunk_table);
-    let context = PassthroughContext {
-        plan,
-        references,
-        chunk_table: &chunk_table,
-        materialized_index: &materialized_index,
-    };
-
-    let mut jobs = Vec::new();
-    for (chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-        let chunk_id = chunk_artifact.chunk_id;
-        if plan.is_suppressed(chunk_id) {
-            continue;
-        }
-        let chunk_name = chunk_table.name(chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
-                continue;
-            };
-            // Materialized module files' specifiers are constructed by
-            // lowering from the same plan; only pass-through files
-            // (entries, runtime files) are rewritten here.
-            if file.metadata.role == FileRole::Module || file.ast().is_none() {
-                continue;
-            }
-            let (parts, ast) = chunk_artifact
-                .js
-                .remove_file(&file_path)
-                .and_then(|file| file.into_ast_parts())
-                .with_context(|| format!("missing AST for {chunk_name}/{file_path}"))?;
-            jobs.push(PassthroughFileJob {
-                chunk_index,
-                chunk_id,
-                file_path,
-                parts,
-                ast,
-            });
-        }
-    }
-
-    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
-    // `Mark::new()` / `Id` use stays in the caller's arena.
-    let context_ref = &context;
-    let results: Vec<PassthroughFileResult> = GLOBALS.with(|globals| {
-        jobs.into_par_iter()
-            .map(|job| GLOBALS.set(globals, || rewrite_passthrough_file(job, context_ref)))
-            .collect()
-    });
-
-    let mut references_by_symbol = BTreeMap::new();
-    for result in results {
-        for ((chunk_id, chunk_export), count) in result.references_by_symbol {
-            if !plan.partial_swaps.contains_key(&chunk_id)
-                && !plan.bundled_partial_swaps.contains_key(&chunk_id)
-            {
-                bail!(
-                    "pass-through rewrite reported references to `{chunk_export}` on chunk {}, which has no partial-swap plan",
-                    chunk_table.name(chunk_id)
-                );
-            }
-            *references_by_symbol
-                .entry((chunk_id, chunk_export))
-                .or_insert(0) += count;
-        }
-        artifact
-            .chunks
-            .get_mut(result.chunk_index)
-            .with_context(|| format!("missing chunk index {}", result.chunk_index))?
-            .js
-            .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
-    }
-
-    Ok(PassthroughRewriteResult {
-        artifact,
-        references_by_symbol,
-    })
-}
-
-struct PassthroughContext<'a> {
-    plan: &'a VendorResolutionPlan,
-    references: &'a ArtifactIndexes,
-    chunk_table: &'a ChunkTable,
-    materialized_index: &'a MaterializedOutputChunkIndex,
-}
-
-struct PassthroughFileJob {
-    chunk_index: usize,
-    chunk_id: ChunkId,
-    file_path: String,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-}
-
-struct PassthroughFileResult {
-    chunk_index: usize,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-    references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-}
-
-fn rewrite_passthrough_file(
-    mut job: PassthroughFileJob,
+/// Rewrite one pass-through module in place; rewritten partial-swap
+/// consumer reference counts are accumulated into
+/// `references_by_symbol`.
+pub(crate) fn rewrite_passthrough_module(
+    module: &mut Module,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
     context: &PassthroughContext<'_>,
-) -> PassthroughFileResult {
-    let module = &mut job.ast.module;
+    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
+) {
     let mut state = FileRewriteState {
         bindings: BTreeMap::new(),
         emitted_member_namespace_for: BTreeSet::new(),
@@ -180,8 +76,8 @@ fn rewrite_passthrough_file(
     // replacement plus boundary-rename name mapping, in position.
     module.body = rewrite_directive_items(
         std::mem::take(&mut module.body),
-        job.chunk_id,
-        &job.file_path,
+        caller_chunk_id,
+        caller_file_path,
         context,
         &mut state,
     );
@@ -194,8 +90,8 @@ fn rewrite_passthrough_file(
     // untouched.
     let mut canonicalizer = SourceCanonicalizer {
         context,
-        caller_chunk_id: job.chunk_id,
-        caller_file: &job.file_path,
+        caller_chunk_id,
+        caller_file: caller_file_path,
     };
     module.visit_mut_with(&mut canonicalizer);
 
@@ -209,11 +105,8 @@ fn rewrite_passthrough_file(
         module.visit_mut_with(&mut rewriter);
     }
 
-    PassthroughFileResult {
-        chunk_index: job.chunk_index,
-        parts: job.parts,
-        ast: job.ast,
-        references_by_symbol: state.references_by_symbol,
+    for (key, count) in state.references_by_symbol {
+        *references_by_symbol.entry(key).or_insert(0) += count;
     }
 }
 
@@ -345,9 +238,9 @@ fn rewrite_import_decl(
 
     // Boundary-rename name mapping (vendor-local → public) for named
     // specifiers targeting the boundary chunk's entry file. Index
-    // resolution carries the target file; the materialized fallback
-    // only fires for removed full-swap chunks, whose only consumable
-    // file is the entry.
+    // resolution carries the target file; when only the materialized
+    // fallback resolved, a full-swap target's sole consumable file is
+    // the entry.
     let targets_entry_file = match &resolved {
         Some(resolved) => context
             .plan
@@ -624,9 +517,9 @@ fn rewrite_export_from_decl(
 /// `RuntimeSourceRewriter`. Rewrites relative directive sources that
 /// resolve to another chunk into the artifact-relative form; sources
 /// already spelled as artifact output paths keep their spelling.
-/// Directives targeting a removed full-swap chunk (index resolution
-/// misses — the live-proxy dangling-import contract) canonicalize
-/// against the plan's recorded entry path instead.
+/// Directives targeting a full-swap chunk that index resolution misses
+/// (the live-proxy dangling-import contract) canonicalize against the
+/// plan's recorded entry path instead.
 struct SourceCanonicalizer<'a> {
     context: &'a PassthroughContext<'a>,
     caller_chunk_id: ChunkId,
@@ -649,9 +542,9 @@ impl SourceCanonicalizer<'_> {
             Some(resolved) if resolved.kind == ImportReferenceKind::ArtifactPath => return None,
             Some(resolved) => resolved.target_path,
             None => {
-                // Removed full-swap chunks resolve through the
-                // chunk-table prefix fallback; canonical entry path
-                // comes from the plan.
+                // Full-swap targets the index misses resolve through
+                // the chunk-table prefix fallback; canonical entry
+                // path comes from the plan.
                 let chunk = resolve_partial_swap_import_target(
                     source,
                     self.caller_chunk_id,

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+mod emission;
 mod manifests;
 mod passthrough;
 mod plan;
@@ -17,88 +18,21 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, JsFile, join_module_path,
-    list_chunk_file_paths, module_path_dirname, normalize_module_path, relative_module_specifier,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
+    module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
+pub use emission::{EmissionRewriteResult, apply_emission_rewrites, write_planned_vendor_outputs};
 use js_ast::str_value;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
 pub use manifests::*;
-pub use passthrough::{PassthroughRewriteResult, rewrite_passthrough_directives};
 use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
 use spec::PartialSwapKind;
-pub use strip::{
-    ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
-};
-use wrappers::{write_planned_bundled_assets, write_planned_wrapper};
-
-/// Apply the plan's full swaps: verify caller import alignment against
-/// the current indexes, write planned wrappers, and remove the swapped
-/// chunks from the artifact. All resolution decisions (version checks,
-/// wrapper-shape validation, wrapper generation) were made at plan
-/// time. Caller-side directive handling (canonicalization of the
-/// intentionally dangling chunk specifier, boundary-rename name
-/// mapping) happens at the application sites — lowering and the
-/// pass-through emission rewriter.
-pub fn swap_vendor_chunks(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
-    write: bool,
-) -> Result<SwapVendorChunksResult> {
-    let chunk_table = artifact.chunk_table.clone();
-    let swap_chunk_ids: BTreeSet<ChunkId> =
-        plan.full_swaps.iter().map(|swap| swap.chunk_id).collect();
-    let import_alignment_index = build_import_alignment_index(references, &swap_chunk_ids);
-    let mut removed_chunk_ids = BTreeSet::new();
-    let mut resolutions: BTreeMap<String, VendorResolution> = BTreeMap::new();
-    for swap in &plan.full_swaps {
-        for record in import_alignment_index
-            .get(&swap.chunk_id)
-            .into_iter()
-            .flatten()
-        {
-            for imported_name in &record.named_imports {
-                if swap.vendor_exports.contains(imported_name) {
-                    continue;
-                }
-                bail!(
-                    "swap_vendor_chunks vendor entry {} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {} (known: [{}])",
-                    swap.resolution.chunk_path,
-                    chunk_table.name(record.caller_chunk_id),
-                    record.caller_file,
-                    imported_name,
-                    swap.resolution.chunk_id,
-                    swap.vendor_exports
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(",")
-                );
-            }
-        }
-        if write && let Some(wrapper) = &swap.wrapper {
-            write_planned_wrapper(&wrapper.abs_path, &wrapper.source)?;
-        }
-        artifact.remove_chunk(swap.chunk_id);
-        removed_chunk_ids.insert(swap.resolution.chunk_id.clone());
-        resolutions.insert(swap.resolution.chunk_path.clone(), swap.resolution.clone());
-    }
-
-    let swapped = resolutions.len();
-    Ok(SwapVendorChunksResult {
-        artifact,
-        manifest: VendorResolutionManifest {
-            resolutions,
-            counts: VendorResolutionCounts { swapped },
-        },
-        removed_chunk_ids,
-    })
-}
+pub use strip::ChunkStripStats;
 
 /// Bail when a boundary-mapping key (a vendor-LOCAL binding name) is
 /// itself a genuine export name of the vendor entry bound to a
@@ -191,36 +125,6 @@ fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
         }
     }
     mapping
-}
-
-#[derive(Debug, Clone)]
-struct ImportAlignmentRecord {
-    caller_chunk_id: ChunkId,
-    caller_file: String,
-    named_imports: Vec<String>,
-}
-
-fn build_import_alignment_index(
-    references: &ArtifactIndexes,
-    target_chunk_ids: &BTreeSet<ChunkId>,
-) -> BTreeMap<ChunkId, Vec<ImportAlignmentRecord>> {
-    let mut index = BTreeMap::<ChunkId, Vec<ImportAlignmentRecord>>::new();
-    for target_chunk_id in target_chunk_ids {
-        for import in references.manifest_imports_targeting_chunk(*target_chunk_id) {
-            if import.named_imports.is_empty() {
-                continue;
-            }
-            index
-                .entry(*target_chunk_id)
-                .or_default()
-                .push(ImportAlignmentRecord {
-                    caller_chunk_id: import.caller_chunk_id,
-                    caller_file: import.caller_file.clone(),
-                    named_imports: import.named_imports.clone(),
-                });
-        }
-    }
-    index
 }
 
 fn read_installed_package_metadata(
@@ -502,119 +406,22 @@ fn prop_name(name: &PropName) -> Option<String> {
 
 // === partial vendor swap =================================================
 //
-// `swap_vendor_chunks` operates on a *whole* chunk — it wraps the chunk's
-// upstream, rewrites caller imports to point at the wrapper, and removes
-// the chunk from the artifact. That doesn't work for mixed chunks: Vite
-// commonly bundles several packages (zod + @sentry/browser + react +
-// lodash + katex + mermaid) into one ESM chunk. Removing it would drop
-// every co-bundled package.
+// A full swap operates on a *whole* chunk — its caller imports point at
+// the upstream package and the chunk is excluded from the emission set.
+// That doesn't work for mixed chunks: Vite commonly bundles several
+// packages (zod + @sentry/browser + react + lodash + katex + mermaid)
+// into one ESM chunk. Excluding it would drop every co-bundled package.
 //
-// Partial swaps leave the chunk on disk and replace per-symbol consumer
-// references against upstream packages. The consumer side is applied at
-// two construction sites — lowering (materialized module bodies) and the
-// pass-through emission rewriter (`passthrough.rs`) — both consuming the
-// same `VendorResolutionPlan`. What remains here is the bundled family's
-// vendor-chunk **self-rewrite** (the seed of the residual computation:
-// re-target the chunk's own references at the facade so the strip pass
-// can drop the old implementation) and the manifest projection.
-
-pub struct BundledSelfRewriteResult {
-    pub artifact: ChunkBundle,
-    /// Synthetic facade import locals introduced by the self-rewrite,
-    /// keyed by chunk path; consumed by the strip pass's reachability
-    /// sweep.
-    pub self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
-    /// (swapped chunk, chunk export) → self-rewrite reference counts,
-    /// folded into the same `references_rewritten` manifest fields as
-    /// the consumer-side counts.
-    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-}
-
-/// Apply the plan's bundled partial swaps' vendor-chunk side: write the
-/// planned bundle copy and facades, then re-target the vendor chunk's own
-/// pass-through files at the facade via
-/// `seed_bundled_partial_swap_self_rewrites` and the shared ident rewriter.
-/// Consumer-side rewrites live in the pass-through emission rewriter /
-/// lowering; validation, facade planning, and resolution happened at plan
-/// time.
-pub fn apply_bundled_partial_swap_self_rewrites(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    write: bool,
-) -> Result<BundledSelfRewriteResult> {
-    let chunk_table = artifact.chunk_table.clone();
-    let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
-        BTreeMap::new();
-    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
-
-    if write {
-        for bundled in plan.bundled_partial_swaps.values() {
-            write_planned_bundled_assets(&bundled.assets)?;
-        }
-    }
-
-    for (&chunk_id, bundled) in &plan.bundled_partial_swaps {
-        let chunk_name = chunk_table.name(chunk_id).to_string();
-        let js_chunk = artifact.js_chunk_mut(chunk_id)?;
-        for file_path in list_chunk_file_paths(js_chunk) {
-            let Some(file) = js_chunk.get_file(&file_path) else {
-                continue;
-            };
-            if file.metadata.role == FileRole::Module || file.ast().is_none() {
-                continue;
-            }
-            let (parts, mut ast) = js_chunk
-                .remove_file(&file_path)
-                .and_then(|file| file.into_ast_parts())
-                .with_context(|| format!("missing AST for {chunk_name}/{file_path}"))?;
-
-            let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
-            let mut prelude_imports: Vec<DeferredImport> = Vec::new();
-            let mut self_rewrite_import_locals: BTreeSet<Id> = BTreeSet::new();
-            seed_bundled_partial_swap_self_rewrites(
-                &ast.module,
-                Some(bundled),
-                &chunk_table,
-                chunk_id,
-                &file_path,
-                SelfRewriteOutputs {
-                    bindings: &mut bindings,
-                    prelude_imports: &mut prelude_imports,
-                    references_by_symbol: &mut references_by_symbol,
-                    self_rewrite_import_locals: &mut self_rewrite_import_locals,
-                },
-            );
-            if !prelude_imports.is_empty() {
-                let mut prefixed = prelude_imports
-                    .drain(..)
-                    .map(DeferredImport::into_module_item)
-                    .collect::<Vec<_>>();
-                prefixed.append(&mut ast.module.body);
-                ast.module.body = prefixed;
-            }
-            if !bindings.is_empty() {
-                let mut rewriter = PartialSwapIdentRewriter {
-                    bindings: &bindings,
-                    references_by_symbol: &mut references_by_symbol,
-                };
-                ast.module.visit_mut_with(&mut rewriter);
-            }
-            if !self_rewrite_import_locals.is_empty() {
-                self_rewrite_import_locals_by_chunk_path
-                    .entry(bundled.chunk_path.clone())
-                    .or_default()
-                    .extend(self_rewrite_import_locals);
-            }
-            js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
-        }
-    }
-
-    Ok(BundledSelfRewriteResult {
-        artifact,
-        self_rewrite_import_locals_by_chunk_path,
-        references_by_symbol,
-    })
-}
+// Partial swaps emit the chunk as a computed residual and replace
+// per-symbol consumer references against upstream packages. The
+// consumer side is applied at two construction sites — lowering
+// (materialized module bodies) and the pass-through emission rewriter
+// (`passthrough.rs`) — both consuming the same `VendorResolutionPlan`.
+// What remains here is the bundled family's vendor-chunk
+// **self-rewrite seed** (re-target the chunk's own references at the
+// facade so the residual strip can drop the old implementation),
+// consumed by `emission::emit_vendor_residual`, and the manifest
+// projection.
 
 /// Project the plan's partial / bundled-partial resolutions into the
 /// wire manifest maps, folding the merged per-symbol rewrite counts
@@ -1359,8 +1166,15 @@ pub fn validate_partial_swap_consumers(
         return Ok(());
     }
     let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
+    // Full-swap chunks are excluded from the emission set; their files
+    // are never emitted, so their directives are not consumers (same
+    // rule as the plan-time gate).
+    let full_swap_chunks = plan.full_swap_chunk_ids();
     for chunk_artifact in &artifact.chunks {
         let caller_chunk_id = chunk_artifact.chunk_id;
+        if full_swap_chunks.contains(&caller_chunk_id) {
+            continue;
+        }
         let caller_chunk_name = chunk_table.name(caller_chunk_id);
         for file_path in list_chunk_file_paths(&chunk_artifact.js) {
             let Some(ast) = chunk_artifact
@@ -1571,7 +1385,7 @@ export { b as beta };
                 },
             )
             .unwrap();
-            let result = rewrite_passthrough_directives(artifact, &plan, &references).unwrap();
+            let result = apply_emission_rewrites(artifact, &plan, &references).unwrap();
             let artifact = result.artifact;
             assert!(
                 result.references_by_symbol.is_empty(),

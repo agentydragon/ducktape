@@ -1,21 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use artifact::ChunkBundle;
 use spec::{PartialSwapKind, WrapperShape};
-
-#[derive(Debug, Clone)]
-pub struct VendorResolutionManifest {
-    pub resolutions: BTreeMap<String, VendorResolution>,
-    pub counts: VendorResolutionCounts,
-}
-
-pub struct SwapVendorChunksResult {
-    pub artifact: ChunkBundle,
-    pub manifest: VendorResolutionManifest,
-    pub removed_chunk_ids: BTreeSet<String>,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VendorResolution {
@@ -29,11 +16,6 @@ pub struct VendorResolution {
     pub wrapper_shape: Option<WrapperShape>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_wrapper_path: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VendorResolutionCounts {
-    pub swapped: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

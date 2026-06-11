@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
@@ -67,11 +67,18 @@ struct HtmlEntries {
     module_preloads: Vec<HtmlEntry>,
 }
 
+/// `chunk_records` carries the emission set only (the caller drops
+/// records of excluded chunks); `excluded_chunk_ids` lists chunks
+/// excluded from emission (fully vendor-swapped) — their files are not
+/// written, they contribute nothing to the rename queue, and an HTML
+/// entry/preload referencing one is rejected the same as a chunk the
+/// snapshot manifest never contained.
 pub fn emit_browser_harness(
     artifact: &ChunkBundle,
     options: &EmitBrowserHarnessOptions,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
     let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
         .with_context(|| format!("reading {}", options.asset_summary_path.display()))?;
@@ -114,7 +121,7 @@ pub fn emit_browser_harness(
             .chunk_table
             .get(&chunk_name)
             .with_context(|| format!("Snapshot manifest does not contain chunk {chunk_name}"))?;
-        if !artifact.has_chunk(chunk_id) {
+        if !artifact.has_chunk(chunk_id) || excluded_chunk_ids.contains(&chunk_id) {
             bail!("Snapshot manifest does not contain chunk {chunk_name}");
         }
     }
@@ -127,6 +134,7 @@ pub fn emit_browser_harness(
         &app_root,
         &layout.tree_root(),
         decomposition_by_chunk,
+        excluded_chunk_ids,
     )?;
     let copied_assets = copy_snapshot_assets(&options.snapshot_root, &app_root)?;
     let bootstrap = build_bootstrap(artifact, &entry_scripts, &app_root, &app_root)?;
@@ -140,7 +148,8 @@ pub fn emit_browser_harness(
             chunks: chunk_records,
         },
     )?;
-    let queue = compute_identifier_rename_queue(artifact, decomposition_by_chunk)?;
+    let queue =
+        compute_identifier_rename_queue(artifact, decomposition_by_chunk, excluded_chunk_ids)?;
     write_queue(&layout.rename_queue_report(), &queue)?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),

@@ -21,10 +21,8 @@ use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, ChunkStripStats,
-    StripSwappedVendorExportsOptions, VendorPlanOptions, VendorResolution,
-    apply_bundled_partial_swap_self_rewrites, build_partial_swap_resolutions,
-    build_vendor_resolution_plan, rewrite_passthrough_directives,
-    strip_swapped_vendor_exports_with_options, swap_vendor_chunks, validate_partial_swap_consumers,
+    VendorPlanOptions, VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
+    build_vendor_resolution_plan, validate_partial_swap_consumers, write_planned_vendor_outputs,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -166,7 +164,7 @@ pub fn run_transform_cli_with_options(
         .collect();
     let prepare_result = prepare_js_chunks(&spec, artifact)?;
     let counts = prepare_result.counts;
-    let mut chunk_records = prepare_result.chunk_records;
+    let chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
     let mut indexed = IndexedArtifact::new(prepare_result.artifact)?;
@@ -174,9 +172,10 @@ pub fn run_transform_cli_with_options(
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
     // tables once, and runs the plan-time consumer gate
-    // (plans/vendor_into_emission.md §3.2) before anything is written.
-    // Vendor application below consumes this plan instead of
-    // re-resolving the spec mid-pipeline.
+    // (plans/vendor_into_emission.md §3.2) and the full-swap caller
+    // import-alignment check before anything is written. Vendor
+    // application below consumes this plan instead of re-resolving the
+    // spec mid-pipeline.
     let swap_cfg = &spec.swap_vendor_chunks;
     let vendor_plan = build_vendor_resolution_plan(
         indexed.artifact(),
@@ -191,26 +190,14 @@ pub fn run_transform_cli_with_options(
     )?;
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
-    // Full swaps: write planned wrappers and remove the swapped chunks
-    // so materialize never sees them. (Becomes an emission-set
-    // exclusion in PR 5 of plans/vendor_into_emission.md.)
-    if vendor_plan.has_full_swaps() {
-        let full_swap_outcome;
-        (indexed, full_swap_outcome) = indexed.update(|artifact, indexes| {
-            let swap_result =
-                swap_vendor_chunks(artifact, &vendor_plan, indexes, write_vendor_outputs)?;
-            Ok((
-                swap_result.artifact,
-                (
-                    swap_result.manifest.resolutions,
-                    swap_result.removed_chunk_ids,
-                ),
-            ))
-        })?;
-        let (full_swap_resolutions, removed_chunk_ids) = full_swap_outcome;
-        vendor_report.full = full_swap_resolutions;
-        chunk_records.retain(|chunk| !removed_chunk_ids.contains(&chunk.chunk_id));
-    }
+    // Full swaps are an emission-set exclusion
+    // (plans/vendor_into_emission.md §2.5): the swapped chunks stay in
+    // the bundle — nothing removes them, and the owner graph never
+    // contained vendor chunks — but emission, the rename queue, the
+    // emit-shape check, and the chunk reports skip them. Their
+    // wire-facing resolutions are projections of the plan.
+    let excluded_chunk_ids = vendor_plan.full_swap_chunk_ids();
+    vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
@@ -238,7 +225,7 @@ pub fn run_transform_cli_with_options(
         // `materialize_logical_modules` derives its own per-run indexes
         // internally (it prunes chunks first); the pipeline indexes are
         // not consumed here, but the artifact mutates, so the update
-        // rebuilds them for the partial-swap stage below.
+        // rebuilds them for the emission rewrites below.
         (indexed, _) = indexed.update(|artifact, _indexes| {
             let materialize_result = materialize_logical_modules(
                 artifact,
@@ -277,63 +264,41 @@ pub fn run_transform_cli_with_options(
         })?;
     }
 
-    // Unified pass-through emission rewrite
-    // (plans/vendor_into_emission.md §2.4): one position-preserving
-    // directive pass over the files emitted without lowering — chunk
-    // entries (including materialized chunks' residual entries) and
-    // runtime files — performing specifier canonicalization (the old
-    // always-on stage 0), boundary-rename name mapping, and
-    // partial-swap consumer surgery from the vendor plan. Materialized
-    // module bodies were constructed from the same plan during
-    // lowering; suppress-marked chunks are skipped wholesale (open
-    // question 3). Runs after materialize so the per-symbol consumer
-    // rewrite cannot erase binding names spec selectors matched on.
+    // Emission rewrites (plans/vendor_into_emission.md §2.4–§2.5), one
+    // artifact pass over two disjoint file sets:
+    //
+    // * the unified pass-through directive rewrite over files emitted
+    //   without lowering in non-vendor chunks — specifier
+    //   canonicalization (the old always-on stage 0), boundary-rename
+    //   name mapping, and partial-swap consumer surgery from the
+    //   vendor plan (materialized module bodies were constructed from
+    //   the same plan during lowering; suppress-marked chunks are
+    //   skipped wholesale per open question 3; excluded full-swap
+    //   chunks are never rewritten);
+    // * the vendor residual computation for each partially-swapped
+    //   chunk — the canonicalize → self-rewrite → strip composition as
+    //   one function body, so the former stage ordering is structural
+    //   instead of a pipeline concern.
+    //
+    // Runs after materialize so the per-symbol consumer rewrite cannot
+    // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
-    let passthrough_references;
-    (indexed, passthrough_references) = indexed.update(|artifact, indexes| {
-        let passthrough_result = rewrite_passthrough_directives(artifact, &vendor_plan, indexes)?;
+    let emission_outcome;
+    (indexed, emission_outcome) = indexed.update(|artifact, indexes| {
+        let emission_result = apply_emission_rewrites(artifact, &vendor_plan, indexes)?;
         Ok((
-            passthrough_result.artifact,
-            passthrough_result.references_by_symbol,
+            emission_result.artifact,
+            (
+                emission_result.references_by_symbol,
+                emission_result.strip_stats,
+            ),
         ))
     })?;
-    merge_rewrite_counts(&mut vendor_rewrite_counts, passthrough_references);
+    let (emission_references, strip_stats) = emission_outcome;
+    merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
+    vendor_report.strip_stats = strip_stats;
 
     if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
-        let mut replacement_import_locals_by_chunk_path = BTreeMap::new();
-        if vendor_plan.has_bundled_partial_swaps() {
-            // Bundled partial swaps' vendor-chunk side: write the
-            // bundle copy + facades and seed the chunk's self-rewrite
-            // (the strip below drops the replaced implementation).
-            let self_rewrite_outcome;
-            (indexed, self_rewrite_outcome) = indexed.update(|artifact, _indexes| {
-                let self_rewrite_result = apply_bundled_partial_swap_self_rewrites(
-                    artifact,
-                    &vendor_plan,
-                    write_vendor_outputs,
-                )?;
-                Ok((
-                    self_rewrite_result.artifact,
-                    (
-                        self_rewrite_result.self_rewrite_import_locals_by_chunk_path,
-                        self_rewrite_result.references_by_symbol,
-                    ),
-                ))
-            })?;
-            let (self_rewrite_locals, self_rewrite_references) = self_rewrite_outcome;
-            replacement_import_locals_by_chunk_path = self_rewrite_locals;
-            merge_rewrite_counts(&mut vendor_rewrite_counts, self_rewrite_references);
-        }
-        (indexed, vendor_report.strip_stats) = indexed.update(|artifact, _indexes| {
-            let strip_result = strip_swapped_vendor_exports_with_options(
-                artifact,
-                &vendor_plan,
-                StripSwappedVendorExportsOptions {
-                    replacement_import_locals_by_chunk_path,
-                },
-            )?;
-            Ok((strip_result.artifact, strip_result.manifest.per_chunk))
-        })?;
         // Post-strip differential tripwire behind the plan-time
         // consumer gate (vendor_into_emission §3.2, open question 4):
         // no retained file may still consume the stripped portion of a
@@ -344,8 +309,14 @@ pub fn run_transform_cli_with_options(
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
     let artifact = indexed.into_artifact();
 
+    // Vendor emission outputs: full-swap wrappers and bundled bundle
+    // copies / facades, plus the combined manifest — all write-gated
+    // behind `swap_vendor_chunks.write` (vendor_into_emission §2.5).
+    if write_vendor_outputs {
+        write_planned_vendor_outputs(&vendor_plan)?;
+    }
     write_vendor_swaps_report(
-        spec.swap_vendor_chunks.write && !options.dry_run,
+        write_vendor_outputs,
         spec.swap_vendor_chunks.output_manifest_path.as_deref(),
         &vendor_report,
     )?;
@@ -357,7 +328,18 @@ pub fn run_transform_cli_with_options(
     // pageerror) into an immediate build-time error pointing at the
     // exact file, name, and source lines. Runs unconditionally so
     // pipelines without vendor swaps still benefit.
-    validate_emitted_exports(&artifact)?;
+    validate_emitted_exports(&artifact, &excluded_chunk_ids)?;
+
+    // Chunk records of the emission set: records of excluded
+    // (fully-swapped) chunks are dropped from the emitted reports.
+    let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
+        .iter()
+        .map(|chunk_id| artifact.chunk_table.name(*chunk_id))
+        .collect();
+    let emitted_chunk_records: Vec<_> = chunk_records
+        .into_iter()
+        .filter(|record| !excluded_chunk_names.contains(record.chunk_id.as_str()))
+        .collect();
 
     if !options.dry_run
         && let Some(cfg) = &spec.write_js_tree
@@ -367,9 +349,10 @@ pub fn run_transform_cli_with_options(
             out_dir: &cfg.out_dir,
             lowerings: &selected_lowerings,
             counts: &counts,
-            chunk_records: &chunk_records,
+            chunk_records: &emitted_chunk_records,
             module_count,
             decomposition_by_chunk: &decomposition_by_chunk,
+            excluded_chunk_ids: &excluded_chunk_ids,
         })?;
     }
 
@@ -381,7 +364,13 @@ pub fn run_transform_cli_with_options(
             out_dir: cfg.out_dir.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
         };
-        emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
+        emit_browser_harness(
+            &artifact,
+            &opts,
+            &emitted_chunk_records,
+            &decomposition_by_chunk,
+            &excluded_chunk_ids,
+        )?;
     }
 
     // Defer unmatched-spec-claim failure to here so the build runs
