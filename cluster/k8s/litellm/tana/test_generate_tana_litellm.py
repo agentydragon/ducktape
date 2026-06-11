@@ -28,8 +28,10 @@ def test_tana_litellm_exposes_every_responding_model_once() -> None:
 
 def test_custom_handler_config_uses_adjacent_import_shim() -> None:
     config = yaml.safe_load(generate())
-    assert "custom_provider_map" not in config["litellm_settings"]
-    assert config["custom_provider_map"] == [{"provider": "tana", "custom_handler": "custom_handler.tana_handler"}]
+    assert "custom_provider_map" not in config
+    assert config["litellm_settings"]["custom_provider_map"] == [
+        {"provider": "tana", "custom_handler": "custom_handler.tana_handler"}
+    ]
     shim = get_required_path("ducktape/cluster/k8s/litellm/tana/custom_handler.py").read_text()
     assert "from tana.litellm_proxy.custom_handler import tana_handler" in shim
 
