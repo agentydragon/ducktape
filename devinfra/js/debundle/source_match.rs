@@ -608,6 +608,13 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_expr(&mut self, wildcard: &str, candidate: &Expr) -> bool {
+        // A bare `EXPR_` (the prefix with no suffix) is an anonymous
+        // wildcard: every occurrence matches independently, so authors
+        // don't have to mint a unique name per placeholder. Named holes
+        // (`EXPR_FOO`) keep their cross-occurrence equality.
+        if is_anonymous_hole(wildcard, EXPR_HOLE_PREFIX) {
+            return true;
+        }
         match self.replacements.expressions.get(wildcard) {
             Some(existing) => existing.eq_ignore_span(candidate),
             None => {
@@ -620,6 +627,10 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_stmt(&mut self, wildcard: &str, candidate: &Stmt) -> bool {
+        // Bare `STMT_` is anonymous; see [`Self::bind_expr`].
+        if is_anonymous_hole(wildcard, STMT_HOLE_PREFIX) {
+            return true;
+        }
         match self.replacements.statements.get(wildcard) {
             Some(existing) => existing.eq_ignore_span(candidate),
             None => {
@@ -1759,7 +1770,11 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     /// Match a class member list, honoring a single `CLASS_REST*` hole
-    /// that absorbs the remaining members at its position.
+    /// that absorbs the remaining members at its position. Members
+    /// pinned before/after the hole match the candidate's leading/
+    /// trailing members in order (see [`Self::match_list_around_hole`]).
+    /// Two or more `CLASS_REST*` holes in one class body are ambiguous
+    /// and never match.
     fn match_class_member_slice(
         &mut self,
         needle: &[ClassMember],
@@ -2013,6 +2028,13 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
 fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
     let name = statement_hole_name(stmt)?;
     name.starts_with(STMT_LIST_HOLE_PREFIX).then_some(name)
+}
+
+/// Whether a hole name is the bare `prefix` with no suffix — the
+/// anonymous form, which matches independently at every occurrence
+/// instead of binding for cross-occurrence equality.
+fn is_anonymous_hole(name: &str, prefix: &str) -> bool {
+    name == prefix
 }
 
 /// Whether `member` is a `CLASS_REST*;` class-member hole: a class field

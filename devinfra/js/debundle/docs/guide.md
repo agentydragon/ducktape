@@ -340,10 +340,13 @@ anonymous_statements:
 Identifier expressions whose names start with `EXPR_` match one arbitrary
 expression subtree. Bare expression statements whose names start with `STMT_`
 match one arbitrary statement. Reusing the same placeholder name requires the
-same candidate subtree/statement everywhere it appears. These are still
-structural selectors: surrounding syntax is exact after the identifier policy
-is applied, and ambiguous matches are rejected rather than resolved by source
-order.
+same candidate subtree/statement everywhere it appears. When you don't need
+that equality, use the **bare prefix** as an anonymous wildcard — `EXPR_`,
+`STMT_`, `STMT_LIST_`, or `CLASS_REST` with no suffix — and every occurrence
+matches independently, so there's no need to mint a unique name per
+placeholder. These are still structural selectors: surrounding syntax is exact
+after the identifier policy is applied, and ambiguous matches are rejected
+rather than resolved by source order.
 
 Two variable-length **list holes** absorb a contiguous run rather than a
 single node — ideal for pinning a class by a stable skeleton without copying
@@ -370,10 +373,22 @@ members:
     name: Counter
 ```
 
+A list takes **at most one** hole — a second `STMT_LIST_*` in the same block,
+or a second `CLASS_REST*` in the same class body, is ambiguous and never
+matches. The members or statements you pin around the hole are still matched
+**in order and contiguously**: the elements before the hole must be the
+candidate's leading elements, in that order, and the elements after it the
+candidate's trailing elements, with the hole absorbing only the contiguous
+middle. So `class K { a() { … } b() { … } CLASS_REST; }` matches a class whose
+**first two** members are `a` then `b` (in that order), followed by anything —
+it is _not_ an unordered "class that contains `a` and `b` somewhere" match.
+
 Like the single-node holes, list holes match positionally after
-alpha-canonicalization, so a hole is most robust at the end of its list (a
-trailing hole keeps the matched prefix aligned with the candidate). Two list
-holes in one list are ambiguous and never match.
+alpha-canonicalization, so a hole is most robust at the **end** of its list: a
+trailing hole keeps the matched prefix aligned with the candidate, whereas a
+leading or middle hole that absorbs identifier-bearing nodes can desync the
+alpha-numbering of the elements after it (the same limitation single-node
+holes have).
 
 ## Workflow: renaming a binding without moving
 

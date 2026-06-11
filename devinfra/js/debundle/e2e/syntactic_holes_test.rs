@@ -356,3 +356,150 @@ export { Alpha };
 
     expect_rejection_containing_all(opts, &["static/app::shapes", "ambiguous"]);
 }
+
+#[test]
+fn member_source_match_class_rest_hole_pins_member_order() {
+    // CLASS_REST is positional: members pinned before the hole must be
+    // the candidate's leading members in the same order. Listing `b`
+    // before `a` does not match a class whose first members are `a`
+    // then `b`, so resolution finds no match.
+    let opts = FixtureOpts::new(
+        r#"class Counter {
+  a() {
+    return 1;
+  }
+  b() {
+    return 2;
+  }
+}
+console.log(new Counter().a());
+export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Selected",
+                r#"class K {
+  b() {
+    STMT_LIST_B;
+  }
+  a() {
+    STMT_LIST_A;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+}
+
+#[test]
+fn anonymous_expr_holes_match_independent_subtrees() {
+    // Bare `EXPR_` (no suffix) is anonymous: the two occurrences match
+    // *different* expressions. A named hole `EXPR_X` repeated would
+    // instead force the two arguments to be equal.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha_with_syntactic_holes(
+                "calc_value",
+                r#"const readable = Math.max(EXPR_, EXPR_);"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "7\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/calc.js",
+        &["Math.max", "const calc_value"],
+        &["EXPR_"],
+    );
+}
+
+#[test]
+fn anonymous_stmt_list_and_class_rest_holes_need_no_minted_names() {
+    // Bare `STMT_LIST_` and bare `CLASS_REST` select the class with no
+    // suffixes to invent.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Counter {
+  constructor() {
+    this.value = 0;
+  }
+  increment() {
+    this.value += 1;
+    return this.value;
+  }
+}
+const counter = new Counter();
+console.log(counter.increment());
+export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Counter",
+                r#"class K {
+  constructor() {
+    STMT_LIST_;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "1\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["Counter"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["class", "increment"],
+        &["STMT_LIST_", "CLASS_REST"],
+    );
+}
+
+#[test]
+fn member_source_match_two_class_rest_holes_never_match() {
+    // At most one CLASS_REST hole per class body; a second one is
+    // ambiguous, so the selector matches nothing.
+    let opts = FixtureOpts::new(
+        r#"class Counter {
+  a() {
+    return 1;
+  }
+  b() {
+    return 2;
+  }
+}
+console.log(new Counter().a());
+export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Selected",
+                r#"class K {
+  CLASS_REST_ONE;
+  a() {
+    STMT_LIST_A;
+  }
+  CLASS_REST_TWO;
+}"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+}
