@@ -83,6 +83,15 @@ look like a natural JavaScript codebase:
 Prefer project-local conventions over generic instincts. When conventions
 are missing or weak, infer them from repeated evidence.
 
+Selector health is part of structural review. Run
+`debundle spec selector-debt --modules <modules-dir>` to surface `source_match`
+bodies copied verbatim across modules (a duplication smell — route a worker to
+collapse them to one contextual selector), fragile name-only minified
+selectors, and — with `--against <prior-spec-modules>` — selectors whose
+minified binding drifted across a re-pin (candidates to re-express
+structurally). The architect surfaces these as findings; workers apply the
+edits.
+
 ## Tree Shape Audit
 
 Every architect pass should look at both the spec tree and the emitted JS tree.

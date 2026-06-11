@@ -721,6 +721,36 @@ mod tests {
     }
 
     #[test]
+    fn delete_accepts_extensionless_module_path() {
+        // CLI_DOGFOOD #3: `modules delete <bare-path>` (no `.yaml`)
+        // resolves through the shared `resolve_module_file`, the same
+        // way `modules merge` does. Regression guard so the suffix
+        // requirement does not creep back in.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "auto_partition/auto_partition_0004.yaml",
+            "members: []\n",
+        );
+        let args = DeleteArgs {
+            modules_root: root.to_path_buf(),
+            paths: vec![PathBuf::from("auto_partition/auto_partition_0004")],
+            dry_run: true,
+            no_verify: false,
+            force: false,
+            owner_graph_path: None,
+            source_root: None,
+        };
+        run_delete(args).expect("bare path resolves to the .yaml file");
+        assert!(
+            root.join("auto_partition/auto_partition_0004.yaml")
+                .exists(),
+            "dry-run must not delete",
+        );
+    }
+
+    #[test]
     fn anonymous_statements_are_spliced_too() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();

@@ -118,6 +118,14 @@ Prefer naming symbols that already have a YAML binding (a member entry in
 `modules/**/*.yaml`) but are still minified. These are already extracted
 into the spec — they just need a descriptive name to complete the job.
 
+`debundle spec selector-debt --modules <modules-dir>` ranks exactly these: its
+name-only section lists members still selected by their minified
+`binding.name`, most rebuild-fragile first (`--min-score 70` trims it to the
+short / vowel-poor tokens). With `--against <prior-spec-modules>` it also flags
+members whose readable `name:` stayed put but whose minified binding drifted
+across a re-pin — the highest-value to name and re-express structurally,
+because the bare minified handle has already proven unstable.
+
 When walking outward from a seed module, you will sometimes encounter code
 in the emitted JS that has no module YAML binding yet (still residual code,
 only covered by binding patches, or not attributed to any module). Don't go

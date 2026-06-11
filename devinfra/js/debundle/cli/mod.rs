@@ -25,6 +25,7 @@ use peel::{
     run_peel, run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use selector_debt::{SelectorDebtReport, compute_selector_debt, render_selector_debt_text};
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
@@ -88,6 +89,11 @@ pub struct SpecNs {
 enum SpecNsCommand {
     /// Emit spec-wide summary: module + binding totals and member-count buckets.
     Stats(SpecStatsArgs),
+    /// Rank fragile selectors: name-only minified selectors, repeated
+    /// copied `source_match` bodies, and (with `--against`) selectors
+    /// whose minified binding drifted between two spec versions.
+    #[command(name = "selector-debt")]
+    SelectorDebt(SelectorDebtArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -101,6 +107,34 @@ pub struct SpecStatsArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe. `ndjson`
     /// emits one line per top-level section (`modules`, `bindings`).
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+/// Args for `debundle spec selector-debt`.
+#[derive(Debug, ClapArgs)]
+pub struct SelectorDebtArgs {
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Second modules tree to diff minified bindings against. Surfaces
+    /// members whose readable `name:` is stable but whose
+    /// `selector.binding.name` changed between the two specs.
+    #[arg(long = "against")]
+    pub against: Option<PathBuf>,
+
+    /// Only list name-only selectors whose minified score is at least
+    /// this (0..=100). The summary still counts the whole spec.
+    #[arg(long = "min-score", default_value_t = 0)]
+    pub min_score: u8,
+
+    /// Maximum rows to emit per section. Zero means unlimited.
+    #[arg(long, default_value_t = 0)]
+    pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe. `ndjson`
+    /// emits one tagged object per row plus a final `summary` line.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 }
@@ -135,8 +169,13 @@ pub struct SccArgs {
 /// Args for `debundle cluster <sym>`.
 #[derive(Debug, ClapArgs)]
 pub struct ClusterArgs {
-    /// Binding identifier (minified or readable).
-    pub sym: String,
+    /// Binding identifier (minified or readable). May also be supplied
+    /// as `--binding <sym>` (the spelling some operator skills use).
+    pub sym: Option<String>,
+
+    /// Alias for the positional `<sym>`.
+    #[arg(long = "binding")]
+    pub binding: Option<String>,
 
     #[command(flatten)]
     pub common: PeelCommonArgs,
@@ -144,6 +183,22 @@ pub struct ClusterArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
+}
+
+impl ClusterArgs {
+    /// Resolve the binding from either the positional `<sym>` or the
+    /// `--binding` alias; exactly one must be present.
+    fn resolve_sym(&self) -> Result<&str> {
+        match (self.sym.as_deref(), self.binding.as_deref()) {
+            (Some(sym), None) | (None, Some(sym)) => Ok(sym),
+            (Some(_), Some(_)) => {
+                anyhow::bail!("pass the binding once: positional <sym> or --binding, not both")
+            }
+            (None, None) => {
+                anyhow::bail!("missing binding: pass it positionally or as --binding <sym>")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -160,12 +215,21 @@ pub struct SccEntry {
     pub realizable: bool,
 }
 
+/// A module-quotient node as both its interned `logical:N` id and its
+/// human-readable path label, so cluster output is legible without a
+/// second `describe` round-trip (CLI_DOGFOOD #2).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModuleRef {
+    pub id: String,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ClusterReport {
     pub binding: String,
-    pub home_module: String,
-    pub incoming_modules: Vec<String>,
-    pub outgoing_modules: Vec<String>,
+    pub home_module: ModuleRef,
+    pub incoming_modules: Vec<ModuleRef>,
+    pub outgoing_modules: Vec<ModuleRef>,
 }
 
 /// Args for `debundle modules ...`. Aggregates the existing
@@ -332,6 +396,19 @@ pub struct ModulesListArgs {
     #[arg(long = "unassigned-bindings")]
     pub unassigned_bindings: bool,
 
+    /// Restrict to auto-deletable modules: truly empty (no members and
+    /// no `anonymous_statements:`) AND no module-level `comment:`. This
+    /// is the subset safe to sweep with `modules delete` — a comment
+    /// would otherwise pin the module as a kept shell.
+    #[arg(long = "auto-deletable")]
+    pub auto_deletable: bool,
+
+    /// Include each module's `anonymous_statement_count` in text output,
+    /// alongside `member_count` (JSON always carries it). Surfaces the
+    /// residual sentinel's side-effect drift over time.
+    #[arg(long = "with-anonymous")]
+    pub with_anonymous: bool,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -473,6 +550,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
+            SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
         },
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
@@ -756,6 +834,7 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 }
 
 fn run_cluster(args: ClusterArgs) -> Result<()> {
+    let sym = args.resolve_sym()?;
     let graph: analysis::OwnerGraphReport = serde_json::from_str(
         &std::fs::read_to_string(&args.common.owner_graph_path)
             .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
@@ -763,44 +842,68 @@ fn run_cluster(args: ClusterArgs) -> Result<()> {
     // Use the shared `resolve_binding_owners` helper (same code path
     // `describe` / `show-source` / `scc --binding` use), so minified
     // and readable names both work.
-    let owner = resolve_binding_owners(&graph, &args.sym)
+    let owner = resolve_binding_owners(&graph, sym)
         .into_iter()
         .next()
-        .ok_or_else(|| anyhow::anyhow!("no owner declares binding {:?}", args.sym))?;
-    let home_module = owner.destination.clone();
-    let mut incoming: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut outgoing: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
+    let home_key = &owner.destination;
+    // Dedup + sort by interned id; carry the path label alongside.
+    let mut incoming: std::collections::BTreeMap<String, ModuleRef> =
+        std::collections::BTreeMap::new();
+    let mut outgoing: std::collections::BTreeMap<String, ModuleRef> =
+        std::collections::BTreeMap::new();
     for edge in &graph.quotient.edges {
-        if edge.target == home_module && edge.source != home_module {
-            incoming.insert(edge.source.as_str().to_string());
+        if &edge.target == home_key && &edge.source != home_key {
+            let module_ref = resolve_module_ref(&graph, &edge.source);
+            incoming.insert(module_ref.id.clone(), module_ref);
         }
-        if edge.source == home_module && edge.target != home_module {
-            outgoing.insert(edge.target.as_str().to_string());
+        if &edge.source == home_key && &edge.target != home_key {
+            let module_ref = resolve_module_ref(&graph, &edge.target);
+            outgoing.insert(module_ref.id.clone(), module_ref);
         }
     }
     let report = ClusterReport {
-        binding: args.sym.clone(),
-        home_module: home_module.as_str().to_string(),
-        incoming_modules: incoming.into_iter().collect(),
-        outgoing_modules: outgoing.into_iter().collect(),
+        binding: sym.to_string(),
+        home_module: resolve_module_ref(&graph, home_key),
+        incoming_modules: incoming.into_values().collect(),
+        outgoing_modules: outgoing.into_values().collect(),
     };
     let format = OutputFormat::resolve(args.format);
     print_report(&report, format, render_cluster_text).context("writing cluster output")
 }
 
+/// Pair an interned module key with its human path label, falling back
+/// to the raw key string when the module table has no entry for it.
+fn resolve_module_ref(graph: &analysis::OwnerGraphReport, key: &analysis::ModuleKey) -> ModuleRef {
+    ModuleRef {
+        id: key.as_str().to_string(),
+        label: graph
+            .module(key)
+            .map(|entry| entry.path.to_string())
+            .unwrap_or_else(|| key.as_str().to_string()),
+    }
+}
+
 fn render_cluster_text(report: &ClusterReport, out: &mut String) {
     out.push_str(&format!(
-        "binding={} home={}\n",
-        report.binding, report.home_module
+        "binding={} home={} ({})\n",
+        report.binding, report.home_module.label, report.home_module.id,
     ));
     out.push_str(&format!(
         "  incoming: {}\n",
-        report.incoming_modules.join(", ")
+        join_module_labels(&report.incoming_modules)
     ));
     out.push_str(&format!(
         "  outgoing: {}\n",
-        report.outgoing_modules.join(", ")
+        join_module_labels(&report.outgoing_modules)
     ));
+}
+
+fn join_module_labels(refs: &[ModuleRef]) -> String {
+    refs.iter()
+        .map(|module_ref| module_ref.label.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
@@ -985,9 +1088,11 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
         // and isn't empty in any meaningful sense — its rebuild
         // side-effects are still part of the spec.
         let is_truly_empty = entry.member_count == 0 && entry.anonymous_statement_count == 0;
+        let is_auto_deletable = is_truly_empty && !entry.has_comment;
         let keep = (!args.empty || is_truly_empty)
             && (!args.residual || entry.residual)
-            && (!args.unassigned_bindings || is_truly_empty);
+            && (!args.unassigned_bindings || is_truly_empty)
+            && (!args.auto_deletable || is_auto_deletable);
         if keep {
             entries.push(entry);
         }
@@ -995,7 +1100,11 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     let report = ModulesListReport { modules: entries };
     let format = OutputFormat::resolve(args.format);
-    print_report(&report, format, render_modules_list_text).context("writing modules list output")
+    let with_anonymous = args.with_anonymous;
+    print_report(&report, format, |report, out| {
+        render_modules_list_text(report, out, with_anonymous)
+    })
+    .context("writing modules list output")
 }
 
 fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {
@@ -1036,7 +1145,75 @@ fn render_spec_stats_text_wrapper(stats: &SpecStats, out: &mut String) {
     render_spec_stats_text(stats, out);
 }
 
-fn render_modules_list_text(report: &ModulesListReport, out: &mut String) {
+fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
+    let mut report = compute_selector_debt(&args.modules_root, args.against.as_deref())?;
+    // `--min-score` filters the listed rows; the summary keeps the
+    // spec-wide totals so the denominator stays visible.
+    if args.min_score > 0 {
+        report
+            .name_only
+            .retain(|entry| entry.minified_score >= args.min_score);
+    }
+    if args.limit > 0 {
+        report.name_only.truncate(args.limit);
+        report.repeated_source_match.truncate(args.limit);
+        report.drifted_bindings.truncate(args.limit);
+    }
+    let format = OutputFormat::resolve(args.format);
+    if format == OutputFormat::Ndjson {
+        emit_selector_debt_ndjson(&report)?;
+        return Ok(());
+    }
+    print_report(&report, format, render_selector_debt_text).context("writing selector-debt output")
+}
+
+/// One tagged JSON object per row, then a final `summary` line — the
+/// streaming shape `jq -c` consumers dispatch on via `.section`.
+fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Line<'a, T: serde::Serialize> {
+        section: &'a str,
+        #[serde(flatten)]
+        row: &'a T,
+    }
+    for entry in &report.name_only {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "name_only",
+                row: entry,
+            })?
+        );
+    }
+    for group in &report.repeated_source_match {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "repeated_source_match",
+                row: group,
+            })?
+        );
+    }
+    for drift in &report.drifted_bindings {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "drifted_binding",
+                row: drift,
+            })?
+        );
+    }
+    println!(
+        "{}",
+        serde_json::to_string(&Line {
+            section: "summary",
+            row: &report.summary,
+        })?
+    );
+    Ok(())
+}
+
+fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_anonymous: bool) {
     out.push_str(&format!("{} module(s)\n", report.modules.len()));
     for entry in &report.modules {
         let flags = match (entry.residual, entry.has_comment) {
@@ -1045,9 +1222,14 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String) {
             (false, true) => "[doc]",
             (false, false) => "",
         };
+        let anon = if with_anonymous {
+            format!("  anon={}", entry.anonymous_statement_count)
+        } else {
+            String::new()
+        };
         out.push_str(&format!(
-            "  {}  members={}  {}\n",
-            entry.path, entry.member_count, flags
+            "  {}  members={}{}  {}\n",
+            entry.path, entry.member_count, anon, flags
         ));
     }
 }

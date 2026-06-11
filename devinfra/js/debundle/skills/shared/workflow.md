@@ -46,6 +46,16 @@ port. Use the shared guide's "Workflow: authoring portable selectors" for
 structural selectors must remain failures; refine them with stable code shape
 or context instead of relying on source order or opaque hashes.
 
+To audit where a spec already carries this debt, run
+`debundle spec selector-debt --modules <modules-dir>`. It ranks name-only
+selectors by how minified the bound name looks (most rebuild-fragile first),
+groups `source_match` bodies that were copied verbatim across members /
+anonymous statements / binding groups (the copies a contextual selector should
+replace), and — with `--against <prior-spec-modules>` — flags members whose
+readable `name:` is stable but whose `selector.binding.name` drifted between two
+spec versions (proven-fragile name-only selection). It reads only the modules
+tree, so it is a cheap pre-pass before a structural-selector cleanup.
+
 ## Round Loop
 
 1. Refresh debundle outputs, root/chunk reports, directory reports, and

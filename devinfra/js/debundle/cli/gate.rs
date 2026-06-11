@@ -174,6 +174,16 @@ pub fn run_gate_cli(args: GateArgs) -> Result<()> {
 
 fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
     let path = common.resolved_cycles_path();
+    // The pipeline writes `cycles.json` only when the gate rejects, so
+    // its absence is the clean state: zero blocking SCCs. Returning an
+    // empty list (rather than a read error) makes `gate list` on a
+    // realizable spec print `[]` / "0 blocking SCC(s)" and exit 0,
+    // distinguishable from a present-but-malformed file (which still
+    // errors below). `gate describe` / `gate cut` then report
+    // "no blocking SCC with id N (found 0 entries)" for any id.
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text)

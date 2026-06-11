@@ -370,6 +370,29 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_debt",
+    srcs = ["selector_debt.rs"],
+    crate_root = "selector_debt.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "selector_debt_test",
+    crate = ":selector_debt",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
@@ -623,6 +646,7 @@ rust_library(
         ":output_layout",
         ":peel",
         ":pipeline",
+        ":selector_debt",
         ":spec",
         ":spec_modules",
         ":spec_stats",

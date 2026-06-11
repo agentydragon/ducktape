@@ -179,8 +179,10 @@ pub struct CommentOutcome {
     pub locator: String,
     pub kind: OutcomeKind,
     /// What the comment looks like after the operation (or, in read
-    /// mode, what it currently is). Empty string means absent.
-    pub comment: String,
+    /// mode, what it currently is). `None` means the field is absent;
+    /// `Some("")` is an explicit empty comment — the two are distinct
+    /// (CLI_DOGFOOD #7), and serialize as `null` vs `""`.
+    pub comment: Option<String>,
     /// One of "read", "set", "cleared", "unchanged", "dry-run".
     pub action: &'static str,
     /// Absolute path of the YAML touched (or that would be touched).
@@ -201,7 +203,8 @@ pub enum OutcomeKind {
 struct CommentOutcomeJson<'a> {
     #[serde(flatten)]
     locator: Locator<'a>,
-    comment: &'a str,
+    /// `null` when the comment field is unset, distinct from `""`.
+    comment: Option<&'a str>,
     action: &'a str,
 }
 
@@ -216,7 +219,9 @@ enum Locator<'a> {
 fn print_outcome(outcome: &CommentOutcome, format: peel::OutputFormat) {
     match format {
         peel::OutputFormat::Text => {
-            println!("{}", outcome.comment);
+            // Text keeps the bare-line shape: an unset comment prints an
+            // empty line. The null/"" distinction lives in JSON.
+            println!("{}", outcome.comment.as_deref().unwrap_or(""));
         }
         peel::OutputFormat::Json | peel::OutputFormat::Ndjson => {
             let locator = match outcome.kind {
@@ -225,7 +230,7 @@ fn print_outcome(outcome: &CommentOutcome, format: peel::OutputFormat) {
             };
             let payload = CommentOutcomeJson {
                 locator,
-                comment: &outcome.comment,
+                comment: outcome.comment.as_deref(),
                 action: outcome.action,
             };
             println!(
@@ -276,33 +281,33 @@ pub fn apply_binding_comment(
         file, member_index, ..
     } = hit;
     let mut doc = read_yaml(&file)?;
-    let current = current_member_comment(&doc, member_index)?.unwrap_or_default();
+    let current: Option<String> = current_member_comment(&doc, member_index)?;
 
     let (new_action, new_comment, dirty) = match mode {
         CommentMode::Read => ("read", current.clone(), false),
         CommentMode::Set(text) => {
             set_member_comment(&mut doc, member_index, Some(text.clone()))?;
-            ("set", text, true)
+            ("set", Some(text), true)
         }
         CommentMode::Edit => {
-            let edited = run_editor(&current)?;
-            if edited == current {
-                ("unchanged", current, false)
+            let effective_current = current.clone().unwrap_or_default();
+            let edited = run_editor(&effective_current)?;
+            if edited == effective_current {
+                ("unchanged", current.clone(), false)
             } else if edited.is_empty() {
                 set_member_comment(&mut doc, member_index, None)?;
-                ("cleared", String::new(), true)
+                ("cleared", None, true)
             } else {
                 set_member_comment(&mut doc, member_index, Some(edited.clone()))?;
-                ("set", edited, true)
+                ("set", Some(edited), true)
             }
         }
         CommentMode::Clear => {
-            let was_present = current_member_comment(&doc, member_index)?.is_some();
-            if was_present {
+            if current.is_some() {
                 set_member_comment(&mut doc, member_index, None)?;
-                ("cleared", String::new(), true)
+                ("cleared", None, true)
             } else {
-                ("unchanged", String::new(), false)
+                ("unchanged", None, false)
             }
         }
     };
@@ -443,33 +448,33 @@ pub fn apply_module_comment(
         bail!("module YAML not found: {}", file.display());
     }
     let mut doc = read_yaml(&file)?;
-    let current = current_module_comment(&doc).unwrap_or_default();
+    let current: Option<String> = current_module_comment(&doc);
 
     let (new_action, new_comment, dirty) = match mode {
         CommentMode::Read => ("read", current.clone(), false),
         CommentMode::Set(text) => {
             set_module_comment(&mut doc, Some(text.clone()))?;
-            ("set", text, true)
+            ("set", Some(text), true)
         }
         CommentMode::Edit => {
-            let edited = run_editor(&current)?;
-            if edited == current {
-                ("unchanged", current, false)
+            let effective_current = current.clone().unwrap_or_default();
+            let edited = run_editor(&effective_current)?;
+            if edited == effective_current {
+                ("unchanged", current.clone(), false)
             } else if edited.is_empty() {
                 set_module_comment(&mut doc, None)?;
-                ("cleared", String::new(), true)
+                ("cleared", None, true)
             } else {
                 set_module_comment(&mut doc, Some(edited.clone()))?;
-                ("set", edited, true)
+                ("set", Some(edited), true)
             }
         }
         CommentMode::Clear => {
-            let was_present = current_module_comment(&doc).is_some();
-            if was_present {
+            if current.is_some() {
                 set_module_comment(&mut doc, None)?;
-                ("cleared", String::new(), true)
+                ("cleared", None, true)
             } else {
-                ("unchanged", String::new(), false)
+                ("unchanged", None, false)
             }
         }
     };
@@ -642,7 +647,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(set.action, "set");
-        assert_eq!(set.comment, "acquires plugin settings");
+        assert_eq!(set.comment.as_deref(), Some("acquires plugin settings"));
 
         let body = read(root, "ui/widgets.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
@@ -652,12 +657,12 @@ mod tests {
         );
 
         let got = apply_binding_comment(root, "XOe", CommentMode::Read, false).unwrap();
-        assert_eq!(got.comment, "acquires plugin settings");
+        assert_eq!(got.comment.as_deref(), Some("acquires plugin settings"));
         assert_eq!(got.action, "read");
 
         let cleared = apply_binding_comment(root, "XOe", CommentMode::Clear, false).unwrap();
         assert_eq!(cleared.action, "cleared");
-        assert_eq!(cleared.comment, "");
+        assert_eq!(cleared.comment, None);
         let body = read(root, "ui/widgets.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
         assert!(
@@ -743,8 +748,26 @@ mod tests {
             apply_binding_comment(root, "XOe", CommentMode::Set("will not stick".into()), true)
                 .unwrap();
         assert_eq!(out.action, "dry-run");
-        assert_eq!(out.comment, "will not stick");
+        assert_eq!(out.comment.as_deref(), Some("will not stick"));
         assert_eq!(read(root, "m.yaml"), original);
+    }
+
+    #[test]
+    fn read_distinguishes_unset_from_explicit_empty_comment() {
+        // CLI_DOGFOOD #7: an absent `comment:` reads as `None` (JSON
+        // `null`); an explicit `comment: ""` reads as `Some("")`. The
+        // two must not collapse to the same value.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "m.yaml",
+            "members:\n  - selector: { binding: { name: Unset } }\n  - comment: \"\"\n    selector: { binding: { name: Empty } }\n",
+        );
+        let unset = apply_binding_comment(root, "Unset", CommentMode::Read, false).unwrap();
+        assert_eq!(unset.comment, None);
+        let empty = apply_binding_comment(root, "Empty", CommentMode::Read, false).unwrap();
+        assert_eq!(empty.comment.as_deref(), Some(""));
     }
 
     #[test]
@@ -780,7 +803,7 @@ mod tests {
         assert_eq!(doc["comment"].as_str(), Some("plugin glue"));
 
         let got = apply_module_comment(root, "runtime/plugins", CommentMode::Read, false).unwrap();
-        assert_eq!(got.comment, "plugin glue");
+        assert_eq!(got.comment.as_deref(), Some("plugin glue"));
 
         let cleared =
             apply_module_comment(root, "runtime/plugins", CommentMode::Clear, false).unwrap();

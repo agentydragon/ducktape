@@ -202,7 +202,50 @@ fn cluster_emits_quotient_neighbors() {
         .expect("spawn debundle");
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["home_module"].as_str(), Some("ui/plugins"));
-    assert_eq!(parsed["incoming_modules"][0].as_str(), Some("residual"));
-    assert_eq!(parsed["outgoing_modules"][0].as_str(), Some("residual"));
+    // Each module-quotient node carries both its interned id and a
+    // human path label (CLI_DOGFOOD #2). In this synthetic graph the
+    // interned key already equals the path, so id == label here.
+    assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
+    assert_eq!(parsed["home_module"]["id"].as_str(), Some("ui/plugins"));
+    assert_eq!(
+        parsed["incoming_modules"][0]["label"].as_str(),
+        Some("residual")
+    );
+    assert_eq!(
+        parsed["outgoing_modules"][0]["label"].as_str(),
+        Some("residual")
+    );
+}
+
+#[test]
+fn cluster_accepts_binding_flag_alias() {
+    // CLI_DOGFOOD #1: `--binding <sym>` is accepted as an alias for the
+    // positional `<sym>` (the spelling some operator skills document).
+    let dir = tempfile::tempdir().unwrap();
+    let graph_path = dir.path().join("owner_graph.json");
+    let modules = dir.path().join("modules");
+    fs::create_dir_all(&modules).unwrap();
+    write(&graph_path, &synthetic_graph_json());
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "cluster",
+            "--binding",
+            "XOe",
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--modules",
+            modules.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
 }
