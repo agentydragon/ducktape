@@ -51,6 +51,12 @@ spec:
           args:
             - --model-id
             - glm-4.5
+            # Reach litellm by its in-cluster service name (NO_PROXY excludes
+            # .svc.cluster.local), so the model API calls go direct and skip the
+            # agent mitmproxy — whose MITM cert the model client (httpx) doesn't
+            # trust, which otherwise hangs every call. Same bypass as DOCKER_HOST.
+            - --base-url
+            - http://litellm.litellm.svc.cluster.local:4000
             - --task-filter
             - manifold-
             - --wayback-upstream
