@@ -59,6 +59,7 @@ _STANDARD_E2E_DEPS = [
         "lowering_test",
         "mini_factors_test",
         "naturalization_test",
+        "naturalize_cross_scope_params_test",
         "object_plain_data_calls_test",
         "pure_members_test",
         "url_rebase_test",

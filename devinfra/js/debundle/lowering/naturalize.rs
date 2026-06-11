@@ -3,8 +3,28 @@
 //! heuristic renames derived from the AST (return-object aliases,
 //! destructure unpacks, constructor `this.x = param` mappings).
 //!
-//! `naturalize_module_body` is the public entry; everything else is a
-//! contributor of rename intents that get merged via `drop_target_collisions`.
+//! `naturalize_module_body` is the public entry. Heuristic renames are
+//! split by what their source name resolves to:
+//!
+//! - **Free sources** (return-object aliases of names the deriving
+//!   function does not bind — typically source-chunk import aliases)
+//!   rewrite references of top-level bindings. They flow into the
+//!   returned merged map because `plan_module_reference_needs`
+//!   reverse-resolves the post-rename name through it to emit the
+//!   runtime reimport (`import { t as options }`), and they keep the
+//!   module-global target-uniqueness rule (`drop_target_collisions`) —
+//!   two of them onto one target would collide in module scope.
+//!
+//! - **Bound sources** (destructured params, constructor
+//!   `this.x = param` assignments, return-object aliases of the
+//!   function's own root bindings) rename a binding owned by a single
+//!   scope. `ScopedHeuristicNaturalizer` validates and applies them per
+//!   deriving scope, with no module-global uniqueness requirement: two
+//!   sibling scopes reusing the same minified spelling (`e` → `value`
+//!   here, `e` → `registry` there) are independent renames (#2045).
+//!   They stay out of the returned map so a scope-local rename can
+//!   never remap an unrelated top-level export or runtime reimport
+//!   that happens to share the spelling.
 
 use super::scope_names::{
     BindingNameCollector, collect_binding_names_in, collect_occupied_local_names,
@@ -42,53 +62,43 @@ pub(super) fn naturalize_module_body(
             plan_driven.insert(local.clone(), exported.clone());
         }
     }
-    let mut heuristic = BTreeMap::<String, String>::new();
+    let mut free_heuristic = BTreeMap::<String, String>::new();
     for item in body.iter() {
-        collect_naturalization_renames_from_item(item, &mut heuristic);
+        collect_free_alias_renames_from_item(item, &mut free_heuristic);
     }
     // The merged map is what callers read back as the local-name → readable
-    // lookup. Application below splits the two categories: plan-driven names
-    // are top-level module bindings and rename module-wide (suppressed in any
-    // subtree that re-binds them); heuristic names are derived from a single
-    // function/constructor/arrow's own params, return-object aliases, or
-    // `this.x = param` assignments and must rename only within that node's
-    // own subtree — applying them module-wide would rewrite an unrelated
-    // binding of the same name in a sibling scope.
-    let merged = drop_target_collisions(plan_driven.clone(), heuristic);
-    // Heuristic-only entries (those not also plan-driven) are the scope-local
-    // ones; plan-driven entries that survived collision-dropping apply
-    // module-wide.
+    // lookup (runtime-reimport bridge, export remapping). Plan-driven names
+    // are top-level module bindings and rename module-wide (suppressed in
+    // any subtree that re-binds them); free heuristic names rename only
+    // within the function that derived them, via the scoped pass below.
+    let merged = drop_target_collisions(plan_driven.clone(), free_heuristic);
     let plan_driven_effective: BTreeMap<String, String> = merged
         .iter()
         .filter(|(local, _)| plan_driven.contains_key(*local))
         .map(|(local, target)| (local.clone(), target.clone()))
         .collect();
-    let heuristic_effective: BTreeMap<String, String> = merged
+    let free_effective: BTreeMap<String, String> = merged
         .iter()
         .filter(|(local, _)| !plan_driven.contains_key(*local))
         .map(|(local, target)| (local.clone(), target.clone()))
         .collect();
 
-    if plan_driven_effective.is_empty() && heuristic_effective.is_empty() {
+    // Module-wide pass: plan-driven renames + shorthand collapse when the
+    // plan renames anything, shorthand collapse alone otherwise.
+    if plan_driven_effective.is_empty() {
         for item in body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
-        return Ok(NaturalizedRenames {
-            merged,
-            module_scope: plan_driven_effective,
-        });
-    }
-
-    // Validate plan-driven targets against the body's top-level scope
-    // before any mutation: renaming a declaration onto a name another
-    // top-level binding already uses produces a duplicate declaration
-    // (a load-time SyntaxError). A top-level binding that is itself
-    // renamed away vacates its slot and is allowed. Nested-scope target
-    // collisions are NOT pre-checked here — a target bound in a nested
-    // scope is harmless unless the un-shadowed source is referenced
-    // inside that scope, which the renamer detects precisely at the
-    // reference (see the `captured` check below).
-    if !plan_driven_effective.is_empty() {
+    } else {
+        // Validate plan-driven targets against the body's top-level scope
+        // before any mutation: renaming a declaration onto a name another
+        // top-level binding already uses produces a duplicate declaration
+        // (a load-time SyntaxError). A top-level binding that is itself
+        // renamed away vacates its slot and is allowed. Nested-scope target
+        // collisions are NOT pre-checked here — a target bound in a nested
+        // scope is harmless unless the un-shadowed source is referenced
+        // inside that scope, which the renamer detects precisely at the
+        // reference (see the `captured` check below).
         let root_names = collect_occupied_local_names(body);
         let mut errors = Vec::new();
         for (from, to) in &plan_driven_effective {
@@ -105,12 +115,7 @@ pub(super) fn naturalize_module_body(
                 errors.join("\n  - "),
             );
         }
-    }
 
-    // Apply plan-driven (module-scope) renames + shorthand collapse first,
-    // module-wide but scope-aware. Shorthand collapse here covers the
-    // top-level object literals/patterns.
-    if !plan_driven_effective.is_empty() {
         let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven_effective);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
@@ -129,27 +134,21 @@ pub(super) fn naturalize_module_body(
         }
     }
 
-    // Apply heuristic (scope-local) renames per the function/constructor/arrow
-    // they were derived from. `ScopedHeuristicNaturalizer` recurses into the
-    // body, and at each function-like node computes that node's own heuristic
-    // renames and rewrites just that node's subtree (its params + body),
-    // suppressing the rename inside any further-nested subtree that re-binds
-    // the same name.
-    if !heuristic_effective.is_empty() {
-        let mut scoped = ScopedHeuristicNaturalizer {
-            allowed: &heuristic_effective,
-        };
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut scoped);
-        }
-    } else if plan_driven_effective.is_empty() {
-        // No heuristics survived and no plan-driven renames ran: still collapse
-        // shorthand. (Reached only when `merged` is non-empty but every entry
-        // was a heuristic dropped by collision handling — rare, but keep the
-        // shorthand pass.)
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut ShorthandNaturalizer);
-        }
+    // Names a scope-local rename must never target: anything the plan or a
+    // free rename reads or writes module-wide. Renaming a scope's binding
+    // onto one of these would capture module-level references inside the
+    // scope (or collide with the free rename applied in the same scope).
+    let mut reserved = BTreeSet::<String>::new();
+    for (from, to) in plan_driven.iter().chain(merged.iter()) {
+        reserved.insert(from.clone());
+        reserved.insert(to.clone());
+    }
+    let mut scoped = ScopedHeuristicNaturalizer {
+        free_allowed: &free_effective,
+        reserved: &reserved,
+    };
+    for item in body.iter_mut() {
+        item.visit_mut_with(&mut scoped);
     }
 
     Ok(NaturalizedRenames {
@@ -162,25 +161,200 @@ pub(super) fn naturalize_module_body(
 /// scope-locally: at each function/constructor/arrow it derives that node's
 /// own heuristic renames (param destructure aliases, return-object aliases,
 /// `this.x = param` constructor assignments) and rewrites only that node's
-/// subtree. A heuristic rename derived from one scope must never leak into a
-/// sibling/parent scope that binds the same name, so the rewrite is confined
-/// to the deriving node — and `RenameAndShorthandNaturalizer`'s nested
+/// subtree. Bound-source renames fire when their readable target passes the
+/// per-scope safety checks in [`Self::validated_bound`]; free-source
+/// renames fire when they survived the module-global collision rules
+/// (`free_allowed`). A rename derived from one scope never leaks into a
+/// sibling/parent scope, and `RenameAndShorthandNaturalizer`'s nested
 /// shadow-suppression still guards any further-nested re-binding subtree.
 struct ScopedHeuristicNaturalizer<'a> {
-    /// The merged set of heuristic renames that survived collision-dropping;
-    /// a node's locally-derived rename only fires if it appears here.
-    allowed: &'a BTreeMap<String, String>,
+    /// Free-source renames that survived module-global collision-dropping;
+    /// a node's locally-derived free alias only fires if it appears here.
+    free_allowed: &'a BTreeMap<String, String>,
+    /// Module-wide rename sources and targets (plan-driven + free); a
+    /// scope-local rename must not target any of them.
+    reserved: &'a BTreeSet<String>,
+}
+
+/// Name sets describing one function-like subtree, gathered in a single
+/// walk and consumed by the per-scope rename validation.
+#[derive(Default)]
+struct SubtreeNameFacts {
+    /// Every value/binding identifier sym in the subtree. Object-literal
+    /// keys and static member props are `IdentName`s, not `Ident`s, so
+    /// they are intentionally absent — a property key spelled like a
+    /// rename target neither shadows nor captures it.
+    mentions: BTreeSet<String>,
+    /// Names bound by any declaration within the subtree (params, `var`/
+    /// `let`/`const`, function/class declarations and named expressions).
+    bound: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct SubtreeNameFactsCollector {
+    facts: SubtreeNameFacts,
+}
+
+impl Visit for SubtreeNameFactsCollector {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.facts.mentions.insert(ident.sym.to_string());
+    }
+
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.facts.bound.insert(ident.id.sym.to_string());
+        ident.visit_children_with(self);
+    }
+
+    fn visit_fn_decl(&mut self, decl: &FnDecl) {
+        self.facts.bound.insert(decl.ident.sym.to_string());
+        decl.visit_children_with(self);
+    }
+
+    fn visit_class_decl(&mut self, decl: &ClassDecl) {
+        self.facts.bound.insert(decl.ident.sym.to_string());
+        decl.visit_children_with(self);
+    }
+
+    fn visit_fn_expr(&mut self, expr: &FnExpr) {
+        if let Some(ident) = &expr.ident {
+            self.facts.bound.insert(ident.sym.to_string());
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_class_expr(&mut self, expr: &ClassExpr) {
+        if let Some(ident) = &expr.ident {
+            self.facts.bound.insert(ident.sym.to_string());
+        }
+        expr.visit_children_with(self);
+    }
+}
+
+fn collect_subtree_name_facts<N>(node: &N) -> SubtreeNameFacts
+where
+    N: VisitWith<SubtreeNameFactsCollector>,
+{
+    let mut collector = SubtreeNameFactsCollector::default();
+    node.visit_with(&mut collector);
+    collector.facts
+}
+
+/// Names bound in a function's root scope: its params plus lexical
+/// declarations directly in its body statements (no descent into nested
+/// function/arrow bodies). Return-object aliases of these names are
+/// scope-local renames; `rename_root_body` treats the root declarations
+/// as rename targets, so the declaration and its references move together.
+fn function_root_binding_names(function: &Function) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for param in &function.params {
+        collect_pat_binding_names(&param.pat, &mut names);
+    }
+    let Some(body) = function.body.as_ref() else {
+        return names;
+    };
+    for stmt in &body.stmts {
+        match stmt {
+            Stmt::Decl(Decl::Var(var)) => {
+                for declarator in &var.decls {
+                    collect_pat_binding_names(&declarator.name, &mut names);
+                }
+            }
+            Stmt::Decl(Decl::Fn(function)) => {
+                names.insert(function.ident.sym.to_string());
+            }
+            Stmt::Decl(Decl::Class(class)) => {
+                names.insert(class.ident.sym.to_string());
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+fn collect_pat_binding_names(pat: &Pat, out: &mut BTreeSet<String>) {
+    match pat {
+        Pat::Ident(ident) => {
+            out.insert(ident.id.sym.to_string());
+        }
+        Pat::Rest(rest) => collect_pat_binding_names(&rest.arg, out),
+        Pat::Assign(assign) => collect_pat_binding_names(&assign.left, out),
+        Pat::Array(array) => {
+            for elem in array.elems.iter().flatten() {
+                collect_pat_binding_names(elem, out);
+            }
+        }
+        Pat::Object(object) => {
+            for prop in &object.props {
+                match prop {
+                    ObjectPatProp::KeyValue(kv) => collect_pat_binding_names(&kv.value, out),
+                    ObjectPatProp::Assign(assign) => {
+                        out.insert(assign.key.id.sym.to_string());
+                    }
+                    ObjectPatProp::Rest(rest) => collect_pat_binding_names(&rest.arg, out),
+                }
+            }
+        }
+        Pat::Invalid(_) | Pat::Expr(_) => {}
+    }
 }
 
 impl ScopedHeuristicNaturalizer<'_> {
-    /// Filter a node's locally-derived renames down to the globally-allowed
-    /// set, returning the effective scope-local rename map (empty if nothing
-    /// fires).
-    fn effective(&self, derived: BTreeMap<String, String>) -> BTreeMap<String, String> {
-        derived
-            .into_iter()
-            .filter(|(from, to)| self.allowed.get(from) == Some(to))
+    /// Per-scope safety checks for bound-source renames. A rename fires
+    /// only when its readable target is globally unreserved, absent from
+    /// the scope's subtree (renaming onto a name the subtree already
+    /// binds or references would capture or collide), unique among this
+    /// scope's targets, and not itself another rename's source.
+    /// Over-suppression is acceptable; silent capture is not.
+    fn validated_bound(
+        &self,
+        bound: BTreeMap<String, String>,
+        facts: &SubtreeNameFacts,
+    ) -> BTreeMap<String, String> {
+        let mut target_counts = BTreeMap::<String, usize>::new();
+        for target in bound.values() {
+            *target_counts.entry(target.clone()).or_default() += 1;
+        }
+        bound
+            .iter()
+            .filter(|(_, to)| {
+                target_counts.get(to.as_str()).copied() == Some(1)
+                    && !self.reserved.contains(to.as_str())
+                    && !facts.mentions.contains(to.as_str())
+                    && !bound.contains_key(to.as_str())
+            })
+            .map(|(from, to)| (from.clone(), to.clone()))
             .collect()
+    }
+
+    /// Split a function's return-object aliases into the applicable
+    /// categories: aliases of root-scope bindings join `bound`; aliases of
+    /// names the function doesn't bind anywhere apply when the module-global
+    /// free map allows the exact pair; aliases of names bound only in a
+    /// nested scope are dropped (renaming the root-level references would
+    /// desync them from the shadow-suppressed nested declaration).
+    fn classify_function_aliases(
+        &self,
+        function: &Function,
+        facts: &SubtreeNameFacts,
+        bound: &mut BTreeMap<String, String>,
+        free: &mut BTreeMap<String, String>,
+    ) {
+        let Some(body) = function.body.as_ref() else {
+            return;
+        };
+        let mut aliases = BTreeMap::new();
+        collect_return_object_alias_renames(&body.stmts, &mut aliases);
+        if aliases.is_empty() {
+            return;
+        }
+        let root_bound = function_root_binding_names(function);
+        for (from, to) in aliases {
+            if root_bound.contains(&from) {
+                bound.insert(from, to);
+            } else if !facts.bound.contains(&from) && self.free_allowed.get(&from) == Some(&to) {
+                free.insert(from, to);
+            }
+        }
     }
 }
 
@@ -238,11 +412,24 @@ fn rename_root_body(renamer: &mut RenameAndShorthandNaturalizer<'_>, body: Optio
 
 impl VisitMut for ScopedHeuristicNaturalizer<'_> {
     fn visit_mut_function(&mut self, function: &mut Function) {
-        // Recurse first so nested functions apply their own heuristics.
+        // Recurse first so nested functions apply their own heuristics;
+        // the facts collected below then see the post-rename subtree.
         function.visit_mut_children_with(self);
-        let mut derived = BTreeMap::new();
-        collect_naturalization_renames_from_function(function, &mut derived);
-        let local = drop_subtree_captured_targets(self.effective(derived), &*function);
+        let facts = collect_subtree_name_facts(&*function);
+        let mut bound = BTreeMap::new();
+        for param in &function.params {
+            collect_naturalization_renames_from_pattern(&param.pat, &mut bound);
+        }
+        let mut free = BTreeMap::new();
+        self.classify_function_aliases(function, &facts, &mut bound, &mut free);
+        // Free-source aliases get no `mentions` pre-check from
+        // `validated_bound`, so drop any whose target the subtree binds:
+        // applying one would be suppressed only inside the re-binding
+        // scope, tripping the capture assert below on a partially renamed
+        // body. (Bound-source renames are already covered — `validated_bound`
+        // rejects targets the subtree so much as mentions.)
+        let mut local = drop_subtree_captured_targets(free, &*function);
+        local.extend(self.validated_bound(bound, &facts));
         if local.is_empty() {
             return;
         }
@@ -259,11 +446,12 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
 
     fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
         arrow.visit_mut_children_with(self);
-        let mut derived = BTreeMap::new();
+        let facts = collect_subtree_name_facts(&*arrow);
+        let mut bound = BTreeMap::new();
         for param in &arrow.params {
-            collect_naturalization_renames_from_pattern(param, &mut derived);
+            collect_naturalization_renames_from_pattern(param, &mut bound);
         }
-        let local = drop_subtree_captured_targets(self.effective(derived), &*arrow);
+        let local = self.validated_bound(bound, &facts);
         if local.is_empty() {
             return;
         }
@@ -278,9 +466,10 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
 
     fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
         constructor.visit_mut_children_with(self);
-        let mut derived = BTreeMap::new();
-        collect_naturalization_renames_from_constructor(constructor, &mut derived);
-        let local = drop_subtree_captured_targets(self.effective(derived), &*constructor);
+        let facts = collect_subtree_name_facts(&*constructor);
+        let mut bound = BTreeMap::new();
+        collect_naturalization_renames_from_constructor(constructor, &mut bound);
+        let local = self.validated_bound(bound, &facts);
         if local.is_empty() {
             return;
         }
@@ -328,31 +517,30 @@ pub(super) fn drop_target_collisions(
     plan_driven
 }
 
-pub(super) fn collect_naturalization_renames_from_item(
-    item: &ModuleItem,
-    renames: &mut BTreeMap<String, String>,
-) {
+/// Collect a top-level item's free-source return-object aliases: renames
+/// of names the deriving function does not bind anywhere (typically
+/// source-chunk import aliases). These are the only heuristic renames
+/// that rewrite references of top-level bindings and therefore the only
+/// ones that join the module-global merged map.
+fn collect_free_alias_renames_from_item(item: &ModuleItem, renames: &mut BTreeMap<String, String>) {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => collect_from_decl(decl, renames),
+        ModuleItem::Stmt(Stmt::Decl(decl)) => collect_free_alias_renames_from_decl(decl, renames),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            collect_from_decl(&export_decl.decl, renames);
+            collect_free_alias_renames_from_decl(&export_decl.decl, renames);
         }
         _ => {}
     }
 }
 
-fn collect_from_decl(decl: &Decl, renames: &mut BTreeMap<String, String>) {
+fn collect_free_alias_renames_from_decl(decl: &Decl, renames: &mut BTreeMap<String, String>) {
     match decl {
         Decl::Fn(function) => {
-            collect_naturalization_renames_from_function(&function.function, renames);
-        }
-        Decl::Class(class) => {
-            collect_naturalization_renames_from_class(&class.class, renames);
+            collect_free_alias_renames_from_function(&function.function, renames);
         }
         Decl::Var(var) => {
             for declarator in &var.decls {
-                if let Some(init) = declarator.init.as_ref() {
-                    collect_naturalization_renames_from_expr(init, renames);
+                if let Some(Expr::Fn(function)) = declarator.init.as_deref() {
+                    collect_free_alias_renames_from_function(&function.function, renames);
                 }
             }
         }
@@ -360,44 +548,22 @@ fn collect_from_decl(decl: &Decl, renames: &mut BTreeMap<String, String>) {
     }
 }
 
-pub(super) fn collect_naturalization_renames_from_expr(
-    expr: &Expr,
-    renames: &mut BTreeMap<String, String>,
-) {
-    match expr {
-        Expr::Fn(function) => {
-            collect_naturalization_renames_from_function(&function.function, renames)
-        }
-        Expr::Arrow(arrow) => {
-            for param in &arrow.params {
-                collect_naturalization_renames_from_pattern(param, renames);
-            }
-        }
-        Expr::Class(class) => collect_naturalization_renames_from_class(&class.class, renames),
-        _ => {}
-    }
-}
-
-pub(super) fn collect_naturalization_renames_from_function(
+fn collect_free_alias_renames_from_function(
     function: &Function,
     renames: &mut BTreeMap<String, String>,
 ) {
-    for param in &function.params {
-        collect_naturalization_renames_from_pattern(&param.pat, renames);
-    }
     let Some(body) = function.body.as_ref() else {
         return;
     };
-    collect_return_object_alias_renames(&body.stmts, renames);
-}
-
-pub(super) fn collect_naturalization_renames_from_class(
-    class: &Class,
-    renames: &mut BTreeMap<String, String>,
-) {
-    for member in &class.body {
-        if let ClassMember::Constructor(constructor) = member {
-            collect_naturalization_renames_from_constructor(constructor, renames);
+    let mut aliases = BTreeMap::new();
+    collect_return_object_alias_renames(&body.stmts, &mut aliases);
+    if aliases.is_empty() {
+        return;
+    }
+    let facts = collect_subtree_name_facts(function);
+    for (from, to) in aliases {
+        if !facts.bound.contains(&from) {
+            renames.insert(from, to);
         }
     }
 }
