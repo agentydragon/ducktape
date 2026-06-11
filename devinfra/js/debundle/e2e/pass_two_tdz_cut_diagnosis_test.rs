@@ -1,0 +1,101 @@
+//! Pass-2 (ESM-evaluation-simulator) rejections must be diagnosable:
+//! the bail summary names the TDZ binding pair and the lazy
+//! back-edge that closes the I-cycle, and `cycles.json` carries a
+//! non-empty `cut` naming the violated at-init read.
+//!
+//! The fixture is the mediator shape from
+//! `mediator_reaches_asymmetric_cycle_test` (see that test's module
+//! doc for the full DFS walkthrough): the constraining subgraph of
+//! the `{mod_dep, mod_dependent}` SCC is acyclic (one forward
+//! `EagerUse`, one lazy back-edge), so a feedback-arc-set over
+//! constraining edges alone finds nothing to cut. The cut must
+//! instead come from the simulator's violated post-order check:
+//! `cross_value` (mod_dependent) at-init reads `dep_value`
+//! (mod_dep) while mod_dep's body is still mid-evaluation.
+
+use debundle_e2e_support::*;
+use serde_json::Value;
+
+fn mediator_fixture<'a>() -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        r#"const dep_value = "alpha";
+const cross_value = dep_value + "-beta";
+function lazy_reader() { return cross_value; }
+function mediator_helper() { return dep_value + "-via-mediator-" + lazy_reader(); }
+const mediator_init = mediator_helper();
+console.log(mediator_init);
+export { mediator_init };
+"#,
+        vec![
+            logical_module(
+                "mod_dep",
+                &[Member::new("dep_value"), Member::new("lazy_reader")],
+            ),
+            logical_module("mod_dependent", &[Member::new("cross_value")]),
+            logical_module(
+                "mod_mediator",
+                &[Member::new("mediator_helper"), Member::new("mediator_init")],
+            ),
+        ],
+    )
+}
+
+#[test]
+fn pass_two_rejection_summary_names_tdz_binding_pair_and_lazy_closure() {
+    // The summary must blame the violated at-init read as a binding
+    // pair (reader binding, target binding, both module names) and
+    // name the lazy read that closes the I-cycle — not print
+    // "0 R/S edge(s)" with no rows, which is what the FAS-only cut
+    // computation produced for asymmetric (Pass-2) rejections.
+    expect_rejection_containing_all(
+        mediator_fixture(),
+        &[
+            "unrealizable",
+            "cross_value",
+            "dep_value",
+            "at-init",
+            "mod_dep",
+            "mod_dependent",
+            "closes through lazy read",
+            "lazy_reader",
+        ],
+    );
+}
+
+#[test]
+fn pass_two_rejection_cycles_json_has_nonempty_cut() {
+    let rejected = run_rejection_fixture(mediator_fixture());
+    let cycles_path = rejected
+        .report_root
+        .join("static")
+        .join("app")
+        .join("cycles.json");
+    let cycles: Vec<Value> = read_json(&cycles_path);
+    assert_eq!(cycles.len(), 1, "expected one blocking SCC: {cycles:?}");
+    let entry = &cycles[0];
+    let modules: Vec<&str> = entry["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert!(
+        modules.iter().any(|m| m.contains("mod_dep"))
+            && modules.iter().any(|m| m.contains("mod_dependent")),
+        "blocking SCC must list the I-cycle members: {modules:?}",
+    );
+    let cut = entry["cut"].as_array().unwrap();
+    assert!(
+        !cut.is_empty(),
+        "Pass-2 rejection must carry a non-empty cut (the violated at-init reads): {entry}",
+    );
+    // The cut names the violated constraining edge with both bindings.
+    assert!(
+        cut.iter().any(|edge| {
+            edge["binding"].as_str() == Some("dep_value")
+                && edge["from_binding"].as_str() == Some("cross_value")
+                && edge["kind"].as_str() == Some("eager_use")
+        }),
+        "cut must name the violated at-init read cross_value -> dep_value: {cut:?}",
+    );
+}

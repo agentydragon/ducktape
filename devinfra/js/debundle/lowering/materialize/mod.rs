@@ -522,8 +522,8 @@ fn validate_and_emit_reports(
     }
     if !factorization_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
-            // Trim the wire shape before writing: drop `evidence`,
-            // keep `id` (array index), `modules`, `cut`. Evidence is
+            // Trim the wire shape before writing: keep `id` (array
+            // index), `modules`, `cut`. Per-edge evidence is
             // recomputable from `owner_graph.json` + this entry's
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and
@@ -538,6 +538,20 @@ fn validate_and_emit_reports(
         bail!(
             "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; owner graph at reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             n = factorization_report.cycles.len(),
+        );
+    }
+    // Defense-in-depth on the accept path: a cross-destination
+    // rebinding write (clause 2) always co-locates with its target in
+    // one atomic factor unit, so a spec splitting them must have
+    // produced an `atomic_unit_conflicts` bail above. Reaching this
+    // point with a non-empty clause-2 verdict means the atomic-unit
+    // glue and the realizability gate disagree — refuse to emit
+    // rather than materialize a bundle that reassigns an ESM import.
+    if !factorization_report.cross_rebinds.is_empty() {
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-unit conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor units). Rebinds:\n  {rebinds}",
+            n = factorization_report.cross_rebinds.len(),
+            rebinds = factorization_report.cross_rebinds.join("\n  "),
         );
     }
     Ok(())

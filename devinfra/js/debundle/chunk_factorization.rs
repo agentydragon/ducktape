@@ -10,7 +10,7 @@ use crate::graph::{
 };
 use crate::partition::Partition;
 use crate::reports::build_owner_graph_report;
-use crate::validation::validate_factorization_with_quotient;
+use crate::validation::validate_factorization;
 
 use crate::{
     FactorizationReport, LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient,
@@ -47,10 +47,8 @@ pub struct ChunkFactorization {
     pub assembly_conflicts: Vec<AtomicUnitConflict>,
     pub dep_graph: ModuleQuotient,
     /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
-    /// topological order. Precomputed at build time so downstream
-    /// consumers (`validation::validate_factorization` via the
-    /// verdict's `scc_partition`, `reports::build_quotient_scc_reports`)
-    /// share one walk.
+    /// topological order. Precomputed at build time for
+    /// `reports::build_quotient_scc_reports`.
     dep_graph_sccs: Vec<Vec<ModuleId>>,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
@@ -212,12 +210,10 @@ impl ChunkFactorization {
     /// Run SCC analysis over the dep graph. Spec authors consume the
     /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> FactorizationReport {
-        let mut report = validate_factorization_with_quotient(
-            &self.analysis.owner_graph,
-            &self.partition,
-            &self.dep_graph,
-            &|id| self.analysis.module_name(id),
-        );
+        let mut report =
+            validate_factorization(&self.analysis.owner_graph, &self.partition, &|id| {
+                self.analysis.module_name(id)
+            });
         report.atomic_unit_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .linker_order

@@ -1,16 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use petgraph::algo::{condensation, greedy_feedback_arc_set};
+use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::factor_assembly::AtomicUnitConflict;
-use crate::graph::build_module_quotient;
+use crate::graph::{EndpointView, OwnerEdgeId, partition_endpoints};
 use crate::partition::Partition;
-use crate::realizability::{RealizabilityVerdict, check_realizability_with_quotient};
+use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
 use swc_atoms::Atom;
 
-use crate::{DepKind, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal};
+use crate::{DepKind, ModuleId, OwnerGraph, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -27,52 +27,59 @@ pub struct FactorizationReport {
     /// see the linker's evaluation order without re-running
     /// materialization. See docs/design.md "Lemma 2".
     pub linker_order: Vec<String>,
+    /// Clause-2 violations (cross-destination rebinding writes) from
+    /// the realizability verdict, rendered for diagnostics. A
+    /// rebinding write and the binding it reassigns belong to one
+    /// atomic factor unit, so a spec splitting them surfaces as an
+    /// `atomic_unit_conflicts` entry first — on the accept path
+    /// (`cycles` and `atomic_unit_conflicts` both empty) this list
+    /// must be empty too, and the materializer bails if that
+    /// invariant ever breaks (`validate_and_emit_reports`).
+    pub cross_rebinds: Vec<String>,
 }
 
 /// Validator's rendered projection of one unrealizable SCC. The
 /// in-memory primitive is [`crate::realizability::SccDiagnosis`]
-/// (typed `ModuleId`s + `OwnerEdgeId` evidence); this shape adds
-/// stringified module names plus the `evidence` and FAS `cut`
-/// decorations the bail-message renderer consumes.
+/// (typed `ModuleId`s + `OwnerEdgeId` evidence); this shape
+/// stringifies the module names and decorates the diagnosis with the
+/// `cut` / `lazy_closure` rows the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
     pub modules: Vec<String>,
-    pub evidence: Vec<CycleEdge>,
-    /// Spec-author-actionable cut: a near-minimum set of
-    /// realizability-constraining (`at-init` or `side-effect`)
-    /// reasons whose removal would lift the cycle's realizability
-    /// violation. Computed by [`compute_realizability_cut`].
+    /// Spec-author-actionable cut: realizability-constraining
+    /// (`at-init` or `side-effect`) reasons whose removal (by
+    /// co-locating each binding pair into one module) lifts the
+    /// SCC's realizability violation. Derived from the verdict's
+    /// owner-edge provenance per [`SccRejection`] kind:
+    ///
+    /// - [`SccRejection::MutualConstrainingCycle`]: a near-minimum
+    ///   feedback arc set over the SCC's constraining edges,
+    ///   computed by [`compute_realizability_cut`].
+    /// - [`SccRejection::EsmEvaluationTdz`]: exactly the
+    ///   constraining edges whose simulated ESM post-order check
+    ///   failed — the at-init reads that TDZ at runtime.
     ///
     /// The cut never includes `lazy` reasons — lazy edges don't
     /// constrain ESM evaluation order, so removing one cannot help
-    /// fix a cycle. Each entry corresponds to (and shares its
-    /// shape with) a row in `evidence`.
-    ///
-    /// The algorithm builds a `DiGraph` containing only the
-    /// constraining (`R`/`S`) cross-module edges induced by `scc`,
-    /// then runs `petgraph::algo::condensation` once to find the
-    /// constraining-subgraph SCCs. Each non-trivial SCC is fed to
-    /// `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth,
-    /// 1993, `O(V + E)`); the returned FAS edges name the cut
-    /// (one cut entry per constraining reason on each picked edge).
-    /// Sound (removing every FAS edge breaks every cycle in the
-    /// constraining subgraph) and heuristic-minimum (petgraph's
-    /// FAS approximates within a constant factor on dense
-    /// instances).
+    /// fix a cycle. Non-empty for every blocking SCC.
     pub cut: Vec<CycleEdge>,
+    /// Populated only for [`SccRejection::EsmEvaluationTdz`]
+    /// rejections: the lazy cross-module read edges between SCC
+    /// members. For this rejection class the constraining subgraph
+    /// alone is acyclic — these are the back-edges that close the
+    /// I-cycle the ESM evaluation simulator walked, listed so the
+    /// bail summary can show how the cycle forms even though no
+    /// lazy edge is ever part of the cut.
+    pub lazy_closure: Vec<CycleEdge>,
 }
 
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
 ///
-/// The materializer's in-memory `CycleReport` also carries an
-/// `evidence` field — the full list of constraining cross-module
-/// edges inside the SCC, keyed by ordinal — but that list is
-/// recomputable from `owner_graph.json` + this entry's `modules`
-/// set, so it's stripped before serializing to keep the on-disk
-/// shape small (a 1335-module SCC's evidence is multi-MB; the
-/// trimmed entry is ~100 KB).
-///
-/// Consumers that need the per-edge evidence re-derive it via
+/// The full list of constraining cross-module edges inside the SCC
+/// is recomputable from `owner_graph.json` + this entry's `modules`
+/// set, so the wire entry carries only the modules and the cut (a
+/// 1335-module SCC's full evidence is multi-MB; the trimmed entry is
+/// ~100 KB). Consumers that need per-edge evidence re-derive it via
 /// `debundle gate describe <id>` (see `devinfra/js/debundle/docs/cli.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockingSccEntry {
@@ -82,10 +89,10 @@ pub struct BlockingSccEntry {
     pub id: usize,
     /// Every module in the unrealizable SCC.
     pub modules: Vec<String>,
-    /// Near-minimum feedback-arc-set over the SCC's constraining
-    /// (`at-init` / `side-effect`) edges. The actionable subset for
-    /// spec authors: removing any of these edges (by co-locating
-    /// the binding pair into one module) would break the SCC.
+    /// The actionable subset for spec authors: removing any of these
+    /// edges (by co-locating the binding pair into one module) works
+    /// toward breaking the SCC. See [`CycleReport::cut`] for the
+    /// per-rejection-kind derivation.
     pub cut: Vec<CycleEdge>,
 }
 
@@ -144,7 +151,7 @@ pub struct CycleEdge {
 /// **binding pairs**, not just module pairs, so spec authors can act
 /// directly: "move `X` (mod_A) and `Y` (mod_B) into one module."
 ///
-/// Full per-cycle evidence + cut still goes to
+/// Full per-cycle cut still goes to
 /// `reports/tree/<chunk_id>/cycles.json`. This summary keeps the
 /// inline bail message terse: one header line per SCC plus the top-K
 /// binding-pair blame rows.
@@ -155,6 +162,10 @@ pub struct CycleEdge {
 /// bindings render as `<anon stmt #ord>` so every row has a stable
 /// human-readable label even when the source statement declares no
 /// binding (top-level `console.log`, side-effecting expressions).
+///
+/// For ESM-evaluation-simulator (Pass-2 / TDZ) rejections, the cut
+/// rows are followed by the lazy back-edges that close the I-cycle
+/// (`CycleReport::lazy_closure`), in the same binding-pair format.
 ///
 /// The text retains the words "unrealizable" and "cycle" so existing
 /// rejection-keyword tests (`expect_rejection` in the e2e harness)
@@ -185,11 +196,14 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
         let mut ranked: Vec<(BindingPairKey<'_>, BindingPairAgg)> = groups.into_iter().collect();
         ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
 
-        if ranked.is_empty() {
-            // Defensive — the SCC is rejected because at least one
-            // R/S edge exists, so the cut should be non-empty.
-            continue;
-        }
+        // Every blocking SCC carries a non-empty cut by construction:
+        // Pass-1 runs FAS over a strongly connected constraining
+        // subgraph; Pass-2 reports only SCCs with a non-empty
+        // simulator-violated TDZ set.
+        debug_assert!(
+            !ranked.is_empty(),
+            "blocking SCC #{i} rendered with an empty cut: {cycle:?}",
+        );
 
         out.push_str(
             "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module)):\n",
@@ -211,6 +225,36 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
                 ranked.len() - TOP_K,
             ));
         }
+
+        if !cycle.lazy_closure.is_empty() {
+            out.push_str(
+                "  Constraining subgraph alone is acyclic; the I-cycle closes through lazy read(s) below, and the ESM evaluation simulator proved the at-init pair(s) above evaluate under TDZ (docs/design.md \"Lemma 2\"):\n",
+            );
+            let mut lazy_groups: HashMap<BindingPairKey<'_>, usize> = HashMap::new();
+            for edge in &cycle.lazy_closure {
+                *lazy_groups.entry(BindingPairKey::of(edge)).or_insert(0) += 1;
+            }
+            let mut lazy_ranked: Vec<(BindingPairKey<'_>, usize)> =
+                lazy_groups.into_iter().collect();
+            lazy_ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            for (key, count) in lazy_ranked.iter().take(TOP_K) {
+                out.push_str(&format!(
+                    "    {n:>4}x  {from_b} ({from_m})  --lazy-->  {to_b} ({to_m})\n",
+                    n = count,
+                    from_b = key.from_label,
+                    from_m = key.from,
+                    to_b = key.to_label,
+                    to_m = key.to,
+                ));
+            }
+            if lazy_ranked.len() > TOP_K {
+                out.push_str(&format!(
+                    "    … +{} more lazy binding pair(s)\n",
+                    lazy_ranked.len() - TOP_K,
+                ));
+            }
+        }
+
         out.push_str(
             "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
         );
@@ -270,54 +314,30 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
     seen.len()
 }
 
-/// Find SCCs in the dep graph and produce a report listing every
-/// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
-/// non-self-loop SCCs are dropped.
+/// Project the realizability verdict onto the validator's rendered
+/// report: one [`CycleReport`] per [`crate::realizability::SccDiagnosis`].
 ///
-/// [`crate::realizability::check_realizability`] gates this whole function
-/// (early return when its verdict is empty). The historical asymmetry between
-/// a "strict" validator and a "relaxed" primitive is gone: the primitive's
-/// tightened clause-3 rule rejects both the symmetric-constraining-cycle case
-/// (any multi-module SCC in the constraining subgraph) and the
-/// residual-in-cycle case (any multi-module SCC in `I` containing
-/// residual with a constraining edge whose target is residual), and
-/// `lower_chunk` realizes Lemma 2's source-import-order steering for
-/// every spec that makes it past the gate. See docs/design.md "Lemma 2:
-/// entry-side import ordering" for the order-steering algorithm and
-/// the residual-in-cycle carve-out.
-///
-/// The cycle reports this function emits are advisory evidence for
-/// spec authors — when the primitive rejects, this function walks
-/// the quotient and prints which modules + edges are involved so
-/// the author can pick a colocation or move that breaks the cycle.
+/// The verdict is the single source of truth for *which* SCCs block
+/// materialization (docs/design.md "Realizability primitive" —
+/// "Invariant: no bespoke parallel walks"); this function only
+/// decorates each diagnosis's owner-edge provenance into the
+/// stringified, binding-pair-labelled rows spec authors read. In
+/// particular, an asymmetric I-cycle that Lemma 2's source-import
+/// reversal rescues never appears here, even when another SCC in the
+/// same chunk is genuinely unrealizable.
 pub fn validate_factorization(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> FactorizationReport {
-    let quotient = build_module_quotient(owner_graph, partition);
-    validate_factorization_with_quotient(owner_graph, partition, &quotient, module_name)
-}
-
-/// Same as [`validate_factorization`] but takes a pre-built
-/// `ModuleQuotient` so callers that already constructed one (notably
-/// `ChunkFactorization::build_with`, which caches it as
-/// `self.dep_graph`) don't pay for a second
-/// `build_module_quotient` + `tarjan_scc` pass on the way through
-/// the realizability check.
-pub fn validate_factorization_with_quotient(
-    owner_graph: &OwnerGraph,
-    partition: &Partition,
-    quotient: &ModuleQuotient,
-    module_name: &dyn Fn(ModuleId) -> String,
-) -> FactorizationReport {
-    let verdict: RealizabilityVerdict =
-        check_realizability_with_quotient(owner_graph, partition, quotient);
+    let verdict = check_realizability(owner_graph, partition);
+    let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_name);
     if verdict.unrealizable_sccs.is_empty() {
         return FactorizationReport {
             cycles: Vec::new(),
             atomic_unit_conflicts: Vec::new(),
             linker_order: Vec::new(),
+            cross_rebinds,
         };
     }
     // statement_ordinal → first declared binding of the owner that
@@ -335,59 +355,162 @@ pub fn validate_factorization_with_quotient(
                 .map(|id| (node.statement_ordinal, id.0.clone()))
         })
         .collect();
-    let graph = quotient;
-    let mut cycles = Vec::new();
-    for scc in verdict.scc_partition() {
-        let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
-        let is_cycle = scc.len() > 1 || (scc.len() == 1 && graph.contains_edge(scc[0], scc[0]));
-        if !is_cycle {
-            continue;
-        }
-        // Realizability filter (per docs/design.md "The realizability
-        // theorem"): an `I ∪ S` SCC is unrealizable iff at least
-        // one cross-module edge between its members carries a
-        // realizability-constraining reason — an at-init read
-        // (`R`) or a side-effect ordering edge (`S`). Lazy reads
-        // alone don't constrain it: the ESM linker evaluates the
-        // SCC in *some* order, and the lazy reads only fire
-        // afterwards (no TDZ, no missed side-effect ordering).
-        let scc_constrains_evaluation_order = scc.iter().any(|&from| {
-            scc.iter()
-                .any(|&to| from != to && graph.has_init_order_constraining_edge(from, to))
-        });
-        if !scc_constrains_evaluation_order {
-            continue;
-        }
-        let mut evidence = Vec::new();
-        for (from, to, weight) in graph.all_edges() {
-            if !in_scc.contains(&from) || !in_scc.contains(&to) {
-                continue;
+    let cycles = verdict
+        .unrealizable_sccs
+        .iter()
+        .map(|diagnosis| {
+            let (cut, lazy_closure) = match diagnosis.rejection {
+                SccRejection::MutualConstrainingCycle => (
+                    compute_realizability_cut(
+                        owner_graph,
+                        partition,
+                        &diagnosis.constraining_owner_edges,
+                        module_name,
+                        &from_binding_by_ordinal,
+                    ),
+                    Vec::new(),
+                ),
+                // The diagnosis's owner edges ARE the cut: the
+                // simulator surfaced exactly the constraining
+                // `(from, to)` pairs whose post-order check failed.
+                SccRejection::EsmEvaluationTdz => (
+                    cycle_edges_for(
+                        owner_graph,
+                        partition,
+                        diagnosis.constraining_owner_edges.iter().copied(),
+                        module_name,
+                        &from_binding_by_ordinal,
+                    ),
+                    lazy_closure_edges(
+                        owner_graph,
+                        partition,
+                        &diagnosis.modules,
+                        module_name,
+                        &from_binding_by_ordinal,
+                    ),
+                ),
+            };
+            CycleReport {
+                modules: diagnosis.modules.iter().copied().map(module_name).collect(),
+                cut,
+                lazy_closure,
             }
-            for reason in &weight.reasons {
-                evidence.push(CycleEdge {
-                    from: module_name(from),
-                    to: module_name(to),
-                    statement_ordinal: reason.statement_ordinal,
-                    binding: reason.binding.as_ref().map(|id| id.0.clone()),
-                    from_binding: from_binding_by_ordinal
-                        .get(&reason.statement_ordinal)
-                        .cloned(),
-                    kind: reason.kind,
-                });
-            }
-        }
-        let cut = compute_realizability_cut(graph, scc, module_name, &from_binding_by_ordinal);
-        cycles.push(CycleReport {
-            modules: scc.iter().copied().map(module_name).collect(),
-            evidence,
-            cut,
-        });
-    }
+        })
+        .collect();
     FactorizationReport {
         cycles,
         atomic_unit_conflicts: Vec::new(),
         linker_order: Vec::new(),
+        cross_rebinds,
     }
+}
+
+/// Render the verdict's clause-2 cross-rebind diagnoses as
+/// human-readable lines for [`FactorizationReport::cross_rebinds`].
+fn render_cross_rebinds(
+    owner_graph: &OwnerGraph,
+    verdict: &RealizabilityVerdict,
+    module_name: &dyn Fn(ModuleId) -> String,
+) -> Vec<String> {
+    verdict
+        .cross_rebinds
+        .iter()
+        .map(|rebind| {
+            let edge = owner_graph.edge(rebind.owner_edge);
+            let binding = match &edge.reason.binding {
+                Some(id) => id.0.to_string(),
+                None => format!("<anon stmt #{}>", edge.reason.statement_ordinal.0),
+            };
+            format!(
+                "{} --{}--> {} (binding `{}`)",
+                module_name(rebind.from),
+                dep_kind_short(edge.reason.kind),
+                module_name(rebind.to),
+                binding,
+            )
+        })
+        .collect()
+}
+
+/// Project verdict owner-edge provenance onto rendered [`CycleEdge`]
+/// rows, sorted deterministically
+/// `(from, to, statement_ordinal, binding, kind)` so test snapshots
+/// compare cleanly. Endpoints use the gate view
+/// ([`EndpointView::Gate`]) — the same projection the realizability
+/// primitive used to produce the edges, so promoted at-init edges
+/// keep their cross-module endpoints.
+fn cycle_edges_for(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    edge_ids: impl IntoIterator<Item = OwnerEdgeId>,
+    module_name: &dyn Fn(ModuleId) -> String,
+    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
+) -> Vec<CycleEdge> {
+    let mut out: Vec<CycleEdge> = edge_ids
+        .into_iter()
+        .map(|edge_id| {
+            let edge = owner_graph.edge(edge_id);
+            let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)
+                .expect("verdict owner-edge provenance is cross-module in the gate view");
+            CycleEdge {
+                from: module_name(from),
+                to: module_name(to),
+                statement_ordinal: edge.reason.statement_ordinal,
+                binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
+                from_binding: from_binding_by_ordinal
+                    .get(&edge.reason.statement_ordinal)
+                    .cloned(),
+                kind: edge.reason.kind,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        (
+            a.from.as_str(),
+            a.to.as_str(),
+            a.statement_ordinal,
+            &a.binding,
+            a.kind,
+        )
+            .cmp(&(
+                b.from.as_str(),
+                b.to.as_str(),
+                b.statement_ordinal,
+                &b.binding,
+                b.kind,
+            ))
+    });
+    out
+}
+
+/// Lazy cross-module read edges between members of `modules`, gate
+/// view. For a [`SccRejection::EsmEvaluationTdz`] rejection the
+/// constraining subgraph alone is acyclic — these are the back-edges
+/// closing the I-cycle the ESM evaluation simulator walked.
+fn lazy_closure_edges(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    modules: &BTreeSet<ModuleId>,
+    module_name: &dyn Fn(ModuleId) -> String,
+    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
+) -> Vec<CycleEdge> {
+    let lazy_edge_ids = owner_graph.iter_edges().filter_map(|edge| {
+        if edge.reason.kind != DepKind::LazyUse
+            || owner_graph.node(edge.from).is_none()
+            || owner_graph.node(edge.to).is_none()
+        {
+            return None;
+        }
+        let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)?;
+        (modules.contains(&from) && modules.contains(&to)).then_some(edge.id)
+    });
+    cycle_edges_for(
+        owner_graph,
+        partition,
+        lazy_edge_ids,
+        module_name,
+        from_binding_by_ordinal,
+    )
 }
 
 /// Render a human-readable summary of atomic-unit conflicts for
@@ -450,130 +573,64 @@ pub fn render_atomic_unit_conflict_summary(
 }
 
 /// Compute a near-minimum cut of realizability-constraining edges
-/// inside `scc` whose removal makes the SCC realizable.
+/// whose removal makes a [`SccRejection::MutualConstrainingCycle`]
+/// SCC realizable.
 ///
-/// One-shot algorithm:
-/// 1. Build a `DiGraph<ModuleId, ()>` containing only the
-///    realizability-constraining (`R`/`S`) cross-module edges
-///    between members of `scc`. `LazyUse`-only edges are dropped
-///    up front — they don't constrain ESM evaluation order, so no
-///    cut entry can be a lazy edge by construction. This replaces
-///    the old loop's post-FAS "fallback scan for an R/S edge"
-///    hack: FAS now sees only edges that could legitimately be in
-///    the cut.
-/// 2. Run `petgraph::algo::condensation` once to partition the
-///    constraining subgraph into SCCs.
-/// 3. For each non-trivial condensation node (a real SCC of the
-///    constraining subgraph), induce its subgraph and run
-///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth,
-///    1993, `O(V + E)`). Every FAS edge contributes its R/S
-///    reasons to the cut.
+/// Input is the diagnosis's owner-edge provenance — every
+/// constraining cross-module owner edge inside the SCC, in the gate
+/// view. The algorithm groups the owner edges by their gate-view
+/// module pair, builds a `DiGraph` with one edge per pair (strongly
+/// connected by construction: the diagnosis's modules are one SCC of
+/// the constraining subgraph), and runs
+/// `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth, 1993,
+/// `O(V + E)`). Every FAS-picked pair contributes its owner edges to
+/// the cut.
 ///
-/// Soundness: removing every FAS edge makes the constraining
-/// subgraph of `scc` acyclic, so the surviving cross-module edges
-/// have a valid evaluation order — realizable per the docs/design.md
-/// realizability theorem. Cuts are sorted deterministically
-/// `(from, to, statement_ordinal, binding, kind)` so test
-/// snapshots compare cleanly.
+/// Soundness: removing every FAS pair makes the SCC's constraining
+/// subgraph acyclic, so the surviving cross-module edges have a
+/// valid evaluation order — realizable per the docs/design.md
+/// realizability theorem. Heuristic-minimum: petgraph's FAS
+/// approximates within a constant factor on dense instances.
 fn compute_realizability_cut(
-    graph: &ModuleQuotient,
-    scc: &[ModuleId],
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    constraining_owner_edges: &[OwnerEdgeId],
     module_name: &dyn Fn(ModuleId) -> String,
     from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
-    if scc.len() < 2 {
-        return Vec::new();
-    }
-    // Constraining-only induced subgraph on `scc`, as a `DiGraph`
-    // (index-based node ids required by `greedy_feedback_arc_set`).
-    // Node weight carries the original `ModuleId`; edge weight
-    // carries the `(from, to)` pair so we can recover the
-    // underlying `EdgeMetadata` from `graph` after FAS.
-    let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
-    let mut constraining: DiGraph<ModuleId, (ModuleId, ModuleId)> = DiGraph::new();
-    let mut idx_of: HashMap<ModuleId, _> = HashMap::with_capacity(scc.len());
-    for &m in scc {
-        idx_of.insert(m, constraining.add_node(m));
-    }
-    for (from, to, weight) in graph.all_edges() {
-        if from == to || !in_scc.contains(&from) || !in_scc.contains(&to) {
-            continue;
-        }
-        if !weight.constrains_init_order() {
-            continue;
-        }
-        constraining.add_edge(idx_of[&from], idx_of[&to], (from, to));
+    let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
+    for &edge_id in constraining_owner_edges {
+        let edge = owner_graph.edge(edge_id);
+        let (from, to) = partition_endpoints(edge, partition, EndpointView::Gate)
+            .expect("verdict owner-edge provenance is cross-module in the gate view");
+        by_pair.entry((from, to)).or_default().push(edge_id);
     }
 
-    // Condense once to the SCC DAG. `make_acyclic = true` drops
-    // self-loops and parallel edges between condensation nodes;
-    // we only need the membership lists (each condensation node's
-    // `Vec<ModuleId>` weight) to find non-trivial SCCs.
-    let condensed = condensation(constraining, true);
-
-    let mut cut: Vec<CycleEdge> = Vec::new();
-    for node in condensed.node_indices() {
-        let members: &Vec<ModuleId> = &condensed[node];
-        if members.len() < 2 {
-            continue;
-        }
-        let in_s: HashSet<ModuleId> = members.iter().copied().collect();
-
-        // Sub-SCC subgraph rebuilt from the original quotient,
-        // restricted to constraining edges between members.
-        let mut induced: DiGraph<ModuleId, (ModuleId, ModuleId)> = DiGraph::new();
-        let mut sub_idx_of: HashMap<ModuleId, _> = HashMap::with_capacity(members.len());
-        for &m in members {
-            sub_idx_of.insert(m, induced.add_node(m));
-        }
-        for (from, to, weight) in graph.all_edges() {
-            if from == to || !in_s.contains(&from) || !in_s.contains(&to) {
-                continue;
-            }
-            if !weight.constrains_init_order() {
-                continue;
-            }
-            induced.add_edge(sub_idx_of[&from], sub_idx_of[&to], (from, to));
-        }
-
-        for fas_edge in greedy_feedback_arc_set(&induced) {
-            let (u, v) = *fas_edge.weight();
-            let weight = graph
-                .edge_weight(u, v)
-                .expect("FAS edge endpoints came from the module quotient");
-            for reason in &weight.reasons {
-                if !reason.constrains_init_order() {
-                    continue;
-                }
-                cut.push(CycleEdge {
-                    from: module_name(u),
-                    to: module_name(v),
-                    statement_ordinal: reason.statement_ordinal,
-                    binding: reason.binding.as_ref().map(|id| id.0.clone()),
-                    from_binding: from_binding_by_ordinal
-                        .get(&reason.statement_ordinal)
-                        .cloned(),
-                    kind: reason.kind,
-                });
-            }
+    // Module-pair graph (index-based node ids required by
+    // `greedy_feedback_arc_set`). Edge weight carries the
+    // `(from, to)` pair so FAS picks map back to `by_pair`.
+    let mut pair_graph: DiGraph<ModuleId, (ModuleId, ModuleId)> = DiGraph::new();
+    let mut idx_of: HashMap<ModuleId, _> = HashMap::new();
+    for &(from, to) in by_pair.keys() {
+        for module in [from, to] {
+            idx_of
+                .entry(module)
+                .or_insert_with(|| pair_graph.add_node(module));
         }
     }
+    for &(from, to) in by_pair.keys() {
+        pair_graph.add_edge(idx_of[&from], idx_of[&to], (from, to));
+    }
 
-    cut.sort_by(|a, b| {
-        (
-            a.from.as_str(),
-            a.to.as_str(),
-            a.statement_ordinal,
-            &a.binding,
-            a.kind,
-        )
-            .cmp(&(
-                b.from.as_str(),
-                b.to.as_str(),
-                b.statement_ordinal,
-                &b.binding,
-                b.kind,
-            ))
-    });
-    cut
+    let mut cut_edge_ids: Vec<OwnerEdgeId> = Vec::new();
+    for fas_edge in greedy_feedback_arc_set(&pair_graph) {
+        cut_edge_ids.extend_from_slice(&by_pair[fas_edge.weight()]);
+    }
+    cycle_edges_for(
+        owner_graph,
+        partition,
+        cut_edge_ids,
+        module_name,
+        from_binding_by_ordinal,
+    )
 }

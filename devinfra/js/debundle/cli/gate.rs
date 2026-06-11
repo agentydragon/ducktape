@@ -152,9 +152,9 @@ pub struct GateDescribeReport {
     pub id: usize,
     pub modules: Vec<String>,
     pub cut: Vec<CycleEdge>,
-    /// Recomputed from `owner_graph.json` + `modules`. Same shape
-    /// as the in-memory `CycleReport.evidence` the gate emitted to
-    /// stderr at rejection time.
+    /// Every constraining cross-module edge inside the SCC,
+    /// recomputed from `owner_graph.json` + `modules` (the wire
+    /// entry carries only `modules` + `cut`).
     pub evidence: Vec<CycleEdge>,
 }
 

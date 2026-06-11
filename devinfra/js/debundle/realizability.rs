@@ -42,9 +42,8 @@ use rustc_hash::FxHashSet;
 
 use crate::OwnerId;
 use crate::graph::{
-    ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
-    chunk_constraining_module_edges, chunk_linker_order_from_pairs,
-    chunk_source_import_order_from_adjacency, position_lookup,
+    OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
+    chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -70,11 +69,37 @@ use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 pub struct SccDiagnosis {
     /// Modules participating in the cycle.
     pub modules: BTreeSet<ModuleId>,
-    /// Every constraining owner-edge whose endpoints both fall inside
-    /// `modules` and that crosses module boundaries — i.e. the
-    /// owner-level evidence the cycle is composed of. Stable order by
-    /// `OwnerEdgeId`.
+    /// Constraining owner-edge evidence the rejection is composed of,
+    /// in stable `OwnerEdgeId` order. The exact edge set depends on
+    /// `rejection`:
+    ///
+    /// - [`SccRejection::MutualConstrainingCycle`]: every constraining
+    ///   cross-module owner edge whose endpoints both fall inside
+    ///   `modules`.
+    /// - [`SccRejection::EsmEvaluationTdz`]: only the owner edges
+    ///   backing the constraining `(from, to)` pairs whose simulated
+    ///   post-order check failed — the surgical set whose removal
+    ///   (by co-locating the binding pair) lifts the violation.
     pub constraining_owner_edges: Vec<OwnerEdgeId>,
+    /// Which gate pass rejected this SCC.
+    pub rejection: SccRejection,
+}
+
+/// How the realizability gate decided an SCC is unrealizable. See
+/// docs/design.md "Lemma 2: entry-side import ordering" for the
+/// two-pass gating rule.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SccRejection {
+    /// Pass 1: the SCC is cyclic in the constraining-edge subgraph
+    /// alone — a mutual-eager cycle no source import order can
+    /// satisfy.
+    MutualConstrainingCycle,
+    /// Pass 2: the constraining subgraph of the SCC is acyclic, but
+    /// the full I-graph (constraining ∪ lazy back-edges) is cyclic
+    /// and the ESM evaluation simulator proved a TDZ: some
+    /// constraining edge's target evaluates at or after its source
+    /// under the materializer's actual import-order choices.
+    EsmEvaluationTdz,
 }
 
 /// Cross-destination rebinding write. ESM imports are read-only in the
@@ -94,13 +119,6 @@ pub struct CrossRebindEdge {
 pub struct RealizabilityVerdict {
     pub unrealizable_sccs: Vec<SccDiagnosis>,
     pub cross_rebinds: Vec<CrossRebindEdge>,
-    /// SCCs of the module-quotient graph (`build_module_quotient`),
-    /// in `tarjan_scc` reverse-topological order. Populated only by
-    /// the free function [`check_realizability`]; the
-    /// `RealizabilityIndex` verdict paths (which work off cached
-    /// constraining + I subgraphs and never materialise the full
-    /// module quotient) leave this empty.
-    scc_partition: Vec<Vec<ModuleId>>,
 }
 
 impl RealizabilityVerdict {
@@ -120,53 +138,18 @@ impl RealizabilityVerdict {
         }
         out
     }
-
-    /// SCCs of the module-quotient graph. See the field doc on
-    /// `scc_partition`. Only populated by [`check_realizability`];
-    /// callers that consume `RealizabilityIndex::verdict*` outputs
-    /// get an empty slice.
-    pub fn scc_partition(&self) -> &[Vec<ModuleId>] {
-        &self.scc_partition
-    }
 }
 
-/// Pure-function form. Builds the constraining-edge quotient, runs
-/// Tarjan, surfaces multi-module SCCs and cross-rebinds. The
+/// Pure-function form. Builds the canonical constraining edge set,
+/// runs Tarjan, surfaces multi-module SCCs and cross-rebinds. The
 /// correctness reference for the `RealizabilityIndex`'s incremental
 /// backing (verified by differential test in the
 /// `RealizabilityIndex` step 1b follow-up).
-///
-/// Thin wrapper over [`check_realizability_with_quotient`] for callers
-/// that don't already have a built `ModuleQuotient`. If you do
-/// (e.g. `ChunkFactorization::build_with`, which materialises
-/// `dep_graph = build_module_quotient(...)` for its own use), pass it
-/// to the `_with_quotient` form to avoid a redundant
-/// `build_module_quotient` + `tarjan_scc` pass.
 pub fn check_realizability(
     owner_graph: &OwnerGraph,
     partition: &Partition,
 ) -> RealizabilityVerdict {
-    let quotient = build_module_quotient(owner_graph, partition);
-    check_realizability_with_quotient(owner_graph, partition, &quotient)
-}
-
-/// Same as [`check_realizability`], but takes a pre-built
-/// `ModuleQuotient` to read SCCs from instead of constructing one
-/// from `(owner_graph, partition)` internally. The quotient must be
-/// the one produced by `build_module_quotient(owner_graph, partition)`
-/// for the same arguments — `build_module_quotient` is deterministic,
-/// so any two `ModuleQuotient`s built that way are equivalent and
-/// `quotient.sccs()` is byte-identical to a fresh
-/// `build_module_quotient(...).sccs()`.
-pub fn check_realizability_with_quotient(
-    owner_graph: &OwnerGraph,
-    partition: &Partition,
-    quotient: &ModuleQuotient,
-) -> RealizabilityVerdict {
-    let mut verdict = RealizabilityVerdict {
-        scc_partition: quotient.sccs(),
-        ..RealizabilityVerdict::default()
-    };
+    let mut verdict = RealizabilityVerdict::default();
 
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
@@ -233,6 +216,7 @@ pub fn check_realizability_with_quotient(
         verdict.unrealizable_sccs.push(SccDiagnosis {
             modules,
             constraining_owner_edges: owner_edges,
+            rejection: SccRejection::MutualConstrainingCycle,
         });
     }
 
@@ -300,6 +284,7 @@ pub fn check_realizability_with_quotient(
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules,
                 constraining_owner_edges: owner_edges,
+                rejection: SccRejection::EsmEvaluationTdz,
             });
         }
     }
@@ -1163,7 +1148,6 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds.values().cloned().collect(),
-            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
@@ -1176,6 +1160,7 @@ impl IncrementalQuotient {
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules,
                 constraining_owner_edges,
+                rejection: SccRejection::MutualConstrainingCycle,
             });
         }
 
@@ -1205,6 +1190,7 @@ impl IncrementalQuotient {
                 verdict.unrealizable_sccs.push(SccDiagnosis {
                     modules,
                     constraining_owner_edges,
+                    rejection: SccRejection::EsmEvaluationTdz,
                 });
             }
         }
@@ -1216,7 +1202,6 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching(module),
-            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
         let mut i_scc_had_constraining_pair = false;
@@ -1233,6 +1218,7 @@ impl IncrementalQuotient {
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules: constraining_modules,
                 constraining_owner_edges,
+                rejection: SccRejection::MutualConstrainingCycle,
             });
         }
 
@@ -1256,6 +1242,7 @@ impl IncrementalQuotient {
                     verdict.unrealizable_sccs.push(SccDiagnosis {
                         modules: i_modules,
                         constraining_owner_edges,
+                        rejection: SccRejection::EsmEvaluationTdz,
                     });
                 }
             }
@@ -1279,7 +1266,6 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching_with_overlay(module, overlay),
-            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
         let mut i_scc_had_constraining_pair = false;
@@ -1301,6 +1287,7 @@ impl IncrementalQuotient {
             verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules: constraining_modules,
                 constraining_owner_edges,
+                rejection: SccRejection::MutualConstrainingCycle,
             });
         }
 
@@ -1335,6 +1322,7 @@ impl IncrementalQuotient {
                     verdict.unrealizable_sccs.push(SccDiagnosis {
                         modules: i_modules,
                         constraining_owner_edges,
+                        rejection: SccRejection::EsmEvaluationTdz,
                     });
                 }
             }
@@ -1719,10 +1707,13 @@ impl RealizabilityIndex {
     }
 
     /// Roll back the delta identified by `handle`. Must be the top of
-    /// the journal; debug builds panic otherwise. `pub` for the same
-    /// peel-internal reasons as [`Self::push`] — prefer [`Self::scoped`].
+    /// the journal; panics otherwise — also in release builds, since
+    /// the index backs committed planner state and an out-of-LIFO
+    /// undo silently corrupts the maintained quotient. `pub` for the
+    /// same peel-internal reasons as [`Self::push`] — prefer
+    /// [`Self::scoped`].
     pub fn undo(&mut self, owner_graph: &OwnerGraph, handle: DeltaHandle) {
-        debug_assert_eq!(
+        assert_eq!(
             handle.0 + 1,
             self.journal.len(),
             "RealizabilityIndex::undo called out of LIFO order \
@@ -2377,39 +2368,6 @@ mod tests {
             .expect("parse module");
         let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
         build_owner_graph(&facts)
-    }
-
-    /// `check_realizability` is a thin wrapper around
-    /// `check_realizability_with_quotient` that builds the quotient
-    /// fresh. Both forms must produce byte-identical verdicts (incl.
-    /// `scc_partition`, `unrealizable_sccs`, `cross_rebinds`) on the
-    /// same `(owner_graph, partition, build_module_quotient(...))`
-    /// triple. This pins the wrapper-equivalence used by
-    /// `ChunkFactorization::build_with` to share its already-built
-    /// `dep_graph` instead of building a second quotient inside
-    /// validation.
-    #[test]
-    fn check_realizability_with_quotient_matches_pure_form() {
-        // A constraining cross-module cycle so every verdict field
-        // (incl. `unrealizable_sccs` and `scc_partition`) is populated
-        // — exercises more than just the empty-verdict happy path.
-        let source = "const a = b + 1; const b = a + 1;";
-        let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(1), module_id(1));
-
-        let pure_form = check_realizability(&owner_graph, &partition);
-        let quotient = build_module_quotient(&owner_graph, &partition);
-        let threaded = check_realizability_with_quotient(&owner_graph, &partition, &quotient);
-
-        assert_eq!(
-            pure_form, threaded,
-            "wrapper-vs-threaded forms must yield byte-identical verdicts",
-        );
-        assert!(
-            !pure_form.is_realizable(),
-            "fixture should produce a non-empty verdict to exercise all fields",
-        );
     }
 
     /// Two top-level constants in different modules, with one reading
@@ -3115,7 +3073,6 @@ mod tests {
                 .filter(|rebind| rebind.from == module || rebind.to == module)
                 .cloned()
                 .collect(),
-            ..RealizabilityVerdict::default()
         }
     }
 
