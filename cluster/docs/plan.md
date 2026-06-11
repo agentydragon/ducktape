@@ -282,9 +282,33 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `sectionName` on all HTTPRoute parentRefs. Also consider deriving Gateway IP pools
       from OVH node inventory rather than hardcoding addresses.
 - [ ] Cilium Gateway API `Programmed=False` (#42786): hostNetwork mode leaves the Gateway
-      status as `Programmed=False` / `AddressNotAssigned`. Verify whether this is cosmetic
-      (routes still work) or blocks CEC programming. If blocking, try `spec.addresses`
-      with static OVH Gateway IPs, or track the upstream fix.
+      status as `Programmed=False` / `AddressNotAssigned`, even when Cilium has generated
+      the `CiliumEnvoyConfig`, Envoy listeners are present on the selected nodes, and
+      routes work. Current decision: keep the hostNetwork Gateway plus Route 53 records
+      pointing at the public OVH Kubernetes node IPs. Do not alert solely on
+      `Programmed=False` for `gateway-system/cluster-gateway`; use blackbox probes
+      against the public node IPs and Cilium/Envoy programming signals instead.
+
+      More normal Cilium exposure models, if we decide to leave hostNetwork mode:
+
+      1. Provider-managed load balancer: public OVH LB IP -> Kubernetes
+         `LoadBalancer`/`NodePort` Service -> Cilium service handling -> Envoy ->
+         backends. This is the ordinary "intermediate entity" model: the provider owns
+         the routed public IP and health/failover behavior.
+      2. Provider-routed or floating VIPs: OVH Additional IP / routed address block ->
+         Cilium `CiliumLoadBalancerIPPool` assigns Service IPs -> Cilium BGP or L2
+         announcement advertises them. LB-IPAM only allocates IPs; it does not make
+         arbitrary public addresses reachable unless the provider network routes them
+         to us.
+      3. External LB to NodePort: a provider or self-hosted load balancer targets node
+         ports, while Cilium still handles the in-cluster service path.
+
+      If we move to one of these, disable `gatewayAPI.hostNetwork.enabled` and let the
+      generated Gateway Service be the externally exposed object. Setting
+      `Gateway.spec.addresses` to static OVH node IPs is not a real replacement for a
+      routed VIP/LB; it may help status only if Cilium supports that shape, but it
+      would not add failover or change internet routing.
+
 - [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
       hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
       (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium
@@ -308,8 +332,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
         the node?` — the Talos kubelet isn't started with that flag, so it never
         applies the `node.cloudprovider.kubernetes.io/uninitialized` taint, so the
         CCM's `cloud-node` controller short-circuits without populating addresses.
-      - **`CiliumLoadBalancerIPPool`**: not applicable — this cluster uses
-        hostNetwork Gateways (`Programmed=False` bug above), no LB IP allocation.
+      - **`CiliumLoadBalancerIPPool`**: not applicable to the current hostNetwork
+        Gateway. It would become relevant only if we switch to Service exposure
+        backed by provider-routed/floating VIPs plus BGP/L2 advertisement.
 
       Two paths, mostly orthogonal:
 
@@ -413,9 +438,13 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       StatefulSets, or add a `spec.updateStrategy` passthrough field.
 - [ ] OpenClaw: eliminate one-time token entry
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
-      hostNetwork gateways lost address assignment in v1.18.3 refactor.
-      Workaround: wildcard/apex ClusterRRsets in `k8s/powerdns/zones/`.
-      Remove workaround when Cilium ships a fix and we upgrade past it.
+      hostNetwork gateways currently report `AddressNotAssigned` even though traffic
+      works through the hostNetwork Envoy listeners. Current workaround is Route 53
+      wildcard/apex records pointing directly at public OVH Kubernetes node IPs.
+      Revisit only if Cilium fixes hostNetwork Gateway status or if we introduce a
+      normal external exposure layer: provider-managed load balancer, routed/floating
+      OVH VIPs with Cilium LB-IPAM plus BGP/L2 advertisement, or an external LB
+      targeting NodePorts.
 - [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
       reaches Failed, it never retries unless spec changes. Should retry with backoff.
       See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
