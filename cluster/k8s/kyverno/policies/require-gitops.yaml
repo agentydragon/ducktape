@@ -68,6 +68,10 @@ spec:
               - kind: ServiceAccount
                 name: grafana-operator
                 namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: seaweedfs-operator
+                namespace: seaweedfs
           # Allow Authentik (creates outpost Deployments from provider CRs)
           - subjects:
               - kind: ServiceAccount
