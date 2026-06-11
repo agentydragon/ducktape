@@ -40,6 +40,15 @@ pub struct ChunkCodeGraph {
     /// admitted as pure with args evaluated normally. Author-trust
     /// contract; see AGENTS.md "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
+    /// Chunk-top `const X = <result-primitive init>` binding names.
+    /// `const` makes the binding immutable, and a primitive value
+    /// carries no user accessors, so a `ToString` / `ToNumber` /
+    /// `ToPropertyKey` coercion of a reference to `X` fires no user
+    /// code — `X` is admitted as result-primitive wherever it is not
+    /// locally shadowed. The init's own evaluation effects are
+    /// classified separately at its declaration site; only the
+    /// *value* class matters here. See `collect_primitive_const_bindings`.
+    primitive_const_bindings: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +170,7 @@ impl ChunkCodeGraph {
             bindings,
             pure_new_constructors: declared_pure_new.clone(),
             declared_pure_members: declared_pure_members.clone(),
+            primitive_const_bindings: collect_primitive_const_bindings(body),
         };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
@@ -713,6 +723,37 @@ fn collect_plain_data_bindings(
         .into_iter()
         .filter(|n| !disqualified.contains(n))
         .collect()
+}
+
+/// Chunk-top `const X = <init>` names whose init evaluates to a
+/// **primitive** value, resolving references to earlier such consts.
+/// `const` guarantees the binding never rebinds, and a primitive
+/// carries no user accessors, so coercing a reference to the name
+/// fires no user code regardless of how the init was computed (the
+/// init's own evaluation effects are classified at its declaration
+/// site — only the resulting value class matters here). `let` / `var`
+/// are excluded: a later non-primitive rebind would invalidate the
+/// claim.
+///
+/// Forward pass in source order: a const resolves only references to
+/// consts declared before it — exactly the set visible without
+/// hitting the temporal dead zone. Function/arrow inits never reach
+/// here (`plain_data_var_candidates` filters them) and are not
+/// primitive anyway.
+fn collect_primitive_const_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<String> {
+    let mut primitives: BTreeSet<String> = BTreeSet::new();
+    let no_local_shadow: BTreeSet<String> = BTreeSet::new();
+    for item in body {
+        for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
+            if kind == VarDeclKind::Const
+                && !primitives.contains(&name)
+                && is_result_primitive(init, &primitives, &no_local_shadow)
+            {
+                primitives.insert(name);
+            }
+        }
+    }
+    primitives
 }
 
 /// Yield `(name, init)` pairs for every chunk-top single-declarator
@@ -1861,7 +1902,7 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|e| {
                 let p = classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph);
-                if is_result_primitive(e) {
+                if is_result_primitive(e, &graph.primitive_const_bindings, local_shadowed) {
                     p
                 } else {
                     p.worst(Purity::from_reason_with_detail(
@@ -1905,7 +1946,8 @@ pub(crate) fn classify_expr_purity(
                 // `[Symbol.toPrimitive]`. Pure only when the
                 // operand is statically primitive-valued.
                 UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde => {
-                    if is_result_primitive(&u.arg) {
+                    if is_result_primitive(&u.arg, &graph.primitive_const_bindings, local_shadowed)
+                    {
                         arg_purity
                     } else {
                         arg_purity.worst(Purity::from_reason_with_detail(
@@ -1960,7 +2002,13 @@ pub(crate) fn classify_expr_purity(
                 // on object operands. Pure only when both operands
                 // are statically primitive-valued.
                 _ => {
-                    if is_result_primitive(&b.left) && is_result_primitive(&b.right) {
+                    if is_result_primitive(&b.left, &graph.primitive_const_bindings, local_shadowed)
+                        && is_result_primitive(
+                            &b.right,
+                            &graph.primitive_const_bindings,
+                            local_shadowed,
+                        )
+                    {
                         operands
                     } else {
                         operands.worst(Purity::from_reason_with_detail(
@@ -2484,7 +2532,12 @@ fn classify_member_purity(
                     declared_pure,
                     graph,
                 );
-                if is_safe_property_key(&computed.expr, shadowed, local_shadowed) {
+                if is_safe_property_key(
+                    &computed.expr,
+                    shadowed,
+                    local_shadowed,
+                    &graph.primitive_const_bindings,
+                ) {
                     key_purity
                 } else {
                     key_purity.worst(Purity::from_reason_with_detail(
@@ -2843,7 +2896,11 @@ fn is_primitive_literal(expr: &Expr) -> bool {
 ///   (`&&` / `||` / `??` return one of their operands verbatim;
 ///   everything else — arithmetic, relational, equality, bitwise,
 ///   `in`, `instanceof` — returns a number/string/bigint/boolean);
-/// * conditionals whose both branches are result-primitive.
+/// * conditionals whose both branches are result-primitive;
+/// * a reference to a chunk-top `const` provably bound to a
+///   primitive value (`primitives`, from
+///   `collect_primitive_const_bindings`), when the name is not
+///   locally shadowed.
 ///
 /// The global `undefined` is deliberately NOT admitted: it is an
 /// ordinary (shadowable) global binding, not a keyword, and the
@@ -2852,16 +2909,30 @@ fn is_primitive_literal(expr: &Expr) -> bool {
 ///
 /// No admitted shape can produce a Symbol, so ToString on a
 /// result-primitive value never hits the symbol TypeError path.
-fn is_result_primitive(expr: &Expr) -> bool {
+fn is_result_primitive(
+    expr: &Expr,
+    primitives: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
+) -> bool {
     match strip_parens(expr) {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => true,
         Expr::Tpl(_) => true,
+        // A chunk-top `const` provably bound to a primitive value: the
+        // binding is immutable and the value carries no user accessors,
+        // so coercing it fires no user code — unless a local binding
+        // shadows the name in the current scope.
+        Expr::Ident(id) => {
+            primitives.contains(id.sym.as_ref()) && !local_shadowed.contains(id.sym.as_ref())
+        }
         Expr::Unary(u) => u.op != UnaryOp::Delete,
         Expr::Bin(b) => !matches!(
             b.op,
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
         ),
-        Expr::Cond(c) => is_result_primitive(&c.cons) && is_result_primitive(&c.alt),
+        Expr::Cond(c) => {
+            is_result_primitive(&c.cons, primitives, local_shadowed)
+                && is_result_primitive(&c.alt, primitives, local_shadowed)
+        }
         _ => false,
     }
 }
@@ -2877,8 +2948,9 @@ fn is_safe_property_key(
     key: &Expr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
+    primitives: &BTreeSet<String>,
 ) -> bool {
-    if is_result_primitive(key) {
+    if is_result_primitive(key, primitives, local_shadowed) {
         return true;
     }
     if let Expr::Member(member) = strip_parens(key)
@@ -2972,7 +3044,12 @@ fn classify_propname_purity(
         PropName::Computed(c) => {
             let key_purity =
                 classify_expr_purity(&c.expr, shadowed, local_shadowed, declared_pure, graph);
-            if is_safe_property_key(&c.expr, shadowed, local_shadowed) {
+            if is_safe_property_key(
+                &c.expr,
+                shadowed,
+                local_shadowed,
+                &graph.primitive_const_bindings,
+            ) {
                 key_purity
             } else {
                 key_purity.worst(Purity::from_reason_with_detail(
@@ -3022,7 +3099,13 @@ pub(crate) fn class_has_static_observable(
     let key_observable = |key: &PropName| match key {
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => false,
         PropName::Computed(c) => {
-            value_impure(&c.expr) || !is_safe_property_key(&c.expr, shadowed, local_shadowed)
+            value_impure(&c.expr)
+                || !is_safe_property_key(
+                    &c.expr,
+                    shadowed,
+                    local_shadowed,
+                    &graph.primitive_const_bindings,
+                )
         }
     };
     if !class.decorators.is_empty() {

@@ -1012,3 +1012,50 @@ fn object_calls_shadowed_receiver_stays_unknown() {
         !(classify_with_module("const Object = userland;", "Object.entries({a: 1})")).is_pure()
     );
 }
+
+/// Classify `expr_src` against a fully built `ChunkCodeGraph` for the
+/// wrapping `prefix` module, so chunk-top binding facts — including the
+/// primitive-`const` set — are populated.
+fn classify_built(prefix: &str, expr_src: &str) -> Purity {
+    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    let var = match module.body.last().expect("non-empty body") {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+    };
+    let init = var.decls[0].init.as_deref().expect("init expected");
+    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+}
+
+#[test]
+fn coercion_of_primitive_const_binding_is_pure() {
+    // A chunk-top `const` bound to a primitive is immutable and carries
+    // no user accessors, so ToString / ToNumber on a reference fires no
+    // user code — the coercion is pure.
+    assert!(classify_built("const s = \"x\";", "`v=${s}`").is_pure());
+    assert!(classify_built("const n = 5;", "-n").is_pure());
+    assert!(classify_built("const a = 1; const b = 2;", "a + b").is_pure());
+    // Transitive through another primitive const, and a computed key.
+    assert!(classify_built("const a = \"x\"; const b = `${a}!`;", "`${b}`").is_pure());
+    assert!(classify_built("const k = \"id\";", "({ [k]: 1 })").is_pure());
+}
+
+#[test]
+fn coercion_of_let_or_var_binding_stays_unknown() {
+    // `let` / `var` can be rebound to an object later, so the binding is
+    // not provably primitive and the coercion stays conservative.
+    assert!(!classify_built("let s = \"x\";", "`${s}`").is_pure());
+    assert!(!classify_built("var s = \"x\";", "`${s}`").is_pure());
+}
+
+#[test]
+fn coercion_of_non_primitive_const_stays_unknown() {
+    // `const o = {}` is a const but not primitive — interpolating it runs
+    // user `toString` / `[Symbol.toPrimitive]`.
+    assert!(!classify_built("const o = {};", "`${o}`").is_pure());
+    // A const whose init is not statically result-primitive (a bare
+    // import/member read) is not admitted either.
+    assert!(!classify_built("const o = globalThis.x;", "`${o}`").is_pure());
+}
