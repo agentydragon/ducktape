@@ -15,6 +15,17 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 const EXPR_HOLE_PREFIX: &str = "EXPR_";
 const STMT_HOLE_PREFIX: &str = "STMT_";
+/// A bare `STMT_LIST_*;` expression-statement in a block body is a
+/// statement-**list** hole: it absorbs a contiguous run of candidate
+/// statements (including an empty run) at that position. Distinct from
+/// the single-statement `STMT_` hole, which matches exactly one
+/// statement. `STMT_LIST_` is checked before `STMT_` since it is a
+/// prefix of it.
+const STMT_LIST_HOLE_PREFIX: &str = "STMT_LIST_";
+/// A bare `CLASS_REST*;` class field (no initializer) is a class-member
+/// hole: it absorbs the remaining class members at that position. Lets
+/// a selector pin a class by a few stable members and ignore the rest.
+const CLASS_REST_HOLE_PREFIX: &str = "CLASS_REST";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -1087,12 +1098,12 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_block_stmt(&mut self, needle: &BlockStmt, candidate: &BlockStmt) -> bool {
-        self.match_slice(&needle.stmts, &candidate.stmts, Self::match_stmt)
+        self.match_stmt_slice(&needle.stmts, &candidate.stmts)
     }
 
     fn match_switch_case(&mut self, needle: &SwitchCase, candidate: &SwitchCase) -> bool {
         self.match_option_box_expr(&needle.test, &candidate.test)
-            && self.match_slice(&needle.cons, &candidate.cons, Self::match_stmt)
+            && self.match_stmt_slice(&needle.cons, &candidate.cons)
     }
 
     fn match_catch_clause(&mut self, needle: &CatchClause, candidate: &CatchClause) -> bool {
@@ -1446,7 +1457,7 @@ impl<'a> AstWildcardMatcher<'a> {
                 Self::match_decorator,
             )
             && self.match_option_box_expr(&needle.super_class, &candidate.super_class)
-            && self.match_slice(&needle.body, &candidate.body, Self::match_class_member)
+            && self.match_class_member_slice(&needle.body, &candidate.body)
     }
 
     fn match_decorator(&mut self, needle: &Decorator, candidate: &Decorator) -> bool {
@@ -1729,6 +1740,84 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
+    /// Match a statement list, honoring a single `STMT_LIST_*` hole that
+    /// absorbs a contiguous run of candidate statements at its position.
+    /// With no hole this is an exact element-wise match. Two or more
+    /// statement-list holes in one block are ambiguous and never match.
+    fn match_stmt_slice(&mut self, needle: &[Stmt], candidate: &[Stmt]) -> bool {
+        let holes: Vec<usize> = needle
+            .iter()
+            .enumerate()
+            .filter(|(_, stmt)| statement_list_hole_name(stmt).is_some())
+            .map(|(index, _)| index)
+            .collect();
+        match holes.as_slice() {
+            [] => self.match_slice(needle, candidate, Self::match_stmt),
+            &[hole] => self.match_list_around_hole(needle, candidate, hole, Self::match_stmt),
+            _ => false,
+        }
+    }
+
+    /// Match a class member list, honoring a single `CLASS_REST*` hole
+    /// that absorbs the remaining members at its position.
+    fn match_class_member_slice(
+        &mut self,
+        needle: &[ClassMember],
+        candidate: &[ClassMember],
+    ) -> bool {
+        let holes: Vec<usize> = needle
+            .iter()
+            .enumerate()
+            .filter(|(_, member)| is_class_rest_hole(member))
+            .map(|(index, _)| index)
+            .collect();
+        match holes.as_slice() {
+            [] => self.match_slice(needle, candidate, Self::match_class_member),
+            &[hole] => {
+                self.match_list_around_hole(needle, candidate, hole, Self::match_class_member)
+            }
+            _ => false,
+        }
+    }
+
+    /// Match a list whose needle has exactly one list-hole at index
+    /// `hole`: the elements before it match the candidate prefix, the
+    /// elements after it match the candidate suffix, and the hole
+    /// absorbs the contiguous middle (any run, including empty). Like
+    /// the single-node holes, identifiers are matched positionally
+    /// post-alpha-canonicalization, so a hole is most robust at the end
+    /// of a list (a trailing hole keeps the matched prefix's identifier
+    /// numbering aligned with the candidate).
+    fn match_list_around_hole<T>(
+        &mut self,
+        needle: &[T],
+        candidate: &[T],
+        hole: usize,
+        mut match_item: impl FnMut(&mut Self, &T, &T) -> bool,
+    ) -> bool {
+        let prefix = hole;
+        let suffix = needle.len() - hole - 1;
+        if candidate.len() < prefix + suffix {
+            return false;
+        }
+        for index in 0..prefix {
+            if !match_item(self, &needle[index], &candidate[index]) {
+                return false;
+            }
+        }
+        let candidate_suffix_start = candidate.len() - suffix;
+        for offset in 0..suffix {
+            if !match_item(
+                self,
+                &needle[hole + 1 + offset],
+                &candidate[candidate_suffix_start + offset],
+            ) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn match_slice<T>(
         &mut self,
         needle: &[T],
@@ -1757,6 +1846,7 @@ impl AlphaIdentCanonicalizer {
                 .expressions
                 .iter()
                 .chain(&wildcard_idents.statements)
+                .chain(&wildcard_idents.statement_lists)
                 .cloned()
                 .collect(),
             ..Self::default()
@@ -1831,11 +1921,26 @@ fn visit_computed_prop_name(prop_name: &mut PropName, visitor: &mut AlphaIdentCa
 struct WildcardIdents {
     expressions: BTreeSet<String>,
     statements: BTreeSet<String>,
+    /// `STMT_LIST_*` statement-list hole names (reserved from
+    /// alpha-canonicalization like the single-node holes).
+    statement_lists: BTreeSet<String>,
+    /// Whether the selector contains any `CLASS_REST*` class-member
+    /// hole. The marker is a class field key (an `IdentName`, not an
+    /// `Ident`), so it survives alpha-canonicalization without being
+    /// reserved — only presence matters for routing.
+    class_rest_present: bool,
 }
 
 impl WildcardIdents {
+    /// True when the selector carries no holes of any kind, so the
+    /// caller can take the plain `eq_ignore_span` fast path. List holes
+    /// count: a selector with only `STMT_LIST_*` / `CLASS_REST*` still
+    /// needs the structural matcher.
     fn is_empty(&self) -> bool {
-        self.expressions.is_empty() && self.statements.is_empty()
+        self.expressions.is_empty()
+            && self.statements.is_empty()
+            && self.statement_lists.is_empty()
+            && !self.class_rest_present
     }
 }
 
@@ -1860,13 +1965,26 @@ impl Visit for WildcardIdentCollector {
     }
 
     fn visit_stmt(&mut self, stmt: &Stmt) {
-        if let Some(hole_name) = statement_hole_name(stmt)
-            && hole_name.starts_with(STMT_HOLE_PREFIX)
-        {
-            self.idents.statements.insert(hole_name.to_string());
-            return;
+        if let Some(hole_name) = statement_hole_name(stmt) {
+            // `STMT_LIST_` is a prefix of `STMT_`, so it must win first.
+            if hole_name.starts_with(STMT_LIST_HOLE_PREFIX) {
+                self.idents.statement_lists.insert(hole_name.to_string());
+                return;
+            }
+            if hole_name.starts_with(STMT_HOLE_PREFIX) {
+                self.idents.statements.insert(hole_name.to_string());
+                return;
+            }
         }
         stmt.visit_children_with(self);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if is_class_rest_hole(member) {
+            self.idents.class_rest_present = true;
+            return;
+        }
+        member.visit_children_with(self);
     }
 }
 
@@ -1889,4 +2007,23 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
         return None;
     };
     Some(ident.sym.as_ref())
+}
+
+/// The name of a statement-list hole (`STMT_LIST_*;`) if `stmt` is one.
+fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
+    let name = statement_hole_name(stmt)?;
+    name.starts_with(STMT_LIST_HOLE_PREFIX).then_some(name)
+}
+
+/// Whether `member` is a `CLASS_REST*;` class-member hole: a class field
+/// whose key identifier carries the prefix and which has no initializer.
+fn is_class_rest_hole(member: &ClassMember) -> bool {
+    let ClassMember::ClassProp(prop) = member else {
+        return false;
+    };
+    prop.value.is_none()
+        && matches!(
+            &prop.key,
+            PropName::Ident(ident) if ident.sym.as_ref().starts_with(CLASS_REST_HOLE_PREFIX)
+        )
 }

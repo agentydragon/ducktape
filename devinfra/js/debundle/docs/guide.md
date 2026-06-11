@@ -345,6 +345,36 @@ structural selectors: surrounding syntax is exact after the identifier policy
 is applied, and ambiguous matches are rejected rather than resolved by source
 order.
 
+Two variable-length **list holes** absorb a contiguous run rather than a
+single node — ideal for pinning a class by a stable skeleton without copying
+its whole minified body:
+
+- A bare `STMT_LIST_*;` statement in a block body matches any run of
+  statements (including none) at that position — e.g. a method or function
+  body you do not want to spell out.
+- A bare `CLASS_REST*;` class field (no initializer) matches the remaining
+  class members — "this class by these members, ignore the rest".
+
+```yaml
+members:
+  - selector:
+      source_match:
+        identifiers: alpha_all
+        match: |
+          class K {
+            increment() {
+              STMT_LIST_BODY;
+            }
+            CLASS_REST;
+          }
+    name: Counter
+```
+
+Like the single-node holes, list holes match positionally after
+alpha-canonicalization, so a hole is most robust at the end of its list (a
+trailing hole keeps the matched prefix aligned with the candidate). Two list
+holes in one list are ambiguous and never match.
+
 ## Workflow: renaming a binding without moving
 
 ```bash

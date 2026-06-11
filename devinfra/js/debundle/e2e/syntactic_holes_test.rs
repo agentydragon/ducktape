@@ -1,8 +1,17 @@
 //! End-to-end coverage for `source_match` syntactic holes.
 //!
-//! Expression holes are selector-local identifier expressions prefixed with
-//! `EXPR_`. Statement holes are selector-local bare expression statements
-//! prefixed with `STMT_`.
+//! Single-node holes:
+//! - Expression holes are selector-local identifier expressions prefixed
+//!   with `EXPR_`; they match one arbitrary expression subtree.
+//! - Statement holes are selector-local bare expression statements
+//!   prefixed with `STMT_`; they match exactly one statement.
+//!
+//! List holes (variable-length):
+//! - `STMT_LIST_*;` in a block body absorbs a contiguous run of
+//!   statements (including an empty run) — e.g. a method body you don't
+//!   want to pin.
+//! - `CLASS_REST*;` as a class field absorbs the remaining class members
+//!   — e.g. "match this class by these members, ignore the rest".
 
 use debundle_e2e_support::*;
 
@@ -191,4 +200,159 @@ export { marker };
             r#"console.log("done")"#,
         ],
     );
+}
+
+#[test]
+fn anonymous_source_match_stmt_list_hole_absorbs_contiguous_statements() {
+    // `STMT_LIST_BODY;` as the whole block body absorbs the three
+    // statements, so the selector matches the `if` regardless of body.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"if (true) {
+  console.log("a");
+  console.log("b");
+  console.log("c");
+}
+const marker = "ready";
+export { marker };
+"#,
+        vec![logical_module_with_anon_alpha_syntactic_holes(
+            "init",
+            &[Member::new("marker")],
+            r#"if (true) {
+  STMT_LIST_BODY;
+}"#,
+        )],
+    ));
+
+    assert_entry_output(&fixture, "a\nb\nc\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/init.js",
+        &[
+            r#"console.log("a")"#,
+            r#"console.log("b")"#,
+            r#"console.log("c")"#,
+            "const marker",
+        ],
+        // The selector's placeholder name never appears in the output;
+        // the original statements were spliced in verbatim.
+        &["STMT_LIST_BODY"],
+    );
+}
+
+#[test]
+fn anonymous_source_match_stmt_list_hole_absorbs_empty_run() {
+    // A trailing `STMT_LIST_TAIL;` matches a block that has only the
+    // pinned prefix statement — the hole absorbs zero statements.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"if (true) {
+  console.log("only");
+}
+const marker = "ready";
+export { marker };
+"#,
+        vec![logical_module_with_anon_alpha_syntactic_holes(
+            "init",
+            &[Member::new("marker")],
+            r#"if (true) {
+  console.log("only");
+  STMT_LIST_TAIL;
+}"#,
+        )],
+    ));
+
+    assert_entry_output(&fixture, "only\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/init.js",
+        &[r#"console.log("only")"#, "const marker"],
+        &["STMT_LIST_TAIL"],
+    );
+}
+
+#[test]
+fn member_source_match_class_rest_hole_selects_class_ignoring_other_members() {
+    // Pin the class by its constructor (body hole) and let `CLASS_REST;`
+    // absorb `increment` and `reset`. The whole class still moves — the
+    // hole is only in the selector, not the output.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Counter {
+  constructor() {
+    this.value = 0;
+  }
+  increment() {
+    this.value += 1;
+    return this.value;
+  }
+  reset() {
+    this.value = 0;
+  }
+}
+const counter = new Counter();
+console.log(counter.increment());
+export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Counter",
+                r#"class K {
+  constructor() {
+    STMT_LIST_CTOR;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "1\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["Counter"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        // The full class moved, members and all.
+        &["class", "increment", "reset"],
+        &["CLASS_REST", "STMT_LIST_CTOR"],
+    );
+}
+
+#[test]
+fn member_source_match_class_skeleton_rejects_ambiguous_match() {
+    // The skeleton `class K { run() { STMT_LIST } CLASS_REST }` matches
+    // both `Alpha` and `Beta`; ambiguous matches stay hard errors.
+    let opts = FixtureOpts::new(
+        r#"class Alpha {
+  run() {
+    return 1;
+  }
+}
+class Beta {
+  run() {
+    return 2;
+  }
+}
+console.log(new Alpha().run() + new Beta().run());
+export { Alpha };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Selected",
+                r#"class K {
+  run() {
+    STMT_LIST_BODY;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(opts, &["static/app::shapes", "ambiguous"]);
 }
