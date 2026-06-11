@@ -317,6 +317,19 @@ py_test(
 )
 
 py_test(
+    name = "test_dns_records",
+    srcs = ["test_dns_records.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "//tf/gitops/dns-records:main.tf",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
     data = [

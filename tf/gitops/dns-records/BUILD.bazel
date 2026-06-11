@@ -1,5 +1,10 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
+exports_files(
+    ["main.tf"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 tf_providers_versions(
     name = "providers",
     providers = {

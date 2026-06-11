@@ -17,21 +17,16 @@ terraform {
 locals {
   domain = "allegedly.works"
 
-  # Public Gateway node IPs. Update when public Gateway-capable nodes change.
-  # Comments name the current node (post talos-* → ovh-ns* renames). An IP listed
-  # here lands in the `*.allegedly.works` round-robin, so a dead IP gives every
-  # consumer a ~1/N transient failure rate — only list IPs whose node is currently
-  # announcing the Cilium gateway.
+  # Public Gateway node IPs. This should match every public OVH Kubernetes node
+  # in nebula-mesh.json with role=control-plane or role=worker. The validation
+  # test in cluster/validation/test_dns_records.py fails if this hand-written
+  # Terraform list drifts from that roster.
   public_gateway_ips = [
     "147.135.37.175", # ovh-ns102453 (formerly talos-kimsufi-cp-0)
     "147.135.39.162", # ovh-ns103656 (formerly talos-kimsufi-worker-0)
+    "147.135.39.176", # ovh-ns103711 (formerly talos-kimsufi-worker-1)
+    "147.135.104.5",  # ovh-ns104952 (formerly talos-ks-game-worker-0)
     "147.135.104.16", # ovh-ns104963 (formerly talos-ks-game-worker-1)
-    # Dropped 2026-06-02: `.176` (ovh-ns103711, formerly talos-kimsufi-worker-1) and
-    # `.5` (ovh-ns104952, formerly talos-ks-game-worker-0) — both nodes are up but
-    # the IPs return RST (Cilium L2 announce not active on these post-rename), so
-    # the augur oauth2-proxy and similar consumers intermittently fail OIDC
-    # discovery when their DNS round-robin lands on one. Restore once L2
-    # announcement / per-node public-IP wiring is fixed.
   ]
 
   # Kubernetes API endpoints — every control-plane node, not just the ones whose
@@ -65,7 +60,7 @@ import {
   id = "Z02901943N8ZFQFOD9P5I_allegedly.works_A"
 }
 
-# Wildcard A record — all subdomains resolve to VPS nodes
+# Wildcard A record — all subdomains resolve to public Kubernetes nodes.
 resource "aws_route53_record" "wildcard" {
   #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
   zone_id         = var.route53_zone_id
