@@ -48,6 +48,16 @@ def test_prepaid_exhausted_with_feature_on_is_over_plan() -> None:
     assert currently_over_plan(fetch)
 
 
+def test_short_window_exhausted_with_feature_on_is_over_plan() -> None:
+    # 5h window exhausted (burning extra) but 7d window still has headroom.
+    fetch = _fetch(
+        short_window=QuotaWindow(used_percent=105, reset_seconds=1200, window_seconds=18000),
+        long_window=QuotaWindow(used_percent=96, reset_seconds=86400, window_seconds=604800),
+        extra_usage=ExtraUsage(is_enabled=True, monthly_limit_usd=4600, used_usd=3120, utilization=67),
+    )
+    assert currently_over_plan(fetch)
+
+
 def test_extra_status_transitions() -> None:
     quotas = AllQuotas(
         providers=[

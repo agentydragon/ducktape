@@ -56,15 +56,18 @@ def currently_over_plan(out: ProviderFetch) -> bool:
 
     `extra_usage.is_enabled` only signals "feature enabled on the account",
     and `extra_usage.used_usd` is a cumulative monthly tally — neither says
-    anything about "right now". The real signal is the 7d window being
-    exhausted (every further call now hits the monthly bill).
+    anything about "right now". The real signal is *any* rate-limit window
+    being exhausted (every further call now hits the monthly bill).
     """
     if not isinstance(out.result, FetchSuccess):
         return False
     extra = out.result.extra_usage
-    long = out.result.long_window
     if extra is None or not extra.is_enabled:
         return False
+    short = out.result.short_window
+    long = out.result.long_window
+    if short is not None and short.used_percent >= _OVER_PLAN_PERCENT:
+        return True
     return long is not None and long.used_percent >= _OVER_PLAN_PERCENT
 
 
