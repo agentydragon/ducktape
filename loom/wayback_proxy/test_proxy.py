@@ -26,6 +26,7 @@ from loom.wayback_proxy import fake_ia
 from loom.wayback_proxy.addon import HEALTH_HOST, WaybackAddon
 from loom.wayback_proxy.proxy import (
     Config,
+    UpstreamError,
     WaybackResolver,
     parse_web_path,
     pick_available_capture,
@@ -281,6 +282,21 @@ def test_pick_available_capture_ignores_unavailable() -> None:
         }
     }
     assert pick_available_capture(payload, AS_OF_TS) is None
+
+
+def test_pick_available_capture_rejects_malformed_shape() -> None:
+    payload = {
+        "archived_snapshots": {
+            "closest": {
+                "status": "200",
+                "available": True,
+                "url": "http://web.archive.org/web/20200101000000/https://example.com/",
+                "timestamp": "not-a-timestamp",
+            }
+        }
+    }
+    with pytest.raises(UpstreamError, match="Availability response shape"):
+        pick_available_capture(payload, AS_OF_TS)
 
 
 def test_config_requires_as_of(monkeypatch: pytest.MonkeyPatch) -> None:

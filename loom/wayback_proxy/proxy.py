@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TextIO
 
 import aiohttp
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from yarl import URL
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,33 @@ def _truthy_availability(value: object) -> bool:
     return value is True or value in {"true", "True", "1", 1}
 
 
+class AvailabilityClosest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    available: object = False
+    timestamp: str
+    url: str
+
+    @field_validator("timestamp")
+    @classmethod
+    def _validate_timestamp(cls, value: str) -> str:
+        if re.fullmatch(r"\d{4,14}", value) is None:
+            raise ValueError("must be a 4-14 digit IA timestamp")
+        return value
+
+
+class ArchivedSnapshots(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    closest: AvailabilityClosest | None = None
+
+
+class AvailabilityResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    archived_snapshots: ArchivedSnapshots = Field(default_factory=ArchivedSnapshots)
+
+
 def pick_available_capture(payload: object, as_of_ts: str) -> tuple[str, str] | None:
     """Return (timestamp, original URL) from a Wayback Availability response.
 
@@ -106,24 +134,18 @@ def pick_available_capture(payload: object, as_of_ts: str) -> tuple[str, str] | 
     the clamp). The caller can then fall back to CDX. Malformed responses raise
     :class:`UpstreamError`.
     """
-    if not isinstance(payload, dict):
-        raise UpstreamError(f"Availability returned non-object JSON: {type(payload).__name__}")
-    snapshots = payload.get("archived_snapshots", {})
-    if not isinstance(snapshots, dict):
-        raise UpstreamError(f"Availability archived_snapshots is {type(snapshots).__name__}, not object")
-    closest = snapshots.get("closest")
+    try:
+        response = AvailabilityResponse.model_validate(payload)
+    except ValidationError as e:
+        raise UpstreamError(f"Availability response shape is unexpected: {e}") from e
+
+    closest = response.archived_snapshots.closest
     if closest is None:
         return None
-    if not isinstance(closest, dict):
-        raise UpstreamError(f"Availability closest is {type(closest).__name__}, not object")
-    if not _truthy_availability(closest.get("available")):
+    if not _truthy_availability(closest.available):
         return None
-    timestamp = closest.get("timestamp")
-    if not isinstance(timestamp, str) or not re.fullmatch(r"\d{4,14}", timestamp):
-        raise UpstreamError(f"Availability timestamp has unexpected value: {timestamp!r}")
-    replay_url_raw = closest.get("url")
-    if not isinstance(replay_url_raw, str):
-        raise UpstreamError(f"Availability replay url has unexpected value: {replay_url_raw!r}")
+    timestamp = closest.timestamp
+    replay_url_raw = closest.url
     try:
         replay_url = URL(replay_url_raw, encoded=True)
     except ValueError as e:
