@@ -34,10 +34,7 @@ def _render_provider(pv: ProviderView, now: datetime) -> str:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [f"{pv.provider}  {_format_extra_active(extra)}"]
-        if short is not None:
-            lines.append(_active_window_line("5h", short, stale))
-        if long is not None:
-            lines.append(_active_window_line("7d", long, stale))
+        lines.append(_active_windows_line(short, long, stale))
         return "\n".join(lines)
 
     lines = [_header(pv.provider, error)]
@@ -92,11 +89,17 @@ def _format_extra_informational(extra: ExtraUsage) -> str:
     return f"extra: ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) spent this month"
 
 
-def _active_window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:
-    parts = [f"{label}: {round(w.used_percent):>3d}%", f"↻ {format_duration(w.reset_seconds)}"]
+def _active_windows_line(short: QuotaWindow | None, long: QuotaWindow | None, stale_age: str | None) -> str:
+    parts = [_active_window_part("5h", short), _active_window_part("7d", long)]
     if stale_age is not None:
         parts.append(f"(stale {stale_age})")
     return "  " + "  ".join(parts)
+
+
+def _active_window_part(label: str, w: QuotaWindow | None) -> str:
+    if w is None:
+        return f"{label}: no data"
+    return f"{label}: {round(w.used_percent):>3d}% ↻ {format_duration(w.reset_seconds)}"
 
 
 def _window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:

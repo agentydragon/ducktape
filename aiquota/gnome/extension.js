@@ -556,9 +556,8 @@ const QuotaIndicator = GObject.registerClass(
         if (p.state.currentlyOverPlan === true) {
           const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
-          p.longRow.visible = true;
-          this._renderExtraActiveRow(p.shortRow, "5h", short, staleAge);
-          this._renderExtraActiveRow(p.longRow, "7d", long, staleAge);
+          p.longRow.visible = false;
+          this._renderExtraActiveRow(p.shortRow, short, long, staleAge);
         } else {
           const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
@@ -591,21 +590,21 @@ const QuotaIndicator = GObject.registerClass(
       item.label.set_text(parts.join(" · "));
     }
 
-    _renderExtraActiveRow(item, label, state, staleAgeSeconds) {
+    _renderExtraActiveRow(item, short, long, staleAgeSeconds) {
       item._bars.visible = false;
       this._setBarFill(item._timeFill, null);
       this._setBarFill(item._usageFill, null);
       this._setBarTint(item._usageFill, "unknown");
-      if (state == null) {
-        item._summaryLabel.set_text(`${label}: no data`);
-        return;
-      }
+      const parts = [this._formatExtraActiveWindow("5h", short), this._formatExtraActiveWindow("7d", long)];
+      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
+      item._summaryLabel.set_text(parts.join("  "));
+    }
+
+    _formatExtraActiveWindow(label, state) {
+      if (state == null) return `${label}: no data`;
       const liveState = withLiveReset(state);
       const used = liveState.usedPercent != null ? `${Math.round(liveState.usedPercent)}%` : "?";
-      const reset = `↻${formatDuration(liveState.resetSeconds)}`;
-      const parts = [used, reset];
-      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
-      item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
+      return `${label}: ${used} ↻${formatDuration(liveState.resetSeconds)}`;
     }
 
     _renderPopupRow(item, label, state, staleAgeSeconds) {

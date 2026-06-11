@@ -1,5 +1,5 @@
 {
-  "_comment": "Pace-based hot with Anthropic extra usage burning. claude: short=hot(dev+20, 50% used at 30% elapsed)/long=100% → extra usage active, ⚡ in panel, 5h/7d text-only reset rows without bars. extraUsage matches real api.anthropic.com/api/oauth/usage shape (nothing-up-my-sleeve: 314159/500000 = pi digits). codex: both ok(dev+0) → panel ok. zai: short=null (off-peak)/long=warn(dev+10, 40% at 30%) → panel warn.",
+  "_comment": "Pace-based hot with Anthropic extra usage burning. claude: short=hot(dev+20, 50% used at 30% elapsed)/long=100% → extra usage active, ⚡ in panel, one 5h/7d text-only reset row without bars. extraUsage matches real api.anthropic.com/api/oauth/usage shape (nothing-up-my-sleeve: 314159/500000 = pi digits). codex: both ok(dev+0) → panel ok. zai: short=null (off-peak)/long=warn(dev+10, 40% at 30%) → panel warn.",
   "claude": {
     "short": { "usedPercent": 50, "resetSeconds": 12600, "windowSeconds": 18000 },
     "long": { "usedPercent": 100, "resetSeconds": 423360, "windowSeconds": 604800 },
