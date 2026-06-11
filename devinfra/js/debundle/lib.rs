@@ -18,6 +18,7 @@
 
 pub mod analysis_hints;
 pub mod atomic_units;
+pub mod cross_module_purity;
 pub mod factor_assembly;
 pub mod facts;
 pub mod graph;

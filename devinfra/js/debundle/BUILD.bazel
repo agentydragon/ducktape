@@ -258,6 +258,7 @@ rust_library(
     srcs = [
         "analysis_hints.rs",
         "atomic_units.rs",
+        "cross_module_purity.rs",
         "factor_assembly.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
