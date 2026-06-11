@@ -3377,6 +3377,8 @@ spec:
         - --log-level=info
         - --log-encoding=json
         - --enable-leader-election
+        - --concurrent=8
+        - --requeue-dependency=30s
         env:
         - name: RUNTIME_NAMESPACE
           valueFrom:

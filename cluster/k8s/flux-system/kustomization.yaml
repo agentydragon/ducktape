@@ -1,6 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # Keep controller args that must survive raw Terraform bootstrap applies in
+  # gotk-components.yaml instead of overlay-only patches.
   - gotk-components.yaml
   # Keep root GitRepository fields that must survive raw Terraform bootstrap
   # applies, such as auth and sparseCheckout, in gotk-sync.yaml.
@@ -14,22 +16,3 @@ patches:
       - op: add
         path: /metadata/labels/goldilocks.fairwinds.com~1enabled
         value: "false"
-  # Reconcile with moderate fan-out. With 244 Kustomizations and dependsOn
-  # chains up to 9 deep, the upstream defaults serialise propagation:
-  #   --concurrent=4          — at most 4 Kustomizations in flight at a time
-  #   --requeue-dependency=30s — wait 30s before re-checking a not-yet-ready dep
-  # Keep some extra fan-out so healthy pushes still settle promptly, but keep
-  # dependency retries at the upstream interval. A 5s retry loop amplified
-  # unhealthy dependency chains into persistent kustomize-controller churn and
-  # control-plane disk writes.
-  - target:
-      kind: Deployment
-      name: kustomize-controller
-      namespace: flux-system
-    patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: --concurrent=8
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: --requeue-dependency=30s
