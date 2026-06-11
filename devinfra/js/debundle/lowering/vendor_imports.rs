@@ -1,12 +1,11 @@
 //! Construction-time vendor consultation for materialized module
-//! bodies (plans/vendor_into_emission.md §2.4, PR 3): classify each
-//! planned runtime re-import against the `VendorResolutionPlan` and,
-//! for vendor-swapped targets, construct the package / facade import
-//! plus the body-replacement map directly — instead of emitting a
-//! chunk re-import for the post-materialize wave to rewrite. The wave
-//! dispatchers skip `FileRole::Module` files accordingly; pass-through
-//! files (chunk entries, runtime files) stay wave-rewritten until
-//! PR 4's unified emission rewriter.
+//! bodies (plans/vendor_into_emission.md §2.4): classify each planned
+//! runtime re-import against the `VendorResolutionPlan` and, for
+//! vendor-swapped targets, construct the package / facade import plus
+//! the body-replacement map directly. Pass-through files (chunk
+//! entries, runtime files) are the other application site, handled by
+//! the unified emission rewriter (`vendor::passthrough`) consuming the
+//! same plan.
 
 use vendor::{
     DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, VendorImportAction,
@@ -70,8 +69,8 @@ impl<'a> VendorReimportOracle<'a> {
 
     /// Classify one runtime re-import by the chunk its source directive
     /// targets, resolved from the source chunk's own coordinate system —
-    /// the same resolution the post-materialize wave performs on the
-    /// rebased specifier in the emitted module file (the rebase in
+    /// the same resolution the pass-through emission rewriter performs
+    /// on the rebased specifier in an emitted file (the rebase in
     /// `source_chunk_imports_for_moved_body` is exactly the coordinate
     /// change between the two). `None`: not a chunk target (bare
     /// package specifier or extra-file asset).
@@ -109,10 +108,9 @@ pub(super) struct PlannedVendorReimports<'a> {
     /// re-imports exactly as before.
     pub(super) retained: BTreeMap<Id, &'a RuntimeImportInfo>,
     /// Boundary-rename name mapping for retained named re-imports
-    /// (vendor-local → public). Inert while the pre-materialize
-    /// `rename_vendor_exports` wave still runs — source ASTs reach
-    /// lowering already renamed — and load-bearing once PR 4 deletes
-    /// that wave.
+    /// (vendor-local → public). Load-bearing: source ASTs reach
+    /// lowering with the vendor-local names, and the public name is
+    /// applied at import construction.
     pub(super) imported_overrides: BTreeMap<Id, String>,
     /// External package / facade import decls replacing claimed
     /// re-imports; appended to the runtime re-import block.

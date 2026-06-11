@@ -116,13 +116,13 @@ pub fn prepare_js_chunks(
     //
     // A chunk needs to keep its AST if any downstream stage will read it. The
     // predicates below cover spec-driven stages (logical modules, residual
-    // modules, renames, vendor); on top of those, `rewrite_chunk_entry_specifiers`
-    // runs unconditionally for every chunk, so we must also keep the AST whenever
-    // that stage would actually rewrite anything in this chunk's entry. The
-    // `has_rewritable_specifier` fact mirrors `rewrite_source`'s relative-path
-    // gate (`.` or `/` prefix) exactly and is computed during the first-pass
-    // `analyze_program_shallow` walk, so this second pass does not need to
-    // re-visit the AST.
+    // modules, renames, vendor); on top of those, the pass-through emission
+    // rewriter canonicalizes specifiers in every emitted non-module file, so
+    // we must also keep the AST whenever it would rewrite anything in this
+    // chunk's entry. The `has_rewritable_specifier` fact mirrors the
+    // canonicalizer's relative-path gate (`.` or `/` prefix) exactly and is
+    // computed during the first-pass `analyze_program_shallow` walk, so this
+    // second pass does not need to re-visit the AST.
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
@@ -215,9 +215,7 @@ struct PreparedChunk {
     parsed_files: Vec<ParsedJsFileRecord>,
     /// Captured from the fused `analyze_program_shallow` walk so the
     /// second pass can decide AST retention without re-visiting the
-    /// AST. Replaces the dedicated `ast_has_rewritable_specifier`
-    /// traversal that used to run for every chunk in
-    /// `entry_has_rewritable_specifier`.
+    /// AST.
     has_rewritable_specifier: bool,
 }
 

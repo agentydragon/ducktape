@@ -1,19 +1,20 @@
 //! Read-only vendor resolution plan: the single post-prepare resolution
-//! oracle for the vendor waves.
+//! oracle for every vendor application site.
 //!
 //! `build_vendor_resolution_plan` runs once, immediately after chunk
 //! preparation. It validates every vendor mark against the artifact in
 //! one pass (unknown chunk / missing entry, boundary-mapping collisions,
 //! wrapper-shape + `default_export_aliases` soundness, partial-swap
-//! symbol/package shape, installed-package versions) and records the
-//! resolved decisions: boundary mappings, full-swap wrapper text and
-//! output paths, partial/bundled swap symbol tables and facade targets,
-//! plus the wire-facing resolution projections the vendor manifests are
-//! built from. The wave entry points (`rename_vendor_exports`,
-//! `swap_vendor_chunks`, `apply_partial_vendor_swaps`,
-//! `apply_bundled_partial_vendor_swaps`, strip) consume the plan instead
-//! of re-resolving marks mid-pipeline; application (caller rewrites,
-//! file writes, chunk removal, strip) stays in the waves.
+//! symbol/package shape, installed-package versions, consumer-shape
+//! classification) and records the resolved decisions: boundary
+//! mappings, full-swap wrapper text and output paths, partial/bundled
+//! swap symbol tables and facade targets, plus the wire-facing
+//! resolution projections the vendor manifests are built from. The
+//! application sites (`swap_vendor_chunks`, lowering's import
+//! construction, the pass-through emission rewriter, the bundled
+//! self-rewrite, strip) consume the plan instead of re-resolving marks
+//! mid-pipeline; application (directive rewrites, file writes, chunk
+//! removal, strip) stays at those sites.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -23,9 +24,14 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde_json::Value;
 use swc_common::GLOBALS;
+use swc_ecma_ast::{ExportSpecifier, ImportSpecifier, ModuleDecl, ModuleItem};
 
-use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path, manifest_relative_path};
-use js_ast::parse_js_module;
+use artifact::{
+    ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, join_module_path,
+    list_chunk_file_paths, manifest_relative_path,
+};
+use binding_targets::module_export_name;
+use js_ast::{parse_js_module, str_value};
 use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
 };
@@ -46,10 +52,10 @@ use crate::wrappers::{
     plan_bundled_partial_swap_assets, set_diff, wrapper_output_path,
 };
 use crate::{
-    collect_boundary_mapping, collect_default_export_object_keys, collect_exported_names,
-    is_valid_identifier, module_has_export_star, read_installed_package_metadata,
-    resolve_package_subpath, validate_boundary_mapping_collisions,
-    verified_default_alias_export_names,
+    MaterializedOutputChunkIndex, collect_boundary_mapping, collect_default_export_object_keys,
+    collect_exported_names, is_valid_identifier, module_has_export_star,
+    read_installed_package_metadata, resolve_package_subpath, resolve_partial_swap_import_target,
+    validate_boundary_mapping_collisions, verified_default_alias_export_names,
 };
 
 #[derive(Debug, Clone)]
@@ -70,6 +76,11 @@ pub struct VendorResolutionPlan {
     pub(crate) full_swaps: Vec<FullSwapPlan>,
     pub(crate) partial_swaps: BTreeMap<ChunkId, ChunkPartialSwapPlan>,
     pub(crate) bundled_partial_swaps: BTreeMap<ChunkId, ChunkBundledPartialSwapPlan>,
+    /// `suppress`-marked chunks: hands-off for every rewrite — the
+    /// pass-through emission rewriter skips their files entirely, so
+    /// their emitted directives stay byte-identical to the prepared
+    /// input (vendor_into_emission open question 3).
+    pub(crate) suppressed: BTreeSet<ChunkId>,
 }
 
 impl VendorResolutionPlan {
@@ -142,19 +153,42 @@ impl VendorResolutionPlan {
 
     /// Boundary-rename mapping consult for construction-time naming
     /// (vendor_into_emission §2.4): vendor-local export name → public
-    /// name for a `boundary_rename` / `swap` chunk. While the
-    /// pre-materialize `rename_vendor_exports` wave still runs (until
-    /// PR 4 deletes it), source ASTs reach lowering already renamed,
-    /// so this lookup misses (the keys are vendor-local names) and the
-    /// consult is a structural no-op; double application on pathologic
-    /// chained mappings is excluded by
-    /// `validate_boundary_mapping_collisions`.
+    /// name for a `boundary_rename` / `swap` chunk. Load-bearing since
+    /// the pre-materialize `rename_vendor_exports` wave was deleted:
+    /// source ASTs reach lowering with the vendor-local names, and the
+    /// public name is applied at import construction.
     pub fn boundary_public_export_name(&self, chunk: ChunkId, vendor_local: &str) -> Option<&str> {
         self.boundary_renames
             .iter()
             .find(|plan| plan.chunk_id == chunk)
             .and_then(|plan| plan.mapping.get(vendor_local))
             .map(String::as_str)
+    }
+
+    /// Output-tree path (`<chunk_name>/<entry_file>`) of a fully-swapped
+    /// chunk's entry. The chunk is removed from the artifact by
+    /// `swap_vendor_chunks`, so index resolution cannot canonicalize
+    /// directives that keep targeting it (the live-proxy dangling-import
+    /// contract); construction and the pass-through rewriter consult
+    /// this instead.
+    pub fn full_swap_target_path(&self, chunk: ChunkId) -> Option<String> {
+        self.full_swaps
+            .iter()
+            .find(|swap| swap.chunk_id == chunk)
+            .map(|swap| join_module_path(&[&swap.resolution.chunk_id, &swap.resolution.entry_file]))
+    }
+
+    pub fn is_suppressed(&self, chunk: ChunkId) -> bool {
+        self.suppressed.contains(&chunk)
+    }
+
+    /// Entry file of a `boundary_rename` / `swap` chunk — the only file
+    /// whose named imports the boundary mapping applies to.
+    pub(crate) fn boundary_entry_file(&self, chunk: ChunkId) -> Option<&str> {
+        self.boundary_renames
+            .iter()
+            .find(|plan| plan.chunk_id == chunk)
+            .map(|plan| plan.entry_file.as_str())
     }
 }
 
@@ -198,7 +232,6 @@ pub enum VendorImportAction {
 }
 
 pub(crate) struct BoundaryRenamePlan {
-    pub(crate) chunk_path: String,
     pub(crate) chunk_id: ChunkId,
     pub(crate) entry_file: String,
     /// Vendor-local binding name → public export name.
@@ -256,6 +289,7 @@ pub(crate) struct BundledPartialSwapPackageTarget {
 
 pub fn build_vendor_resolution_plan(
     artifact: &ChunkBundle,
+    references: &ArtifactIndexes,
     vendor: &BTreeMap<String, VendorMark>,
     options: &VendorPlanOptions<'_>,
 ) -> Result<VendorResolutionPlan> {
@@ -281,7 +315,12 @@ pub fn build_vendor_resolution_plan(
         );
     }
 
-    Ok(VendorResolutionPlan {
+    let suppressed = vendor
+        .iter()
+        .filter(|(_, mark)| matches!(mark.level, VendorLevel::Suppress))
+        .map(|(chunk_path, _)| resolved_chunks[chunk_path.as_str()].chunk_id)
+        .collect();
+    let plan = VendorResolutionPlan {
         boundary_renames: plan_boundary_renames(artifact, vendor, &resolved_chunks)?,
         full_swaps: plan_full_swaps(artifact, vendor, &resolved_chunks, options)?,
         partial_swaps: plan_partial_swaps(artifact, vendor, &resolved_chunks, options)?,
@@ -291,7 +330,264 @@ pub fn build_vendor_resolution_plan(
             &resolved_chunks,
             options,
         )?,
-    })
+        suppressed,
+    };
+    validate_consumer_shapes(artifact, references, &plan)?;
+    Ok(plan)
+}
+
+/// Plan-time consumer gate (vendor_into_emission §3.2): enumerate every
+/// consumer directive targeting a partially-swapped chunk and reject the
+/// shapes that have no live rewrite at either application site — before
+/// any output is written. The classification is the same one the
+/// rewriters perform, so a consumer the rewriter misses cannot pass the
+/// gate. The post-strip `validate_partial_swap_consumers` scan stays on
+/// as a differential tripwire (it additionally covers directives that
+/// lowering moves or synthesizes inside materialized module bodies)
+/// until PR 6 retires it with fixture evidence.
+///
+/// Over-restriction is the accepted failure mode: a namespace consumer
+/// reading only unswapped members is still rejected.
+fn validate_consumer_shapes(
+    artifact: &ChunkBundle,
+    references: &ArtifactIndexes,
+    plan: &VendorResolutionPlan,
+) -> Result<()> {
+    struct SwappedChunk<'a> {
+        symbols: &'a BTreeMap<String, PartialSwapSymbol>,
+        bundled: bool,
+    }
+    let swapped_by_chunk: BTreeMap<ChunkId, SwappedChunk<'_>> = plan
+        .partial_swaps
+        .iter()
+        .map(|(chunk_id, partial)| {
+            (
+                *chunk_id,
+                SwappedChunk {
+                    symbols: &partial.symbols,
+                    bundled: false,
+                },
+            )
+        })
+        .chain(
+            plan.bundled_partial_swaps
+                .iter()
+                .map(|(chunk_id, bundled)| {
+                    (
+                        *chunk_id,
+                        SwappedChunk {
+                            symbols: &bundled.symbols,
+                            bundled: true,
+                        },
+                    )
+                }),
+        )
+        .collect();
+    let boundary_mapped_chunks: BTreeMap<ChunkId, &BTreeMap<String, String>> = plan
+        .boundary_renames
+        .iter()
+        .filter(|boundary| !boundary.mapping.is_empty())
+        .map(|boundary| (boundary.chunk_id, &boundary.mapping))
+        .collect();
+    if swapped_by_chunk.is_empty() && boundary_mapped_chunks.is_empty() {
+        return Ok(());
+    }
+    let chunk_table = &artifact.chunk_table;
+    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
+    // Full-swap chunks are removed from the artifact before any
+    // consumer rewrite runs; their files are never emitted, so their
+    // directives are not consumers (the post-strip scan never saw them
+    // either).
+    let full_swap_chunks: BTreeSet<ChunkId> =
+        plan.full_swaps.iter().map(|swap| swap.chunk_id).collect();
+    for chunk_artifact in &artifact.chunks {
+        let caller_chunk_id = chunk_artifact.chunk_id;
+        if full_swap_chunks.contains(&caller_chunk_id) {
+            continue;
+        }
+        let caller_suppressed = plan.is_suppressed(caller_chunk_id);
+        let caller_chunk_name = chunk_table.name(caller_chunk_id);
+        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
+            let Some(ast) = chunk_artifact
+                .js
+                .get_file(&file_path)
+                .and_then(|file| file.ast())
+            else {
+                continue;
+            };
+            for item in &ast.module.body {
+                let ModuleItem::ModuleDecl(decl) = item else {
+                    continue;
+                };
+                let source = match decl {
+                    ModuleDecl::Import(import) => str_value(&import.src),
+                    ModuleDecl::ExportNamed(named) => {
+                        let Some(src) = named.src.as_deref() else {
+                            continue;
+                        };
+                        str_value(src)
+                    }
+                    ModuleDecl::ExportAll(export_all) => str_value(&export_all.src),
+                    _ => continue,
+                };
+                let Some(target_chunk_id) = resolve_partial_swap_import_target(
+                    &source,
+                    caller_chunk_id,
+                    &file_path,
+                    references,
+                    chunk_table,
+                    &materialized_index,
+                ) else {
+                    continue;
+                };
+                let consumer = format!("{caller_chunk_name}/{file_path}");
+                // Boundary-renamed names are applied by the pass-through
+                // rewriter (and by lowering's import construction);
+                // suppress files are skipped by both, so a suppress
+                // consumer spelling a vendor-local name would emit a
+                // dangling import name.
+                if caller_suppressed
+                    && target_chunk_id != caller_chunk_id
+                    && let Some(mapping) = boundary_mapped_chunks.get(&target_chunk_id)
+                    && let ModuleDecl::Import(import) = decl
+                {
+                    for specifier in &import.specifiers {
+                        let ImportSpecifier::Named(named) = specifier else {
+                            continue;
+                        };
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        if let Some(public) = mapping.get(&imported)
+                            && public != &imported
+                        {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports vendor-local name `{imported}` from boundary-renamed vendor chunk {}; suppress files are hands-off, so the import would not be renamed to the public export `{public}`",
+                                chunk_table.name(target_chunk_id),
+                            );
+                        }
+                    }
+                }
+                let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
+                    continue;
+                };
+                check_consumer_shape_has_live_rewrite(
+                    decl,
+                    swapped.symbols,
+                    swapped.bundled,
+                    caller_suppressed,
+                    &consumer,
+                    chunk_table.name(target_chunk_id),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_consumer_shape_has_live_rewrite(
+    decl: &ModuleDecl,
+    symbols: &BTreeMap<String, PartialSwapSymbol>,
+    bundled: bool,
+    caller_suppressed: bool,
+    consumer: &str,
+    target_chunk_name: &str,
+) -> Result<()> {
+    let swapped_list = || symbols.keys().cloned().collect::<Vec<_>>().join(",");
+    match decl {
+        ModuleDecl::Import(import) => {
+            for specifier in &import.specifiers {
+                match specifier {
+                    ImportSpecifier::Named(named) => {
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        if !symbols.contains_key(&imported) {
+                            continue;
+                        }
+                        // Named imports of swapped names have a live
+                        // rewrite at both application sites — unless the
+                        // consumer file is hands-off (suppress chunk).
+                        if caller_suppressed {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                            );
+                        }
+                    }
+                    ImportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} namespace-imports partially-swapped vendor chunk {target_chunk_name}; swapped members [{}] would read as `undefined` on the namespace object — namespace consumers of partially-swapped chunks are unsupported, restructure the spec",
+                            swapped_list(),
+                        );
+                    }
+                    ImportSpecifier::Default(_) => {
+                        if symbols.contains_key("default") {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportNamed(named) => {
+            for specifier in &named.specifiers {
+                match specifier {
+                    ExportSpecifier::Named(named_spec) => {
+                        let orig = module_export_name(&named_spec.orig);
+                        let Some(symbol) = symbols.get(&orig) else {
+                            continue;
+                        };
+                        let exported = named_spec
+                            .exported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| orig.clone());
+                        if caller_suppressed {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                            );
+                        }
+                        if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
+                            );
+                        }
+                        if !is_valid_identifier(&exported) {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name} under non-identifier alias `{exported}`; the re-export rewrite has no live form for that alias and the stripped chunk no longer exports it",
+                            );
+                        }
+                    }
+                    ExportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} re-exports the namespace of partially-swapped vendor chunk {target_chunk_name} (`export * as …`); swapped members [{}] would read as `undefined`",
+                            swapped_list(),
+                        );
+                    }
+                    ExportSpecifier::Default(_) => {
+                        if symbols.contains_key("default") {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportAll(_) => {
+            bail!(
+                "partial-swap consumer gate: {consumer} uses `export *` from partially-swapped vendor chunk {target_chunk_name}; swapped names [{}] would silently vanish from the re-exporter's surface",
+                swapped_list(),
+            );
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn plan_boundary_renames(
@@ -307,11 +603,10 @@ fn plan_boundary_renames(
         )
     }) {
         let chunk = &resolved_chunks[chunk_path.as_str()];
-        let vendor_ast = vendor_entry_ast(artifact, "rename_vendor_exports", chunk)?;
+        let vendor_ast = vendor_entry_ast(artifact, "boundary_rename", chunk)?;
         let mapping = collect_boundary_mapping(&vendor_ast.module);
         validate_boundary_mapping_collisions(&vendor_ast.module, &mapping, chunk_path)?;
         plans.push(BoundaryRenamePlan {
-            chunk_path: chunk_path.clone(),
             chunk_id: chunk.chunk_id,
             entry_file: chunk.entry_file.clone(),
             mapping,

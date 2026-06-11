@@ -111,31 +111,6 @@ rust_library(
 )
 
 rust_library(
-    name = "rewrite_specifiers",
-    srcs = ["rewrite_specifiers.rs"],
-    crate_root = "rewrite_specifiers.rs",
-    edition = "2024",
-    deps = [
-        ":artifact",
-        ":binding_targets",
-        ":js_ast",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:serde",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "rewrite_specifiers_test",
-    crate = ":rewrite_specifiers",
-    edition = "2024",
-    deps = ["@crates//:rayon"],
-)
-
-rust_library(
     name = "spec",
     srcs = ["spec.rs"],
     crate_root = "spec.rs",
@@ -157,6 +132,7 @@ rust_library(
     srcs = [
         "vendor/manifests.rs",
         "vendor/mod.rs",
+        "vendor/passthrough.rs",
         "vendor/plan.rs",
         "vendor/strip.rs",
         "vendor/validate.rs",
@@ -226,7 +202,6 @@ rust_library(
         ":artifact",
         ":identifier_rename_queue",
         ":output_layout",
-        ":rewrite_specifiers",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",
@@ -651,7 +626,6 @@ rust_library(
         ":artifact",
         ":js_ast",
         ":program_analysis",
-        ":rewrite_specifiers",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -697,7 +671,6 @@ rust_library(
         ":lowering",
         ":output_layout",
         ":prepare_chunks",
-        ":rewrite_specifiers",
         ":spec",
         ":spec_tree",
         ":validate_emitted_exports",

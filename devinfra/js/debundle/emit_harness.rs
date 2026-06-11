@@ -10,12 +10,34 @@ use url::Url;
 
 use artifact::{
     ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    chunk_id_for_js_path, materialize_artifact_scripts, module_path_from_path,
-    normalize_module_path, path_from_module_path, write_json,
+    chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
+    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
-use rewrite_specifiers::runtime_js_href;
+
+/// Harness-relative module specifier for a chunk's emitted entry file,
+/// resolved from a snapshot `*.js` script path.
+fn runtime_js_href(
+    artifact: &ChunkBundle,
+    js_path: &str,
+    out_dir: &Path,
+    runtime_root: &Path,
+) -> Result<String> {
+    let chunk_name = js_path
+        .strip_suffix(".js")
+        .with_context(|| format!("Expected a .js path: {js_path}"))?;
+    let chunk_id = artifact
+        .chunk_table
+        .get(chunk_name)
+        .with_context(|| format!("Unknown chunk: {chunk_name}"))?;
+    let entry_file = get_chunk_entry_path(artifact, chunk_id)
+        .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
+    let entry_path = runtime_root
+        .join(chunk_name.split('/').collect::<PathBuf>())
+        .join(entry_file.split('/').collect::<PathBuf>());
+    Ok(artifact::relative_module_specifier(out_dir, &entry_path))
+}
 
 pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,

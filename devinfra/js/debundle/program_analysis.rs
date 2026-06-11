@@ -12,10 +12,10 @@ use artifact::{
 use binding_targets::{binding_names, member_root_sym, module_export_name};
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
-/// True when a specifier string is a relative module path that
-/// `rewrite_chunk_entry_specifiers` could rewrite (any `.` / `/`
-/// prefix). Kept in sync with the predicate in
-/// `rewrite_specifiers::is_relative_specifier`.
+/// True when a specifier string is a relative module path that the
+/// pass-through emission rewriter could canonicalize (any `.` / `/`
+/// prefix). Kept in sync with the gate in
+/// `vendor::passthrough`'s `SourceCanonicalizer::rewrite_source`.
 fn is_relative_specifier(source: &str) -> bool {
     source.starts_with('.') || source.starts_with('/')
 }
@@ -67,8 +67,8 @@ pub struct ProgramAnalysis {
     pub side_effects: Vec<SideEffectRecord>,
     pub dynamic_import_count: usize,
     pub observable_module_effect: bool,
-    /// True when the module body contains any specifier that
-    /// `rewrite_chunk_entry_specifiers` could rewrite (any `import`,
+    /// True when the module body contains any specifier that the
+    /// pass-through emission rewriter could canonicalize (any `import`,
     /// `export … from`, `import(...)`, or `new Worker(...)` /
     /// `new SharedWorker(...)` whose source is a relative path
     /// starting with `.` or `/`). Collected during the same module

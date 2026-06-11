@@ -22,8 +22,8 @@
 //! - **A3**: non-literal dynamic-import specifiers in lazy positions
 //!   (`(n) => import(n)`), which could resolve to an internal module
 //!   at runtime. Only `Lit::Str` specifiers count as literal — the
-//!   same notion `prepare_js_chunks` / `rewrite_chunk_entry_specifiers`
-//!   use; a zero-expr template literal is treated as non-literal.
+//!   same notion `prepare_js_chunks` and the pass-through emission
+//!   rewriter use; a zero-expr template literal is non-literal.
 //! - **A5**: `Function.prototype.toString` reads of chunk bindings,
 //!   `Reflect` descriptor inspection on namespace objects, and any
 //!   `import.meta` use inside lazy positions.

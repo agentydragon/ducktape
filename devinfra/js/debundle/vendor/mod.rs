@@ -3,30 +3,30 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use rayon::prelude::*;
 mod manifests;
+mod passthrough;
 mod plan;
 mod strip;
 mod validate;
 mod wrappers;
 
 use serde_json::Value;
-use swc_common::{DUMMY_SP, GLOBALS};
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, JsFile, JsFileAstParts,
-    join_module_path, list_chunk_file_paths, module_path_dirname, normalize_module_path,
-    relative_module_specifier,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, JsFile, join_module_path,
+    list_chunk_file_paths, module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use js_ast::{ParsedJsModule, str_value};
+use js_ast::str_value;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
 pub use manifests::*;
-use plan::{ChunkBundledPartialSwapPlan, ChunkPartialSwapPlan};
+pub use passthrough::{PassthroughRewriteResult, rewrite_passthrough_directives};
+use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
@@ -36,168 +36,14 @@ pub use strip::{
 };
 use wrappers::{write_planned_bundled_assets, write_planned_wrapper};
 
-pub fn rename_vendor_exports(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
-) -> Result<RenameVendorExportsResult> {
-    let mut mappings = VendorExportMappings::new();
-    let mut total_rewrites = 0usize;
-    let mut chunks_with_mapping = 0usize;
-    let mut details = Vec::new();
-    let chunk_table = artifact.chunk_table.clone();
-
-    for op in &plan.boundary_renames {
-        if !op.mapping.is_empty() {
-            chunks_with_mapping += 1;
-            mappings
-                .entry(op.chunk_id)
-                .or_default()
-                .insert(op.entry_file.clone(), op.mapping.clone());
-        }
-    }
-
-    let mut caller_counts_by_target = BTreeMap::<(ChunkId, String), BTreeMap<String, usize>>::new();
-    if !mappings.is_empty() {
-        let mut jobs = Vec::new();
-        for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-            let caller_chunk_id = chunk_artifact.chunk_id;
-            let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
-            for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-                let has_ast = chunk_artifact
-                    .js
-                    .get_file(&file_path)
-                    .and_then(|file| file.ast())
-                    .is_some();
-                if !has_ast {
-                    continue;
-                }
-                let (parts, ast) = chunk_artifact
-                    .js
-                    .remove_file(&file_path)
-                    .and_then(|file| file.into_ast_parts())
-                    .with_context(|| format!("missing AST for {caller_chunk_name}/{file_path}"))?;
-                jobs.push(VendorRenameFileJob {
-                    caller_chunk_index,
-                    caller_chunk_id,
-                    caller_chunk_name: caller_chunk_name.clone(),
-                    file_path,
-                    parts,
-                    ast,
-                });
-            }
-        }
-        let chunk_table_ref = &chunk_table;
-        // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
-        // `Mark::new()` / `Id` use stays in the caller's arena.
-        let results = GLOBALS.with(|globals| {
-            jobs.into_par_iter()
-                .map(|job| {
-                    GLOBALS.set(globals, || {
-                        rename_vendor_imports_in_file(job, references, &mappings, chunk_table_ref)
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-        for result in results {
-            artifact
-                .chunks
-                .get_mut(result.caller_chunk_index)
-                .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
-                .js
-                .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
-            for (target, rewrites) in result.rewrites_by_target {
-                total_rewrites += rewrites;
-                caller_counts_by_target.entry(target).or_default().insert(
-                    format!("{}/{}", result.caller_chunk_name, result.file_path),
-                    rewrites,
-                );
-            }
-        }
-    }
-
-    let considered = plan.boundary_renames.len();
-    for op in &plan.boundary_renames {
-        let caller_counts = caller_counts_by_target
-            .remove(&(op.chunk_id, op.entry_file.clone()))
-            .unwrap_or_default();
-        let chunk_rewrites = caller_counts.values().sum();
-        details.push(RenameVendorExportsDetail {
-            chunk_path: op.chunk_path.clone(),
-            chunk_id: chunk_table.name(op.chunk_id).to_string(),
-            mapping_size: op.mapping.len(),
-            rewrites: chunk_rewrites,
-            callers: caller_counts
-                .into_iter()
-                .map(|(file, rewrites)| RenameVendorExportsCaller { file, rewrites })
-                .collect(),
-        });
-    }
-
-    Ok(RenameVendorExportsResult {
-        artifact,
-        manifest: RenameVendorExportsManifest {
-            counts: RenameVendorExportsCounts {
-                considered,
-                chunks_with_mapping,
-                rewrites: total_rewrites,
-            },
-            details,
-        },
-    })
-}
-
-/// chunk → entry file → vendor-local name → public export name.
-type VendorExportMappings = BTreeMap<ChunkId, BTreeMap<String, BTreeMap<String, String>>>;
-
-struct VendorRenameFileJob {
-    caller_chunk_index: usize,
-    caller_chunk_id: ChunkId,
-    caller_chunk_name: String,
-    file_path: String,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-}
-
-struct VendorRenameFileResult {
-    caller_chunk_index: usize,
-    caller_chunk_name: String,
-    file_path: String,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-    rewrites_by_target: BTreeMap<(ChunkId, String), usize>,
-}
-
-fn rename_vendor_imports_in_file(
-    mut job: VendorRenameFileJob,
-    references: &ArtifactIndexes,
-    mappings: &VendorExportMappings,
-    chunk_table: &ChunkTable,
-) -> VendorRenameFileResult {
-    let mut rewriter = VendorImportRenamer {
-        references,
-        chunk_table,
-        caller_chunk_id: job.caller_chunk_id,
-        caller_file: job.file_path.clone(),
-        mappings,
-        rewrites_by_target: BTreeMap::new(),
-    };
-    job.ast.module.visit_mut_with(&mut rewriter);
-    VendorRenameFileResult {
-        caller_chunk_index: job.caller_chunk_index,
-        caller_chunk_name: job.caller_chunk_name,
-        file_path: job.file_path,
-        parts: job.parts,
-        ast: job.ast,
-        rewrites_by_target: rewriter.rewrites_by_target,
-    }
-}
-
 /// Apply the plan's full swaps: verify caller import alignment against
-/// the current (post-rename) indexes, write planned wrappers, and
-/// remove the swapped chunks from the artifact. All resolution
-/// decisions (version checks, wrapper-shape validation, wrapper
-/// generation) were made at plan time.
+/// the current indexes, write planned wrappers, and remove the swapped
+/// chunks from the artifact. All resolution decisions (version checks,
+/// wrapper-shape validation, wrapper generation) were made at plan
+/// time. Caller-side directive handling (canonicalization of the
+/// intentionally dangling chunk specifier, boundary-rename name
+/// mapping) happens at the application sites — lowering and the
+/// pass-through emission rewriter.
 pub fn swap_vendor_chunks(
     mut artifact: ChunkBundle,
     plan: &VendorResolutionPlan,
@@ -310,7 +156,7 @@ fn validate_boundary_mapping_collisions(
                 .map(|local| format!("local `{local}`"))
                 .unwrap_or_else(|| "a non-local origin".to_string());
             bail!(
-                "rename_vendor_exports vendor entry {chunk_path}: boundary mapping key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
+                "boundary_rename vendor entry {chunk_path}: boundary mapping key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
             );
         }
     }
@@ -345,65 +191,6 @@ fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
         }
     }
     mapping
-}
-
-struct VendorImportRenamer<'a> {
-    references: &'a ArtifactIndexes,
-    chunk_table: &'a ChunkTable,
-    caller_chunk_id: ChunkId,
-    caller_file: String,
-    mappings: &'a VendorExportMappings,
-    rewrites_by_target: BTreeMap<(ChunkId, String), usize>,
-}
-
-impl VisitMut for VendorImportRenamer<'_> {
-    fn visit_mut_import_decl(&mut self, node: &mut ImportDecl) {
-        let source = str_value(&node.src);
-        let resolved = self.references.resolve_runtime_import_reference(
-            &source,
-            self.caller_chunk_id,
-            &self.caller_file,
-            self.chunk_table,
-        );
-        let Some(resolved) = resolved else {
-            return;
-        };
-        let target_chunk_id = resolved.target_chunk_id;
-        let target_file = resolved.target_file;
-        if target_chunk_id == self.caller_chunk_id {
-            return;
-        }
-        let Some(files) = self.mappings.get(&target_chunk_id) else {
-            return;
-        };
-        let Some(mapping) = files.get(&target_file) else {
-            return;
-        };
-        for specifier in &mut node.specifiers {
-            let ImportSpecifier::Named(named) = specifier else {
-                continue;
-            };
-            let imported_name = named
-                .imported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| named.local.sym.to_string());
-            let Some(mapped) = mapping.get(&imported_name) else {
-                continue;
-            };
-            if mapped == &imported_name {
-                continue;
-            }
-            named.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                mapped.clone().into(),
-                DUMMY_SP,
-            )));
-            *self
-                .rewrites_by_target
-                .entry((target_chunk_id, target_file.clone()))
-                .or_insert(0) += 1;
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -722,280 +509,43 @@ fn prop_name(name: &PropName) -> Option<String> {
 // lodash + katex + mermaid) into one ESM chunk. Removing it would drop
 // every co-bundled package.
 //
-// `apply_partial_vendor_swaps` is the per-symbol variant: it leaves the
-// chunk on disk and rewrites each listed caller-side import specifier
-// against an upstream package, then replaces every reference to the
-// imported local binding with a namespace member access. The chunk's
-// un-swapped exports keep working through the residual import.
+// Partial swaps leave the chunk on disk and replace per-symbol consumer
+// references against upstream packages. The consumer side is applied at
+// two construction sites — lowering (materialized module bodies) and the
+// pass-through emission rewriter (`passthrough.rs`) — both consuming the
+// same `VendorResolutionPlan`. What remains here is the bundled family's
+// vendor-chunk **self-rewrite** (the seed of the residual computation:
+// re-target the chunk's own references at the facade so the strip pass
+// can drop the old implementation) and the manifest projection.
 
-trait PartialSwapMappingEntry {
-    fn chunk_path(&self) -> &str;
+pub struct BundledSelfRewriteResult {
+    pub artifact: ChunkBundle,
+    /// Synthetic facade import locals introduced by the self-rewrite,
+    /// keyed by chunk path; consumed by the strip pass's reachability
+    /// sweep.
+    pub self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
+    /// (swapped chunk, chunk export) → self-rewrite reference counts,
+    /// folded into the same `references_rewritten` manifest fields as
+    /// the consumer-side counts.
+    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
 }
 
-impl PartialSwapMappingEntry for ChunkPartialSwapPlan {
-    fn chunk_path(&self) -> &str {
-        &self.chunk_path
-    }
-}
-
-impl PartialSwapMappingEntry for ChunkBundledPartialSwapPlan {
-    fn chunk_path(&self) -> &str {
-        &self.chunk_path
-    }
-}
-
-struct PartialSwapDispatchOutcome {
-    total_references: usize,
-    self_rewrite_locals_by_caller: Vec<(ChunkId, BTreeSet<Id>)>,
-}
-
-/// Collect AST files from all chunks into parallel jobs, dispatch per-file
-/// rewrites via rayon, reassemble results into the artifact, and update
-/// per-symbol reference counts in resolutions.
-fn dispatch_partial_swap_jobs<M, R, F>(
-    artifact: &mut ChunkBundle,
-    chunk_table: &ChunkTable,
-    mappings: &BTreeMap<ChunkId, M>,
-    references: &ArtifactIndexes,
-    resolutions: &mut BTreeMap<String, R>,
-    rewrite_fn: F,
-) -> Result<PartialSwapDispatchOutcome>
-where
-    M: PartialSwapMappingEntry + Sync,
-    R: PartialSwapResolutionSymbols,
-    F: Fn(
-            PartialSwapFileJob,
-            &ArtifactIndexes,
-            &BTreeMap<ChunkId, M>,
-            &ChunkTable,
-            &MaterializedOutputChunkIndex,
-        ) -> PartialSwapFileResult
-        + Sync,
-{
-    // Precompute once: the per-import-decl call in `rewrite_swap_import_decls`
-    // used to do an O(N_chunks) linear scan over the chunk table to resolve
-    // relative `./..` imports against materialized output paths (15.4%
-    // inclusive on cpu_atom of `debundle run`). The longest-prefix index
-    // collapses that to two HashMap lookups plus a short ancestor walk per
-    // import, and also pre-formats the `"<name>.js"` keys so we no longer
-    // `format!()` once per import-decl per chunk.
-    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
-    let mut jobs = Vec::new();
-    for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-        let caller_chunk_id = chunk_artifact.chunk_id;
-        let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
-                continue;
-            };
-            if file.ast().is_none() {
-                continue;
-            }
-            // File-class partition (plans/vendor_into_emission.md §8,
-            // PR 3): materialized module files' vendor-targeted
-            // references are planned during lowering's import
-            // construction from the vendor resolution plan, so the
-            // post-materialize wave only rewrites pass-through files
-            // (chunk entries and runtime files) until PR 4's unified
-            // emission rewriter takes those over too.
-            if file.metadata.role == FileRole::Module {
-                continue;
-            }
-            let (parts, ast) = chunk_artifact
-                .js
-                .remove_file(&file_path)
-                .and_then(|file| file.into_ast_parts())
-                .with_context(|| format!("missing AST for {caller_chunk_name}/{file_path}"))?;
-            jobs.push(PartialSwapFileJob {
-                caller_chunk_index,
-                caller_chunk_id,
-                file_path,
-                parts,
-                ast,
-            });
-        }
-    }
-
-    let chunk_table_ref = chunk_table;
-    let mappings_ref = mappings;
-    let materialized_index_ref = &materialized_index;
-    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
-        jobs.into_par_iter()
-            .map(|job| {
-                GLOBALS.set(globals, || {
-                    rewrite_fn(
-                        job,
-                        references,
-                        mappings_ref,
-                        chunk_table_ref,
-                        materialized_index_ref,
-                    )
-                })
-            })
-            .collect()
-    });
-
-    let mut total_references = 0usize;
-    let mut self_rewrite_import_locals = Vec::new();
-    for result in results {
-        for ((chunk_id, chunk_export), count) in &result.references_by_symbol {
-            let Some(mapping) = mappings_ref.get(chunk_id) else {
-                bail!(
-                    "partial-swap dispatch: file rewrite reported references to `{chunk_export}` on chunk {}, which has no partial-swap mapping",
-                    chunk_table.name(*chunk_id)
-                );
-            };
-            if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
-                && let Some(symbol_resolution) = resolution.symbols_mut().get_mut(chunk_export)
-            {
-                symbol_resolution.references_rewritten += count;
-            }
-            total_references += count;
-        }
-        if !result.self_rewrite_import_locals.is_empty() {
-            self_rewrite_import_locals.push((
-                result.caller_chunk_id,
-                result.self_rewrite_import_locals.clone(),
-            ));
-        }
-        artifact
-            .chunks
-            .get_mut(result.caller_chunk_index)
-            .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
-            .js
-            .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
-    }
-
-    Ok(PartialSwapDispatchOutcome {
-        total_references,
-        self_rewrite_locals_by_caller: self_rewrite_import_locals,
-    })
-}
-
-/// Apply the plan's partial swaps: rewrite consumer imports /
-/// references against the upstream packages. Validation and resolution
-/// happened at plan time; the manifest is the plan's resolution
-/// projection plus application-time rewrite counts.
-///
-/// `lowering_rewrites` carries the per-symbol counts of vendor
-/// rewrites already applied at construction time in materialized
-/// module bodies (lowering's import construction consumes the same
-/// plan); they are folded into the same `references_rewritten` fields
-/// so the manifest keeps counting **emitted** references regardless of
-/// which application site produced them. Entries for chunks outside
-/// this wave's family (bundled vs partial) are skipped — the sibling
-/// wave folds them.
-pub fn apply_partial_vendor_swaps(
+/// Apply the plan's bundled partial swaps' vendor-chunk side: write the
+/// planned bundle copy and facades, then re-target the vendor chunk's own
+/// pass-through files at the facade via
+/// `seed_bundled_partial_swap_self_rewrites` and the shared ident rewriter.
+/// Consumer-side rewrites live in the pass-through emission rewriter /
+/// lowering; validation, facade planning, and resolution happened at plan
+/// time.
+pub fn apply_bundled_partial_swap_self_rewrites(
     mut artifact: ChunkBundle,
     plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
-    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
-) -> Result<ApplyPartialVendorSwapsResult> {
-    let chunk_table = artifact.chunk_table.clone();
-    let mut resolutions: BTreeMap<String, ChunkPartialSwapResolution> = plan
-        .partial_swaps
-        .values()
-        .map(|partial| (partial.chunk_path.clone(), partial.resolution.clone()))
-        .collect();
-
-    if plan.partial_swaps.is_empty() {
-        return Ok(ApplyPartialVendorSwapsResult {
-            artifact,
-            manifest: ResolutionManifest {
-                resolutions,
-                counts: PartialSwapResolutionCounts {
-                    chunks: 0,
-                    symbols: 0,
-                    references_rewritten: 0,
-                },
-            },
-        });
-    }
-
-    let lowering_references =
-        fold_lowering_rewrite_counts(&plan.partial_swaps, &mut resolutions, lowering_rewrites);
-    let outcome = dispatch_partial_swap_jobs(
-        &mut artifact,
-        &chunk_table,
-        &plan.partial_swaps,
-        references,
-        &mut resolutions,
-        rewrite_partial_swap_in_file,
-    )?;
-
-    let total_symbols: usize = resolutions
-        .values()
-        .map(|resolution| resolution.symbols.len())
-        .sum();
-    Ok(ApplyPartialVendorSwapsResult {
-        artifact,
-        manifest: ResolutionManifest {
-            resolutions,
-            counts: PartialSwapResolutionCounts {
-                chunks: plan.partial_swaps.len(),
-                symbols: total_symbols,
-                references_rewritten: outcome.total_references + lowering_references,
-            },
-        },
-    })
-}
-
-/// Fold lowering-applied per-symbol rewrite counts into the wave's
-/// resolutions; returns the total folded so the manifest counts stay
-/// consistent. Counts keyed by chunks outside `mappings` belong to the
-/// sibling wave family and are skipped.
-fn fold_lowering_rewrite_counts<M: PartialSwapMappingEntry, R: PartialSwapResolutionSymbols>(
-    mappings: &BTreeMap<ChunkId, M>,
-    resolutions: &mut BTreeMap<String, R>,
-    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
-) -> usize {
-    let mut total = 0usize;
-    for ((chunk_id, chunk_export), count) in lowering_rewrites {
-        let Some(mapping) = mappings.get(chunk_id) else {
-            continue;
-        };
-        if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
-            && let Some(symbol_resolution) = resolution.symbols_mut().get_mut(chunk_export)
-        {
-            symbol_resolution.references_rewritten += count;
-        }
-        total += count;
-    }
-    total
-}
-
-/// Apply the plan's bundled partial swaps: write the planned bundle
-/// copy + facades, rewrite consumer imports / references against the
-/// facades, and seed the vendor chunk's self-rewrite. Validation,
-/// facade planning, and resolution happened at plan time.
-pub fn apply_bundled_partial_vendor_swaps(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
     write: bool,
-    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
-) -> Result<ApplyBundledPartialVendorSwapsResult> {
+) -> Result<BundledSelfRewriteResult> {
     let chunk_table = artifact.chunk_table.clone();
-    let mut resolutions: BTreeMap<String, ChunkBundledPartialSwapResolution> = plan
-        .bundled_partial_swaps
-        .values()
-        .map(|bundled| (bundled.chunk_path.clone(), bundled.resolution.clone()))
-        .collect();
-
-    if plan.bundled_partial_swaps.is_empty() {
-        return Ok(ApplyBundledPartialVendorSwapsResult {
-            artifact,
-            manifest: ResolutionManifest {
-                resolutions,
-                counts: PartialSwapResolutionCounts {
-                    chunks: 0,
-                    symbols: 0,
-                    references_rewritten: 0,
-                },
-            },
-            self_rewrite_import_locals_by_chunk_path: BTreeMap::new(),
-        });
-    }
+    let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
+        BTreeMap::new();
+    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
 
     if write {
         for bundled in plan.bundled_partial_swaps.values() {
@@ -1003,487 +553,124 @@ pub fn apply_bundled_partial_vendor_swaps(
         }
     }
 
-    let lowering_references = fold_lowering_rewrite_counts(
-        &plan.bundled_partial_swaps,
-        &mut resolutions,
-        lowering_rewrites,
-    );
-    let outcome = dispatch_partial_swap_jobs(
-        &mut artifact,
-        &chunk_table,
-        &plan.bundled_partial_swaps,
-        references,
-        &mut resolutions,
-        rewrite_bundled_partial_swap_in_file,
-    )?;
+    for (&chunk_id, bundled) in &plan.bundled_partial_swaps {
+        let chunk_name = chunk_table.name(chunk_id).to_string();
+        let js_chunk = artifact.js_chunk_mut(chunk_id)?;
+        for file_path in list_chunk_file_paths(js_chunk) {
+            let Some(file) = js_chunk.get_file(&file_path) else {
+                continue;
+            };
+            if file.metadata.role == FileRole::Module || file.ast().is_none() {
+                continue;
+            }
+            let (parts, mut ast) = js_chunk
+                .remove_file(&file_path)
+                .and_then(|file| file.into_ast_parts())
+                .with_context(|| format!("missing AST for {chunk_name}/{file_path}"))?;
 
-    let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
-        BTreeMap::new();
-    for (caller_chunk_id, locals) in &outcome.self_rewrite_locals_by_caller {
-        if let Some(bundled) = plan.bundled_partial_swaps.get(caller_chunk_id) {
-            self_rewrite_import_locals_by_chunk_path
-                .entry(bundled.chunk_path.clone())
-                .or_default()
-                .extend(locals.clone());
+            let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
+            let mut prelude_imports: Vec<DeferredImport> = Vec::new();
+            let mut self_rewrite_import_locals: BTreeSet<Id> = BTreeSet::new();
+            seed_bundled_partial_swap_self_rewrites(
+                &ast.module,
+                Some(bundled),
+                &chunk_table,
+                chunk_id,
+                &file_path,
+                SelfRewriteOutputs {
+                    bindings: &mut bindings,
+                    prelude_imports: &mut prelude_imports,
+                    references_by_symbol: &mut references_by_symbol,
+                    self_rewrite_import_locals: &mut self_rewrite_import_locals,
+                },
+            );
+            if !prelude_imports.is_empty() {
+                let mut prefixed = prelude_imports
+                    .drain(..)
+                    .map(DeferredImport::into_module_item)
+                    .collect::<Vec<_>>();
+                prefixed.append(&mut ast.module.body);
+                ast.module.body = prefixed;
+            }
+            if !bindings.is_empty() {
+                let mut rewriter = PartialSwapIdentRewriter {
+                    bindings: &bindings,
+                    references_by_symbol: &mut references_by_symbol,
+                };
+                ast.module.visit_mut_with(&mut rewriter);
+            }
+            if !self_rewrite_import_locals.is_empty() {
+                self_rewrite_import_locals_by_chunk_path
+                    .entry(bundled.chunk_path.clone())
+                    .or_default()
+                    .extend(self_rewrite_import_locals);
+            }
+            js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
         }
     }
 
-    let total_symbols: usize = resolutions
-        .values()
-        .map(|resolution| resolution.symbols.len())
-        .sum();
-    Ok(ApplyBundledPartialVendorSwapsResult {
+    Ok(BundledSelfRewriteResult {
         artifact,
-        manifest: ResolutionManifest {
-            resolutions,
-            counts: PartialSwapResolutionCounts {
-                chunks: plan.bundled_partial_swaps.len(),
-                symbols: total_symbols,
-                references_rewritten: outcome.total_references + lowering_references,
-            },
-        },
         self_rewrite_import_locals_by_chunk_path,
+        references_by_symbol,
     })
 }
 
-struct PartialSwapFileJob {
-    caller_chunk_index: usize,
-    caller_chunk_id: ChunkId,
-    file_path: String,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-}
-
-struct PartialSwapFileResult {
-    caller_chunk_index: usize,
-    caller_chunk_id: ChunkId,
-    parts: JsFileAstParts,
-    ast: ParsedJsModule,
-    /// (chunk, chunk_export) -> count of rewritten references in
-    /// this file.
-    references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-    self_rewrite_import_locals: BTreeSet<Id>,
-}
-
-fn rewrite_partial_swap_in_file(
-    mut job: PartialSwapFileJob,
-    references: &ArtifactIndexes,
-    mappings: &BTreeMap<ChunkId, ChunkPartialSwapPlan>,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-) -> PartialSwapFileResult {
-    let module = &mut job.ast.module;
-
-    // Pass A: scan ImportDecls. For each ImportSpecifier::Named on a
-    // partial-swap chunk import:
-    //   - kind=member: record the local-binding sym for Pass B's
-    //     member-access rewrite; queue one shared
-    //     `import * as <pkg.namespace> from "<pkg>"` for the file.
-    //   - kind=namespace: queue a per-binding
-    //     `import * as <local> from "<pkg>"`; no identifier rewrite.
-    //   - kind=default: queue a per-binding
-    //     `import <local> from "<pkg>"`; no identifier rewrite.
-    let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
-    let mut emitted_member_namespace_for: BTreeSet<String> = BTreeSet::new();
-    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
-
-    module.body = rewrite_swap_import_decls(
-        std::mem::take(&mut module.body),
-        job.caller_chunk_id,
-        &job.file_path,
-        references,
-        chunk_table,
-        materialized_index,
-        |target_chunk_id, imported_name_lookup, local_sym| {
-            let chunk_mapping = mappings.get(&target_chunk_id)?;
-            let target = chunk_mapping.symbols.get(imported_name_lookup)?;
-            let package_coords = chunk_mapping.packages.get(&target.package)?;
-            let mut imports = Vec::new();
-            match target.kind {
-                PartialSwapKind::Member => {
-                    let upstream_export = target.upstream_export.as_deref()?;
-                    let namespace = package_coords.namespace.as_deref()?;
-                    bindings.insert(
-                        local_sym.to_id(),
-                        IdentRewriteTarget::Member {
-                            namespace: namespace.to_string(),
-                            upstream_export: upstream_export.to_string(),
-                            chunk_id: target_chunk_id,
-                            chunk_export: imported_name_lookup.to_string(),
-                        },
-                    );
-                    if emitted_member_namespace_for.insert(target.package.clone()) {
-                        imports.push(DeferredImport::Namespace {
-                            source: target.package.clone(),
-                            local: namespace.to_string(),
-                        });
-                    }
-                }
-                PartialSwapKind::Namespace => {
-                    imports.push(DeferredImport::Namespace {
-                        source: target.package.clone(),
-                        local: local_sym.sym.to_string(),
-                    });
-                    *references_by_symbol
-                        .entry((target_chunk_id, imported_name_lookup.to_string()))
-                        .or_insert(0) += 1;
-                }
-                PartialSwapKind::Default => {
-                    imports.push(DeferredImport::Default {
-                        source: target.package.clone(),
-                        local: local_sym.sym.to_string(),
-                    });
-                    *references_by_symbol
-                        .entry((target_chunk_id, imported_name_lookup.to_string()))
-                        .or_insert(0) += 1;
-                }
-                PartialSwapKind::Named => {
-                    let upstream_export = target.upstream_export.as_deref()?;
-                    imports.push(DeferredImport::Named {
-                        source: target.package.clone(),
-                        local: upstream_export.to_string(),
-                        upstream_export: upstream_export.to_string(),
-                    });
-                    if local_sym.sym.as_ref() != upstream_export {
-                        bindings.insert(
-                            local_sym.to_id(),
-                            IdentRewriteTarget::Rename {
-                                upstream_export: upstream_export.to_string(),
-                                chunk_id: target_chunk_id,
-                                chunk_export: imported_name_lookup.to_string(),
-                            },
-                        );
-                    } else {
-                        *references_by_symbol
-                            .entry((target_chunk_id, imported_name_lookup.to_string()))
-                            .or_insert(0) += 1;
-                    }
-                }
-            }
-            Some(imports)
-        },
-    );
-
-    // Pass A2: rewrite `export { x } from "<vendor-chunk>"` re-exports of
-    // swapped names. The strip pass removes those names from the chunk's
-    // export surface, so an unrewritten re-export would link-fail.
-    module.body = rewrite_partial_swap_export_from_decls(
-        std::mem::take(&mut module.body),
-        job.caller_chunk_id,
-        &job.file_path,
-        references,
-        chunk_table,
-        materialized_index,
-        mappings,
-        &mut references_by_symbol,
-    );
-
-    // Pass B: rewrite every Expr::Ident reference to a tracked local
-    // binding into `<namespace>.<upstream_export>`. Only kind=member
-    // populates `bindings`; kind=namespace and kind=default leave the
-    // local-binding references intact.
-    if !bindings.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &bindings,
-            references_by_symbol: &mut references_by_symbol,
-        };
-        module.visit_mut_with(&mut rewriter);
-    }
-
-    PartialSwapFileResult {
-        caller_chunk_index: job.caller_chunk_index,
-        caller_chunk_id: job.caller_chunk_id,
-        parts: job.parts,
-        ast: job.ast,
-        references_by_symbol,
-        self_rewrite_import_locals: BTreeSet::new(),
-    }
-}
-
-/// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
-/// re-exports of swapped names against the upstream package:
-///
-/// * `kind: named`     → `export { <upstream_export> as <name> } from "<pkg>"`
-/// * `kind: default`   → `export { default as <name> } from "<pkg>"`
-/// * `kind: namespace` → `export * as <name> from "<pkg>"`
-/// * `kind: member`    → retained — a member access off a namespace import
-///   has no live re-export equivalent; the post-strip consumer gate bails
-///   with a precise diagnostic instead.
-///
-/// Bundled partial swaps are not rewritten here (their facade default is
-/// only member-addressable); the consumer gate covers them.
-#[allow(clippy::too_many_arguments)] // mirrors rewrite_swap_import_decls' resolution context
-fn rewrite_partial_swap_export_from_decls(
-    original_body: Vec<ModuleItem>,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    references: &ArtifactIndexes,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-    mappings: &BTreeMap<ChunkId, ChunkPartialSwapPlan>,
-    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
-) -> Vec<ModuleItem> {
-    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len());
-    for item in original_body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(mut named)) = item else {
-            new_body.push(item);
-            continue;
-        };
-        let Some(src) = named.src.as_deref() else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
-            continue;
-        };
-        let source = str_value(src);
-        let Some(target_chunk_id) = resolve_partial_swap_import_target(
-            &source,
-            caller_chunk_id,
-            caller_file_path,
-            references,
-            chunk_table,
-            materialized_index,
-        ) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
-            continue;
-        };
-        let chunk_mapping = if target_chunk_id == caller_chunk_id {
-            None
+/// Project the plan's partial / bundled-partial resolutions into the
+/// wire manifest maps, folding the merged per-symbol rewrite counts
+/// from every application site (lowering construction, pass-through
+/// rewrite, bundled self-rewrite) into `references_rewritten` — the
+/// manifest counts **emitted** references regardless of which site
+/// produced them (vendor_into_emission §5).
+pub fn build_partial_swap_resolutions(
+    plan: &VendorResolutionPlan,
+    rewrite_counts: &BTreeMap<(ChunkId, String), usize>,
+) -> Result<(
+    BTreeMap<String, ChunkPartialSwapResolution>,
+    BTreeMap<String, ChunkBundledPartialSwapResolution>,
+)> {
+    let mut partial: BTreeMap<String, ChunkPartialSwapResolution> = plan
+        .partial_swaps
+        .values()
+        .map(|entry| (entry.chunk_path.clone(), entry.resolution.clone()))
+        .collect();
+    let mut bundled: BTreeMap<String, ChunkBundledPartialSwapResolution> = plan
+        .bundled_partial_swaps
+        .values()
+        .map(|entry| (entry.chunk_path.clone(), entry.resolution.clone()))
+        .collect();
+    for ((chunk_id, chunk_export), count) in rewrite_counts {
+        let symbol_resolution = if let Some(entry) = plan.partial_swaps.get(chunk_id) {
+            partial
+                .get_mut(&entry.chunk_path)
+                .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
+        } else if let Some(entry) = plan.bundled_partial_swaps.get(chunk_id) {
+            bundled
+                .get_mut(&entry.chunk_path)
+                .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
         } else {
-            mappings.get(&target_chunk_id)
-        };
-        let Some(chunk_mapping) = chunk_mapping else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
-            continue;
-        };
-        let mut retained: Vec<ExportSpecifier> = Vec::new();
-        let mut replacements: Vec<ModuleItem> = Vec::new();
-        for specifier in std::mem::take(&mut named.specifiers) {
-            let ExportSpecifier::Named(named_spec) = &specifier else {
-                retained.push(specifier);
-                continue;
-            };
-            let orig_name = module_export_name(&named_spec.orig);
-            let exported_name = named_spec
-                .exported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| orig_name.clone());
-            let Some(target) = chunk_mapping.symbols.get(&orig_name) else {
-                retained.push(specifier);
-                continue;
-            };
-            if !is_valid_identifier(&exported_name) {
-                retained.push(specifier);
-                continue;
-            }
-            let replacement = match target.kind {
-                PartialSwapKind::Named => target
-                    .upstream_export
-                    .as_deref()
-                    .map(|upstream| make_named_reexport(&target.package, upstream, &exported_name)),
-                PartialSwapKind::Default => Some(make_named_reexport(
-                    &target.package,
-                    "default",
-                    &exported_name,
-                )),
-                PartialSwapKind::Namespace => {
-                    Some(make_namespace_reexport(&target.package, &exported_name))
-                }
-                PartialSwapKind::Member => None,
-            };
-            let Some(replacement) = replacement else {
-                retained.push(specifier);
-                continue;
-            };
-            replacements.push(replacement);
-            *references_by_symbol
-                .entry((target_chunk_id, orig_name))
-                .or_insert(0) += 1;
-        }
-        new_body.extend(replacements);
-        if !retained.is_empty() {
-            named.specifiers = retained;
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
-        }
-    }
-    new_body
-}
-
-fn rewrite_bundled_partial_swap_in_file(
-    mut job: PartialSwapFileJob,
-    references: &ArtifactIndexes,
-    mappings: &BTreeMap<ChunkId, ChunkBundledPartialSwapPlan>,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-) -> PartialSwapFileResult {
-    let module = &mut job.ast.module;
-
-    let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
-    let mut emitted_default_namespace_for: BTreeSet<String> = BTreeSet::new();
-    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
-    let mut prelude_imports: Vec<DeferredImport> = Vec::new();
-    let mut self_rewrite_import_locals: BTreeSet<Id> = BTreeSet::new();
-    seed_bundled_partial_swap_self_rewrites(
-        module,
-        mappings.get(&job.caller_chunk_id),
-        chunk_table,
-        job.caller_chunk_id,
-        &job.file_path,
-        SelfRewriteOutputs {
-            bindings: &mut bindings,
-            prelude_imports: &mut prelude_imports,
-            references_by_symbol: &mut references_by_symbol,
-            self_rewrite_import_locals: &mut self_rewrite_import_locals,
-        },
-    );
-
-    let new_body = rewrite_swap_import_decls(
-        std::mem::take(&mut module.body),
-        job.caller_chunk_id,
-        &job.file_path,
-        references,
-        chunk_table,
-        materialized_index,
-        |target_chunk_id, imported_name_lookup, local_sym| {
-            let chunk_mapping = mappings.get(&target_chunk_id)?;
-            let target = chunk_mapping.symbols.get(imported_name_lookup)?;
-            let package_coords = chunk_mapping.packages.get(&target.package)?;
-            let import_source = bundled_facade_import_source(
-                chunk_table,
-                job.caller_chunk_id,
-                &job.file_path,
-                &package_coords.facade_app_path,
+            bail!(
+                "vendor rewrite counts reference `{chunk_export}` on chunk {}, which has no partial-swap plan",
+                plan_chunk_name(plan, *chunk_id),
             );
-            let mut imports = Vec::new();
-            match target.kind {
-                PartialSwapKind::Member | PartialSwapKind::Named => {
-                    let upstream_export = target.upstream_export.as_deref()?;
-                    let namespace = package_coords.namespace.as_deref()?;
-                    bindings.insert(
-                        local_sym.to_id(),
-                        IdentRewriteTarget::Member {
-                            namespace: namespace.to_string(),
-                            upstream_export: upstream_export.to_string(),
-                            chunk_id: target_chunk_id,
-                            chunk_export: imported_name_lookup.to_string(),
-                        },
-                    );
-                    if emitted_default_namespace_for.insert(target.package.clone()) {
-                        imports.push(DeferredImport::Default {
-                            source: import_source,
-                            local: namespace.to_string(),
-                        });
-                    }
-                }
-                PartialSwapKind::Namespace | PartialSwapKind::Default => {
-                    imports.push(DeferredImport::Default {
-                        source: import_source,
-                        local: local_sym.sym.to_string(),
-                    });
-                    *references_by_symbol
-                        .entry((target_chunk_id, imported_name_lookup.to_string()))
-                        .or_insert(0) += 1;
-                }
-            }
-            Some(imports)
-        },
-    );
-
-    if !prelude_imports.is_empty() {
-        let mut prefixed = prelude_imports
-            .drain(..)
-            .map(DeferredImport::into_module_item)
-            .collect::<Vec<_>>();
-        prefixed.extend(new_body);
-        module.body = prefixed;
-    } else {
-        module.body = new_body;
-    }
-
-    if !bindings.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &bindings,
-            references_by_symbol: &mut references_by_symbol,
         };
-        module.visit_mut_with(&mut rewriter);
+        if let Some(symbol_resolution) = symbol_resolution {
+            symbol_resolution.references_rewritten += count;
+        }
     }
-
-    PartialSwapFileResult {
-        caller_chunk_index: job.caller_chunk_index,
-        caller_chunk_id: job.caller_chunk_id,
-        parts: job.parts,
-        ast: job.ast,
-        references_by_symbol,
-        self_rewrite_import_locals,
-    }
+    Ok((partial, bundled))
 }
 
-fn rewrite_swap_import_decls<F>(
-    original_body: Vec<ModuleItem>,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    references: &ArtifactIndexes,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-    mut rewrite_one: F,
-) -> Vec<ModuleItem>
-where
-    F: FnMut(ChunkId, &str, &Ident) -> Option<Vec<DeferredImport>>,
-{
-    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
-    for item in original_body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(mut import_decl)) = item else {
-            new_body.push(item);
-            continue;
-        };
-        let source = str_value(&import_decl.src);
-        let Some(target_chunk_id) = resolve_partial_swap_import_target(
-            &source,
-            caller_chunk_id,
-            caller_file_path,
-            references,
-            chunk_table,
-            materialized_index,
-        ) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        };
-        if target_chunk_id == caller_chunk_id {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        }
-        let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
-        let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
-        for specifier in std::mem::take(&mut import_decl.specifiers) {
-            let imported_name_lookup = match &specifier {
-                ImportSpecifier::Named(named) => named
-                    .imported
-                    .as_ref()
-                    .map(module_export_name)
-                    .unwrap_or_else(|| named.local.sym.to_string()),
-                _ => {
-                    retained_specifiers.push(specifier);
-                    continue;
-                }
-            };
-            let ImportSpecifier::Named(named) = specifier else {
-                unreachable!("classified named above");
-            };
-            if let Some(imports) = rewrite_one(target_chunk_id, &imported_name_lookup, &named.local)
-            {
-                decl_local_imports.extend(imports);
-            } else {
-                retained_specifiers.push(ImportSpecifier::Named(named));
-            }
-        }
-        for deferred in decl_local_imports.drain(..) {
-            new_body.push(deferred.into_module_item());
-        }
-        if !retained_specifiers.is_empty() {
-            import_decl.specifiers = retained_specifiers;
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-        }
-    }
-    new_body
+fn plan_chunk_name(plan: &VendorResolutionPlan, chunk_id: ChunkId) -> String {
+    plan.partial_swaps
+        .get(&chunk_id)
+        .map(|entry| entry.resolution.chunk_id.clone())
+        .or_else(|| {
+            plan.bundled_partial_swaps
+                .get(&chunk_id)
+                .map(|entry| entry.resolution.chunk_id.clone())
+        })
+        .unwrap_or_else(|| format!("#{}", chunk_id.0))
 }
 
 /// Map each chunk-local named export to the hygiene-preserving `Id`
@@ -2071,6 +1258,39 @@ fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
     }))
 }
 
+/// `new URL("<source>", import.meta.url)` — the pass-through rewriter's
+/// replacement for a canonicalized `new Worker("<source>")` string
+/// argument (worker URLs must be module-relative at runtime).
+fn new_url_expr(source: &str) -> Expr {
+    Expr::New(NewExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
+        args: Some(vec![
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: DUMMY_SP,
+                    value: source.into(),
+                    raw: None,
+                }))),
+            },
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Member(MemberExpr {
+                    span: DUMMY_SP,
+                    obj: Box::new(Expr::MetaProp(MetaPropExpr {
+                        span: DUMMY_SP,
+                        kind: MetaPropKind::ImportMeta,
+                    })),
+                    prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
+                })),
+            },
+        ]),
+        type_args: None,
+    })
+}
+
 /// `export * as <exported> from "<source>"`.
 fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
     ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
@@ -2089,19 +1309,30 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
     }))
 }
 
-/// Post-strip cross-chunk soundness gate for partial vendor swaps.
+/// Post-strip cross-chunk soundness gate for partial vendor swaps —
+/// retained as a **differential tripwire** behind the plan-time
+/// consumer gate (vendor_into_emission §3.2, open question 4).
 ///
-/// `apply_partial_vendor_swaps` / `apply_bundled_partial_vendor_swaps`
-/// rewrite `ImportDecl` named specifiers (and, for non-bundled swaps,
-/// rewritable `export … from` re-exports); the strip pass then removes
-/// every swapped name from the vendor chunk's export surface. Any
-/// consumer that survived those rewrites while still referencing the
-/// stripped surface yields a broken emitted tree:
+/// The pass-through emission rewriter and lowering's import
+/// construction rewrite `ImportDecl` named specifiers (and, for
+/// non-bundled swaps, rewritable `export … from` re-exports); the strip
+/// pass then removes every swapped name from the vendor chunk's export
+/// surface. Any consumer that survived those rewrites while still
+/// referencing the stripped surface yields a broken emitted tree:
 ///
 /// * a named import / re-export of a swapped name link-fails;
 /// * a namespace import (`import * as M`) silently reads `undefined`
 ///   for swapped members;
 /// * `export *` silently drops the swapped names from the re-exporter.
+///
+/// The plan-time gate rejects these shapes before any emission; this
+/// scan re-checks the post-strip artifact, additionally covering
+/// directives that lowering moved into or synthesized inside
+/// materialized module bodies (e.g. `export … from` re-exports in moved
+/// bodies and `BindingKind::Imported` re-export imports — shapes with
+/// no live rewrite at the construction site). PR 6 of the plan retires
+/// it only with fixture evidence that the plan-time gate fires on every
+/// case this scan does.
 ///
 /// Scan every retained file of every chunk and bail with a precise
 /// diagnostic on the first surviving consumer. Over-restriction is the
@@ -2277,7 +1508,7 @@ mod tests {
     use spec::{VendorLevel, VendorMark, VendorRole};
 
     #[test]
-    fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
+    fn passthrough_rewrites_boundary_renames_for_multiple_vendor_targets_in_one_pass() {
         js_ast::with_swc_globals(|| {
             let mut artifact = ChunkBundle {
                 chunks: Vec::new(),
@@ -2330,6 +1561,7 @@ export { b as beta };
             let references = ArtifactIndexes::build(&artifact).unwrap();
             let plan = build_vendor_resolution_plan(
                 &artifact,
+                &references,
                 &vendor,
                 &VendorPlanOptions {
                     package_roots: &HashMap::new(),
@@ -2339,27 +1571,11 @@ export { b as beta };
                 },
             )
             .unwrap();
-            let result = rename_vendor_exports(artifact, &plan, &references).unwrap();
+            let result = rewrite_passthrough_directives(artifact, &plan, &references).unwrap();
             let artifact = result.artifact;
-            let manifest = result.manifest;
-
-            assert_eq!(manifest.counts.considered, 2);
-            assert_eq!(manifest.counts.chunks_with_mapping, 2);
-            assert_eq!(manifest.counts.rewrites, 3);
-            assert_eq!(manifest.details[0].chunk_id, "vendor-a");
-            assert_eq!(manifest.details[0].mapping_size, 1);
-            assert_eq!(manifest.details[0].rewrites, 1);
-            assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
-            assert_eq!(manifest.details[1].chunk_id, "vendor-b");
-            assert_eq!(manifest.details[1].mapping_size, 1);
-            assert_eq!(manifest.details[1].rewrites, 2);
-            assert_eq!(
-                manifest.details[1]
-                    .callers
-                    .iter()
-                    .map(|caller| (caller.file.as_str(), caller.rewrites))
-                    .collect::<Vec<_>>(),
-                vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
+            assert!(
+                result.references_by_symbol.is_empty(),
+                "boundary renames are not partial-swap reference rewrites"
             );
 
             assert_eq!(
@@ -2375,6 +1591,29 @@ export { b as beta };
                 vec![("beta".to_string(), "b".to_string())]
             );
         });
+    }
+
+    #[test]
+    fn worker_url_rewrite_uses_import_meta_url_as_base() {
+        let Expr::New(new_expr) = new_url_expr("../worker.js") else {
+            panic!("expected new URL expression");
+        };
+        let args = new_expr.args.expect("new URL args");
+        assert_eq!(args.len(), 2);
+        let Expr::Member(member) = &*args[1].expr else {
+            panic!("expected import.meta.url member expression");
+        };
+        assert!(matches!(
+            &*member.obj,
+            Expr::MetaProp(MetaPropExpr {
+                kind: MetaPropKind::ImportMeta,
+                ..
+            })
+        ));
+        let MemberProp::Ident(prop) = &member.prop else {
+            panic!("expected ident member property");
+        };
+        assert_eq!(prop.sym.as_ref(), "url");
     }
 
     #[test]

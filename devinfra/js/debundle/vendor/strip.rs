@@ -49,8 +49,9 @@ pub struct ChunkStripStats {
 /// bindings that are no longer reachable from the residual export
 /// surface plus retained side-effect statements (Phase 2).
 ///
-/// Runs after `apply_partial_vendor_swaps` — the consumer side has
-/// already been rewritten to import each swapped name from upstream,
+/// Runs after the consumer-side rewrites (lowering construction + the
+/// pass-through emission rewriter) — every consumer already imports
+/// each swapped name from upstream,
 /// so the chunk's residual `export { … }` entries for those names
 /// are dead weight. Without this pass the on-disk vendor blob stays
 /// byte-identical to pre-swap.

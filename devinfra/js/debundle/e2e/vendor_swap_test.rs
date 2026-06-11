@@ -617,8 +617,8 @@ fn partial_swap_keeps_megachunk_on_disk() {
 
 // ─── strip swapped exports ───────────────────────────────────────────────
 //
-// After `apply_partial_vendor_swaps` rewrites the consumer side, the
-// `strip_swapped_vendor_exports` stage drops the swapped names from the
+// After the consumer side is rewritten (lowering construction + the
+// pass-through emission rewriter), the strip pass drops the swapped names from the
 // vendor chunk's own export surface and sweeps any top-level bindings
 // that are no longer reachable. These tests cover both halves of that
 // pass against the synthetic megachunk fixture.
@@ -2567,6 +2567,55 @@ fn suppress_vendor_chunk_passes_through_unchanged() {
         "await import(\"./app/static/app/entry.js\");\n",
     );
     assert_node_output(&probe_path, "1\n", "");
+}
+
+#[test]
+fn suppress_vendor_chunk_skips_specifier_canonicalization() {
+    // Golden pin for vendor_into_emission open question 3: suppress
+    // means hands-off, so the pass-through emission rewriter skips
+    // suppress-marked chunks entirely — even directives the
+    // canonicalizer rewrites in every other chunk (`./helper-X.js` →
+    // `../helper-X/entry.js`) keep their original spelling, making the
+    // documented byte-compat contract true. (The old always-on stage 0
+    // canonicalized suppress chunks too; this diff is intentional.)
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const HELPER_PATH: &str = "static/helper-X.js";
+    let ws = VendorTestWorkspace::new("vendor-suppress-canonicalize-");
+    ws.write_chunk(
+        VENDOR_PATH,
+        "import { h } from \"./helper-X.js\";\nexport const a = h;\n",
+    );
+    ws.write_chunk(HELPER_PATH, "export const h = 1;\n");
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{HELPER_PATH}\n"));
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: { "level": "suppress", "identity": "suppress canonicalization fixture" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
+        .expect("vendor chunk emitted");
+    assert!(
+        vendor.contains("\"./helper-X.js\""),
+        "suppress chunk directives must keep their original spelling:\n{vendor}",
+    );
+    assert!(
+        !vendor.contains("../helper-X/entry.js"),
+        "suppress chunk directives must not be canonicalized:\n{vendor}",
+    );
 }
 
 // ─── full swap: caller contract + export-shape validation ───────────────

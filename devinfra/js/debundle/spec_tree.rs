@@ -261,8 +261,8 @@ fn vendor_map(
     source_root: Option<&Path>,
 ) -> Result<BTreeMap<String, VendorMark>> {
     // Multiple vendor marks on the same `chunk_path` would silently clobber
-    // each other in the resulting `BTreeMap`. The downstream stages
-    // (`apply_partial_vendor_swaps`, `strip_swapped_vendor_exports`) only
+    // each other in the resulting `BTreeMap`. The downstream consumers
+    // (the vendor resolution plan and everything it feeds) only
     // see the survivor, so the dropped entries' packages and symbols never
     // make it into the importmap or the rewriter — the spec author sees a
     // green build but only one of the two marks actually takes effect.
