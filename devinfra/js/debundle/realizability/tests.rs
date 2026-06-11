@@ -30,7 +30,7 @@ fn parse_and_build(source: &str) -> OwnerGraph {
         .parse_module()
         .expect("parse module");
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
-    build_owner_graph(&facts)
+    build_owner_graph(&facts).unwrap()
 }
 
 /// Two top-level constants in different modules, with one reading

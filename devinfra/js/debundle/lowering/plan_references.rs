@@ -98,12 +98,12 @@ pub(super) fn collect_imported_reexports_by_module(
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `factorization.analysis.bindings` (HashMap): the
+    // Stable iteration order on `factorization.analysis.bindings()` (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
     let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
-        factorization.analysis.bindings.iter().collect();
+        factorization.analysis.bindings().iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -262,7 +262,7 @@ fn collect_phantom_side_effect_providers(
 ) {
     let module_id = ModuleId(LogicalModuleIndex(module_index));
     let residual = factorization.partition.residual();
-    let owner_graph = &factorization.analysis.owner_graph;
+    let owner_graph = factorization.analysis.owner_graph();
     for (owner_id, owner_module) in factorization.partition.iter() {
         if owner_module != module_id {
             continue;

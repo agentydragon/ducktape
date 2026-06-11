@@ -117,17 +117,29 @@ consolidation (`ResolutionManifest<R>`), typed chunk identity.
 
 ## Track D — type-shape and strict-mapping cleanups (week 2, parallel)
 
-- `StatementFacts`: `PositionBucketed<T>` (9 fields → 3, structural subset
-  invariants), unify the `StructuralStatementFacts` vocabulary, derive
-  `effects`.
-- `ChunkManifest` → `#[serde(flatten)]` over `ChunkAnalysisReport` (zero
-  wire change; resolves the backlog's auto-derive open decision).
-- `ChunkAnalysis` field privatization (cache-staleness hazard).
-- Fold `program_analysis.rs`'s remainder into the facts walk (two parallel
-  extractors with divergent traversal rules).
-- `graph.rs` strict mapping: error on duplicate top-level declarations and
-  on `from_report` edges with unresolvable endpoints.
-- `cli/mod.rs`: move scc/cluster implementations + renderers out.
+_Status (2026-06): landed, except the `program_analysis.rs` fold._
+
+- Done: `StatementFacts` `PositionBucketed<T>` (9 fields → 3, structural
+  subset invariants), unified `StructuralStatementFacts` vocabulary,
+  derived `effects()`.
+- Done: `ChunkManifest` → `#[serde(flatten)]` over `ChunkAnalysisReport`
+  (zero wire change; resolved the backlog's auto-derive open decision).
+- Done: `ChunkAnalysis` field privatization (cache-staleness hazard).
+- **Open** — fold `program_analysis.rs`'s remainder into the facts walk
+  (two parallel extractors with divergent traversal rules). Not a
+  mechanical fold: the shallow extractor runs at prepare time on a plain
+  parse of _every_ chunk and feeds `artifact::ChunkAnalysisReport`
+  records, while the facts walk runs at stage one on resolver-processed
+  ASTs of materialized chunks in a crate (`analysis`) that doesn't (and
+  shouldn't) depend on `artifact`. Folding needs a redesign of when/where
+  manifest records are computed, or a shared declaration classifier
+  extracted to `binding_targets`. Tracked by CODE_REVIEW's "Two parallel
+  top-level fact extractors" P1 item, which stays open.
+- Done: `graph.rs` strict mapping — `DuplicateTopLevelDeclaration` error
+  instead of last-insert-wins, `from_report` hard error on unresolvable
+  edge endpoints.
+- Done: `cli/mod.rs` scc/cluster implementations + renderers moved to
+  `cli/scc_cluster.rs`.
 
 ## Track E — CLI scripting surface (week 2–3, parallel)
 

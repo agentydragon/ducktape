@@ -4,10 +4,7 @@ mod local_effects;
 pub mod wire;
 
 pub use local_effects::local_namespace_iife_target;
-pub use wire::{
-    ChunkFactsReport, EffectCellReport, IdReport, StatementEffectSummaryReport,
-    StatementFactsReport,
-};
+pub use wire::{ChunkFactsReport, IdReport, StatementFactsReport};
 
 use binding_targets::{
     TargetAccessRecorder, callee_base_expr, declaration_ids, hoisted_var_ids, record_assign_target,
@@ -26,53 +23,76 @@ use crate::purity::{
 };
 use crate::{SourceLocation, StatementOrdinal};
 
+/// One value per syntactic position bucket. Collapses the repeated
+/// eager / lazy / first-order-lazy triples (reads, rebinds, calls)
+/// into a single shape so the "first-order ⊆ lazy" subset invariant
+/// lives in one place ([`Self::record`]) instead of at every
+/// construction site.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PositionBucketed<T> {
+    /// At-init position: outside any function/arrow/method/getter/
+    /// setter body, constructor body, or instance class-field
+    /// initializer.
+    pub eager: T,
+    /// Inside a lazy syntactic position, at any nesting depth. May
+    /// overlap with `eager` if the same name appears in both eager
+    /// and lazy positions of the statement.
+    pub lazy: T,
+    /// Subset of `lazy` whose sites sit in a function's
+    /// **first-order, pre-await** body (depth 1 from this statement).
+    /// Used by at-init call promotion: a synchronous call to the
+    /// function only runs its immediate pre-await body, so sites
+    /// inside nested function/arrow definitions or past an `await`
+    /// don't promote to the caller.
+    pub first_order_lazy: T,
+}
+
+impl PositionBucketed<BTreeSet<Id>> {
+    /// Record `id` in the bucket the cursor position selects: `eager`
+    /// at depth 0; `lazy` at depth ≥ 1, additionally `first_order_lazy`
+    /// at depth 1 before the body's first `await`. Maintains the
+    /// `first_order_lazy ⊆ lazy` invariant structurally.
+    fn record(&mut self, id: &Id, lazy_depth: u32, past_await: bool) {
+        if lazy_depth == 0 {
+            self.eager.insert(id.clone());
+            return;
+        }
+        self.lazy.insert(id.clone());
+        if lazy_depth == 1 && !past_await {
+            self.first_order_lazy.insert(id.clone());
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<Id>,
-    pub eager_reads: BTreeSet<Id>,
-    pub eager_rebinds: BTreeSet<Id>,
-    /// Reads happening only inside lazy syntactic positions (function
-    /// bodies, instance class-field initializers, getters/setters,
-    /// constructor bodies). May overlap with `eager_reads` if the
-    /// same name appears in both eager and lazy positions of the
-    /// statement.
-    pub lazy_reads: BTreeSet<Id>,
-    /// Rebinding writes happening only inside lazy syntactic
-    /// positions. Member writes (`obj.x = ...`) are intentionally
-    /// excluded: mutating an imported object is legal, but rebinding
-    /// the imported binding cell is not.
-    pub lazy_rebinds: BTreeSet<Id>,
-    /// Subset of `lazy_reads` whose read sites sit in a function's
-    /// **first-order** body (depth 1 from this statement). Used by
-    /// at-init call promotion: a synchronous call to the function
-    /// only runs its immediate body, so reads inside nested
-    /// function/arrow definitions don't promote to the caller.
-    pub first_order_lazy_reads: BTreeSet<Id>,
-    /// Subset of `lazy_rebinds` whose write sites sit in a function's
-    /// first-order body. See `first_order_lazy_reads`.
-    pub first_order_lazy_rebinds: BTreeSet<Id>,
+    /// Identifier reads, bucketed by syntactic position.
+    pub reads: PositionBucketed<BTreeSet<Id>>,
+    /// Rebinding writes, bucketed by syntactic position. Member
+    /// writes (`obj.x = ...`) are intentionally excluded: mutating an
+    /// imported object is legal, but rebinding the imported binding
+    /// cell is not.
+    pub rebinds: PositionBucketed<BTreeSet<Id>>,
     /// Target-local mutations produced by recognized trusted helper
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
     pub local_effects: BTreeSet<Id>,
-    /// Bare-identifier callees of `CallExpr` nodes seen at-init —
-    /// i.e. outside any function/arrow/method body. Used by the
-    /// owner-graph build to drive at-init call promotion: a call from
-    /// statement S to chunk-declared function `f` is treated as
-    /// transitively reading everything `f`'s body lazily reads. See
-    /// docs/design.md "At-init call promotion". Indirect calls
-    /// (`const g = f; g()`), method calls (`obj.method()`), and
-    /// computed callees are skipped — the callee must be a direct
-    /// `Ident`.
-    pub at_init_calls: BTreeSet<Id>,
-    /// Same as `at_init_calls` but for calls inside lazy positions.
-    /// Used by the owner-graph build to reconstruct the chunk call
-    /// graph so that promotion can transitively follow call chains
-    /// (e.g. `function f() { g(); } f();` at top level promotes
-    /// through `g`'s body too).
-    pub body_calls: BTreeSet<Id>,
+    /// Bare-identifier callees of `CallExpr` nodes, bucketed by
+    /// syntactic position. Indirect calls (`const g = f; g()`),
+    /// method calls (`obj.method()`), and computed callees are
+    /// skipped — the callee must be a direct `Ident`. The owner-graph
+    /// build uses `eager` to drive at-init call promotion (a call
+    /// from statement S to chunk-declared function `f` transitively
+    /// reads everything `f`'s body lazily reads — see docs/design.md
+    /// "At-init call promotion") and `lazy` to reconstruct the chunk
+    /// call graph so promotion follows call chains (e.g.
+    /// `function f() { g(); } f();` promotes through `g`'s body too).
+    /// `first_order_lazy` keeps calls nested inside a closure of the
+    /// body from appearing as direct callees of the outer function.
+    pub calls: PositionBucketed<BTreeSet<Id>>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -102,26 +122,60 @@ pub struct StatementFacts {
     /// bindings (when never rebound) as precisely resolvable;
     /// everything else takes the conservative fallback.
     pub declares_direct_function: bool,
-    /// Subset of `body_calls` whose call sites sit in a function's
-    /// **first-order** body. The promotion call graph uses this so
-    /// that calls lexically nested inside a closure of the body
-    /// don't appear as direct callees of the outer function — they
-    /// don't fire when the outer function is invoked synchronously.
-    pub first_order_body_calls: BTreeSet<Id>,
-    /// Per-statement (writes, reads) summary used by the
-    /// dataflow-aware S-chain emission in `graph.rs`. Tracks the
-    /// outer-observable cells the statement touches at-init:
-    /// binding cells (declared / rebound / read) and static-key
-    /// `globalThis.<prop>` cells. See `README.md` →
+    /// Static-key `globalThis.<prop>` cells the statement writes
+    /// at-init (`globalThis.tag = ...` records `"tag"`). Dynamic-key
+    /// accesses bail `cell_writes_summarizable` instead.
+    pub global_writes: BTreeSet<String>,
+    /// Static-key `globalThis.<prop>` cells the statement reads
+    /// at-init.
+    pub global_reads: BTreeSet<String>,
+    /// `false` when the statement contains a shape that defeats any
+    /// static reasoning about which cells it WRITES (`with`, direct
+    /// or indirect `eval`, `Function(...)`, dynamic-key
+    /// `globalThis[expr]`, `defineProperty`/`Proxy` on the global).
+    /// Consumed by the vendor strip's swap-privacy gate, whose call
+    /// side effects are covered by its own island-reachability
+    /// analysis.
+    pub cell_writes_summarizable: bool,
+    /// `false` whenever `cell_writes_summarizable` is `false`, and
+    /// additionally for shapes that defeat the dataflow-aware
+    /// S-chain's stronger "which cells does this statement TOUCH"
+    /// question: opaque (not classifier-Pure) at-init calls/news
+    /// (I/O is not a cell; callee bodies may touch globals), member
+    /// writes through bindings (aliasing), and statements tainted by
+    /// a global-object alias escape. Downstream passes must treat
+    /// the statement as touching every cell. See `README.md` →
     /// "Conditionally-correct optimizations" for the soundness
-    /// precondition; `effects.dataflow_summarizable=false`
-    /// means the statement contains a shape we can't statically
-    /// summarize (dynamic `globalThis[<expr>]`, `with`, direct
-    /// `eval`, `Function(...)` constructor, etc.) and downstream
-    /// passes must treat it as touching every cell.
-    pub effects: StatementEffectSummary,
+    /// precondition.
+    pub dataflow_summarizable: bool,
     pub purity: Purity,
     pub kind: StatementKind,
+}
+
+impl StatementFacts {
+    /// Per-statement (writes, reads) cell summary used by the
+    /// dataflow-aware S-chain emission in `graph.rs` and the vendor
+    /// strip's swap-privacy gate. Derived on demand: the
+    /// `Binding`-cell half restates `declared` / `reads.eager` /
+    /// `rebinds.eager`; only the `GlobalProp` half (`global_writes` /
+    /// `global_reads`) is stored state.
+    pub fn effects(&self) -> StatementEffectSummary {
+        let mut writes = BTreeSet::<EffectCell>::new();
+        for name in self.declared.iter().chain(self.rebinds.eager.iter()) {
+            writes.insert(EffectCell::Binding(name.clone()));
+        }
+        for key in &self.global_writes {
+            writes.insert(EffectCell::GlobalProp(key.clone()));
+        }
+        let mut reads = BTreeSet::<EffectCell>::new();
+        for name in &self.reads.eager {
+            reads.insert(EffectCell::Binding(name.clone()));
+        }
+        for key in &self.global_reads {
+            reads.insert(EffectCell::GlobalProp(key.clone()));
+        }
+        StatementEffectSummary { writes, reads }
+    }
 }
 
 /// One outer-observable storage location a statement can read or
@@ -138,26 +192,14 @@ pub enum EffectCell {
     GlobalProp(String),
 }
 
-#[derive(Debug, Clone, Default)]
+/// The (writes, reads) cell view of one statement, derived by
+/// [`StatementFacts::effects`]. The summarizability bits live on
+/// [`StatementFacts`] directly (`cell_writes_summarizable`,
+/// `dataflow_summarizable`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
-    /// `false` when the statement contains a shape that defeats any
-    /// static reasoning about which cells it WRITES (`with`, direct
-    /// or indirect `eval`, `Function(...)`, dynamic-key
-    /// `globalThis[expr]`, `defineProperty`/`Proxy` on the global).
-    /// Consumed by the vendor strip's swap-privacy gate, whose call
-    /// side effects are covered by its own island-reachability
-    /// analysis.
-    pub cell_writes_summarizable: bool,
-    /// `false` whenever `cell_writes_summarizable` is `false`, and
-    /// additionally for shapes that defeat the dataflow-aware
-    /// S-chain's stronger "which cells does this statement TOUCH"
-    /// question: opaque (not classifier-Pure) at-init calls/news
-    /// (I/O is not a cell; callee bodies may touch globals), member
-    /// writes through bindings (aliasing), and statements tainted by
-    /// a global-object alias escape.
-    pub dataflow_summarizable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -270,15 +312,9 @@ pub(crate) struct StructuralStatementFacts {
     source_location: Option<SourceLocation>,
     kind: StatementKind,
     declared: BTreeSet<Id>,
-    at_init_reads: BTreeSet<Id>,
-    lazy_reads: BTreeSet<Id>,
-    first_order_lazy_reads: BTreeSet<Id>,
-    at_init_writes: BTreeSet<Id>,
-    lazy_writes: BTreeSet<Id>,
-    first_order_lazy_writes: BTreeSet<Id>,
-    at_init_calls: BTreeSet<Id>,
-    lazy_calls: BTreeSet<Id>,
-    first_order_lazy_calls: BTreeSet<Id>,
+    reads: PositionBucketed<BTreeSet<Id>>,
+    rebinds: PositionBucketed<BTreeSet<Id>>,
+    calls: PositionBucketed<BTreeSet<Id>>,
     at_init_unresolved_sources: BTreeSet<Id>,
     at_init_unresolved_inline_fn: bool,
     first_order_unresolved_sources: BTreeSet<Id>,
@@ -365,15 +401,9 @@ where
                 source_location,
                 kind,
                 declared,
-                at_init_reads: collector.at_init_reads,
-                lazy_reads: collector.lazy_reads,
-                first_order_lazy_reads: collector.first_order_lazy_reads,
-                at_init_writes: collector.at_init_writes,
-                lazy_writes: collector.lazy_writes,
-                first_order_lazy_writes: collector.first_order_lazy_writes,
-                at_init_calls: collector.at_init_calls,
-                lazy_calls: collector.lazy_calls,
-                first_order_lazy_calls: collector.first_order_lazy_calls,
+                reads: collector.reads,
+                rebinds: collector.rebinds,
+                calls: collector.calls,
                 at_init_unresolved_sources: collector.at_init_unresolved_sources,
                 at_init_unresolved_inline_fn: collector.at_init_unresolved_inline_fn,
                 first_order_unresolved_sources: collector.first_order_unresolved_sources,
@@ -470,9 +500,10 @@ fn apply_global_escape_taint(
         for (idx, facts) in per_statement.iter().enumerate() {
             if !tainted[idx]
                 && facts
-                    .at_init_reads
+                    .reads
+                    .eager
                     .iter()
-                    .chain(facts.lazy_reads.iter())
+                    .chain(facts.reads.lazy.iter())
                     .any(|id| suspects.contains(id))
             {
                 tainted[idx] = true;
@@ -482,8 +513,8 @@ fn apply_global_escape_taint(
                 for id in facts
                     .declared
                     .iter()
-                    .chain(facts.at_init_writes.iter())
-                    .chain(facts.lazy_writes.iter())
+                    .chain(facts.rebinds.eager.iter())
+                    .chain(facts.rebinds.lazy.iter())
                 {
                     changed |= suspects.insert(id.clone());
                 }
@@ -739,15 +770,9 @@ fn assemble_statement_facts(
         source_location,
         kind,
         declared,
-        at_init_reads,
-        lazy_reads,
-        first_order_lazy_reads,
-        at_init_writes,
-        lazy_writes,
-        first_order_lazy_writes,
-        at_init_calls,
-        lazy_calls,
-        first_order_lazy_calls,
+        reads,
+        rebinds,
+        calls,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,
@@ -781,46 +806,23 @@ fn assemble_statement_facts(
     // binding edges + rebind co-location rather than the S-chain.
     let dataflow_summarizable =
         dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
-    let mut effects_writes = BTreeSet::<EffectCell>::new();
-    for name in declared.iter().chain(at_init_writes.iter()) {
-        effects_writes.insert(EffectCell::Binding(name.clone()));
-    }
-    for key in &global_writes {
-        effects_writes.insert(EffectCell::GlobalProp(key.clone()));
-    }
-    let mut effects_reads = BTreeSet::<EffectCell>::new();
-    for name in &at_init_reads {
-        effects_reads.insert(EffectCell::Binding(name.clone()));
-    }
-    for key in &global_reads {
-        effects_reads.insert(EffectCell::GlobalProp(key.clone()));
-    }
-    let effects = StatementEffectSummary {
-        writes: effects_writes,
-        reads: effects_reads,
-        cell_writes_summarizable,
-        dataflow_summarizable,
-    };
     StatementFacts {
         ordinal,
         source_location,
         declared,
-        eager_reads: at_init_reads,
-        eager_rebinds: at_init_writes,
-        lazy_reads,
-        lazy_rebinds: lazy_writes,
-        first_order_lazy_reads,
-        first_order_lazy_rebinds: first_order_lazy_writes,
+        reads,
+        rebinds,
         local_effects,
-        at_init_calls,
-        body_calls: lazy_calls,
-        first_order_body_calls: first_order_lazy_calls,
+        calls,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,
         first_order_unresolved_inline_fn,
         declares_direct_function,
-        effects,
+        global_writes,
+        global_reads,
+        cell_writes_summarizable,
+        dataflow_summarizable,
         purity,
         kind,
     }
@@ -1291,34 +1293,27 @@ trait LazyBoundary: Visit {
 /// each re-implemented the same `LazyBoundary` boilerplate and walked
 /// the same AST.
 ///
-/// Bucketing rules:
+/// Bucketing rules (see [`PositionBucketed::record`]):
 ///
-/// - `lazy_depth == 0` (eager, top of the statement): reads land in
-///   `at_init_reads`, rebind writes in `at_init_writes`, direct
-///   `f(...)` callees in `at_init_calls`; static-key
-///   `globalThis.<prop>` accesses contribute to
-///   `global_writes`/`global_reads`; bail-out shapes flip
-///   `dataflow_summarizable` to `false`.
+/// - `lazy_depth == 0` (eager, top of the statement): reads, rebind
+///   writes, and direct `f(...)` callees land in the respective
+///   `eager` buckets; static-key `globalThis.<prop>` accesses
+///   contribute to `global_writes`/`global_reads`; bail-out shapes
+///   flip `dataflow_summarizable` to `false`.
 /// - `lazy_depth >= 1` (inside a function/arrow/method/getter/setter
 ///   body, constructor body, or instance class-field initializer):
-///   reads/writes/calls land in `lazy_*`. The subset whose call sites
-///   sit at `lazy_depth == 1 && !past_await` also lands in
-///   `first_order_lazy_*` — used by at-init call promotion, which
+///   reads/writes/calls land in the `lazy` buckets. The subset whose
+///   sites sit at `lazy_depth == 1 && !past_await` also lands in
+///   `first_order_lazy` — used by at-init call promotion, which
 ///   only inherits effects from a callee's immediate pre-await body.
 /// - Bail-out shapes nested inside lazy scopes are deliberately not
 ///   recorded: at-init call promotion handles transitive effects via
 ///   the call graph, not via per-statement syntactic checks.
 #[derive(Default)]
 struct StatementFactsCollector {
-    at_init_reads: BTreeSet<Id>,
-    lazy_reads: BTreeSet<Id>,
-    first_order_lazy_reads: BTreeSet<Id>,
-    at_init_writes: BTreeSet<Id>,
-    lazy_writes: BTreeSet<Id>,
-    first_order_lazy_writes: BTreeSet<Id>,
-    at_init_calls: BTreeSet<Id>,
-    lazy_calls: BTreeSet<Id>,
-    first_order_lazy_calls: BTreeSet<Id>,
+    reads: PositionBucketed<BTreeSet<Id>>,
+    rebinds: PositionBucketed<BTreeSet<Id>>,
+    calls: PositionBucketed<BTreeSet<Id>>,
     at_init_unresolved_sources: BTreeSet<Id>,
     at_init_unresolved_inline_fn: bool,
     first_order_unresolved_sources: BTreeSet<Id>,
@@ -1346,36 +1341,15 @@ impl StatementFactsCollector {
     }
 
     fn record_read(&mut self, id: &Id) {
-        if self.lazy_depth == 0 {
-            self.at_init_reads.insert(id.clone());
-            return;
-        }
-        self.lazy_reads.insert(id.clone());
-        if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_reads.insert(id.clone());
-        }
+        self.reads.record(id, self.lazy_depth, self.past_await);
     }
 
     fn record_write(&mut self, id: &Id) {
-        if self.lazy_depth == 0 {
-            self.at_init_writes.insert(id.clone());
-            return;
-        }
-        self.lazy_writes.insert(id.clone());
-        if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_writes.insert(id.clone());
-        }
+        self.rebinds.record(id, self.lazy_depth, self.past_await);
     }
 
     fn record_call(&mut self, id: &Id) {
-        if self.lazy_depth == 0 {
-            self.at_init_calls.insert(id.clone());
-            return;
-        }
-        self.lazy_calls.insert(id.clone());
-        if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_calls.insert(id.clone());
-        }
+        self.calls.record(id, self.lazy_depth, self.past_await);
     }
 
     /// A call whose callee promotion can never resolve syntactically
@@ -1525,11 +1499,11 @@ impl Visit for StatementFactsCollector {
     // this chunk's entry to keep the export surface intact. The
     // realizability primitive's I-graph cycle check needs to see
     // that materializer-induced lazy import edge, so record each
-    // `orig` Ident as a LAZY read (placed directly into `lazy_reads`,
+    // `orig` Ident as a LAZY read (placed directly into `reads.lazy`,
     // bypassing `record_read`'s lazy-depth bucketing — these reads
     // are semantically deferred regardless of where the export
     // specifier sits syntactically). Not added to
-    // `first_order_lazy_reads`: re-exports aren't reachable through
+    // `reads.first_order_lazy`: re-exports aren't reachable through
     // at-init call promotion, so excluding them from that subset
     // prevents the promotion pass from inventing spurious eager
     // edges for re-exported bindings.
@@ -1547,7 +1521,7 @@ impl Visit for StatementFactsCollector {
                 continue;
             };
             if let ModuleExportName::Ident(ident) = &named.orig {
-                self.lazy_reads.insert(ident.to_id());
+                self.reads.lazy.insert(ident.to_id());
             }
         }
     }
@@ -1842,7 +1816,7 @@ fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &ClassMember) {
         // No outer descend here — a method body must land at
         // lazy_depth 1, the same as a bare `function f() { ... }`,
         // so rebinds in the immediate body show up in
-        // `first_order_lazy_rebinds` and the owner-graph emits the
+        // `rebinds.first_order_lazy` and the owner-graph emits the
         // constraining `LazyRebind` edge that catches cross-module
         // writes to imported bindings (ESM rejects at runtime).
         ClassMember::Method(method) => {

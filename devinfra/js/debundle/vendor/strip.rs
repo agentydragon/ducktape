@@ -1142,12 +1142,12 @@ fn analyze_prune_items(module: &Module, chunk_path: &str) -> Result<Vec<ItemAnal
 }
 
 fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnalysis {
-    let mut reads = fact.eager_reads.clone();
-    reads.extend(fact.lazy_reads.iter().cloned());
-    reads.extend(fact.eager_rebinds.iter().cloned());
-    reads.extend(fact.lazy_rebinds.iter().cloned());
-    reads.extend(fact.at_init_calls.iter().cloned());
-    reads.extend(fact.body_calls.iter().cloned());
+    let mut reads = fact.reads.eager.clone();
+    reads.extend(fact.reads.lazy.iter().cloned());
+    reads.extend(fact.rebinds.eager.iter().cloned());
+    reads.extend(fact.rebinds.lazy.iter().cloned());
+    reads.extend(fact.calls.eager.iter().cloned());
+    reads.extend(fact.calls.lazy.iter().cloned());
     for id in &fact.declared {
         reads.remove(id);
     }
@@ -1167,8 +1167,8 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         export_aliases: export_aliases_for_item(item),
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
-        observable_writes: fact.effects.writes.clone(),
-        effects_summarizable: fact.effects.cell_writes_summarizable,
+        observable_writes: fact.effects().writes,
+        effects_summarizable: fact.cell_writes_summarizable,
     }
 }
 

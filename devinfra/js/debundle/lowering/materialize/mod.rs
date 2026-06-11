@@ -310,7 +310,6 @@ pub(super) fn materialize_logical_chunk(
     let factorization = time_phase!(timings, "build_factorization", {
         ChunkFactorization::build_with(
             chunk_id.to_string(),
-            analysis.facts,
             precomputed,
             bindings_catalogue,
             logical_modules,
@@ -677,7 +676,7 @@ fn build_directory_dependency_facts(
     factorization: &ChunkFactorization,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
-    for edge in factorization.analysis.owner_graph.iter_edges() {
+    for edge in factorization.analysis.owner_graph().iter_edges() {
         let source_module = factorization.partition.of(edge.from);
         let target_module = factorization.partition.of(edge.to);
         if source_module == target_module {
@@ -718,10 +717,8 @@ fn module_output_file(
     factorization: &ChunkFactorization,
     module: ModuleId,
 ) -> Option<String> {
-    let ModuleId(LogicalModuleIndex(idx)) = module;
     factorization
         .analysis
-        .logical_modules
-        .get(idx)
+        .logical_module(module.0)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }

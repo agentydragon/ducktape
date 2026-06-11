@@ -53,7 +53,7 @@ mod rebind_fold;
 pub use chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
 pub use rebind_fold::{RebindFold, compute_rebind_folds};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use swc_common::Span;
 use swc_ecma_ast::Module;
 
@@ -120,7 +120,8 @@ where
         resolve_dynamic_import,
     )?;
     let owner_graph_and_units =
-        compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options);
+        compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options)
+            .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
     Ok(StageOneAnalysis {
         fact_analysis,
         owner_graph_and_units,

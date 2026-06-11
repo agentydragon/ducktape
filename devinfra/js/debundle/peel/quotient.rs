@@ -381,8 +381,11 @@ impl QuotientGraph {
     /// consumer (e.g. running `assemble_partition` against the
     /// reconstructed graph) needs `declared`, switch this call to
     /// pass the chunk's `StatementFactsReport` slice.
-    pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
-        let (owner_graph, _) = OwnerGraph::from_report(report, &[]);
+    pub fn from_report(
+        report: &OwnerGraphReport,
+        cap_lines: usize,
+    ) -> Result<Self, analysis::UnresolvedOwnerEdgeEndpoint> {
+        let (owner_graph, _) = OwnerGraph::from_report(report, &[])?;
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let owner_id_to_idx: FxHashMap<String, OwnerIdx> = owner_ids
             .iter()
@@ -428,12 +431,16 @@ impl QuotientGraph {
         let mut owner_weighted_edges: Vec<WeightedOwnerEdge> =
             Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
-            let (Some(&s), Some(&t)) = (
-                owner_id_to_idx.get(edge.source.as_str()),
-                owner_id_to_idx.get(edge.target.as_str()),
-            ) else {
-                continue;
+            // Endpoint resolution can't fail here: the
+            // `OwnerGraph::from_report` call above already errored on
+            // any edge whose endpoint is missing from the node table.
+            let resolve = |endpoint: &str| {
+                owner_id_to_idx
+                    .get(endpoint)
+                    .copied()
+                    .expect("validated by OwnerGraph::from_report")
             };
+            let (s, t) = (resolve(&edge.source), resolve(&edge.target));
             owner_weighted_edges.push(WeightedOwnerEdge {
                 from: s,
                 to: t,
@@ -501,7 +508,7 @@ impl QuotientGraph {
             next_module_idx,
         };
         q.rebuild_class_adjacency();
-        q
+        Ok(q)
     }
 
     /// Build a quotient over `report.nodes` and immediately contract
@@ -526,7 +533,7 @@ impl QuotientGraph {
         report: &OwnerGraphReport,
         cap_lines: usize,
         groups: &[Vec<OwnerIdx>],
-    ) -> (Self, Vec<ClassId>) {
+    ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
         let extended_groups: Vec<PartitionGroup> = groups
             .iter()
             .map(|owner_idxs| PartitionGroup {
@@ -547,8 +554,8 @@ impl QuotientGraph {
         report: &OwnerGraphReport,
         cap_lines: usize,
         groups: &[PartitionGroup],
-    ) -> (Self, Vec<ClassId>) {
-        let mut q = Self::from_report(report, cap_lines);
+    ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
+        let mut q = Self::from_report(report, cap_lines)?;
         let mut group_class_ids = Vec::with_capacity(groups.len());
         for group in groups {
             let mut winner: Option<ClassId> = None;
@@ -577,7 +584,7 @@ impl QuotientGraph {
         // callers see the correct initial state.
         q.rebuild_class_adjacency();
         q.rebuild_realizability_index();
-        (q, group_class_ids)
+        Ok((q, group_class_ids))
     }
 
     /// The class an owner currently belongs to.
@@ -2113,8 +2120,8 @@ pub fn build_seed_quotient(
     atomic_units: &[analysis::AtomicUnitReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
-) -> (QuotientGraph, Vec<SeedContractionRejected>) {
-    let mut q = QuotientGraph::from_report(report, cap_lines);
+) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
+    let mut q = QuotientGraph::from_report(report, cap_lines)?;
     let mut rejected = Vec::<SeedContractionRejected>::new();
 
     // ---- Pass 1: atomic units. Canonical order: lowest OwnerIdx
@@ -2432,7 +2439,7 @@ pub fn build_seed_quotient(
         }
     }
 
-    (q, rejected)
+    Ok((q, rejected))
 }
 
 fn resolve_owner_idxs(q: &QuotientGraph, owner_ids: &[String]) -> Vec<OwnerIdx> {

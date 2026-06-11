@@ -366,6 +366,19 @@ export { A, B };
     assert_entry_output(&fixture, "a-value b-value\n");
 
     let manifest: serde_json::Value = read_json(&fixture.report_root.join("static/app/chunk.json"));
+    // Wire-shape pin: the analysis-report fields stay flattened at the
+    // manifest's top level (`ChunkManifest` embeds `ChunkAnalysisReport`
+    // via `#[serde(flatten)]`), not nested under an `analysis` key.
+    for key in ["chunk_id", "source_path", "entry_file", "counts", "files"] {
+        assert!(
+            manifest.get(key).is_some(),
+            "chunk.json should carry analysis field {key:?} at top level",
+        );
+    }
+    assert!(
+        manifest.get("analysis").is_none(),
+        "chunk.json must not nest the analysis report under an `analysis` key",
+    );
     let entry_path = fixture.out_root.join("static/app/entry.js");
     let named_path = fixture.out_root.join("static/app/modules/mod_a.js");
     let residual_path = fixture

@@ -690,13 +690,13 @@ partition-independent: intra-module promoted edges are dropped by the
 quotient automatically, so the same promoted owner graph drives
 hypothetical planner partitions and the validator's actual one.
 
-**Algorithm.** For each top-level chunk statement S with `at_init_calls`
+**Algorithm.** For each top-level chunk statement S with `calls.eager`
 non-empty, walk the chunk call graph (among chunk-declared functions)
 in reverse topological order to compute, per function-owner F,
 `reachable_lazy_reads[F]` and `reachable_lazy_rebinds[F]` — the
 fixpoint closure of F's body lazy reads/rebinds plus the closures of
 every chunk function F calls. Then for each callee C in S's
-`at_init_calls`, emit promoted edges from S's owner to every owner
+`calls.eager`, emit promoted edges from S's owner to every owner
 declaring a binding in C's reachable closures.
 
 **Hoisted-target filter.** Promoted reads filter out targets whose

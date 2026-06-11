@@ -1,11 +1,10 @@
 //! Per-chunk analysis state: inputs, IR, and input-derived caches.
 //!
 //! [`ChunkAnalysis`] is what's known about a chunk before factorize
-//! runs — the facts harvested from the AST, the spec-supplied
-//! logical modules and chunk renames, the owner graph derived from
-//! those facts, and the small lookup caches that depend only on
-//! inputs. The factorize algorithm consumes a `ChunkAnalysis` plus
-//! a default destination to produce a
+//! runs — the spec-supplied logical modules, the binding catalogue,
+//! the owner graph derived from the chunk facts, and the small
+//! lookup caches that depend only on inputs. The factorize algorithm
+//! consumes a `ChunkAnalysis` plus a default destination to produce a
 //! [`crate::ChunkFactorization`] — the partition-and-derived state
 //! that depends on which logical-module assignment the spec chose.
 
@@ -15,32 +14,23 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::reports::owner_key;
-use analysis::{
-    BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph, StatementFacts,
-};
+use analysis::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
 /// Constructed once per chunk and held by reference (typically via
 /// `Arc<ChunkAnalysis>`) by every [`crate::ChunkFactorization`]
 /// candidate that explores a partition over the same owner graph.
+/// All fields are private: the lookup tables are precomputed from the
+/// inputs at [`ChunkAnalysis::build`] time, so a mutable input field
+/// would silently stale the caches. Read access goes through the
+/// accessors below.
 #[derive(Debug, Clone)]
 pub struct ChunkAnalysis {
-    pub chunk_id: String,
-    pub facts: Vec<StatementFacts>,
-    /// All top-level bindings of the chunk indexed by local name.
-    /// Iteration order is undefined; consumers that need a
-    /// deterministic order (emit sites, error messages) must sort
-    /// the keys themselves.
-    pub bindings: HashMap<Id, BindingKind>,
-    pub logical_modules: Vec<LogicalModule>,
-    /// In-place readability renames for bindings that stay in
-    /// entry. Iteration order is undefined; the
-    /// `materialize_logical_modules` validation pass sorts the
-    /// keys before iterating so any spec errors it emits stay
-    /// deterministic.
-    pub chunk_renames: HashMap<Id, Atom>,
-    pub owner_graph: OwnerGraph,
+    chunk_id: String,
+    bindings: HashMap<Id, BindingKind>,
+    logical_modules: Vec<LogicalModule>,
+    owner_graph: OwnerGraph,
     owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
     binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
 }
@@ -58,27 +48,48 @@ impl ChunkAnalysis {
     /// Build a `ChunkAnalysis` reusing a caller-supplied owner graph.
     /// `bindings` should already have every `Owned` binding the spec
     /// assigned and every `Imported` binding the spec re-exports.
+    ///
+    /// `chunk_renames` (in-place readability renames for bindings
+    /// that stay in entry) feed the export-name lookup table but are
+    /// not retained beyond construction.
     pub fn build(
         chunk_id: String,
-        facts: Vec<StatementFacts>,
         owner_graph: OwnerGraph,
         bindings: HashMap<Id, BindingKind>,
         logical_modules: Vec<LogicalModule>,
-        chunk_renames: HashMap<Id, Atom>,
+        chunk_renames: &HashMap<Id, Atom>,
     ) -> Self {
         let owner_report_ids_by_binding = build_owner_report_ids_by_binding(&owner_graph);
         let binding_lookup_by_id =
-            build_binding_lookup_by_id(&bindings, &chunk_renames, &logical_modules);
+            build_binding_lookup_by_id(&bindings, chunk_renames, &logical_modules);
         Self {
             chunk_id,
-            facts,
             bindings,
             logical_modules,
-            chunk_renames,
             owner_graph,
             owner_report_ids_by_binding,
             binding_lookup_by_id,
         }
+    }
+
+    pub fn chunk_id(&self) -> &str {
+        &self.chunk_id
+    }
+
+    /// All top-level bindings of the chunk indexed by local name.
+    /// Iteration order is undefined; consumers that need a
+    /// deterministic order (emit sites, error messages) must sort
+    /// the keys themselves.
+    pub fn bindings(&self) -> &HashMap<Id, BindingKind> {
+        &self.bindings
+    }
+
+    pub fn logical_modules(&self) -> &[LogicalModule] {
+        &self.logical_modules
+    }
+
+    pub fn owner_graph(&self) -> &OwnerGraph {
+        &self.owner_graph
     }
 
     /// Pre-computed export name for a chunk binding, falling back

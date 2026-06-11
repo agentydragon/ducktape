@@ -143,14 +143,6 @@ These files document the same project from multiple perspectives. Skimming them,
 
 ## Concerns to discuss before deciding
 
-### Should `ChunkAnalysisReport` be auto-derived from the IR?
-
-After the rename, `chunk_analysis::ChunkAnalysis` (IR) and `artifact::ChunkAnalysisReport` (JSON wire) still coexist as parallel definitions. The longer-term question is whether the report shape should be derived from the IR shape via a wire-format adapter (the way `OwnerGraph` ↔ `OwnerGraphReport` works). If yes, the two types collapse into one IR + one auto-derived report.
-
-**Decision needed**: whether the report types are auto-derivable from IR types, or whether they intentionally diverge (e.g. the report has fields the IR doesn't, like `parser: ParserOptionsRecord` for reproducibility).
-
-A related collapse with zero wire change is available today: `artifact.rs::ChunkManifest::from_analysis` copies `ChunkAnalysisReport` into `ChunkManifest` field-by-field; embedding the report struct with `#[serde(flatten)]` removes one duplication layer while keeping the serialized shape identical.
-
 ### Gate simulator ↔ materializer import-order sharing (RESOLVED)
 
 The historical drift surface — the emitter placed phantom side-effect imports first in each emitted module while the simulator sorted ALL of a module's I-successors in one `linker_position` list, residual's missing universal entry imports, and the `usize::MAX` tie-break mismatch — is resolved: both sides now consume one shared ordering implementation, `esm_import_order::EsmImportOrder` (`sort_entry_imports` / `sort_module_imports`), built from the canonical `ChunkConstrainingEdgeSet`. The emitter renders the entry's per-plan import list (named imports for binding-owning plans, side-effect-only imports for binding-less plans) and each module's merged intra-chunk import list (binding + phantom + residual-entry, one sort) from it; the simulator (`realizability::EsmIGraph`) uses the same two sorts as DFS neighbor order, with residual fanning out to every I-graph module exactly as the emitted entry does. Do not reintroduce per-side ordering rules — encode any ordering requirement in `EsmImportOrder` so both sides inherit it.

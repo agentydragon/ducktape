@@ -29,7 +29,10 @@ use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
 use crate::facts::StatementFacts;
-use crate::graph::{DepKind, OwnerGraph, OwnerGraphOptions, OwnerId, build_owner_graph_with};
+use crate::graph::{
+    DepKind, DuplicateTopLevelDeclaration, OwnerGraph, OwnerGraphOptions, OwnerId,
+    build_owner_graph_with,
+};
 
 /// One atomic factor unit: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
@@ -61,7 +64,9 @@ pub struct OwnerGraphAndUnits {
 /// default (strictly-conservative) [`OwnerGraphOptions`] — call
 /// [`compute_owner_graph_and_units_with`] when the chunk spec opts
 /// into conditionally-correct refinements.
-pub fn compute_owner_graph_and_units(facts: &[StatementFacts]) -> OwnerGraphAndUnits {
+pub fn compute_owner_graph_and_units(
+    facts: &[StatementFacts],
+) -> Result<OwnerGraphAndUnits, DuplicateTopLevelDeclaration> {
     compute_owner_graph_and_units_with(facts, OwnerGraphOptions::default())
 }
 
@@ -70,13 +75,13 @@ pub fn compute_owner_graph_and_units(facts: &[StatementFacts]) -> OwnerGraphAndU
 pub fn compute_owner_graph_and_units_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,
-) -> OwnerGraphAndUnits {
-    let owner_graph = build_owner_graph_with(facts, options);
+) -> Result<OwnerGraphAndUnits, DuplicateTopLevelDeclaration> {
+    let owner_graph = build_owner_graph_with(facts, options)?;
     let atomic_units = compute_atomic_units(&owner_graph);
-    OwnerGraphAndUnits {
+    Ok(OwnerGraphAndUnits {
         owner_graph,
         atomic_units,
-    }
+    })
 }
 
 /// Compute atomic factor units for an owner graph. Returns one unit

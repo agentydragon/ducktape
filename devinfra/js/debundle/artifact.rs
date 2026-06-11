@@ -354,18 +354,13 @@ pub struct DirectoryDependencyFact {
 }
 
 /// Per-chunk report serialized to `reports/tree/<chunk>/chunk.json` at write time.
+/// The analysis report is flattened so the serialized shape is the
+/// analysis fields followed by the decomposition/metrics fields —
+/// identical to the previous field-by-field copy.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkManifest {
-    pub chunk_id: String,
-    pub source_path: String,
-    pub parser: ParserOptionsRecord,
-    pub entry_file: String,
-    pub counts: ChunkCounts,
-    pub files: Vec<ChunkFileRecord>,
-    pub imports: Vec<ImportRecord>,
-    pub export_aliases: Vec<ExportAliasRecord>,
-    pub unresolved_exports: Vec<ExportAliasRecord>,
-    pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
+    #[serde(flatten)]
+    pub analysis: ChunkAnalysisReport,
     pub validation: ChunkValidationSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logical_modules: Option<ChunkLogicalModulesSummary>,
@@ -380,16 +375,7 @@ impl ChunkManifest {
         output_metrics: OutputMetrics,
     ) -> Self {
         Self {
-            chunk_id: analysis.chunk_id.clone(),
-            source_path: analysis.source_path.clone(),
-            parser: analysis.parser.clone(),
-            entry_file: analysis.entry_file.clone(),
-            counts: analysis.counts.clone(),
-            files: analysis.files.clone(),
-            imports: analysis.imports.clone(),
-            export_aliases: analysis.export_aliases.clone(),
-            unresolved_exports: analysis.unresolved_exports.clone(),
-            kept_top_level_declarations: analysis.kept_top_level_declarations.clone(),
+            analysis: analysis.clone(),
             validation: decomposition.map_or_else(
                 || ChunkValidationSummary {
                     status: "not_materialized",

@@ -7,7 +7,7 @@
 //! `StatementKind::FnDecl` as ESM-Phase-1 hoisted and excludes
 //! promoted at-init reads of FnDecl bindings from the call-graph
 //! closure that feeds the promoted-edge emission. The *direct*
-//! top-level eager-read path (the loop over `stmt.eager_reads`
+//! top-level eager-read path (the loop over `stmt.reads.eager`
 //! in `graph.rs`) used to skip that filter: any top-level
 //! `const x = f()` where `f` is a hoisted `function f() {}`
 //! emitted a direct `EagerUse` edge `caller → f_owner` with

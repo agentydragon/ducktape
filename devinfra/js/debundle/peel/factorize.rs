@@ -323,7 +323,7 @@ fn factorize_with_context(
         &graph.atomic_graph.nodes,
         &spec_modules,
         size_cap_lines,
-    );
+    )?;
     // Mutates the quotient in place; the returned merge-step list is unused here.
     greedy_merge_to_convergence(&mut quotient);
 

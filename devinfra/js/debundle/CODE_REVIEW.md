@@ -23,10 +23,6 @@ Whitelist tables already in `purity/whitelists.rs`; long PlainData /
 scanning, and TS enum IIFE recognition still live in `mod.rs` —
 could be sub-split further if it keeps growing.
 
-### `facts/mod.rs` (~1930 lines, 2 concerns)
-
-`StatementFacts` carries many derivable `BTreeSet<Id>` sets that every construction site must keep mutually consistent — see the canonical "### `StatementFacts`" item under P3.
-
 ---
 
 ## P1 — Major Duplication
@@ -42,15 +38,6 @@ could be sub-split further if it keeps growing.
 ---
 
 ## P2 — Structural Issues
-
-### `graph.rs` — silent-skip hazards
-
-- `build_owner_graph_with` populates `binding_owner` with plain inserts, so duplicate top-level declarations (legal JS: two `var x;`, two `function f() {}`) silently resolve last-insert-wins and earlier declarators get no incoming edges. Detect duplicates and error (or model multi-owner bindings explicitly).
-- `OwnerGraph::from_report` silently `continue`s past edges whose endpoints don't resolve in the node table. A malformed or version-skewed `owner_graph.json` loses edges without a diagnostic — and the planner-side gate then reasons over a weaker graph. Make unresolvable endpoints a hard error (strict mapping).
-
-### `cli/mod.rs` — still a grab-bag (~1800 lines)
-
-After the module/binding/comment/gate extractions, `cli/mod.rs` still hosts the full `scc` and `cluster` command implementations plus their text renderers (`run_scc`, `render_scc_text`, `run_cluster`, `render_cluster_text`) alongside arg structs and dispatch. Move them to sibling modules like the other commands.
 
 ### `lowering/lower.rs` — monolithic function (partially extracted)
 
@@ -72,13 +59,6 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 `rollback_graph.rs`, `artifact.rs`, `realizability/` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
 
-### `StatementFacts` (facts/mod.rs) — ~18 fields, triple-repeated position pattern
-
-The eager/lazy/first-order shape repeats three times — reads (`eager_reads`/`lazy_reads`/`first_order_lazy_reads`), rebinds (`eager_rebinds`/`lazy_rebinds`/`first_order_lazy_rebinds`), and calls (`at_init_calls`/`body_calls`/`first_order_body_calls`). A `PositionBucketed<T> { eager, lazy, first_order_lazy }` cuts 9 fields to 3 and makes the "first-order ⊆ lazy" subset invariants structural instead of per-construction-site discipline. Two related cleanups:
-
-- The internal `StructuralStatementFacts` spells the same sets in a different vocabulary and renames field-by-field mid-pipeline (`at_init_reads`→`eager_reads`, `at_init_writes`→`eager_rebinds`, `lazy_calls`→`body_calls`, `first_order_lazy_calls`→`first_order_body_calls`). Unify on one vocabulary.
-- The `effects` summary is assembled at construction from the other sets plus the global read/write scans; its `Binding`-cell half restates `declared`/`eager_reads`/`eager_rebinds`, leaving only the `GlobalProp` half as new information. Consider deriving it on demand.
-
 ### `DepKind` 6-way split vs primary constraining/non-constraining axis
 
 Callers in realizability/, validation.rs, facts/mod.rs frequently partition into constraining vs non-constraining via `constrains_init_order()`. Make this a first-class type distinction.
@@ -94,10 +74,6 @@ Nearly every struct field and function is `pub(super)`. This is "module-private 
 ### Vendor manifest struct proliferation
 
 ~26 manifest/counts/detail structs with similar shapes in `vendor/manifests.rs`. `PartialSwapResolutionManifest` and `BundledPartialSwapResolutionManifest` are field-for-field twins — a generic `ResolutionManifest<R>` collapses the pair. `PartialSwapSymbolTarget` (`vendor/mod.rs`) is likewise a field-for-field twin of `spec::PartialSwapSymbol`.
-
-### `ChunkAnalysis` pub inputs + private derived caches
-
-`chunk_analysis.rs` exposes `facts`, `bindings`, `logical_modules`, `chunk_renames`, `owner_graph` as `pub` fields while `build()` precomputes private lookup tables (`owner_report_ids_by_binding`, `binding_lookup_by_id`) from them. Mutating a pub field after construction silently stales the caches. Privatize the inputs behind accessors so the staleness hazard is unrepresentable.
 
 ### `SourceImportResolution = Option<(String, String, String)>` (`plan_references.rs:41`)
 
@@ -195,6 +171,4 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and validate/resolve helpers extracted; remaining: strip-specific helpers, annotation/identity logic.
 
-3. **Simplify `StatementFacts`** (`facts/mod.rs`) — see the canonical "### `StatementFacts`" item under P3.
-
-4. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong.
+3. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong.

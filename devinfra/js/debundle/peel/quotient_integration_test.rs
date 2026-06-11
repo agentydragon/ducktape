@@ -51,7 +51,8 @@ fn seed_pre_contracts_atomic_units() {
         vec![unit.clone()],
         vec![],
     );
-    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000);
+    let (q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
     assert!(
         rejected.is_empty(),
         "well-formed atomic unit must not produce rejections: {rejected:?}",
@@ -82,7 +83,8 @@ fn seed_pre_contracts_spec_modules() {
         module_id: "mod_alpha".to_string(),
         owner_ids: vec!["owner:a".to_string(), "owner:b".to_string()],
     }];
-    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+    let (q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
     assert!(
         rejected.is_empty(),
         "well-formed spec module must not produce rejections: {rejected:?}",
@@ -135,7 +137,8 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
             owner_ids: vec!["owner:b1".to_string(), "owner:b2".to_string()],
         },
     ];
-    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+    let (q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
 
     // Exactly one of the two contractions must be rejected. The
     // canonical order is mod_alpha first (lex), so mod_alpha
@@ -225,7 +228,8 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
         vec![unit],
         vec![],
     );
-    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000);
+    let (q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
     assert!(
         rejected.is_empty(),
         "atomic-unit contractions internal to the residual module are \
@@ -275,7 +279,7 @@ fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
     );
     let groups = vec![make_module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
 
@@ -319,7 +323,8 @@ fn seed_atomic_unit_contractions_never_rejected_on_well_formed_input() {
         fixture_two_units_no_edges(),
     ];
     for (label, report) in fixtures {
-        let (_q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000);
+        let (_q, rejected) =
+            build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
         let atomic_rejections: Vec<&SeedContractionRejected> = rejected
             .iter()
             .filter(|r| matches!(r, SeedContractionRejected::AtomicUnit { .. }))
@@ -434,10 +439,10 @@ fn seed_rejection_diagnostic_is_canonical() {
 
     let report_a = make_report();
     let (_q1, rejected_a) =
-        build_seed_quotient(&report_a, &report_a.atomic_graph.nodes, &spec, 10_000);
+        build_seed_quotient(&report_a, &report_a.atomic_graph.nodes, &spec, 10_000).unwrap();
     let report_b = make_report();
     let (_q2, rejected_b) =
-        build_seed_quotient(&report_b, &report_b.atomic_graph.nodes, &spec, 10_000);
+        build_seed_quotient(&report_b, &report_b.atomic_graph.nodes, &spec, 10_000).unwrap();
 
     let json_a = serde_json::to_string_pretty(&rejected_a).unwrap();
     let json_b = serde_json::to_string_pretty(&rejected_b).unwrap();
@@ -475,7 +480,7 @@ fn contract_never_un_contracts() {
         ],
         vec![],
     );
-    let mut q = QuotientGraph::from_report(&report, 10_000);
+    let mut q = QuotientGraph::from_report(&report, 10_000).unwrap();
     let a_idx = q.owner_idx_of("owner:a").unwrap();
     let b_idx = q.owner_idx_of("owner:b").unwrap();
     let c_idx = q.owner_idx_of("owner:c").unwrap();
@@ -542,7 +547,8 @@ fn partition_constructor_contracts_each_group() {
         vec![OwnerIdx(0), OwnerIdx(1)],
         vec![OwnerIdx(2), OwnerIdx(3)],
     ];
-    let (q, class_ids) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups);
+    let (q, class_ids) =
+        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
     assert_eq!(class_ids.len(), 2, "one class id per input group");
 
     let a_idx = q.owner_idx_of("owner:a").unwrap();
@@ -741,7 +747,7 @@ fn greedy_extends_existing_module_with_only_consumer() {
 
     let groups = vec![make_module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
 
     // Exactly one contraction merging owner:anon's class into the
@@ -779,7 +785,7 @@ fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
 
     let groups = vec![make_module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
 
     assert_eq!(contractions.len(), 1, "got: {contractions:?}");
@@ -812,7 +818,8 @@ fn greedy_terminates_at_convergence() {
     );
 
     let groups = vec![make_module_group("ui/x", vec![0])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let (mut q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let before = q.iter_classes().count();
     let contractions = greedy_merge_to_convergence(&mut q);
     let after = q.iter_classes().count();
@@ -852,7 +859,8 @@ fn greedy_never_splits_existing_spec_module() {
     );
 
     let groups = vec![make_module_group("ui/x", vec![0, 1])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let (mut q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let _ = greedy_merge_to_convergence(&mut q);
 
     let a1_idx = q.owner_idx_of("owner:a1").unwrap();
@@ -903,7 +911,7 @@ fn greedy_never_merges_into_residual() {
 
     let groups = vec![make_module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let residual_idx = q.owner_idx_of("owner:residual_catchall").unwrap();
     let residual_class = q.class_of(residual_idx);
     // Designate the catch-all class as the sticky residual sink; the
@@ -1041,12 +1049,13 @@ fn incremental_state_matches_rebuild_on_synthetic_specs() {
 
     for (label, report, groups) in fixtures {
         let (mut incremental, _) =
-            QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+            QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
 
         // After construction, the cached cycle set must equal a
         // from-scratch rebuild.
         let cached = incremental.cycle_set();
         let rebuilt = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups)
+            .unwrap()
             .0
             .cycle_set();
         assert_eq!(
@@ -1111,7 +1120,8 @@ fn replay_partition(
             label: None,
         })
         .collect();
-    let (q, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, &groups);
+    let (q, _) =
+        QuotientGraph::from_report_with_partition_extended(report, cap_lines, &groups).unwrap();
     q
 }
 
@@ -1298,7 +1308,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
 
     for (label, report, groups) in fixtures {
         let (mut q, _) =
-            QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+            QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
 
         // Initial assertion: incremental verdict matches rebuild.
         {
@@ -1387,7 +1397,8 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
         make_module_group("ui/h", vec![1]),
         make_module_group("ui/b", vec![2]),
     ];
-    let (q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let (q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
 
     for (left, right, expected_preserves) in [
         (ClassId(0), ClassId(1), true),
@@ -1478,7 +1489,8 @@ fn greedy_merges_three_clusters_under_cap() {
         make_module_group("ui/b", vec![1]),
         make_module_group("ui/c", vec![2]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 150, &groups);
+    let (mut q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 150, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
     assert_eq!(
         contractions.len(),
@@ -1520,7 +1532,8 @@ fn greedy_stops_at_cap() {
         make_module_group("ui/b", vec![1]),
         make_module_group("ui/c", vec![2]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 40, &groups);
+    let (mut q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 40, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
     assert_eq!(
         contractions.len(),
@@ -1573,7 +1586,8 @@ fn greedy_resolves_realizability_cycle_by_merging() {
         make_module_group("ui/a", vec![0]),
         make_module_group("ui/b", vec![1]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let (mut q, _) =
+        QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
     assert_eq!(
         contractions.len(),
@@ -2019,7 +2033,8 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
         module_id: "mod_alpha".to_string(),
         owner_ids: vec!["owner:foo".to_string()],
     }];
-    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+    let (q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
 
     let reachability_rejections: Vec<&SeedContractionRejected> = rejected
         .iter()
@@ -2074,7 +2089,7 @@ fn owner_graph_and_partition_from_spec(
     spec: &[peel::quotient::SpecModuleGroup],
 ) -> (analysis::OwnerGraph, analysis::Partition) {
     use std::collections::HashMap;
-    let (owner_graph, index) = analysis::OwnerGraph::from_report(report, &[]);
+    let (owner_graph, index) = analysis::OwnerGraph::from_report(report, &[]).unwrap();
     // Module-id assignment: residual goes to ModuleId(0). Every
     // distinct spec module gets its own ModuleId starting at 1.
     let residual = analysis::ModuleId::logical(0);
@@ -2249,7 +2264,8 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
 
     // Planner-side verdict.
     let (_q, rejected) =
-        peel::quotient::build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+        peel::quotient::build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000)
+            .unwrap();
     let planner_has_rejection = !rejected.is_empty();
 
     // The two MUST agree. If the materializer says unrealizable, the
@@ -2540,7 +2556,8 @@ fn planner_and_materializer_agree_on_corpus() {
             &case.report.atomic_graph.nodes,
             &case.spec,
             10_000,
-        );
+        )
+        .unwrap();
         let planner_has_rejection = !rejected.is_empty();
 
         assert_eq!(
@@ -2610,7 +2627,8 @@ fn incremental_kernel_query_matches_rebuild_after_each_contract() {
         let (mut incremental, _) =
             peel::quotient::QuotientGraph::from_report_with_partition_extended(
                 &report, 10_000, &groups,
-            );
+            )
+            .unwrap();
 
         loop {
             let one = peel::quotient::greedy_step(&mut incremental);
@@ -2646,8 +2664,10 @@ fn build_fixture(
     groups: &[peel::quotient::PartitionGroup],
     cap_lines: usize,
 ) -> (QuotientGraph, QuotientGraph) {
-    let (q_a, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups);
-    let (q_b, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups);
+    let (q_a, _) =
+        QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups).unwrap();
+    let (q_b, _) =
+        QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups).unwrap();
     (q_a, q_b)
 }
 
@@ -2882,7 +2902,8 @@ fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
         &report,
         10_000,
         &[vec![OwnerIdx(0), OwnerIdx(2)]],
-    );
+    )
+    .unwrap();
     let merged = group_classes[0];
     let b_class = q.class_of(OwnerIdx(1));
     assert_eq!(q.class_of(OwnerIdx(0)), merged);

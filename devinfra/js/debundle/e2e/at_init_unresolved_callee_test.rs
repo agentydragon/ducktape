@@ -2,7 +2,7 @@
 //! to a chunk-declared function must not be silently skipped by
 //! at-init call promotion (`graph.rs::promote_at_init_calls`).
 //!
-//! Before the fix, `at_init_calls` recorded only bare-`Ident` callees
+//! Before the fix, `calls.eager` recorded only bare-`Ident` callees
 //! and promotion silently `continue`d when a callee didn't resolve to
 //! a chunk function — so an at-init call routed through a
 //! single-assignment alias (`const g = readB; g();`) or an
@@ -56,7 +56,7 @@ export { A, B, g, r, readB };
 
 /// Method-call variant: `const api = { read: () => B }; api.read();`
 /// — the callee is a member expression, never recorded in
-/// `at_init_calls` at all before the fix.
+/// `calls.eager` at all before the fix.
 #[test]
 fn object_literal_method_at_init_call_closing_cycle_is_rejected() {
     expect_rejection(

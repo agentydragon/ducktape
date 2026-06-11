@@ -295,7 +295,7 @@ fn gate_matches_reference_on_clean_chain() {
         make_module_group("ui/b", vec![2]),
     ];
     let (mut q, _) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let live: Vec<ClassId> = q.iter_classes().collect();
     for i in 0..live.len() {
         for j in (i + 1)..live.len() {
@@ -329,7 +329,7 @@ fn gate_accepts_residual_pile_cycle_merge() {
         ],
         vec![],
     );
-    let mut q = QuotientGraph::from_report(&report, CAP_LINES);
+    let mut q = QuotientGraph::from_report(&report, CAP_LINES).unwrap();
     let ca = q.class_of(q.owner_idx_of("owner:a").unwrap());
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -364,7 +364,7 @@ fn gate_rejects_pass2_tdz_merge() {
     );
     let groups = vec![make_module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
@@ -402,7 +402,7 @@ fn gate_rejects_module_granularity_pass1_cycle() {
     );
     let groups = vec![make_module_group("ui/a", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -440,7 +440,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
     );
     let groups = vec![make_module_group("ui/a", vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
+        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
@@ -572,7 +572,7 @@ fn randomized_gate_equals_reference() {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let (report, spec) = random_report(&mut rng);
         let (mut q, _rejected) =
-            build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES);
+            build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES).unwrap();
         for _round in 0..6 {
             let live: Vec<ClassId> = q.iter_classes().collect();
             let mut accepted_pair: Option<(ClassId, ClassId)> = None;

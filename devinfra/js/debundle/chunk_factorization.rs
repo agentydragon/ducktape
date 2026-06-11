@@ -62,18 +62,23 @@ impl ChunkFactorization {
     /// units internally. Call sites that already have those precomputed
     /// (e.g. the materializer reuses them for mini-factor synthesis)
     /// should call [`Self::build_with`] instead.
+    ///
+    /// Panics on facts where two statements declare the same binding
+    /// (`analysis::DuplicateTopLevelDeclaration`) — the production
+    /// path goes through `compute_stage_one_analysis`, which surfaces
+    /// that as a spec-facing error before any factorization runs.
     pub fn build(
         chunk_id: String,
-        facts: Vec<analysis::StatementFacts>,
+        facts: &[analysis::StatementFacts],
         bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
     ) -> Self {
-        let precomputed = compute_owner_graph_and_units(&facts);
+        let precomputed =
+            compute_owner_graph_and_units(facts).expect("chunk facts declare a binding twice");
         Self::build_with(
             chunk_id,
-            facts,
             precomputed,
             bindings,
             logical_modules,
@@ -88,7 +93,6 @@ impl ChunkFactorization {
     /// factorization doesn't redo the work.
     pub fn build_with(
         chunk_id: String,
-        facts: Vec<analysis::StatementFacts>,
         precomputed: OwnerGraphAndUnits,
         bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
         logical_modules: Vec<LogicalModule>,
@@ -133,11 +137,10 @@ impl ChunkFactorization {
         );
         let analysis = Arc::new(ChunkAnalysis::build(
             chunk_id,
-            facts,
             owner_graph,
             bindings,
             logical_modules,
-            chunk_renames,
+            &chunk_renames,
         ));
         Self {
             analysis,
@@ -170,7 +173,7 @@ impl ChunkFactorization {
     /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> FactorizationReport {
         let mut report =
-            validate_factorization(&self.analysis.owner_graph, &self.partition, &|id| {
+            validate_factorization(self.analysis.owner_graph(), &self.partition, &|id| {
                 self.analysis.module_path(id)
             });
         report.atomic_unit_conflicts = self.assembly_conflicts.clone();

@@ -725,6 +725,7 @@ rust_library(
         "cli/mod.rs",
         "cli/module.rs",
         "cli/outcome.rs",
+        "cli/scc_cluster.rs",
         "cli/yaml_edit.rs",
     ],
     crate_name = "debundle_cli",

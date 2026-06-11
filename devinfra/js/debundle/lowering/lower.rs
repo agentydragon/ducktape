@@ -516,7 +516,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         if !auto_grow.is_empty() {
             entry_body.push(export_named_for_bindings(&auto_grow));
         }
-        trim_dead_named_specifiers(&mut entry_body, &factorization.analysis.bindings);
+        trim_dead_named_specifiers(&mut entry_body, factorization.analysis.bindings());
     });
     let entry_exports_by_original_local = time_phase!(timings, "collect_entry_exports", {
         collect_entry_exports_by_original_local(
@@ -964,7 +964,7 @@ fn lower_single_plan(
         rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
     });
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis.bindings`): for each `Imported` binding whose
+    // `factorization.analysis.bindings()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are

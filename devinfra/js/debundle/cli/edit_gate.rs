@@ -360,7 +360,8 @@ pub fn gate_post_edit_partition(
     // which is fine for `check_realizability`/`validate_factorization`
     // (both consume the partition we build below, not the per-owner
     // declared field).
-    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[]);
+    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[])
+        .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
 
     // owner_by_binding_name uses the Atom-only declared_bindings the
     // wire shape carries; that's enough because the spec author also

@@ -83,6 +83,7 @@ _STANDARD_E2E_DEPS = [
         "object_literal_import_collapse_test",
         "object_literal_return_shorthand_drops_import_test",
         "duplicate_export_test",
+        "duplicate_top_level_declaration_test",
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
         "at_init_unresolved_callee_test",

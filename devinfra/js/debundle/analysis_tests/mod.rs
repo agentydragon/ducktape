@@ -46,7 +46,7 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
 }
 
 /// A direct call `f()` at the chunk top level records `f` in the
-/// statement's `at_init_calls` set. Drives at-init call promotion
+/// statement's `calls.eager` set. Drives at-init call promotion
 /// per docs/design.md "At-init call promotion".
 #[test]
 fn at_init_call_recorded() {
@@ -54,15 +54,15 @@ fn at_init_call_recorded() {
     let facts = analyze_facts(&module);
     assert_eq!(facts.len(), 2);
     // function decl: callee never recorded for the decl itself.
-    assert!(facts[0].at_init_calls.is_empty());
-    assert!(facts[0].body_calls.is_empty());
+    assert!(facts[0].calls.eager.is_empty());
+    assert!(facts[0].calls.lazy.is_empty());
     // call statement: f() is at-init, no body reads.
-    assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("f")]),);
-    assert!(facts[1].body_calls.is_empty());
+    assert_eq!(facts[1].calls.eager, BTreeSet::from([test_id("f")]),);
+    assert!(facts[1].calls.lazy.is_empty());
 }
 
-/// A call inside a function body lives in `body_calls`, not
-/// `at_init_calls`. The call only fires when the function is
+/// A call inside a function body lives in `calls.lazy`, not
+/// `calls.eager`. The call only fires when the function is
 /// invoked, so promotion treats it as a lazy edge of the
 /// containing function.
 #[test]
@@ -70,8 +70,8 @@ fn body_call_recorded() {
     let module = parse("function f() { g(); } function g() {}");
     let facts = analyze_facts(&module);
     // f's decl: its body calls g lazily.
-    assert!(facts[0].at_init_calls.is_empty());
-    assert_eq!(facts[0].body_calls, BTreeSet::from([test_id("g")]),);
+    assert!(facts[0].calls.eager.is_empty());
+    assert_eq!(facts[0].calls.lazy, BTreeSet::from([test_id("g")]),);
 }
 
 /// Indirect calls (`const g = f; g()`) are skipped — the callee
@@ -83,7 +83,7 @@ fn indirect_call_not_recorded() {
     let facts = analyze_facts(&module);
     // Last statement: `g()` records `g`, not `f`. (The aliasing
     // is unmodeled; callee resolution only sees `g`.)
-    assert_eq!(facts[2].at_init_calls, BTreeSet::from([test_id("g")]),);
+    assert_eq!(facts[2].calls.eager, BTreeSet::from([test_id("g")]),);
 }
 
 /// Method calls (`obj.method()`) are skipped — callee is a
@@ -92,49 +92,49 @@ fn indirect_call_not_recorded() {
 fn method_call_not_recorded() {
     let module = parse("const obj = {}; obj.method();");
     let facts = analyze_facts(&module);
-    // Last statement: no at_init_calls. `obj` is still recorded
+    // Last statement: no calls.eager. `obj` is still recorded
     // as an eager read.
-    assert!(facts[1].at_init_calls.is_empty());
-    assert!(facts[1].eager_reads.contains(&test_id("obj")));
+    assert!(facts[1].calls.eager.is_empty());
+    assert!(facts[1].reads.eager.contains(&test_id("obj")));
 }
 
 /// Class static field initializers fire at-init (class evaluation
-/// time). Calls in static initializers go into `at_init_calls`.
+/// time). Calls in static initializers go into `calls.eager`.
 #[test]
 fn class_static_init_call_is_at_init() {
     let module = parse("function f() {} class C { static x = f(); }");
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("f")]),);
-    assert!(facts[1].body_calls.is_empty());
+    assert_eq!(facts[1].calls.eager, BTreeSet::from([test_id("f")]),);
+    assert!(facts[1].calls.lazy.is_empty());
 }
 
 /// Class instance field initializers fire per-construction, not
-/// at class-decl time. Calls inside them are `body_calls`,
+/// at class-decl time. Calls inside them are `calls.lazy`,
 /// matching how the existing read collectors treat instance
 /// fields as lazy.
 #[test]
 fn class_instance_field_call_is_lazy() {
     let module = parse("function f() {} class C { x = f(); }");
     let facts = analyze_facts(&module);
-    assert!(facts[1].at_init_calls.is_empty());
-    assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("f")]),);
+    assert!(facts[1].calls.eager.is_empty());
+    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("f")]),);
 }
 
 /// Nested calls in argument positions are still seen by the
 /// collector. `console.log(readB())` records both `console` (in
-/// eager_reads) and `readB` (in at_init_calls).
+/// reads.eager) and `readB` (in calls.eager).
 #[test]
 fn nested_call_arguments_record_inner_callee() {
     let module = parse("function readB() {} console.log(readB());");
     let facts = analyze_facts(&module);
     // The console.log statement: console is an eager read.
     // readB is recorded as an at-init call. console.log is a
-    // method call, so it's NOT in at_init_calls.
-    assert!(facts[1].eager_reads.contains(&test_id("console")));
-    assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("readB")]),);
+    // method call, so it's NOT in calls.eager.
+    assert!(facts[1].reads.eager.contains(&test_id("console")));
+    assert_eq!(facts[1].calls.eager, BTreeSet::from([test_id("readB")]),);
 }
 
-/// VarDecl-bound arrow functions participate in body_calls the
+/// VarDecl-bound arrow functions participate in calls.lazy the
 /// same way function declarations do. `const f = () => g()` is
 /// a function carrier; the `g()` inside is lazy.
 #[test]
@@ -142,12 +142,12 @@ fn vardecl_arrow_body_call_recorded() {
     let module = parse("function g() {} const f = () => g();");
     let facts = analyze_facts(&module);
     // f's vardecl: g() is a lazy body call.
-    assert!(facts[1].at_init_calls.is_empty());
-    assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]),);
+    assert!(facts[1].calls.eager.is_empty());
+    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]),);
 }
 
 /// A binding rebind inside a function's immediate body
-/// shows up in both `lazy_rebinds` and `first_order_lazy_rebinds`.
+/// shows up in both `rebinds.lazy` and `rebinds.first_order_lazy`.
 /// At-init promotion and the direct `lazy_rebind` owner edge
 /// both read from the first-order subset.
 #[test]
@@ -155,9 +155,9 @@ fn first_order_lazy_rebind_in_immediate_body() {
     let module = parse("let s = 0; function f() { s = 1; }");
     let facts = analyze_facts(&module);
     // f's decl: body rebinds s at depth 1.
-    assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
+    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
     assert_eq!(
-        facts[1].first_order_lazy_rebinds,
+        facts[1].rebinds.first_order_lazy,
         BTreeSet::from([test_id("s")])
     );
 }
@@ -165,21 +165,21 @@ fn first_order_lazy_rebind_in_immediate_body() {
 /// A binding rebind inside a class method body sits at depth 1
 /// (the method's function body is the immediate body, just like
 /// a bare `function f() { ... }`). Must show up in
-/// `first_order_lazy_rebinds` so the owner-graph emits a
+/// `rebinds.first_order_lazy` so the owner-graph emits a
 /// constraining `LazyRebind` edge for it.
 #[test]
 fn first_order_lazy_rebind_in_class_method_body() {
     let module = parse("let counter = 0; class C { bump(b) { counter = b; } }");
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("counter")]));
+    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("counter")]));
     assert_eq!(
-        facts[1].first_order_lazy_rebinds,
+        facts[1].rebinds.first_order_lazy,
         BTreeSet::from([test_id("counter")])
     );
 }
 
 /// A binding rebind inside a nested closure (depth ≥ 2) shows
-/// up in `lazy_rebinds` but NOT in `first_order_lazy_rebinds`
+/// up in `rebinds.lazy` but NOT in `rebinds.first_order_lazy`
 /// — invoking the outer function synchronously only stashes
 /// the closure; the rebind doesn't fire. See
 /// `at_init_promotion_nested_closure_test`.
@@ -190,8 +190,8 @@ fn first_order_lazy_rebind_skips_nested_closure() {
          function f() { globalThis.fire = () => { s = 1; }; }",
     );
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
-    assert!(facts[1].first_order_lazy_rebinds.is_empty());
+    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
+    assert!(facts[1].rebinds.first_order_lazy.is_empty());
 }
 
 /// Same depth distinction for calls: a call in the immediate
@@ -204,14 +204,14 @@ fn first_order_body_call_skips_nested_closure() {
          function f() { globalThis.fire = () => { g(); }; }",
     );
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]));
-    assert!(facts[1].first_order_body_calls.is_empty());
+    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]));
+    assert!(facts[1].calls.first_order_lazy.is_empty());
 }
 
 /// A rebind that lexically precedes the first `await` in an async
 /// function body runs synchronously when the function is invoked
 /// (the engine doesn't suspend until it reaches the await), so it
-/// belongs in `first_order_lazy_rebinds`.
+/// belongs in `rebinds.first_order_lazy`.
 #[test]
 fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
     let module = parse(
@@ -219,9 +219,9 @@ fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
          async function f() { s = 1; await Promise.resolve(); }",
     );
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
+    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
     assert_eq!(
-        facts[1].first_order_lazy_rebinds,
+        facts[1].rebinds.first_order_lazy,
         BTreeSet::from([test_id("s")])
     );
 }
@@ -229,8 +229,8 @@ fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
 /// A rebind that lexically follows the first `await` in an async
 /// function body runs in a microtask after the at-init caller has
 /// finished — it doesn't fire synchronously when the function is
-/// invoked, so it must not appear in `first_order_lazy_rebinds`.
-/// The coarse `lazy_rebinds` still records it (it IS lazy from the
+/// invoked, so it must not appear in `rebinds.first_order_lazy`.
+/// The coarse `rebinds.lazy` still records it (it IS lazy from the
 /// chunk's top-level POV). See `at_init_promotion_post_await_test`.
 #[test]
 fn first_order_lazy_rebind_skips_after_await_in_async_body() {
@@ -239,8 +239,8 @@ fn first_order_lazy_rebind_skips_after_await_in_async_body() {
          async function f() { await Promise.resolve(); s = 1; }",
     );
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
-    assert!(facts[1].first_order_lazy_rebinds.is_empty());
+    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
+    assert!(facts[1].rebinds.first_order_lazy.is_empty());
 }
 
 /// Same await-boundary distinction for body calls.
@@ -251,8 +251,8 @@ fn first_order_body_call_skips_after_await_in_async_body() {
          async function f() { await Promise.resolve(); g(); }",
     );
     let facts = analyze_facts(&module);
-    assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]));
-    assert!(facts[1].first_order_body_calls.is_empty());
+    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]));
+    assert!(facts[1].calls.first_order_lazy.is_empty());
 }
 
 #[test]
@@ -262,11 +262,11 @@ fn function_body_reads_are_lazy() {
     assert_eq!(facts.len(), 2);
     // f() declares "f"; its body reference to X is lazy.
     assert_eq!(facts[0].declared, BTreeSet::from([test_id("f")]));
-    assert!(!facts[0].eager_reads.contains(&test_id("X")));
+    assert!(!facts[0].reads.eager.contains(&test_id("X")));
     assert_eq!(facts[0].kind, StatementKind::FnDecl);
     // Y declares "Y"; init is `1` (no reads).
     assert_eq!(facts[1].declared, BTreeSet::from([test_id("Y")]));
-    assert!(facts[1].eager_reads.is_empty());
+    assert!(facts[1].reads.eager.is_empty());
 }
 
 #[test]
@@ -275,8 +275,8 @@ fn class_extends_clause_eager_read() {
     let facts = analyze_facts(&module);
     assert_eq!(facts.len(), 1);
     // extends A is eager; method body reference to X is lazy.
-    assert!(facts[0].eager_reads.contains(&test_id("A")));
-    assert!(!facts[0].eager_reads.contains(&test_id("X")));
+    assert!(facts[0].reads.eager.contains(&test_id("A")));
+    assert!(!facts[0].reads.eager.contains(&test_id("X")));
 }
 
 #[test]
@@ -284,14 +284,14 @@ fn computed_key_eager_read() {
     let module = parse("const M = { [k.foo]: 1 };");
     let facts = analyze_facts(&module);
     // The key expression `k.foo` reads `k` at-init.
-    assert!(facts[0].eager_reads.contains(&test_id("k")));
+    assert!(facts[0].reads.eager.contains(&test_id("k")));
 }
 
 #[test]
 fn class_static_init_eager_read() {
     let module = parse("class C { static x = Y; }");
     let facts = analyze_facts(&module);
-    assert!(facts[0].eager_reads.contains(&test_id("Y")));
+    assert!(facts[0].reads.eager.contains(&test_id("Y")));
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn class_instance_init_is_lazy() {
     let facts = analyze_facts(&module);
     // Instance field initializer evaluates per-instance, not at
     // class-decl time.
-    assert!(!facts[0].eager_reads.contains(&test_id("Y")));
+    assert!(!facts[0].reads.eager.contains(&test_id("Y")));
 }
 
 #[test]
@@ -317,7 +317,7 @@ console.log("tail");"#,
     assert_eq!(facts[4].local_effects, BTreeSet::from([test_id("C")]));
     assert!(facts[4].purity.is_pure());
 
-    let graph = build_owner_graph(&facts);
+    let graph = build_owner_graph(&facts).unwrap();
     let local_effects: Vec<_> = graph
         .iter_edges()
         .filter(|edge| edge.reason.kind == DepKind::LocalEffect)
@@ -550,7 +550,7 @@ fn vendor_prune_policy_records_namespace_iife_local_effects() {
     let facts = analyze_facts_with_hints(&module, &hints);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("ns")]));
     assert!(facts[1].purity.is_pure());
-    assert!(facts[1].lazy_reads.contains(&test_id("wrap")));
+    assert!(facts[1].reads.lazy.contains(&test_id("wrap")));
 }
 
 #[test]
@@ -679,18 +679,18 @@ sideEffect(C, E);
         assert_eq!(af.ordinal, bf.ordinal);
         assert_eq!(af.kind, bf.kind);
         assert_eq!(af.declared, bf.declared);
-        assert_eq!(af.eager_reads, bf.eager_reads);
-        assert_eq!(af.eager_rebinds, bf.eager_rebinds);
-        assert_eq!(af.lazy_reads, bf.lazy_reads);
-        assert_eq!(af.lazy_rebinds, bf.lazy_rebinds);
-        assert_eq!(af.first_order_lazy_reads, bf.first_order_lazy_reads);
-        assert_eq!(af.first_order_lazy_rebinds, bf.first_order_lazy_rebinds);
-        assert_eq!(af.at_init_calls, bf.at_init_calls);
-        assert_eq!(af.body_calls, bf.body_calls);
-        assert_eq!(af.first_order_body_calls, bf.first_order_body_calls);
-        assert_eq!(af.effects.reads, bf.effects.reads);
-        assert_eq!(af.effects.writes, bf.effects.writes);
-        // `effects.dataflow_summarizable` is deliberately NOT
+        assert_eq!(af.reads.eager, bf.reads.eager);
+        assert_eq!(af.rebinds.eager, bf.rebinds.eager);
+        assert_eq!(af.reads.lazy, bf.reads.lazy);
+        assert_eq!(af.rebinds.lazy, bf.rebinds.lazy);
+        assert_eq!(af.reads.first_order_lazy, bf.reads.first_order_lazy);
+        assert_eq!(af.rebinds.first_order_lazy, bf.rebinds.first_order_lazy);
+        assert_eq!(af.calls.eager, bf.calls.eager);
+        assert_eq!(af.calls.lazy, bf.calls.lazy);
+        assert_eq!(af.calls.first_order_lazy, bf.calls.first_order_lazy);
+        assert_eq!(af.effects().reads, bf.effects().reads);
+        assert_eq!(af.effects().writes, bf.effects().writes);
+        // `dataflow_summarizable` is deliberately NOT
         // compared: the opaque-at-init-call bail consults the purity
         // classifier (declared-pure hints exempt a call from the
         // bail), so the bit is policy-DEPENDENT by design. The

@@ -57,7 +57,7 @@ fn cycle_detected_between_two_modules() {
     let mut binding_assignment = HashMap::new();
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -73,7 +73,7 @@ fn dag_has_no_cycles() {
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
     binding_assignment.insert(test_id("C"), logical(2));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -104,7 +104,7 @@ fn mixed_cycle_without_at_init_call_is_realizable() {
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("readB"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -122,10 +122,10 @@ fn mixed_cycle_without_at_init_call_is_realizable() {
 /// owner to the target binding's owner.
 #[test]
 fn at_init_call_promotion_materializes_owner_edge() {
-    // owner 0: function readB { return B; } (lazy_reads = {B})
+    // owner 0: function readB { return B; } (reads.lazy = {B})
     // owner 1: const A = 1
-    // owner 2: const triggerInit = readB(); (at_init_calls = {readB})
-    // owner 3: const B = A + 1; (declared = {B}, eager_reads = {A})
+    // owner 2: const triggerInit = readB(); (calls.eager = {readB})
+    // owner 3: const B = A + 1; (declared = {B}, reads.eager = {A})
     // Promotion should add an EagerUse edge owner 2 → owner 3
     // because triggerInit at-init-calls readB whose body reads B.
     let module = parse(
@@ -133,12 +133,12 @@ fn at_init_call_promotion_materializes_owner_edge() {
     );
     let facts = analyze_facts(&module);
     assert_eq!(
-        facts[2].at_init_calls,
+        facts[2].calls.eager,
         BTreeSet::from([test_id("readB")]),
-        "triggerInit's at_init_calls must include readB: {:?}",
-        facts[2].at_init_calls,
+        "triggerInit's calls.eager must include readB: {:?}",
+        facts[2].calls.eager,
     );
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let promoted: Vec<_> = owner_graph
         .iter_edges()
         .filter(|e| e.from == OwnerId(2) && e.to == OwnerId(3))
@@ -176,7 +176,7 @@ fn at_init_call_promotion_closes_otherwise_relaxed_cycle() {
     binding_assignment.insert(test_id("triggerInit"), logical(0));
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -210,7 +210,7 @@ fn cut_emits_side_effect_edges_for_s_only_cycle() {
     binding_assignment.insert(test_id("a1"), logical(0));
     binding_assignment.insert(test_id("a2"), logical(0));
     binding_assignment.insert(test_id("b1"), logical(1));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -244,7 +244,7 @@ fn cut_is_absent_for_lazy_only_cycle() {
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("helperB"), logical(1));
     binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     let partition =
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
@@ -363,7 +363,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
     });
     ChunkFactorization::build(
         "test_chunk".to_string(),
-        facts,
+        &facts,
         bindings,
         logical_modules,
         HashMap::new(),
@@ -405,7 +405,7 @@ fn factorization_with_residual_module(
     ];
     ChunkFactorization::build(
         "test_chunk".to_string(),
-        facts,
+        &facts,
         bindings,
         logical_modules,
         HashMap::new(),
@@ -420,13 +420,17 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
     let factorization = factorization_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
     assert!(
-        factorization.analysis.owner_graph.iter_edges().any(|edge| {
-            edge.from == OwnerId(0)
-                && edge.to == OwnerId(1)
-                && edge.reason.kind() == DepKind::EagerUse
-                && edge.reason.statement_ordinal() == StatementOrdinal(0)
-                && edge.reason.binding().is_some_and(|id| id.0 == "X")
-        }),
+        factorization
+            .analysis
+            .owner_graph()
+            .iter_edges()
+            .any(|edge| {
+                edge.from == OwnerId(0)
+                    && edge.to == OwnerId(1)
+                    && edge.reason.kind() == DepKind::EagerUse
+                    && edge.reason.statement_ordinal() == StatementOrdinal(0)
+                    && edge.reason.binding().is_some_and(|id| id.0 == "X")
+            }),
         "owner graph should retain the unassigned declared provider edge",
     );
     // The residual is the synthesized logical module at index 1
@@ -686,7 +690,7 @@ const impure = new Something(), pureBrand = Symbol("Brand");"#;
 
     let module = parse(source);
     let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts);
+    let graph = build_owner_graph(&facts).unwrap();
     let impure_owner = owner_for_binding(&graph, "impure");
     let brand_owner = owner_for_binding(&graph, "pureBrand");
     assert_ne!(
@@ -719,7 +723,7 @@ fn split_three_declarator_let() {
 fn split_comma_list_attributes_later_declarator_read_to_later_owner() {
     let module = parse(r#"const first = Symbol("First"), second = first;"#);
     let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts);
+    let graph = build_owner_graph(&facts).unwrap();
     let first_owner = owner_for_binding(&graph, "first");
     let second_owner = owner_for_binding(&graph, "second");
     let first_binding = test_id("first");
@@ -746,7 +750,7 @@ fn split_comma_list_rebind_unit_sticks_to_mutable_declarator_only() {
 mutable = mutable + 1;"#,
     );
     let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts);
+    let graph = build_owner_graph(&facts).unwrap();
     let mutable_owner = owner_for_binding(&graph, "mutable");
     let peer_owner = owner_for_binding(&graph, "peer");
     let assign_owner = OwnerId(2);
@@ -1036,7 +1040,7 @@ fn validate_returns_empty_linker_order_for_cyclic_spec() {
 fn atomic_units_for(source: &str) -> Vec<AtomicUnit> {
     let module = parse(source);
     let facts = analyze_facts(&module);
-    let owner_graph = build_owner_graph(&facts);
+    let owner_graph = build_owner_graph(&facts).unwrap();
     compute_atomic_units(&owner_graph)
 }
 
@@ -1153,7 +1157,7 @@ fn atomic_units_lazy_rebind_merges() {
 fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = factorization
         .analysis
-        .owner_graph
+        .owner_graph()
         .iter_nodes()
         .map(|node| {
             let declared: Vec<String> = node.declared.iter().map(|id| id.0.to_string()).collect();

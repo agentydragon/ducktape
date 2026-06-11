@@ -53,7 +53,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
     let (nodes, edges) = nodes_edges;
     let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_edges);
     OwnerGraphReport {
-        chunk_id: factorization.analysis.chunk_id.clone(),
+        chunk_id: factorization.analysis.chunk_id().to_string(),
         nodes,
         edges,
         quotient: OwnerGraphQuotientReport {
@@ -73,7 +73,7 @@ fn build_owner_nodes_and_edges(
     factorization: &ChunkFactorization,
 ) -> (Vec<OwnerGraphNodeReport>, Vec<OwnerGraphEdgeReport>) {
     let partition = &factorization.partition;
-    let owner_graph = &factorization.analysis.owner_graph;
+    let owner_graph = factorization.analysis.owner_graph();
     let nodes = owner_graph
         .iter_nodes()
         .map(|node| OwnerGraphNodeReport {
@@ -120,7 +120,7 @@ where
 
 fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    for idx in 0..factorization.analysis.logical_modules.len() {
+    for idx in 0..factorization.analysis.logical_modules().len() {
         modules.insert(ModuleId(LogicalModuleIndex(idx)));
     }
     for (_, module) in factorization.partition.iter() {
@@ -148,7 +148,7 @@ pub(crate) fn build_quotient_edge_reports(
     // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
     // without a per-pair sort.
     let partition = &factorization.partition;
-    let owner_graph = &factorization.analysis.owner_graph;
+    let owner_graph = factorization.analysis.owner_graph();
     let mut accum: std::collections::HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
         std::collections::HashMap::with_capacity(owner_graph.num_edges());
     let mut seen_side_effect_module_pairs: std::collections::HashSet<(ModuleId, ModuleId)> =
@@ -212,7 +212,7 @@ fn build_atomic_unit_report(
     let mut max_ordinal = 0usize;
     for owner_id in &unit.members {
         owner_ids.push(owner_key(*owner_id));
-        if let Some(node) = factorization.analysis.owner_graph.node(*owner_id) {
+        if let Some(node) = factorization.analysis.owner_graph().node(*owner_id) {
             if node.declared.is_empty() {
                 anonymous_statement_owner_ids.push(owner_key(*owner_id));
             }
@@ -246,7 +246,7 @@ fn build_atomic_unit_report(
 }
 
 fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphReport {
-    let owner_graph = &factorization.analysis.owner_graph;
+    let owner_graph = factorization.analysis.owner_graph();
     let mut units = factorization.atomic_units.clone();
     units.sort_by_key(|unit| unit.members.iter().copied().min().map(|owner| owner.0));
     // `unit_by_owner` is lookup-only after construction — a `HashMap`
@@ -385,11 +385,9 @@ fn quotient_edge_indices_by_source(
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
 pub(crate) fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
-    let LogicalModuleIndex(idx) = id.0;
     factorization
         .analysis
-        .logical_modules
-        .get(idx)
+        .logical_module(id.0)
         .is_some_and(|module| module.residual)
 }
 

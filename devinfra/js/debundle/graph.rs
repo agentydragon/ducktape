@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -412,10 +413,16 @@ impl OwnerGraph {
     /// match the original `OwnerEdgeId`s that produced the report.
     /// The gate only uses them as opaque identifiers in its evidence
     /// listing.
+    ///
+    /// Errors with [`UnresolvedOwnerEdgeEndpoint`] when an edge
+    /// references an owner id missing from the report's node table —
+    /// a malformed or version-skewed `owner_graph.json`. Silently
+    /// dropping such edges would hand the planner-side gate a weaker
+    /// graph than the one the report described.
     pub fn from_report(
         report: &crate::OwnerGraphReport,
         facts: &[crate::StatementFactsReport],
-    ) -> (Self, OwnerReportIndex) {
+    ) -> Result<(Self, OwnerReportIndex), UnresolvedOwnerEdgeEndpoint> {
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let by_id: HashMap<String, OwnerId> = owner_ids
             .iter()
@@ -449,10 +456,17 @@ impl OwnerGraph {
 
         let mut edges: Vec<OwnerEdge> = Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
-            let (Some(&from), Some(&to)) = (by_id.get(&edge.source), by_id.get(&edge.target))
-            else {
-                continue;
+            let resolve = |endpoint: &String| {
+                by_id
+                    .get(endpoint)
+                    .copied()
+                    .ok_or_else(|| UnresolvedOwnerEdgeEndpoint {
+                        edge_id: edge.id.clone(),
+                        endpoint: endpoint.clone(),
+                    })
             };
+            let from = resolve(&edge.source)?;
+            let to = resolve(&edge.target)?;
             // Round-trip the edge role so the planner-side gate runs
             // the same cross-module-promotion filter as the
             // materializer.
@@ -495,9 +509,31 @@ impl OwnerGraph {
             callee_edges,
         };
         let index = OwnerReportIndex { owner_ids, by_id };
-        (graph, index)
+        Ok((graph, index))
     }
 }
+
+/// An `owner_graph.json` edge references an owner id absent from the
+/// report's node table. See [`OwnerGraph::from_report`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnresolvedOwnerEdgeEndpoint {
+    pub edge_id: String,
+    /// The owner id (e.g. `owner:42`) that didn't resolve.
+    pub endpoint: String,
+}
+
+impl fmt::Display for UnresolvedOwnerEdgeEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "owner graph edge {} references owner {} which is not in the report's node table \
+             (malformed or version-skewed owner_graph.json)",
+            self.edge_id, self.endpoint,
+        )
+    }
+}
+
+impl std::error::Error for UnresolvedOwnerEdgeEndpoint {}
 
 /// Per-edge metadata. One physical `(from, to)` ESM `import`
 /// directive can be backed by multiple reasons (e.g. several
@@ -616,6 +652,35 @@ impl ModuleQuotient {
     }
 }
 
+/// Two distinct top-level statements declare the same binding
+/// (`var x = 1; var x = 2;` — legal JS, but the owner graph models
+/// each binding as having exactly one owning statement). Letting the
+/// last declaration win would silently drop every edge into the
+/// earlier owner, so the earlier statement could be ordered after its
+/// readers. Rejecting the chunk is the accepted over-restriction
+/// (AGENTS.md "Soundness over completeness").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateTopLevelDeclaration {
+    pub binding: swc_atoms::Atom,
+    pub first: StatementOrdinal,
+    pub second: StatementOrdinal,
+}
+
+impl fmt::Display for DuplicateTopLevelDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "duplicate top-level declaration of binding `{}`: statements #{} and #{} both \
+             declare it; the owner graph requires a single owning statement per binding. \
+             Rewrite the chunk so the binding is declared once (e.g. merge the declarations \
+             or rename one of them).",
+            self.binding, self.first.0, self.second.0,
+        )
+    }
+}
+
+impl std::error::Error for DuplicateTopLevelDeclaration {}
+
 /// Build the fine owner graph from per-statement facts. Pure IR
 /// construction: no module assignment, no quotient. Module-level
 /// dependencies are derived later by [`build_module_quotient`]
@@ -624,17 +689,28 @@ impl ModuleQuotient {
 /// Uses default (strictly-conservative) [`OwnerGraphOptions`]. Call
 /// [`build_owner_graph_with`] when the chunk spec opts into
 /// conditionally-correct refinements.
-pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
+pub fn build_owner_graph(
+    facts: &[StatementFacts],
+) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
     build_owner_graph_with(facts, OwnerGraphOptions::default())
 }
 
 /// Like [`build_owner_graph`] but takes per-chunk [`OwnerGraphOptions`].
-pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptions) -> OwnerGraph {
+pub fn build_owner_graph_with(
+    facts: &[StatementFacts],
+    options: OwnerGraphOptions,
+) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
     let mut binding_owner = HashMap::<Id, OwnerId>::new();
     let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
     for stmt in facts {
         for binding in &stmt.declared {
-            binding_owner.insert(binding.clone(), OwnerId(stmt.ordinal.0));
+            if let Some(prev) = binding_owner.insert(binding.clone(), OwnerId(stmt.ordinal.0)) {
+                return Err(DuplicateTopLevelDeclaration {
+                    binding: binding.0.clone(),
+                    first: StatementOrdinal(prev.0),
+                    second: stmt.ordinal,
+                });
+            }
         }
         let id = OwnerId(stmt.ordinal.0);
         nodes.push(OwnerNode {
@@ -692,7 +768,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
     };
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
-        for binding in &stmt.eager_reads {
+        for binding in &stmt.reads.eager {
             if target_is_hoisted(binding) {
                 continue;
             }
@@ -704,7 +780,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.lazy_reads {
+        for binding in &stmt.reads.lazy {
             push_binding_edge(
                 &mut raw_edges,
                 from,
@@ -713,7 +789,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.eager_rebinds {
+        for binding in &stmt.rebinds.eager {
             push_binding_edge(
                 &mut raw_edges,
                 from,
@@ -728,7 +804,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         // when the function is invoked synchronously, so it must not
         // constrain init order or feed at-init call promotion. See
         // the e2e test `at_init_promotion_nested_closure_test`.
-        for binding in &stmt.first_order_lazy_rebinds {
+        for binding in &stmt.rebinds.first_order_lazy {
             push_binding_edge(
                 &mut raw_edges,
                 from,
@@ -744,8 +820,8 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         // cross-destination splits are rejected and `G_atomic`
         // forces co-location, without manufacturing an init-order
         // constraint nothing fires at init.
-        for binding in &stmt.lazy_rebinds {
-            if stmt.first_order_lazy_rebinds.contains(binding) {
+        for binding in &stmt.rebinds.lazy {
+            if stmt.rebinds.first_order_lazy.contains(binding) {
                 continue;
             }
             push_binding_edge(
@@ -827,13 +903,13 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         }
     }
 
-    OwnerGraph {
+    Ok(OwnerGraph {
         nodes,
         edges,
         out_edges,
         in_edges,
         callee_edges,
-    }
+    })
 }
 
 /// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").
@@ -900,14 +976,15 @@ fn emit_s_chain(
     let mut opaque_barrier: Option<OwnerId> = None;
     for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
         let from = OwnerId(stmt.ordinal.0);
+        let effects = stmt.effects();
         let mut targets: BTreeSet<OwnerId> = BTreeSet::new();
-        if stmt.effects.dataflow_summarizable {
-            for cell in stmt.effects.reads.iter().chain(stmt.effects.writes.iter()) {
+        if stmt.dataflow_summarizable {
+            for cell in effects.reads.iter().chain(effects.writes.iter()) {
                 if let Some(&to) = last_writer.get(cell) {
                     targets.insert(to);
                 }
             }
-            for cell in &stmt.effects.writes {
+            for cell in &effects.writes {
                 if let Some(readers) = readers_since_last_write.get(cell) {
                     targets.extend(readers.iter().copied());
                 }
@@ -931,14 +1008,14 @@ fn emit_s_chain(
                 raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
             }
         }
-        if stmt.effects.dataflow_summarizable {
-            for cell in &stmt.effects.writes {
-                last_writer.insert(cell.clone(), from);
-                readers_since_last_write.remove(cell);
+        if stmt.dataflow_summarizable {
+            for cell in effects.writes {
+                readers_since_last_write.remove(&cell);
+                last_writer.insert(cell, from);
             }
-            for cell in &stmt.effects.reads {
+            for cell in effects.reads {
                 readers_since_last_write
-                    .entry(cell.clone())
+                    .entry(cell)
                     .or_default()
                     .insert(from);
             }
@@ -974,7 +1051,7 @@ fn promote_at_init_calls(
     // so calls to them are not precisely resolvable.
     let rebound: BTreeSet<&Id> = facts
         .iter()
-        .flat_map(|s| s.eager_rebinds.iter().chain(s.lazy_rebinds.iter()))
+        .flat_map(|s| s.rebinds.eager.iter().chain(s.rebinds.lazy.iter()))
         .collect();
 
     // A callee binding is precisely resolvable iff (a) its declaring
@@ -990,7 +1067,7 @@ fn promote_at_init_calls(
     };
 
     // 1. Build the call graph: owner → owner edges for each
-    //    resolvable callee reachable via *first-order* body_calls.
+    //    resolvable callee reachable via *first-order* calls.lazy.
     //    Nested-closure calls (e.g. inside an arrow returned by the
     //    body) don't fire when the body is invoked synchronously, so
     //    they don't belong on the promotion call graph — see
@@ -1029,7 +1106,7 @@ fn promote_at_init_calls(
             stmt.first_order_unresolved_inline_fn,
             owner,
         );
-        for callee_id in &stmt.first_order_body_calls {
+        for callee_id in &stmt.calls.first_order_lazy {
             if resolvable_callee(callee_id).is_none()
                 && let Some(&callee_owner) = binding_owner.get(callee_id)
             {
@@ -1041,9 +1118,9 @@ fn promote_at_init_calls(
     let mut call_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
     for stmt in facts {
         let owner = OwnerId(stmt.ordinal.0);
-        if !stmt.first_order_body_calls.is_empty()
-            || !stmt.first_order_lazy_reads.is_empty()
-            || !stmt.first_order_lazy_rebinds.is_empty()
+        if !stmt.calls.first_order_lazy.is_empty()
+            || !stmt.reads.first_order_lazy.is_empty()
+            || !stmt.rebinds.first_order_lazy.is_empty()
             || !stmt.first_order_unresolved_sources.is_empty()
             || stmt.first_order_unresolved_inline_fn
         {
@@ -1051,11 +1128,11 @@ fn promote_at_init_calls(
         }
     }
     for stmt in facts {
-        if stmt.first_order_body_calls.is_empty() {
+        if stmt.calls.first_order_lazy.is_empty() {
             continue;
         }
         let caller = OwnerId(stmt.ordinal.0);
-        for callee_id in &stmt.first_order_body_calls {
+        for callee_id in &stmt.calls.first_order_lazy {
             let Some(callee_owner) = resolvable_callee(callee_id) else {
                 continue;
             };
@@ -1074,7 +1151,7 @@ fn promote_at_init_calls(
         }
     }
 
-    // 3. Per-owner seeds: own lazy_reads / lazy_rebinds resolved to
+    // 3. Per-owner seeds: own reads.lazy / rebinds.lazy resolved to
     //    BindingId. Filters out targets whose owner is a function
     //    declaration — function bindings are hoisted at module
     //    instantiation (Phase 1 of ESM linking), so a cross-module
@@ -1114,12 +1191,12 @@ fn promote_at_init_calls(
                 continue;
             };
             roots.extend(owner_first_order_roots(stmt));
-            for id in &stmt.first_order_lazy_reads {
+            for id in &stmt.reads.first_order_lazy {
                 if binding_owner.contains_key(id) && !target_is_hoisted(id) {
                     reads.insert(id.clone());
                 }
             }
-            for id in &stmt.first_order_lazy_rebinds {
+            for id in &stmt.rebinds.first_order_lazy {
                 if binding_owner.contains_key(id) {
                     rebinds.insert(id.clone());
                 }
@@ -1158,7 +1235,7 @@ fn promote_at_init_calls(
     //    [`UnresolvedCallFallback`].
     let mut fallback: Option<UnresolvedCallFallback> = None;
     for stmt in facts {
-        if stmt.at_init_calls.is_empty()
+        if stmt.calls.eager.is_empty()
             && stmt.at_init_unresolved_sources.is_empty()
             && !stmt.at_init_unresolved_inline_fn
         {
@@ -1172,7 +1249,7 @@ fn promote_at_init_calls(
             stmt.at_init_unresolved_inline_fn,
             caller,
         );
-        for callee_id in &stmt.at_init_calls {
+        for callee_id in &stmt.calls.eager {
             let Some(callee_owner) = resolvable_callee(callee_id) else {
                 // A bare-Ident callee that isn't chunk-declared is a
                 // global/import — out of single-chunk analysis scope
@@ -1274,7 +1351,7 @@ fn promote_at_init_calls(
 /// closure** of every owner reachable from it through the chunk's
 /// read graph: edges `O → owner(b)` for every chunk binding `b` the
 /// owner `O` reads (eagerly or lazily), with every reachable owner
-/// contributing its `lazy_reads` / `lazy_rebinds` at any nesting
+/// contributing its `reads.lazy` / `rebinds.lazy` at any nesting
 /// depth. The caller statement then eagerly depends on every
 /// collected target.
 ///
@@ -1301,7 +1378,7 @@ impl UnresolvedCallFallback {
         for stmt in facts {
             let owner = OwnerId(stmt.ordinal.0);
             read_graph.add_node(owner);
-            for id in stmt.eager_reads.iter().chain(stmt.lazy_reads.iter()) {
+            for id in stmt.reads.eager.iter().chain(stmt.reads.lazy.iter()) {
                 if let Some(&target) = binding_owner.get(id) {
                     read_graph.add_edge(owner, target, ());
                 }
@@ -1327,12 +1404,12 @@ impl UnresolvedCallFallback {
                 let Some(stmt) = stmt_by_owner.get(owner) else {
                     continue;
                 };
-                for id in &stmt.lazy_reads {
+                for id in &stmt.reads.lazy {
                     if binding_owner.contains_key(id) {
                         reads.insert(id.clone());
                     }
                 }
-                for id in &stmt.lazy_rebinds {
+                for id in &stmt.rebinds.lazy {
                     if binding_owner.contains_key(id) {
                         rebinds.insert(id.clone());
                     }
@@ -1838,7 +1915,52 @@ mod chunk_constraining_module_edges_tests {
             .parse_module()
             .expect("parse module");
         let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
-        build_owner_graph(&facts)
+        build_owner_graph(&facts).unwrap()
+    }
+
+    fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
+        let cm: Lrc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer)
+            .parse_module()
+            .expect("parse module");
+        analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts
+    }
+
+    /// Strict mapping: two top-level statements declaring the same
+    /// binding (legal JS) must error instead of silently letting the
+    /// last declaration win — last-insert-wins drops every edge into
+    /// the earlier owner.
+    #[test]
+    fn duplicate_top_level_declarations_error() {
+        let err = build_owner_graph(&parse_facts("var x = 1;\nvar x = 2;\n")).unwrap_err();
+        assert_eq!(err.binding.as_ref(), "x");
+        assert_eq!(err.first, StatementOrdinal(0));
+        assert_eq!(err.second, StatementOrdinal(1));
+        assert!(
+            err.to_string().contains("duplicate top-level declaration"),
+            "{err}"
+        );
+    }
+
+    /// Same name in distinct scopes is hygienically distinct — no
+    /// duplicate. Comma-split declarators of *different* names are
+    /// also fine.
+    #[test]
+    fn distinct_bindings_with_shared_name_are_not_duplicates() {
+        build_owner_graph(&parse_facts(
+            "var x = 1;\nfunction f() { var x = 2; return x; }\nconst y = 3, z = 4;\n",
+        ))
+        .unwrap();
     }
 
     /// Pure cross-module lazy edge must not appear in the canonical
@@ -2056,7 +2178,7 @@ mod edge_role_wire_format_tests {
                 edges: Vec::new(),
             },
         };
-        let (graph, _) = OwnerGraph::from_report(&report, &[]);
+        let (graph, _) = OwnerGraph::from_report(&report, &[]).unwrap();
         assert_eq!(graph.num_edges(), 1);
         assert_eq!(graph.edge(OwnerEdgeId(0)).reason.role(), EdgeRole::Direct);
     }
@@ -2093,7 +2215,7 @@ mod edge_role_wire_format_tests {
                 edges: Vec::new(),
             },
         };
-        let (graph, _) = OwnerGraph::from_report(&report, &[]);
+        let (graph, _) = OwnerGraph::from_report(&report, &[]).unwrap();
         assert_eq!(graph.num_edges(), 1);
         assert_eq!(
             graph.edge(OwnerEdgeId(0)).reason.role(),
@@ -2214,7 +2336,7 @@ mod declared_round_trip_tests {
             .parse_module()
             .expect("parse module");
         let analysis = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
-        let owner_graph = build_owner_graph(&analysis.facts);
+        let owner_graph = build_owner_graph(&analysis.facts).unwrap();
         let facts_reports: Vec<StatementFactsReport> = analysis
             .facts
             .iter()
@@ -2318,7 +2440,7 @@ mod declared_round_trip_tests {
             "fixture must have at least one declared-binding owner",
         );
 
-        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts);
+        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts).unwrap();
 
         assert_eq!(
             round_tripped.nodes.len(),
@@ -2364,7 +2486,7 @@ mod declared_round_trip_tests {
             residual,
         );
 
-        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts);
+        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts).unwrap();
         let restored_units = crate::atomic_units::compute_atomic_units(&round_tripped);
         let restored_outcome = assemble_partition(
             &round_tripped,
@@ -2385,5 +2507,23 @@ mod declared_round_trip_tests {
         (0..owner_count)
             .map(|i| partition.of(crate::OwnerId(i)))
             .collect()
+    }
+
+    /// Strict mapping: an edge referencing an owner id missing from
+    /// the node table (malformed / version-skewed `owner_graph.json`)
+    /// must be a hard error, not a silently dropped edge — the
+    /// planner-side gate would otherwise reason over a weaker graph.
+    #[test]
+    fn from_report_errors_on_unresolvable_edge_endpoint() {
+        let (_, _, mut report, _, _) = build_and_serialize("const a = 1;\nconst b = a + 1;\n");
+        assert!(
+            !report.edges.is_empty(),
+            "fixture must produce at least one edge"
+        );
+        report.edges[0].target = "owner:999".to_string();
+        let err = OwnerGraph::from_report(&report, &[]).unwrap_err();
+        assert_eq!(err.endpoint, "owner:999");
+        assert_eq!(err.edge_id, report.edges[0].id);
+        assert!(err.to_string().contains("owner:999"), "{err}");
     }
 }
