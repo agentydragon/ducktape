@@ -1,0 +1,87 @@
+# On-demand loom/gym forecasting-eval run. Applied by hand (not Flux) into
+# claude-sandbox; the driver orchestrates Inspect-AI docker-compose sandboxes on
+# the in-cluster docker-ci DinD over mTLS, and the contestant/proxy containers
+# reach the wayback cache via its in-cluster ClusterIP (no public gateway, so no
+# Envoy 60s cap). See README.md for the create-secret + apply + fetch-results flow.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loom-gym-eval
+  namespace: claude-sandbox
+spec:
+  backoffLimit: 0 # an eval run is not idempotent — never auto-retry
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: eval
+          image: ghcr.io/agentydragon/loom-gym-eval:latest
+          args:
+            - --model-id
+            - glm-4.5
+            - --task-filter
+            - manifold-
+            - --wayback-upstream
+            - http://wayback-cache.wayback-cache.svc.cluster.local:8080
+            - --log-dir
+            - /work/logs
+          env:
+            # Remote daemon: the docker CLI talks to docker-ci over mTLS. The host
+            # must match the server cert SAN (docker-ci.allegedly.works), so we use
+            # the TLS-passthrough route rather than the bare ClusterIP.
+            - name: DOCKER_HOST
+              value: tcp://docker-ci.allegedly.works:2376
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /certs
+            # pygit2 ensure_checkout clones augur-evidence under $HOME/.cache; logs
+            # and compose temp dirs also want a writable home on the emptyDir.
+            - name: HOME
+              value: /work
+            - name: TMPDIR
+              value: /work
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+            - name: AUGUR_EVIDENCE_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claude-forgejo-credentials
+                  key: username
+            - name: AUGUR_EVIDENCE_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claude-forgejo-credentials
+                  key: password
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+            - name: work
+              mountPath: /work
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              # The heavy work (sandbox containers) runs on docker-ci, not here;
+              # this is just the Inspect driver + model HTTP calls.
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: certs
+          secret:
+            secretName: docker-ci-client
+            defaultMode: 0400
+        - name: work
+          emptyDir: {}

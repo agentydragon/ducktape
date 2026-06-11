@@ -48,6 +48,13 @@ spec:
             - "8081"
             - --set
             - confdir=/mitmproxy-data
+            # Raw-tunnel the docker-ci DinD mTLS endpoint instead of intercepting
+            # it: the loom/gym eval driver in claude-sandbox reaches the daemon by
+            # its public name through this proxy, and docker mTLS must pass
+            # end-to-end (interception would break the client-cert handshake). The
+            # sandbox-escape implication is documented in ccnp-sandbox-proxy-egress.yaml.
+            - --ignore-hosts
+            - docker-ci\.allegedly\.works
           ports:
             - name: proxy
               containerPort: 8080

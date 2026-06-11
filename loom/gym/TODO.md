@@ -25,3 +25,10 @@
   network still can't reach the live internet. The per-sandbox MITM clamp then becomes
   defense-in-depth rather than the sole barrier. A per-run throwaway daemon (torn down
   after each eval) is an alternative that also bounds blast radius.
+
+- **Automate sandbox-image staging into the in-cluster eval Job.** `loom/gym/k8s/`
+  currently documents a manual step 2 (pull `wayback-proxy` from GHCR + `docker build`
+  `loom-gym-sandbox` into the docker-ci daemon before running the Job). Fold this into
+  an initContainer on `eval-job.yaml` (docker CLI + the mTLS secret), so a run is a
+  single `kubectl apply`. The sandbox Dockerfile has no local context, so
+  `docker build -t loom-gym-sandbox:latest -` from a ConfigMap-mounted Dockerfile works.

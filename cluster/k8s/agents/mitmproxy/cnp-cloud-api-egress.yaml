@@ -44,3 +44,13 @@ spec:
               protocol: TCP
             - port: "8080"
               protocol: TCP
+    # The loom/gym eval driver (in claude-sandbox) reaches the docker-ci DinD by
+    # its public name through this proxy, which raw-tunnels it (ignore_hosts in
+    # deployment.yaml) so docker mTLS passes end-to-end. Allow mitmproxy to reach
+    # the daemon's mTLS port to establish that CONNECT tunnel.
+    - toFQDNs:
+        - matchName: docker-ci.allegedly.works
+      toPorts:
+        - ports:
+            - port: "2376"
+              protocol: TCP

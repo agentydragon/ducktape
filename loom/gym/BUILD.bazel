@@ -1,27 +1,20 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "bookworm_loom_gym_eval.yaml",
+    "bookworm_loom_gym_eval.lock.json",
+])
 
 # keep
 py_binary(
     name = "compare_eval_runs",
     main_module = "loom.gym.compare_runs",
     deps = [":compare_runs"],
-)
-
-py_library(
-    name = "analyze_baselines",
-    srcs = ["analyze_baselines.py"],
-    deps = [
-        ":market_seed_tasks",
-        ":scoring",
-        "@pypi//inspect_ai",
-        "@pypi//matplotlib",
-    ],
-)
-
-py_binary(
-    name = "analyze_baselines_bin",
-    main_module = "loom.gym.analyze_baselines",
-    deps = [":analyze_baselines"],
 )
 
 # keep
@@ -367,4 +360,64 @@ py_test(
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
+)
+
+# ── OCI image (driver for the in-cluster forecasting-eval Job) ────────────────
+#
+# Bundles the Python eval driver with the `docker` CLI + `docker compose` v2
+# plugin (upstream static binaries; see @docker_cli_static / @docker_compose_plugin
+# in MODULE.bazel). Inspect-AI's docker sandbox provider shells out to both to
+# spin up docker-compose sandboxes on the daemon at $DOCKER_HOST.
+
+# /usr/local/bin/docker — the Docker CLI.
+pkg_tar(
+    name = "docker_cli_layer",
+    srcs = ["@docker_cli_static//:docker/docker"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    remap_paths = {"docker/docker": "docker"},
+)
+
+# /usr/libexec/docker/cli-plugins/docker-compose — the `docker compose` v2
+# plugin. The CLI auto-discovers plugins under this libexec path.
+pkg_tar(
+    name = "docker_compose_layer",
+    srcs = ["@docker_compose_plugin//file"],
+    mode = "0755",
+    package_dir = "/usr/libexec/docker/cli-plugins",
+    remap_paths = {"docker-compose": "docker-compose"},
+)
+
+aspect_py_binary(
+    name = "agent_eval_image_bin",
+    main = "agent_eval.py",
+    deps = [":agent_eval"],
+)
+
+py_image_layer(
+    name = "agent_eval_layers",
+    binary = ":agent_eval_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "eval_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("agent_eval_image_bin"),
+    env = py_image_env(binary_name = "agent_eval_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@bookworm_loom_gym_eval//:flat",
+        ":docker_cli_layer",
+        ":docker_compose_layer",
+        ":agent_eval_layers",
+    ],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "eval_load",
+    image = ":eval_image",
+    repo_tags = ["loom-gym-eval:latest"],
 )

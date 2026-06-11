@@ -82,6 +82,7 @@ tf.download(
         "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
         "external": "hashicorp/external:2.3.5",
+        "flux": "fluxcd/flux:1.7.6",
         "forgejo": "svalabs/forgejo:1.5.0",
         "github": "integrations/github:6.6.0",
         "grafana": "grafana/grafana:3.22.2",
@@ -340,7 +341,18 @@ apt.install(
     lock = "//finance/scraper:trixie_evidence.lock.json",
     manifest = "//finance/scraper:trixie_evidence.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_evidence", "trixie_jwt_rotation")
+
+# loom/gym forecasting-eval driver: ca-certificates on debian:bookworm-slim so
+# `import pygit2` (via finance.evidence.checkout) can initialize libgit2's
+# OpenSSL cert locations — it fails the whole process at import without a system
+# CA bundle. (The docker CLI + compose plugin come from upstream static binaries,
+# not apt; see //loom/gym:BUILD.bazel.)
+apt.install(
+    name = "bookworm_loom_gym_eval",
+    lock = "//loom/gym:bookworm_loom_gym_eval.lock.json",
+    manifest = "//loom/gym:bookworm_loom_gym_eval.yaml",
+)
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_evidence", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -893,15 +905,29 @@ http_file(
     urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
 )
 
-# Bazel 8.6.0 linux-amd64 — prepopulates Bazelisk's cache in the claude-hook
-# container E2E image so the nested `bazelisk build //:hello` does not fetch
-# from releases.bazel.build at test runtime.
+# Docker CLI (static binaries) + `docker compose` v2 plugin for the loom/gym
+# eval driver image. Inspect-AI's docker sandbox provider shells out to the
+# `docker` CLI and the `docker compose` plugin, neither of which Debian packages
+# as a v2 plugin (docker.io ships only the CLI/daemon; there is no
+# docker-compose-v2 in Debian main). Fetch the upstream static builds instead.
+# The tarball also bundles dockerd/containerd/runc; only `docker` is used here
+# (the eval talks to a remote daemon via $DOCKER_HOST), and //loom/gym packages
+# just the CLI into the image layer.
+http_archive(
+    name = "docker_cli_static",
+    build_file_content = 'exports_files(["docker/docker"])',
+    sha256 = "34eea64e9c3435f5af1b760827a56a561cd67fc2d6e9cd1813b8bb1e3ff7930b",
+    urls = ["https://download.docker.com/linux/static/stable/x86_64/docker-29.5.3.tgz"],
+)
+
+# docker compose v2 plugin binary — installed at the cli-plugins path so
+# `docker compose ...` resolves it.
 http_file(
-    name = "bazel_8_6_0_linux_amd64",
-    downloaded_file_path = "bazel",
+    name = "docker_compose_plugin",
+    downloaded_file_path = "docker-compose",
     executable = True,
-    sha256 = "9860da9c9386bbc023feed8f43af3105d338727d77b644fa6aeca45a4a11957c",
-    urls = ["https://releases.bazel.build/8.6.0/release/bazel-8.6.0-linux-x86_64"],
+    sha256 = "bd5835ccbbf06a42dcb5294c65e34a4634b34447afb9ed6fc7adf18a000e0f99",
+    urls = ["https://github.com/docker/compose/releases/download/v2.40.0/docker-compose-linux-x86_64"],
 )
 
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
