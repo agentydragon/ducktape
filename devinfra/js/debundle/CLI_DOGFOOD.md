@@ -17,19 +17,6 @@ The actual path now has a `+_repo_rules+` prefix:
 
 **Fix**: update gaffer-private's AGENTS.md.
 
-### 2. `describe` text format missing home-module path
-
-JSON output includes `binding_homes[].path`. Text output shows owners,
-bindings, atom membership, edge counts — but no module path. Either the
-text output should include the path, or the docs should reflect text's
-narrower surface.
-
-### 3. `describe <sym>` text format hangs on repeat invocations
-
-First invocation returned a 5-line summary; second invocation of the
-same command hung indefinitely. `--format json` consistently completes
-in ~30s. May indicate a stale cache or non-idempotent text renderer.
-
 ## Planner CLI follow-ups
 
 Generic usability follow-ups for the top-level planner commands.

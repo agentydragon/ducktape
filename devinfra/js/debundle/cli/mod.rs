@@ -1331,6 +1331,15 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             .collect::<Vec<_>>()
             .join(", ")
     ));
+    // Home module path per binding (CLI_DOGFOOD #6): the JSON carries
+    // `binding_homes[].path`, but the text view previously dropped it,
+    // leaving no way to see where a binding lives without `--format json`.
+    if !report.binding_homes.is_empty() {
+        out.push_str("  homes:\n");
+        for home in &report.binding_homes {
+            out.push_str(&format!("    {} -> {}\n", home.binding, home.path));
+        }
+    }
     out.push_str(&format!("  atomic_units: {}\n", report.atomic_units.len()));
     out.push_str(&format!(
         "  incoming_edges: {}, outgoing_edges: {}\n",
@@ -1519,6 +1528,46 @@ mod tests {
             parsed.command,
             super::DebundleCommand::Describe(_)
         ));
+    }
+
+    #[test]
+    fn render_explain_text_includes_home_module_paths() {
+        // CLI_DOGFOOD #6: the text view must surface each binding's home
+        // module path (the JSON's `binding_homes[].path`), not only owners
+        // / bindings / atom / edge counts.
+        use peel::plan::{BindingHomeReport, BindingHomeSourceKind, QueryKind, QueryReport};
+        let report = peel::ExplainReport {
+            query: QueryReport {
+                kind: QueryKind::Binding,
+                value: "XOe".to_string(),
+            },
+            owner_ids: vec!["owner:0".to_string()],
+            owners: vec![],
+            neighbor_owners: vec![],
+            bindings: vec![],
+            binding_homes: vec![BindingHomeReport {
+                binding: "XOe".to_string(),
+                name: "PluginSettingsAccessor".to_string(),
+                source_kind: BindingHomeSourceKind::Module,
+                path: "runtime/plugins".to_string(),
+            }],
+            incoming_edges: vec![],
+            outgoing_edges: vec![],
+            atomic_units: vec![],
+            incoming_atomic_edges: vec![],
+            outgoing_atomic_edges: vec![],
+            quotient_edges: vec![],
+            factorize_proposals: None,
+            factorize_diagnostics: None,
+            limits: None,
+        };
+        let mut out = String::new();
+        super::render_explain_text(&report, &mut out);
+        assert!(out.contains("homes:"), "missing homes section:\n{out}");
+        assert!(
+            out.contains("XOe -> runtime/plugins"),
+            "missing binding->path line:\n{out}",
+        );
     }
 
     #[test]
