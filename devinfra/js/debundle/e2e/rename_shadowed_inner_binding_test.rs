@@ -70,6 +70,40 @@ export { a, f };
     );
 }
 
+/// Labels live in a separate namespace from bindings; renaming binding
+/// `a` must not rewrite a label `a:` or its `break`/`continue`
+/// references (a shadow-suppressed `continue a` paired with a renamed
+/// `b:` label would desync into a SyntaxError).
+#[test]
+fn top_level_rename_does_not_rename_matching_labels() {
+    let opts = FixtureOpts::new(
+        r#"var a = "A";
+function f() {
+  a: for (;;) {
+    break a;
+  }
+  return a;
+}
+console.log(f());
+export { a, f };
+"#,
+        vec![],
+    )
+    .with_chunk_renames(chunk_rename("b", "a"))
+    .with_unassigned_mode(unassigned_mode_inline());
+    let fixture = run_fixture(opts);
+
+    assert_entry_output(&fixture, "A\n");
+    // The label and its break stay `a`; the binding reference inside
+    // `f` (not shadowed) is renamed to `b`.
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["a: for", "break a", "return b"],
+        &["b: for", "break b"],
+    );
+}
+
 /// The same guard for a function parameter that shadows the renamed
 /// top-level name: `f(a)`'s param `a` and its uses refer to the parameter,
 /// not the renamed top-level binding, so they must be left alone.

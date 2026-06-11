@@ -319,6 +319,19 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
+        if !renamer.captured.is_empty() {
+            // A rename target was bound in a scope where the (un-shadowed)
+            // source is referenced — applying it would capture the
+            // reference. A pre-check can't decide this precisely (a target
+            // bound nested is harmless when the source is shadowed in that
+            // same scope), so the visitor detects it at the exact reference
+            // and we reject here. The body is partially renamed at this
+            // point; bailing discards the run before anything is emitted.
+            bail!(
+                "chunk_renames for chunk {chunk_id} would be captured by a nested binding: {:?}",
+                renamer.captured,
+            );
+        }
         timings.add("rename_entry_body", rename_entry_body_started.elapsed());
     }
     if !entry_imports.is_empty() {
@@ -347,13 +360,13 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // body references; auto-grow then sees the post-naturalize set,
     // which is also what the per-plan loop sees today.
     let mut naturalized_bodies: Vec<Vec<ModuleItem>> = Vec::with_capacity(module_plans.len());
-    let mut local_renames_by_module: Vec<BTreeMap<String, String>> =
+    let mut local_renames_by_module: Vec<NaturalizedRenames> =
         Vec::with_capacity(module_plans.len());
     let mut body_facts_by_module: Vec<ModuleBodyFacts> = Vec::with_capacity(module_plans.len());
     time_phase!(timings, "module.naturalize_body", {
         for (index, plan) in module_plans.iter().enumerate() {
             let mut body = std::mem::take(&mut selected_by_module[index]);
-            let renames = naturalize_module_body(&mut body, plan);
+            let renames = naturalize_module_body(&mut body, plan)?;
             naturalized_bodies.push(body);
             local_renames_by_module.push(renames);
         }
@@ -468,7 +481,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // thread's `Globals` and re-set it inside each worker closure.
     // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
     let per_plan_bodies: Vec<Vec<ModuleItem>> = std::mem::take(&mut naturalized_bodies);
-    let per_plan_local_renames: Vec<BTreeMap<String, String>> =
+    let per_plan_local_renames: Vec<NaturalizedRenames> =
         std::mem::take(&mut local_renames_by_module);
     let module_outputs: Vec<(
         JsFile,
@@ -605,7 +618,7 @@ struct LowerSinglePlanInputs<'a> {
     index: usize,
     plan: &'a ModulePlan,
     body: Vec<ModuleItem>,
-    local_renames: BTreeMap<String, String>,
+    local_renames: NaturalizedRenames,
     body_facts: &'a ModuleBodyFacts,
     factorization: &'a ChunkFactorization,
     declaration_by_name: &'a HashMap<Id, usize>,
@@ -669,7 +682,7 @@ fn lower_single_plan(
             entry_exports_by_original_local,
             RuntimeImportLookup {
                 imports: runtime_import_facts,
-                heuristic_renames: &local_renames,
+                heuristic_renames: &local_renames.merged,
             },
         )
     });
@@ -713,6 +726,17 @@ fn lower_single_plan(
         let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
+        }
+        if !renamer.captured.is_empty() {
+            // Import-local renames are minted against every name bound
+            // anywhere in the body (`collect_local_binding_names`), so a
+            // capture here is an internal invariant violation, not a
+            // user-facing spec error.
+            bail!(
+                "materialize_logical_modules: import-local renames for module {} were captured by a nested binding: {:?}. This is an internal invariant violation in import-local minting.",
+                plan.id,
+                renamer.captured,
+            );
         }
     }
     // Re-import any source-chunk import-specifier-bound locals that
@@ -759,6 +783,16 @@ fn lower_single_plan(
             let mut renamer = IdentifierRenamer::new(cross_module_chunk_renames);
             for item in body.iter_mut() {
                 item.visit_mut_with(&mut renamer);
+            }
+            if !renamer.captured.is_empty() {
+                // The entry-side chunk_renames validation only sees
+                // entry's post-split body; a target can still collide
+                // with a binding nested inside this moved module body.
+                bail!(
+                    "chunk_renames applied to module {} would be captured by a nested binding: {:?}",
+                    plan.id,
+                    renamer.captured,
+                );
             }
         });
     }
@@ -809,7 +843,12 @@ fn lower_single_plan(
     });
     time_phase!(timings, "module.final_exports", {
         if let Some(exports) = &selected_exports_by_module[index] {
-            let mut exports = final_module_exports(exports, &local_renames);
+            // Export locals remap through `module_scope` only: heuristic
+            // renames are scope-local and never rename the top-level
+            // declaration an export specifier refers to, so mapping
+            // through the merged map can emit `export { x as y }` for an
+            // `x` that was never declared (a load-time SyntaxError).
+            let mut exports = final_module_exports(exports, &local_renames.module_scope);
             exports.extend(
                 import_member_exports
                     .iter()
@@ -829,7 +868,7 @@ fn lower_single_plan(
             entry_file,
             source_path,
         };
-        build_module_output(plan, body, &output_context)
+        build_module_output(plan, body, &local_renames.module_scope, &output_context)
     });
     Ok((file, record, lowering, timings))
 }
@@ -837,6 +876,7 @@ fn lower_single_plan(
 fn build_module_output(
     plan: &ModulePlan,
     body: Vec<ModuleItem>,
+    module_scope_renames: &BTreeMap<String, String>,
     context: &ModuleOutputContext<'_>,
 ) -> (JsFile, (String, FileRole), SelectedModuleLowering) {
     let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
@@ -880,6 +920,24 @@ fn build_module_output(
         ),
     ]);
     let leading_item_comments = anonymous_statement_comments_by_span(plan, context.runtime_ast);
+    // `plan.binding_comments` is keyed by the member's ORIGINAL binding
+    // name, but `attach_binding_comments` matches the names the emitted
+    // declarations carry AFTER naturalization renamed them — re-key
+    // through the applied module-scope renames or renamed members lose
+    // their comments.
+    let binding_comments: BTreeMap<String, String> = plan
+        .binding_comments
+        .iter()
+        .map(|(binding, comment)| {
+            (
+                module_scope_renames
+                    .get(binding)
+                    .cloned()
+                    .unwrap_or_else(|| binding.clone()),
+                comment.clone(),
+            )
+        })
+        .collect();
     let file = JsFile {
         path: plan.target_file.clone(),
         body: JsFileBody::Ast(ParsedJsModule {
@@ -893,7 +951,7 @@ fn build_module_output(
             top_level_mark: context.runtime_ast.top_level_mark,
         }),
         header_lines: header,
-        binding_comments: plan.binding_comments.clone(),
+        binding_comments,
         leading_item_comments,
         metadata: FileMetadata {
             chunk_id: context.chunk_id.to_string(),

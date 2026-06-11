@@ -209,12 +209,31 @@ mock browser bundle. Extend to:
 
 ## Rename pipeline: collect → validate → execute _once_
 
-A scope-aware down-payment has landed: the in-place rename visitors
-(`IdentifierRenamer`, `RenameAndShorthandNaturalizer` in
-`lowering/visitors.rs`) now carry a `RenameScopeStack` and suppress a
-rename inside subtrees that re-bind the name, so the "X-layer renamed it,
-Y-layer didn't notice" shadowing class is mitigated. The
-collect→validate→execute **ledger/intent-buffer** architecture below
+Scope-aware down-payments have landed in `lowering/visitors.rs` /
+`lowering/naturalize.rs` / `lowering/lower.rs`:
+
+- **Source shadowing**: the in-place rename visitors
+  (`IdentifierRenamer`, `RenameAndShorthandNaturalizer`) carry a
+  `RenameScopeStack` and suppress a rename inside subtrees that re-bind
+  the source name.
+- **Target capture**: the same scope stack tracks rename TARGETS; a
+  rename whose target is shadowed at the reference is withheld and
+  recorded in the visitor's `captured` set, which every caller checks
+  and rejects on (no silent capture, no partial application). Heuristic
+  naturalizer renames pre-filter targets bound anywhere in the deriving
+  node's subtree and are suppressed entirely instead.
+- **Shorthand expansion**: renaming a binding read/declared through
+  `{ a }` / `const { a } = o` shorthand expands to the key-value form
+  (`{ a: b }`) so property keys survive the rename.
+- **Labels**: label idents and their `break`/`continue` references are
+  excluded from renaming (separate namespace).
+- **Era-keyed consumers**: export locals and `binding_comments` keys
+  remap through the module-scope (plan-driven) rename map only —
+  `NaturalizedRenames` splits it from the merged heuristic map so
+  scope-local heuristic renames can no longer remap a top-level export
+  specifier or orphan a member comment.
+
+The collect→validate→execute **ledger/intent-buffer** architecture below
 remains the open work.
 
 The naturalizer / lowerer currently mutates identifiers in place across

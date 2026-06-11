@@ -6,13 +6,30 @@
 //! `naturalize_module_body` is the public entry; everything else is a
 //! contributor of rename intents that get merged via `drop_target_collisions`.
 
+use super::scope_names::{
+    BindingNameCollector, collect_binding_names_in, collect_occupied_local_names,
+};
 use super::util::is_valid_js_identifier;
 use super::*;
+
+/// The rename maps `naturalize_module_body` applied, split by scope.
+pub(super) struct NaturalizedRenames {
+    /// Plan-driven + heuristic, original → readable. The reverse lookup
+    /// for bridging post-rename body syms back to pre-rename fact-table
+    /// keys (`RuntimeImportLookup`).
+    pub(super) merged: BTreeMap<String, String>,
+    /// Plan-driven renames applied module-wide to top-level declarations.
+    /// The ONLY map export locals and binding-comment keys may be remapped
+    /// through: heuristic entries are scope-local and never rename a
+    /// top-level declaration, so mapping a top-level name through `merged`
+    /// can remap an export/comment whose declaration kept its name.
+    pub(super) module_scope: BTreeMap<String, String>,
+}
 
 pub(super) fn naturalize_module_body(
     body: &mut [ModuleItem],
     plan: &ModulePlan,
-) -> BTreeMap<String, String> {
+) -> Result<NaturalizedRenames> {
     let mut plan_driven = BTreeMap::<String, String>::new();
     // Stable iteration over `plan.bindings` (a HashMap) so the order
     // renames land in `plan_driven` — and thus the rename-precedence the
@@ -56,7 +73,38 @@ pub(super) fn naturalize_module_body(
         for item in body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
-        return merged;
+        return Ok(NaturalizedRenames {
+            merged,
+            module_scope: plan_driven_effective,
+        });
+    }
+
+    // Validate plan-driven targets against the body's top-level scope
+    // before any mutation: renaming a declaration onto a name another
+    // top-level binding already uses produces a duplicate declaration
+    // (a load-time SyntaxError). A top-level binding that is itself
+    // renamed away vacates its slot and is allowed. Nested-scope target
+    // collisions are NOT pre-checked here — a target bound in a nested
+    // scope is harmless unless the un-shadowed source is referenced
+    // inside that scope, which the renamer detects precisely at the
+    // reference (see the `captured` check below).
+    if !plan_driven_effective.is_empty() {
+        let root_names = collect_occupied_local_names(body);
+        let mut errors = Vec::new();
+        for (from, to) in &plan_driven_effective {
+            if root_names.contains(to) && !plan_driven_effective.contains_key(to) {
+                errors.push(format!(
+                    "rename of binding {from} to {to} collides with another top-level binding in the module body",
+                ));
+            }
+        }
+        if !errors.is_empty() {
+            bail!(
+                "invalid renames for module {}:\n  - {}",
+                plan.id,
+                errors.join("\n  - "),
+            );
+        }
     }
 
     // Apply plan-driven (module-scope) renames + shorthand collapse first,
@@ -66,6 +114,18 @@ pub(super) fn naturalize_module_body(
         let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven_effective);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
+        }
+        if !naturalizer.captured.is_empty() {
+            // A rename target was bound in a scope where the un-shadowed
+            // source is referenced — applying it would make the renamed
+            // reference resolve to the inner binding. The body is
+            // partially renamed at this point; the bail discards the
+            // whole pipeline run before anything is emitted.
+            bail!(
+                "renames for module {} would be captured by a nested binding: {:?}",
+                plan.id,
+                naturalizer.captured,
+            );
         }
     }
 
@@ -92,7 +152,10 @@ pub(super) fn naturalize_module_body(
         }
     }
 
-    merged
+    Ok(NaturalizedRenames {
+        merged,
+        module_scope: plan_driven_effective,
+    })
 }
 
 /// Walks the module body and applies heuristic naturalization renames
@@ -121,6 +184,40 @@ impl ScopedHeuristicNaturalizer<'_> {
     }
 }
 
+/// Drop heuristic renames whose target `node`'s subtree binds. Applying
+/// such a rename would either collide with the binding or be suppressed
+/// only inside the binding's scope — leaving the declaration renamed but
+/// some references not (a silent capture/miscompile). Heuristic renames
+/// are cosmetic, so whole-entry suppression is the sound fallback.
+fn drop_subtree_captured_targets<N>(
+    local: BTreeMap<String, String>,
+    node: &N,
+) -> BTreeMap<String, String>
+where
+    N: VisitWith<BindingNameCollector>,
+{
+    if local.is_empty() {
+        return local;
+    }
+    let bound = collect_binding_names_in(node);
+    local
+        .into_iter()
+        .filter(|(_, to)| !bound.contains(to))
+        .collect()
+}
+
+/// Invariant check after a heuristic scope-local rename pass: the
+/// subtree pre-filter must have made captures impossible. A non-empty
+/// `captured` set means the body is partially renamed — crash loudly
+/// rather than emit a miscompile.
+fn assert_no_heuristic_capture(renamer: &RenameAndShorthandNaturalizer<'_>) {
+    assert!(
+        renamer.captured.is_empty(),
+        "heuristic rename captured despite subtree pre-filter: {:?}",
+        renamer.captured,
+    );
+}
+
 /// Rewrites the statements of a function/constructor body with a heuristic
 /// rename map, treating the body's own (root-scope) bindings as rename
 /// targets rather than shadows. The renamer is applied to each statement
@@ -145,7 +242,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         function.visit_mut_children_with(self);
         let mut derived = BTreeMap::new();
         collect_naturalization_renames_from_function(function, &mut derived);
-        let local = self.effective(derived);
+        let local = drop_subtree_captured_targets(self.effective(derived), &*function);
         if local.is_empty() {
             return;
         }
@@ -157,6 +254,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         function.params.visit_mut_with(&mut renamer);
         rename_root_body(&mut renamer, function.body.as_mut());
+        assert_no_heuristic_capture(&renamer);
     }
 
     fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
@@ -165,7 +263,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         for param in &arrow.params {
             collect_naturalization_renames_from_pattern(param, &mut derived);
         }
-        let local = self.effective(derived);
+        let local = drop_subtree_captured_targets(self.effective(derived), &*arrow);
         if local.is_empty() {
             return;
         }
@@ -175,13 +273,14 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             BlockStmtOrExpr::BlockStmt(block) => rename_root_body(&mut renamer, Some(block)),
             BlockStmtOrExpr::Expr(expr) => expr.visit_mut_with(&mut renamer),
         }
+        assert_no_heuristic_capture(&renamer);
     }
 
     fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
         constructor.visit_mut_children_with(self);
         let mut derived = BTreeMap::new();
         collect_naturalization_renames_from_constructor(constructor, &mut derived);
-        let local = self.effective(derived);
+        let local = drop_subtree_captured_targets(self.effective(derived), &*constructor);
         if local.is_empty() {
             return;
         }
@@ -190,6 +289,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             param.visit_mut_with(&mut renamer);
         }
         rename_root_body(&mut renamer, constructor.body.as_mut());
+        assert_no_heuristic_capture(&renamer);
     }
 }
 

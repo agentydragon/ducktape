@@ -79,7 +79,7 @@ use materialize::{
     ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
     materialize_logical_chunk,
 };
-use naturalize::naturalize_module_body;
+use naturalize::{NaturalizedRenames, naturalize_module_body};
 use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
     collect_imported_reexports_by_module, plan_module_reference_needs,
