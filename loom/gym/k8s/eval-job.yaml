@@ -118,7 +118,11 @@ spec:
         - name: certs
           secret:
             secretName: docker-ci-client
-            defaultMode: 0400
+            # 0444 (not 0400): the eval image runs as non-root (uid 1000) and must
+            # read the projected mTLS material the docker CLI loads from
+            # DOCKER_CERT_PATH. The root-run stage-images initContainer reads it
+            # either way.
+            defaultMode: 0444
             items:
               - key: ca.crt
                 path: ca.pem

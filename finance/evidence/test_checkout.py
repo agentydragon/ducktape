@@ -6,7 +6,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from finance.evidence.checkout import ensure_checkout
+from finance.evidence.checkout import _EgressTrust, ensure_checkout
 
 
 def test_env_dir_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -35,48 +35,37 @@ def test_cached_checkout_used_without_credentials(monkeypatch: pytest.MonkeyPatc
     assert ensure_checkout() == checkout
 
 
-class _RecordingSettings:
-    ssl_cert_file: str | None = None
+def test_certificate_check_accepts_libgit2_valid_cert() -> None:
+    # Never reject what libgit2 itself trusts.
+    assert _EgressTrust().certificate_check(None, True, b"git.allegedly.works") is True
 
 
-def _stub_clone(monkeypatch: pytest.MonkeyPatch) -> _RecordingSettings:
-    """Replace pygit2's network clone + global settings so the cold path is hermetic.
+def test_certificate_check_accepts_mitm_cert_behind_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # libgit2 marks the cluster mitmproxy's MITM cert invalid; accept it because
+    # the only egress is that trusted in-cluster proxy.
+    monkeypatch.setenv("HTTPS_PROXY", "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080")
+    assert _EgressTrust().certificate_check(None, False, b"git.allegedly.works") is True
 
-    Returns the recording settings so callers can assert what libgit2 was pointed at.
-    """
-    settings = _RecordingSettings()
-    monkeypatch.setattr(pygit2, "settings", settings)
 
-    def fake_clone(url: str, path: str, **_: object) -> None:
+def test_certificate_check_rejects_invalid_cert_without_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Outside a proxied egress, an invalid cert is a real failure — don't mask it.
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    assert _EgressTrust().certificate_check(None, False, b"git.allegedly.works") is False
+
+
+def test_clone_uses_egress_trust_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _clear_evidence_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_USERNAME", "u")
+    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_PASSWORD", "p")
+    captured: dict[str, object] = {}
+
+    def fake_clone(url: str, path: str, *, callbacks: object, **_: object) -> None:
+        captured["callbacks"] = callbacks
         (Path(path) / ".git").mkdir(parents=True)
 
     monkeypatch.setattr(pygit2, "clone_repository", fake_clone)
-    return settings
-
-
-def test_clone_points_libgit2_at_egress_ca(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    # libgit2 ignores SSL_CERT_FILE, so the cold clone must mirror it into the
-    # GIT_OPT_SET_SSL_CERT_LOCATIONS setting or the MITM egress cert is rejected.
-    _clear_evidence_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_USERNAME", "u")
-    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_PASSWORD", "p")
-    ca = tmp_path / "mitmproxy-ca.pem"
-    ca.write_text("-----BEGIN CERTIFICATE-----\n")
-    monkeypatch.setenv("SSL_CERT_FILE", str(ca))
-    settings = _stub_clone(monkeypatch)
     ensure_checkout()
-    assert settings.ssl_cert_file == str(ca)
-
-
-def test_clone_leaves_libgit2_default_trust_when_no_ca_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _clear_evidence_env(monkeypatch, tmp_path)
-    monkeypatch.delenv("GIT_SSL_CAINFO", raising=False)
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
-    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_USERNAME", "u")
-    monkeypatch.setenv("AUGUR_EVIDENCE_GIT_PASSWORD", "p")
-    settings = _stub_clone(monkeypatch)
-    ensure_checkout()
-    assert settings.ssl_cert_file is None
+    assert isinstance(captured["callbacks"], _EgressTrust)
 
 
 if __name__ == "__main__":
