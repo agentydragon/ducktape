@@ -32,11 +32,17 @@
 //! `a` -> `b` at a point where an enclosing scope binds `b` would make
 //! the rewritten reference resolve to the inner `b` (capture). The
 //! visitors do not apply such a rename; they record the offending
-//! `(source, target)` pair in `captured` instead. A partial
+//! `(source, target)` pair in `captured` instead — a partial
 //! application (decl renamed at top level, captured reference left
-//! as-is) is itself a miscompile, so callers MUST check `captured`
-//! after the pass and reject (or discard the mutated body) when it is
-//! non-empty.
+//! as-is) is itself a miscompile. The recorded set has three consumer
+//! classes: the read-only `RenameCaptureProbe` walks the un-renamed
+//! body to feed the ledger seal the capture facts it hard-errors on;
+//! the post-seal executors `debug_assert!` it is empty (seal already
+//! rejected captures — a non-empty set means probe and executor
+//! diverged); and the moved-module-body `chunk_renames` application
+//! bails on it, the one application whose body occupancy seal cannot
+//! see (see `rename_ledger.rs` "Boundaries that validate at
+//! application").
 //!
 //! ## Shorthand expansion
 //!
@@ -345,8 +351,8 @@ macro_rules! impl_rename_visit_mut {
 /// capture-checked rename lookup. The lookup returns the rename target for
 /// `name` only when applying it is safe at the current traversal point;
 /// when the target is shadowed it records the `(source, target)` pair in
-/// `self.captured` and returns `None` (see module docs: callers MUST check
-/// `captured`).
+/// `self.captured` and returns `None` (see the module docs' "Target
+/// capture" for who consumes the set).
 macro_rules! impl_rename_helpers {
     () => {
         fn with_rename_scope<F: FnOnce(&mut Self)>(&mut self, scope: BTreeSet<String>, f: F) {
@@ -520,7 +526,8 @@ pub(super) struct IdentifierRenamer<'a> {
     scopes: RenameScopeStack,
     /// `(source, target)` pairs whose rename was withheld because the
     /// target was shadowed at the reference. Non-empty after a pass means
-    /// the mutated body is partially renamed — callers MUST reject it.
+    /// the mutated body is partially renamed (see the module docs'
+    /// "Target capture" for the consumer classes).
     pub(super) captured: BTreeSet<(String, String)>,
 }
 

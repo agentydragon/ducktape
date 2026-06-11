@@ -51,20 +51,20 @@ perf baseline for the program.
    — blocked rows are not landable, implemented; `BindingId` interning
    — deferred, perf-triggered, see the backlog's decided-state note.
 
-## Track B — RenameLedger (weeks 1–2)
+## Track B — RenameLedger (weeks 1–2) — complete (2026-06)
 
 The structural fix for the rename-bug family (#2052/#2057 were
 down-payments). Five PRs, each independently green against the ~90
-rename-pinning e2e tests:
+rename-pinning e2e tests — all landed
+(#2086/#2091/#2101/#2106 + the PR-5 cleanup):
 
 1. Types + inventory: `RenameLedger` of `RenameIntent { scope, from, to,
 origin, priority }`, scopes Chunk/Module/Function, **keyed by hygiene
    `Id`** (post-#2042 contexts are why string keys breed bugs). Adopt the
    "no structural moves between seal and execute" contract. _(Landed
-   2026-06: `lowering/rename_ledger.rs`, including the seal-time
+   2026-06: #2086 — `lowering/rename_ledger.rs`, including the seal-time
    same-priority conflict check and the two explicit contributors —
-   spec `chunk_renames` + plan `export_name`s; see TODO.md's rename
-   pipeline section for decisions and the remaining ladder.)_
+   spec `chunk_renames` + plan `export_name`s.)_
 2. Collect: convert contributors (spec `export_name`s, bound/free
    heuristics, import-local `_N` minting, `chunk_renames`, cross-module,
    collision resolution) one at a time to emit intents. _(Landed
@@ -72,24 +72,26 @@ origin, priority }`, scopes Chunk/Module/Function, **keyed by hygiene
 3. Seal: explicit > import-induced > heuristic; same-priority conflicts are
    hard errors naming both contributors; target-occupancy validated at seal
    time against scope-accurate occupied sets; `_N` minting becomes a ledger
-   service. _(Landed 2026-06; see TODO.md's "PR 3 landed" entry and the
-   "Seal points" section of `lowering/rename_ledger.rs` for what stays at
-   the application sites until PR 4.)_
+   service. _(Landed 2026-06: #2101.)_
 4. Execute once: the post-seal rename pass is the only mutation per scope
    unit; capture facts reach seal from the un-renamed tree. _(Landed
-   2026-06: read-only `RenameCaptureProbe` + `pending_renames_by_name`
+   2026-06: #2106 — read-only `RenameCaptureProbe` + `pending_renames_by_name`
    replace the pre-seal trial walks, the export-growth ledger merged into
    `lower_chunk`'s chunk ledger, and `plan_references`' reverse `.find`
-   became the sealed map's inverse projection. The naturalizer's derive
-   clone, the per-plan import ledger, and `cross_module_chunk_renames`'
-   separate application stay with documented reasons — see TODO.md's
-   "PR 4 landed" entry and `rename_ledger.rs` "Seal points".)_
-5. Cleanup: delete the defensive era (`captured` sets,
-   `drop_subtree_captured_targets` where dominated, reverse lookups) and
-   attack PR 4's documented blockers (import-ledger merge,
-   `Id`-keyed executor deleting the `*_by_name` projection). Afterwards
-   the #2045 class is unrepresentable and aggressive auto-naturalization
-   becomes safe to build.
+   became the sealed map's inverse projection.)_
+5. Cleanup: delete the defensive era and resolve PR 4's documented
+   blockers. _(Landed 2026-06: the dominated `drop_subtree_captured_targets`
+   subtree re-walk and the clone-side capture asserts are deleted (the
+   post-seal executors keep the single `debug_assert!` tripwire layer);
+   the import-ledger merge and `cross_module_chunk_renames` folding are
+   finalized as design — the cross-module phase cycle and the sequential
+   mint composition are documented invariants in `rename_ledger.rs`'s
+   "The four ledgers" / "Boundaries that validate at application" — as
+   are the derive clone and the `merged`/`explicit` map split. The
+   `Id`-keyed executor is re-filed in TODO.md "Rename pipeline" (blocked
+   on real-context import/export emission). The #2045 class is
+   unrepresentable; aggressive auto-naturalization is now a TODO.md
+   capability item.)_
 
 ## Track C — vendor-into-emission collapse (weeks 2–3)
 

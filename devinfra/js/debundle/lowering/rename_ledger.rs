@@ -1,12 +1,28 @@
-//! `RenameLedger` — the intent buffer of the collect → validate →
-//! execute-once rename pipeline (sanitization program Track B; TODO.md
-//! "Rename pipeline: collect → validate → execute _once_").
+//! `RenameLedger` — the collect → seal → execute-once rename pipeline.
 //!
-//! Rename contributors submit [`RenameIntent`]s instead of building their
-//! own maps; [`RenameLedger::seal`] validates the intents and freezes them
-//! into [`SealedRenames`], whose queries reproduce exactly the maps the
-//! pre-ledger code built so the existing application sites (the
-//! string-keyed rename visitors in `visitors.rs`) stay unchanged.
+//! Every rename a lowered chunk applies flows through one architectural
+//! boundary: contributors submit [`RenameIntent`]s during the collect
+//! phase instead of building their own maps, [`RenameLedger::seal`]
+//! validates the intents and freezes them into the read-only
+//! [`SealedRenames`], and one post-seal executor pass per scope unit is
+//! the only mutation of that unit's AST. No pass invents a rename after
+//! seal; consumers that bridge pre- and post-rename names consult the
+//! sealed maps (e.g. `RuntimeImportLookup::original_by_renamed`, the
+//! inverse projection — injective by seal's target-collision rules).
+//! There is no pre-seal trial application: capture facts reach seal from
+//! read-only walks of the **un-renamed** body. This makes the
+//! "X-layer renamed it, Y-layer keyed off the wrong-era name" bug class
+//! unrepresentable rather than defended against.
+//!
+//! ## Scopes, origins, priorities
+//!
+//! An intent renames `from` to `to` within one [`RenameScope`]
+//! (`Chunk` | `Module` | `Function` | `EntryPublicExports`); intents in
+//! one scope are invisible to queries for any other scope. The
+//! [`RenameOrigin`] names the contributor (for conflict diagnostics)
+//! and derives the conflict priority: explicit (spec-author decision) >
+//! import-induced (mechanical, required to emit valid imports) >
+//! heuristic (cosmetic readability).
 //!
 //! ## Seal validation
 //!
@@ -50,40 +66,37 @@
 //! taken set from the body's occupied names ([`RenameLedger::seed_taken`]
 //! / [`RenameLedger::claim`]) and request fresh names with
 //! [`RenameLedger::mint`], which suffix-mints `base$N` past collisions
-//! (decided 2026-06: the `$N` scheme stays; readability is a later
+//! (the `$N` scheme is the minting contract; readability is a later
 //! naturalizer concern). Import-local disambiguation (`import_emit.rs`)
 //! and public-export growth (`exports.rs`) mint through the ledger.
 //!
 //! ## Contract: no structural moves between seal and execute
 //!
-//! Adopted (decided 2026-06): once a chunk's ledger is sealed, no pass may
-//! move declarations between modules — structural moves (entry-body split,
-//! residual sweep, rebind folds, mini-factor synthesis) must all happen
-//! before collection finishes. The materializer satisfies the collection
-//! side (intents are collected from the finalized `ChunkPlan`), and as of
-//! PR 4 every ledger executes post-seal only. Making the contract
-//! type-level (non-execute passes take `&Module`) is remaining work.
+//! Once a chunk's ledger is sealed, no pass may move declarations
+//! between modules — structural moves (entry-body split, residual
+//! sweep, rebind folds, mini-factor synthesis) all happen before
+//! collection finishes. The materializer satisfies the collection side
+//! (intents are collected from the finalized `ChunkPlan`), and every
+//! ledger executes post-seal only.
 //!
-//! ## Seal points (PR 4 era)
+//! ## The four ledgers
 //!
-//! Four ledger instances remain, and each follows the same discipline:
-//! collect every intent, seal once, then execute — the post-seal rename
-//! pass is the only mutation of the scope unit's AST, and no pre-seal
-//! trial application exists (capture facts come from read-only probes /
-//! the derive clone over the un-renamed body):
+//! Four ledger instances cover a chunk's lowering. Each follows the
+//! same discipline — collect every intent, seal once, execute once —
+//! and each is a separate instance for a structural reason, not code
+//! shape:
 //!
 //! - **Chunk explicit ledger** (`materialize_logical_chunk`): spec
 //!   `chunk_renames` + plan `export_name`s; conflict-validated only (the
 //!   post-split bodies its targets must avoid don't exist yet — its
-//!   intents are re-collected into the two ledgers below, which validate
-//!   occupancy). Sealed before factorization, which consumes the
-//!   Chunk-scope projection. It cannot merge downstream: its Chunk
-//!   projection is an input to plan building and factorization, which
-//!   run before the post-split bodies exist.
-//! - **Chunk ledger** (`lower_chunk`): the chunk_renames entries staying
+//!   intents are re-collected into the two body-validating ledgers
+//!   below). It cannot merge downstream: its sealed Chunk projection is
+//!   an input to plan building and factorization, which run before the
+//!   post-split bodies exist.
+//! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
 //!   in entry plus entry import-local mints (`Chunk` scope) AND the
-//!   auto-grown residual public exports (`EntryPublicExports` scope —
-//!   PR 4 absorbed the former export-growth ledger). One seal validates
+//!   auto-grown residual public exports (`EntryPublicExports` scope — a
+//!   separate namespace from local-binding renames). One seal validates
 //!   entry's post-split body occupancy (capture facts from the read-only
 //!   `RenameCaptureProbe`) and the public-export namespace; one executor
 //!   pass applies the Chunk map to the entry body.
@@ -95,49 +108,63 @@
 //!   rule ([`merge_module_renames`]), and per-scope occupancy. The
 //!   executor (sealed module-wide walk + `SealedScopeRenameApplier`) is
 //!   the only mutation of the real body; derivation runs on a scratch
-//!   clone of the un-renamed body (see below for why the clone stays).
+//!   clone of the un-renamed body (see "Derive clone").
 //! - **Per-plan import ledger** (`lower_single_plan`): cross-module +
-//!   residual-entry import-local mints. It cannot merge into the
-//!   naturalize ledger because of a cross-module phase ordering, not
-//!   mere code shape: collection needs this module's post-naturalize
-//!   body facts AND entry's grown export list, which itself needs every
-//!   module's post-naturalize facts — so the naturalize seal would have
-//!   to stay open across a chunk-wide phase whose inputs require the
-//!   naturalize application to have already run. Breaking the cycle
-//!   means planning references off un-renamed facts plus sealed-map
-//!   reasoning at import emission (PR 5 candidate; changes mint seeding
-//!   and is not behavior-preserving in suffix-mint corner cases).
+//!   residual-entry import-local mints. Separate from the naturalize
+//!   ledger because of a cross-module phase cycle, not code shape:
+//!   collection needs this module's post-naturalize body facts AND
+//!   entry's grown export list, which itself needs every module's
+//!   post-naturalize facts — the naturalize seal would have to stay
+//!   open across a chunk-wide phase whose inputs require the naturalize
+//!   application to have already run. Collapsing the two would mean
+//!   planning references off un-renamed facts plus sealed-map reasoning
+//!   at import emission, which changes mint seeding and is not
+//!   behavior-preserving in suffix-mint corner cases; the two-ledger
+//!   split is the accepted design.
 //!
-//! What still validates at the application site (PR 5 candidates):
+//! ## Boundaries that validate at application
 //!
-//! - The free-alias subtree-capture filter
-//!   (`naturalize.rs::drop_subtree_captured_targets`): free aliases apply
-//!   function-locally while their intents live at `Module` scope; seal
-//!   checks them against the deriving subtree's bound names when the
-//!   derive pass submits `Function`-scope copies, but the module-level
-//!   occupancy of free-alias targets is not checked (matching pre-ledger
-//!   behavior).
-//! - `chunk_renames` applied to *moved module bodies*
+//! Two scope-aware checks live at application sites by design — they
+//! validate facts only the application point can see, and are part of
+//! the architecture rather than residual defense:
+//!
+//! - **`chunk_renames` over moved module bodies**
 //!   (`lower_single_plan`'s `cross_module_chunk_renames` pass): the
-//!   entry-side seal validates against entry's body only; a target can
-//!   still collide inside a moved body, and that application keeps its
-//!   reachable bail. It also cannot fold into the per-plan import
-//!   ledger's seal: the two maps deliberately compose *sequentially*
-//!   (an import-local mint may rename `x → y$1` precisely because the
-//!   chunk-rename target `y` was taken, and the cross map's `x → y`
-//!   must then no-op), while one seal's priority rule would resolve the
+//!   entry-side seal validates against entry's post-split body only, so
+//!   a target can still be captured inside a moved body; that
+//!   application's capture check is the moved body's only occupancy
+//!   validation for spec renames and keeps its reachable bail. The pass
+//!   also deliberately composes *sequentially* with the import ledger's
+//!   mints rather than sealing with them: an import-local mint may
+//!   rename `x → y$1` precisely because the chunk-rename target `y` was
+//!   taken, and the cross map's `x → y` must then no-op on the
+//!   already-renamed refs — one seal's priority rule would resolve the
 //!   pair to the explicit target and desync body refs from the emitted
 //!   import local.
-//! - The derive-phase clone in `naturalize_module_body` (the scratch
-//!   clone + `validated_bound` / `drop_subtree_captured_targets` /
-//!   [`merge_module_renames`] pre-computation): the per-scope derive
-//!   cascade needs each enclosing scope's subtree name facts to reflect
-//!   the nested scopes' fired renames (the application is
-//!   scope-sensitive — a flat set transformation of the sealed nested
-//!   maps over the un-renamed facts both over- and under-suppresses),
-//!   so the clone walk is the precise fact source. Seal re-derives the
-//!   same decisions from the submitted facts; the clone never touches
-//!   the real body.
+//! - **Free-alias function-local application**: free-source
+//!   return-object aliases rewrite references function-locally while
+//!   their intents live at `Module` scope (they join the module-wide
+//!   merged map so runtime-import planning can reverse-resolve them).
+//!   The module-level occupancy of their targets is deliberately not
+//!   checked; the deriving subtree's bound-name rule — applied at seal
+//!   to their `Function`-scope copies — is the capture guard. This is
+//!   also why `NaturalizedRenames` keeps its `merged` / `explicit`
+//!   split: export locals and binding-comment keys may remap only
+//!   through renames that actually rename a top-level declaration.
+//!
+//! ## Derive clone
+//!
+//! `naturalize_module_body` derives heuristics on a scratch clone of
+//! the un-renamed body: the per-scope derive cascade needs each
+//! enclosing scope's subtree name facts to reflect the nested scopes'
+//! fired renames (the application is scope-sensitive — a flat set
+//! transformation of the sealed nested maps over the un-renamed facts
+//! both over- and under-suppresses), so the clone walk is the precise
+//! fact source. The clone's local preview applies the same rules seal
+//! re-derives from the submitted facts, so clone and sealed output
+//! agree; the clone never touches the real body, whose only mutation is
+//! the post-seal executor. The clone's plan-driven walk doubles as the
+//! Module-scope capture probe.
 //!
 //! ## Hygiene boundary
 //!
@@ -146,24 +173,26 @@
 //! breed. Contributors that only have a spec string resolve it at the
 //! collection point via `top_level_id(name, chunk_top_level_mark)`. The
 //! seal output is projected back to bare syms at the query boundary
-//! (`*_by_name`) because the post-#2052 application visitors are still
-//! string-keyed; the projection asserts that no two hygiene contexts share
-//! a sym within one scope. An `Id`-keyed executor that deletes the
-//! projection is remaining (PR 5) work.
+//! (`*_by_name`) because the application visitors are string-keyed; the
+//! projection asserts that no two hygiene contexts share a sym within
+//! one scope — that assert is the boundary's tripwire. Deleting the
+//! projection (an `Id`-keyed executor) requires emitting import/export
+//! decls under real contexts instead of `Ident::new_no_ctxt` (today one
+//! rename must hit both a no-ctxt emitted import local and the
+//! real-ctxt body references, which only sym-keyed application can do)
+//! and hygiene-resolving the `Function`-scope heuristic sources; see
+//! TODO.md "Rename pipeline".
 //!
 //! `Function`-scope heuristic sources are function-local bindings whose
 //! hygiene context the string-keyed derivation never resolves; they are
-//! keyed by `(sym, SyntaxContext::empty())` until the executor keys
-//! application by real `Id`s (remaining work — the post-#2052 visitors
-//! are string-keyed, and re-keying them is entangled with emitting
-//! import/export decls under real contexts instead of `new_no_ctxt`).
-//! Within one function scope a sym maps to at most one rename, so the
-//! empty-context encoding cannot collide.
+//! keyed by `(sym, SyntaxContext::empty())`. Within one function scope a
+//! sym maps to at most one rename, so the empty-context encoding cannot
+//! collide.
 //!
 //! ## Contributor inventory
 //!
-//! All rename contributors submit intents (PR 2) and all validation is
-//! seal-time (PR 3):
+//! Every rename contributor submits intents and all validation is
+//! seal-time:
 //!
 //! - Spec `chunk_renames` — `chunk_renames.rs::collect_chunk_renames`
 //!   (scope: `Chunk`, origin: `Explicit`; chunk explicit ledger, then
@@ -359,9 +388,10 @@ pub enum ScopeOccupancy {
         /// nested binding" error.
         captured: BTreeSet<(String, String)>,
     },
-    /// `Function` scopes: the deriving subtree's name facts, mirroring
-    /// the pre-ledger `validated_bound` / `drop_subtree_captured_targets`
-    /// checks.
+    /// `Function` scopes: the deriving subtree's name facts. Seal's
+    /// per-scope rules over them are the same rules the derive clone's
+    /// local preview applies (`validated_bound` + the free-copy
+    /// bound-target filter), so clone and sealed output agree.
     Subtree {
         /// Names bound anywhere under the deriving node. Classifies each
         /// intent (bound-source vs free-source) and rejects free-alias
@@ -772,8 +802,8 @@ fn validate_function_scope(
 /// in the same scope. This is the module-level target-collision rule
 /// seal applies to free-source aliases; `naturalize_module_body` calls it
 /// directly for the derive-phase preview (`free_allowed`) on the scratch
-/// clone (see the module doc's "Seal points" section for why the clone
-/// stays).
+/// clone (see the module doc's "Derive clone" section for why the clone
+/// is the fact source).
 pub fn merge_module_renames(
     mut explicit: BTreeMap<String, String>,
     heuristic: BTreeMap<String, String>,
@@ -838,7 +868,8 @@ impl SealedRenames {
         self.scope_renames_at_priority(&RenameScope::Module(module), RenamePriority::Explicit)
     }
 
-    /// Typed per-scope view (tests, the future execute-once pass).
+    /// Typed per-scope view (tests; the production executors consume the
+    /// by-name projection — see the module doc's "Hygiene boundary").
     pub fn scope_renames(&self, scope: &RenameScope) -> Option<BTreeMap<Id, Atom>> {
         self.by_scope.get(scope).map(|renames| {
             renames

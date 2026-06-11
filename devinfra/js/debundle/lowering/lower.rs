@@ -1007,12 +1007,12 @@ fn lower_single_plan(
     });
     time_phase!(timings, "module.final_exports", {
         if let Some(exports) = &selected_exports_by_module[index] {
-            // Export locals remap through `module_scope` only: heuristic
-            // renames are scope-local and never rename the top-level
-            // declaration an export specifier refers to, so mapping
-            // through the merged map can emit `export { x as y }` for an
-            // `x` that was never declared (a load-time SyntaxError).
-            let mut exports = final_module_exports(exports, &local_renames.module_scope);
+            // Export locals remap through the explicit map only: heuristic
+            // renames never rename the top-level declaration an export
+            // specifier refers to, so mapping through the merged map can
+            // emit `export { x as y }` for an `x` that was never declared
+            // (a load-time SyntaxError).
+            let mut exports = final_module_exports(exports, &local_renames.explicit);
             exports.extend(
                 import_member_exports
                     .iter()
@@ -1032,7 +1032,7 @@ fn lower_single_plan(
             entry_file,
             source_path,
         };
-        build_module_output(plan, body, &local_renames.module_scope, &output_context)
+        build_module_output(plan, body, &local_renames.explicit, &output_context)
     });
     Ok((file, record, lowering, timings))
 }
@@ -1040,7 +1040,7 @@ fn lower_single_plan(
 fn build_module_output(
     plan: &ModulePlan,
     body: Vec<ModuleItem>,
-    module_scope_renames: &BTreeMap<String, String>,
+    explicit_renames: &BTreeMap<String, String>,
     context: &ModuleOutputContext<'_>,
 ) -> (JsFile, (String, FileRole), SelectedModuleLowering) {
     let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
@@ -1087,14 +1087,14 @@ fn build_module_output(
     // `plan.binding_comments` is keyed by the member's ORIGINAL binding
     // name, but `attach_binding_comments` matches the names the emitted
     // declarations carry AFTER naturalization renamed them — re-key
-    // through the applied module-scope renames or renamed members lose
+    // through the applied explicit renames or renamed members lose
     // their comments.
     let binding_comments: BTreeMap<String, String> = plan
         .binding_comments
         .iter()
         .map(|(binding, comment)| {
             (
-                module_scope_renames
+                explicit_renames
                     .get(binding)
                     .cloned()
                     .unwrap_or_else(|| binding.clone()),

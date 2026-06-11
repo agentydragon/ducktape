@@ -44,25 +44,28 @@
 
 use swc_common::Span;
 
-use super::scope_names::{
-    BindingNameCollector, collect_binding_names_in, collect_nested_binding_names,
-    collect_occupied_local_names,
-};
+use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
 use super::util::is_valid_js_identifier;
 use super::*;
 
-/// The rename maps `naturalize_module_body` applied, split by scope.
+/// The rename maps `naturalize_module_body` applied, split by what may
+/// consume them. The split is final design, not a transition state:
+/// free-source heuristic aliases rewrite references function-locally
+/// without renaming any top-level declaration, so the two consumer
+/// families need different maps (see the ledger module doc's
+/// "Boundaries that validate at application").
 pub(super) struct NaturalizedRenames {
-    /// Plan-driven + heuristic, original → readable. The reverse lookup
-    /// for bridging post-rename body syms back to pre-rename fact-table
-    /// keys (`RuntimeImportLookup`).
+    /// Plan-driven + surviving free heuristics, original → readable. The
+    /// reverse lookup for bridging post-rename body syms back to
+    /// pre-rename fact-table keys (`RuntimeImportLookup`).
     pub(super) merged: BTreeMap<String, String>,
-    /// Plan-driven renames applied module-wide to top-level declarations.
-    /// The ONLY map export locals and binding-comment keys may be remapped
-    /// through: heuristic entries are scope-local and never rename a
-    /// top-level declaration, so mapping a top-level name through `merged`
-    /// can remap an export/comment whose declaration kept its name.
-    pub(super) module_scope: BTreeMap<String, String>,
+    /// Plan-driven (explicit) renames only — the renames that actually
+    /// rename a top-level declaration module-wide. The ONLY map export
+    /// locals and binding-comment keys may be remapped through: heuristic
+    /// entries never rename a top-level declaration, so mapping a
+    /// top-level name through `merged` can remap an export/comment whose
+    /// declaration kept its name.
+    pub(super) explicit: BTreeMap<String, String>,
 }
 
 /// Collect each plan's spec-driven `export_name` renames into the ledger
@@ -190,7 +193,7 @@ pub(super) fn naturalize_module_body(
     // scopes' subtree facts (bound/mention sets) must reflect the nested
     // scopes' fired renames, and a flat set transformation of the sealed
     // nested maps cannot reproduce the scope-sensitive application the
-    // clone walk performs (see TODO.md "Rename pipeline", PR-5 notes).
+    // clone walk performs (see the ledger module doc's "Derive clone").
     let mut derive_body = body.to_vec();
     let mut plan_captured = BTreeSet::new();
     if plan_driven.is_empty() {
@@ -233,17 +236,17 @@ pub(super) fn naturalize_module_body(
     // heuristic maps in the same order the derive pass fired them
     // (children first), so each scope's map applies to the same
     // intermediate tree state the derivation validated against.
-    let module_scope = sealed.module_explicit_renames_by_name(module);
+    let explicit = sealed.module_explicit_renames_by_name(module);
     debug_assert_eq!(
-        module_scope, plan_driven,
+        explicit, plan_driven,
         "sealed module-wide explicit renames diverged from the candidate map the derive clone applied",
     );
-    if module_scope.is_empty() {
+    if explicit.is_empty() {
         for item in body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&module_scope);
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&explicit);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
@@ -260,7 +263,7 @@ pub(super) fn naturalize_module_body(
 
     Ok(NaturalizedRenames {
         merged: sealed.module_renames_by_name(module),
-        module_scope,
+        explicit,
     })
 }
 
@@ -274,10 +277,10 @@ pub(super) fn naturalize_module_body(
 /// enclosing scopes derive against the post-rename nested state —
 /// exactly the pre-ledger derive-and-apply order. The clone mutation
 /// uses a local preview of seal's rules ([`Self::validated_bound`] +
-/// `drop_subtree_captured_targets`), so the clone and the sealed output
-/// agree. The clone is what makes the enclosing scopes' subtree facts
-/// reflect nested fired renames precisely — see the ledger module doc's
-/// "Seal points" for why set-level reasoning can't replace it.
+/// the free-copy bound-target filter), so the clone and the sealed
+/// output agree. The clone is what makes the enclosing scopes' subtree
+/// facts reflect nested fired renames precisely — see the ledger module
+/// doc's "Derive clone" for why set-level reasoning can't replace it.
 /// Free-source renames fire only when they survived the module-global
 /// collision rules (`free_allowed`). A rename derived from one scope
 /// never leaks into a sibling/parent scope, and
@@ -576,32 +579,11 @@ impl ScopedHeuristicNaturalizer<'_> {
     }
 }
 
-/// Drop heuristic renames whose target `node`'s subtree binds. Applying
-/// such a rename would either collide with the binding or be suppressed
-/// only inside the binding's scope — leaving the declaration renamed but
-/// some references not (a silent capture/miscompile). Heuristic renames
-/// are cosmetic, so whole-entry suppression is the sound fallback.
-fn drop_subtree_captured_targets<N>(
-    local: BTreeMap<String, String>,
-    node: &N,
-) -> BTreeMap<String, String>
-where
-    N: VisitWith<BindingNameCollector>,
-{
-    if local.is_empty() {
-        return local;
-    }
-    let bound = collect_binding_names_in(node);
-    local
-        .into_iter()
-        .filter(|(_, to)| !bound.contains(to))
-        .collect()
-}
-
-/// Debug-time invariant check after a heuristic scope-local rename pass:
-/// seal's per-scope target validation (target absent from the subtree's
-/// mentions / bound names) makes captures impossible. A non-empty
-/// `captured` set means seal's guarantee was violated.
+/// Debug-time invariant tripwire after the post-seal heuristic
+/// scope-local executor pass: seal's per-scope target validation (target
+/// absent from the subtree's mentions / bound names) makes captures
+/// impossible. A non-empty `captured` set means seal's guarantee was
+/// violated.
 fn assert_no_heuristic_capture(renamer: &RenameAndShorthandNaturalizer<'_>) {
     debug_assert!(
         renamer.captured.is_empty(),
@@ -642,12 +624,17 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         self.classify_function_aliases(function, &facts, &mut bound, &mut free);
         // Preview of seal's per-scope rules, deciding what fires on this
         // clone. Free-source aliases get no `mentions` check, but any
-        // whose target the subtree binds is dropped: applying one would
-        // be suppressed only inside the re-binding scope, leaving a
-        // partially renamed body. (Bound-source renames are covered by
-        // `validated_bound`, which rejects targets the subtree so much
-        // as mentions.)
-        let mut local = drop_subtree_captured_targets(free.clone(), &*function);
+        // whose target the subtree binds is dropped — seal's free-copy
+        // rule, read off the same `facts.bound` set submitted to it:
+        // applying one would be suppressed only inside the re-binding
+        // scope, leaving a partially renamed body. (Bound-source renames
+        // are covered by `validated_bound`, which rejects targets the
+        // subtree so much as mentions.)
+        let mut local: BTreeMap<String, String> = free
+            .iter()
+            .filter(|(_, to)| !facts.bound.contains(to.as_str()))
+            .map(|(from, to)| (from.clone(), to.clone()))
+            .collect();
         local.extend(self.validated_bound(bound.clone(), &facts));
         self.submit_scope_intents(function.span, &bound, &free, facts);
         if local.is_empty() {
@@ -661,7 +648,6 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         function.params.visit_mut_with(&mut renamer);
         rename_root_body(&mut renamer, function.body.as_mut());
-        assert_no_heuristic_capture(&renamer);
     }
 
     fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
@@ -682,7 +668,6 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             BlockStmtOrExpr::BlockStmt(block) => rename_root_body(&mut renamer, Some(block)),
             BlockStmtOrExpr::Expr(expr) => expr.visit_mut_with(&mut renamer),
         }
-        assert_no_heuristic_capture(&renamer);
     }
 
     fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
@@ -700,7 +685,6 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             param.visit_mut_with(&mut renamer);
         }
         rename_root_body(&mut renamer, constructor.body.as_mut());
-        assert_no_heuristic_capture(&renamer);
     }
 }
 

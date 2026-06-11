@@ -57,10 +57,10 @@ pub(super) fn collect_occupied_local_names(body: &[ModuleItem]) -> BTreeSet<Stri
 }
 
 /// Visitor behind [`collect_local_binding_names`] /
-/// [`collect_binding_names_in`]: records every name bound anywhere under
-/// the visited node (declarations, params, patterns, fn/class expr names,
-/// import specifier locals).
-pub(super) struct BindingNameCollector {
+/// [`collect_nested_binding_names`]: records every name bound anywhere
+/// under the visited node (declarations, params, patterns, fn/class expr
+/// names, import specifier locals).
+struct BindingNameCollector {
     names: BTreeSet<String>,
 }
 
@@ -104,21 +104,6 @@ impl Visit for BindingNameCollector {
     fn visit_import_star_as_specifier(&mut self, specifier: &ImportStarAsSpecifier) {
         self.names.insert(specifier.local.sym.to_string());
     }
-}
-
-/// Names bound anywhere under one AST node (a function, arrow,
-/// constructor, …). Used to suppress renames whose target a node's
-/// subtree binds — applying such a rename would capture the rewritten
-/// references.
-pub(super) fn collect_binding_names_in<N>(node: &N) -> BTreeSet<String>
-where
-    N: VisitWith<BindingNameCollector>,
-{
-    let mut collector = BindingNameCollector {
-        names: BTreeSet::new(),
-    };
-    node.visit_with(&mut collector);
-    collector.names
 }
 
 /// Names bound anywhere under `body`. This is stricter than file-scope
