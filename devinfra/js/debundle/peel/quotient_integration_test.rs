@@ -194,28 +194,21 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
 
 // ---------- Gate-ladder pinning tests (plans/incremental_gate_unification.md §7.3). ----------
 //
-// These pin the module-level gate predicate decided in the plan's §2.
-// They assert the DESIRED behavior, which the current class-level
-// PK/cone gate gets wrong, so they are `#[ignore]`d until PR 4 of the
-// plan's §8 cuts the boolean gate over to the realizability ladder and
-// un-ignores them. The current (wrong) behavior is pinned by the
-// differential harness's divergence catalog in
-// `peel/gate_differential_test.rs`. The third §7.3 case — preservation
-// of `seed_skips_unrealizable_spec_module_contraction_and_reports` —
-// is the existing (non-ignored) test above.
+// These pin the module-level gate predicate decided in the plan's §2,
+// which `check_merge_boolean` routes through since the §8 PR 4
+// cutover. The third §7.3 case — preservation of
+// `seed_skips_unrealizable_spec_module_contraction_and_reports` —
+// is the existing test above.
 
 /// §2's atomic-unit anomaly: a 3-owner atomic unit whose members form
 /// a constraining cycle `a → b → c → a` exists precisely because its
 /// members MUST co-locate, and the module-level predicate accepts the
 /// contractions (all three owners project to the residual module, so
-/// every merge is a delta-free no-op). The current class-level gate
-/// rejects them: the class graph is `!is_dag` from construction, the
-/// cone-DFS fallback finds the pre-existing (transient) path
-/// `b → c → a`, and the unit cannot seed.
+/// every merge is a delta-free no-op). The deleted class-level gate
+/// rejected them: the class graph was cyclic from construction, the
+/// cone-DFS fallback found the pre-existing (transient) path
+/// `b → c → a`, and the unit could not seed.
 #[test]
-#[ignore = "gate ladder PR 4 (plans/incremental_gate_unification.md §8): the \
-            class-level cycle gate over-rejects merges internal to the residual \
-            module; un-ignore when check_merge_boolean routes through the ladder"]
 fn seed_co_locates_constraining_cycle_atomic_unit() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
@@ -249,10 +242,10 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
 /// §1's Pass-2 blindness: a merge that closes an asymmetric I-SCC
 /// (eager forward, lazy back) where the `EsmEvaluationSimulator`
 /// proves TDZ must be rejected AT THE MERGE, with
-/// `EsmEvaluationTdz`-backed evidence. The current hot gate sees only
-/// constraining class edges, accepts, and commits; the only backstop
-/// is `build_seed_quotient`'s post-seed `PostSeedUnrealizableScc`
-/// report, which does not undo the merge.
+/// `EsmEvaluationTdz`-backed evidence. The deleted hot gate saw only
+/// constraining class edges, accepted, and committed; the only
+/// backstop was `build_seed_quotient`'s post-seed
+/// `PostSeedUnrealizableScc` report, which does not undo the merge.
 ///
 /// Shape: pre-existing module `ui/x` = {x}; residual-pile owners `r`
 /// (stays) and `h` (the merge candidate). `x` eager-reads `r`'s
@@ -262,9 +255,6 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
 /// carries a constraining pair targeting residual — the DFS root
 /// evaluates last, so `M`'s eager read of `r`'s binding TDZs.
 #[test]
-#[ignore = "gate ladder PR 4 (plans/incremental_gate_unification.md §8): the \
-            hot boolean gate is blind to Pass-2 (EsmEvaluationTdz) rejections; \
-            un-ignore when check_merge_boolean routes through the ladder"]
 fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
     let r = residual_owner("owner:r", 2, &["BindingR"], 5);
@@ -1397,7 +1387,7 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
         make_module_group("ui/h", vec![1]),
         make_module_group("ui/b", vec![2]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let (q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
 
     for (left, right, expected_preserves) in [
         (ClassId(0), ClassId(1), true),
@@ -2860,18 +2850,18 @@ fn lazy_pq_greedy_matches_full_scan_greedy_on_corpus() {
 }
 
 #[test]
-fn gate_bypassing_partition_cycle_degrades_gracefully_and_recovers() {
+fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
     // `from_report_with_partition` bypasses the contraction gate: a
-    // group that closes a class-graph cycle is legal input. Shape:
+    // group that closes a module-graph cycle is legal input. Shape:
     // a → b → c (owner constraining edges), group {a, c}. Contracting
-    // a and c yields the class cycle {a,c} → b → {a,c}. The
-    // incremental topo order's window Kahn cannot complete during the
-    // group merge — this used to be a reachable release-mode
-    // `assert_eq!` panic; it must instead degrade to the slow cycle
-    // gate and keep answering correctly. Distinct active destinations
-    // keep each class on its own ModuleId so the cycle stays visible
-    // to the realizability projection (an all-residual fixture would
-    // collapse into one module and hide it).
+    // a and c yields the module cycle {a,c} → b → {a,c}. The kernel
+    // must surface the cycle as evidence and keep gating correctly on
+    // the unrealizable state (the ladder's CondensationOrder handles
+    // cyclic condensations natively — no degraded mode). Distinct
+    // active destinations keep each class on its own ModuleId so the
+    // cycle stays visible to the realizability projection (an
+    // all-residual fixture would collapse into one module and hide
+    // it).
     let a = active_owner("owner:a", 1, &["BindingA"], 5, "ui/a");
     let b = active_owner("owner:b", 2, &["BindingB"], 5, "ui/b");
     let c = active_owner("owner:c", 3, &["BindingC"], 5, "ui/c");
@@ -2904,7 +2894,7 @@ fn gate_bypassing_partition_cycle_degrades_gracefully_and_recovers() {
         "the bypassed contraction's class cycle must surface in cycle_set()",
     );
 
-    // The (degraded, cone-DFS-backed) gate still answers: merging the
+    // The gate still answers on the unrealizable state: merging the
     // cycle classes together dissolves the cycle into one class, so
     // the contraction is permitted and the kernel returns to a
     // realizable, cycle-free state.

@@ -1007,6 +1007,17 @@ impl IncrementalQuotient {
         simulation.tdz_pairs(modules, &effective_pairs).collect()
     }
 
+    /// Whether `a` and `b` sit in the same multi-module SCC of the
+    /// maintained constraining condensation — the `O(α)` DSU probe
+    /// behind the greedy's cycle-reduction sort key. On realizable
+    /// committed states (clause 3, Pass 1 clean) no multi-module
+    /// constraining SCC exists, so this is `false` for every pair.
+    pub(super) fn modules_share_constraining_multi_scc(&self, a: ModuleId, b: ModuleId) -> bool {
+        self.constraining_order
+            .borrow_mut()
+            .same_multi_scc(&self.constraining_graph, a, b)
+    }
+
     /// Tier-0 memo: `verdict_touching(module).is_realizable()` against
     /// the committed quotient state, cached until the next mutation.
     fn touching_is_clean(&self, module: ModuleId) -> bool {

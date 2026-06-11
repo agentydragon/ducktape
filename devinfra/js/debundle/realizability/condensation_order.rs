@@ -2,9 +2,10 @@
 //! incremental-gate unification design
 //! (`plans/incremental_gate_unification.md` §4).
 //!
-//! Generalizes the peel kernel's Pearce–Kelly `TopoOrder`
-//! (`peel/topo_order.rs`) from "topological order over a DAG, degrade
-//! to `!is_dag` when cycles appear" to "topological order over the
+//! Generalizes the peel kernel's deleted Pearce–Kelly `TopoOrder`
+//! (formerly `peel/topo_order.rs`; absorbed here by the §8 PR 4
+//! cutover) from "topological order over a DAG, degrade to `!is_dag`
+//! when cycles appear" to "topological order over the
 //! **condensation** of an arbitrary directed graph": a union-find
 //! tracks SCC membership, a PK rank order is maintained over the
 //! condensation DAG, and cycles are **unioned** instead of degrading
@@ -195,6 +196,21 @@ where
         };
         let rep = find(&mut self.scc_parent, idx);
         self.module_count[rep as usize] >= 2
+    }
+
+    /// Whether `u` and `v` sit in the same multi-module SCC. The
+    /// `O(α)` DSU probe backing the greedy's cycle-reduction sort key
+    /// (`plans/incremental_gate_unification.md` §6): a merge of two
+    /// modules inside one multi-module SCC dissolves part of an
+    /// unrealizable cycle. Rebuilds first if stale.
+    pub fn same_multi_scc(&mut self, base: &RollbackDiGraph<N>, u: N, v: N) -> bool {
+        self.ensure_fresh(base);
+        let (Some(&iu), Some(&iv)) = (self.idx_of.get(&u), self.idx_of.get(&v)) else {
+            return false;
+        };
+        let su = find(&mut self.scc_parent, iu);
+        let sv = find(&mut self.scc_parent, iv);
+        su == sv && self.module_count[su as usize] >= 2
     }
 
     /// Report a committed edge insertion. Call **after**
@@ -1214,8 +1230,8 @@ mod tests {
 
     #[test]
     fn insert_edge_closing_cycle_unions_scc_instead_of_degrading() {
-        // 0 → 1 → 2, then insert 2 → 0: the kernel TopoOrder would
-        // degrade to !is_dag here; the condensation order unions.
+        // 0 → 1 → 2, then insert 2 → 0: a plain PK topological order
+        // has no valid order here; the condensation order unions.
         let mut base = graph(&[(0, 1), (1, 2), (2, 3)]);
         let mut order = order_via_inserts(&base);
         assert!(!order.is_in_multi_scc(&base, 0));
@@ -1417,8 +1433,7 @@ mod tests {
         assert_eq!(order.current_epoch, 1);
     }
 
-    /// Simple xorshift RNG for deterministic tests (same shape as
-    /// `peel/topo_order.rs`).
+    /// Simple xorshift RNG for deterministic tests.
     struct SimpleRng(u64);
     impl SimpleRng {
         fn new(seed: u64) -> Self {
@@ -1556,8 +1571,8 @@ mod tests {
     fn random_contraction_sequences_union_instead_of_degrading() {
         // Pure contraction runs over random DAGs — contractions may
         // freely close cycles (no gating), and the structure must keep
-        // a valid condensation order throughout (the kernel TopoOrder
-        // degrades to !is_dag here).
+        // a valid condensation order throughout (a plain PK order over
+        // the raw graph has no valid order once a cycle closes).
         let seeds: &[u64] = &[0xC0FFEE, 0xDEADBEEF, 0x1234];
         for &seed in seeds {
             let mut rng = SimpleRng::new(seed);

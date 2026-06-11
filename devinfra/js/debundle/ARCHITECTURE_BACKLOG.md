@@ -157,10 +157,6 @@ The historical drift surface — the emitter placed phantom side-effect imports 
 
 Remaining known approximation: the simulator roots at `partition.residual()` (the `anon_residual_sentinel` ≈ the entry file) and models its body as evaluating last. That is exact for the entry file in both `unassigned_mode`s; the `catchall_file` plan itself is an ordinary module and is modeled as one. Pass-2 candidate SCC enumeration still runs over the _real_ I-graph (no universal residual edges), so a module that eager-reads an entry-file binding when residual's own statements never reference that module forms no candidate SCC and is not checked — a narrow, pre-existing under-restriction (inline-mode-only: catchall chunks keep no TDZ-prone bindings in the entry file). Extending candidate enumeration with the universal entry edges would close it at the cost of much larger SCCs in the incremental planner path.
 
-### Should the kernel's merge gate route through the realizability index?
-
-The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycle` (a constraining-only Pearce–Kelly walk over the kernel-maintained `TopoOrder` + class adjacency in `peel/quotient.rs`), with `build_seed_quotient`'s post-seed `check_realizability` pass as the backstop for asymmetric I-cycles. docs/design.md §"Why not Pearce–Kelly verbatim" documents this as the current trade-off. The open question: route the hot gate through the `RealizabilityIndex` (one source of truth, slower per query) vs. keep the PK gate (fast, but a second decision-making derived structure the kernel must keep consistent).
-
 ### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
 
 Implement only if corpus profiling (`perf/proposer.md`) shows the binding-keyed graph paths as a material cost; docs/design.md marks the sketch as hypothetical with the same trigger. Until then it stays unimplemented — do not treat the design.md sketch as a description of the code.

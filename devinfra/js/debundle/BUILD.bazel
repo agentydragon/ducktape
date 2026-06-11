@@ -462,7 +462,6 @@ rust_library(
         "peel/mod.rs",
         "peel/plan.rs",
         "peel/quotient.rs",
-        "peel/topo_order.rs",
     ],
     crate_root = "peel/mod.rs",
     edition = "2024",

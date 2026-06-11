@@ -1,30 +1,23 @@
-//! Differential harness skeleton for the gate-ladder unification
-//! (`plans/incremental_gate_unification.md` §7.1; PR 1 of §8).
+//! Differential harness for the gate-ladder unification
+//! (`plans/incremental_gate_unification.md` §7.1).
 //!
 //! Compares the kernel's hot boolean merge gate
 //! (`QuotientGraph::merge_preserves_invariants`) against the plan-§2
-//! **reference predicate**: `gate(c1, c2)` should accept iff
+//! **reference predicate**: `gate(c1, c2)` accepts iff
 //! `check_realizability_touching(owner_graph, post_partition, M)` is
 //! realizable, where `M` is the post-merge module and
 //! `post_partition` is built by an independent reference projection
 //! (NOT the kernel's own `project_partition`).
 //!
-//! The current gate is a constraining-only class-level walk and is
-//! KNOWN to diverge from the reference; every divergence the harness
-//! observes must fall into the catalog below ([`DivergenceClass`]),
-//! and the deterministic fixtures assert that each cataloged
-//! divergence actually occurs today — the "known-divergence catalog
-//! encoded as expected failures". When PR 4 routes
-//! `check_merge_boolean` through the realizability ladder, those
-//! fixture assertions flip to agreement and this harness becomes a
-//! strict-equality check (and the catalog is deleted).
-//!
-//! PR 3 additions: every comparison also runs the index's tier
-//! ladder (`QuotientGraph::ladder_decision_for_merge`) and asserts
-//! **strict equality** against the reference plus per-tier skip
-//! soundness (§7.1) — the ladder has no divergence catalog; only the
-//! legacy class-level gate keeps one until PR 4 routes
-//! `check_merge_boolean` through the ladder.
+//! Since the §8 PR 4 cutover, `check_merge_boolean` routes through
+//! the index's tier ladder, so the harness asserts **strict
+//! equality** on every precondition-passing query — the pre-cutover
+//! known-divergence catalog is gone. Every comparison also asserts
+//! per-tier skip soundness (§7.1) against the ladder's decision so a
+//! ladder bug localizes to its tier. The deterministic fixtures pin
+//! the three semantic fixes the cutover landed (the atomic-unit /
+//! residual-pile over-rejection, Pass-2 blindness, module-granularity
+//! Pass 1) plus the clause-2 cross-rebind caveat.
 //!
 //! Skeleton caveat (completed by Track F1 in later PRs): generation
 //! uses a deterministic xorshift sweep over small synthetic reports
@@ -160,50 +153,13 @@ fn reference_partition(
 }
 
 // ---------------------------------------------------------------------
-// Query comparison + the known-divergence catalog.
+// Query comparison.
 // ---------------------------------------------------------------------
-
-/// Catalog of divergences the current (pre-ladder) gate is known to
-/// produce against the reference predicate. Anything outside this
-/// enum fails the harness. PR 4 empties the catalog.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum DivergenceClass {
-    /// Gate rejects, reference accepts: the class-level walk sees a
-    /// cycle among classes that project into one module (plan §2's
-    /// atomic-unit anomaly and pass-3 class-cycle rejections).
-    ClassLevelOverRejection,
-    /// Gate accepts, reference rejects with `EsmEvaluationTdz`: the
-    /// hot gate is blind to Pass 2 (plan §1 item 1).
-    Pass2Blindness,
-    /// Gate accepts, reference rejects with a
-    /// `MutualConstrainingCycle`: the class graph is finer than the
-    /// module projection, so a cycle through two *distinct* residual
-    /// classes is invisible at class granularity (plan §1 item 2).
-    ModuleGranularityPass1,
-    /// Gate accepts, reference rejects with a clause-2 cross-rebind:
-    /// the hot gate never checks rebinds, and a gate-residual
-    /// promotion can turn an intra-residual rebind into a
-    /// cross-module one (a caveat to plan §3's "merges only ever
-    /// convert cross-rebinds to intra-module" formality claim).
-    CrossRebindBlindness,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum QueryOutcome {
-    Agree,
-    /// The PRE-state verdict touching `M` is already unrealizable.
-    /// The plan-§2 equality claim ("touching-filtered and
-    /// full-verdict accept/reject coincide") is scoped to realizable
-    /// pre-states, so these queries are outside the harness's
-    /// equality domain and are tallied, not compared.
-    DirtyPreState,
-    Diverged(DivergenceClass),
-}
 
 /// Public replica of the kernel's non-cycle merge preconditions
 /// (same class / emptiness / residual stickiness / line cap). The
-/// reference predicate covers only the cycle clause, so the harness
-/// compares only when these pass.
+/// reference predicate covers only the realizability clause, so the
+/// harness compares only when these pass.
 fn preconditions_pass(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     c1 != c2
         && q.class_members(c1).next().is_some()
@@ -212,34 +168,8 @@ fn preconditions_pass(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
         && q.class_lines(c1).saturating_add(q.class_lines(c2)) <= CAP_LINES
 }
 
-fn classify_divergence(gate_accepts: bool, reference: &RealizabilityVerdict) -> DivergenceClass {
-    if !gate_accepts {
-        return DivergenceClass::ClassLevelOverRejection;
-    }
-    if reference
-        .unrealizable_sccs
-        .iter()
-        .any(|scc| scc.rejection == SccRejection::MutualConstrainingCycle)
-    {
-        return DivergenceClass::ModuleGranularityPass1;
-    }
-    if reference
-        .unrealizable_sccs
-        .iter()
-        .any(|scc| scc.rejection == SccRejection::EsmEvaluationTdz)
-    {
-        return DivergenceClass::Pass2Blindness;
-    }
-    assert!(
-        !reference.cross_rebinds.is_empty(),
-        "a rejecting reference verdict with no SCCs must carry cross-rebinds: {reference:#?}",
-    );
-    DivergenceClass::CrossRebindBlindness
-}
-
-/// PR 3 (plan §8): the tier ladder must equal the reference predicate
-/// on EVERY query — the divergence catalog does not apply to it — and
-/// each deciding tier must be certified by the reference shape its
+/// The tier ladder must equal the reference predicate on EVERY query,
+/// and each deciding tier must be certified by the reference shape its
 /// skip-condition theorem names (plan §7.1 tier-skip soundness), so a
 /// ladder bug localizes to its tier.
 fn assert_ladder_matches_reference(
@@ -291,45 +221,43 @@ fn assert_ladder_matches_reference(
     }
 }
 
-/// Run one gate-vs-reference comparison. Returns `None` when the
-/// non-cycle preconditions fail (the gate's `false` would not be a
-/// predicate decision).
+/// Run one gate-vs-reference comparison: asserts the boolean gate and
+/// the ladder both equal the reference predicate, then returns the
+/// ladder's decision (`accepts()` is the gate decision, asserted
+/// equal). Returns `None` when the non-cycle preconditions fail (the
+/// gate's `false` would not be a predicate decision).
 fn compare_gate_to_reference(
     report: &OwnerGraphReport,
     q: &mut QuotientGraph,
     c1: ClassId,
     c2: ClassId,
-) -> Option<QueryOutcome> {
+) -> Option<LadderDecision> {
     if !preconditions_pass(q, c1, c2) {
         return None;
     }
     let residual_ids = residual_owner_ids(report);
     let (pre_modules, next_fresh) = reference_class_modules(q, &residual_ids);
     let post_module = reference_post_module(q, &residual_ids, &pre_modules, next_fresh, c1, c2);
-    let pre_partition = reference_partition(q, &pre_modules, None);
     let post_partition = reference_partition(q, &pre_modules, Some((c1, c2, post_module)));
     let owner_graph = q.owner_graph_for_tests();
     let reference = check_realizability_touching(owner_graph, &post_partition, post_module);
-    let pre_dirty =
-        !check_realizability_touching(owner_graph, &pre_partition, post_module).is_realizable();
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
-    // The ladder is the post-state predicate itself, so its equality
-    // claim is NOT scoped to clean pre-states — assert on every query.
     let ladder = q.ladder_decision_for_merge(c1, c2);
     assert_ladder_matches_reference(c1, c2, ladder, &reference);
-    Some(if gate_accepts == reference.is_realizable() {
-        QueryOutcome::Agree
-    } else if pre_dirty {
-        QueryOutcome::DirtyPreState
-    } else {
-        QueryOutcome::Diverged(classify_divergence(gate_accepts, &reference))
-    })
+    assert_eq!(
+        gate_accepts,
+        reference.is_realizable(),
+        "({c1:?}, {c2:?}): boolean gate diverges from the reference \
+         predicate (ladder {ladder:?}): {reference:#?}",
+    );
+    Some(ladder)
 }
 
 // ---------------------------------------------------------------------
-// Deterministic divergence fixtures — the catalog's expected failures.
-// Each asserts the divergence the current gate produces TODAY; when
-// PR 4 lands the ladder, these flip to `Agree` and the catalog dies.
+// Deterministic fixtures pinning the semantic fixes the §8 PR 4
+// cutover landed. Pre-cutover, each was a cataloged divergence of the
+// class-level gate; post-cutover the gate equals the reference and
+// each fixture pins the decision's direction.
 // ---------------------------------------------------------------------
 
 fn make_module_group(module_id: &str, owner_idxs: Vec<usize>) -> PartitionGroup {
@@ -371,24 +299,19 @@ fn gate_matches_reference_on_clean_chain() {
     let live: Vec<ClassId> = q.iter_classes().collect();
     for i in 0..live.len() {
         for j in (i + 1)..live.len() {
-            let outcome = compare_gate_to_reference(&report, &mut q, live[i], live[j])
+            // Equality with the reference is asserted inside.
+            compare_gate_to_reference(&report, &mut q, live[i], live[j])
                 .expect("chain classes pass preconditions");
-            assert_eq!(
-                outcome,
-                QueryOutcome::Agree,
-                "({:?}, {:?}) must agree on the clean chain",
-                live[i],
-                live[j],
-            );
         }
     }
 }
 
-/// Expected failure (plan §2, atomic-unit anomaly): merging two
-/// members of a residual-pile constraining 3-cycle is a delta-free
-/// no-op for the reference, but the class-level gate rejects it.
+/// Plan §2's atomic-unit anomaly, fixed: merging two members of a
+/// residual-pile constraining 3-cycle is a delta-free no-op for the
+/// module-level predicate and must be accepted. The deleted
+/// class-level gate over-rejected it.
 #[test]
-fn gate_over_rejects_residual_pile_cycle_merge() {
+fn gate_accepts_residual_pile_cycle_merge() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
     let c = residual_owner("owner:c", 3, &["BindingC"], 5);
@@ -409,21 +332,20 @@ fn gate_over_rejects_residual_pile_cycle_merge() {
     let mut q = QuotientGraph::from_report(&report, CAP_LINES);
     let ca = q.class_of(q.owner_idx_of("owner:a").unwrap());
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
-    let outcome = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
+    let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
     assert_eq!(
-        outcome,
-        QueryOutcome::Diverged(DivergenceClass::ClassLevelOverRejection),
-        "current gate is expected to over-reject this residual-pile \
-         merge; if this now AGREES, the ladder landed — un-ignore the \
-         §7.3 pinning tests and flip this harness to strict equality",
+        ladder,
+        LadderDecision::DeltaFreeAccept,
+        "residual-pile merge is a delta-free no-op for the module-level \
+         gate and must be accepted at tier 0",
     );
 }
 
-/// Expected failure (plan §1 item 1): a merge that closes an
-/// asymmetric I-SCC whose constraining pair TDZs is accepted by the
-/// hot gate but rejected by the reference with `EsmEvaluationTdz`.
+/// Plan §1 item 1, fixed: a merge that closes an asymmetric I-SCC
+/// whose constraining pair TDZs is rejected at the merge (tier 3,
+/// `EsmEvaluationTdz`). The deleted hot gate was Pass-2-blind here.
 #[test]
-fn gate_accepts_pass2_tdz_merge_reference_rejects() {
+fn gate_rejects_pass2_tdz_merge() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
     let r = residual_owner("owner:r", 2, &["BindingR"], 5);
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
@@ -445,22 +367,21 @@ fn gate_accepts_pass2_tdz_merge_reference_rejects() {
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
-    let outcome = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
+    let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
     assert_eq!(
-        outcome,
-        QueryOutcome::Diverged(DivergenceClass::Pass2Blindness),
-        "current gate is expected to be Pass-2-blind here; if this now \
-         AGREES, the ladder landed — un-ignore the §7.3 pinning tests \
-         and flip this harness to strict equality",
+        ladder,
+        LadderDecision::SimulatorReject,
+        "TDZ-closing merge must be rejected at the merge by tier 3",
     );
 }
 
-/// Expected failure (plan §1 item 2): the class graph is finer than
-/// the module projection. `a → r1` and `r2 → b` involve two distinct
-/// residual classes, so promoting `b` into `ui/a` closes the
-/// module-level mutual cycle `M ↔ R` without any class-level cycle.
+/// Plan §1 item 2, fixed: the class graph is finer than the module
+/// projection. `a → r1` and `r2 → b` involve two distinct residual
+/// classes, so promoting `b` into `ui/a` closes the module-level
+/// mutual cycle `M ↔ R` without any class-level cycle — invisible to
+/// the deleted class-granularity gate, rejected by tier 1.
 #[test]
-fn gate_accepts_module_granularity_pass1_cycle_reference_rejects() {
+fn gate_rejects_module_granularity_pass1_cycle() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
     let r1 = residual_owner("owner:r1", 2, &["BindingR1"], 5);
     let r2 = residual_owner("owner:r2", 3, &["BindingR2"], 5);
@@ -484,23 +405,20 @@ fn gate_accepts_module_granularity_pass1_cycle_reference_rejects() {
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
     let ca = group_ids[0];
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
-    let outcome = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
+    let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
     assert_eq!(
-        outcome,
-        QueryOutcome::Diverged(DivergenceClass::ModuleGranularityPass1),
-        "current gate is expected to miss the module-granularity \
-         Pass-1 cycle; if this now AGREES, the ladder landed — \
-         un-ignore the §7.3 pinning tests and flip this harness to \
-         strict equality",
+        ladder,
+        LadderDecision::ConstrainingCycleReject,
+        "module-granularity Pass-1 cycle must be rejected by tier 1",
     );
 }
 
-/// Expected failure (clause-2 caveat to plan §3): a rebind between
-/// two residual-pile owners is intra-module pre-merge; promoting the
-/// writer's class into `ui/a` makes it a cross-module rebind the hot
-/// gate never checks.
+/// Clause-2 caveat to plan §3, fixed: a rebind between two
+/// residual-pile owners is intra-module pre-merge; promoting the
+/// writer's class into `ui/a` makes it a cross-module rebind, which
+/// tier 1 rejects. The deleted hot gate never checked rebinds.
 #[test]
-fn gate_accepts_promotion_created_cross_rebind_reference_rejects() {
+fn gate_rejects_promotion_created_cross_rebind() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
     let h = residual_owner("owner:h", 2, &["BindingH"], 5);
     let r = residual_owner("owner:r", 3, &["BindingR"], 5);
@@ -525,14 +443,12 @@ fn gate_accepts_promotion_created_cross_rebind_reference_rejects() {
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups);
     let ca = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
-    let outcome = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
+    let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
     assert_eq!(
-        outcome,
-        QueryOutcome::Diverged(DivergenceClass::CrossRebindBlindness),
-        "current gate is expected to be blind to promotion-created \
-         cross-rebinds; if this now AGREES, the ladder landed — \
-         un-ignore the §7.3 pinning tests and flip this harness to \
-         strict equality",
+        ladder,
+        LadderDecision::CrossRebindReject,
+        "promotion-created cross-module rebind must be rejected by \
+         tier 1's clause-2 check",
     );
 }
 
@@ -644,12 +560,14 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
 /// (`build_seed_quotient`), then alternate full pairwise gate-vs-
 /// reference comparison rounds with committed mutations (the real
 /// greedy driver, plus directly-contracted gate-accepted pairs).
-/// Every divergence must be a cataloged [`DivergenceClass`];
-/// `classify_divergence` panics on any rejecting-reference shape
-/// outside the catalog.
+/// `compare_gate_to_reference` asserts strict gate == reference ==
+/// ladder equality plus tier-skip soundness on every query.
 #[test]
-fn randomized_gate_divergences_stay_within_catalog() {
-    let mut tally: BTreeMap<&'static str, usize> = BTreeMap::new();
+fn randomized_gate_equals_reference() {
+    // Keyed by `LadderDecision` debug name — the sweep's tier-hit
+    // distribution — plus "preconditions_failed".
+    let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+    let mut compared = 0usize;
     for seed in 1..=60u64 {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let (report, spec) = random_report(&mut rng);
@@ -660,33 +578,14 @@ fn randomized_gate_divergences_stay_within_catalog() {
             let mut accepted_pair: Option<(ClassId, ClassId)> = None;
             for i in 0..live.len() {
                 for j in (i + 1)..live.len() {
-                    let Some(outcome) =
-                        compare_gate_to_reference(&report, &mut q, live[i], live[j])
+                    let Some(ladder) = compare_gate_to_reference(&report, &mut q, live[i], live[j])
                     else {
-                        *tally.entry("preconditions_failed").or_default() += 1;
+                        *tally.entry("preconditions_failed".to_string()).or_default() += 1;
                         continue;
                     };
-                    let key = match outcome {
-                        QueryOutcome::Agree => "agree",
-                        QueryOutcome::DirtyPreState => "dirty_pre_state",
-                        QueryOutcome::Diverged(DivergenceClass::ClassLevelOverRejection) => {
-                            "class_level_over_rejection"
-                        }
-                        QueryOutcome::Diverged(DivergenceClass::Pass2Blindness) => {
-                            "pass2_blindness"
-                        }
-                        QueryOutcome::Diverged(DivergenceClass::ModuleGranularityPass1) => {
-                            "module_granularity_pass1"
-                        }
-                        QueryOutcome::Diverged(DivergenceClass::CrossRebindBlindness) => {
-                            "cross_rebind_blindness"
-                        }
-                    };
-                    *tally.entry(key).or_default() += 1;
-                    if matches!(outcome, QueryOutcome::Agree)
-                        && accepted_pair.is_none()
-                        && q.merge_preserves_invariants(live[i], live[j])
-                    {
+                    compared += 1;
+                    *tally.entry(format!("{ladder:?}")).or_default() += 1;
+                    if ladder.accepts() && accepted_pair.is_none() {
                         accepted_pair = Some((live[i], live[j]));
                     }
                 }
@@ -705,11 +604,10 @@ fn randomized_gate_divergences_stay_within_catalog() {
             }
         }
     }
-    let agreed = tally.get("agree").copied().unwrap_or(0);
     assert!(
-        agreed >= 100,
+        compared >= 100,
         "sweep must exercise a meaningful number of in-domain \
-         agreeing queries; tally: {tally:?}",
+         queries; tally: {tally:?}",
     );
-    eprintln!("gate-vs-reference sweep tally: {tally:?}");
+    eprintln!("gate-vs-reference sweep tier tally ({compared} compared): {tally:?}");
 }

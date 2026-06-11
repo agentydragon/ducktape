@@ -18,31 +18,27 @@
 //! Commit 2 of the plan adds:
 //! - `greedy_merge_to_convergence` — the greedy contraction loop
 //!   with deterministic `pick_best` tiebreaks.
-//! - Incremental cycle-set cache. The cycle set is computed once in
-//!   `from_report*` and maintained across `contract` calls without
-//!   rebuilding from scratch. Merges only ever shrink the cycle set
-//!   (proof in the plan's "Why merges don't create cycles" section),
-//!   so the cache update is cheap: walk cycles touching the merged
-//!   endpoints, project class labels, drop cycles that collapse to
-//!   a single class.
 //! - `is_pre_existing_module` per-class metadata. Required by the
 //!   commit-2 greedy mergeability restriction ("extension of
 //!   existing module by orphaned residual class").
 //!
 //! ## The unified realizability gate (Track A)
 //!
-//! The kernel's cycle gate is the single function
-//! `gate::check_realizability(&OwnerGraph, &Partition)`. The same
-//! function the materializer's `validate_factorization` calls.
+//! The kernel's cycle gate is the realizability primitive itself
+//! (`gate::check_realizability(&OwnerGraph, &Partition)` — the same
+//! predicate the materializer's `validate_factorization` computes),
+//! evaluated at **module** granularity under the kernel's projection
+//! (`plans/incremental_gate_unification.md` §2): a speculative merge
+//! with post-merge module `M` is acceptable iff the post-merge
+//! partition has no clause-2 or clause-3 violation touching `M`.
 //!
 //! The kernel must not reimplement the gate over the JSON
 //! `OwnerGraphReport` adjacency: a constraining-only projection drops
 //! non-constraining edges and misses asymmetric `(eager forward, lazy
-//! back)` I-cycles that the materializer catches. The current kernel
+//! back)` I-cycles that the materializer catches. The kernel
 //! reconstructs an `OwnerGraph` from the report, stores it on the
-//! kernel, and projects each candidate query's class assignment back to
-//! a `Partition` whose verdict comes from the shared realizability
-//! primitive.
+//! kernel, and keeps a persistent `gate::RealizabilityIndex` in sync
+//! with its class projection.
 //!
 //! ## Cost of the unified gate
 //!
@@ -50,19 +46,21 @@
 //! merge-candidate queries run per (c1, c2) pair, so a from-scratch
 //! implementation would cost `O(|V|² · |E|)` per planner round.
 //!
-//! Commit 5 wires the kernel through `gate::RealizabilityIndex`,
-//! the persistent-state incremental form of the gate (docs/design.md
-//! "Realizability primitive → Iterative, undo-aware shape"). Per
-//! contract, the kernel pushes a `PartitionDelta::MoveOwners` for the
-//! loser class's owners onto the index; the index updates only the
-//! quotient edge buckets incident to the moved owners. Per query,
-//! the kernel uses `verdict_after_moving_owners_touching` — every
-//! speculative merge delta targets the single post-merge module
-//! (asserted in `realizability_cycles_after_contract`).
-//!
-//! See docs/design.md "Peel planner unification (Track A) → Cost and the
-//! upgrade path" for the per-merge cost analysis and the references
-//! block for the underlying literature.
+//! Instead, every query routes through the index's tier ladder
+//! (`ladder_decision_after_moving_owners_touching`, plan §3): tier 0
+//! short-circuits delta-free moves, tiers 1–2 answer Pass 1 /
+//! Pass-2-vacuity from maintained `CondensationOrder` structures in
+//! `O(α)`–`O(|Δ|)`, and tier 3 runs the shared scoped
+//! `EsmEvaluationSimulator` only for merges that land the target in a
+//! constraining-edge-bearing multi-module I-SCC. The boolean hot path
+//! (`check_merge_boolean`) and the evidence-producing diagnostic path
+//! (`would_be_cycles_after_contract`) are the same evaluation — one
+//! entry point, two output shapes — so the gate cannot drift from the
+//! materializer's verdict. Per committed contract, the kernel pushes
+//! `PartitionDelta::MoveOwners` deltas onto the index; speculative
+//! queries read it non-mutatingly through the overlay path (every
+//! speculative merge delta targets the single post-merge module,
+//! asserted in `realizability_cycles_after_contract`).
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -286,17 +284,6 @@ pub struct QuotientGraph {
     /// Cap on per-class combined lines. Exceeding this is a rejected
     /// merge.
     cap_lines: usize,
-    /// Cached cycle set, maintained incrementally across `contract`.
-    /// Recomputed from scratch in `from_report*`, then updated in
-    /// place. Invariants: classes monotonically decrease (a contracted
-    /// class id is rewritten to its survivor); cycles that collapse
-    /// to a single class are dropped.
-    cached_cycles: Vec<CycleClassSet>,
-    /// Class → indices into `cached_cycles` whose `classes` list
-    /// contains this class. Permits O(min(|cycles touching c1|,
-    /// |cycles touching c2|)) `merge_preserves_invariants` and
-    /// `contract`-time cycle maintenance.
-    class_to_cycle_indices: BTreeMap<ClassId, Vec<usize>>,
     /// Unified class-level out-edge adjacency. Indexed by `ClassId.0`
     /// (dense; dead classes have an empty map). For each source class
     /// `s`, `out_edges[s.0]` is a map from target class `t` to an
@@ -334,15 +321,6 @@ pub struct QuotientGraph {
     /// residual class transitions to non-residual via a contract
     /// that brings in a non-gate-residual member.
     next_module_idx: usize,
-    /// Incremental topological order over the live classes,
-    /// maintained across contractions via the Pearce-Kelly 2007
-    /// algorithm. Replaces the per-pop cone-DFS that was the
-    /// dominant inner cost — `merge_creates_new_constraining_cycle`
-    /// now reduces to an `O(|Δ|)` window-restricted reachability
-    /// check, and `apply_contract` runs a local Kahn over the
-    /// affected window `[ord[lo], ord[hi]]`. See
-    /// `peel/topo_order.rs` for the algorithm + invariants.
-    topo_ord: super::topo_order::TopoOrder,
 }
 
 /// One owner-edge with its `DepKind`-derived weight. Stored on the
@@ -516,18 +494,13 @@ impl QuotientGraph {
             owner_constraining_edges,
             owner_weighted_edges,
             cap_lines,
-            cached_cycles: Vec::new(),
-            class_to_cycle_indices: BTreeMap::new(),
             out_edges: vec![FxHashMap::default(); num_classes],
             in_neighbors: vec![FxHashSet::default(); num_classes],
             realizability_index,
             class_module_id,
             next_module_idx,
-            topo_ord: super::topo_order::TopoOrder::empty(),
         };
         q.rebuild_class_adjacency();
-        q.rebuild_cycle_cache();
-        q.rebuild_topo_ord();
         q
     }
 
@@ -599,13 +572,11 @@ impl QuotientGraph {
             group_class_ids.push(survivor);
         }
         // Partition seeding bypasses the gate, so the cached
-        // adjacency / cycle set / realizability index can drift from
-        // the per-merge incremental update. Rebuild from scratch so
+        // adjacency / realizability index can drift from the
+        // per-merge incremental update. Rebuild from scratch so
         // callers see the correct initial state.
         q.rebuild_class_adjacency();
-        q.rebuild_cycle_cache();
         q.rebuild_realizability_index();
-        q.rebuild_topo_ord();
         (q, group_class_ids)
     }
 
@@ -668,7 +639,7 @@ impl QuotientGraph {
     /// incrementally on each `contract`.
     pub fn cycle_set(&self) -> CycleEvidence {
         let verdict = self.realizability_index.verdict();
-        self.translate_verdict_to_evidence(&verdict, None)
+        self.translate_verdict_to_evidence(&verdict)
     }
 
     /// Public realizability verdict against the kernel's current
@@ -699,199 +670,59 @@ impl QuotientGraph {
     ///    other must be too (residual is sticky — never absorb a
     ///    non-residual class into the residual catch-all).
     /// 3. `class_lines(c1) + class_lines(c2) <= cap_lines`.
-    /// 4. Post-merge cycle set ⊆ current cycle set (always true for
-    ///    a merge — see the plan's "Why merges don't create cycles"
-    ///    — but checked defensively against future gate clauses).
+    /// 4. The post-merge partition, under the kernel's module
+    ///    projection, has no clause-2 or clause-3 violation touching
+    ///    the post-merge module (the tier-laddered realizability
+    ///    predicate, `plans/incremental_gate_unification.md` §2).
     ///
     /// State mutation: this hot boolean path does not materialize
-    /// diagnostic evidence, so the persistent realizability index is
-    /// not touched. `would_be_cycles_after_contract` remains the
-    /// diagnostic path and reads the index through the non-mutating
-    /// overlay query when it needs owner-level cycle evidence.
-    pub fn merge_preserves_invariants(&mut self, c1: ClassId, c2: ClassId) -> bool {
+    /// diagnostic evidence — the ladder short-circuits without
+    /// building verdicts. `would_be_cycles_after_contract` is the
+    /// same evaluation with evidence materialization enabled.
+    pub fn merge_preserves_invariants(&self, c1: ClassId, c2: ClassId) -> bool {
         self.check_merge_boolean(c1, c2)
     }
 
-    /// Diagnostic: what cycles would the merge create or surface?
-    /// Returns `None` if the post-merge partition is realizable.
-    /// Returns `Some(evidence)` if a multi-class SCC would surface
-    /// after the speculative `(c1, c2)` contraction.
+    /// Diagnostic: what violations would the merge create or surface?
+    /// Returns `None` if the post-merge partition is realizable
+    /// (touching the post-merge module). Returns `Some(evidence)`
+    /// otherwise.
     ///
-    /// **Fast path (constraining-only)**: this hot query uses the
-    /// localized class-adjacency BFS the pre-Track-A kernel used,
-    /// scoped to the merged class's cone. That's `O(|cone|)` per
-    /// query and bounds the greedy's overall cost at
-    /// `O(|V| · |cone|)`. The unified-gate `check_realizability`
-    /// call would be `O(|V| + |E|)` per query, pushing the greedy
-    /// to `O(|V|² · |E|)` — `~10⁹` ops on gaffer-scale inputs and
-    /// out of wall-clock budget today.
-    ///
-    /// The asymmetric I-cycle pass (the Track A regression case) is
-    /// covered by `build_seed_quotient`'s `post_seed_realizability_check`,
-    /// which runs the unified `check_realizability` once over the
-    /// final partition. Per-merge contractions that close
-    /// constraining-only cycles still surface here; asymmetric
-    /// I-cycles assembled across the post-seed partition surface in
-    /// the post-seed pass.
+    /// Same predicate as the boolean gate (`check_merge_boolean`):
+    /// the ladder decides, and only on a reject does this path
+    /// materialize owner-level evidence through the index's
+    /// non-mutating overlay verdict — one entry point, two output
+    /// shapes.
     ///
     /// The evidence shape (class IDs + owner ID strings) is
     /// preserved from the pre-Track-A kernel for compatibility with
     /// existing `SeedContractionRejected` JSON consumers.
     pub fn would_be_cycles_after_contract(
-        &mut self,
+        &self,
         c1: ClassId,
         c2: ClassId,
     ) -> Option<CycleEvidence> {
         if c1 == c2 {
             return None;
         }
-        // Cached cycle through both endpoints with > 2 classes
-        // survives the merge — short-circuit.
-        let (probe, other) = match (
-            self.class_to_cycle_indices.get(&c1),
-            self.class_to_cycle_indices.get(&c2),
-        ) {
-            (Some(a), Some(b)) => {
-                if a.len() <= b.len() {
-                    (a, c2)
-                } else {
-                    (b, c1)
-                }
-            }
-            _ => (&Vec::new() as &Vec<usize>, c2),
-        };
-        let mut surfaced: Vec<CycleClassSet> = Vec::new();
-        for &idx in probe {
-            let cycle = &self.cached_cycles[idx];
-            if cycle.classes.contains(&other) && cycle.classes.len() > 2 {
-                surfaced.push(cycle.clone());
-            }
+        if self.ladder_decision_for_merge(c1, c2).accepts() {
+            return None;
         }
-        if !surfaced.is_empty() {
-            surfaced.sort();
-            surfaced.dedup();
-            return Some(CycleEvidence { cycles: surfaced });
+        let evidence = self.realizability_cycles_after_contract(c1, c2);
+        if !evidence.is_empty() {
+            return Some(evidence);
         }
-
-        // Localized reachability: would merging create a new
-        // constraining-only multi-class SCC through the merged
-        // class?
-        if self.merge_creates_new_constraining_cycle(c1, c2) {
-            // Use the persistent realizability index to materialize
-            // the cycle's owner_ids / classes for the diagnostic.
-            // The overlay query reads the index without mutating it,
-            // so its committed partition is untouched.
-            let merged_class = if c1 < c2 { c1 } else { c2 };
-            let detailed = self.realizability_cycles_after_contract(c1, c2);
-            let new_cycles: Vec<CycleClassSet> = detailed
-                .cycles
-                .into_iter()
-                .filter(|cycle| cycle.classes.contains(&merged_class))
-                .collect();
-            if !new_cycles.is_empty() {
-                return Some(CycleEvidence { cycles: new_cycles });
-            }
-            // Fall back to a minimal evidence shape if the index
-            // didn't surface the cycle the fast check found
-            // (shouldn't happen, but defensive).
-            return Some(CycleEvidence {
-                cycles: vec![CycleClassSet {
-                    classes: vec![c1.min(c2), c1.max(c2)],
-                    owner_ids: Vec::new(),
-                }],
-            });
-        }
-        None
-    }
-
-    /// Fast check: does merging `c1` and `c2` introduce a new
-    /// constraining-only multi-class SCC through the merged class?
-    ///
-    /// Reduces to ordinary node-pair reachability in the pre-merge
-    /// DAG: a new cycle through the merged class exists iff there is
-    /// a path `c1 → ... → c2` (or reverse) through **at least one
-    /// intermediate class**. A direct edge `c1 → c2` just becomes a
-    /// self-loop after merge and is NOT a new cycle. (See the proof
-    /// sketch in `peel/topo_order.rs`.)
-    ///
-    /// Uses the persistently-maintained `out_edges` adjacency
-    /// (refreshed every contract by `update_class_adjacency_after_merge`);
-    /// only constraining edges (`constraining_count > 0`) participate
-    /// in the DFS — the cycle gate is constraining-only.
-    ///
-    /// When the class graph is a DAG, the maintained Pearce-Kelly
-    /// topological order answers this in `O(|Δ|)` per check, bounded
-    /// by the affected region — typically much smaller than the
-    /// reachable cone the pre-PK kernel walked. When the graph
-    /// contains pre-existing cycles (`!topo_ord.is_dag()`), no valid
-    /// topo order exists, and we fall back to the original localized
-    /// cone-DFS over the projected post-merge graph. The fallback
-    /// matches the pre-PK behavior bit-for-bit and is only taken
-    /// when the seed produces a non-realizable partition (rare on
-    /// well-formed corpora).
-    fn merge_creates_new_constraining_cycle(&mut self, c1: ClassId, c2: ClassId) -> bool {
-        if self.topo_ord.is_dag() {
-            return self.topo_ord.would_create_cycle(c1, c2, &self.out_edges);
-        }
-        self.cone_dfs_creates_new_cycle(c1, c2)
-    }
-
-    /// Original cone-DFS cycle check. Kept as a fallback for the
-    /// rare case where the class graph contains pre-existing cycles
-    /// — in that case the maintained Pearce-Kelly topological order
-    /// is not a valid ordering, so we cannot use the fast PK path.
-    /// See `merge_creates_new_constraining_cycle` for context.
-    fn cone_dfs_creates_new_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
-        if c1 == c2 {
-            return false;
-        }
-        let (target, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
-        // Build the BFS frontier from the *post-merge* target's
-        // out-neighbors: union of `out_edges[target.0]` and
-        // `out_edges[loser.0]` filtered to constraining edges, with
-        // `loser` relabeled to `target` and self-loops dropped.
-        let mut seen: BTreeSet<ClassId> = BTreeSet::new();
-        let mut stack: Vec<ClassId> = Vec::new();
-        let push_succ = |succ: ClassId, seen: &mut BTreeSet<ClassId>, stack: &mut Vec<ClassId>| {
-            let mapped = if succ == loser { target } else { succ };
-            if mapped == target {
-                return;
-            }
-            if seen.insert(mapped) {
-                stack.push(mapped);
-            }
-        };
-        for (&n, edge) in &self.out_edges[target.0] {
-            if edge.constraining_count == 0 {
-                continue;
-            }
-            push_succ(n, &mut seen, &mut stack);
-        }
-        for (&n, edge) in &self.out_edges[loser.0] {
-            if edge.constraining_count == 0 {
-                continue;
-            }
-            push_succ(n, &mut seen, &mut stack);
-        }
-        if stack.is_empty() {
-            return false;
-        }
-        while let Some(node) = stack.pop() {
-            debug_assert_ne!(node, loser);
-            for (&next, edge) in &self.out_edges[node.0] {
-                if edge.constraining_count == 0 {
-                    continue;
-                }
-                let mapped = if next == loser { target } else { next };
-                if mapped == target {
-                    return true;
-                }
-                if seen.insert(mapped) {
-                    stack.push(mapped);
-                }
-            }
-        }
-        false
+        // The ladder rejected but the verdict translation produced no
+        // multi-class SCC evidence — a clause-2 cross-rebind reject
+        // (no SCC to render), or an SCC whose owners collapse into a
+        // single class under the projection. Surface a minimal
+        // two-class evidence shape so callers still see a rejection.
+        Some(CycleEvidence {
+            cycles: vec![CycleClassSet {
+                classes: vec![c1.min(c2), c1.max(c2)],
+                owner_ids: Vec::new(),
+            }],
+        })
     }
 
     /// Apply a contraction. Returns `Err(ContractRejected)` if any
@@ -948,28 +779,6 @@ impl QuotientGraph {
             self.classes[winner.0].is_pre_existing_module = true;
         }
         self.update_class_adjacency_after_merge(winner, loser);
-        if self.topo_ord.is_dag() {
-            // Maintain the Pearce-Kelly topological order. `out_edges` /
-            // `in_neighbors` already reflect the post-merge adjacency;
-            // the PK reorder runs over the affected window only. A
-            // gate-bypassing cycle-creating merge degrades the order
-            // to `!is_dag` here instead of keeping it valid.
-            self.topo_ord
-                .apply_contract(winner, loser, &self.out_edges, &self.in_neighbors);
-        } else {
-            // Degraded order (a previous gate-bypassing merge created
-            // a class-graph cycle). While degraded, every cycle check
-            // already pays the slow cone-DFS, so spend O(|V| + |E|)
-            // per committed contraction attempting a full rebuild —
-            // contractions are the only events that can dissolve the
-            // cycle, and the first one that does restores the PK fast
-            // path instead of leaving `!is_dag` as a permanent perf
-            // degradation.
-            self.rebuild_topo_ord();
-        }
-        #[cfg(debug_assertions)]
-        debug_assert!(self.topo_ord.validate(&self.out_edges).is_ok());
-        self.update_cycle_cache_after_merge(winner, loser);
         // Commit the realizability-index deltas. These are pushed
         // permanently (no undo) because the kernel mutation just
         // landed. Update the class -> module map: winner gets
@@ -993,7 +802,7 @@ impl QuotientGraph {
         Ok(winner)
     }
 
-    fn check_merge(&mut self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
+    fn check_merge(&self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
         self.check_merge_preconditions(c1, c2)?;
         if let Some(cycle) = self.would_be_cycles_after_contract(c1, c2) {
             return Err(ContractRejected::WouldCreateCycle { cycle });
@@ -1007,13 +816,13 @@ impl QuotientGraph {
     /// evidence materialization. On large corpora, most rejected
     /// candidates only need a yes/no answer; constructing
     /// `CycleEvidence` routes through the full realizability verdict,
-    /// simulator, and owner-module diagnostic translation. Keep that
-    /// work on the cold diagnostics path.
-    fn check_merge_boolean(&mut self, c1: ClassId, c2: ClassId) -> bool {
+    /// simulator, and owner-module diagnostic translation. The ladder
+    /// answers the same predicate with the evidence elided.
+    fn check_merge_boolean(&self, c1: ClassId, c2: ClassId) -> bool {
         if self.check_merge_preconditions(c1, c2).is_err() {
             return false;
         }
-        !self.would_violate_cycle_gate_after_contract(c1, c2)
+        self.ladder_decision_for_merge(c1, c2).accepts()
     }
 
     fn check_merge_preconditions(&self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
@@ -1040,38 +849,6 @@ impl QuotientGraph {
             });
         }
         Ok(())
-    }
-
-    /// Boolean twin of `would_be_cycles_after_contract`.
-    ///
-    /// The detailed method exists for diagnostics and has to translate
-    /// owner/module evidence when rejecting. This method preserves the
-    /// same yes/no decision while staying on the cheap class graph
-    /// path used by the candidate-pop loop.
-    fn would_violate_cycle_gate_after_contract(&mut self, c1: ClassId, c2: ClassId) -> bool {
-        if c1 == c2 {
-            return false;
-        }
-        let (probe, other) = match (
-            self.class_to_cycle_indices.get(&c1),
-            self.class_to_cycle_indices.get(&c2),
-        ) {
-            (Some(a), Some(b)) => {
-                if a.len() <= b.len() {
-                    (a, c2)
-                } else {
-                    (b, c1)
-                }
-            }
-            _ => (&Vec::new() as &Vec<usize>, c2),
-        };
-        for &idx in probe {
-            let cycle = &self.cached_cycles[idx];
-            if cycle.classes.contains(&other) && cycle.classes.len() > 2 {
-                return true;
-            }
-        }
-        self.merge_creates_new_constraining_cycle(c1, c2)
     }
 
     /// Project the kernel's current class assignment back to an
@@ -1215,14 +992,7 @@ impl QuotientGraph {
     /// Translate an `gate::RealizabilityVerdict` (in ModuleId
     /// space) back into the kernel's `CycleEvidence` shape (in
     /// ClassId space, with owner-id strings for diagnostics).
-    /// `overlay` lets callers project class `a` and `b` as if they
-    /// had been merged into the lower of the two, mirroring the
-    /// hypothetical-contract API of `would_be_cycles_after_contract`.
-    fn translate_verdict_to_evidence(
-        &self,
-        verdict: &RealizabilityVerdict,
-        overlay: Option<(ClassId, ClassId)>,
-    ) -> CycleEvidence {
+    fn translate_verdict_to_evidence(&self, verdict: &RealizabilityVerdict) -> CycleEvidence {
         let active = !verdict.is_realizable();
         record_gate_diagnostic_translation(
             active,
@@ -1232,14 +1002,6 @@ impl QuotientGraph {
         if !active {
             return CycleEvidence::default();
         }
-        let project = |c: ClassId| -> ClassId {
-            if let Some((a, b)) = overlay {
-                if c == a || c == b {
-                    return if a < b { a } else { b };
-                }
-            }
-            c
-        };
         let partition = self.realizability_index.partition();
         let mut cycles: Vec<CycleClassSet> = Vec::new();
         for scc in &verdict.unrealizable_sccs {
@@ -1255,8 +1017,7 @@ impl QuotientGraph {
                     continue;
                 }
                 owner_ids.insert(owner_id_str.clone());
-                let c = self.owner_to_class[owner_idx];
-                class_set.insert(project(c));
+                class_set.insert(self.owner_to_class[owner_idx]);
             }
             if class_set.len() < 2 {
                 continue;
@@ -1281,7 +1042,7 @@ impl QuotientGraph {
     /// the index's graphs are never mutated and only SCCs touching
     /// the target module are read — the key cost saving on
     /// gaffer-scale inputs.
-    fn realizability_cycles_after_contract(&mut self, c1: ClassId, c2: ClassId) -> CycleEvidence {
+    fn realizability_cycles_after_contract(&self, c1: ClassId, c2: ClassId) -> CycleEvidence {
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
         // Producing invariant: `compute_merge_deltas` only ever emits
@@ -1320,13 +1081,14 @@ impl QuotientGraph {
     }
 
     /// Tier-laddered boolean gate decision for the speculative merge
-    /// `(c1, c2)` (`plans/incremental_gate_unification.md` §3; PR 3 of
-    /// §8). Derives the same single-target move
+    /// `(c1, c2)` (`plans/incremental_gate_unification.md` §3).
+    /// Derives the same single-target move
     /// `realizability_cycles_after_contract` computes and routes it
     /// through the index's ladder instead of the evidence-producing
-    /// verdict. NOT yet consulted by `check_merge_boolean` — the PR 4
-    /// cutover does that; until then the differential harness and
-    /// `DEBUNDLE_GATE_ORACLE` runs exercise it.
+    /// verdict. This is the production boolean gate —
+    /// `check_merge_boolean` and `would_be_cycles_after_contract`
+    /// both decide through it; with `DEBUNDLE_GATE_ORACLE` set every
+    /// query is cross-checked against the pure reference predicate.
     ///
     /// Caller contract: `(c1, c2)` must pass the non-cycle merge
     /// preconditions (same as the other speculative cycle queries).
@@ -1513,44 +1275,6 @@ impl QuotientGraph {
         }
     }
 
-    /// Rebuild the topological-order index from scratch by running
-    /// Kahn's over the current `out_edges` / `in_neighbors` adjacency.
-    /// Called in `from_report*` after `rebuild_class_adjacency`, and
-    /// from `merge_classes_unchecked` after every committed
-    /// contraction while the order is degraded (`!is_dag`) — the
-    /// opportunistic recovery that restores the PK fast path once a
-    /// contraction dissolves the last class-graph cycle.
-    ///
-    /// O(|V| + |E|) — same cost as the adjacency walk it covers.
-    /// Incremental updates (`apply_contract`) keep the order valid
-    /// across `contract` calls, so on DAG-shaped (i.e. normal) inputs
-    /// the rebuild is one-shot per quotient construction.
-    fn rebuild_topo_ord(&mut self) {
-        let num_classes = self.classes.len();
-        let live: Vec<ClassId> = self.iter_classes().collect();
-        self.topo_ord.init_from_dag(
-            num_classes,
-            live.into_iter(),
-            &self.out_edges,
-            &self.in_neighbors,
-        );
-        #[cfg(debug_assertions)]
-        debug_assert!(self.topo_ord.validate(&self.out_edges).is_ok());
-    }
-
-    /// Rebuild the cycle-set cache from scratch by reading the
-    /// realizability index's verdict. The cache is consulted only by
-    /// the greedy's `rank_candidate` cycle-reduction heuristic (key
-    /// byte 0); `cycle_set()` reads the index directly per call.
-    /// Keeping the cache in sync avoids drift in the heuristic
-    /// across contractions.
-    fn rebuild_cycle_cache(&mut self) {
-        let verdict = self.realizability_index.verdict();
-        let evidence = self.translate_verdict_to_evidence(&verdict, None);
-        self.cached_cycles = evidence.cycles;
-        self.rebuild_class_to_cycle_indices();
-    }
-
     /// Rebuild the persistent realizability index from scratch using
     /// the current class projection. O(|V| + |E|). Used after
     /// partition-driven mutations that bypass `contract`
@@ -1715,18 +1439,6 @@ impl QuotientGraph {
         (post_module, deltas)
     }
 
-    fn rebuild_class_to_cycle_indices(&mut self) {
-        self.class_to_cycle_indices.clear();
-        for (idx, cycle) in self.cached_cycles.iter().enumerate() {
-            for &class in &cycle.classes {
-                self.class_to_cycle_indices
-                    .entry(class)
-                    .or_default()
-                    .push(idx);
-            }
-        }
-    }
-
     /// Update class adjacency after `loser` is absorbed into `winner`.
     /// Relabels all loser-incident entries to winner, dropping self-
     /// loops. O(|out_edges[loser.0]| + |in_neighbors[loser.0]|) —
@@ -1799,60 +1511,6 @@ impl QuotientGraph {
         self.debug_assert_edge_invariants();
     }
 
-    /// Update cached cycle set after `loser` is absorbed into `winner`.
-    /// The cache is now consulted only by `rank_candidate`'s
-    /// cycle-reduction heuristic (key byte 0) and by
-    /// `would_be_cycles_after_contract`'s fast-path short-circuit.
-    /// Maintaining it via the unified gate would mean an
-    /// `O(|V| + |E|)` rebuild per merge — the greedy's bottleneck.
-    /// Instead, we walk only cycles touching the merged endpoints
-    /// and project their class set onto the new partition; cycles
-    /// that collapse to a single class are dropped. The cache is
-    /// approximate (it only contains cycles that existed pre-merge,
-    /// minus those dissolved by the merge), but the source of truth
-    /// `cycle_set()` and `would_be_cycles_after_contract` consult
-    /// the unified gate on demand. The cache is an advisory cache
-    /// for the heuristic only.
-    fn update_cycle_cache_after_merge(&mut self, winner: ClassId, loser: ClassId) {
-        let mut affected_indices: BTreeSet<usize> = BTreeSet::new();
-        if let Some(idxs) = self.class_to_cycle_indices.get(&loser) {
-            affected_indices.extend(idxs.iter().copied());
-        }
-        if let Some(idxs) = self.class_to_cycle_indices.get(&winner) {
-            affected_indices.extend(idxs.iter().copied());
-        }
-        if affected_indices.is_empty() {
-            return;
-        }
-        let mut drop_indices: BTreeSet<usize> = BTreeSet::new();
-        for idx in &affected_indices {
-            let cycle = &mut self.cached_cycles[*idx];
-            let mut new_classes: BTreeSet<ClassId> = BTreeSet::new();
-            for &c in &cycle.classes {
-                if c == loser {
-                    new_classes.insert(winner);
-                } else {
-                    new_classes.insert(c);
-                }
-            }
-            cycle.classes = new_classes.into_iter().collect();
-            cycle.classes.sort();
-            if cycle.classes.len() < 2 {
-                drop_indices.insert(*idx);
-            }
-        }
-        if !drop_indices.is_empty() {
-            let mut new_cycles: Vec<CycleClassSet> = Vec::new();
-            for (idx, cycle) in self.cached_cycles.iter().enumerate() {
-                if !drop_indices.contains(&idx) {
-                    new_cycles.push(cycle.clone());
-                }
-            }
-            self.cached_cycles = new_cycles;
-        }
-        self.rebuild_class_to_cycle_indices();
-    }
-
     /// `true` if a class is **pre-existing module-anchored** —
     /// i.e., it was constructed from a `PartitionGroup` with
     /// `is_pre_existing_module = true`, or marked by the seeding
@@ -1911,12 +1569,6 @@ impl QuotientGraph {
             self.realizability_index.commit();
         }
         self.class_module_id.insert(c, new_module);
-        // The advisory `cached_cycles` is intentionally left stale —
-        // the source-of-truth `realizability_index.verdict()` is now
-        // updated (the only consumer of correctness). Rebuilding the
-        // cache would cost O(|V| + |E|) per spec-module promotion,
-        // amounting to O(|modules| · (|V| + |E|)) on seed; we drop
-        // that and let the cache catch up at the next contract.
     }
 
     /// Number of owner edges between `a` and `b` (in either
@@ -2018,7 +1670,7 @@ impl QuotientGraph {
 /// - At least one cross-edge connects the two.
 /// - Combined lines under the cap (`merge_preserves_invariants`).
 /// - Cycle gate holds (`merge_preserves_invariants`).
-pub fn mergeable_commit2(q: &mut QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+pub fn mergeable_commit2(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if !mergeable_commit2_preconditions(q, c1, c2) {
         return false;
     }
@@ -2356,7 +2008,7 @@ struct RankedCandidate {
     sort_key: [u8; 33],
 }
 
-fn pick_best_candidate(q: &mut QuotientGraph) -> Option<RankedCandidate> {
+fn pick_best_candidate(q: &QuotientGraph) -> Option<RankedCandidate> {
     // Enumerate candidate pairs: any (c, n) where c is a pre-existing
     // module class and n is a non-pre-existing non-residual neighbor.
     // The mergeable_commit2 gate is the source of truth; we use the
@@ -2368,11 +2020,6 @@ fn pick_best_candidate(q: &mut QuotientGraph) -> Option<RankedCandidate> {
         .collect();
     let mut best: Option<RankedCandidate> = None;
     for c in anchors {
-        // Materialize before the loop body: `mergeable_commit2` borrows
-        // `q` mutably, so we can't iterate `class_neighbors(c)` (which
-        // holds an immutable borrow of `q`) concurrently. This driver
-        // is the reference-impl correctness gate (not the production
-        // path), so the per-anchor Vec allocation is acceptable.
         let neighbors: Vec<ClassId> = q.class_neighbors(c).collect();
         for n in neighbors {
             if n == c {
@@ -2396,37 +2043,23 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate 
     let (low, high) = if a < b { (a, b) } else { (b, a) };
     let mut key = [0u8; 33];
 
-    // Cycle-reduction key: 0 if merge strictly reduces |cycle_set|, 1
-    // otherwise. Currently the cycle set is always preserved or
-    // shrunk; a true "reduction" happens when low and high are in a
-    // 2-class cycle. We check via the cached cycle index.
-    //
-    // Implementation note: on healthy corpora `cached_cycles` is
-    // empty, so both lookups return `None` and the inner branch is
-    // never entered (verified on the tana fixture: 59663 calls, 0
-    // entries into the inner branch). On corpora with pre-existing
-    // constraining cycles the per-class index lists are small —
-    // typically length ≤ 1-2 — so a nested
-    // `.iter().any(|a| other.contains(a))` is O(|la| · |lb|) with no
-    // allocation. This is strictly cheaper than the prior
-    // `BTreeSet::collect` + probe (one allocator round-trip per
-    // entry into the inner branch). Inner Vecs are produced by
-    // `rebuild_class_to_cycle_indices` via forward `enumerate()`
-    // pushes, so each is ascending — a sort-and-binary-search would
-    // be safe if profiling on a cyclic corpus later shows the lists
-    // growing.
-    let mut reduces = false;
-    if let (Some(la), Some(lb)) = (
-        q.class_to_cycle_indices.get(&low),
-        q.class_to_cycle_indices.get(&high),
-    ) {
-        let (probe, other) = if la.len() <= lb.len() {
-            (la, lb)
-        } else {
-            (lb, la)
-        };
-        reduces = probe.iter().any(|idx| other.contains(idx));
-    }
+    // Cycle-reduction key: 0 if the merge dissolves part of an
+    // unrealizable SCC — i.e. both classes' modules sit in the same
+    // multi-module SCC of the maintained constraining condensation
+    // (the `O(α)` DSU probe of `plans/incremental_gate_unification.md`
+    // §6) — 1 otherwise. On realizable committed states (the normal
+    // greedy regime) Pass 1 is clean, so no multi-module constraining
+    // SCC exists and the key is 1 for every pair — matching the
+    // deleted `cached_cycles` probe, which was empty on healthy
+    // corpora. On unrealizable seeds the ranking may drift from the
+    // (deliberately stale) cache the old probe read; accepted per the
+    // plan's open question 5.
+    let reduces = match (q.class_module_id.get(&low), q.class_module_id.get(&high)) {
+        (Some(&m_low), Some(&m_high)) => q
+            .realizability_index
+            .modules_share_constraining_multi_scc(m_low, m_high),
+        _ => false,
+    };
     key[0] = if reduces { 0 } else { 1 };
 
     // Coupling: higher = better → invert.

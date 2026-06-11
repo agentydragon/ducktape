@@ -1,7 +1,6 @@
 pub mod factorize;
 pub mod plan;
 pub mod quotient;
-mod topo_order;
 
 pub use plan::{
     CommonArgs, ExplainArgs, ExplainReport, GraphSummaryArgs, GraphSummaryReport, OutputFormat,

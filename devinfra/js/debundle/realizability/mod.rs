@@ -576,8 +576,8 @@ impl RealizabilityIndex {
 
     /// Boolean form of
     /// [`Self::ladder_decision_after_moving_owners_touching`] — the
-    /// §8 PR 3 gate-ladder entry point. PR 4 routes the kernel's
-    /// `check_merge_boolean` here.
+    /// gate-ladder entry point the kernel's `check_merge_boolean`
+    /// routes through (via `QuotientGraph::ladder_decision_for_merge`).
     pub fn would_remain_realizable_after_moving_owners_touching(
         &self,
         owner_graph: &OwnerGraph,
@@ -586,6 +586,14 @@ impl RealizabilityIndex {
     ) -> bool {
         self.ladder_decision_after_moving_owners_touching(owner_graph, owners, to)
             .accepts()
+    }
+
+    /// `O(α)` DSU probe against the tier-1 condensation order: are
+    /// `a` and `b` in the same multi-module constraining SCC? Backs
+    /// the greedy's cycle-reduction sort key ("this merge dissolves
+    /// part of an unrealizable SCC") without a cache that can drift.
+    pub fn modules_share_constraining_multi_scc(&self, a: ModuleId, b: ModuleId) -> bool {
+        self.quotient.modules_share_constraining_multi_scc(a, b)
     }
 }
 
