@@ -1,11 +1,41 @@
 //! Emit cross-module + residual-entry imports for a moved module body.
 //! Both call `disambiguate_*_import_locals` (import_emit.rs) to mint fresh
-//! locals when names collide with already-occupied bindings.
+//! locals when names collide with already-occupied bindings; the minted
+//! `original → fresh` renames are submitted into the consuming plan's
+//! import ledger (scope: that plan's `Module`, origin: `ImportInduced`)
+//! and applied from the sealed projection in `lower_single_plan`.
 
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
 use super::*;
+
+pub(super) const CROSS_MODULE_IMPORT_CONTRIBUTOR: &str = "cross-module import-local disambiguation";
+pub(super) const RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR: &str =
+    "residual-entry import-local disambiguation";
+
+/// Where one plan's import-local mint renames go: the per-plan ledger
+/// plus the scope/key context its intents need.
+pub(super) struct ImportLocalRenameSink<'a> {
+    pub(super) module: ModuleId,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
+    pub(super) ledger: &'a mut RenameLedger,
+}
+
+impl ImportLocalRenameSink<'_> {
+    /// Submit one minting pass's `original → fresh` renames as
+    /// `Module`-scope `ImportInduced` intents for the consuming plan.
+    fn submit(&mut self, renames: BTreeMap<String, String>, contributor: &'static str) {
+        for (original, fresh) in renames {
+            self.ledger.submit(RenameIntent {
+                scope: RenameScope::Module(self.module),
+                from: top_level_id(&original, self.chunk_top_level_mark),
+                to: fresh.as_str().into(),
+                origin: RenameOrigin::ImportInduced { contributor },
+            });
+        }
+    }
+}
 
 /// Build one `import { … } from "./<provider>.js";` per provider,
 /// tagged with the provider's `ModuleId`. UNSORTED — the caller
@@ -23,7 +53,7 @@ pub(super) fn cross_module_imports_for_plan(
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
     factorization: &ChunkFactorization,
     occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
+    sink: &mut ImportLocalRenameSink<'_>,
 ) -> Vec<(ModuleId, ModuleItem)> {
     imports_by_provider
         .into_iter()
@@ -32,7 +62,9 @@ pub(super) fn cross_module_imports_for_plan(
                 .analysis
                 .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| {
-                    let resolved = disambiguate_import_locals(&bindings, occupied, renames);
+                    let mut minted = BTreeMap::new();
+                    let resolved = disambiguate_import_locals(&bindings, occupied, &mut minted);
+                    sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
                     (
                         ModuleId(LogicalModuleIndex(provider_index)),
                         import_decl_for_plan(from_file, &provider.target_file, &resolved),
@@ -83,7 +115,7 @@ pub(super) fn residual_entry_imports_for_moved_body(
     imports: BTreeMap<String, EntryExport>,
     missing_exports: BTreeSet<String>,
     occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
+    sink: &mut ImportLocalRenameSink<'_>,
 ) -> Result<Vec<ModuleItem>> {
     if !missing_exports.is_empty() {
         // Defense-in-depth: `auto_grown_residual_exports` is supposed
@@ -102,7 +134,9 @@ pub(super) fn residual_entry_imports_for_moved_body(
     if imports.is_empty() {
         return Ok(Vec::new());
     }
-    let resolved = disambiguate_residual_entry_import_locals(&imports, occupied, renames);
+    let mut minted = BTreeMap::new();
+    let resolved = disambiguate_residual_entry_import_locals(&imports, occupied, &mut minted);
+    sink.submit(minted, RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR);
     Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
 }
 

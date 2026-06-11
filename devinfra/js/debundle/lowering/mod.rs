@@ -64,12 +64,13 @@ use chunk_ast::{
 };
 use chunk_renames::collect_chunk_renames;
 use exports::{
-    auto_grown_residual_exports, entry_exports_for_moved_bindings, export_named_for_bindings,
-    reject_duplicate_export_names, reject_duplicate_member_bindings, trim_dead_named_specifiers,
+    ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
+    export_named_for_bindings, reject_duplicate_export_names, reject_duplicate_member_bindings,
+    trim_dead_named_specifiers,
 };
 use imports_cross::{
-    collect_entry_exports_by_original_local, cross_module_imports_for_plan, final_module_exports,
-    phantom_side_effect_imports, residual_entry_imports_for_moved_body,
+    ImportLocalRenameSink, collect_entry_exports_by_original_local, cross_module_imports_for_plan,
+    final_module_exports, phantom_side_effect_imports, residual_entry_imports_for_moved_body,
 };
 use imports_runtime::{
     group_specifiers_into_import_decls, import_decl_module_item, resolve_imported_binding,

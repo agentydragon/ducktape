@@ -264,6 +264,24 @@ the same maps the pre-ledger code built. The two explicit contributors
 are converted (spec `chunk_renames`; plan-driven `export_name`s); the
 remaining-contributor inventory lives in `rename_ledger.rs`'s module doc.
 
+**PR 2 landed (2026-06):** every remaining contributor submits intents
+and every application site consumes a sealed projection — heuristic
+bound-source per-scope renames (`Function` scope; derived by
+`ScopedHeuristicNaturalizer` over a scratch clone, replayed by
+`SealedScopeRenameApplier`), heuristic free-source return-object aliases
+(`Module` scope, per deriving function; `drop_target_collisions` still
+runs at application until PR 3), entry- and module-side import-local
+mints (`Chunk` / `Module` scope, `ImportInduced`; minting itself stays
+in `import_emit.rs` until PR 3), and auto-grown residual public-export
+minting (new `EntryPublicExports` scope). Because contributor derivation
+still depends on earlier contributors' application, PR 2 seals at phase
+boundaries — one ledger instance per former private map (see the "Seal
+points" section of `rename_ledger.rs`'s module doc); PRs 3–4 collapse
+them into a single collect → seal → execute pass. Two previously
+silent last-write-wins shapes are now seal-time hard errors: two
+deriving functions free-aliasing one source to different targets, and
+two import-local mints disagreeing on one binding.
+
 Decisions taken (formerly the open-questions subsection below):
 
 1. **Same-priority conflicts are hard errors at seal**, naming both
@@ -278,13 +296,10 @@ Decisions taken (formerly the open-questions subsection below):
 
 Remaining PRs:
 
-- **PR 2 — collect**: convert the remaining contributors (heuristic
-  bound/free, import-local disambiguation, cross-module renames,
-  collision resolution) to submit intents; worklist in
-  `rename_ledger.rs`.
-- **PR 3 — seal**: move target-occupancy/capture validation into seal
-  against scope-accurate occupied sets; `_N`/`$N` minting becomes a
-  ledger service.
+- **PR 3 — seal**: move target-occupancy/capture validation (and the
+  free-source `drop_target_collisions` rule) into seal against
+  scope-accurate occupied sets; `_N`/`$N` minting becomes a ledger
+  service; collapse the per-phase ledger instances toward one.
 - **PR 4 — execute once**: one visitor pass (the post-#2052 rename
   visitor becomes the executor) updating the AST, export tables,
   `runtime_imports`, `binding_comments`, and cross-module indexes in
@@ -295,7 +310,7 @@ Remaining PRs:
   split, reverse lookups); afterwards the #2045 class is
   unrepresentable.
 
-The architecture sketch below remains the reference for PRs 2–5.
+The architecture sketch below remains the reference for PRs 3–5.
 
 The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer
@@ -339,8 +354,9 @@ defensive reverse-lookups and path sanitizers can become ordinary
 mapping/path-building code once the final mapping makes body ASTs,
 runtime imports, and report tables agree before planning runs.
 
-Remaining prerequisite work (the contributor inventory and the scope
-model landed with PR 1 — see `lowering/rename_ledger.rs`):
+Remaining prerequisite work (the scope model landed with PR 1 and all
+contributors collect through the ledger as of PR 2 — see
+`lowering/rename_ledger.rs`):
 
 1. Inventory every downstream consumer that today reads identifier
    names off the AST or off pre-rename fact maps. Same call sites that

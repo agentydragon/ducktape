@@ -284,9 +284,11 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// export policy. See docs/design.md "Valid peels and atomic modules"
 /// (importability clause).
 ///
-/// Returns a `local → exported` map (with `local == exported`
-/// because we surface the residual binding's own name); the caller
-/// feeds it to `export_named_for_bindings`.
+/// Submits one `EntryPublicExports`-scope intent per grown export,
+/// keyed by the residual binding's original name and targeting the
+/// minted public name; the caller seals the ledger and maps originals
+/// to entry's post-rename locals before feeding
+/// `export_named_for_bindings`.
 ///
 /// Skips:
 /// - bindings already in `existing_exports` (the upstream source
@@ -300,15 +302,33 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// - bindings owned by a logical module (`binding_assignment`), which
 ///   are imported directly module→module rather than mediated by
 ///   entry.
+pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual export";
+
+/// The entry-side facts `auto_grown_residual_exports` consults; see
+/// `LowerChunkSpecFacts` and `lower_chunk` for the field provenance.
+pub(super) struct ExportGrowthFacts<'a> {
+    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) binding_assignment: &'a HashMap<Id, usize>,
+    pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
+    pub(super) pre_existing_public_export_names: &'a HashSet<String>,
+    pub(super) entry_renames: &'a BTreeMap<String, String>,
+    pub(super) entry_declared_names: &'a HashSet<String>,
+}
+
 pub(super) fn auto_grown_residual_exports(
     body_facts_by_module: &[ModuleBodyFacts],
-    declaration_by_name: &HashMap<Id, usize>,
-    binding_assignment: &HashMap<Id, usize>,
-    pre_existing_entry_exports: &HashSet<Id>,
-    pre_existing_public_export_names: &HashSet<String>,
-    entry_renames: &BTreeMap<String, String>,
-    entry_declared_names: &HashSet<String>,
-) -> BTreeMap<String, String> {
+    facts: &ExportGrowthFacts<'_>,
+    chunk_top_level_mark: swc_common::Mark,
+    ledger: &mut RenameLedger,
+) {
+    let &ExportGrowthFacts {
+        declaration_by_name,
+        binding_assignment,
+        pre_existing_entry_exports,
+        pre_existing_public_export_names,
+        entry_renames,
+        entry_declared_names,
+    } = facts;
     let mut needed = BTreeSet::<String>::new();
     // `body_facts_by_module` is precomputed once upstream (see
     // `lower_chunk`); both this auto-grow pass and the per-plan
@@ -344,30 +364,34 @@ pub(super) fn auto_grown_residual_exports(
     // sym via `EntryExport.{local_name, exported_name}`, so the
     // mint is invisible to the moved body.
     let mut taken_public_names = pre_existing_public_export_names.clone();
-    needed
-        .into_iter()
-        .filter_map(|name| {
-            let final_local = entry_renames
-                .get(&name)
-                .cloned()
-                .unwrap_or_else(|| name.clone());
-            // Only grow exports for bindings the final entry body
-            // actually declares. A chunk-declared binding whose
-            // declaring statement was claimed into a non-entry
-            // module (e.g. a block-hoisted `var` inside an
-            // anonymously-claimed `try` statement) can't be
-            // mediated through entry — growing `export { name }`
-            // here would emit a SyntaxError-at-load entry module.
-            // Skipping leaves the reference in
-            // `missing_residual_exports`, which
-            // `residual_entry_imports_for_moved_body` rejects
-            // loudly instead of emitting broken JS.
-            if !entry_declared_names.contains(&final_local) {
-                return None;
-            }
-            let public_name =
-                import_emit::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
-            Some((final_local, public_name))
-        })
-        .collect()
+    for name in needed {
+        let final_local = entry_renames
+            .get(&name)
+            .cloned()
+            .unwrap_or_else(|| name.clone());
+        // Only grow exports for bindings the final entry body
+        // actually declares. A chunk-declared binding whose
+        // declaring statement was claimed into a non-entry
+        // module (e.g. a block-hoisted `var` inside an
+        // anonymously-claimed `try` statement) can't be
+        // mediated through entry — growing `export { name }`
+        // here would emit a SyntaxError-at-load entry module.
+        // Skipping leaves the reference in
+        // `missing_residual_exports`, which
+        // `residual_entry_imports_for_moved_body` rejects
+        // loudly instead of emitting broken JS.
+        if !entry_declared_names.contains(&final_local) {
+            continue;
+        }
+        let public_name =
+            import_emit::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
+        ledger.submit(RenameIntent {
+            scope: RenameScope::EntryPublicExports,
+            from: top_level_id(&name, chunk_top_level_mark),
+            to: public_name.as_str().into(),
+            origin: RenameOrigin::ImportInduced {
+                contributor: AUTO_GROWN_EXPORT_CONTRIBUTOR,
+            },
+        });
+    }
 }

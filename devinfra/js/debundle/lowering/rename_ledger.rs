@@ -27,6 +27,20 @@
 //! `ChunkPlan`); the contract becomes mechanically enforceable when the
 //! execute-once pass lands (PR 4) and non-execute passes take `&Module`.
 //!
+//! ## Seal points (PR 2 era)
+//!
+//! Contributor derivation is interleaved with application across the
+//! lowering pipeline — a later contributor derives from the AST state an
+//! earlier contributor's application produced (heuristics read the
+//! post-plan-rename body; import-local minting reads the post-naturalize
+//! body) — so PR 2 seals at phase boundaries: each former private rename
+//! map is its own ledger instance, collected and sealed exactly where
+//! that map used to be complete, with the application site consuming the
+//! sealed projection. The instances are listed in the contributor
+//! inventory below. PR 3 (minting as a ledger service, seal-time
+//! occupancy validation) and PR 4 (execute once) collapse them toward a
+//! single collect → seal → execute pass.
+//!
 //! ## Hygiene boundary
 //!
 //! Intents are keyed by hygiene-aware [`Id`] — post-#2042 the chunk AST
@@ -39,45 +53,53 @@
 //! a sym within one scope. PR 4's executor consumes `Id`s directly and
 //! deletes the projection.
 //!
+//! `Function`-scope heuristic sources are function-local bindings whose
+//! hygiene context the string-keyed derivation never resolves; they are
+//! keyed by `(sym, SyntaxContext::empty())` until PR 4's executor keys
+//! application by real `Id`s. Within one function scope a sym maps to at
+//! most one rename, so the empty-context encoding cannot collide.
+//!
 //! ## Contributor inventory
 //!
-//! Converted (submit intents):
+//! All rename contributors submit intents (PR 2):
 //!
 //! - Spec `chunk_renames` — `chunk_renames.rs::collect_chunk_renames`
-//!   (scope: `Chunk`, origin: `Explicit`).
+//!   (scope: `Chunk`, origin: `Explicit`; chunk ledger sealed in
+//!   `materialize_logical_chunk`).
 //! - Plan-driven spec `export_name`s —
 //!   `naturalize.rs::collect_plan_export_rename_intents` (scope:
-//!   `Module`, origin: `Explicit`).
-//!
-//! Remaining (PR 2 worklist; each keeps building its own map today):
-//!
+//!   `Module`, origin: `Explicit`; same chunk ledger).
 //! - Heuristic bound-source scope-local renames — `naturalize.rs`:
 //!   `collect_naturalization_renames_from_pattern`,
 //!   `collect_naturalization_renames_from_constructor`, and root-bound
-//!   return-object aliases, derived and applied per function-like node by
-//!   `ScopedHeuristicNaturalizer::{visit_mut_function, visit_mut_arrow_expr,
-//!   visit_mut_constructor}` (scope: `Function`, origin: `Heuristic`).
+//!   return-object aliases, derived per function-like node by
+//!   `ScopedHeuristicNaturalizer` over a scratch clone of the module body
+//!   (scope: `Function`, origin: `Heuristic`); the per-module ledger seals
+//!   in `naturalize_module_body` and `SealedScopeRenameApplier` replays
+//!   the sealed per-scope maps onto the real body.
 //! - Heuristic free-source return-object aliases — `naturalize.rs`:
-//!   `collect_free_alias_renames_from_item`, merged module-wide via
-//!   `drop_target_collisions` (scope: `Module`, origin: `Heuristic`).
+//!   `collect_free_alias_renames_from_item`, submitted per deriving
+//!   function (scope: `Module`, origin: `Heuristic`; same per-module
+//!   ledger). The module-global target-collision rule
+//!   (`drop_target_collisions`) still runs at application; moving it into
+//!   seal is PR 3.
 //! - Import-local disambiguation (fresh-local `$N` minting) —
 //!   `import_emit.rs`: `disambiguate_import_locals`,
-//!   `disambiguate_residual_entry_import_locals`, `mint_unique_name`;
-//!   entry-side call site in `lower.rs` (entry-import build seeding
-//!   `body_renames`), module-side call sites in
-//!   `imports_cross.rs::cross_module_imports_for_plan` and
-//!   `imports_cross.rs::residual_entry_imports_for_moved_body` (scope:
-//!   `Chunk` / `Module`, origin: `ImportInduced`). Minting becomes a
-//!   ledger service in PR 3; decided 2026-06: the `$N` suffix scheme
-//!   stays as-is (readability is a later naturalizer concern).
-//! - Cross-module rename application to moved bodies — the
-//!   `module_import_renames` map accumulated across the two
-//!   `imports_cross.rs` helpers above and applied in
-//!   `lower.rs::lower_single_plan` (origin: `ImportInduced`).
+//!   `disambiguate_residual_entry_import_locals`, `mint_unique_name`.
+//!   The entry-side call site in `lower.rs::lower_chunk` submits into the
+//!   entry-body ledger (scope: `Chunk`, origin: `ImportInduced`); the
+//!   module-side call sites `imports_cross.rs::cross_module_imports_for_plan`
+//!   and `imports_cross.rs::residual_entry_imports_for_moved_body` submit
+//!   into the per-plan import ledger sealed in `lower_single_plan`
+//!   (scope: `Module`, origin: `ImportInduced`) — this is the
+//!   cross-module rename application to moved bodies. Minting itself
+//!   becomes a ledger service in PR 3; decided 2026-06: the `$N` suffix
+//!   scheme stays as-is (readability is a later naturalizer concern).
 //! - Collision-resolving public-name minting —
 //!   `exports.rs::auto_grown_residual_exports` (suffix-mints a grown
-//!   public export past pre-existing public names; origin:
-//!   `ImportInduced`).
+//!   public export past pre-existing public names; scope:
+//!   `EntryPublicExports`, origin: `ImportInduced`; sealed in
+//!   `lower_chunk`'s export-growth phase).
 //!
 //! Vendor boundary renames (`vendor/`) run in a separate pipeline stage on
 //! different artifacts and are out of this ledger's scope.
@@ -126,6 +148,12 @@ pub enum RenameScope {
     Module(ModuleId),
     /// Scope-local renames derived by one function-like node.
     Function(FunctionScopeId),
+    /// Public export-name allocations on the chunk's residual entry — a
+    /// separate namespace from local-binding renames: `from` is the
+    /// residual binding's top-level `Id`, `to` the public name entry's
+    /// grown `export { … }` clause assigns it
+    /// (`exports.rs::auto_grown_residual_exports`).
+    EntryPublicExports,
 }
 
 impl fmt::Display for RenameScope {
@@ -134,6 +162,7 @@ impl fmt::Display for RenameScope {
             RenameScope::Chunk => write!(f, "chunk scope"),
             RenameScope::Module(ModuleId(index)) => write!(f, "module #{}", index.0),
             RenameScope::Function(span) => write!(f, "function@{}..{}", span.lo, span.hi),
+            RenameScope::EntryPublicExports => write!(f, "entry public exports"),
         }
     }
 }
@@ -320,9 +349,11 @@ impl SealedRenames {
     /// Project one scope's sealed renames onto bare syms for the
     /// string-keyed application visitors. Lossy iff two hygiene contexts
     /// share a sym within one scope — the current contributors resolve
-    /// every `from` through one chunk-top-level context, so that cannot
-    /// happen; assert rather than silently merge if it ever does.
-    fn scope_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
+    /// every `from` through one context per scope (chunk-top-level for
+    /// `Chunk`/`Module`/`EntryPublicExports`, the string-era empty context
+    /// for `Function`), so that cannot happen; assert rather than silently
+    /// merge if it ever does.
+    pub fn scope_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
         let Some(renames) = self.by_scope.get(scope) else {
             return BTreeMap::new();
         };
@@ -503,6 +534,80 @@ mod tests {
             reverse.submit(i.clone());
         }
         assert_eq!(forward.seal().unwrap(), reverse.seal().unwrap());
+    }
+
+    #[test]
+    fn entry_public_exports_scope_is_isolated_from_chunk_scope() {
+        // The export-name namespace is separate from local-binding
+        // renames: one binding may simultaneously carry a Chunk-scope
+        // local rename and an EntryPublicExports-scope public-name
+        // allocation without conflicting.
+        let mint = RenameOrigin::ImportInduced {
+            contributor: "auto-grown residual export",
+        };
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "readable", A));
+        ledger.submit(intent(RenameScope::EntryPublicExports, "a", "a$1", mint));
+        let sealed = ledger.seal().unwrap();
+        assert_eq!(
+            sealed.scope_renames_by_name(&RenameScope::Chunk),
+            BTreeMap::from([("a".to_string(), "readable".to_string())]),
+        );
+        assert_eq!(
+            sealed.scope_renames_by_name(&RenameScope::EntryPublicExports),
+            BTreeMap::from([("a".to_string(), "a$1".to_string())]),
+        );
+    }
+
+    #[test]
+    fn import_induced_conflict_is_a_hard_error_naming_both_minters() {
+        let cross = RenameOrigin::ImportInduced {
+            contributor: "cross-module import-local disambiguation",
+        };
+        let residual = RenameOrigin::ImportInduced {
+            contributor: "residual-entry import-local disambiguation",
+        };
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "x", "x$1", cross));
+        ledger.submit(intent(module, "x", "x$2", residual));
+        let message = ledger.seal().unwrap_err().to_string();
+        assert!(
+            message.contains("cross-module import-local disambiguation"),
+            "{message}"
+        );
+        assert!(
+            message.contains("residual-entry import-local disambiguation"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn function_scope_projection_returns_per_scope_string_maps() {
+        let heuristic = RenameOrigin::Heuristic {
+            contributor: "scope-local heuristic naturalizer",
+        };
+        let outer = RenameScope::Function(FunctionScopeId { lo: 1, hi: 100 });
+        let inner = RenameScope::Function(FunctionScopeId { lo: 10, hi: 20 });
+        let mut ledger = RenameLedger::default();
+        // Sibling/nested scopes reusing one minified spelling with
+        // different targets are independent renames (#2045) — no conflict.
+        ledger.submit(intent(outer, "e", "value", heuristic));
+        ledger.submit(intent(inner, "e", "registry", heuristic));
+        let sealed = ledger.seal().unwrap();
+        assert_eq!(
+            sealed.scope_renames_by_name(&outer),
+            BTreeMap::from([("e".to_string(), "value".to_string())]),
+        );
+        assert_eq!(
+            sealed.scope_renames_by_name(&inner),
+            BTreeMap::from([("e".to_string(), "registry".to_string())]),
+        );
+        assert!(
+            sealed
+                .scope_renames_by_name(&RenameScope::Function(FunctionScopeId { lo: 2, hi: 3 }))
+                .is_empty()
+        );
     }
 
     #[test]

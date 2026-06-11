@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use swc_common::GLOBALS;
 use swc_common::{BytePos, Spanned};
 
+use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
 use super::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
@@ -18,6 +19,8 @@ use super::scope_names::{collect_local_binding_names, collect_occupied_local_nam
 use super::util::{is_valid_js_identifier, remaining_item_after_selection};
 use super::*;
 use crate::time_phase;
+
+pub(super) const ENTRY_IMPORT_LOCAL_CONTRIBUTOR: &str = "entry import-local disambiguation";
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -188,13 +191,21 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
-    let mut body_renames = BTreeMap::<String, String>::new();
-    // Seed body_renames with `chunk_renames` entries for bindings
-    // staying in entry's body (not claimed by any logical module).
-    // Bindings owned by a logical module take their rename from the
-    // module plan via the disambiguate-imports pass below;
-    // chunk_renames entries for those bindings are silently
-    // dropped here (the logical-module rename wins).
+    // Entry-body renames flow through a dedicated ledger: the accepted
+    // chunk_renames entries (Explicit) and the entry import-local mints
+    // (ImportInduced) submit Chunk-scope intents below; the sealed
+    // projection is the `body_renames` map the entry renamer applies.
+    // The two contributors' source sets are disjoint by construction —
+    // chunk_renames seeding skips module-owned bindings, mints fire only
+    // for module-owned bindings — so a seal conflict can only come from
+    // one contributor disagreeing with itself.
+    let mut entry_ledger = RenameLedger::default();
+    // Submit `chunk_renames` intents for bindings staying in entry's
+    // body (not claimed by any logical module). Bindings owned by a
+    // logical module take their rename from the module plan via the
+    // disambiguate-imports pass below; chunk_renames entries for those
+    // bindings are silently dropped here (the logical-module rename
+    // wins).
     //
     // Each accepted target name is reserved in `occupied` before the
     // import-disambiguation pass runs, so a later cross-module
@@ -211,13 +222,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         renamed_away.insert(binding.clone());
     }
     // Iterate `chunk_renames` (a `HashMap`) in sorted order so the
-    // collected error list and the `body_renames` insertion order
-    // are stable. Collect every violation rather than `bail!`ing on
-    // the first one so a spec author sees the full set in one
-    // round-trip; the "duplicate target" branch in particular only
-    // surfaces after `occupied.insert` returned false, so the
-    // earlier-rename whose target was duplicated is implied by the
-    // sort order.
+    // collected error list and the ledger's intent order are stable.
+    // Collect every violation rather than `bail!`ing on the first one
+    // so a spec author sees the full set in one round-trip; the
+    // "duplicate target" branch in particular only surfaces after
+    // `occupied.insert` returned false, so the earlier-rename whose
+    // target was duplicated is implied by the sort order.
     let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
     sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
     let mut errors = Vec::<String>::new();
@@ -255,7 +265,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             ));
             continue;
         }
-        body_renames.insert(binding.clone(), export_name.clone());
+        entry_ledger.submit(RenameIntent {
+            scope: RenameScope::Chunk,
+            from: top_level_id(binding, chunk_top_level_mark),
+            to: export_name.as_str().into(),
+            origin: RenameOrigin::Explicit {
+                contributor: CHUNK_RENAMES_CONTRIBUTOR,
+            },
+        });
     }
     if !errors.is_empty() {
         bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
@@ -302,7 +319,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for (local, fresh) in emit_renames {
             let local_id = top_level_id(&local, chunk_top_level_mark);
             if binding_assignment.get(&local_id).copied() == Some(module_index) {
-                body_renames.insert(local, fresh);
+                entry_ledger.submit(RenameIntent {
+                    scope: RenameScope::Chunk,
+                    from: local_id,
+                    to: fresh.as_str().into(),
+                    origin: RenameOrigin::ImportInduced {
+                        contributor: ENTRY_IMPORT_LOCAL_CONTRIBUTOR,
+                    },
+                });
             }
         }
         entry_imports.push((
@@ -324,6 +348,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     timings.add("build_entry_imports", build_entry_imports_started.elapsed());
+    // Seal the entry ledger: `body_renames` is its Chunk-scope projection
+    // — exactly the map the pre-ledger code accumulated inline across the
+    // chunk_renames seeding and the import-local mint loop above.
+    let sealed_entry_renames = entry_ledger.seal()?;
+    let body_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
     let entry_binding_renames = body_renames.clone();
     if !body_renames.is_empty() {
         let rename_entry_body_started = Instant::now();
@@ -387,7 +416,13 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for (index, plan) in module_plans.iter().enumerate() {
             let mut body = std::mem::take(&mut selected_by_module[index]);
             let plan_driven = sealed_renames.module_renames_by_name(ModuleId::logical(index));
-            let renames = naturalize_module_body(&mut body, plan, plan_driven)?;
+            let renames = naturalize_module_body(
+                &mut body,
+                plan,
+                ModuleId::logical(index),
+                plan_driven,
+                chunk_top_level_mark,
+            )?;
             naturalized_bodies.push(body);
             local_renames_by_module.push(renames);
         }
@@ -420,15 +455,39 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             .iter()
             .flat_map(|item| top_level_declaration_names(item).0)
             .collect();
-        let auto_grow = auto_grown_residual_exports(
+        let mut export_ledger = RenameLedger::default();
+        auto_grown_residual_exports(
             &body_facts_by_module,
-            declaration_by_name,
-            binding_assignment,
-            pre_existing_entry_exports,
-            pre_existing_public_export_names,
-            &entry_binding_renames,
-            &entry_declared_names,
+            &ExportGrowthFacts {
+                declaration_by_name,
+                binding_assignment,
+                pre_existing_entry_exports,
+                pre_existing_public_export_names,
+                entry_renames: &entry_binding_renames,
+                entry_declared_names: &entry_declared_names,
+            },
+            chunk_top_level_mark,
+            &mut export_ledger,
         );
+        // The sealed map is keyed by the residual binding's original
+        // name; the emitted export clause is keyed by entry's
+        // post-rename local, so remap through `entry_binding_renames`
+        // at application. A single contributor over a set-deduped
+        // source set cannot produce a seal conflict.
+        let sealed_exports = export_ledger.seal()?;
+        let auto_grow: BTreeMap<String, String> = sealed_exports
+            .scope_renames_by_name(&RenameScope::EntryPublicExports)
+            .into_iter()
+            .map(|(original, public_name)| {
+                (
+                    entry_binding_renames
+                        .get(&original)
+                        .cloned()
+                        .unwrap_or(original),
+                    public_name,
+                )
+            })
+            .collect();
         if !auto_grow.is_empty() {
             entry_body.push(export_named_for_bindings(&auto_grow));
         }
@@ -712,7 +771,17 @@ fn lower_single_plan(
             },
         )
     });
-    let mut module_import_renames = BTreeMap::<String, String>::new();
+    // Import-local mints for this plan's body flow through a per-plan
+    // ledger (scope: this plan's `Module`, origin: `ImportInduced`);
+    // the sealed projection below is the rename map the body renamer
+    // applies.
+    let module = ModuleId::logical(index);
+    let mut import_ledger = RenameLedger::default();
+    let mut import_rename_sink = ImportLocalRenameSink {
+        module,
+        chunk_top_level_mark,
+        ledger: &mut import_ledger,
+    };
     let mut module_import_locals = collect_local_binding_names(&body);
     // All intra-chunk imports (cross-module binding imports, phantom
     // side-effect imports, and the residual-entry import) are
@@ -729,7 +798,7 @@ fn lower_single_plan(
             cross_module_imports_by_provider,
             factorization,
             &mut module_import_locals,
-            &mut module_import_renames,
+            &mut import_rename_sink,
         )
     });
     // Phantom side-effect imports surface at-init-promotion-derived
@@ -751,9 +820,13 @@ fn lower_single_plan(
             residual_entry_imports,
             missing_residual_exports,
             &mut module_import_locals,
-            &mut module_import_renames,
+            &mut import_rename_sink,
         )
     })?;
+    // Seal the per-plan import ledger; the Module-scope projection is
+    // the import-local rename map the pre-ledger code accumulated
+    // across the two minting passes above.
+    let module_import_renames = import_ledger.seal()?.module_renames_by_name(module);
     if !module_import_renames.is_empty() {
         let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {

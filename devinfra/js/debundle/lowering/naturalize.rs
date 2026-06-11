@@ -21,13 +21,22 @@
 //! - **Bound sources** (destructured params, constructor
 //!   `this.x = param` assignments, return-object aliases of the
 //!   function's own root bindings) rename a binding owned by a single
-//!   scope. `ScopedHeuristicNaturalizer` validates and applies them per
+//!   scope. `ScopedHeuristicNaturalizer` derives and validates them per
 //!   deriving scope, with no module-global uniqueness requirement: two
 //!   sibling scopes reusing the same minified spelling (`e` → `value`
 //!   here, `e` → `registry` there) are independent renames (#2045).
 //!   They stay out of the returned map so a scope-local rename can
 //!   never remap an unrelated top-level export or runtime reimport
 //!   that happens to share the spelling.
+//!
+//! Both heuristic families submit intents into a per-module
+//! [`RenameLedger`] sealed before any heuristic rename is applied
+//! (free sources at `Module` scope, bound sources at `Function` scope);
+//! `SealedScopeRenameApplier` replays the sealed per-scope maps onto the
+//! real body, and the returned merged map is rebuilt from the sealed
+//! Module-scope intents.
+
+use swc_common::Span;
 
 use super::scope_names::{
     BindingNameCollector, collect_binding_names_in, collect_occupied_local_names,
@@ -79,6 +88,8 @@ pub(super) fn collect_plan_export_rename_intents(
 }
 
 pub(super) const PLAN_EXPORT_NAME_CONTRIBUTOR: &str = "logical_module member export_name";
+pub(super) const FREE_ALIAS_CONTRIBUTOR: &str = "return-object alias (free source)";
+pub(super) const SCOPED_HEURISTIC_CONTRIBUTOR: &str = "scope-local heuristic naturalizer";
 
 /// `plan_driven` is this plan's sealed Module-scope rename map
 /// (`SealedRenames::module_renames_by_name`); sorted (`BTreeMap`)
@@ -87,11 +98,37 @@ pub(super) const PLAN_EXPORT_NAME_CONTRIBUTOR: &str = "logical_module member exp
 pub(super) fn naturalize_module_body(
     body: &mut [ModuleItem],
     plan: &ModulePlan,
+    module: ModuleId,
     plan_driven: BTreeMap<String, String>,
+    chunk_top_level_mark: swc_common::Mark,
 ) -> Result<NaturalizedRenames> {
-    let mut free_heuristic = BTreeMap::<String, String>::new();
+    // Both heuristic contributors submit into this per-module ledger,
+    // sealed below before any heuristic rename is applied.
+    // `free_heuristic` is the derive-phase scratch view of the same
+    // Module-scope intents: the bound-source derive pass needs the
+    // module-global collision rules resolved before the ledger can seal
+    // (sealing also waits for the derive pass's Function-scope intents).
+    // Free aliases are submitted per deriving function, so two functions
+    // aliasing one free source to different targets — previously a
+    // silent last-write-wins on this map — are a seal-time conflict.
+    let mut ledger = RenameLedger::default();
+    let mut per_function_free = Vec::<BTreeMap<String, String>>::new();
     for item in body.iter() {
-        collect_free_alias_renames_from_item(item, &mut free_heuristic);
+        collect_free_alias_renames_from_item(item, &mut per_function_free);
+    }
+    let mut free_heuristic = BTreeMap::<String, String>::new();
+    for aliases in per_function_free {
+        for (from, to) in aliases {
+            ledger.submit(RenameIntent {
+                scope: RenameScope::Module(module),
+                from: top_level_id(&from, chunk_top_level_mark),
+                to: to.as_str().into(),
+                origin: RenameOrigin::Heuristic {
+                    contributor: FREE_ALIAS_CONTRIBUTOR,
+                },
+            });
+            free_heuristic.insert(from, to);
+        }
     }
     // The merged map is what callers read back as the local-name → readable
     // lookup (runtime-reimport bridge, export remapping). Plan-driven names
@@ -170,30 +207,57 @@ pub(super) fn naturalize_module_body(
         reserved.insert(from.clone());
         reserved.insert(to.clone());
     }
-    let mut scoped = ScopedHeuristicNaturalizer {
+    // Derive pass: run the scoped heuristic machinery over a scratch
+    // clone of the body. It performs exactly the pre-ledger
+    // derive-and-apply walk — outer scopes validate against subtrees
+    // that already carry their nested scopes' renames — but the
+    // mutations land on the clone; the real body is only renamed by the
+    // sealed-output applier below. Each fired per-scope map is submitted
+    // as Function-scope intents. The clone is deleted with PR 4's
+    // execute-once pass.
+    let mut derive_body = body.to_vec();
+    let mut deriver = ScopedHeuristicNaturalizer {
         free_allowed: &free_effective,
         reserved: &reserved,
+        ledger: &mut ledger,
     };
+    for item in derive_body.iter_mut() {
+        item.visit_mut_with(&mut deriver);
+    }
+    let sealed = ledger.seal()?;
+    // Apply pass: replay the sealed per-scope maps onto the real body in
+    // the same order the derive pass fired them (children first), so each
+    // scope's map applies to the same intermediate tree state the
+    // derivation validated against.
+    let mut applier = SealedScopeRenameApplier { sealed: &sealed };
     for item in body.iter_mut() {
-        item.visit_mut_with(&mut scoped);
+        item.visit_mut_with(&mut applier);
     }
 
     Ok(NaturalizedRenames {
-        merged,
+        // The merged map consumers read is rebuilt from the sealed
+        // Module-scope (free-source) intents — identical to the derive
+        // scratch `merged` whenever seal succeeded.
+        merged: drop_target_collisions(plan_driven, sealed.module_renames_by_name(module)),
         module_scope: plan_driven_effective,
     })
 }
 
-/// Walks the module body and applies heuristic naturalization renames
-/// scope-locally: at each function/constructor/arrow it derives that node's
-/// own heuristic renames (param destructure aliases, return-object aliases,
-/// `this.x = param` constructor assignments) and rewrites only that node's
-/// subtree. Bound-source renames fire when their readable target passes the
-/// per-scope safety checks in [`Self::validated_bound`]; free-source
-/// renames fire when they survived the module-global collision rules
-/// (`free_allowed`). A rename derived from one scope never leaks into a
-/// sibling/parent scope, and `RenameAndShorthandNaturalizer`'s nested
-/// shadow-suppression still guards any further-nested re-binding subtree.
+/// The derive pass of the per-scope heuristic pipeline: walks a scratch
+/// clone of the module body and, at each function/constructor/arrow,
+/// derives that node's own heuristic renames (param destructure aliases,
+/// return-object aliases, `this.x = param` constructor assignments),
+/// validates them, submits the fired map as Function-scope intents, and
+/// rewrites the (clone's) subtree so enclosing scopes validate against
+/// the post-rename nested state — exactly the pre-ledger
+/// derive-and-apply order. Bound-source renames fire when their readable
+/// target passes the per-scope safety checks in [`Self::validated_bound`];
+/// free-source renames fire when they survived the module-global
+/// collision rules (`free_allowed`). A rename derived from one scope
+/// never leaks into a sibling/parent scope, and
+/// `RenameAndShorthandNaturalizer`'s nested shadow-suppression still
+/// guards any further-nested re-binding subtree. The real body is
+/// renamed by [`SealedScopeRenameApplier`] from the sealed ledger.
 struct ScopedHeuristicNaturalizer<'a> {
     /// Free-source renames that survived module-global collision-dropping;
     /// a node's locally-derived free alias only fires if it appears here.
@@ -201,6 +265,67 @@ struct ScopedHeuristicNaturalizer<'a> {
     /// Module-wide rename sources and targets (plan-driven + free); a
     /// scope-local rename must not target any of them.
     reserved: &'a BTreeSet<String>,
+    /// Sink for the fired per-scope maps (Function-scope intents).
+    ledger: &'a mut RenameLedger,
+}
+
+/// Replays the sealed Function-scope heuristic renames onto the real
+/// module body, children-first — the same order
+/// [`ScopedHeuristicNaturalizer`] fired them in on the derive clone, so
+/// each scope's map applies to the same intermediate tree state the
+/// derivation validated against.
+struct SealedScopeRenameApplier<'a> {
+    sealed: &'a SealedRenames,
+}
+
+impl SealedScopeRenameApplier<'_> {
+    fn scope_map(&self, span: Span) -> BTreeMap<String, String> {
+        self.sealed
+            .scope_renames_by_name(&RenameScope::Function(span.into()))
+    }
+}
+
+impl VisitMut for SealedScopeRenameApplier<'_> {
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        function.visit_mut_children_with(self);
+        let local = self.scope_map(function.span);
+        if local.is_empty() {
+            return;
+        }
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        function.params.visit_mut_with(&mut renamer);
+        rename_root_body(&mut renamer, function.body.as_mut());
+        assert_no_heuristic_capture(&renamer);
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
+        arrow.visit_mut_children_with(self);
+        let local = self.scope_map(arrow.span);
+        if local.is_empty() {
+            return;
+        }
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        arrow.params.visit_mut_with(&mut renamer);
+        match &mut *arrow.body {
+            BlockStmtOrExpr::BlockStmt(block) => rename_root_body(&mut renamer, Some(block)),
+            BlockStmtOrExpr::Expr(expr) => expr.visit_mut_with(&mut renamer),
+        }
+        assert_no_heuristic_capture(&renamer);
+    }
+
+    fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
+        constructor.visit_mut_children_with(self);
+        let local = self.scope_map(constructor.span);
+        if local.is_empty() {
+            return;
+        }
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        for param in &mut constructor.params {
+            param.visit_mut_with(&mut renamer);
+        }
+        rename_root_body(&mut renamer, constructor.body.as_mut());
+        assert_no_heuristic_capture(&renamer);
+    }
 }
 
 /// Name sets describing one function-like subtree, gathered in a single
@@ -326,6 +451,25 @@ fn collect_pat_binding_names(pat: &Pat, out: &mut BTreeSet<String>) {
 }
 
 impl ScopedHeuristicNaturalizer<'_> {
+    /// Record one deriving scope's fired rename map as Function-scope
+    /// intents. The sources are function-local bindings whose hygiene
+    /// context the string-keyed derivation never resolves; the
+    /// string-era key is encoded as the empty `SyntaxContext` (the
+    /// sealed by-name projection is what the apply pass consumes; see
+    /// the ledger module doc's hygiene-boundary section).
+    fn submit_scope_intents(&mut self, span: Span, local: &BTreeMap<String, String>) {
+        for (from, to) in local {
+            self.ledger.submit(RenameIntent {
+                scope: RenameScope::Function(span.into()),
+                from: (from.as_str().into(), SyntaxContext::empty()),
+                to: to.as_str().into(),
+                origin: RenameOrigin::Heuristic {
+                    contributor: SCOPED_HEURISTIC_CONTRIBUTOR,
+                },
+            });
+        }
+    }
+
     /// Per-scope safety checks for bound-source renames. A rename fires
     /// only when its readable target is globally unreserved, absent from
     /// the scope's subtree (renaming onto a name the subtree already
@@ -460,6 +604,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         if local.is_empty() {
             return;
         }
+        self.submit_scope_intents(function.span, &local);
         // Params and the root body share this function's scope, where the
         // renamed name is bound exactly once and every reference resolves to
         // it. Drive past the root param/block scope (visiting params and the
@@ -482,6 +627,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         if local.is_empty() {
             return;
         }
+        self.submit_scope_intents(arrow.span, &local);
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
@@ -500,6 +646,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         if local.is_empty() {
             return;
         }
+        self.submit_scope_intents(constructor.span, &local);
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
@@ -548,26 +695,36 @@ pub(super) fn drop_target_collisions(
 /// of names the deriving function does not bind anywhere (typically
 /// source-chunk import aliases). These are the only heuristic renames
 /// that rewrite references of top-level bindings and therefore the only
-/// ones that join the module-global merged map.
-fn collect_free_alias_renames_from_item(item: &ModuleItem, renames: &mut BTreeMap<String, String>) {
+/// ones that join the module-global merged map. Each deriving function's
+/// aliases are pushed as a separate map so the caller can submit them as
+/// per-function ledger intents.
+fn collect_free_alias_renames_from_item(
+    item: &ModuleItem,
+    per_function: &mut Vec<BTreeMap<String, String>>,
+) {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => collect_free_alias_renames_from_decl(decl, renames),
+        ModuleItem::Stmt(Stmt::Decl(decl)) => {
+            collect_free_alias_renames_from_decl(decl, per_function)
+        }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            collect_free_alias_renames_from_decl(&export_decl.decl, renames);
+            collect_free_alias_renames_from_decl(&export_decl.decl, per_function);
         }
         _ => {}
     }
 }
 
-fn collect_free_alias_renames_from_decl(decl: &Decl, renames: &mut BTreeMap<String, String>) {
+fn collect_free_alias_renames_from_decl(
+    decl: &Decl,
+    per_function: &mut Vec<BTreeMap<String, String>>,
+) {
     match decl {
         Decl::Fn(function) => {
-            collect_free_alias_renames_from_function(&function.function, renames);
+            collect_free_alias_renames_from_function(&function.function, per_function);
         }
         Decl::Var(var) => {
             for declarator in &var.decls {
                 if let Some(Expr::Fn(function)) = declarator.init.as_deref() {
-                    collect_free_alias_renames_from_function(&function.function, renames);
+                    collect_free_alias_renames_from_function(&function.function, per_function);
                 }
             }
         }
@@ -577,7 +734,7 @@ fn collect_free_alias_renames_from_decl(decl: &Decl, renames: &mut BTreeMap<Stri
 
 fn collect_free_alias_renames_from_function(
     function: &Function,
-    renames: &mut BTreeMap<String, String>,
+    per_function: &mut Vec<BTreeMap<String, String>>,
 ) {
     let Some(body) = function.body.as_ref() else {
         return;
@@ -588,10 +745,12 @@ fn collect_free_alias_renames_from_function(
         return;
     }
     let facts = collect_subtree_name_facts(function);
-    for (from, to) in aliases {
-        if !facts.bound.contains(&from) {
-            renames.insert(from, to);
-        }
+    let renames: BTreeMap<String, String> = aliases
+        .into_iter()
+        .filter(|(from, _)| !facts.bound.contains(from))
+        .collect();
+    if !renames.is_empty() {
+        per_function.push(renames);
     }
 }
 
