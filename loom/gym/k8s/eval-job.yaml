@@ -14,6 +14,37 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      initContainers:
+        # Stage the sandbox images into the docker-ci daemon under the bare
+        # :latest tags the compose expects (x-local — no pull at sandbox-create
+        # time). The daemon has clean egress, so it does the GHCR pull; we retag.
+        - name: stage-images
+          image: docker:27-cli
+          command:
+            - sh
+            - -ceu
+            - |
+              for img in wayback-proxy loom-gym-sandbox; do
+                docker pull "ghcr.io/agentydragon/$img:latest"
+                docker tag "ghcr.io/agentydragon/$img:latest" "$img:latest"
+              done
+          env:
+            - name: DOCKER_HOST
+              value: tcp://docker-ci.allegedly.works:2376
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /certs
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
       containers:
         - name: eval
           image: ghcr.io/agentydragon/loom-gym-eval:latest

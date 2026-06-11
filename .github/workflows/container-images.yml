@@ -22,6 +22,7 @@ on:
       - "skills/freecad/Dockerfile.test"
       - "third_party/kubernetes-mcp-server-pin.txt"
       - "x/rtl_tcp/Dockerfile"
+      - "loom/gym/sandbox/**"
       - ".github/workflows/container-images.yml"
   workflow_dispatch:
 
@@ -129,6 +130,25 @@ jobs:
           context: x/rtl_tcp
           cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache
           cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache,mode=max
+
+  loom-gym-sandbox:
+    name: Loom Gym Sandbox
+    # The forecasting-eval agent environment (interactive python3 + sci toolkit).
+    # A Dockerfile rather than an oci_image because the agent shells into a general
+    # python env, not a single py_binary. The in-cluster eval Job pulls this from
+    # GHCR and tags it loom-gym-sandbox:latest into the docker-ci daemon.
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/loom-gym-sandbox
+          context: loom/gym/sandbox
 
   # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
   # bypasses the main-protection ruleset (github-actions can't bypass on
