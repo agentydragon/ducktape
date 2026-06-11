@@ -790,3 +790,56 @@ export { composed };
     );
     assert_entry_output(&fixture, "41\n");
 }
+
+// Regression test (originally RED) for the phantom-first import
+// divergence: the emitter used to place phantom side-effect imports
+// FIRST in every moved module as a separate run before the
+// cross-module binding imports, while the realizability gate's
+// evaluation simulator ordered ALL of a module's import targets in
+// one `linker_position` list. A phantom provider with a HIGHER
+// linker position than a binding-import provider therefore made the
+// emitted DFS order diverge from the simulated one. Both sides now
+// consume the single shared ordering (`EsmImportOrder`); this pins
+// the emitted shape: imports interleave by linker position, so the
+// binding import of `mod_p1` (the deeper dependency) precedes the
+// phantom side-effect import of `mod_p2`.
+//
+// Shape: `mod_m`'s body references `p1_v` directly (binding import
+// of `mod_p1`) and calls the residual helper `read_helper` at init,
+// whose body reads `p2_v` — an at-init-promoted constraining edge to
+// `mod_p2` with no direct binding reference, i.e. a phantom
+// side-effect import. `p2_v`'s initializer reads `p1_v`, forcing
+// `linker_position(mod_p1) < linker_position(mod_p2)`.
+#[test]
+fn phantom_side_effect_import_interleaves_with_binding_imports_by_linker_position() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const p1_v = "x";
+const p2_v = p1_v + "y";
+function read_helper() { return p2_v; }
+const m_v = p1_v + read_helper();
+console.log(m_v);
+export { p1_v, p2_v, m_v };
+"#,
+        vec![
+            logical_module("mod_p1", &[Member::new("p1_v")]),
+            logical_module("mod_p2", &[Member::new("p2_v")]),
+            logical_module("mod_m", &[Member::new("m_v")]),
+        ],
+    ));
+
+    let m_src = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_m.js"))
+        .expect("read mod_m.js");
+    let binding_import_pos = m_src
+        .find("import { p1_v }")
+        .unwrap_or_else(|| panic!("mod_m.js missing binding import of p1_v:\n{m_src}"));
+    let phantom_import_pos = m_src.find(r#"import "./mod_p2.js""#).unwrap_or_else(|| {
+        panic!("mod_m.js missing phantom side-effect import of mod_p2:\n{m_src}")
+    });
+    assert!(
+        binding_import_pos < phantom_import_pos,
+        "phantom import of mod_p2 (linker position 1) must follow the \
+         binding import of mod_p1 (linker position 0) — shared-order \
+         interleaving, not phantom-first:\n{m_src}",
+    );
+    assert_entry_output(&fixture, "xxy\n");
+}

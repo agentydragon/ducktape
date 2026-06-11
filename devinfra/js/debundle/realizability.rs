@@ -41,10 +41,8 @@ use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitabl
 use rustc_hash::FxHashSet;
 
 use crate::OwnerId;
-use crate::graph::{
-    OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
-    chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
-};
+use crate::esm_import_order::EsmImportOrder;
+use crate::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
 use crate::ids::ModuleId;
 use crate::partition::Partition;
 use crate::rollback_graph::{GraphMark, RollbackDiGraph};
@@ -296,17 +294,19 @@ pub fn check_realizability(
 /// decide whether Lemma 2's source-import reversal actually rescues
 /// a candidate asymmetric I-SCC at runtime.
 ///
-/// The simulator models the **same** import-ordering decisions
-/// the materializer makes:
-///   - residual's imports are sorted by `source_import_position`
-///     (the Lemma 2 algorithm — reverse-within-SCC of the
-///     constraining linker order). See
-///     `ChunkFactorization::source_import_position` and
-///     `lowering::lower_chunk`.
-///   - every other module's imports are sorted by `linker_position`
-///     (dependency-first toposort of the constraining-edge
-///     subgraph). See `ChunkFactorization::linker_position` and
-///     `lowering::imports_cross::cross_module_imports_for_plan`.
+/// The simulator models the **same** import-ordering decisions the
+/// materializer makes, via the shared `EsmImportOrder` (the single
+/// source of truth both sides consume — see `esm_import_order`):
+///   - residual (= the chunk's emitted entry file) imports **every**
+///     emitted logical module — binding imports for binding-owning
+///     plans, side-effect-only imports for binding-less plans — in
+///     `EsmImportOrder::sort_entry_imports` order (Lemma 2's
+///     source-import order). See `lowering::lower_chunk`.
+///   - every other module's intra-chunk imports (cross-module
+///     binding imports, phantom side-effect imports, residual-entry
+///     import — one merged list) follow
+///     `EsmImportOrder::sort_module_imports` (dependency-first
+///     linker order). See `lowering::lower_chunk::lower_single_plan`.
 ///
 /// It then walks DFS from residual, records the post-order
 /// evaluation index per module, and verifies every cross-module
@@ -338,30 +338,20 @@ impl EsmEvaluationSimulator {
         constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
         residual: ModuleId,
     ) -> Self {
-        let mut extra = BTreeSet::new();
-        extra.insert(residual);
-        // Position-lookup view of the canonical linker order — the
-        // simulator's `EsmIGraph` resolves neighbor sort keys with
-        // O(1) per probe.
-        let linker_position = position_lookup(&chunk_linker_order_from_pairs(
-            constraining_pairs.iter().copied(),
-        ));
-        let source_import_order = chunk_source_import_order_from_adjacency(
-            constraining_pairs.iter().copied(),
-            i_successors,
-            &extra,
-        );
-        let source_import_position: BTreeMap<ModuleId, usize> = source_import_order
-            .into_iter()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
-            .collect();
-        let post_order = simulate_esm_post_order(
-            residual,
-            i_successors,
-            &linker_position,
-            &source_import_position,
-        );
+        // The simulator's module universe: every module that appears
+        // in the I-graph (plus residual itself). The emitted entry
+        // imports every logical module; modules with no I-edges are
+        // DFS dead-ends that cannot affect any other module's
+        // post-order, so restricting the universe to I-graph
+        // participants is exact.
+        let mut nodes: BTreeSet<ModuleId> = BTreeSet::new();
+        nodes.insert(residual);
+        for (from, succs) in i_successors {
+            nodes.insert(*from);
+            nodes.extend(succs.iter().copied());
+        }
+        let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
+        let post_order = simulate_esm_post_order(residual, i_successors, &nodes, &import_order);
         Self { post_order }
     }
 
@@ -398,17 +388,16 @@ impl EsmEvaluationSimulator {
 
 /// Simulate ECMA-262 Phase-2 DFS from `residual`. Returns a
 /// `post_order` map: lower index = earlier post-order = body
-/// evaluates earlier. Modules unreachable from `residual` are
-/// absent.
+/// evaluates earlier.
 ///
-/// Import ordering per visitor:
-///   - At `residual`: `source_import_position` (Lemma 2-aware).
-///   - Elsewhere: `linker_position` ascending (dependency-first;
-///     mirrors `lowering::imports_cross::cross_module_imports_for_plan`).
-///
-/// Modules without a `linker_position` slot fall back to
-/// `usize::MAX` — i.e. evaluated last among that module's imports —
-/// matching the materializer's `unwrap_or(usize::MAX)`.
+/// Import ordering per visitor (the shared `EsmImportOrder` rules):
+///   - At `residual`: fan out to **every** module in `nodes`
+///     (the emitted entry imports every logical module), in
+///     `sort_entry_imports` order (Lemma 2-aware).
+///   - Elsewhere: that module's I-successors in
+///     `sort_module_imports` order (dependency-first; mirrors the
+///     merged cross/phantom/residual-entry import list the emitter
+///     renders in `lowering::lower_chunk::lower_single_plan`).
 ///
 /// Cycle no-op: a back-edge to a module already on the link-DFS
 /// stack is skipped. petgraph's `DfsPostOrder` filters neighbors
@@ -418,14 +407,14 @@ impl EsmEvaluationSimulator {
 fn simulate_esm_post_order(
     residual: ModuleId,
     i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    linker_position: &BTreeMap<ModuleId, usize>,
-    source_import_position: &BTreeMap<ModuleId, usize>,
+    nodes: &BTreeSet<ModuleId>,
+    import_order: &EsmImportOrder,
 ) -> BTreeMap<ModuleId, usize> {
     let graph = EsmIGraph {
         i_successors,
         residual,
-        linker_position,
-        source_import_position,
+        nodes,
+        import_order,
     };
     let mut dfs = DfsPostOrder::new(&graph, residual);
     let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
@@ -437,17 +426,22 @@ fn simulate_esm_post_order(
 }
 
 /// Petgraph view over `i_successors` that bakes in the ECMA-262
-/// import-order sort: residual fans out in `source_import_position`
-/// order, every other module in `linker_position` order. Neighbors
-/// are yielded in REVERSE sort-key order so that
-/// `DfsPostOrder`'s push-all-then-pop-top semantics visits the
-/// smallest-key successor first (matching the hand-rolled walker's
-/// reverse-push of `sorted_successors`).
+/// import-order sort from the shared `EsmImportOrder`: residual fans
+/// out to every module in `nodes` in entry-import order, every other
+/// module to its I-successors in module-import order. Neighbors are
+/// yielded in REVERSE sort-key order so that `DfsPostOrder`'s
+/// push-all-then-pop-top semantics visits the smallest-key successor
+/// first (matching the hand-rolled walker's reverse-push of
+/// `sorted_successors`).
 struct EsmIGraph<'a> {
     i_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     residual: ModuleId,
-    linker_position: &'a BTreeMap<ModuleId, usize>,
-    source_import_position: &'a BTreeMap<ModuleId, usize>,
+    /// The simulator's module universe (see
+    /// `EsmEvaluationSimulator::build`). Residual's neighbor set —
+    /// the emitted entry imports every logical module, not only the
+    /// ones residual's own statements reference.
+    nodes: &'a BTreeSet<ModuleId>,
+    import_order: &'a EsmImportOrder,
 }
 
 impl GraphBase for &EsmIGraph<'_> {
@@ -479,20 +473,31 @@ impl IntoNeighbors for &EsmIGraph<'_> {
     type Neighbors = std::vec::IntoIter<ModuleId>;
 
     fn neighbors(self, node: ModuleId) -> Self::Neighbors {
-        let Some(succs) = self.i_successors.get(&node) else {
-            return Vec::new().into_iter();
-        };
-        let mut succs: Vec<ModuleId> = succs.iter().copied().collect();
-        let positions = if node == self.residual {
-            self.source_import_position
+        let mut succs: Vec<ModuleId> = if node == self.residual {
+            // The emitted entry imports EVERY logical module
+            // (binding-owning plans via named imports, binding-less
+            // plans via side-effect-only imports), not just the
+            // modules residual's own statements reference.
+            self.nodes
+                .iter()
+                .copied()
+                .filter(|m| *m != self.residual)
+                .collect()
         } else {
-            self.linker_position
+            self.i_successors
+                .get(&node)
+                .map(|succs| succs.iter().copied().collect())
+                .unwrap_or_default()
         };
         // Reverse sort: largest key first, smallest key last. petgraph's
         // DfsPostOrder pushes neighbors in iteration order and visits
         // the top of the stack next, so the LAST-yielded neighbor is
         // descended into first.
-        succs.sort_by_key(|m| std::cmp::Reverse(positions.get(m).copied().unwrap_or(usize::MAX)));
+        if node == self.residual {
+            succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.entry_import_sort_key(*m)));
+        } else {
+            succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.module_import_sort_key(*m)));
+        }
         succs.into_iter()
     }
 }
@@ -2485,15 +2490,23 @@ mod tests {
         );
     }
 
-    /// Same SCC shape but residual has NO direct I-edge into the
-    /// SCC — residual only reaches the SCC through `mod_mediator`,
-    /// whose imports are sorted by `linker_position` (dependency
-    /// first). The simulator's DFS enters `mod_dep` first via
-    /// mediator; mod_dep's lazy back-edge to mod_dependent fires;
-    /// mod_dependent body evaluates with dep_value uninitialized.
-    /// Verdict must report the SCC.
+    /// Same SCC shape but residual's own statements have NO direct
+    /// I-edge into the SCC — they reach it only through
+    /// `mod_mediator`. Still realizable: the emitted entry imports
+    /// EVERY logical module (not just the ones residual's statements
+    /// reference), in Lemma 2's source-import order, so ESM DFS
+    /// enters the SCC at `mod_dependent` (the dependent) before the
+    /// mediator's dependency-first imports could reach it at
+    /// `mod_dep`. The simulator's universal residual fan-out models
+    /// this; the matching Node-anchored pin is
+    /// `e2e/mediator_reaches_asymmetric_cycle_test` (the emitted
+    /// output runs cleanly and prints the mediator-derived value).
+    ///
+    /// Simulated post-order: `mod_dep` → `mod_dependent` →
+    /// `mod_mediator` → residual; the constraining pair
+    /// `(mod_dependent → mod_dep)` is satisfied.
     #[test]
-    fn mediator_only_entrant_into_asymmetric_cycle_is_unrealizable() {
+    fn mediator_only_entrant_into_asymmetric_cycle_is_rescued_by_entry_imports() {
         // owner_0: const dep_value = "alpha"
         // owner_1: const cross_value = dep_value + "-beta"
         // owner_2: function lazy_reader() { return cross_value; }
@@ -2513,28 +2526,17 @@ mod tests {
         // owner_5 (console.log) stays in residual.
         let verdict = check_realizability(&owner_graph, &partition);
         assert!(
-            !verdict.is_realizable(),
-            "mediator-only entrant should trigger TDZ; verdict: {verdict:#?}",
+            verdict.is_realizable(),
+            "entry's universal per-plan imports DFS into the SCC at the \
+             dependent first (Lemma 2); the mediator path never wins. \
+             verdict: {verdict:#?}",
         );
-        let modules = verdict.modules_in_unrealizable_sccs();
-        assert!(modules.contains(&module_id(1)) && modules.contains(&module_id(2)));
     }
 
-    /// **RED regression test** for the gaffer over-rejection (the
-    /// "Pass 2 simulator considers lazy back-edges in the runtime DFS"
-    /// bug). Asymmetric I-cycle where residual reaches the SCC only
+    /// Regression test for the gaffer over-rejection. Asymmetric
+    /// I-cycle where residual's own statements reach the SCC only
     /// via the constraining edge's **target** (the dependency), not
-    /// the source (the dependent). Lemma 2's source-import reversal
-    /// can't help because residual has no direct i_edge into the
-    /// dependent — DFS enters the SCC via the dependency, then the
-    /// dependency's lazy back-edge to the dependent pulls the
-    /// dependent in first, producing a `post_order[dependent] <
-    /// post_order[dependency]` that the `tdz_pairs` check flags as
-    /// TDZ. But the runtime ESM DFS does NOT follow lazy back-edges
-    /// (they're function-body reads, no ESM `import` emitted), so
-    /// the actual evaluation order is `dependency` body → `residual`
-    /// body, with the dependent never loaded — no TDZ at runtime,
-    /// gate should accept.
+    /// the source (the dependent).
     ///
     /// Shape (gaffer's `domains/system/ids` ↔ `domains/system/schemas`
     /// minimal repro):
@@ -2551,35 +2553,30 @@ mod tests {
     ///   - `residual → mod_schemas` `EagerUse(schemas_target)` (constraining)
     ///
     /// I-graph SCC: `{mod_ids, mod_schemas}`. Residual is NOT in the
-    /// SCC; residual's only I-edge into the SCC is to `mod_schemas`.
+    /// SCC; residual's statements only reference `mod_schemas`.
     ///
-    /// Pre-investigation hypothesis (v2 plan): lazy-edge exclusion
-    /// from `i_successors` would make this gate accept. Empirically
-    /// (`/tmp/claude-1000/tdz_materializer_plan_v2.md`) that
-    /// hypothesis was wrong — excluding lazy from `i_successors`
-    /// breaks four existing soundness tests
-    /// (`mediator_reaches_asymmetric_cycle_test`,
-    /// `runtime_tdz_on_imported_class_test`, etc.) because
-    /// asymmetric-cycle TDZ detection genuinely depends on the
-    /// simulator's DFS following lazy back-edges. Lazy edges live
-    /// in `i_successors` but NOT in `edges` (constraining only) —
-    /// the unification's split surface. The gaffer-shape
-    /// over-rejection remains an open design question: the
-    /// asymmetric-cycle gate still flags shapes the runtime
-    /// arguably handles (chunker-determined source order rescues
-    /// them), but no precise predicate for "this asymmetric cycle
-    /// is runtime-safe" exists yet. Marked ignored so the
-    /// regression case stays in the test file as documentation.
+    /// The historical over-rejection: the simulator modeled residual's
+    /// DFS fan-out as only the modules residual's statements
+    /// reference, entered the SCC at `mod_schemas`, followed the
+    /// emitted lazy-read import back to `mod_ids`, and flagged
+    /// `post_order[mod_schemas] > post_order[mod_ids]` as TDZ. The
+    /// emitted entry, however, has always imported every plan —
+    /// `mod_ids` included — in Lemma 2's source-import order, which
+    /// puts the dependent `mod_ids` first; the runtime DFS unwinds
+    /// through `mod_schemas` and evaluates it before `mod_ids`. The
+    /// simulator now models the entry's universal imports and
+    /// accepts.
     #[test]
-    #[ignore = "gaffer over-rejection — see comment above; needs deeper Pass-2 model"]
-    fn pass_two_simulator_must_ignore_lazy_back_edges_in_runtime_dfs() {
+    fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
         // owner_0: const schemas_target = "v"     (mod_schemas)
         // owner_1: function lazy_back() { return ids_val; }
         //                                         (mod_schemas; lazy_use ids_val)
-        // owner_2: const ids_val = schemas_target + "-derived"
-        //                                         (mod_ids; eager_use schemas_target)
+        // owner_2: const ids_val = schemas_target (mod_ids; eager_use
+        //          schemas_target — a PURE initializer, so no
+        //          sequenced edges hand residual an incidental
+        //          direct edge to mod_ids)
         // owner_3: console.log(schemas_target);   (residual; eager_use schemas_target)
-        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target + \"-derived\"; console.log(schemas_target);";
+        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target; console.log(schemas_target);";
         let owner_graph = parse_and_build(source);
         let mut partition = Partition::new(&owner_graph, module_id(0));
         partition.set(OwnerId(0), module_id(1)); // schemas_target → mod_schemas
@@ -2589,11 +2586,50 @@ mod tests {
         let verdict = check_realizability(&owner_graph, &partition);
         assert!(
             verdict.is_realizable(),
-            "gaffer-shape asymmetric cycle must accept: lazy back-edge from \
-             mod_schemas to mod_ids is a function-body read, not an ESM \
-             import. Runtime DFS won't follow it; the Pass-2 simulator's \
-             post-order must mirror that by excluding lazy edges from \
-             i_successors. verdict: {verdict:#?}",
+            "gaffer-shape asymmetric cycle must accept: entry imports \
+             every plan in Lemma 2's source-import order, so the runtime \
+             DFS enters the SCC at mod_ids (the dependent) and evaluates \
+             mod_schemas first. verdict: {verdict:#?}",
+        );
+    }
+
+    /// Differential pin: the simulator's predicted Phase-2 post-order
+    /// for the gaffer shape equals the evaluation order Node produces
+    /// for the emitted tree. The Node side is pinned by
+    /// `e2e/asymmetric_non_residual_cycle_test::`
+    /// `dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`
+    /// — the same shape, which TDZ-crashes under Node unless
+    /// `mod_schemas`' body evaluates before `mod_ids`'. Emitter and
+    /// simulator both consume `EsmImportOrder`, so this pin guards
+    /// the shared-ordering contract from the gate side.
+    #[test]
+    fn simulator_post_order_matches_emitted_evaluation_order() {
+        // owner_0: const schemas_target = "v"      (mod_schemas)
+        // owner_1: function lazy_back() { return ids_val; } (mod_schemas)
+        // owner_2: const ids_val = schemas_target  (mod_ids)
+        // owner_3: console.log(schemas_target)     (residual)
+        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target; console.log(schemas_target);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // schemas_target → mod_schemas
+        partition.set(OwnerId(1), module_id(1)); // lazy_back     → mod_schemas
+        partition.set(OwnerId(2), module_id(2)); // ids_val       → mod_ids
+        // owner_3 (console.log) stays in residual.
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        let simulator =
+            EsmEvaluationSimulator::build(&canonical.i_successors, &pairs, partition.residual());
+        // Node evaluates: mod_schemas body, mod_ids body, then the
+        // entry (residual) body — entry's imports are
+        // [mod_ids, mod_schemas] (intra-SCC reversal), DFS unwinds
+        // through mod_schemas first, and the root body is last.
+        let expected: BTreeMap<ModuleId, usize> =
+            [(module_id(1), 0), (module_id(2), 1), (module_id(0), 2)]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            simulator.post_order, expected,
+            "simulated post-order must match the emitted tree's actual Node evaluation order",
         );
     }
 

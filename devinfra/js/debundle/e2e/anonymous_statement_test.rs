@@ -91,6 +91,45 @@ export { X, Existing };
     );
 }
 
+// Regression test (originally RED) for the anonymous-only-module
+// side-effect drop: a logical module whose only member is an
+// anonymous statement owns no bindings, so the entry used to emit no
+// import for it at all — the emitted file existed but was never
+// loaded, and its side effects silently vanished while the gate
+// accepted the spec. The entry must emit a side-effect-only
+// `import "./<module>.js";` for binding-less modules, placed by the
+// same shared import ordering as every other entry import.
+#[test]
+fn anonymous_only_module_side_effects_still_run() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const keep = "k";
+console.log("anon-side-effect");
+export { keep };
+"#,
+        vec![logical_module_with_anon(
+            "anon_only",
+            &[],
+            &[r#"console.log("anon-side-effect");"#],
+        )],
+    ));
+
+    // The module file carries the claimed statement...
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/anon_only.js",
+        &[r#"console.log("anon-side-effect")"#],
+        &[],
+    );
+    // ...and entry loads it via a bare side-effect import.
+    let entry_src = fs::read_to_string(&fixture.entry_path).expect("read emitted entry");
+    assert!(
+        entry_src.contains("modules/anon_only.js"),
+        "entry must import the binding-less module so its side effects run:\n{entry_src}",
+    );
+    // End-to-end: the moved side effect actually executes under Node.
+    assert_entry_output(&fixture, "anon-side-effect\n");
+}
+
 // Pin the zero-match error path for anonymous-statement selectors.
 //
 // When an `anonymous_statements[].match` source doesn't match any

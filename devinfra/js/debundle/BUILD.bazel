@@ -262,6 +262,7 @@ rust_library(
         "atomic_units.rs",
         "chunk_analysis.rs",
         "chunk_factorization.rs",
+        "esm_import_order.rs",
         "factor_assembly.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",

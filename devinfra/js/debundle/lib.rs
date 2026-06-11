@@ -18,6 +18,7 @@ mod analysis_hints;
 mod atomic_units;
 mod chunk_analysis;
 mod chunk_factorization;
+mod esm_import_order;
 mod factor_assembly;
 mod facts;
 mod graph;
@@ -37,6 +38,7 @@ pub use atomic_units::{
 };
 pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
+pub use esm_import_order::EsmImportOrder;
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };

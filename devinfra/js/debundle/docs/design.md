@@ -737,8 +737,9 @@ module's `import` directives must be emitted in a specific source
 order so that depth-first link traversal lands on a Phase-2
 evaluation order matching the constraining-edge linearization.
 
-The materializer computes `ChunkFactorization::source_import_position` to drive
-this. The algorithm:
+The materializer computes the source-import order on
+`esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
+to drive this. The algorithm:
 
 1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
 2. Each SCC is assigned a dependency rank = the minimum
@@ -768,23 +769,29 @@ mod_b. mod_b's at-init read of A succeeds.
 reversal trick only rescues an asymmetric I-cycle when
 ECMA-262's actual evaluation DFS, run over the materializer's
 import-order choices, lands every constraining edge's target
-strictly before its source. Whether that holds depends on the
-spec's full import topology — not just the SCC's internal shape:
+strictly before its source. Two facts about the emitted structure
+decide that:
 
-1. **Residual is in the cycle, with a constraining edge whose
-   target is residual.** Residual is the ESM DFS root —
-   post-order evaluates every other cycle member first, then
-   residual. A constraining read of residual's
+1. **The entry imports every logical module.** The emitted entry
+   file carries one `import` directive per plan — named imports
+   for binding-owning plans, side-effect-only
+   `import "./<plan>.js";` for binding-less plans (anonymous-
+   statement-only modules) — in `source_import_position` order.
+   ESM DFS therefore always enters a non-residual SCC at its
+   most-dependent member (Lemma 2's intra-SCC reversal) before
+   any mediator's dependency-first imports can reach it. This is
+   why a non-residual mediator reaching into an SCC does NOT
+   reject: the entry's own import of the SCC's dependent wins
+   the race (pinned by
+   `e2e/mediator_reaches_asymmetric_cycle_test` and
+   `e2e/asymmetric_non_residual_cycle_test`).
+2. **Residual in the cycle, with a constraining edge whose
+   target is residual, always TDZs.** Residual is the ESM DFS
+   root — post-order evaluates every other cycle member first,
+   then residual. A constraining read of residual's
    `class`/`const`/`let` bindings TDZs. ESM hoists every
    `import` above any statement, so no source-order trick fixes
    it.
-2. **A non-residual mediator reaches into an SCC without
-   residual having a direct entrant.** When the only way DFS
-   reaches the SCC is through a mediator, the mediator's
-   imports are sorted by `linker_position` (dependency-first,
-   not reversed). DFS enters via the dependency, the lazy back-
-   edge fires the cycle, and the dependent's body evaluates
-   while the dependency's body is mid-evaluation. Result: TDZ.
 
 The realizability primitive (`check_realizability` and the
 matching `IncrementalQuotient::verdict*` helpers) makes the
@@ -797,10 +804,14 @@ verdict by:
    For every multi-module SCC carrying at least one constraining
    edge, run an in-process **ESM evaluation simulator** rooted at
    residual:
-   - At residual, sort imports by `source_import_position`
-     (Lemma 2 — intra-SCC reverse of constraining linker order).
-   - At every other module, sort imports by `linker_position`
-     (dependency-first toposort of the constraining subgraph).
+   - At residual, fan out to EVERY module in the I-graph (the
+     entry's universal per-plan imports), in entry-import order
+     (`EsmImportOrder::sort_entry_imports` — Lemma 2's intra-SCC
+     reverse of constraining linker order).
+   - At every other module, visit its I-successors in
+     module-import order (`EsmImportOrder::sort_module_imports`
+     — dependency-first toposort of the constraining subgraph,
+     `ModuleId` tie-break).
    - Walk DFS; record each module's post-order index when its
      body would evaluate.
    - For each constraining edge `(M, X)` inside the SCC, demand
@@ -808,10 +819,15 @@ verdict by:
      runtime → reject the SCC.
 
 Pure-lazy I-cycles (no constraining edge inside the SCC) skip
-pass 2's simulator and pass. The simulator mirrors the
-materializer's emit-time decisions exactly
-(`ChunkFactorization::{source_import_position, linker_position}`,
-`lowering::lower_chunk`, `lowering::imports_cross`), so a spec
+pass 2's simulator and pass. The simulator and the emitter share
+ONE ordering implementation — `esm_import_order::EsmImportOrder`,
+built from the canonical `ChunkConstrainingEdgeSet` — so the
+import order the gate simulates is structurally the order
+`lowering::lower_chunk` emits: the entry's import list and every
+module's merged intra-chunk import list (cross-module binding
+imports, phantom side-effect imports, and the residual-entry
+import, interleaved by one sort) come from the same two sort
+rules the simulator's DFS uses for its neighbor order. A spec
 accepted by the gate is one the emitted ESM bundle actually
 evaluates without TDZ.
 
@@ -1105,15 +1121,19 @@ in `I`, sort the import list so that the earliest-in-`L` successor
 appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
-**Implementation.** `ChunkFactorization::source_import_position`
-(see "Lemma 2: entry-side import ordering" above) computes `L` from
-the constraining-edge subgraph's toposort, reversed within each
-`I ∪ S` SCC so that the cycle dependent is imported first and DFS
-unwinds through the dependency. `lowering::lower_chunk` sorts
-entry's emitted `import` directives by this position. The validator
-rejects any spec the primitive's tightened clause-3 rule does not
-accept, so every spec the materializer reaches `lower_chunk` for has
-an `L` Lemma 2 can realize.
+**Implementation.** `esm_import_order::EsmImportOrder` (held on
+`ChunkFactorization`, see "Lemma 2: entry-side import ordering"
+above) computes `L` from the constraining-edge subgraph's toposort,
+reversed within each `I ∪ S` SCC so that the cycle dependent is
+imported first and DFS unwinds through the dependency.
+`lowering::lower_chunk` sorts entry's emitted `import` directives
+with `sort_entry_imports` and every module's merged intra-chunk
+import list with `sort_module_imports`; the realizability gate's
+evaluation simulator applies the same two sorts to its DFS neighbor
+order, so the simulated linker order and the emitted one cannot
+diverge. The validator rejects any spec the primitive's tightened
+clause-3 rule does not accept, so every spec the materializer
+reaches `lower_chunk` for has an `L` Lemma 2 can realize.
 
 The remaining principled gap is the `(at-init forward, lazy back)`
 shape **where residual itself is a cycle member**. Lemma 2's
@@ -2710,7 +2730,13 @@ Within `materialize_logical_modules`, the substages are:
    evidence.
 9. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
-   No init wrappers.
+   No init wrappers. Import-directive ordering comes from the shared
+   `esm_import_order::EsmImportOrder` (the same object the
+   realizability gate's evaluation simulator consults): the entry
+   imports every logical module — side-effect-only for binding-less
+   plans — in entry-import order, and each module's intra-chunk
+   imports (binding, phantom side-effect, residual-entry) form one
+   merged list in module-import order.
 
 Treat those stages as a functional data flow. Analysis produces
 immutable facts; assignment is explicit input; quotienting derives a

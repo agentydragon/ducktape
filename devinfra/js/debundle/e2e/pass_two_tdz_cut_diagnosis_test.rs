@@ -3,41 +3,43 @@
 //! back-edge that closes the I-cycle, and `cycles.json` carries a
 //! non-empty `cut` naming the violated at-init read.
 //!
-//! The fixture is the mediator shape from
-//! `mediator_reaches_asymmetric_cycle_test` (see that test's module
-//! doc for the full DFS walkthrough): the constraining subgraph of
-//! the `{mod_dep, mod_dependent}` SCC is acyclic (one forward
-//! `EagerUse`, one lazy back-edge), so a feedback-arc-set over
-//! constraining edges alone finds nothing to cut. The cut must
-//! instead come from the simulator's violated post-order check:
-//! `cross_value` (mod_dependent) at-init reads `dep_value`
-//! (mod_dep) while mod_dep's body is still mid-evaluation.
+//! The fixture is a residual-in-SCC shape (the canonical remaining
+//! Pass-2 rejection now that the simulator models the entry's
+//! universal per-plan imports): the constraining subgraph of the
+//! `{residual, mod_dependent}` SCC is acyclic (one forward
+//! `EagerUse` into residual, one lazy back-edge out of residual), so
+//! a feedback-arc-set over constraining edges alone finds nothing to
+//! cut. The cut must instead come from the simulator's violated
+//! post-order check: `cross_value` (mod_dependent) at-init reads
+//! `seed_value`, which stays in the entry file — the ESM DFS root,
+//! whose body always evaluates last.
 
 use debundle_e2e_support::*;
 use serde_json::Value;
 
-fn mediator_fixture<'a>() -> FixtureOpts<'a> {
+// No impure residual statement may follow `cross_value` in source
+// order: `cross_value`'s initializer is conservatively impure (the
+// `+` can fire `valueOf`), and a later impure residual statement
+// would add a Sequenced residual→mod_dependent edge, upgrading the
+// rejection to a Pass-1 mutual constraining cycle — a different
+// (FAS-cut) diagnostic path than the Pass-2 simulator cut this test
+// pins.
+fn residual_cycle_fixture<'a>() -> FixtureOpts<'a> {
     FixtureOpts::new(
-        r#"const dep_value = "alpha";
-const cross_value = dep_value + "-beta";
-function lazy_reader() { return cross_value; }
-function mediator_helper() { return dep_value + "-via-mediator-" + lazy_reader(); }
-const mediator_init = mediator_helper();
-console.log(mediator_init);
-export { mediator_init };
+        r#"const seed_value = "alpha";
+const cross_value = seed_value + "-beta";
+function lazy_back() { return cross_value; }
+export { seed_value, lazy_back };
 "#,
-        vec![
-            logical_module(
-                "mod_dep",
-                &[Member::new("dep_value"), Member::new("lazy_reader")],
-            ),
-            logical_module("mod_dependent", &[Member::new("cross_value")]),
-            logical_module(
-                "mod_mediator",
-                &[Member::new("mediator_helper"), Member::new("mediator_init")],
-            ),
-        ],
+        vec![logical_module(
+            "mod_dependent",
+            &[Member::new("cross_value")],
+        )],
     )
+    // Inline mode keeps `seed_value` / `lazy_back` in the entry file
+    // (the partition's residual), which is what makes the eager read
+    // target the DFS root rather than an ordinary sibling module.
+    .with_unassigned_mode(unassigned_mode_inline())
 }
 
 #[test]
@@ -48,23 +50,22 @@ fn pass_two_rejection_summary_names_tdz_binding_pair_and_lazy_closure() {
     // "0 R/S edge(s)" with no rows, which is what the FAS-only cut
     // computation produced for asymmetric (Pass-2) rejections.
     expect_rejection_containing_all(
-        mediator_fixture(),
+        residual_cycle_fixture(),
         &[
             "unrealizable",
             "cross_value",
-            "dep_value",
+            "seed_value",
             "at-init",
-            "mod_dep",
             "mod_dependent",
             "closes through lazy read",
-            "lazy_reader",
+            "lazy_back",
         ],
     );
 }
 
 #[test]
 fn pass_two_rejection_cycles_json_has_nonempty_cut() {
-    let rejected = run_rejection_fixture(mediator_fixture());
+    let rejected = run_rejection_fixture(residual_cycle_fixture());
     let cycles_path = rejected
         .report_root
         .join("static")
@@ -80,8 +81,7 @@ fn pass_two_rejection_cycles_json_has_nonempty_cut() {
         .map(|m| m.as_str().unwrap())
         .collect();
     assert!(
-        modules.iter().any(|m| m.contains("mod_dep"))
-            && modules.iter().any(|m| m.contains("mod_dependent")),
+        modules.iter().any(|m| m.contains("mod_dependent")),
         "blocking SCC must list the I-cycle members: {modules:?}",
     );
     let cut = entry["cut"].as_array().unwrap();
@@ -92,10 +92,10 @@ fn pass_two_rejection_cycles_json_has_nonempty_cut() {
     // The cut names the violated constraining edge with both bindings.
     assert!(
         cut.iter().any(|edge| {
-            edge["binding"].as_str() == Some("dep_value")
+            edge["binding"].as_str() == Some("seed_value")
                 && edge["from_binding"].as_str() == Some("cross_value")
                 && edge["kind"].as_str() == Some("eager_use")
         }),
-        "cut must name the violated at-init read cross_value -> dep_value: {cut:?}",
+        "cut must name the violated at-init read cross_value -> seed_value: {cut:?}",
     );
 }

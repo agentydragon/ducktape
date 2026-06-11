@@ -172,14 +172,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     })?;
     // Two passes: build entry imports in plan order (so the
     // first plan to claim a binding wins disambiguation), then
-    // sort the resulting imports by `linker_order` so ECMA-262's
+    // order them through the shared `EsmImportOrder` so ECMA-262's
     // depth-first link traversal evaluates dependencies first.
-    // Plan-order disambiguation + linker-order placement keeps
+    // Plan-order disambiguation + shared-order placement keeps
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See docs/design.md "Module dep graphs"
     // and "Lemma 2".
     let build_entry_imports_started = Instant::now();
-    let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
+    let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
     let mut body_renames = BTreeMap::<String, String>::new();
     // Seed body_renames with `chunk_renames` entries for bindings
@@ -255,9 +255,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     }
     occupied.extend(collect_local_binding_names(&entry_body));
     for (module_index, plan) in module_plans.iter().enumerate() {
-        if plan.bindings.is_empty() {
-            continue;
-        }
         // Drop bindings that don't exist anywhere (no entry in
         // `binding_assignment`). Bindings owned by another plan stay
         // in the import — they're a separate "two plans claim the
@@ -270,6 +267,22 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         if live_bindings.is_empty() {
+            // A plan with no importable bindings can still carry
+            // emitted content (anonymous claimed statements). The
+            // entry must still load it — a module nothing imports
+            // never evaluates, silently dropping its side effects —
+            // so emit a side-effect-only `import "./<plan>.js";`.
+            // Included in the shared entry ordering below, exactly
+            // like the gate simulator's universal residual edges.
+            if !selected_by_module[module_index].is_empty() {
+                entry_imports.push((
+                    ModuleId(LogicalModuleIndex(module_index)),
+                    import_decl_module_item(
+                        Vec::new(),
+                        &relative_source(entry_file, &plan.target_file),
+                    ),
+                ));
+            }
             continue;
         }
         let mut emit_renames = BTreeMap::<String, String>::new();
@@ -286,22 +299,22 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             }
         }
         entry_imports.push((
-            module_index,
+            ModuleId(LogicalModuleIndex(module_index)),
             import_decl_for_plan(entry_file, &plan.target_file, &resolved),
         ));
     }
-    // Sort entry imports by ChunkFactorization::source_import_position, which
-    // implements Lemma 2 (docs/design.md "The realizability theorem"):
-    // for acyclic imports graphs the order matches linker_order
+    // Order entry imports through the shared `EsmImportOrder`
+    // (Lemma 2, docs/design.md "The realizability theorem"): for
+    // acyclic imports graphs the order matches linker_order
     // (dependency-first source), but for cyclic-I shapes accepted
     // by the relaxed clause-3 rule the SCC members are reverse-
     // sorted so DFS unwinds the dependency first in post-order.
-    // Stable sort preserves plan-order for ties.
-    entry_imports.sort_by_key(|(idx, _)| {
-        factorization
-            .source_import_position(ModuleId(LogicalModuleIndex(*idx)))
-            .unwrap_or(usize::MAX)
-    });
+    // The gate's evaluation simulator sorts residual's DFS
+    // neighbors with the same call, so the emitted entry order and
+    // the simulated order are structurally identical.
+    factorization
+        .import_order()
+        .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     timings.add("build_entry_imports", build_entry_imports_started.elapsed());
     let entry_binding_renames = body_renames.clone();
@@ -693,7 +706,16 @@ fn lower_single_plan(
     });
     let mut module_import_renames = BTreeMap::<String, String>::new();
     let mut module_import_locals = collect_local_binding_names(&body);
-    let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
+    // All intra-chunk imports (cross-module binding imports, phantom
+    // side-effect imports, and the residual-entry import) are
+    // collected as `(target ModuleId, decl)` pairs and ordered by ONE
+    // shared rule — `EsmImportOrder::sort_module_imports` — below.
+    // The realizability gate's evaluation simulator sorts this
+    // module's DFS neighbors with the same call, so the emitted
+    // import order and the gate's predicted evaluation order cannot
+    // diverge. See `esm_import_order` and
+    // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+    let mut intra_chunk_imports = time_phase!(timings, "module.build_cross_imports", {
         cross_module_imports_for_plan(
             &plan.target_file,
             cross_module_imports_by_provider,
@@ -704,19 +726,16 @@ fn lower_single_plan(
     });
     // Phantom side-effect imports surface at-init-promotion-derived
     // constraining edges as real ESM imports so the linker's DFS
-    // visits the provider modules as dependencies. Prepended so
-    // they sort before residual-entry and runtime re-imports, all
-    // of which would short-circuit the cycle when the residual is
-    // mid-evaluation. See `phantom_side_effect_imports` and
-    // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
-    let phantom_imports = time_phase!(timings, "module.build_phantom_imports", {
-        phantom_side_effect_imports(
+    // visits the provider modules as dependencies. See
+    // `phantom_side_effect_imports`.
+    time_phase!(timings, "module.build_phantom_imports", {
+        intra_chunk_imports.extend(phantom_side_effect_imports(
             &plan.target_file,
             phantom_side_effect_providers,
             factorization,
-        )
+        ));
     });
-    let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
+    let residual_entry_import_items = time_phase!(timings, "module.build_residual_imports", {
         residual_entry_imports_for_moved_body(
             &plan.id,
             entry_file,
@@ -766,14 +785,29 @@ fn lower_single_plan(
             runtime_reimports,
         )
     })?;
-    module_imports.append(&mut residual_entry_imports);
-    module_imports.append(&mut runtime_reimports);
-    // Phantom side-effect imports go FIRST in the emitted module
-    // so the linker DFS-recurses into the providers before the
-    // residual/entry import (which would short-circuit when the
-    // residual is mid-evaluation).
-    let mut combined = phantom_imports;
-    combined.append(&mut module_imports);
+    // The residual-entry import targets the chunk's residual module
+    // (the emitted entry file — always the ESM DFS root, so its slot
+    // in the list is a runtime no-op, but it still gets its shared-
+    // ordering position for determinism).
+    let residual_module = factorization.partition.residual();
+    intra_chunk_imports.extend(
+        residual_entry_import_items
+            .into_iter()
+            .map(|item| (residual_module, item)),
+    );
+    // ONE ordering for every intra-chunk import — the same
+    // `EsmImportOrder::sort_module_imports` the gate's simulator
+    // uses for this module's DFS neighbor order. Runtime re-imports
+    // (other source chunks) follow; they're outside the per-chunk
+    // I-graph the gate reasons about.
+    factorization
+        .import_order()
+        .sort_module_imports(&mut intra_chunk_imports);
+    let mut combined: Vec<ModuleItem> = intra_chunk_imports
+        .into_iter()
+        .map(|(_, item)| item)
+        .collect();
+    combined.append(&mut runtime_reimports);
     combined.append(&mut body);
     body = combined;
     // Apply chunk_renames to the assembled module body so that

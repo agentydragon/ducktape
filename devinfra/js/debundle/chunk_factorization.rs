@@ -3,11 +3,9 @@ use std::sync::Arc;
 
 use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::chunk_analysis::ChunkAnalysis;
+use crate::esm_import_order::EsmImportOrder;
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
-use crate::graph::{
-    build_module_quotient, chunk_constraining_module_edges, chunk_linker_order,
-    chunk_source_import_order,
-};
+use crate::graph::{build_module_quotient, chunk_constraining_module_edges};
 use crate::partition::Partition;
 use crate::reports::build_owner_graph_report;
 use crate::validation::validate_factorization;
@@ -50,17 +48,11 @@ pub struct ChunkFactorization {
     /// topological order. Precomputed at build time for
     /// `reports::build_quotient_scc_reports`.
     dep_graph_sccs: Vec<Vec<ModuleId>>,
-    /// Topological linearization of `I ∪ S`, dependency-first
-    /// (the module at index 0 must evaluate before any other; the
-    /// last module — typically the residual entry — evaluates
-    /// last). Empty when `dep_graph` has cycles (validation will
-    /// reject the spec). Used by the emitter to author each
-    /// module's `import` directive list in an order that steers
-    /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
-    /// evaluation order; see docs/design.md "Lemma 2".
-    pub linker_order: Vec<ModuleId>,
-    linker_position_by_module: HashMap<ModuleId, usize>,
-    source_import_position_by_module: HashMap<ModuleId, usize>,
+    /// Shared per-module ESM import ordering — the single source of
+    /// truth the emitter renders import declarations from and the
+    /// realizability gate's evaluation simulator mirrors. See
+    /// `esm_import_order::EsmImportOrder`.
+    import_order: EsmImportOrder,
 }
 
 impl ChunkFactorization {
@@ -130,30 +122,18 @@ impl ChunkFactorization {
         // simulator share one source of truth — see `graph.rs:
         // chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
-        // Canonical linker order (Vec<ModuleId>, dependency-first).
-        // Modules absent from the canonical set are not present here.
-        let linker_order: Vec<ModuleId> = chunk_linker_order(&canonical_edges);
-        // O(1) position-lookup cache for `linker_position(id)` queries
-        // — built once here so downstream code doesn't re-derive it.
-        let linker_position_by_module: HashMap<ModuleId, usize> = linker_order
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
-            .collect();
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't
         // participate in any canonical edge.
         let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len())
             .map(|idx| ModuleId(LogicalModuleIndex(idx)))
             .collect();
-        let source_import_order = chunk_source_import_order(&canonical_edges, &extra_nodes);
-        let source_import_position_by_module: HashMap<ModuleId, usize> = source_import_order
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
-            .collect();
+        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
+        let import_order = EsmImportOrder::build(
+            &constraining_pairs,
+            &canonical_edges.i_successors,
+            &extra_nodes,
+        );
         let analysis = Arc::new(ChunkAnalysis::build(
             chunk_id,
             facts,
@@ -169,9 +149,7 @@ impl ChunkFactorization {
             assembly_conflicts,
             dep_graph,
             dep_graph_sccs,
-            linker_order,
-            linker_position_by_module,
-            source_import_position_by_module,
+            import_order,
         }
     }
 
@@ -183,28 +161,12 @@ impl ChunkFactorization {
         &self.dep_graph_sccs
     }
 
-    /// Position of `id` in `linker_order`, if present. Used by the
-    /// emitter to sort each module's `import` directives so that
-    /// ECMA-262's depth-first link traversal evaluates dependencies
-    /// before dependents.
-    pub fn linker_position(&self, id: ModuleId) -> Option<usize> {
-        self.linker_position_by_module.get(&id).copied()
-    }
-
-    /// Position of `id` in the emitted entry's source-import order
-    /// — the order in which entry's `import` directives must appear
-    /// in source so the ESM linker's depth-first instantiation lands
-    /// on a Phase-2 evaluation order matching `linker_order`.
-    ///
-    /// Per docs/design.md "The realizability theorem", Lemma 2: for
-    /// acyclic shapes this coincides with `linker_position`
-    /// (dependency-first source order). For cyclic-I shapes accepted
-    /// by the relaxed clause-3 rule, SCC members are reverse-sorted
-    /// — DFS into the dependent unwinds the dependency first in
-    /// post-order, so the dependent must appear first in entry's
-    /// source for post-DFS evaluation to put the dependency first.
-    pub fn source_import_position(&self, id: ModuleId) -> Option<usize> {
-        self.source_import_position_by_module.get(&id).copied()
+    /// Shared per-module ESM import ordering. The emitter renders
+    /// every import-directive list through this; the realizability
+    /// gate's evaluation simulator applies the same ordering rules
+    /// (see `esm_import_order::EsmImportOrder` for the contract).
+    pub fn import_order(&self) -> &EsmImportOrder {
+        &self.import_order
     }
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
@@ -216,7 +178,8 @@ impl ChunkFactorization {
             });
         report.atomic_unit_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
-            .linker_order
+            .import_order
+            .linker_order()
             .iter()
             .map(|id| self.analysis.module_path(*id))
             .collect();
