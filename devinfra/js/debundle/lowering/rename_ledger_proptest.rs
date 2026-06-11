@@ -1,19 +1,20 @@
-//! Proptest suite for the public `RenameLedger` seal contract
-//! (rename pipeline PR 2 surface, #2091): seal determinism under
-//! intent permutation and duplication, priority dominance,
-//! same-priority conflicts always erroring naming both origins, and
-//! per-scope validation isolation.
+//! Proptest suite for the public `RenameLedger` seal contract: seal
+//! determinism under intent permutation and duplication, priority
+//! dominance, same-priority conflicts always erroring naming both
+//! origins, per-scope validation isolation, and occupancy-driven
+//! silent drops of colliding heuristic targets.
 //!
 //! Deliberately written against the public `submit`/`seal`/
-//! `SealedRenames` query API only — seal-internal validation is in
-//! flux (PR 3 moves occupancy/capture validation into seal), and these
-//! properties must survive that change unedited or with mechanical
-//! signature updates only. Case counts are bounded for CI (see
+//! `SealedRenames` query API only. The core properties seal with
+//! `SealValidation::default()` — scopes absent from `occupancy` get
+//! conflict/priority validation only — so they hold regardless of
+//! occupancy facts; the drop property supplies `ScopeOccupancy::Body`
+//! facts explicitly. Case counts are bounded for CI (see
 //! [`ci_config`]); override locally via
 //! `bbr test //devinfra/js/debundle:lowering_test
 //! --test_env=PROPTEST_CASES=2000`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ModuleId;
 use proptest::prelude::*;
@@ -24,7 +25,8 @@ use swc_common::SyntaxContext;
 use swc_ecma_ast::Id;
 
 use super::rename_ledger::{
-    FunctionScopeId, RenameIntent, RenameLedger, RenameOrigin, RenameScope, SealedRenames,
+    FunctionScopeId, RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy,
+    SealValidation, SealedRenames,
 };
 
 /// Source-binding pool, disjoint from [`TARGETS`] so a generated
@@ -91,7 +93,9 @@ fn seal_all(intents: Vec<RenameIntent>) -> Result<SealedRenames, String> {
     for intent in intents {
         ledger.submit(intent);
     }
-    ledger.seal().map_err(|error| error.to_string())
+    ledger
+        .seal(&SealValidation::default())
+        .map_err(|error| error.to_string())
 }
 
 /// Bounded case count for CI; a `PROPTEST_CASES` env override still
@@ -164,10 +168,10 @@ proptest! {
             origin: RenameOrigin::Explicit { contributor: "explicit_winner" },
         });
         let sealed = ledger
-            .seal()
+            .seal(&SealValidation::default())
             .map_err(|error| TestCaseError::fail(error.to_string()))?;
         let expected = BTreeMap::from([(id(from), Atom::from(explicit_to))]);
-        prop_assert_eq!(sealed.scope_renames(&scope), Some(&expected));
+        prop_assert_eq!(sealed.scope_renames(&scope), Some(expected));
     }
 
     /// Two intents at the same priority disagreeing on one
@@ -194,7 +198,7 @@ proptest! {
             to: Atom::from(TARGETS[target_b]),
             origin: origin_at(priority_kind, CONTRIBUTORS[contributor_b]),
         });
-        let message = match ledger.seal() {
+        let message = match ledger.seal(&SealValidation::default()) {
             Ok(_) => return Err(TestCaseError::fail(
                 "same-priority disagreement sealed successfully",
             )),
@@ -249,5 +253,55 @@ proptest! {
                 );
             }
         }
+    }
+
+    /// Occupancy-validated body scopes drop colliding heuristic targets
+    /// silently (PR 3 seal-drop behavior): with `ScopeOccupancy::Body`
+    /// facts supplied, a heuristic rename survives seal iff no other
+    /// heuristic source in the scope claims the same target — and the
+    /// losers never turn the seal into an error.
+    #[test]
+    fn body_occupancy_drops_colliding_heuristic_targets(
+        renames in proptest::collection::btree_map(
+            select(&SOURCES[..]),
+            select(&TARGETS[..]),
+            0..=SOURCES.len(),
+        ),
+    ) {
+        let scope = RenameScope::Module(ModuleId::logical(0));
+        let mut ledger = RenameLedger::default();
+        for (&from, &to) in &renames {
+            ledger.submit(RenameIntent {
+                scope,
+                from: id(from),
+                to: Atom::from(to),
+                origin: RenameOrigin::Heuristic { contributor: "alias" },
+            });
+        }
+        let validation = SealValidation {
+            occupancy: BTreeMap::from([(scope, ScopeOccupancy::Body {
+                label: "m0".to_string(),
+                root: BTreeSet::new(),
+                nested: BTreeSet::new(),
+                captured: BTreeSet::new(),
+            })]),
+            reserved: BTreeSet::new(),
+        };
+        let sealed = ledger
+            .seal(&validation)
+            .map_err(|error| TestCaseError::fail(format!(
+                "heuristic collisions must drop silently, not error: {error}",
+            )))?;
+        let mut target_counts = BTreeMap::<&str, usize>::new();
+        for &to in renames.values() {
+            *target_counts.entry(to).or_default() += 1;
+        }
+        let expected: BTreeMap<Id, Atom> = renames
+            .iter()
+            .filter(|(_, to)| target_counts[**to] == 1)
+            .map(|(&from, &to)| (id(from), Atom::from(to)))
+            .collect();
+        let expected = (!expected.is_empty()).then_some(expected);
+        prop_assert_eq!(sealed.scope_renames(&scope), expected);
     }
 }

@@ -134,3 +134,97 @@ pub(super) fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<Strin
     }
     collector.names
 }
+
+/// Names bound strictly below `body`'s top level — everything
+/// [`collect_local_binding_names`] sees except the top-level declarations'
+/// own root names (which [`collect_occupied_local_names`] reports). Seal
+/// validation distinguishes the two: a rename target colliding with a
+/// top-level name is a root collision (vacatable by renaming that binding
+/// away); a target bound anywhere below the top level could capture
+/// renamed references and is rejected outright. A name bound at BOTH
+/// levels (`const a = () => { let a; }`) appears in both sets.
+pub(super) fn collect_nested_binding_names(body: &[ModuleItem]) -> BTreeSet<String> {
+    let mut collector = BindingNameCollector {
+        names: BTreeSet::new(),
+    };
+    for item in body {
+        match item {
+            // Import locals are root bindings; imports contain nothing else.
+            ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => {}
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                collect_nested_from_decl(&export_decl.decl, &mut collector);
+            }
+            // The declared name is a root binding; only the body is nested.
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) => {
+                match &default_decl.decl {
+                    DefaultDecl::Fn(function) => function.function.visit_with(&mut collector),
+                    DefaultDecl::Class(class) => class.class.visit_with(&mut collector),
+                    DefaultDecl::TsInterfaceDecl(_) => {}
+                }
+            }
+            ModuleItem::Stmt(Stmt::Decl(decl)) => collect_nested_from_decl(decl, &mut collector),
+            // Non-declaration statements bind nothing at the root level;
+            // anything they bind (for-heads, block-scoped decls, function
+            // expressions) is nested. `var` hoisted out of a top-level
+            // block is recorded as nested too — over-restriction, matching
+            // the rename visitors' block-shadow over-suppression.
+            other => other.visit_with(&mut collector),
+        }
+    }
+    collector.names
+}
+
+fn collect_nested_from_decl(decl: &Decl, collector: &mut BindingNameCollector) {
+    match decl {
+        // The declared name is the root binding; params and body are nested.
+        Decl::Fn(function) => function.function.visit_with(collector),
+        Decl::Class(class) => class.class.visit_with(collector),
+        Decl::Var(var) => {
+            for declarator in &var.decls {
+                collect_nested_from_root_pat(&declarator.name, collector);
+                if let Some(init) = &declarator.init {
+                    init.visit_with(collector);
+                }
+            }
+        }
+        _ => decl.visit_with(collector),
+    }
+}
+
+/// Walk a top-level declarator pattern recording only bindings that are
+/// NOT the pattern's own root binders: pattern defaults and computed keys
+/// can contain function expressions whose params/locals are nested.
+fn collect_nested_from_root_pat(pat: &Pat, collector: &mut BindingNameCollector) {
+    match pat {
+        Pat::Ident(_) => {}
+        Pat::Rest(rest) => collect_nested_from_root_pat(&rest.arg, collector),
+        Pat::Assign(assign) => {
+            collect_nested_from_root_pat(&assign.left, collector);
+            assign.right.visit_with(collector);
+        }
+        Pat::Array(array) => {
+            for elem in array.elems.iter().flatten() {
+                collect_nested_from_root_pat(elem, collector);
+            }
+        }
+        Pat::Object(object) => {
+            for prop in &object.props {
+                match prop {
+                    ObjectPatProp::KeyValue(key_value) => {
+                        if let PropName::Computed(computed) = &key_value.key {
+                            computed.expr.visit_with(collector);
+                        }
+                        collect_nested_from_root_pat(&key_value.value, collector);
+                    }
+                    ObjectPatProp::Assign(assign) => {
+                        if let Some(value) = &assign.value {
+                            value.visit_with(collector);
+                        }
+                    }
+                    ObjectPatProp::Rest(rest) => collect_nested_from_root_pat(&rest.arg, collector),
+                }
+            }
+        }
+        Pat::Invalid(_) | Pat::Expr(_) => {}
+    }
+}

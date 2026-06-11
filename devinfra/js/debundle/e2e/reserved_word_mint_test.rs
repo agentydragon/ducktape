@@ -2,8 +2,8 @@
 //! reserved JS word must not surface verbatim into an emitted import
 //! clause.
 //!
-//! Background. `lowering/import_emit.rs::mint_unique_name` is the single
-//! name minter behind `disambiguate_import_locals`,
+//! Background. `lowering/rename_ledger.rs::RenameLedger::mint` is the
+//! single name minter behind `disambiguate_import_locals`,
 //! `disambiguate_residual_entry_import_locals`, and
 //! `auto_grown_residual_exports`. It used to return its `base` verbatim
 //! whenever the claim closure accepted it, never consulting
@@ -32,7 +32,7 @@
 //!   from "./modules/mod_x.js"` into `entry.js`. Node rejects the entry
 //!   with a SyntaxError ("Unexpected reserved word"), so
 //!   `assert_entry_output` fails at the node step.
-//! - **After the fix**: `mint_unique_name` rejects the reserved base via
+//! - **After the fix**: `RenameLedger::mint` rejects the reserved base via
 //!   `is_valid_js_identifier` and suffixes it to `default$1`, emitting
 //!   `import { default$1 as default } from "..."` — a valid identifier
 //!   that parses and runs.

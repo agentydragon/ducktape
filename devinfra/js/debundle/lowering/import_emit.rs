@@ -1,37 +1,17 @@
-use super::util::is_valid_js_identifier;
 use super::*;
-
-pub(super) fn mint_unique_name(base: &str, mut try_claim: impl FnMut(&str) -> bool) -> String {
-    // A reserved word (`default`, `class`, `await`, …) used verbatim as a
-    // local would surface straight into an emitted `import {...}` /
-    // `export {...}` clause and produce un-parseable JS. Suffixing turns
-    // it into a valid identifier (`default$1`), so only offer `base`
-    // directly when it is a usable identifier. `$`-suffixed candidates are
-    // always valid, so the loop below always terminates with a parseable
-    // name.
-    if is_valid_js_identifier(base) && try_claim(base) {
-        return base.to_string();
-    }
-    let mut suffix = 1usize;
-    loop {
-        let candidate = format!("{base}${suffix}");
-        if try_claim(&candidate) {
-            return candidate;
-        }
-        suffix += 1;
-    }
-}
 
 /// Map plan-side `original -> exported` to `actual_local -> exported`.
 ///
 /// When a spec gives a binding a readable exported name, prefer that
 /// readable name as the consumer-side local too. That keeps the final
 /// emitted tree from retaining the input-bundle name merely as an import
-/// alias. Collisions still mint a fresh local and get recorded in
-/// `renames` so the entry body can be rewritten after emission.
+/// alias. Collisions still mint a fresh local through the ledger's
+/// taken-name service ([`RenameLedger::mint`]) and get recorded in
+/// `renames` so the consuming body can be rewritten after emission.
 pub(super) fn disambiguate_import_locals(
     bindings: &BTreeMap<String, String>,
-    occupied: &mut BTreeSet<String>,
+    ledger: &mut RenameLedger,
+    scope: RenameScope,
     renames: &mut BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     bindings
@@ -42,7 +22,7 @@ pub(super) fn disambiguate_import_locals(
             } else {
                 original.as_str()
             };
-            let actual = mint_unique_name(preferred, |n| occupied.insert(n.to_string()));
+            let actual = ledger.mint(scope, preferred);
             if actual != *original {
                 renames.insert(original.clone(), actual.clone());
             }
@@ -62,14 +42,15 @@ pub(super) fn disambiguate_import_locals(
 /// the original chunk.
 pub(super) fn disambiguate_residual_entry_import_locals(
     bindings: &BTreeMap<String, EntryExport>,
-    occupied: &mut BTreeSet<String>,
+    ledger: &mut RenameLedger,
+    scope: RenameScope,
     renames: &mut BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     bindings
         .iter()
         .map(|(original, entry_export)| {
             let preferred = entry_export.local_name.as_str();
-            let actual = mint_unique_name(preferred, |n| occupied.insert(n.to_string()));
+            let actual = ledger.mint(scope, preferred);
             if actual != *original {
                 renames.insert(original.clone(), actual.clone());
             }

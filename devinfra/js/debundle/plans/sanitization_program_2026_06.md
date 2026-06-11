@@ -64,11 +64,14 @@ origin, priority }`, scopes Chunk/Module/Function, **keyed by hygiene
    pipeline section for decisions and the remaining ladder.)_
 2. Collect: convert contributors (spec `export_name`s, bound/free
    heuristics, import-local `_N` minting, `chunk_renames`, cross-module,
-   collision resolution) one at a time to emit intents.
+   collision resolution) one at a time to emit intents. _(Landed
+   2026-06: #2091.)_
 3. Seal: explicit > import-induced > heuristic; same-priority conflicts are
    hard errors naming both contributors; target-occupancy validated at seal
    time against scope-accurate occupied sets; `_N` minting becomes a ledger
-   service.
+   service. _(Landed 2026-06; see TODO.md's "PR 3 landed" entry and the
+   "Seal points" section of `lowering/rename_ledger.rs` for what stays at
+   the application sites until PR 4.)_
 4. Execute once: one visitor pass (the post-#2052 rename visitor becomes the
    executor) updating export tables, `runtime_imports`, `binding_comments`,
    and cross-module indexes in lockstep.

@@ -310,7 +310,6 @@ pub(super) struct ExportGrowthFacts<'a> {
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
-    pub(super) pre_existing_public_export_names: &'a HashSet<String>,
     pub(super) entry_renames: &'a BTreeMap<String, String>,
     pub(super) entry_declared_names: &'a HashSet<String>,
 }
@@ -325,7 +324,6 @@ pub(super) fn auto_grown_residual_exports(
         declaration_by_name,
         binding_assignment,
         pre_existing_entry_exports,
-        pre_existing_public_export_names,
         entry_renames,
         entry_declared_names,
     } = facts;
@@ -351,19 +349,19 @@ pub(super) fn auto_grown_residual_exports(
             needed.insert(id.0.as_ref().to_string());
         }
     }
-    // `taken_public_names` accumulates every public name already
-    // committed to entry's export list — the source-level set we
-    // were handed, plus each new grown public name as we mint it.
-    // When a candidate's natural public name collides, suffix-mint
-    // a fresh `<name>$<n>` instead of skipping: skipping forces the
-    // peeled module's body reference to resolve as an unexported
-    // residual binding and `residual_entry_imports_for_moved_body`
-    // would bail with "moved module references residual entry
-    // binding(s) not exported by entry". The peeled module's
-    // importer side renames the import back to the original local
-    // sym via `EntryExport.{local_name, exported_name}`, so the
-    // mint is invisible to the moved body.
-    let mut taken_public_names = pre_existing_public_export_names.clone();
+    // The ledger's `EntryPublicExports` taken-name set holds every
+    // public name already committed to entry's export list — the
+    // source-level set the caller seeded, plus each new grown public
+    // name as it is minted. When a candidate's natural public name
+    // collides, suffix-mint a fresh `<name>$<n>` instead of skipping:
+    // skipping forces the peeled module's body reference to resolve as
+    // an unexported residual binding and
+    // `residual_entry_imports_for_moved_body` would bail with "moved
+    // module references residual entry binding(s) not exported by
+    // entry". The peeled module's importer side renames the import back
+    // to the original local sym via
+    // `EntryExport.{local_name, exported_name}`, so the mint is
+    // invisible to the moved body.
     for name in needed {
         let final_local = entry_renames
             .get(&name)
@@ -383,8 +381,7 @@ pub(super) fn auto_grown_residual_exports(
         if !entry_declared_names.contains(&final_local) {
             continue;
         }
-        let public_name =
-            import_emit::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
+        let public_name = ledger.mint(RenameScope::EntryPublicExports, &name);
         ledger.submit(RenameIntent {
             scope: RenameScope::EntryPublicExports,
             from: top_level_id(&name, chunk_top_level_mark),

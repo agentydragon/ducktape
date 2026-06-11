@@ -253,14 +253,19 @@ pub(super) fn materialize_logical_chunk(
     // same-priority intents disagree on one binding's target; the sealed
     // output feeds the same application sites the pre-ledger maps fed
     // (Chunk scope → `chunk_renames_map` below, Module scope → the
-    // per-plan naturalize pass in `lower_chunk`).
+    // per-plan naturalize pass in `lower_chunk`). No occupancy facts are
+    // passed: the post-split bodies these renames must not collide with
+    // don't exist yet, so target occupancy is validated downstream — the
+    // entry ledger in `lower_chunk` re-collects the Chunk-scope intents
+    // and the per-module naturalize ledgers re-collect the Module-scope
+    // ones, each sealing against its body's occupancy.
     let sealed_renames = time_phase!(timings, "seal_rename_ledger", {
         let mut ledger = RenameLedger::default();
         if let Some(renames) = chunk_renames.get(chunk_id) {
             collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
         }
         collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
-        ledger.seal()
+        ledger.seal(&SealValidation::default())
     })?;
     let chunk_renames_map = sealed_renames.chunk_renames_by_name();
     let (logical_modules, default_destination) =
