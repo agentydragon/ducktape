@@ -540,6 +540,24 @@ pub fn swap_vendor_chunks(
                 .with_context(|| {
                     format!("swap_vendor_chunks vendor chunk {chunk_name} is missing entry AST")
                 })?;
+            let vendor_exports = collect_exported_names(&entry_ast.module);
+            let declared_default_aliases: BTreeSet<String> =
+                swap.default_export_aliases.iter().cloned().collect();
+            let unknown_aliases = set_diff(&declared_default_aliases, &vendor_exports);
+            if !unknown_aliases.is_empty() {
+                bail!(
+                    "swap_vendor_chunks vendor entry {} default_export_aliases names exports the chunk does not declare: [{}]",
+                    chunk_path,
+                    unknown_aliases.into_iter().collect::<Vec<_>>().join(",")
+                );
+            }
+            // Author-asserted default aliases (see `SwapMark::default_export_aliases`)
+            // join the statically verified set so a chunk that re-exports the package
+            // default under a minified name without its own `default` export can still
+            // pass the `named_from_module_default` soundness check.
+            let mut vendor_default_aliases =
+                verified_default_alias_export_names(&entry_ast.module);
+            vendor_default_aliases.extend(declared_default_aliases);
             Ok(SwapVendorJob {
                 chunk_path: (*chunk_path).clone(),
                 chunk_name,
@@ -548,8 +566,8 @@ pub fn swap_vendor_chunks(
                 version: swap.version.clone(),
                 subpath: swap.subpath.clone(),
                 wrapper_shape: swap.wrapper_shape,
-                vendor_exports: collect_exported_names(&entry_ast.module),
-                vendor_default_aliases: verified_default_alias_export_names(&entry_ast.module),
+                vendor_exports,
+                vendor_default_aliases,
             })
         })
         .collect::<Result<Vec<_>>>()?;

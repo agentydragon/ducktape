@@ -83,6 +83,10 @@ struct VendorMarkSource {
     subpath: Option<String>,
     #[serde(default)]
     wrapper_shape: Option<WrapperShape>,
+    /// `swap`-only: upstream named exports asserted as aliases of the
+    /// package default (see `spec::SwapMark::default_export_aliases`).
+    #[serde(default)]
+    default_export_aliases: Vec<String>,
     /// `partial_swap` / `bundled_partial_swap`: per-package upstream
     /// coordinates. Bundled swaps also require `bundle_export`.
     #[serde(default)]
@@ -311,6 +315,7 @@ impl VendorMarkSource {
                         format!("vendor mark {} missing subpath", self.chunk_path)
                     })?,
                     wrapper_shape: self.wrapper_shape,
+                    default_export_aliases: self.default_export_aliases,
                 }))
             }
             VendorLevelSource::PartialSwap => {
@@ -401,6 +406,7 @@ impl VendorMarkSource {
             || self.version.is_some()
             || self.subpath.is_some()
             || self.wrapper_shape.is_some()
+            || !self.default_export_aliases.is_empty()
         {
             bail!(
                 "vendor mark {} has swap-only fields but level is not swap",

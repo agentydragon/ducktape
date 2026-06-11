@@ -2890,6 +2890,21 @@ properties must not be reassigned after module init, and consumers
 must not rely on live-binding semantics for the wrapped names.
 (JSON wrappers are immune — JSON modules are inert data.)
 
+`named_from_module_default` additionally requires each non-`default`
+vendor export to be a **verified alias** of the chunk's own `default`
+export — i.e. the chunk binds the name to the same local as its
+`default` (`export { x as default, x as alias }`). This rejects a
+chunk that exports an unrelated binding (`export { x as default, y as
+other }`), which would otherwise silently re-export the package
+default under `other`. A chunk that re-exports the package default
+under a single minified name with no `default` export of its own
+(`export { Ft as c }`, as Vite emits for a default-only re-export)
+cannot be verified from the chunk alone. For that case the swap mark
+carries `default_export_aliases: [<name>...]`, an author-asserted list
+admitted as verified aliases — the author is responsible for
+confirming the binding really is the package default (e.g. by its
+runtime identity/version).
+
 ## Empty logical modules
 
 A spec entry that resolves to zero owned bindings and no re-exports

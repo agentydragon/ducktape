@@ -418,6 +418,19 @@ pub struct SwapMark {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub wrapper_shape: Option<WrapperShape>,
+    /// Upstream named exports the author asserts are aliases of the
+    /// swapped package's default export. The `named_from_module_default`
+    /// soundness check normally verifies, from the upstream chunk alone,
+    /// that each named export shares a local binding with the chunk's own
+    /// `default` export. A chunk that re-exports the package default under
+    /// a single minified name without also exporting it as `default`
+    /// (`export { Ft as c }`) gives the static check nothing to anchor on,
+    /// so it cannot prove the alias even when it holds. Listing the export
+    /// name here records the author's verified assertion (e.g. confirmed by
+    /// the binding's runtime identity/version) and admits it as a default
+    /// alias. Only consulted for `wrapper_shape: named_from_module_default`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_export_aliases: Vec<String>,
 }
 
 /// Per-symbol vendor swap on a mixed chunk. The chunk stays on disk

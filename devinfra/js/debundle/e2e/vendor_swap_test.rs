@@ -273,6 +273,7 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
         chunk_source: "export { x as default };\nconst x = 0;\n",
         wrapper_shape: Some("named_from_module_default"),
         upstream_source,
+        default_export_aliases: &[],
     })
 }
 
@@ -282,6 +283,9 @@ struct FullSwapFixtureArgs<'a> {
     /// `None` runs the plain (wrapper-less) swap path.
     wrapper_shape: Option<&'a str>,
     upstream_source: &'a str,
+    /// Upstream named exports asserted as package-default aliases
+    /// (`SwapMark::default_export_aliases`). Empty for most fixtures.
+    default_export_aliases: &'a [&'a str],
 }
 
 fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
@@ -313,6 +317,15 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
             .as_object_mut()
             .expect("vendor mark is a JSON object")
             .insert("wrapper_shape".to_string(), json!(wrapper_shape));
+    }
+    if !args.default_export_aliases.is_empty() {
+        vendor_mark
+            .as_object_mut()
+            .expect("vendor mark is a JSON object")
+            .insert(
+                "default_export_aliases".to_string(),
+                json!(args.default_export_aliases),
+            );
     }
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
@@ -502,6 +515,7 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
         chunk_source: args.chunk_source,
         wrapper_shape: Some("named_from_default"),
         upstream_source: args.upstream_source,
+        default_export_aliases: &[],
     })
 }
 
@@ -2384,6 +2398,7 @@ fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
         chunk_source: "const x = 0;\nexport default x;\n",
         wrapper_shape: None,
         upstream_source: "export const unrelated = 1;\n",
+        default_export_aliases: &[],
     });
     assert!(
         !fixture.result.status.success(),
@@ -2406,6 +2421,7 @@ fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_defau
         chunk_source: "const x = 0;\nexport { x as default };\n",
         wrapper_shape: None,
         upstream_source: "const d = 1;\nexport default d;\n",
+        default_export_aliases: &[],
     });
     assert!(
         fixture.result.status.success(),
@@ -2485,6 +2501,7 @@ fn named_from_module_default_rejects_unverified_named_exports() {
         chunk_source: "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
         wrapper_shape: Some("named_from_module_default"),
         upstream_source: "export default function f() { return \"pkg\"; }\n",
+        default_export_aliases: &[],
     });
     assert!(
         !fixture.result.status.success(),
@@ -2507,6 +2524,7 @@ fn named_from_module_default_accepts_verified_default_aliases() {
         chunk_source: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
         wrapper_shape: Some("named_from_module_default"),
         upstream_source: "export default function f() { return \"val\"; }\n",
+        default_export_aliases: &[],
     });
     assert!(
         fixture.result.status.success(),
@@ -2527,6 +2545,65 @@ fn named_from_module_default_accepts_verified_default_aliases() {
     assert_node_output(&probe_path, "true\n", "");
 }
 
+#[test]
+fn named_from_module_default_rejects_single_named_export_without_assertion() {
+    // Tana's cytoscape chunk shape: the package default is re-exported under
+    // a single minified name (`export { Ft as c }`) with no `default` export
+    // of its own. The static check cannot prove `c` aliases the package
+    // default from the chunk alone, so without an explicit assertion the
+    // swap must bail rather than silently re-export the default under `c`.
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-module-default-single-unasserted-",
+        chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
+        wrapper_shape: Some("named_from_module_default"),
+        upstream_source: "export default function f() { return \"cy\"; }\n",
+        default_export_aliases: &[],
+    });
+    assert!(
+        !fixture.result.status.success(),
+        "debundler must reject an unasserted single-named-export chunk\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("named-from-module-default")
+            && fixture.result.stderr.contains("c"),
+        "expected unverified-alias diagnostic naming `c` in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn named_from_module_default_admits_authored_default_alias() {
+    // Same chunk shape as above, but the author asserts via
+    // `default_export_aliases` that `c` is the package default. The swap
+    // then succeeds and the wrapper re-exports the package default under `c`.
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-module-default-single-asserted-",
+        chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
+        wrapper_shape: Some("named_from_module_default"),
+        upstream_source: "export default function f() { return \"cy\"; }\n",
+        default_export_aliases: &["c"],
+    });
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let probe_path = fixture
+        .wrapper_path
+        .parent()
+        .expect("wrapper has parent dir")
+        .join("__probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./entry.js\");\nconsole.log(m.c === m.default && m.c() === \"cy\");\n",
+    );
+    assert_node_output(&probe_path, "true\n", "");
+}
+
 // ─── named_from_json_default ────────────────────────────────────────────
 
 #[test]
@@ -2536,6 +2613,7 @@ fn named_from_json_default_generates_named_pulls_from_json_keys() {
         chunk_source: "export { version, flag } from \"lib\";\n",
         wrapper_shape: Some("named_from_json_default"),
         upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
+        default_export_aliases: &[],
     });
     assert!(
         fixture.result.status.success(),
@@ -2571,6 +2649,7 @@ fn named_from_json_default_rejects_names_missing_from_json() {
         chunk_source: "export { missing } from \"lib\";\n",
         wrapper_shape: Some("named_from_json_default"),
         upstream_source: "{ \"version\": \"1.2.3\" }\n",
+        default_export_aliases: &[],
     });
     assert!(
         !fixture.result.status.success(),
