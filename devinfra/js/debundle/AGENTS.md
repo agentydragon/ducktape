@@ -299,6 +299,14 @@ The analysis engine carries an inline TODO listing patterns
 that would become admissible once a primitive-arg gate exists —
 treat that as the queue for safe whitelist growth.
 
+All whitelist admission arguments additionally assume **intrinsic
+integrity** (docs/design.md A11): the chunk runs with unmodified
+built-in prototypes. Prototype pollution (e.g. replacing
+`Set.prototype.add` or `Array.prototype[Symbol.iterator]`) defeats
+every whitelist entry whose ECMA-262 citation describes the
+standard built-in; the analyzer cannot detect it because the
+pollution may live outside the analyzed chunk.
+
 ### Declared purity
 
 The spec format admits optional per-member `purity:` annotations.

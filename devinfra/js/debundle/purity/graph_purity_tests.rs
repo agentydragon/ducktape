@@ -98,13 +98,28 @@ fn fn_purity_propagates_transitive_impurity() {
 fn fn_purity_mutual_recursion_converges_pure() {
     // `even` and `odd` only reference each other inside their
     // bodies. Optimistic init (Pure) holds through the
-    // fixed-point — neither body has an impure operation.
+    // fixed-point — neither body has an impure operation. (The
+    // recursion argument is passed through unchanged: `n - 1`
+    // would be a coercing operator on a possibly-object operand,
+    // which classifies NotPure by design — this test pins
+    // fixed-point convergence, not arithmetic.)
     let src = r#"
-    function even(n) { return n === 0 ? true : odd(n - 1); }
-    function odd(n) { return n === 0 ? false : even(n - 1); }
+    function even(n) { return n === 0 ? true : odd(n); }
+    function odd(n) { return n === 0 ? false : even(n); }
 "#;
     assert_eq!(fn_purity(src, "even"), Some(true));
     assert_eq!(fn_purity(src, "odd"), Some(true));
+}
+
+#[test]
+fn fn_purity_param_arithmetic_is_not_pure() {
+    // SOUNDNESS: `n - 1` runs ToNumeric on `n`; a caller can pass
+    // an object whose `valueOf` fires arbitrary code, so a body
+    // coercing an opaque param is not pure-callable.
+    assert_eq!(
+        fn_purity("function dec(n) { return n - 1; }", "dec"),
+        Some(false)
+    );
 }
 
 #[test]
@@ -768,7 +783,10 @@ fn plain_data_let_with_plain_literal_replacement_is_tracked() {
     const getEnv = (k) => envConfig[k];
 "#;
     assert!(is_plain_data(src, "envConfig"));
-    assert_eq!(fn_purity(src, "getEnv"), Some(true));
+    // `getEnv` is no longer inferred pure: `envConfig[k]` runs
+    // ToPropertyKey on the opaque key `k` (user `toString` on an
+    // object key) — see `plain_data_computed_read_with_opaque_key_is_not_pure`.
+    assert_eq!(fn_purity(src, "getEnv"), Some(false));
 }
 
 #[test]
@@ -838,13 +856,13 @@ fn plain_data_let_chain_collapses_env_config_walkthrough_shape() {
     //       (mr.FUNCTIONS_EMULATOR ? true : getEnv("REACT_APP_ENV") === "emulator");
     //   const getSystemConfig = () => envConfig;
     //
-    // Today (pre-this-extension) the spec author needed
-    // `purity: pure` hints on `getEnv` / `isEmulatorEnv` /
-    // `getSystemConfig` in
-    // `runtime/environment/{env_config,config}.yaml` because
-    // `envConfig` was `let` and member access on it flagged
-    // `unknown_member`. With the let+mutator extension every
-    // helper in the chain classifies pure with zero hints.
+    // The let+mutator extension keeps `envConfig` PlainData and
+    // static-prop readers pure. The opaque-key accessor `getEnv`
+    // (and its transitive caller `isEmulatorEnv`) are NOT inferred
+    // pure under the ToPropertyKey gate — `envConfig[n]` coerces an
+    // opaque key — so those two still need `purity: pure` hints in
+    // `runtime/environment/{env_config,config}.yaml` when the spec
+    // author wants their call sites S-edge-free.
     let src = r#"
     const mr = { FUNCTIONS_EMULATOR: false };
     let envConfig = {
@@ -861,8 +879,8 @@ fn plain_data_let_chain_collapses_env_config_walkthrough_shape() {
 "#;
     assert!(is_plain_data(src, "envConfig"));
     assert!(is_plain_data(src, "mr"));
-    assert_eq!(fn_purity(src, "getEnv"), Some(true));
-    assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(true));
+    assert_eq!(fn_purity(src, "getEnv"), Some(false));
+    assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(false));
     assert_eq!(fn_purity(src, "getSystemConfig"), Some(true));
     // `applySystemConfigOverrides` itself is impure (it writes
     // to envConfig); call sites still need to anchor it via
@@ -981,24 +999,36 @@ fn plain_data_disqualified_by_define_property_call() {
 }
 
 #[test]
-fn plain_data_read_through_chunk_local_helper_collapses_chain() {
-    // The flagship case from the recursive-purity proposal: a
-    // chunk-local `const TA = { ... }` data shape and a helper
-    // `const Me = (n) => TA[n]` that reads a key on it. Today
-    // (pre-PlainData), `TA[n]` flags `unknown_member` and `Me`
-    // classifies impure — so any call `Me("FOO")` cascades to
-    // impure and any owner statement containing it picks up a
-    // spurious `S`-edge. With PlainData tracking, `TA[n]` is
-    // pure (key `n` is a pure Ident; receiver is PlainData) →
-    // `Me` is pure → `Me("FOO")` is pure → the call site's
-    // surrounding statement classifies pure with zero
-    // `purity: pure` hints.
+fn plain_data_computed_read_with_opaque_key_is_not_pure() {
+    // SOUNDNESS (ToPropertyKey): `TA[n]` runs ToPropertyKey on the
+    // key VALUE before the (accessor-free) lookup on the PlainData
+    // receiver. A caller can pass an object `n` whose `toString`
+    // fires arbitrary code, so the accessor body is NOT
+    // pure-callable even though the receiver is PlainData.
+    // (This deliberately re-restricts the earlier
+    // `Me = (n) => TA[n]` flagship shape; recovering it needs a
+    // primitive-args-at-callsite gate or a `purity: pure` hint.)
     let src = r#"
     const TA = { FOO: "bar", BAZ: "qux" };
     const Me = (n) => TA[n];
 "#;
     assert!(is_plain_data(src, "TA"));
-    assert_eq!(fn_purity(src, "Me"), Some(true));
+    assert_eq!(fn_purity(src, "Me"), Some(false));
+}
+
+#[test]
+fn plain_data_computed_read_with_primitive_key_is_pure() {
+    // Positive direction for the ToPropertyKey gate: statically
+    // primitive keys (literals, well-known symbols) keep the
+    // PlainData computed read pure.
+    let src = r#"
+    const TA = { FOO: "bar", BAZ: "qux" };
+    const readFoo = () => TA["FOO"];
+    const readZero = () => TA[0];
+"#;
+    assert!(is_plain_data(src, "TA"));
+    assert_eq!(fn_purity(src, "readFoo"), Some(true));
+    assert_eq!(fn_purity(src, "readZero"), Some(true));
 }
 
 #[test]
@@ -1021,12 +1051,14 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     // `(internal purity research notes)`: a config
     // table `TA`, an accessor `Me`, an env-derived predicate
     // `$i`, and a top-level binding `gF` whose init is an
-    // object literal whose values are calls to `Me`. Today the
-    // peel author has to add four `purity: pure` hints (Me,
-    // $i, vR, Oge) to flip the cycle. With recursive purity
-    // via PlainData, every helper in the chain classifies
-    // pure with no hints — `gF`'s owner statement reclassifies
-    // pure on its own.
+    // object literal whose values are calls to `Me`.
+    //
+    // Under the ToPropertyKey gate, the opaque-key accessor
+    // `Me = (n) => TA[n]` is NOT inferred pure (an object key
+    // fires user `toString`), so the inference-only collapse of
+    // this chain no longer happens — the spec author keeps the
+    // `purity: pure` hint on `Me` (one hint instead of four:
+    // hint-pure `Me` lets `$i` / `vR` / `Oge` infer pure).
     let src = r#"
     const TA = { ENV: "emulator", KEY: "x" };
     const mr = { FUNCTIONS_EMULATOR: false };
@@ -1035,13 +1067,13 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     const vR = (x) => Me(x);
     const Oge = () => vR("KEY");
 "#;
-    assert_eq!(fn_purity(src, "Me"), Some(true));
-    assert_eq!(fn_purity(src, "$i"), Some(true));
-    assert_eq!(fn_purity(src, "vR"), Some(true));
-    assert_eq!(fn_purity(src, "Oge"), Some(true));
-    // And the top-level `const gF = { apiKey: Me("KEY"), ... }`
-    // owner statement reclassifies pure: every value is a call
-    // to a now-pure chunk-local helper.
+    assert_eq!(fn_purity(src, "Me"), Some(false));
+    assert_eq!(fn_purity(src, "$i"), Some(false));
+    assert_eq!(fn_purity(src, "vR"), Some(false));
+    assert_eq!(fn_purity(src, "Oge"), Some(false));
+    // With a single `purity: pure` hint on `Me`, the rest of the
+    // chain (and the `gF` owner statement) infers pure.
+    let hinted: BTreeSet<String> = BTreeSet::from(["Me".to_string()]);
     let full = format!(
         r#"
     {src}
@@ -1049,14 +1081,20 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
 "#
     );
     let module = parse(&full);
-    let facts = analyze_facts(&module);
+    let facts = analyze_chunk(
+        &module,
+        &AnalysisHints::from_declared_pure(&hinted),
+        None,
+        |_| None,
+    )
+    .facts;
     let gf_fact = facts
         .iter()
         .find(|f| f.declared.contains(&test_id("gF")))
         .expect("gF fact missing from chunk analysis");
     assert!(
         gf_fact.purity.is_pure(),
-        "gF should classify pure with recursive purity, got {:?}",
+        "gF should classify pure with a single hint on Me, got {:?}",
         gf_fact.purity,
     );
 }
@@ -1175,4 +1213,273 @@ fn fn_purity_mutual_recursion_with_external_impure_callee() {
     assert_eq!(fn_purity(src, "c"), Some(false));
     assert_eq!(fn_purity(src, "a"), Some(false));
     assert_eq!(fn_purity(src, "b"), Some(false));
+}
+
+// --- Body-level shadowing of global tables / chunk graph / annotations --
+
+/// `fn_purity` with an explicit declared-pure set.
+fn fn_purity_with_declared_pure(src: &str, name: &str, declared: &[&str]) -> Option<bool> {
+    let module = parse(src);
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
+    let graph = ChunkCodeGraph::build(&body, &shadowed, &declared_pure);
+    graph.function_purity(name).map(|p| p.is_pure())
+}
+
+#[test]
+fn body_shadowed_chunk_function_call_is_not_pure() {
+    // SOUNDNESS: inside `outer`, the param `helper` shadows the
+    // chunk-top pure function of the same name — the called value
+    // is whatever the caller passed.
+    let src = r#"
+    function helper() { return 1; }
+    function outer(helper) { return helper(); }
+    function control() { return helper(); }
+"#;
+    assert_eq!(fn_purity(src, "outer"), Some(false));
+    assert_eq!(fn_purity(src, "control"), Some(true));
+}
+
+#[test]
+fn body_shadowed_whitelist_receiver_is_not_pure() {
+    // SOUNDNESS: a param named `Math` shadows the global inside
+    // the body; `Math.PI` there reads a user object (getter risk).
+    let src = r#"
+    function f(Math) { return Math.PI; }
+    function g() { return Math.PI; }
+    function h(Array) { return Array.isArray([]); }
+"#;
+    assert_eq!(fn_purity(src, "f"), Some(false));
+    assert_eq!(fn_purity(src, "g"), Some(true));
+    assert_eq!(fn_purity(src, "h"), Some(false));
+}
+
+#[test]
+fn body_shadowed_builtin_new_is_not_pure() {
+    // SOUNDNESS: a param named `Map` shadows the builtin; `new
+    // Map()` constructs the caller-supplied class.
+    let src = r#"
+    function f(Map) { return new Map(); }
+    function g() { return new Map(); }
+"#;
+    assert_eq!(fn_purity(src, "f"), Some(false));
+    assert_eq!(fn_purity(src, "g"), Some(true));
+}
+
+#[test]
+fn body_shadowed_declared_pure_binding_is_not_pure() {
+    // SOUNDNESS: `purity: pure` is a trust contract on the
+    // chunk-top binding `dp`; a param of the same name is a
+    // different value the author never vouched for.
+    let src = r#"
+    function f(dp) { return dp(); }
+    function g() { return dp(); }
+"#;
+    assert_eq!(fn_purity_with_declared_pure(src, "f", &["dp"]), Some(false));
+    assert_eq!(fn_purity_with_declared_pure(src, "g", &["dp"]), Some(true));
+}
+
+#[test]
+fn body_shadowed_pure_member_binding_is_not_pure() {
+    // SOUNDNESS: same for `pure_members` — `b.forwardRef(...)` on
+    // a param `b` is not the annotated vendor namespace.
+    let src = r#"
+    import * as b from "vendor";
+    function f(b) { return b.forwardRef(1); }
+    function g() { return b.forwardRef(1); }
+"#;
+    let module = parse(src);
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let declared_pure_members: BTreeMap<String, BTreeSet<String>> =
+        BTreeMap::from([("b".to_string(), BTreeSet::from(["forwardRef".to_string()]))]);
+    let graph = ChunkCodeGraph::build_full(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &declared_pure_members,
+    );
+    assert_eq!(graph.function_purity("f").map(|p| p.is_pure()), Some(false));
+    assert_eq!(graph.function_purity("g").map(|p| p.is_pure()), Some(true));
+}
+
+// --- Parameter evaluation (defaults / destructuring) --------------------
+
+#[test]
+fn fn_purity_impure_param_default_makes_function_not_pure() {
+    // Default-value expressions evaluate at call time, exactly
+    // like body code.
+    assert_eq!(
+        fn_purity("const f = (x = (globalThis.boom = 1)) => 1;", "f"),
+        Some(false)
+    );
+    assert_eq!(
+        fn_purity("function g(x = io()) { return 1; }", "g"),
+        Some(false)
+    );
+}
+
+#[test]
+fn fn_purity_pure_param_default_stays_pure() {
+    assert_eq!(fn_purity("const f = (x = 1) => x;", "f"), Some(true));
+    assert_eq!(fn_purity("const g = (x = []) => x;", "g"), Some(true));
+}
+
+#[test]
+fn fn_purity_destructuring_param_makes_function_not_pure() {
+    // Destructuring a parameter fires getters (object pattern) or
+    // the iterator protocol (array pattern) on the argument.
+    assert_eq!(fn_purity("const f = ({ a }) => a;", "f"), Some(false));
+    assert_eq!(fn_purity("const g = ([x]) => x;", "g"), Some(false));
+    assert_eq!(
+        fn_purity("function h({ a } = {}) { return a; }", "h"),
+        Some(false)
+    );
+}
+
+#[test]
+fn fn_purity_rest_param_stays_pure() {
+    // A rest param builds a fresh array from the arguments list —
+    // no user-code path.
+    assert_eq!(fn_purity("const f = (...xs) => xs;", "f"), Some(true));
+}
+
+// --- Iteration statements / destructuring declarators in bodies ---------
+
+#[test]
+fn fn_purity_for_of_makes_function_not_pure() {
+    // for-of fires the iterated value's `[Symbol.iterator]`.
+    assert_eq!(
+        fn_purity("function f(xs) { for (const x of xs) {} return 1; }", "f"),
+        Some(false)
+    );
+}
+
+#[test]
+fn fn_purity_for_in_makes_function_not_pure() {
+    // for-in enumeration fires proxy ownKeys/getOwnPropertyDescriptor
+    // traps on the enumerated value.
+    assert_eq!(
+        fn_purity("function f(o) { for (const k in o) {} return 1; }", "f"),
+        Some(false)
+    );
+}
+
+#[test]
+fn fn_purity_plain_loops_stay_pure() {
+    // Plain `while` / C-style `for` introduce no protocol firing
+    // beyond their (independently classified) sub-expressions.
+    assert_eq!(
+        fn_purity(
+            "function f(flag) { while (flag) { flag = false; } return 1; }",
+            "f"
+        ),
+        Some(false) // the assign is impure — control for the loop itself below
+    );
+    assert_eq!(
+        fn_purity("function g(flag) { while (flag) {} return 1; }", "g"),
+        Some(true)
+    );
+}
+
+#[test]
+fn fn_purity_destructuring_declarator_makes_function_not_pure() {
+    // `const {a} = o` fires o's getters; `const [x] = o` fires the
+    // iterator protocol.
+    assert_eq!(
+        fn_purity("function f(o) { const { a } = o; return a; }", "f"),
+        Some(false)
+    );
+    assert_eq!(
+        fn_purity("function g(o) { const [x] = o; return x; }", "g"),
+        Some(false)
+    );
+    assert_eq!(
+        fn_purity("function h(o) { const a = o; return a; }", "h"),
+        Some(true)
+    );
+}
+
+// --- PlainData escape analysis ------------------------------------------
+
+#[test]
+fn plain_data_alias_escape_disqualifies() {
+    // SOUNDNESS: the write scan is name-based; an alias defeats it
+    // (`Object.defineProperty(Y, …)` would install an accessor the
+    // scan can't see). Escape itself disqualifies.
+    assert!(!is_plain_data("const X = { a: 1 }; const Y = X;", "X"));
+    assert!(!is_plain_data(
+        r#"const X = { a: 1 }; const Y = X; Object.defineProperty(Y, "a", { get: () => io() });"#,
+        "X"
+    ));
+}
+
+#[test]
+fn plain_data_call_arg_escape_disqualifies() {
+    assert!(!is_plain_data("const X = { a: 1 }; f(X);", "X"));
+    assert!(!is_plain_data("const X = { a: 1 }; new Thing(X);", "X"));
+}
+
+#[test]
+fn plain_data_container_value_escape_disqualifies() {
+    assert!(!is_plain_data("const X = { a: 1 }; const arr = [X];", "X"));
+    assert!(!is_plain_data(
+        "const X = { a: 1 }; const o = { x: X };",
+        "X"
+    ));
+    assert!(!is_plain_data("const X = { a: 1 }; const o = { X };", "X"));
+}
+
+#[test]
+fn plain_data_conditional_alias_escape_disqualifies() {
+    // `flag ? X : null` evaluates to X itself — a captured alias.
+    assert!(!is_plain_data(
+        "const X = { a: 1 }; const Y = flag ? X : null;",
+        "X"
+    ));
+    assert!(!is_plain_data(
+        "const X = { a: 1 }; const Y = X || {};",
+        "X"
+    ));
+}
+
+#[test]
+fn plain_data_non_capturing_reads_keep_admission() {
+    // The short list of provably non-capturing positions must NOT
+    // disqualify: member receiver, spread source, typeof/!/void,
+    // Object.keys-style single arg, return / concise arrow body,
+    // export specifier.
+    assert!(is_plain_data("const X = { a: 1 }; const v = X.a;", "X"));
+    assert!(is_plain_data(
+        "const X = { a: 1 }; const Y = { ...X };",
+        "X"
+    ));
+    assert!(is_plain_data("const X = [1]; const Y = [...X];", "X"));
+    assert!(is_plain_data(
+        "const X = { a: 1 }; const t = typeof X;",
+        "X"
+    ));
+    assert!(is_plain_data("const X = { a: 1 }; const b = !X;", "X"));
+    assert!(is_plain_data(
+        "const X = { a: 1 }; const ks = Object.keys(X);",
+        "X"
+    ));
+    assert!(is_plain_data(
+        "const X = { a: 1 }; function f() { return X; }",
+        "X"
+    ));
+    assert!(is_plain_data("const X = { a: 1 }; const f = () => X;", "X"));
+    assert!(is_plain_data("const X = { a: 1 }; export { X };", "X"));
+}
+
+#[test]
+fn plain_data_object_keys_escape_exemption_requires_unshadowed_object() {
+    // With `Object` rebound at chunk top, `Object.keys(X)` calls a
+    // user function — the arg is a real escape.
+    assert!(!is_plain_data(
+        "const userland = 1; const Object = userland; const X = { a: 1 }; const ks = Object.keys(X);",
+        "X"
+    ));
 }

@@ -1,6 +1,6 @@
 mod whitelists;
 
-pub(crate) use whitelists::WHITELIST_RECEIVERS;
+pub(crate) use whitelists::{SHADOW_TRACKED_GLOBALS, WHITELIST_RECEIVERS};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -150,7 +150,7 @@ impl ChunkCodeGraph {
         // in the chunk. Function-bound `const` initializers are already
         // tracked as `Function`; this pass only adds non-function
         // plain-data shapes.
-        for name in collect_plain_data_bindings(body) {
+        for name in collect_plain_data_bindings(body, shadowed) {
             // Functions take precedence: a chunk-top `const f = () => ...`
             // is registered as Function and must not be re-registered as
             // PlainData (calling it is the interesting question, not
@@ -436,6 +436,11 @@ impl Visit for CallCollector<'_> {
 #[derive(Debug, Clone)]
 struct ChunkFunction<'a> {
     name: String,
+    /// Parameter patterns. Default-value expressions evaluate at call
+    /// time and destructuring patterns fire getters / the iterator
+    /// protocol on the argument, so they participate in the body's
+    /// purity classification (`classify_param_purity`).
+    params: Vec<&'a Pat>,
     /// Block-bodied function/arrow.
     block_body: Option<&'a BlockStmt>,
     /// Concise-arrow expression body (`(x) => expr`).
@@ -443,17 +448,28 @@ struct ChunkFunction<'a> {
     /// Every binding-ident name introduced by this function — its
     /// params plus every `BindingIdent` declared anywhere in its body
     /// (vars, nested function params, catch bindings, …). Over-approx
-    /// is sound: these names lexically shadow chunk-top PlainData
-    /// candidates so member reads on them must not be admitted as pure.
+    /// is sound: these names lexically shadow chunk-top bindings,
+    /// whitelist receivers, and spec-annotated names, so references
+    /// to them inside the body must not resolve through the global
+    /// tables / chunk graph.
     param_and_body_bindings: BTreeSet<String>,
 }
 
 impl ChunkFunction<'_> {
-    /// Drive a `Visit` visitor over this function's body. Block
+    /// Drive a `Visit` visitor over this function's parameter
+    /// patterns and body. Params are included because default-value
+    /// expressions evaluate at call time exactly like body code —
+    /// both the purity walk (`BodyPurityCollector`) and the
+    /// call-graph walk (`CallCollector`) must see them (a call edge
+    /// hidden in a param default would otherwise skip SCC ordering
+    /// and freeze the callee at its optimistic `Pure` init). Block
     /// bodies recurse via `visit_with`; concise-arrow expression
     /// bodies fire `visit_expr` directly so the visitor's
     /// `visit_call_expr` / `visit_expr` overrides catch the body.
     fn visit_body_with<V: Visit + ?Sized>(&self, visitor: &mut V) {
+        for pat in &self.params {
+            pat.visit_with(visitor);
+        }
         if let Some(block) = self.block_body {
             block.visit_with(visitor);
         }
@@ -525,6 +541,7 @@ fn push_fn_decl<'a>(fn_decl: &'a FnDecl, out: &mut Vec<ChunkFunction<'a>>) {
     let block_body = fn_decl.function.body.as_ref();
     out.push(ChunkFunction {
         name: fn_decl.ident.sym.to_string(),
+        params: fn_decl.function.params.iter().map(|p| &p.pat).collect(),
         block_body,
         expr_body: None,
         param_and_body_bindings: collect_function_bindings(
@@ -557,6 +574,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                 let block_body = fn_expr.function.body.as_ref();
                 out.push(ChunkFunction {
                     name,
+                    params: fn_expr.function.params.iter().map(|p| &p.pat).collect(),
                     block_body,
                     expr_body: None,
                     param_and_body_bindings: collect_function_bindings(
@@ -570,6 +588,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                 BlockStmtOrExpr::BlockStmt(block) => {
                     out.push(ChunkFunction {
                         name,
+                        params: arrow.params.iter().collect(),
                         block_body: Some(block),
                         expr_body: None,
                         param_and_body_bindings: collect_function_bindings(
@@ -582,6 +601,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                 BlockStmtOrExpr::Expr(expr) => {
                     out.push(ChunkFunction {
                         name,
+                        params: arrow.params.iter().collect(),
                         block_body: None,
                         expr_body: Some(expr.as_ref()),
                         param_and_body_bindings: collect_function_bindings(
@@ -629,7 +649,10 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
 ///
 /// Returns the list of qualified names; the caller registers them as
 /// `ChunkBinding::PlainData` in the graph.
-fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
+fn collect_plain_data_bindings(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+) -> Vec<String> {
     // Aggregate every chunk-top init expression per binding name.
     // The same name can have multiple inits for `var`-bound bindings
     // (`var X = a; var X = b;`); every init must independently pass
@@ -654,10 +677,23 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
     }
     // Scan the entire chunk body (including function/class bodies) for
     // anything that could install an accessor or change the prototype
-    // of any candidate: member writes / updates / deletes on `X.k` /
-    // `X[k]`, and `Object.defineProperty(X, ...)` /
-    // `Object.defineProperties(X, ...)` / `Object.setPrototypeOf(X, ...)`
-    // / `Reflect.{defineProperty,defineProperties,setPrototypeOf,set}(X, ...)`.
+    // of any candidate, or let the candidate's object reference ESCAPE
+    // into code we can't analyze:
+    //
+    // * member writes / updates / deletes on `X.k` / `X[k]`;
+    // * calls to the hostile builtins in `PLAIN_DATA_HOSTILE_BUILTINS`
+    //   (`Object.{defineProperty,defineProperties,setPrototypeOf,assign}`,
+    //   `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}`)
+    //   with `X` as the first argument;
+    // * any *escaping* bare reference to `X` — as a call/new argument,
+    //   array element, object property value, alias RHS (`const Y = X`,
+    //   `obj.k = X`), or any other position not on the scanner's short
+    //   list of provably non-capturing reads (member receiver, spread
+    //   source, `typeof`/`!`/`void` operand, return value / concise
+    //   arrow body). Once the reference is aliased, a write through the
+    //   alias (`Object.defineProperty(Y, …)`) would defeat the
+    //   name-based write scan, so escape itself disqualifies.
+    //
     // Plain data-property writes (`X.foo = bar`) don't install
     // accessors and don't change the prototype chain, but the
     // conservative check rejects them anyway — the cost is dropping
@@ -665,6 +701,7 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
     // benefit is one short rule that's easy to audit.
     let mut scanner = PlainDataWriteScanner {
         candidates: &candidates,
+        shadowed,
         disqualified: BTreeSet::new(),
         shadowing_scopes: Vec::new(),
     };
@@ -776,7 +813,7 @@ fn is_plain_data_init(expr: &Expr, binding: &str, kind: VarDeclKind) -> bool {
 pub(crate) fn classify_var_decl_purity(
     var: &VarDecl,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -785,13 +822,25 @@ pub(crate) fn classify_var_decl_purity(
         .filter_map(|decl| {
             let init = decl.init.as_deref()?;
             let Pat::Ident(binding) = &decl.name else {
-                return Some(classify_expr_purity(
+                // Destructuring declarators (`const {a} = o`,
+                // `const [x] = o`) fire getters / the iterator
+                // protocol on the initializer value — user code the
+                // init expression's own classification doesn't see.
+                // Simplest sound rule: any non-Ident pattern makes
+                // the statement not pure, regardless of init shape.
+                // (A fresh-plain-data-literal RHS would be sound to
+                // admit; deliberately not done — the shape is rare
+                // at chunk top and the uniform rule is easier to
+                // audit.)
+                let pattern_purity = param_destructuring_purity(&decl.name)
+                    .unwrap_or_else(|| Purity::from_reason(PurityRule::Other, decl.span));
+                return Some(pattern_purity.worst(classify_expr_purity(
                     init,
                     shadowed,
-                    plain_data_shadowed,
+                    local_shadowed,
                     declared_pure,
                     graph,
-                ));
+                )));
             };
             let name = binding.id.sym.as_ref();
             if var.kind == VarDeclKind::Var
@@ -803,7 +852,7 @@ pub(crate) fn classify_var_decl_purity(
                 Some(classify_expr_purity(
                     init,
                     shadowed,
-                    plain_data_shadowed,
+                    local_shadowed,
                     declared_pure,
                     graph,
                 ))
@@ -883,6 +932,14 @@ fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bool {
     let Expr::Call(call) = cur else {
         return false;
     };
+    is_ts_enum_iife_call_for_binding(call, binding)
+}
+
+/// `CallExpr`-level form of `is_ts_enum_iife_init_for_binding`, used
+/// both from the var-init admission and by `PlainDataWriteScanner` to
+/// exempt the vetted `X || (X = {})` argument occurrence of the enum
+/// binding from the escape scan.
+fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -> bool {
     let Callee::Expr(callee_expr) = &call.callee else {
         return false;
     };
@@ -1080,11 +1137,36 @@ fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 }
 
 /// Visitor that disqualifies plain-data candidates seen as the target
-/// of a member write/update/delete, or as the first argument to one
-/// of a small set of accessor- / prototype-installing built-ins.
-/// Skips the right side of `X.k = ...` only in the sense that
-/// recursing through `expr` still picks up nested cases — every
-/// expression node visits its children.
+/// of a member write/update/delete, as the first argument to one of a
+/// small set of accessor- / prototype-installing built-ins, or in any
+/// ESCAPING position.
+///
+/// **Escape analysis.** The write scan above is name-based: it only
+/// catches mutations spelled through the candidate's own identifier.
+/// An alias (`const Y = X; Object.defineProperty(Y, …)`) or any other
+/// captured reference (call argument, array element, object property
+/// value) defeats it. The scanner therefore treats every bare
+/// candidate `Ident` as an escape — and disqualifies — unless the
+/// occurrence is in one of a short list of provably non-capturing
+/// read positions:
+///
+/// * member-access receiver (`X.k`, `X[k]`, `X?.k`) — a read;
+/// * spread source (`{...X}`, `[...X]`, `f(...X)`) — copies values /
+///   iterates; the receiver object's identity is not captured;
+/// * `typeof X` / `!X` / `void X` operands — transient inspection;
+/// * single argument of `Object.{keys,values,entries,freeze,
+///   fromEntries}` with the global `Object` unshadowed — read-only /
+///   descriptor-tightening builtins that install no accessors (the
+///   same set `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admits);
+/// * the vetted `X || (X = {})` argument of a recognized TS-enum
+///   IIFE init (`is_ts_enum_iife_call_for_binding`);
+/// * `return X` / concise arrow body `() => X` — accepted by scope
+///   decision: consumers of chunk-internal return values (like
+///   importers of an exported PlainData binding) are assumed not to
+///   install accessors on it; see docs/purity_soundness.md §
+///   "ChunkBinding::PlainData" for the residual-assumption note.
+///   Export specifiers (`export { X }`) are non-escaping under the
+///   same assumption.
 ///
 /// **Function/arrow parameter scope tracking.** When entering a
 /// function or arrow body whose parameters include names that
@@ -1105,6 +1187,10 @@ fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 /// would have been admissible), never false positives.
 struct PlainDataWriteScanner<'a> {
     candidates: &'a BTreeSet<String>,
+    /// Chunk-top shadowed-globals set (A8): consulted by the
+    /// `Object.{keys,…}(X)` non-escaping-position exemption, which
+    /// must not fire when the chunk rebinds `Object`.
+    shadowed: &'a BTreeSet<&'static str>,
     disqualified: BTreeSet<String>,
     /// Stack of per-scope candidate-shadowing sets. Each scope entry
     /// is the subset of `candidates` shadowed by the function/arrow
@@ -1320,10 +1406,79 @@ impl Visit for PlainDataWriteScanner<'_> {
         if node.op == UnaryOp::Delete {
             self.disqualify_member_receiver(&node.arg);
         }
+        // `typeof X` / `!X` / `void X` are transient inspections of
+        // the value — the reference isn't captured. Skip the bare
+        // candidate Ident so the escape default doesn't fire.
+        if matches!(node.op, UnaryOp::TypeOf | UnaryOp::Bang | UnaryOp::Void)
+            && matches!(strip_parens(&node.arg), Expr::Ident(_))
+        {
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
+    // ESCAPE DEFAULT: any bare candidate Ident reached by the
+    // traversal is a captured reference (alias RHS, call/new arg,
+    // array element, object property value, shorthand prop, …) and
+    // disqualifies. The non-capturing read positions on the short
+    // list in the struct doc-comment are skipped by the overrides
+    // below before traversal reaches the Ident.
+    fn visit_ident(&mut self, node: &Ident) {
+        self.disqualify_if_candidate(node.sym.as_ref());
+    }
+
+    // Binding positions (declarator names, params, catch bindings)
+    // introduce a binding rather than reading the candidate's value
+    // — not an escape.
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    // `export { X }` is non-escaping by scope decision (see the
+    // struct doc-comment): importers of an exported PlainData
+    // binding are assumed not to install accessors on it.
+    fn visit_export_named_specifier(&mut self, _node: &ExportNamedSpecifier) {}
+
+    // Member-access receivers are reads, not captures. Skip an
+    // Ident receiver (candidate or not); everything else (nested
+    // receivers, computed keys) is traversed normally.
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if !matches!(strip_parens(&node.obj), Expr::Ident(_)) {
+            node.obj.visit_with(self);
+        }
+        node.prop.visit_with(self);
+    }
+
+    // Spread sources (`{...X}`, `[...X]`, `f(...X)`) copy values /
+    // iterate; the receiver object's identity is not captured.
+    fn visit_spread_element(&mut self, node: &SpreadElement) {
+        if matches!(strip_parens(&node.expr), Expr::Ident(_)) {
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_expr_or_spread(&mut self, node: &ExprOrSpread) {
+        if node.spread.is_some() && matches!(strip_parens(&node.expr), Expr::Ident(_)) {
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
+    // `return X` is non-escaping by scope decision (see the struct
+    // doc-comment's residual-assumption note).
+    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let Some(arg) = node.arg.as_deref()
+            && matches!(strip_parens(arg), Expr::Ident(_))
+        {
+            return;
+        }
         node.visit_children_with(self);
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        // Hostile accessor-/prototype-installing builtins with the
+        // candidate as first arg. Redundant with the escape default
+        // (a call arg is an escape) but kept as an explicit,
+        // self-documenting check.
         if let Callee::Expr(callee) = &node.callee
             && let Expr::Member(member) = callee.as_ref()
             && let (Expr::Ident(obj), MemberProp::Ident(prop)) = (member.obj.as_ref(), &member.prop)
@@ -1336,12 +1491,58 @@ impl Visit for PlainDataWriteScanner<'_> {
         {
             self.disqualify_if_candidate(target.sym.as_ref());
         }
+        // `Object.{keys,values,entries,freeze,fromEntries}(X)` with
+        // the global `Object` unshadowed — read-only /
+        // descriptor-tightening builtins that install no accessors
+        // (the same set `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admits).
+        // Skip the argument so the escape default doesn't fire.
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.as_ref()
+            && let (Expr::Ident(obj), MemberProp::Ident(prop)) = (member.obj.as_ref(), &member.prop)
+            && obj.sym.as_ref() == "Object"
+            && !self.shadowed.contains("Object")
+            && PURE_OBJECT_CALLS_ON_PLAIN_DATA
+                .iter()
+                .any(|(_, p)| *p == prop.sym.as_ref())
+            && node.args.len() == 1
+            && node.args[0].spread.is_none()
+            && matches!(strip_parens(&node.args[0].expr), Expr::Ident(_))
+        {
+            // Receiver `Object` and the static prop carry no
+            // candidate refs; nothing else to visit.
+            return;
+        }
+        // The vetted `X || (X = {})` argument of a recognized
+        // TS-enum IIFE init: the only callee shapes the recognizer
+        // admits are inline arrow/function expressions whose bodies
+        // mutate their own parameter — visit the callee (the
+        // param-scope tracking exempts same-named param writes) and
+        // skip the vetted argument.
+        if self
+            .candidates
+            .iter()
+            .any(|c| !self.is_shadowed(c) && is_ts_enum_iife_call_for_binding(node, c))
+        {
+            node.callee.visit_with(self);
+            return;
+        }
         node.visit_children_with(self);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let scope = self.shadowed_by_params(node.params.iter());
-        self.with_scope(scope, |s| node.visit_children_with(s));
+        self.with_scope(scope, |s| {
+            for param in &node.params {
+                param.visit_with(s);
+            }
+            // A concise body that is a bare candidate Ident is the
+            // `() => X` return position — non-escaping by the same
+            // scope decision as `return X`.
+            match node.body.as_ref() {
+                BlockStmtOrExpr::Expr(expr) if matches!(strip_parens(expr), Expr::Ident(_)) => {}
+                body => body.visit_with(s),
+            }
+        });
     }
 
     fn visit_function(&mut self, node: &Function) {
@@ -1357,28 +1558,69 @@ fn classify_function_body(
     graph: &ChunkCodeGraph,
 ) -> Purity {
     // Names bound by this function (its params and every binding
-    // declared anywhere in its body) shadow chunk-top PlainData
-    // candidates of the same name. Restricting to names that are
-    // actually plain-data keeps the set small; correctness only
-    // requires that every shadowing name be excluded, so a larger
-    // set would also be sound. Lexical scope is constant across one
-    // classification tree (nested function/arrow bodies are not
-    // walked), so this single set suffices for the whole body.
-    let plain_data_shadowed: BTreeSet<String> = function
-        .param_and_body_bindings
+    // declared anywhere in its body) lexically shadow EVERY outer
+    // resolution path of the same name: chunk-top PlainData
+    // candidates, chunk-top function bindings, whitelist receivers
+    // (`Math`, `Object`, …), pure-new builtins (`Map`, `Set`, …),
+    // and spec-annotated `declared_pure` / `pure_members` /
+    // `pure_new` bindings. A reference to a shadowed name inside
+    // the body is a *different value* than the one the global
+    // tables / chunk graph / spec author describe, so none of those
+    // shortcuts may fire for it. Over-approximation (collecting
+    // bindings from nested scopes too) is sound: extra names only
+    // make more reads conservative. Lexical scope is constant
+    // across one classification tree (nested function/arrow bodies
+    // are not walked), so this single set suffices for the whole
+    // body.
+    let local_shadowed = &function.param_and_body_bindings;
+    // Destructuring parameters fire getters (object patterns) or
+    // the iterator protocol (array patterns) on the caller's
+    // argument at call time — user code the body's expression walk
+    // never sees. A function with any destructuring param is not
+    // pure-callable. Default-value expressions are classified by
+    // the body walk below (`visit_body_with` drives the visitor
+    // over the param patterns too).
+    let param_purity = function
+        .params
         .iter()
-        .filter(|name| graph.is_plain_data(name))
-        .cloned()
-        .collect();
+        .filter_map(|pat| param_destructuring_purity(pat))
+        .fold(Purity::Pure, Purity::worst);
     let mut collector = BodyPurityCollector {
         purity: Purity::Pure,
         shadowed,
-        plain_data_shadowed: &plain_data_shadowed,
+        local_shadowed,
         declared_pure,
         graph,
     };
     function.visit_body_with(&mut collector);
-    collector.purity
+    param_purity.worst(collector.purity)
+}
+
+/// `Some(NotPure)` when `pat` contains a destructuring pattern that
+/// fires user code on the bound value at evaluation time: object
+/// patterns run `[[Get]]` per key (user getters / proxy traps),
+/// array patterns run the iterator protocol. Plain idents and rest
+/// params (fresh array from the arguments list) contribute nothing;
+/// default-value expressions are classified separately as
+/// expressions by the body walk.
+fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
+    match pat {
+        Pat::Ident(_) => None,
+        Pat::Rest(rest) => param_destructuring_purity(&rest.arg),
+        Pat::Assign(assign) => param_destructuring_purity(&assign.left),
+        Pat::Array(arr) => Some(Purity::from_reason_with_detail(
+            PurityRule::DestructuringPattern,
+            arr.span,
+            "array destructuring fires the iterator protocol on the bound value".to_string(),
+        )),
+        Pat::Object(obj) => Some(Purity::from_reason_with_detail(
+            PurityRule::DestructuringPattern,
+            obj.span,
+            "object destructuring fires [[Get]] (user getters / proxy traps) on the bound value"
+                .to_string(),
+        )),
+        Pat::Invalid(_) | Pat::Expr(_) => Some(Purity::from_reason(PurityRule::Other, pat.span())),
+    }
 }
 
 /// Visitor that walks a function body and accumulates the worst
@@ -1389,11 +1631,12 @@ fn classify_function_body(
 struct BodyPurityCollector<'a> {
     purity: Purity,
     shadowed: &'a BTreeSet<&'static str>,
-    /// Chunk-top PlainData names shadowed by a binding of the function
-    /// whose body is being walked (its params / body declarations).
-    /// A `recv.k` read on such a name must NOT be admitted as pure —
-    /// the lexical `recv` is the local binding, not the plain-data const.
-    plain_data_shadowed: &'a BTreeSet<String>,
+    /// Every name bound by the function whose body is being walked
+    /// (its params / body declarations). References to such names
+    /// must not resolve through any global table, chunk-graph
+    /// binding, or spec annotation — the lexical binding is a
+    /// different value than the outer one those describe.
+    local_shadowed: &'a BTreeSet<String>,
     declared_pure: &'a BTreeSet<String>,
     graph: &'a ChunkCodeGraph,
 }
@@ -1412,7 +1655,7 @@ impl Visit for BodyPurityCollector<'_> {
         let p = classify_expr_purity(
             expr,
             self.shadowed,
-            self.plain_data_shadowed,
+            self.local_shadowed,
             self.declared_pure,
             self.graph,
         );
@@ -1435,6 +1678,44 @@ impl Visit for BodyPurityCollector<'_> {
     fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
         let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
         self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(dbg_reason);
+    }
+
+    // Iteration statements fire user code beyond their
+    // sub-expressions: `for-of` (and `for await-of`) runs the
+    // iterated value's `[Symbol.iterator]` / `[Symbol.asyncIterator]`
+    // protocol; `for-in` runs `[[OwnPropertyKeys]]` /
+    // `[[GetOwnPropertyDescriptor]]` per step, which a Proxy traps.
+    // The RHS expression's own evaluation is classified by the
+    // regular recursion, but the protocol firing is invisible to it
+    // — flag the statement itself.
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        let reason = Purity::from_reason_with_detail(
+            PurityRule::IterationProtocol,
+            node.span,
+            "for-of fires the iterator protocol on the iterated value".to_string(),
+        );
+        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        let reason = Purity::from_reason_with_detail(
+            PurityRule::IterationProtocol,
+            node.span,
+            "for-in enumeration can fire proxy traps on the enumerated value".to_string(),
+        );
+        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        node.visit_children_with(self);
+    }
+
+    // `const {a} = o` / `const [x] = o` inside a body fire getters /
+    // the iterator protocol on the initializer value — effects the
+    // init expression's own classification doesn't cover.
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let Some(reason) = param_destructuring_purity(&node.name) {
+            self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        }
+        node.visit_children_with(self);
     }
 }
 
@@ -1494,6 +1775,27 @@ pub enum PurityRule {
     ObjectAssignProp,
     ClassStaticObservable,
     BareControlFlow,
+    /// A coercing operator (`+`, `-`, relational, loose equality,
+    /// `~`, unary `+`/`-`, template interpolation, `in`,
+    /// `instanceof`) whose operand is not statically known to be a
+    /// primitive. ToPrimitive / ToNumber / ToString /
+    /// `[Symbol.hasInstance]` / proxy-`has` on an object operand
+    /// fires user code.
+    CoercingOperator,
+    /// A computed property key (`obj[key]`, `{[key]: v}`,
+    /// `class { [key]() {} }`) whose key expression is not
+    /// statically known to be a primitive (or a whitelisted
+    /// `Symbol.*` well-known symbol). ToPropertyKey on an object
+    /// key fires `toString` / `[Symbol.toPrimitive]`.
+    ToPropertyKeyCoercion,
+    /// `for-of` / `for await-of` / `for-in` — iteration fires the
+    /// iterator protocol or proxy enumeration traps on the
+    /// iterated value.
+    IterationProtocol,
+    /// A destructuring pattern (declarator name or function
+    /// parameter) — object patterns fire `[[Get]]`, array patterns
+    /// fire the iterator protocol on the bound value.
+    DestructuringPattern,
     Other,
 }
 
@@ -1541,7 +1843,7 @@ impl Purity {
 pub(crate) fn classify_expr_purity(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1549,17 +1851,34 @@ pub(crate) fn classify_expr_purity(
         Expr::Lit(_) => Purity::Pure,
         Expr::Ident(_) => Purity::Pure,
         Expr::This(_) | Expr::MetaProp(_) => Purity::Pure,
+        // Template interpolation runs ToString on each interpolated
+        // value — an object operand fires user `toString` /
+        // `[Symbol.toPrimitive]`. Each interpolation must therefore
+        // be statically primitive-valued in addition to being pure
+        // to evaluate.
         Expr::Tpl(tpl) => tpl
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e, shadowed, plain_data_shadowed, declared_pure, graph))
+            .map(|e| {
+                let p = classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph);
+                if is_result_primitive(e) {
+                    p
+                } else {
+                    p.worst(Purity::from_reason_with_detail(
+                        PurityRule::CoercingOperator,
+                        e.span(),
+                        "template interpolation runs ToString on a possibly-object value"
+                            .to_string(),
+                    ))
+                }
+            })
             .fold(Purity::Pure, Purity::worst),
         Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
         Expr::Class(class_expr) => {
             if class_has_static_observable(
                 &class_expr.class,
                 shadowed,
-                plain_data_shadowed,
+                local_shadowed,
                 declared_pure,
                 graph,
             ) {
@@ -1569,38 +1888,106 @@ pub(crate) fn classify_expr_purity(
             }
         }
         Expr::Paren(p) => {
-            classify_expr_purity(&p.expr, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_expr_purity(&p.expr, shadowed, local_shadowed, declared_pure, graph)
         }
-        Expr::Unary(u) => match u.op {
-            UnaryOp::Delete => Purity::from_reason(PurityRule::DeleteOperator, u.span),
-            // typeof / void / +/-/!/~ on a pure operand are pure
-            // (they may coerce, but coercion of an Ident or Lit
-            // doesn't run user code).
-            _ => classify_expr_purity(&u.arg, shadowed, plain_data_shadowed, declared_pure, graph),
-        },
+        Expr::Unary(u) => {
+            let arg_purity =
+                classify_expr_purity(&u.arg, shadowed, local_shadowed, declared_pure, graph);
+            match u.op {
+                UnaryOp::Delete => Purity::from_reason(PurityRule::DeleteOperator, u.span),
+                // `typeof` has no coercion path; `void` discards;
+                // `!` runs ToBoolean, which is type-cased and fires
+                // no user code on any value (ECMA-262 §7.1.2).
+                // Pure iff the operand is.
+                UnaryOp::TypeOf | UnaryOp::Void | UnaryOp::Bang => arg_purity,
+                // Unary `+` / `-` / `~` run ToNumber / ToNumeric —
+                // on an object operand that fires user `valueOf` /
+                // `[Symbol.toPrimitive]`. Pure only when the
+                // operand is statically primitive-valued.
+                UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde => {
+                    if is_result_primitive(&u.arg) {
+                        arg_purity
+                    } else {
+                        arg_purity.worst(Purity::from_reason_with_detail(
+                            PurityRule::CoercingOperator,
+                            u.span,
+                            format!("unary {} runs ToNumber on a possibly-object operand", u.op),
+                        ))
+                    }
+                }
+            }
+        }
         Expr::Bin(b) => {
-            classify_expr_purity(&b.left, shadowed, plain_data_shadowed, declared_pure, graph)
-                .worst(classify_expr_purity(
-                    &b.right,
-                    shadowed,
-                    plain_data_shadowed,
-                    declared_pure,
-                    graph,
-                ))
+            let operands =
+                classify_expr_purity(&b.left, shadowed, local_shadowed, declared_pure, graph)
+                    .worst(classify_expr_purity(
+                        &b.right,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    ));
+            match b.op {
+                // No-coercion operators: short-circuit logicals
+                // evaluate operands as-is; strict (in)equality is
+                // type-cased with no ToPrimitive path (ECMA-262
+                // §7.2.16 IsStrictlyEqual).
+                BinaryOp::LogicalAnd
+                | BinaryOp::LogicalOr
+                | BinaryOp::NullishCoalescing
+                | BinaryOp::EqEqEq
+                | BinaryOp::NotEqEq => operands,
+                // `in` runs ToPropertyKey on the LHS and HasProperty
+                // on the RHS (proxy `has` trap); `instanceof` runs
+                // GetMethod(RHS, @@hasInstance) and reads
+                // `RHS.prototype` (proxy `get` trap). The
+                // interesting RHS is always an object, so no
+                // primitive-operand gate can admit these.
+                BinaryOp::In | BinaryOp::InstanceOf => {
+                    operands.worst(Purity::from_reason_with_detail(
+                        PurityRule::CoercingOperator,
+                        b.span,
+                        format!(
+                            "`{}` can fire proxy traps / @@hasInstance on its operand",
+                            b.op
+                        ),
+                    ))
+                }
+                // Every remaining operator (arithmetic, relational,
+                // loose equality, bitwise, shifts, `+`) coerces its
+                // operands via ToPrimitive / ToNumeric, which fires
+                // user `valueOf` / `toString` / `[Symbol.toPrimitive]`
+                // on object operands. Pure only when both operands
+                // are statically primitive-valued.
+                _ => {
+                    if is_result_primitive(&b.left) && is_result_primitive(&b.right) {
+                        operands
+                    } else {
+                        operands.worst(Purity::from_reason_with_detail(
+                            PurityRule::CoercingOperator,
+                            b.span,
+                            format!(
+                                "binary {} runs ToPrimitive on a possibly-object operand",
+                                b.op
+                            ),
+                        ))
+                    }
+                }
+            }
         }
         Expr::Cond(c) => {
-            classify_expr_purity(&c.test, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_expr_purity(&c.test, shadowed, local_shadowed, declared_pure, graph)
                 .worst(classify_expr_purity(
                     &c.cons,
                     shadowed,
-                    plain_data_shadowed,
+                    local_shadowed,
                     declared_pure,
                     graph,
                 ))
                 .worst(classify_expr_purity(
                     &c.alt,
                     shadowed,
-                    plain_data_shadowed,
+                    local_shadowed,
                     declared_pure,
                     graph,
                 ))
@@ -1608,20 +1995,18 @@ pub(crate) fn classify_expr_purity(
         Expr::Seq(s) => s
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e, shadowed, plain_data_shadowed, declared_pure, graph))
+            .map(|e| classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
         Expr::Array(arr) => {
-            classify_array_literal_purity(arr, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_array_literal_purity(arr, shadowed, local_shadowed, declared_pure, graph)
         }
         Expr::Object(obj) => obj
             .props
             .iter()
-            .map(|prop| {
-                classify_prop_purity(prop, shadowed, plain_data_shadowed, declared_pure, graph)
-            })
+            .map(|prop| classify_prop_purity(prop, shadowed, local_shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
         Expr::Member(member) => {
-            classify_member_purity(member, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_member_purity(member, shadowed, local_shadowed, declared_pure, graph)
         }
         Expr::SuperProp(s) => Purity::from_reason(PurityRule::SuperProp, s.span),
         // Optional chaining (`recv?.prop`, `recv?.()`) only adds a
@@ -1634,28 +2019,24 @@ pub(crate) fn classify_expr_purity(
         // docs/design.md "Open design questions / OptChain purity".
         Expr::OptChain(opt) => match &*opt.base {
             OptChainBase::Member(member) => {
-                classify_member_purity(member, shadowed, plain_data_shadowed, declared_pure, graph)
+                classify_member_purity(member, shadowed, local_shadowed, declared_pure, graph)
             }
             OptChainBase::Call(opt_call) => classify_callee_call(
                 &opt_call.callee,
                 &opt_call.args,
                 opt.span,
                 shadowed,
-                plain_data_shadowed,
+                local_shadowed,
                 declared_pure,
                 graph,
             ),
         },
         Expr::Call(call) => {
-            classify_call_purity(call, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_call_purity(call, shadowed, local_shadowed, declared_pure, graph)
         }
-        Expr::New(new_expr) => classify_new_expr_purity(
-            new_expr,
-            shadowed,
-            plain_data_shadowed,
-            declared_pure,
-            graph,
-        ),
+        Expr::New(new_expr) => {
+            classify_new_expr_purity(new_expr, shadowed, local_shadowed, declared_pure, graph)
+        }
         Expr::TaggedTpl(t) => Purity::from_reason(PurityRule::TaggedTpl, t.span),
         Expr::Assign(a) => Purity::from_reason(PurityRule::AssignOrUpdate, a.span),
         Expr::Update(u) => Purity::from_reason(PurityRule::AssignOrUpdate, u.span),
@@ -1670,7 +2051,7 @@ pub(crate) fn classify_expr_purity(
 fn classify_array_literal_purity(
     arr: &ArrayLit,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1681,7 +2062,7 @@ fn classify_array_literal_purity(
             classify_array_literal_element_purity(
                 elem,
                 shadowed,
-                plain_data_shadowed,
+                local_shadowed,
                 declared_pure,
                 graph,
             )
@@ -1692,7 +2073,7 @@ fn classify_array_literal_purity(
 fn classify_array_literal_element_purity(
     elem: &ExprOrSpread,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1701,19 +2082,13 @@ fn classify_array_literal_element_purity(
             &elem.expr,
             None,
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         )
         .unwrap_or_else(|| Purity::from_reason(PurityRule::ArraySpread, sp));
     }
-    classify_expr_purity(
-        &elem.expr,
-        shadowed,
-        plain_data_shadowed,
-        declared_pure,
-        graph,
-    )
+    classify_expr_purity(&elem.expr, shadowed, local_shadowed, declared_pure, graph)
 }
 
 /// Array spread is only side-effect-free when the source is known to
@@ -1729,7 +2104,7 @@ fn classify_fresh_array_spread_source(
     expr: &Expr,
     for_iterable: Option<&str>,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Option<Purity> {
@@ -1738,7 +2113,7 @@ fn classify_fresh_array_spread_source(
             &p.expr,
             for_iterable,
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         ),
@@ -1751,39 +2126,33 @@ fn classify_fresh_array_spread_source(
                         arr.span,
                         callee,
                         shadowed,
-                        plain_data_shadowed,
+                        local_shadowed,
                         declared_pure,
                         graph,
                     )
                 })
                 .fold(Purity::Pure, Purity::worst)
         } else {
-            classify_array_literal_purity(arr, shadowed, plain_data_shadowed, declared_pure, graph)
+            classify_array_literal_purity(arr, shadowed, local_shadowed, declared_pure, graph)
         }),
         Expr::Cond(cond) => Some(
-            classify_expr_purity(
-                &cond.test,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )
-            .worst(classify_fresh_array_spread_source(
-                &cond.cons,
-                for_iterable,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )?)
-            .worst(classify_fresh_array_spread_source(
-                &cond.alt,
-                for_iterable,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )?),
+            classify_expr_purity(&cond.test, shadowed, local_shadowed, declared_pure, graph)
+                .worst(classify_fresh_array_spread_source(
+                    &cond.cons,
+                    for_iterable,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                )?)
+                .worst(classify_fresh_array_spread_source(
+                    &cond.alt,
+                    for_iterable,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                )?),
         ),
         _ => None,
     }
@@ -1855,7 +2224,7 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
 fn classify_new_expr_purity(
     new_expr: &NewExpr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1872,6 +2241,7 @@ fn classify_new_expr_purity(
         .copied()
         .find(|n| *n == callee.sym.as_ref())
         && !shadowed.contains(name)
+        && !local_shadowed.contains(name)
         && arg_count == 0
     {
         return Purity::Pure;
@@ -1881,6 +2251,7 @@ fn classify_new_expr_purity(
         .copied()
         .find(|n| *n == callee.sym.as_ref())
         && !shadowed.contains(name)
+        && !local_shadowed.contains(name)
         && let Some(args) = new_expr.args.as_ref()
         && args.len() == 1
         && args[0].spread.is_none()
@@ -1895,7 +2266,7 @@ fn classify_new_expr_purity(
             &args[0].expr,
             name,
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         );
@@ -1909,9 +2280,14 @@ fn classify_new_expr_purity(
         )
         .worst(inner);
     }
-    if graph.is_declared_pure_new(callee.sym.as_ref()) {
+    // `pure_new` is an author trust contract on the chunk-top
+    // binding; a body-local binding of the same name is a different
+    // value the contract doesn't cover.
+    if !local_shadowed.contains(callee.sym.as_ref())
+        && graph.is_declared_pure_new(callee.sym.as_ref())
+    {
         let args = new_expr.args.as_deref().unwrap_or(&[]);
-        let arg_purity = all_args_pure(args, shadowed, plain_data_shadowed, declared_pure, graph);
+        let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
         if arg_purity.is_pure() {
             return Purity::Pure;
         }
@@ -1949,7 +2325,7 @@ fn classify_array_literal_for_iterable(
     expr: &Expr,
     callee: &str,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1968,7 +2344,7 @@ fn classify_array_literal_for_iterable(
                 arr.span,
                 callee,
                 shadowed,
-                plain_data_shadowed,
+                local_shadowed,
                 declared_pure,
                 graph,
             )
@@ -1981,7 +2357,7 @@ fn classify_iterable_element(
     arr_span: Span,
     callee: &str,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -1999,27 +2375,15 @@ fn classify_iterable_element(
             &elem.expr,
             Some(callee),
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         )
         .unwrap_or_else(|| Purity::from_reason(PurityRule::ArraySpread, sp));
     }
     match callee {
-        "Set" => classify_expr_purity(
-            &elem.expr,
-            shadowed,
-            plain_data_shadowed,
-            declared_pure,
-            graph,
-        ),
-        "Map" => classify_map_entry(
-            &elem.expr,
-            shadowed,
-            plain_data_shadowed,
-            declared_pure,
-            graph,
-        ),
+        "Set" => classify_expr_purity(&elem.expr, shadowed, local_shadowed, declared_pure, graph),
+        "Map" => classify_map_entry(&elem.expr, shadowed, local_shadowed, declared_pure, graph),
         _ => Purity::from_reason_with_detail(
             PurityRule::Other,
             elem.expr.span(),
@@ -2031,7 +2395,7 @@ fn classify_iterable_element(
 fn classify_map_entry(
     entry_expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -2062,7 +2426,7 @@ fn classify_map_entry(
                 Purity::from_reason(PurityRule::ArraySpread, e.spread.unwrap())
             }
             Some(e) => {
-                classify_expr_purity(&e.expr, shadowed, plain_data_shadowed, declared_pure, graph)
+                classify_expr_purity(&e.expr, shadowed, local_shadowed, declared_pure, graph)
             }
         })
         .fold(Purity::Pure, Purity::worst)
@@ -2084,12 +2448,13 @@ fn classify_map_entry(
 fn classify_member_purity(
     member: &MemberExpr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
     if let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
+        && !local_shadowed.contains(recv)
         && (PURE_STATIC_PROPS.contains(&(recv, prop))
             || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
     {
@@ -2101,17 +2466,34 @@ fn classify_member_purity(
         // shadows the chunk-top PlainData const, so `recv` here is the
         // local (possibly a getter-bearing object), not the plain-data
         // shape. Admitting it as pure would be a soundness hole.
-        && !plain_data_shadowed.contains(recv.sym.as_ref())
+        && !local_shadowed.contains(recv.sym.as_ref())
     {
         return match &member.prop {
             MemberProp::Ident(_) | MemberProp::PrivateName(_) => Purity::Pure,
-            MemberProp::Computed(computed) => classify_expr_purity(
-                &computed.expr,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            ),
+            // Computed access runs ToPropertyKey on the key VALUE
+            // before the (accessor-free) lookup on the PlainData
+            // receiver — an object key fires user `toString` /
+            // `[Symbol.toPrimitive]`. The key must therefore be
+            // statically primitive-valued (or a well-known Symbol)
+            // in addition to being pure to evaluate.
+            MemberProp::Computed(computed) => {
+                let key_purity = classify_expr_purity(
+                    &computed.expr,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                );
+                if is_safe_property_key(&computed.expr, shadowed, local_shadowed) {
+                    key_purity
+                } else {
+                    key_purity.worst(Purity::from_reason_with_detail(
+                        PurityRule::ToPropertyKeyCoercion,
+                        computed.span,
+                        "computed key runs ToPropertyKey on a possibly-object value".to_string(),
+                    ))
+                }
+            }
         };
     }
     let detail = match (member.obj.as_ref(), &member.prop) {
@@ -2131,7 +2513,7 @@ fn classify_member_purity(
 fn classify_call_purity(
     call: &CallExpr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -2147,7 +2529,7 @@ fn classify_call_purity(
         &call.args,
         call.span,
         shadowed,
-        plain_data_shadowed,
+        local_shadowed,
         declared_pure,
         graph,
     )
@@ -2165,21 +2547,25 @@ fn classify_callee_call(
     args: &[ExprOrSpread],
     call_span: Span,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
     // Author-declared pure binding: a chunk-local function whose
     // spec member carries `purity: "pure"`. The annotation is an
     // explicit override and wins over both the whitelist and the
-    // shadowing check (the spec author asserts that THIS bound
-    // value is pure regardless of what its body does or whether
-    // an import shadows the name). See AGENTS.md "Declared
-    // purity".
+    // chunk-top (A8) shadowing check — the spec author asserts that
+    // THIS bound value is pure regardless of what its body does or
+    // whether an import shadows the name. It does NOT win over a
+    // body-local binding of the same name (`local_shadowed`): a
+    // function param or local var is a *different value* than the
+    // chunk-top binding the author annotated, so the trust contract
+    // doesn't cover it. See AGENTS.md "Declared purity".
     if let Expr::Ident(ident) = callee_expr
         && declared_pure.contains(ident.sym.as_ref())
+        && !local_shadowed.contains(ident.sym.as_ref())
     {
-        return all_args_pure(args, shadowed, plain_data_shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // Author-declared pure member call: a binding whose spec member
     // carries `pure_members: [<prop>, …]`. Admits
@@ -2191,25 +2577,32 @@ fn classify_callee_call(
     // and the opt-call form (`b.forwardRef?.(args)`, callee =
     // `Expr::Member`) qualify under the same admission rule via
     // `static_member_obj_prop`. As with `purity: pure` on a
-    // direct-Ident call, the annotation overrides shadowing — the
-    // spec author asserts THIS bound value is pure regardless of
-    // where it came from. See AGENTS.md "Declared purity".
+    // direct-Ident call, the annotation overrides chunk-top (A8)
+    // shadowing — the spec author asserts THIS bound value is pure
+    // regardless of where it came from — but NOT a body-local
+    // binding of the same name (a param/local is a different value
+    // than the annotated chunk-top binding). See AGENTS.md
+    // "Declared purity".
     if let Some((recv, prop)) = static_member_obj_prop(callee_expr)
+        && !local_shadowed.contains(recv)
         && graph.is_declared_pure_member(recv, prop)
     {
-        return all_args_pure(args, shadowed, plain_data_shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
     // non-Pure callee inherits its reasons (so the chain points
     // back through to the unhandled construct in the function body).
+    // A body-local binding of the same name shadows the chunk-top
+    // function — the called value is unknown then.
     if let Expr::Ident(ident) = callee_expr
+        && !local_shadowed.contains(ident.sym.as_ref())
         && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
     {
         return callee_purity.worst(all_args_pure(
             args,
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         ));
@@ -2218,9 +2611,10 @@ fn classify_callee_call(
     if let Expr::Member(member) = callee_expr
         && let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
+        && !local_shadowed.contains(recv)
         && PURE_STATIC_CALLS.contains(&(recv, prop))
     {
-        return all_args_pure(args, shadowed, plain_data_shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // `Object.{entries,keys,values,freeze}(<plain-data arg>)` /
     // `Object.fromEntries(<entry-array literal>)` — admitted when
@@ -2233,6 +2627,7 @@ fn classify_callee_call(
     if let Expr::Member(member) = callee_expr
         && let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
+        && !local_shadowed.contains(recv)
         && PURE_OBJECT_CALLS_ON_PLAIN_DATA.contains(&(recv, prop))
         && args.len() == 1
         && args[0].spread.is_none()
@@ -2240,7 +2635,7 @@ fn classify_callee_call(
             prop,
             &args[0].expr,
             shadowed,
-            plain_data_shadowed,
+            local_shadowed,
             declared_pure,
             graph,
         )
@@ -2254,8 +2649,9 @@ fn classify_callee_call(
             .copied()
             .find(|n| *n == ident.sym.as_ref())
         && !shadowed.contains(name)
+        && !local_shadowed.contains(name)
     {
-        return all_args_pure(args, shadowed, plain_data_shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // `globalCallable(prim_lit, …)` against
     // PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS. Every argument
@@ -2270,6 +2666,7 @@ fn classify_callee_call(
             .copied()
             .find(|n| *n == ident.sym.as_ref())
         && !shadowed.contains(name)
+        && !local_shadowed.contains(name)
         && args
             .iter()
             .all(|arg| arg.spread.is_none() && is_primitive_literal(&arg.expr))
@@ -2328,7 +2725,7 @@ fn is_pure_plain_data_arg_for(
     prop: &str,
     arg: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
@@ -2342,7 +2739,7 @@ fn is_pure_plain_data_arg_for(
             && is_fresh_entry_array_for_from_entries(
                 arg,
                 shadowed,
-                plain_data_shadowed,
+                local_shadowed,
                 declared_pure,
                 graph,
             );
@@ -2353,19 +2750,18 @@ fn is_pure_plain_data_arg_for(
         // local binding of the same name lexically shadows it, in which
         // case `ident` is the local (possibly getter-bearing) value.
         Expr::Ident(ident) => {
-            graph.is_plain_data(ident.sym.as_ref())
-                && !plain_data_shadowed.contains(ident.sym.as_ref())
+            graph.is_plain_data(ident.sym.as_ref()) && !local_shadowed.contains(ident.sym.as_ref())
         }
         // Fresh object literal with no accessor channels.
         Expr::Object(obj) => {
             obj.props.iter().all(is_plain_data_prop)
-                && classify_expr_purity(arg, shadowed, plain_data_shadowed, declared_pure, graph)
+                && classify_expr_purity(arg, shadowed, local_shadowed, declared_pure, graph)
                     .is_pure()
         }
         // Fresh array literal; element purity (including spread
         // sources) is handled by the standard literal classifier.
         Expr::Array(_) => {
-            classify_expr_purity(arg, shadowed, plain_data_shadowed, declared_pure, graph).is_pure()
+            classify_expr_purity(arg, shadowed, local_shadowed, declared_pure, graph).is_pure()
         }
         _ => false,
     }
@@ -2381,7 +2777,7 @@ fn is_pure_plain_data_arg_for(
 fn is_fresh_entry_array_for_from_entries(
     arg: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
@@ -2403,14 +2799,8 @@ fn is_fresh_entry_array_for_from_entries(
         }
         entry.elems.iter().flatten().all(|kv| {
             kv.spread.is_none()
-                && classify_expr_purity(
-                    &kv.expr,
-                    shadowed,
-                    plain_data_shadowed,
-                    declared_pure,
-                    graph,
-                )
-                .is_pure()
+                && classify_expr_purity(&kv.expr, shadowed, local_shadowed, declared_pure, graph)
+                    .is_pure()
         })
     })
 }
@@ -2435,10 +2825,78 @@ fn is_primitive_literal(expr: &Expr) -> bool {
     )
 }
 
+/// Whether evaluating `expr` is statically guaranteed to produce a
+/// **primitive** value, so a parent operator's ToPrimitive /
+/// ToString / ToNumber / ToPropertyKey coercion of the RESULT
+/// cannot fire user code. This predicate only answers "is the
+/// resulting value primitive?" — the operand's own evaluation
+/// effects are classified separately by the regular purity
+/// recursion.
+///
+/// Admitted result-primitive shapes:
+/// * primitive literals (string / number / boolean / null / bigint;
+///   regex literals are objects and excluded);
+/// * template literals (always evaluate to a string);
+/// * any unary operator except `delete` (`typeof` → string, `void`
+///   → undefined, `!` → boolean, `+`/`-`/`~` → number/bigint);
+/// * any binary operator except the short-circuit logicals
+///   (`&&` / `||` / `??` return one of their operands verbatim;
+///   everything else — arithmetic, relational, equality, bitwise,
+///   `in`, `instanceof` — returns a number/string/bigint/boolean);
+/// * conditionals whose both branches are result-primitive.
+///
+/// The global `undefined` is deliberately NOT admitted: it is an
+/// ordinary (shadowable) global binding, not a keyword, and the
+/// shadowed-globals pass doesn't track it. Over-restriction is the
+/// acceptable failure mode.
+///
+/// No admitted shape can produce a Symbol, so ToString on a
+/// result-primitive value never hits the symbol TypeError path.
+fn is_result_primitive(expr: &Expr) -> bool {
+    match strip_parens(expr) {
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => true,
+        Expr::Tpl(_) => true,
+        Expr::Unary(u) => u.op != UnaryOp::Delete,
+        Expr::Bin(b) => !matches!(
+            b.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ),
+        Expr::Cond(c) => is_result_primitive(&c.cons) && is_result_primitive(&c.alt),
+        _ => false,
+    }
+}
+
+/// Whether `key` is a safe computed property key: ToPropertyKey on
+/// its value fires no user code. True for result-primitive
+/// expressions (string/number coercion of a primitive is
+/// engine-only) and for whitelisted well-known-symbol reads
+/// (`Symbol.iterator` etc. — Symbols are valid property keys with
+/// no coercion path), provided neither the global `Symbol` nor a
+/// local binding shadows the receiver.
+fn is_safe_property_key(
+    key: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+) -> bool {
+    if is_result_primitive(key) {
+        return true;
+    }
+    if let Expr::Member(member) = strip_parens(key)
+        && let Some((recv, prop)) = static_member_pair(member)
+        && recv == "Symbol"
+        && !shadowed.contains(recv)
+        && !local_shadowed.contains(recv)
+        && PURE_STATIC_PROPS.contains(&(recv, prop))
+    {
+        return true;
+    }
+    false
+}
+
 fn all_args_pure(
     args: &[ExprOrSpread],
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -2448,13 +2906,8 @@ fn all_args_pure(
             let spread = arg
                 .spread
                 .map(|sp| Purity::from_reason(PurityRule::ArraySpread, sp));
-            let body = classify_expr_purity(
-                &arg.expr,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            );
+            let body =
+                classify_expr_purity(&arg.expr, shadowed, local_shadowed, declared_pure, graph);
             spread.unwrap_or(Purity::Pure).worst(body)
         })
         .fold(Purity::Pure, Purity::worst)
@@ -2463,7 +2916,7 @@ fn all_args_pure(
 fn classify_prop_purity(
     prop: &PropOrSpread,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -2473,34 +2926,24 @@ fn classify_prop_purity(
             // iterator (array spread) or property iteration
             // (object spread). Either can fire a getter or a
             // user-defined `[Symbol.iterator]`.
-            classify_expr_purity(
-                &spread.expr,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )
-            .worst(Purity::from_reason(
-                PurityRule::ObjectSpread,
-                spread.expr.span(),
-            ))
+            classify_expr_purity(&spread.expr, shadowed, local_shadowed, declared_pure, graph)
+                .worst(Purity::from_reason(
+                    PurityRule::ObjectSpread,
+                    spread.expr.span(),
+                ))
         }
         PropOrSpread::Prop(prop) => match prop.as_ref() {
             Prop::Shorthand(_) => Purity::Pure,
-            Prop::KeyValue(kv) => classify_propname_purity(
-                &kv.key,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )
-            .worst(classify_expr_purity(
-                &kv.value,
-                shadowed,
-                plain_data_shadowed,
-                declared_pure,
-                graph,
-            )),
+            Prop::KeyValue(kv) => {
+                classify_propname_purity(&kv.key, shadowed, local_shadowed, declared_pure, graph)
+                    .worst(classify_expr_purity(
+                        &kv.value,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    ))
+            }
             Prop::Assign(a) => Purity::from_reason(PurityRule::ObjectAssignProp, a.key.span),
             // `{ get x() {}, set x(v) {}, m() {} }` — defining a
             // method or accessor is pure; invoking it is not, and
@@ -2513,7 +2956,7 @@ fn classify_prop_purity(
 fn classify_propname_purity(
     name: &PropName,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
@@ -2521,44 +2964,100 @@ fn classify_propname_purity(
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
             Purity::Pure
         }
+        // Defining a property under a computed key runs
+        // ToPropertyKey on the key value — an object key fires user
+        // `toString` / `[Symbol.toPrimitive]`. The key must be
+        // statically primitive-valued (or a well-known Symbol) in
+        // addition to being pure to evaluate.
         PropName::Computed(c) => {
-            classify_expr_purity(&c.expr, shadowed, plain_data_shadowed, declared_pure, graph)
+            let key_purity =
+                classify_expr_purity(&c.expr, shadowed, local_shadowed, declared_pure, graph);
+            if is_safe_property_key(&c.expr, shadowed, local_shadowed) {
+                key_purity
+            } else {
+                key_purity.worst(Purity::from_reason_with_detail(
+                    PurityRule::ToPropertyKeyCoercion,
+                    c.span,
+                    "computed key runs ToPropertyKey on a possibly-object value".to_string(),
+                ))
+            }
         }
     }
 }
 
 /// Whether a class declaration runs observable code at class-decl
-/// time. Static blocks always run; static fields run their
-/// initializer. `extends <expr>` is at-init: the expression itself
-/// runs, but `extends` references are tracked as `R`-edges
-/// elsewhere — here we only report whether the class itself
-/// _additionally_ has observable side-effecting init code.
+/// time. Eagerly-evaluated class parts (aligned with the fact
+/// collector's `visit_eager_member_parts` / `visit_class_decl`):
+///
+/// * **decorators** (class-level or member-level) — decorator
+///   application CALLS the decorator function at class-definition
+///   time; any decorator present is observable.
+/// * **`extends <expr>`** — the superclass expression evaluates at
+///   class-definition time; an impure expression (e.g.
+///   `extends f()`) is observable. A pure-classified expression
+///   (Ident etc.) is admitted: reading `.prototype` off a plain
+///   constructor fires no user code (function `prototype` is an
+///   own data property; the Proxy-superclass case falls under
+///   assumption A11, intrinsic/exotic-object integrity).
+/// * **computed member keys** (any member kind, static or not) —
+///   key expressions evaluate eagerly AND their values undergo
+///   ToPropertyKey (user `toString` on object keys), so the key
+///   must be pure and statically primitive-valued (or a well-known
+///   `Symbol.*`).
+/// * **static field / static auto-accessor initializers** — run at
+///   class-definition time; impure initializer is observable.
+///
+/// Static blocks always run. Instance field/accessor initializers,
+/// constructor and method bodies are lazy and not consulted.
 pub(crate) fn class_has_static_observable(
     class: &Class,
     shadowed: &BTreeSet<&'static str>,
-    plain_data_shadowed: &BTreeSet<String>,
+    local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
+    let value_impure = |v: &Expr| {
+        !classify_expr_purity(v, shadowed, local_shadowed, declared_pure, graph).is_pure()
+    };
+    let key_observable = |key: &PropName| match key {
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => false,
+        PropName::Computed(c) => {
+            value_impure(&c.expr) || !is_safe_property_key(&c.expr, shadowed, local_shadowed)
+        }
+    };
+    if !class.decorators.is_empty() {
+        return true;
+    }
+    if let Some(super_class) = class.super_class.as_deref()
+        && value_impure(super_class)
+    {
+        return true;
+    }
     class.body.iter().any(|member| match member {
         ClassMember::StaticBlock(_) => true,
-        ClassMember::ClassProp(prop) if prop.is_static => prop
-            .value
-            .as_deref()
-            .map(|v| {
-                classify_expr_purity(v, shadowed, plain_data_shadowed, declared_pure, graph)
-                    != Purity::Pure
-            })
-            .unwrap_or(false),
-        ClassMember::PrivateProp(prop) if prop.is_static => prop
-            .value
-            .as_deref()
-            .map(|v| {
-                classify_expr_purity(v, shadowed, plain_data_shadowed, declared_pure, graph)
-                    != Purity::Pure
-            })
-            .unwrap_or(false),
-        _ => false,
+        ClassMember::Method(method) => {
+            !method.function.decorators.is_empty() || key_observable(&method.key)
+        }
+        ClassMember::PrivateMethod(method) => !method.function.decorators.is_empty(),
+        ClassMember::Constructor(_) => false,
+        ClassMember::ClassProp(prop) => {
+            !prop.decorators.is_empty()
+                || key_observable(&prop.key)
+                || (prop.is_static && prop.value.as_deref().is_some_and(value_impure))
+        }
+        ClassMember::PrivateProp(prop) => {
+            !prop.decorators.is_empty()
+                || (prop.is_static && prop.value.as_deref().is_some_and(value_impure))
+        }
+        ClassMember::AutoAccessor(accessor) => {
+            !accessor.decorators.is_empty()
+                || (match &accessor.key {
+                    Key::Public(name) => key_observable(name),
+                    Key::Private(_) => false,
+                })
+                || (accessor.is_static && accessor.value.as_deref().is_some_and(value_impure))
+        }
+        ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => false,
     })
 }
 

@@ -141,12 +141,14 @@ export { userSchema, productSchema, orderSchema };
 }
 
 #[test]
-#[ignore = "blocked on Expr::New whitelist with per-constructor arg-shape gate \
-            (Step E in the purity-desiderata follow-up plan)"]
+#[ignore = "blocked on a RegExp entry in the Expr::New whitelist: Set/Map array-literal \
+            forms landed (PURE_BUILTIN_NEW_ARRAY_ITERABLE; see the new_map / new_set / \
+            new_map_with_array_of_pure_pairs tests below), but `new RegExp(\"a+\")` still \
+            classifies UnknownNew"]
 fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
-    // literal-only args are pure by built-in catalogue. The
-    // current classifier marks all `Expr::New` as `Unknown`.
+    // literal-only args are pure by built-in catalogue. Set/Map
+    // are handled; RegExp is the remaining blocker.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const tagsA = new Set(["alpha", "beta"]);
 const tagsB = new Set(["gamma"]);
@@ -257,13 +259,18 @@ export { A, B, C };
 
 #[test]
 fn inferred_pure_recursive_function_classified_pure() {
-    // Mutually recursive pure functions: `even(n)` calls
-    // `odd(n - 1)`; `odd(n)` calls `even(n - 1)`. Recursive
-    // analysis must terminate (memoize per-function visit
-    // status) and conclude both pure.
+    // Mutually recursive pure functions: `even` calls `odd` and
+    // vice versa. Recursive analysis must terminate (memoize
+    // per-function visit status) and conclude both pure. The
+    // decrement goes through `prev` (literal-equality ternaries)
+    // rather than `n - 1`: arithmetic on an opaque param is a
+    // coercing operator on a possibly-object operand and
+    // classifies NotPure by design — this test pins recursion
+    // termination, not arithmetic.
     let fixture = run_fixture(FixtureOpts::new(
-        r#"function even(n) { return n === 0 ? true : odd(n - 1); }
-function odd(n) { return n === 0 ? false : even(n - 1); }
+        r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
+function even(n) { return n === 0 ? true : odd(prev(n)); }
+function odd(n) { return n === 0 ? false : even(prev(n)); }
 const fourEven = even(4);
 const fiveOdd = odd(5);
 console.log(fourEven, fiveOdd);
@@ -348,6 +355,54 @@ const a1 = caller("a1");
 const b1 = caller("b1");
 const a2 = caller("a2");
 console.log(a1.label, b1.label, a2.label, globalThis.touched);
+export { a1, a2, b1 };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_b", &[Member::new("b1")]),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn coercing_operator_on_opaque_operand_still_emits_s_edges() {
+    // SOUNDNESS: `obj + 1` runs ToPrimitive on `obj` — a user
+    // `valueOf` can fire arbitrary code, so the statements stay
+    // side-effecting and the interleaved modules still close an
+    // S cycle the gate must reject. Pins the coercing-operator
+    // gate at the pipeline level (the classifier previously
+    // admitted `A + 1` as pure).
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const a1 = obj + 1;
+const b1 = obj + 2;
+const a2 = obj + 3;
+console.log(a1, b1, a2);
+export { a1, a2, b1 };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_b", &[Member::new("b1")]),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn destructuring_declarators_still_emit_s_edges() {
+    // SOUNDNESS: `const { a1 } = src` fires `src`'s getters at
+    // declaration time — the statements stay side-effecting and
+    // interleaved modules close an S cycle the gate must reject.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const src = make();
+const { a1 } = src;
+const { b1 } = src;
+const { a2 } = src;
+console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
             vec![

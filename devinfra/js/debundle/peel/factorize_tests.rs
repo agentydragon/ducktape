@@ -562,7 +562,11 @@ fn pure_const_decl_is_not_side_effecting() {
     assert_eq!(has_side_effect_for("const X = { a: 1 };"), vec![false]);
     assert_eq!(has_side_effect_for("const X = [1, 2, 3];"), vec![false]);
     assert_eq!(has_side_effect_for("const X = OTHER;"), vec![false]);
-    assert_eq!(has_side_effect_for("const X = A + B;"), vec![false]);
+    assert_eq!(has_side_effect_for("const X = 1 + 2;"), vec![false]);
+    // `A + B` on opaque Idents runs ToPrimitive — possible user
+    // `valueOf` — and is side-effecting under the coercing-operator
+    // gate (see purity classifier_tests).
+    assert_eq!(has_side_effect_for("const X = A + B;"), vec![true]);
 }
 
 #[test]

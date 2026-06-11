@@ -21,7 +21,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 use crate::analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 use crate::purity::{
     ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
-    WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
+    SHADOW_TRACKED_GLOBALS, class_has_static_observable, classify_expr_purity,
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 use crate::{SourceLocation, StatementOrdinal};
@@ -492,19 +492,23 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
     out
 }
 
-/// Walk `body` and collect the subset of `WHITELIST_RECEIVERS`
-/// that are declared at the chunk's top-level scope (`var/let/const`,
+/// Walk `body` and collect the subset of `SHADOW_TRACKED_GLOBALS`
+/// (the union of every global name any purity-whitelist table keys
+/// on — receivers like `Math`/`Object`, global callables like
+/// `Boolean`/`Symbol`, pure-new builtins like `Map`/`Set`) that are
+/// declared at the chunk's top-level scope (`var/let/const`,
 /// `function`, `class`, exported decls) or bound by an import
 /// specifier (default / namespace / named). The classifier consults
-/// this set to skip the whitelist for any receiver the chunk
-/// shadows — `const Math = …` and
-/// `import { Math } from "./userland"` both make `Math.PI` an
-/// Unknown read, not the global constant. See docs/design.md A8.
+/// this set to skip the whitelist for any name the chunk shadows —
+/// `const Math = …` and `import { Math } from "./userland"` both
+/// make `Math.PI` an Unknown read, and `const Map = class { … }`
+/// makes `new Map()` an Unknown construction, not the built-in.
+/// See docs/design.md A8.
 pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
-        if let Some(global) = WHITELIST_RECEIVERS.iter().copied().find(|r| *r == name) {
-            into.insert(global);
+        if let Some(global) = SHADOW_TRACKED_GLOBALS.get(name) {
+            into.insert(*global);
         }
     };
     for item in body {

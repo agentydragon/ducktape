@@ -5,6 +5,9 @@
 //! citation showing no user-callback path; "common in practice" is not
 //! sufficient.
 
+use std::collections::BTreeSet;
+use std::sync::LazyLock;
+
 /// Builtins that can install an accessor or rewire the prototype chain
 /// of their first argument. Any candidate appearing as the first
 /// positional arg of one of these calls is disqualified from
@@ -226,3 +229,24 @@ pub(super) const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
 /// e.g. `const Math = …` makes `Math.PI` fall back to `Unknown`.
 pub(crate) const WHITELIST_RECEIVERS: &[&str] =
     &["Math", "Array", "Symbol", "Number", "Boolean", "Object"];
+
+/// Every global name any whitelist table keys on, derived as the
+/// union of all tables. `compute_shadowed_globals` tracks exactly
+/// this set, so adding a table (or an entry naming a new global)
+/// automatically extends shadow tracking — a name missing from the
+/// tracked set would make the classifier blind to `const Map = …`
+/// at chunk top and let `new Map()` classify `Pure` against a
+/// user-defined value.
+pub(crate) static SHADOW_TRACKED_GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
+    let mut names: BTreeSet<&'static str> = BTreeSet::new();
+    names.extend(WHITELIST_RECEIVERS.iter().copied());
+    names.extend(PURE_STATIC_PROPS.iter().map(|(r, _)| *r));
+    names.extend(PURE_STATIC_CALLS.iter().map(|(r, _)| *r));
+    names.extend(PURE_STATIC_FUNCTION_REFS.iter().map(|(r, _)| *r));
+    names.extend(PURE_OBJECT_CALLS_ON_PLAIN_DATA.iter().map(|(r, _)| *r));
+    names.extend(PURE_GLOBAL_CALLS.iter().copied());
+    names.extend(PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS.iter().copied());
+    names.extend(PURE_BUILTIN_NEW_NO_ARGS.iter().copied());
+    names.extend(PURE_BUILTIN_NEW_ARRAY_ITERABLE.iter().copied());
+    names
+});

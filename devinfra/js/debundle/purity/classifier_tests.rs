@@ -146,9 +146,62 @@ fn classify_pure_unary_and_binary() {
     assert!((classify("-1")).is_pure());
     assert!((classify("!FOO")).is_pure());
     assert!((classify("typeof FOO")).is_pure());
-    assert!((classify("A + 1")).is_pure());
+    assert!((classify("void FOO")).is_pure());
     assert!((classify("A && B")).is_pure());
+    assert!((classify("A || B")).is_pure());
+    assert!((classify("A ?? B")).is_pure());
+    assert!((classify("A === B")).is_pure());
+    assert!((classify("A !== B")).is_pure());
     assert!((classify("A ? B : C")).is_pure());
+    // Coercing operators on statically-primitive operands stay
+    // pure: the engine's ToPrimitive of a primitive runs no user
+    // code. Nested coercing results are themselves primitive.
+    assert!((classify("1 + 2")).is_pure());
+    assert!((classify("'a' + 1")).is_pure());
+    assert!((classify("1 + 2 + 3")).is_pure());
+    assert!((classify("1e3 * 60 * 60")).is_pure());
+    assert!((classify("-(1 + 2)")).is_pure());
+    assert!((classify("~0")).is_pure());
+    assert!((classify("(typeof A) + '!'")).is_pure());
+    assert!((classify("(A === B) | 0")).is_pure());
+}
+
+#[test]
+fn classify_coercing_operators_on_possibly_object_operands_are_not_pure() {
+    // SOUNDNESS: ToPrimitive / ToNumber / ToString on an object
+    // operand fires user `valueOf` / `toString` /
+    // `[Symbol.toPrimitive]`. An opaque Ident can hold an object,
+    // so coercing operators only classify pure when every coerced
+    // operand is statically primitive-valued. (`A + 1` was
+    // previously pinned pure — deliberate conservative shift.)
+    assert!(!(classify("A + 1")).is_pure());
+    assert!(!(classify("A - 1")).is_pure());
+    assert!(!(classify("A * B")).is_pure());
+    assert!(!(classify("A < 10")).is_pure());
+    assert!(!(classify("A >= B")).is_pure());
+    assert!(!(classify("A == null")).is_pure());
+    assert!(!(classify("A != B")).is_pure());
+    assert!(!(classify("A & 1")).is_pure());
+    assert!(!(classify("A << 2")).is_pure());
+    assert!(!(classify("+A")).is_pure());
+    assert!(!(classify("-A")).is_pure());
+    assert!(!(classify("~A")).is_pure());
+    // The shadowable global `undefined` is an ordinary binding the
+    // shadow pass doesn't track — deliberately NOT admitted as a
+    // primitive operand.
+    assert!(!(classify("A == undefined")).is_pure());
+    assert!(!(classify("undefined + 1")).is_pure());
+}
+
+#[test]
+fn classify_in_and_instanceof_are_not_pure() {
+    // `in` fires the proxy `has` trap on its RHS; `instanceof`
+    // fires `@@hasInstance` / reads `.prototype` on its RHS. The
+    // interesting RHS is always an object, so no primitive-operand
+    // gate can admit these.
+    assert!(!(classify("'k' in o")).is_pure());
+    assert!(!(classify("x instanceof C")).is_pure());
+    assert!(!(classify("'k' in { k: 1 }")).is_pure());
 }
 
 #[test]
@@ -179,7 +232,13 @@ fn classify_member_access_is_unknown() {
 #[test]
 fn classify_object_literal_pure_when_props_pure() {
     assert!((classify("({ a: 1, b: 'x' })")).is_pure());
-    assert!((classify("({ [k]: 1 })")).is_pure());
+    // Computed keys run ToPropertyKey on the key VALUE — an opaque
+    // Ident can hold an object whose `toString` fires. Pure only
+    // for statically-primitive keys and well-known symbols.
+    assert!((classify("({ ['k']: 1 })")).is_pure());
+    assert!((classify("({ [1 + 2]: 1 })")).is_pure());
+    assert!((classify("({ [Symbol.iterator]: 1 })")).is_pure());
+    assert!(!(classify("({ [k]: 1 })")).is_pure());
     // Computed key with member access — getter could fire.
     assert!(!(classify("({ [k.x]: 1 })")).is_pure());
     // Spread of an arbitrary expr — iterator could fire.
@@ -230,8 +289,14 @@ fn classify_class_expr_pure_without_static_init() {
 }
 
 #[test]
-fn classify_template_with_pure_exprs_is_pure() {
-    assert!((classify("`a${A}b${1+2}c`")).is_pure());
+fn classify_template_interpolation_requires_primitive_values() {
+    // Interpolation runs ToString on the value — pure only when
+    // the interpolated expression is statically primitive-valued.
+    assert!((classify("`a${1 + 2}b${'x'}c`")).is_pure());
+    assert!((classify("`a${`inner${1}`}b`")).is_pure());
+    assert!((classify("`a${typeof A}b`")).is_pure());
+    // An opaque Ident can hold an object whose `toString` fires.
+    assert!(!(classify("`a${A}b`")).is_pure());
     assert!(!(classify("`a${foo()}`")).is_pure());
 }
 
@@ -295,32 +360,51 @@ fn whitelist_static_calls_unknown_arg_infects() {
 // --- PURE_STATIC_FUNCTION_REFS: read-vs-call distinction ---------------
 
 #[test]
-fn static_function_ref_object_aliases_are_pure() {
+fn static_function_ref_aliases_are_pure() {
     // Bare member READS access own data properties of the
-    // built-in `Object` per ECMA-262 §20.1.2 — no getter
-    // fires, no observable side effect. Aliasing the function
-    // value into a binding stays pure (the value isn't called).
-    assert!((classify("Object.defineProperty")).is_pure());
-    assert!((classify("Object.freeze")).is_pure());
-    assert!((classify("Object.values")).is_pure());
-    assert!((classify("Object.keys")).is_pure());
+    // built-in receiver per ECMA-262 — no getter fires, no
+    // observable side effect. Aliasing the function value into a
+    // binding stays pure (the value isn't called). Table-driven
+    // over the whole whitelist so every entry (current and
+    // future) carries its positive direction.
+    for &(recv, prop) in PURE_STATIC_FUNCTION_REFS {
+        let src = format!("{recv}.{prop}");
+        assert!(
+            classify(&src).is_pure(),
+            "expected function-ref read `{src}` to classify Pure"
+        );
+    }
 }
 
 #[test]
-fn static_function_ref_object_calls_remain_unknown() {
+fn static_function_ref_calls_remain_unknown() {
     // The CALL form of each function-ref entry is unsafe on
     // arbitrary args (see `PURE_STATIC_FUNCTION_REFS`
     // doc-comment for why each is excluded from
     // `PURE_STATIC_CALLS`). The function-ref entry only opens
-    // the read path; the general call must stay Unknown so the
-    // soundness contract holds.
+    // the read path; the general (opaque-binding-arg) call must
+    // stay Unknown so the soundness contract holds. Table-driven
+    // over the whole whitelist; entries that are also in
+    // `PURE_STATIC_CALLS` (currently `Object.is`) are call-pure
+    // by their own admission contract and skipped here.
     //
     // Note: a subset of these calls (`Object.{keys, values,
     // entries, freeze, fromEntries}`) becomes Pure when called
     // with a syntactically plain-data argument — pinned in the
-    // `object_*` tests below. The negatives here use opaque
-    // bindings / non-literal expressions that fall outside that
-    // narrow shape, so they still classify Unknown.
+    // `object_*` tests below. The opaque-Ident args used here
+    // fall outside that narrow shape.
+    for &(recv, prop) in PURE_STATIC_FUNCTION_REFS {
+        if PURE_STATIC_CALLS.contains(&(recv, prop)) {
+            continue;
+        }
+        let src = format!("{recv}.{prop}(o, p)");
+        assert!(
+            !classify(&src).is_pure(),
+            "expected function-ref CALL `{src}` to stay Unknown"
+        );
+    }
+    // Representative shapes with literal extra args, pinning that
+    // arg purity alone never admits the call.
     assert!(!(classify("Object.defineProperty(t, 'k', { value: 1 })")).is_pure());
     assert!(!(classify("Object.freeze(o)")).is_pure());
     assert!(!(classify("Object.values(o)")).is_pure());
@@ -455,6 +539,126 @@ fn import_specifier_locals_shadow_whitelist() {
         ))
         .is_pure()
     );
+}
+
+// --- Whitelist: shadow tracking covers every table -----------------------
+
+#[test]
+fn unshadowed_builtin_new_is_pure() {
+    // Positive control for the shadow-tracking fix: with no
+    // chunk-top rebind, the `new <Container>()` whitelists fire.
+    assert!((classify("new Map()")).is_pure());
+    assert!((classify("new Set()")).is_pure());
+    assert!((classify("new Set(['a', 'b'])")).is_pure());
+}
+
+#[test]
+fn shadowed_builtin_new_falls_back_to_unknown() {
+    // SOUNDNESS: `compute_shadowed_globals` must track every name
+    // any whitelist table keys on (SHADOW_TRACKED_GLOBALS — the
+    // derived union), not just WHITELIST_RECEIVERS. A chunk-top
+    // `const Map = class { … }` rebinds the name; `new Map()` then
+    // constructs the user class, which can run arbitrary code.
+    assert!(
+        !(classify_with_module(
+            "const Map = class { constructor() { globalThis.boom = 1; } };",
+            "new Map()"
+        ))
+        .is_pure()
+    );
+    assert!(!(classify_with_module("function Set() {}", "new Set()")).is_pure());
+    assert!(
+        !(classify_with_module(
+            r#"import { Map } from "./userland.js";"#,
+            "new Map([['k', 1]])"
+        ))
+        .is_pure()
+    );
+    // Shadowed global callables fall back the same way.
+    assert!(!(classify_with_module("const Symbol = userland;", "Symbol('x')")).is_pure());
+}
+
+// --- Class definition eager-evaluation effects ---------------------------
+
+#[test]
+fn classify_class_extends_expr_effects_propagate() {
+    // `extends <expr>` evaluates at class-definition time.
+    assert!(!(classify("class extends io() {}")).is_pure());
+    // A plain Ident superclass is admitted (reading `.prototype`
+    // off an ordinary constructor fires no user code; A11 covers
+    // the exotic-object case).
+    assert!((classify("class extends B {}")).is_pure());
+}
+
+#[test]
+fn classify_class_computed_keys_require_safe_primitive_keys() {
+    // Computed member keys evaluate eagerly AND run ToPropertyKey
+    // on the value — any member kind, static or not.
+    assert!(!(classify("class { [io()]() {} }")).is_pure());
+    assert!(!(classify("class { [k]() {} }")).is_pure());
+    assert!(!(classify("class { [k] = 1; }")).is_pure());
+    assert!(!(classify("class { static [k] = 1; }")).is_pure());
+    // Primitive and well-known-symbol keys are safe.
+    assert!((classify("class { ['m']() {} }")).is_pure());
+    assert!((classify("class { [Symbol.iterator]() {} }")).is_pure());
+    assert!((classify("class { ['x'] = io(); }")).is_pure()); // instance init is lazy
+}
+
+/// Parse a single class declaration with decorators /
+/// auto-accessors enabled and run `class_has_static_observable`
+/// on it with empty shadow/annotation context.
+fn class_observable(src: &str) -> bool {
+    let cm: Lrc<swc_common::SourceMap> = Default::default();
+    let fm = cm.new_source_file(FileName::Custom("test.js".into()).into(), src.to_string());
+    let lexer = Lexer::new(
+        Syntax::Es(swc_ecma_parser::EsSyntax {
+            decorators: true,
+            auto_accessors: true,
+            ..Default::default()
+        }),
+        Default::default(),
+        StringInput::from(&*fm),
+        None,
+    );
+    let module = Parser::new_from(lexer).parse_module().unwrap();
+    let class = module
+        .body
+        .iter()
+        .find_map(|item| match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => Some(&cls.class),
+            _ => None,
+        })
+        .expect("expected a class declaration");
+    class_has_static_observable(
+        class,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &ChunkCodeGraph::default(),
+    )
+}
+
+#[test]
+fn class_decorators_are_observable() {
+    // Decorator application CALLS the decorator function at
+    // class-definition time — any decorator (class-level or
+    // member-level) is observable.
+    assert!(class_observable("@dec class C {}"));
+    assert!(class_observable("class C { @dec m() {} }"));
+    assert!(class_observable("class C { @dec x = 1; }"));
+    assert!(class_observable("class C { @dec accessor x = 1; }"));
+    // Positive control: same members without decorators.
+    assert!(!class_observable("class C { m() {} x = 1; }"));
+}
+
+#[test]
+fn class_static_auto_accessor_initializer_is_observable() {
+    // `static accessor x = <expr>` runs the initializer at
+    // class-definition time, like a static field.
+    assert!(class_observable("class C { static accessor x = io(); }"));
+    assert!(!class_observable("class C { static accessor x = 1; }"));
+    // Instance auto-accessor initializers are lazy.
+    assert!(!class_observable("class C { accessor x = io(); }"));
 }
 
 // --- Declared purity (spec annotation) ---------------------------------

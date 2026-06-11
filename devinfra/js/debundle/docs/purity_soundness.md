@@ -36,6 +36,30 @@ setPrototypeOf,assign}` /
   `X` as first arg. Plain-ident writes whose RHS is not a
   plain-literal also disqualify.
 
+- **No escaping references.** The write scan above is name-based: it
+  only catches mutations spelled through the candidate's own
+  identifier. An alias (`const Y = X; Object.defineProperty(Y, …)`)
+  or any captured reference (call argument, array element, object
+  property value) would defeat it, so the scan also treats every
+  bare candidate `Ident` outside a short list of provably
+  non-capturing read positions (member receiver, spread source,
+  `typeof`/`!`/`void` operand, `Object.{keys,values,entries,freeze,
+fromEntries}` single argument with `Object` unshadowed, the vetted
+  TS-enum-IIFE argument, `return X` / `() => X`, `export { X }`) as
+  an escape and disqualifies the candidate.
+
+  **Residual assumption for `return X` / `export { X }`:** consumers
+  of a returned or exported PlainData reference (chunk-internal
+  callers of the returning function; importers of the exported
+  binding in other modules of the same debundle) are assumed not to
+  install accessors on it. For exports this is the same single-bundle
+  closed-world view the rest of the analysis takes; for returns it
+  admits the ubiquitous accessor pattern `const get = () => CONFIG;`
+  without a whole-program escape analysis. A consumer calling
+  `Object.defineProperty` on the received reference would break the
+  read-purity claim — the same way a chunk-external mutation already
+  could (the scan only ever sees one chunk).
+
 - **Re-bind soundness for `let`.** Reads on `X` after a re-bind see
   the new plain-literal value; reads before still saw the old
   plain-literal value. At no program point does `X` hold an

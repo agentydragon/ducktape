@@ -54,9 +54,9 @@ fn analyze_redundant_hints(
 #[test]
 fn redundant_hint_on_pure_function_is_reported() {
     // `f` is a chunk-local arrow whose body classifies pure on
-    // its own (returns a primitive literal). The hint is a no-op
+    // its own (returns a fresh literal). The hint is a no-op
     // — the analyzer reaches the same verdict without it.
-    let got = redundant_hints("const f = (x) => x + 1;", &["f"]);
+    let got = redundant_hints("const f = (x) => ({ val: x });", &["f"]);
     assert_eq!(
         got,
         vec![("f".to_string(), RedundantPurityReason::InferredPureFunction)]
@@ -115,16 +115,16 @@ fn hint_on_unknown_binding_is_not_reported() {
 #[test]
 fn hint_chain_keeps_only_genuinely_redundant_entries() {
     // `a` calls `b`; `b`'s body is itself pure (returns
-    // `x + 1`). Per-hint independent removal:
+    // `[x]`). Per-hint independent removal:
     // - Drop `a`'s hint → analyzer probes `a` with declared_pure
     //   = {b}. Inside `a`'s body, `b(x)` is hint-pure → `a`'s
     //   body classifies pure → `a` reported redundant.
     // - Drop `b`'s hint → analyzer probes `b` with declared_pure
-    //   = {a}. `b`'s body `x + 1` is pure on its own (no calls
+    //   = {a}. `b`'s body `[x]` is pure on its own (no calls
     //   at all) → `b` reported redundant.
     // Both hints are redundant.
     let src = r#"
-    const b = (x) => x + 1;
+    const b = (x) => [x];
     const a = (x) => b(x);
 "#;
     let got = redundant_hints(src, &["a", "b"]);
@@ -174,7 +174,7 @@ fn no_hints_produces_no_warnings() {
     // functions. The analyzer doesn't invent warnings about
     // "you could have added a hint here" — it only reports
     // existing hints that are redundant.
-    let got = redundant_hints("const f = (x) => x + 1;", &[]);
+    let got = redundant_hints("const f = (x) => [x];", &[]);
     assert!(
         got.is_empty(),
         "empty declared_pure must produce no warnings; got {got:?}"
@@ -182,23 +182,26 @@ fn no_hints_produces_no_warnings() {
 }
 
 #[test]
-fn redundant_hint_on_let_with_whole_object_replacement_is_reported() {
+fn hint_on_opaque_key_accessor_is_load_bearing() {
     // The gaffer env_config shape: `let X = {…}` with whole-
-    // object replacement writes; `purity: pure` on the
-    // accessor function `getX` is redundant once X admits as
-    // PlainData (Part 2). This is the test that pins the
-    // motivating downstream removal — if it fails after some
-    // future refactor, the gaffer hint-removal regresses.
+    // object replacement writes keeps X PlainData, but the
+    // accessor `getEnv = (n) => envConfig[n]` coerces an opaque
+    // key via ToPropertyKey (user `toString` on an object key),
+    // so it is NOT inferred pure. The `purity: pure` hint on it
+    // is genuinely load-bearing and must not be flagged
+    // redundant. A static-prop accessor IS inferred pure and its
+    // hint flagged.
     let src = r#"
     let envConfig = { REACT_APP_ENV: "production" };
     const applyOverrides = (n) => { envConfig = { ...envConfig, ...n }; };
     const getEnv = (n) => envConfig[n];
+    const getAppEnv = () => envConfig.REACT_APP_ENV;
 "#;
-    let got = redundant_hints(src, &["getEnv"]);
+    let got = redundant_hints(src, &["getEnv", "getAppEnv"]);
     assert_eq!(
         got,
         vec![(
-            "getEnv".to_string(),
+            "getAppEnv".to_string(),
             RedundantPurityReason::InferredPureFunction
         )]
     );

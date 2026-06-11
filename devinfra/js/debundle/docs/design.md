@@ -931,6 +931,27 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   same review burden as `purity: "pure"`; the difference is that the
   trusted claim is local target mutation, not absence of effects.
 
+- **A11. Intrinsic integrity: the chunk runs with unmodified
+  built-in prototypes and intrinsics.** Every purity-whitelist
+  admission argument cites ECMA-262 behavior of the _standard_
+  built-ins: `Set.prototype.add` doing SameValueZero,
+  `Array.prototype[Symbol.iterator]` being the built-in array
+  iterator, `Object.prototype.toString` firing no user code, a
+  plain constructor's `prototype` being an own data property. If
+  code that runs before the chunk pollutes those prototypes
+  (`Set.prototype.add = function () { globalThis.boom = 1; … }`,
+  replacing `Array.prototype[Symbol.iterator]`, installing
+  `Object.prototype[Symbol.toPrimitive]`), a `Pure`-classified
+  statement like `new Set(["a"])` fires user code, S edges drop,
+  and the theorem's ordering claim no longer holds. Unlike A8
+  (chunk-top shadowing), this is **not** detected — pollution can
+  live in another chunk, a vendor bundle, or host code, outside
+  what the analyzer sees. Production bundles we target don't
+  monkey-patch intrinsics; the assumption is relied on by
+  observation, like A6. (Membrane/zone-style frameworks that DO
+  patch intrinsics would need the affected whitelist entries
+  disabled for soundness.)
+
 A1–A5 are statically checkable on each chunk: grep for top-level
 `await`, dynamic `import()` of internal paths, `eval`, and `with`.
 A2 in particular is enforced by `find_top_level_await` —
@@ -946,7 +967,9 @@ purity is author-trusted) is satisfied by spec review — every
 `purity: "pure"` annotation is an explicit, reviewable trust
 claim. A10 (declared local effects) is likewise satisfied by spec
 review, with analyzer shape checks limiting the trusted surface to
-the admitted helper-call forms.
+the admitted helper-call forms. A11 (intrinsic integrity) is not
+statically checkable — pollution can originate outside the analyzed
+chunk — and is relied on by observation of the target bundles.
 
 ### Lemmas
 
