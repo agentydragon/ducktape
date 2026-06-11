@@ -165,9 +165,9 @@ Remaining known approximation: the simulator roots at `partition.residual()` (th
 
 The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycle` (a constraining-only Pearce–Kelly walk over the kernel-maintained `TopoOrder` + class adjacency in `peel/quotient.rs`), with `build_seed_quotient`'s post-seed `check_realizability` pass as the backstop for asymmetric I-cycles. docs/design.md §"Why not Pearce–Kelly verbatim" documents this as the current trade-off. The open question: route the hot gate through the `RealizabilityIndex` (one source of truth, slower per query) vs. keep the PK gate (fast, but a second decision-making derived structure the kernel must keep consistent).
 
-### `BindingId`/`BindingTable` interning: implement or delete
+### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
 
-docs/design.md sketches a compact interned binding form (`BindingId(usize)` newtype + `BindingTable` of dense indices) and explicitly marks it **not implemented** — an aspirational optimization. Decide: implement it (it is also the natural fix for the BTree-keyed-by-cloned-`Id` hot paths flagged in CODE_REVIEW.md) or delete the passage so design.md describes only the real representation.
+Implement only if corpus profiling (`perf/proposer.md`) shows the binding-keyed graph paths as a material cost; docs/design.md marks the sketch as hypothetical with the same trigger. Until then it stays unimplemented — do not treat the design.md sketch as a description of the code.
 
 ### A11 intrinsic integrity: from observed assumption to checked precondition
 

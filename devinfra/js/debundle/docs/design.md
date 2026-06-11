@@ -122,9 +122,11 @@ declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
 
 A compact interned form (a `BindingId(usize)` newtype plus a
 `BindingTable` mapping names to dense indices, so hot paths do
-vector lookups instead of keying by cloned `Id`s) has been sketched
-but is **not implemented** — treat it as an aspirational
-optimization, not a description of the code.
+vector lookups instead of keying by cloned `Id`s) is **hypothetical
+and not implemented** — not a description of the code. Decided
+2026-06: implement it only if corpus profiling shows the
+binding-keyed graph paths as a material cost; such evidence would
+land in `perf/proposer.md`.
 
 Names are stable across the readability rename pass. The rename
 pass changes the _emitted_ identifier in the destination module's

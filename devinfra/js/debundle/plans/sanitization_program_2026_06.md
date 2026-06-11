@@ -40,12 +40,13 @@ perf baseline for the program.
    only after untangling its index entanglement — see CODE_REVIEW). Pure
    moves, no behavior change; makes the wished-for boundaries
    compiler-enforced and shrinks rebuild times.
-3. **Decision batch (maintainer, ≤1h total).** Four open calls that gate
-   later tracks: PK-gate vs realizability-index for the peel kernel;
-   `BindingId` interning implement-or-delete; `landable_today` semantics for
-   cross-residual proposals; delete-or-implement the unreachable multi-target
-   fallback in `peel/quotient.rs`. All have backlog entries with the
-   trade-offs.
+3. **Decision batch (maintainer, ≤1h total).** Two calls remain open and
+   gate later tracks: PK-gate vs realizability-index for the peel kernel;
+   delete-or-implement the unreachable multi-target fallback in
+   `peel/quotient.rs`. Both have backlog entries with the trade-offs.
+   (Decided 2026-06: `landable_today` for cross-residual proposals —
+   blocked rows are not landable, implemented; `BindingId` interning —
+   deferred, perf-triggered, see the backlog's decided-state note.)
 
 ## Track B — RenameLedger (weeks 1–2)
 
