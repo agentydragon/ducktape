@@ -396,10 +396,10 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+custom_provider_map:
+  - provider: tana
+    custom_handler: custom_handler.tana_handler
 litellm_settings:
   drop_params: true
   callbacks:
     - langfuse_otel
-  custom_provider_map:
-    - provider: tana
-      custom_handler: custom_handler.tana_handler
