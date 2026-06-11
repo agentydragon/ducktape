@@ -127,6 +127,8 @@ py_library(
 py_library(
     name = "inspect_harness",
     srcs = ["inspect_harness.py"],
+    # Embedded verbatim into the agent system prompt (see _SANDBOX_DOCKERFILE).
+    data = ["sandbox/Dockerfile"],
     deps = [
         ":baseline_llm",
         ":dossier",

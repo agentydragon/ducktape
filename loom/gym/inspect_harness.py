@@ -191,12 +191,21 @@ def _sandbox_compose(
     }
 
 
+# The sandbox image's Dockerfile is the single source of truth for the agent's
+# toolkit. We show it verbatim so the inventory in the prompt can never drift from
+# what's actually installed (read at import; it ships as runfiles data of this lib).
+_SANDBOX_DOCKERFILE = (Path(__file__).resolve().parent / "sandbox" / "Dockerfile").read_text()
+
+_TOOLKIT = (
+    "python3 is available; your sandbox is built from this Dockerfile, so rely on exactly what it "
+    "installs (run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`):\n"
+    f"```dockerfile\n{_SANDBOX_DOCKERFILE}```"
+)
+
 AGENT_PROMPT = (
     "You are a careful forecaster. You have one tool: bash. Data files are under /data (start with "
     "/data/README.txt). Each bash call runs in a FRESH shell — variables and working state do NOT "
-    "persist between calls, so make every command self-contained. python3 is available; the image "
-    "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
-    "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
+    "persist between calls, so make every command self-contained. " + _TOOLKIT + "\n"
     "You have access to a snapshotted archive of today's internet through a preconfigured proxy: "
     "ordinary http:// and https:// URLs both work (curl, urllib, and requests honor the proxy and its "
     "CA automatically) — use it to gather information. If /data/sources.txt exists, it lists URLs worth "
@@ -207,9 +216,7 @@ AGENT_PROMPT = (
 AGENT_PROMPT_NO_ARCHIVE = (
     "You are a careful forecaster. You have one tool: bash. Data files are under /data (start with "
     "/data/README.txt). Each bash call runs in a FRESH shell — variables and working state do NOT "
-    "persist between calls, so make every command self-contained. python3 is available; the image "
-    "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
-    "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
+    "persist between calls, so make every command self-contained. " + _TOOLKIT + "\n"
     "You have NO network access: rely only on the /data files and your own knowledge. "
     "When confident, call the submit tool with your forecast — its arguments are the structured "
     "answer fields, which the tool schema enforces."
