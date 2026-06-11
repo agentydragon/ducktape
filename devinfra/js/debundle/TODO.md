@@ -104,13 +104,6 @@ private corpus details in Ducktape.
   argument, callback body, object property value, or statement-list slot. This
   should avoid scanning unrelated subtrees while preserving the current rule
   that ambiguous matches are hard errors.
-- **Bare anonymous list-hole aliases.** Anonymous throwaway holes currently
-  use the reserved-prefix spelling with a trailing underscore, e.g.
-  `STMT_LIST_;` for a statement-list hole. Accept the no-suffix base token
-  `STMT_LIST;` as an alias too, because authors naturally read it as
-  "anonymous statement list" rather than as a named binding. Keep the existing
-  ambiguity behavior: repeated anonymous aliases must match independently, not
-  bind a shared statement-list replacement.
 - **Cross-module binding groups.** Current `binding_groups` export
   multiple bindings into one logical module. Add or design a form for
   one matched declaration context whose bindings should land in
