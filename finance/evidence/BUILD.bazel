@@ -41,6 +41,7 @@ py_test(
     deps = [
         ":checkout",
         "//:conftest",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 EVIDENCE_REPO_URL = "https://git.allegedly.works/augur-evidence/augur-evidence.git"
 
 
+def _trust_egress_ca() -> None:
+    """Point libgit2 at the egress CA bundle that the environment already trusts.
+
+    libgit2 does not consult OpenSSL's ``SSL_CERT_FILE`` env var (the way
+    ``requests``/``curl`` do), so in a TLS-inspecting egress environment — e.g.
+    the Claude agent sandbox, where the Kyverno ``inject-mitmproxy`` policy
+    mounts the mitmproxy CA and sets ``SSL_CERT_FILE`` to it — the clone is
+    rejected with ``user rejected certificate for git.allegedly.works``. Mirror
+    that bundle into libgit2's own trust setting (``GIT_OPT_SET_SSL_CERT_LOCATIONS``).
+    A no-op when neither var is set (libgit2 then uses its built-in default).
+    """
+    if ca_file := os.environ.get("GIT_SSL_CAINFO") or os.environ.get("SSL_CERT_FILE"):
+        pygit2.settings.ssl_cert_file = ca_file
+
+
 def ensure_checkout() -> Path:
     if (configured := os.environ.get("AUGUR_EVIDENCE_DIR")) is not None:
         return Path(configured)
@@ -44,6 +59,7 @@ def ensure_checkout() -> Path:
             "  export AUGUR_EVIDENCE_GIT_USERNAME=$U AUGUR_EVIDENCE_GIT_PASSWORD=$P"
         )
     logger.info("cloning evidence repo to %s", checkout)
+    _trust_egress_ca()
     checkout.parent.mkdir(parents=True, exist_ok=True)
     callbacks = pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, password))
     pygit2.clone_repository(EVIDENCE_REPO_URL, str(checkout), depth=1, callbacks=callbacks)
