@@ -72,6 +72,16 @@ pub struct TransformSpec {
     /// spec explicitly opts in.
     #[serde(default)]
     pub chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
+    /// Author-asserted purity of a chunk's exports, keyed by the
+    /// *defining* chunk. The cross-module purity oracle seeds these as
+    /// trusted axioms (pinned `Pure`, exempt from fixpoint demotion) and
+    /// propagates them to every importing chunk — the assertion is made
+    /// once, where the audited code lives, not per consumer. Same trust
+    /// contract as member-level `purity: pure` (docs/design.md A9):
+    /// an incorrect assertion can produce a buggy debundle; soundness
+    /// shifts to the spec author.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 
     // --- per-stage configuration ---
     /// Output configuration for `swap_vendor_chunks`. The stage runs
@@ -95,6 +105,20 @@ pub struct TransformSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
+}
+
+/// Author-asserted purity for one defining chunk's exports. See
+/// [`TransformSpec::chunk_export_purity`].
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChunkExportPurity {
+    /// Export names whose *calls* the author asserts have no observable
+    /// side effects. Applies to the export regardless of how the binding
+    /// is produced (function declaration, function-valued const, interop
+    /// wrapper), so it also covers callables the static classifier cannot
+    /// see into.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub pure_exports: BTreeSet<String>,
 }
 
 /// Per-chunk owner-graph build options. Each field defaults to the

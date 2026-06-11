@@ -8,11 +8,11 @@ use serde::Deserialize;
 use output_layout::DebundleOutputLayout;
 use spec::{
     AnonymousStatement, BindingGroup, BundledPartialSwapBundle, BundledPartialSwapMark,
-    BundledPartialSwapPackage, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs,
-    LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity,
-    OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
-    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
-    WrapperShape,
+    BundledPartialSwapPackage, ChunkExportPurity, ChunkRenames, EmitBrowserHarnessConfig,
+    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
+    MemberPurity, OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol,
+    SwapMark, SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark,
+    VendorRole, WrapperShape,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -45,6 +45,10 @@ struct AuthoringConfig {
     /// strictly-conservative analysis path unless it opts in here.
     #[serde(default)]
     chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
+    /// Author-asserted pure exports, keyed by defining chunk. See
+    /// `TransformSpec::chunk_export_purity`.
+    #[serde(default)]
+    chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -162,6 +166,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
         unassigned_mode: config.unassigned_mode,
         chunk_analysis_options: config.chunk_analysis_options,
+        chunk_export_purity: config.chunk_export_purity,
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_manifest_path.clone()),
             output_wrapper_dir: Some(layout.vendor_wrapper_root.clone()),

@@ -31,7 +31,8 @@ use artifact::{
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;
 use spec::{
-    BindingSourceKind, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
+    BindingSourceKind, ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity,
+    UnassignedMode,
 };
 
 mod anonymous;
@@ -218,6 +219,7 @@ pub fn materialize_logical_modules(
     chunk_renames: &BTreeMap<String, ChunkRenames>,
     unassigned_mode: &BTreeMap<String, UnassignedMode>,
     chunk_analysis_options: &BTreeMap<String, OwnerGraphOptions>,
+    chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     if options.chunk_ids.is_empty() {
@@ -246,8 +248,11 @@ pub fn materialize_logical_modules(
     // Program-level pass over ALL retained chunks (not just selected):
     // cross-module purity verdicts for each chunk's imported function
     // bindings, consumed per chunk via `AnalysisHints::imported_purities`.
-    let cross_module_purities =
-        cross_module::collect_cross_module_imported_purities(&artifact, &artifact_indexes);
+    let cross_module_purities = cross_module::collect_cross_module_imported_purities(
+        &artifact,
+        &artifact_indexes,
+        chunk_export_purity,
+    );
 
     let artifact_ref: &ChunkBundle = &artifact;
     // SWC's `swc_common::GLOBALS` is a `scoped_tls` thread-local, so the

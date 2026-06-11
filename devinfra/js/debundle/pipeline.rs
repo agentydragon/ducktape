@@ -209,6 +209,7 @@ pub fn run_transform_cli_with_options(
                 &spec.chunk_renames,
                 &spec.unassigned_mode,
                 &spec.chunk_analysis_options,
+                &spec.chunk_export_purity,
                 MaterializeLogicalModulesOptions {
                     chunk_ids: materialise_chunk_ids,
                     file,

@@ -1050,6 +1050,17 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   an incorrect spec selector can — soundness shifts to the spec
   author. See AGENTS.md "Declared purity".
 
+  `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
+  of the same contract, addressed to the **defining** chunk rather than
+  a consumer: it asserts that calls to the named exports of that chunk
+  have no observable side effects. The cross-module purity oracle seeds
+  these as pinned-`Pure` axioms (exempt from fixpoint demotion) and
+  propagates them to every importing chunk, so a vendor factory that the
+  static classifier cannot bless — or cannot even see as a chunk-top
+  function (interop re-export) — is asserted once where the audited code
+  lives instead of at each call site. Same author-trust contract;
+  dangling assertions (no such analyzed export) warn and are ignored.
+
 - **A10. Spec-declared local-effect annotations are
   author-trusted.** The spec format also admits an optional
   per-member `effect:` field for named helper bindings whose

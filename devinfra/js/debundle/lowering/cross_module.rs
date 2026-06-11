@@ -4,7 +4,7 @@
 //! `AnalysisHints::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::cross_module_purity::{ModulePurityFacts, ResolvedImport, resolve_imported_purities};
 use analysis::purity::Purity;
@@ -13,6 +13,7 @@ use artifact::{
 };
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
+use spec::ChunkExportPurity;
 use swc_ecma_ast::{Decl, ModuleDecl, ModuleItem, Pat};
 
 /// Binding names introduced by an exported declaration (`export function`/
@@ -52,6 +53,7 @@ struct ReparsedEntry {
 pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
+    chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
 ) -> BTreeMap<String, BTreeMap<String, Purity>> {
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -178,5 +180,10 @@ pub(super) fn collect_cross_module_imported_purities(
             },
         );
     }
-    resolve_imported_purities(&modules)
+    let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
+        .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_exports.clone()))
+        .collect();
+    resolve_imported_purities(&modules, &asserted_pure)
 }
