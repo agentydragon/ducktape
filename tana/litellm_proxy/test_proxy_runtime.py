@@ -58,6 +58,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
               - model_name: gpt-4o-mini
                 litellm_params:
                   model: tana/gpt-4o-mini
+                  custom_llm_provider: tana
                 model_info:
                   mode: chat
                   supports_function_calling: true
@@ -120,6 +121,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
             assert deployments is not None
             assert len(deployments) == 1
             assert deployments[0]["litellm_params"]["model"] == "tana/gpt-4o-mini"
+            assert deployments[0]["litellm_params"]["custom_llm_provider"] == "tana"
 
             tana_handler = _get_tana_handler()
             original_client = tana_handler._client

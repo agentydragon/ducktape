@@ -21,7 +21,7 @@ _CUSTOM_HANDLER = "custom_handler.tana_handler"
 def _model_entry(model_id: str) -> dict:
     return {
         "model_name": model_id,
-        "litellm_params": {"model": f"tana/{model_id}"},
+        "litellm_params": {"model": f"tana/{model_id}", "custom_llm_provider": "tana"},
         "model_info": {"mode": "chat", "supports_function_calling": True},
     }
 
