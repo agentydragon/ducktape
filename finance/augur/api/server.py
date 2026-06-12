@@ -89,11 +89,11 @@ async def static_price_clients(clients: dict[Platform, PriceClient]) -> AsyncIte
 class ApiServerConfig:
     augur_config: Config
     models: dict[str, Sampler]
-    # Live prediction-market price sources for `/api/calibration/run` (per-market YES probs), as an
+    # Prediction-market price sources for `/api/calibration/run` (per-market YES probs), as an
     # async context manager entered once for the app's lifetime (server lifespan): it yields the
-    # `{Platform: client}` map and owns the one long-lived Valkey cache store + upstream clients,
-    # closing them on shutdown. Use `default_price_clients()` in production, `static_price_clients(...)`
-    # for already-built (hermetic) clients in tests.
+    # `{Platform: client}` map and owns any provider lifecycle. Use `default_price_clients()` in
+    # production for evidence-checkout readers, `static_price_clients(...)` for already-built
+    # hermetic clients in tests.
     price_clients: PriceClientsProvider
     # The deployment's calibration catalog parsed into a `MarketCatalog` at startup. None only
     # when the app is assembled directly without loading it (e.g. a product-only TestClient);
@@ -131,9 +131,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Enter the price-client provider once for the process: it builds the one long-lived Valkey
-        # store + upstream clients in the serving loop (so they're bound to it) and closes them on
-        # shutdown. `/api/calibration/run` reads them off `app.state`.
+        # Enter the price-client provider once for the process so any provider-owned resources are
+        # bound to the serving loop and closed on shutdown. `/api/calibration/run` reads them off
+        # `app.state`.
         async with config.price_clients as price_clients:
             app.state.price_clients = price_clients
             yield

@@ -77,6 +77,18 @@ Remaining:
 
 ## Exogenous Models & Evidence
 
+- [ ] **Split augur-evidence fetch cadence by source freshness.** The in-cluster
+      scrape + git-sync checkout is live; what remains is reducing unnecessary
+      upstream fetches. Keep daily jobs for price/market sources that can move
+      daily, and gate or split slower FRED/Zillow/FHFA/rent sources by their
+      weekly/monthly/quarterly publication cadence. Git already no-ops unchanged
+      bytes, so this is about upstream load and clearer freshness expectations.
+- [ ] **Add an in-cluster refit/publish job for trained evidence artifacts.**
+      Fresh scraped evidence updates checkout reads, but state-space
+      `latest_observations` and trained artifacts still require a gated
+      `fit:train` / `sample_sanity` refresh. Run the fit in cluster, fail closed
+      on the gate, and publish the artifact/config update for review across the
+      public/private repo boundary.
 - [ ] **Plaid-fed portfolio granularity.** v0 Plaid portfolio import maps configured
       public-stock/ETF holdings into synthetic SP500 proxy lots. Later, add a
       per-security import mode with explicit model-series mapping for supported tickers,
