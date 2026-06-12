@@ -20,7 +20,7 @@ not a BlueZ or rfkill-level failure:
 - Current boot (`7.0.11`) logged:
   `btintel_pcie 0000:00:14.7: probe with driver btintel_pcie failed with error -62`.
 - Previous boot (`7.0.10`) did work: it logged `Bluetooth: hci0: Found device
-  firmware: intel/ibt-0190-0291-iml.sfi`, then
+firmware: intel/ibt-0190-0291-iml.sfi`, then
   `intel/ibt-0190-0291-pci.sfi`, then DDC load success.
 - Firmware files are present under `/run/current-system/firmware/intel/`, so the
   current failure happens before firmware selection/download.
