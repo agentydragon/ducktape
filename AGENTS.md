@@ -41,20 +41,10 @@ The MCP server uses an in-memory kubeconfig with an Authentik-issued bearer JWT;
 the JWT's group claim maps to `oidc-ksbx-groups:kubectl-sandbox-users`. It never
 triggers permission prompts.
 
-**RBAC** (see <cluster/k8s/agents/claude-rbac/>):
-
-- **claude-sandbox namespace**: full CRUD on pods, pods/log, pods/exec, pods/attach,
-  services, configmaps, secrets, PVCs, events, deployments, statefulsets, daemonsets,
-  replicasets, jobs, cronjobs (<role-sandbox.yaml>); resource-quota-limited (see
-  <cluster/k8s/agents/claude-rbac/README.md>).
-- **Cluster-wide read** (`cluster-diagnostics-reader` ClusterRole): nodes, pods,
-  deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
-  cert-manager, CNPG clusters, metrics, Gateway API, Kyverno, and more.
-- **Cross-namespace read**: per-service `agent-rbac/` directories bind ClusterRoles
-  in each target namespace. See `cluster/k8s/agents/claude-rbac/README.md` for
-  context and source-of-truth pointers:
-
-@cluster/k8s/agents/claude-rbac/permissions.md
+**RBAC source of truth**: keep permission details in
+<cluster/k8s/agents/claude-rbac/README.md> and the RoleBinding files it points to,
+not in this root agent file. Check those docs before assuming namespace coverage
+or write permissions.
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
@@ -77,7 +67,7 @@ DCR workaround, and the whole OAuth-dance saga, see
 
 Run `bb`, `bazel`, `bazelisk`, `bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
-**All Bazel-family commands (`bazel`, `bazelisk`, `bb`, `bbr`) must always use `dangerouslyDisableSandbox: true`.** When any `WebFetch(domain:...)` permission rule exists in settings, the sandbox applies `--unshare-net` (full network namespace isolation). Bazel's Java gRPC client ignores `GRPC_PROXY` and performs direct DNS resolution — which is impossible in an isolated network namespace. This breaks RBE, BES upload, and remote cache. The sandbox proxy cannot fix this because Bazel's `--remote_proxy` / `--bes_proxy` only accept Unix sockets (raw TCP forwarders), not the HTTP CONNECT / SOCKS5 proxies the sandbox provides. See <devinfra/docs/bazel_worktree_cache_sharing.md> for current cache/sandbox guidance, <docs/claude_code_sandbox.md> for Claude Code sandbox internals, and <debug/bazel_sandbox_mitigations.md> only for the historical March 2026 investigation.
+**All Bazel-family commands (`bazel`, `bazelisk`, `bb`, `bbr`) must always use `dangerouslyDisableSandbox: true` in agent sessions.** When any `WebFetch(domain:...)` permission rule exists in settings, the sandbox applies `--unshare-net` (full network namespace isolation). Bazel's BuildBuddy/RBE/BES traffic is not a supported path through that sandbox in this repo. Treat <docs/claude_code_sandbox.md> as the current operational rule; <devinfra/docs/bazel_worktree_cache_sharing.md> contains local CLI cache and proxy-shim notes, not an override for this requirement. See <debug/bazel_sandbox_mitigations.md> only for the historical March 2026 investigation.
 
 ## Bazel Commands
 

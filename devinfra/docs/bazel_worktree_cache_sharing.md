@@ -5,6 +5,11 @@ Drafted 2026-05-20.
 Scope: local developer machines running normal CLI Codex and Claude Code. This
 does not cover Codex Web, Claude Code Web, or Claude web sessions.
 
+This is cache-layout and local-sandbox context, not the operational rule for
+agent sessions. Root <../../AGENTS.md> and <../../docs/claude_code_sandbox.md>
+remain authoritative for agent execution: Bazel-family commands (`bazel`,
+`bazelisk`, `bb`, `bbr`) run outside the sandbox there.
+
 ## The Boundary
 
 Bazel's analysis state is server-local state under one output base. It is not a
@@ -167,9 +172,12 @@ The Ducktape Claude hook daemon therefore makes the Bazel shim translate
 --host_jvm_args=-Dhttp.proxyPort=<port>
 ```
 
-That keeps the normal Claude sandbox path usable for Bazel gRPC without needing
-Bazel's `--remote_proxy` or `--bes_proxy`. Those Bazel flags only accept
-`unix:/path/to/socket` and are not HTTP/SOCKS proxy settings.
+For local CLI Claude Code, that proxy-shim path is intended to keep
+`bazel`/`bazelisk` usable in the Claude sandbox without needing Bazel's
+`--remote_proxy` or `--bes_proxy`. It does not change the root agent-session
+rule, and it does not make `bb`/`bbr` sandboxed runs the supported path. Those
+Bazel flags only accept `unix:/path/to/socket` and are not HTTP/SOCKS proxy
+settings.
 
 ## Codex Local Sandbox
 
