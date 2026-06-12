@@ -31,7 +31,7 @@ export { b };
 }
 
 #[test]
-fn rejects_extracted_binding_assigned_by_residual_owner() {
+fn folds_unclaimed_assigner_with_extracted_mutable_binding() {
     // This is the minimal shape behind the an upstream boot-progress
     // `Assignment to constant variable` failure: the spec peels a
     // mutable binding, while a still-residual function assigns to
@@ -40,12 +40,10 @@ fn rejects_extracted_binding_assigned_by_residual_owner() {
     // assignment because imported ESM bindings are read-only in the
     // importing module.
     //
-    // The realizability/factorization validation phase must reject this
-    // spec before emission. A binding with a cross-destination
-    // assignment cannot be safely peeled unless every top-level
-    // owner that may assign it is peeled into the same destination,
-    // or the emitter grows a sound live-mutation bridge for that
-    // binding.
+    // Rebind-only atomic-unit folding extends the explicit `state`
+    // destination to cover the unclaimed assigner `b`. That keeps the
+    // assignment local to the module that owns `a`; the residual entry
+    // imports and calls `b` instead of assigning an imported binding.
     let mut opts = FixtureOpts::new(
         r#"let a = 0;
 function b() {
@@ -58,10 +56,27 @@ export { a };
         vec![logical_module("state", &[Member::new("a")])],
     );
     opts.unassigned_mode = unassigned_mode_inline();
-    expect_rejection_containing_all(
-        opts,
-        &["assignment", "assigner", "mutable", "cross-destination"],
+    let fixture = run_fixture(opts);
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/state.js",
+        &["a", "b"],
+        &[],
     );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/state.js",
+        &["let a = 0;", "function b()", "a = 1;"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["import { a, b }"],
+        &["a = 1;"],
+    );
+    assert_entry_output(&fixture, "1\n");
 }
 
 #[test]
@@ -620,6 +635,7 @@ fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import()
     // `B as vendorHelper`.
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { o as B } from "./vendor.js";

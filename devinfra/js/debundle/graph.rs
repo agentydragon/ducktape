@@ -1031,11 +1031,12 @@ fn emit_s_chain(
 /// reads/rebinds too. See docs/design.md "At-init call promotion".
 ///
 /// Per-statement dedup: at most one promoted eager edge per
-/// (caller, target-owner) pair, and at most one promoted rebind edge
-/// per (caller, target-owner) pair. Without dedup, a single
-/// at-init call to a function with N transitive lazy reads would emit
-/// N edges from the caller, and multiple at-init calls in the same
-/// statement would multiply that further.
+/// (caller, target-owner) pair. Rebind targets are also promoted as
+/// eager order edges; the write site's direct rebind edge enforces
+/// write legality. Without dedup, a single at-init call to a
+/// function with N transitive lazy reads would emit N edges from the
+/// caller, and multiple at-init calls in the same statement would
+/// multiply that further.
 fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_owner: &HashMap<Id, OwnerId>,
@@ -1243,12 +1244,46 @@ fn promote_at_init_calls(
         }
         let caller = OwnerId(stmt.ordinal.0);
         let mut promoted_read_targets: BTreeSet<OwnerId> = BTreeSet::new();
-        let mut promoted_rebind_targets: BTreeSet<OwnerId> = BTreeSet::new();
-        let mut fallback_roots = fallback_roots_of(
-            &stmt.at_init_unresolved_sources,
-            stmt.at_init_unresolved_inline_fn,
-            caller,
-        );
+        let mut fallback_roots = fallback_roots_of(&stmt.at_init_unresolved_sources, false, caller);
+        if stmt.at_init_unresolved_inline_fn
+            && let Some(&scc_idx) = scc_of.get(&caller)
+        {
+            fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
+            for target_binding in &scc_reads[scc_idx] {
+                let Some(target_owner) = binding_owner.get(target_binding) else {
+                    continue;
+                };
+                if caller == *target_owner {
+                    continue;
+                }
+                if !promoted_read_targets.insert(*target_owner) {
+                    continue;
+                }
+                raw_edges.push((
+                    caller,
+                    *target_owner,
+                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
+                        .promoted_at_init(caller),
+                ));
+            }
+            for target_binding in &scc_rebinds[scc_idx] {
+                let Some(target_owner) = binding_owner.get(target_binding) else {
+                    continue;
+                };
+                if caller == *target_owner {
+                    continue;
+                }
+                if !promoted_read_targets.insert(*target_owner) {
+                    continue;
+                }
+                raw_edges.push((
+                    caller,
+                    *target_owner,
+                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
+                        .promoted_at_init(caller),
+                ));
+            }
+        }
         for callee_id in &stmt.calls.eager {
             let Some(callee_owner) = resolvable_callee(callee_id) else {
                 // A bare-Ident callee that isn't chunk-declared is a
@@ -1289,13 +1324,13 @@ fn promote_at_init_calls(
                 if caller == *target_owner {
                     continue;
                 }
-                if !promoted_rebind_targets.insert(*target_owner) {
+                if !promoted_read_targets.insert(*target_owner) {
                     continue;
                 }
                 raw_edges.push((
                     caller,
                     *target_owner,
-                    EdgeReason::eager_rebind(stmt.ordinal, target_binding.clone())
+                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
                         .promoted_at_init(callee_owner),
                 ));
             }

@@ -950,6 +950,7 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
     //   participation. Only edge: residual → b_module. DAG.
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";

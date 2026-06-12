@@ -62,6 +62,12 @@ impl PositionBucketed<BTreeSet<Id>> {
             self.first_order_lazy.insert(id.clone());
         }
     }
+
+    fn extend(&mut self, other: Self) {
+        self.eager.extend(other.eager);
+        self.lazy.extend(other.lazy);
+        self.first_order_lazy.extend(other.first_order_lazy);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -372,6 +378,7 @@ where
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let global_object_names = unshadowed_global_object_aliases(&body);
+    let async_direct_function_bindings = collect_async_direct_function_bindings(&body);
     let mut top_level_await = None;
     let mut per_statement: Vec<StructuralStatementFacts> = body
         .iter()
@@ -387,7 +394,11 @@ where
             }
             let kind = classify_item(item);
             let declared = collect_declared_names(item);
-            let mut collector = StatementFactsCollector::new(global_object_names.clone());
+            let mut collector = StatementFactsCollector::new(
+                global_object_names.clone(),
+                async_direct_function_bindings.clone(),
+                !shadowed.contains("Promise"),
+            );
             item.visit_with(&mut collector);
             let source_location = source_path.and_then(|source_path| {
                 line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
@@ -799,8 +810,55 @@ fn assemble_statement_facts(
     // calls are exempt: Pure guarantees no observable writes and no
     // global-prop reads, and binding-cell ordering is enforced by
     // binding edges + rebind co-location rather than the S-chain.
-    let dataflow_summarizable =
-        dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
+    let trusted_summary = hints.trusted_dataflow_summaries && cell_writes_summarizable;
+    let dataflow_summarizable = trusted_summary
+        || dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
+    // A pure top-level statement may still eagerly read ordinary
+    // argument bindings (`pureWrap(B)`), and those reads stay in
+    // `reads.eager`. What purity rules out is the unresolved-call
+    // fallback's stronger assumption that opaque member calls or
+    // wrapper calls may synchronously invoke function-valued
+    // arguments / object-held functions at module init. Dropping only
+    // the at-init fallback roots preserves direct R edges while
+    // avoiding promoted callback-body reads for audited pure factories
+    // such as React `forwardRef`.
+    let no_sync_arg_sources = no_sync_member_argument_fallback_sources(item, hints);
+    let mut first_order_unresolved_sources = first_order_unresolved_sources;
+    for id in &no_sync_arg_sources.first_order_lazy {
+        first_order_unresolved_sources.remove(id);
+    }
+    let (at_init_unresolved_sources, at_init_unresolved_inline_fn, first_order_unresolved_sources) =
+        if purity.is_pure() {
+            (BTreeSet::new(), false, first_order_unresolved_sources)
+        } else {
+            let safe_array_sources =
+                safe_plain_array_at_init_fallback_sources(item, shadowed, graph);
+            let mut at_init_unresolved_sources = at_init_unresolved_sources;
+            for id in &no_sync_arg_sources.eager {
+                at_init_unresolved_sources.remove(id);
+            }
+
+            if safe_array_sources.is_empty() {
+                let at_init_unresolved_inline_fn = at_init_unresolved_inline_fn
+                    && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
+                (
+                    at_init_unresolved_sources,
+                    at_init_unresolved_inline_fn,
+                    first_order_unresolved_sources,
+                )
+            } else {
+                (
+                    at_init_unresolved_sources
+                        .difference(&safe_array_sources)
+                        .cloned()
+                        .collect(),
+                    at_init_unresolved_inline_fn
+                        && has_untrusted_at_init_unresolved_inline_fn_call(item, hints),
+                    first_order_unresolved_sources,
+                )
+            }
+        };
+
     StatementFacts {
         ordinal,
         source_location,
@@ -821,6 +879,169 @@ fn assemble_statement_facts(
         purity,
         kind,
     }
+}
+
+fn safe_plain_array_at_init_fallback_sources(
+    item: &ModuleItem,
+    shadowed: &BTreeSet<&'static str>,
+    graph: &ChunkCodeGraph,
+) -> BTreeSet<Id> {
+    let mut out = BTreeSet::new();
+    if let Some(var) = var_decl_of_item(item) {
+        for decl in &var.decls {
+            let Some(init) = decl.init.as_deref() else {
+                continue;
+            };
+            if let Some(root) = object_from_entries_plain_array_chain_root(init, shadowed, graph) {
+                out.insert(root);
+            }
+            if let Some(root) = plain_array_map_filter_chain_root(init, graph) {
+                out.insert(root);
+            }
+            collect_array_literal_plain_array_spread_roots(init, graph, &mut out);
+        }
+    }
+    if let ModuleItem::Stmt(Stmt::Expr(expr)) = item
+        && let Some(root) = plain_array_for_each_root(&expr.expr, graph)
+    {
+        out.insert(root);
+    }
+    out
+}
+
+fn object_from_entries_plain_array_chain_root(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    graph: &ChunkCodeGraph,
+) -> Option<Id> {
+    let Expr::Call(call) = strip_parens(expr) else {
+        return None;
+    };
+    if call.args.len() != 1 || call.args[0].spread.is_some() || shadowed.contains("Object") {
+        return None;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(member) = strip_parens(callee) else {
+        return None;
+    };
+    if !matches!(
+        (member.obj.as_ref(), &member.prop),
+        (Expr::Ident(obj), MemberProp::Ident(prop))
+            if obj.sym.as_ref() == "Object" && prop.sym.as_ref() == "fromEntries"
+    ) {
+        return None;
+    }
+    plain_array_map_filter_chain_root(&call.args[0].expr, graph)
+}
+
+fn collect_array_literal_plain_array_spread_roots(
+    expr: &Expr,
+    graph: &ChunkCodeGraph,
+    out: &mut BTreeSet<Id>,
+) {
+    let Expr::Array(array) = strip_parens(expr) else {
+        return;
+    };
+    for elem in array.elems.iter().flatten() {
+        if elem.spread.is_some()
+            && let Some(root) = plain_array_map_filter_chain_root(&elem.expr, graph)
+        {
+            out.insert(root);
+        }
+    }
+}
+
+fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
+    let Expr::Call(call) = strip_parens(expr) else {
+        return None;
+    };
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return None;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(member) = strip_parens(callee) else {
+        return None;
+    };
+    if !matches!(&member.prop, MemberProp::Ident(prop) if prop.sym.as_ref() == "forEach")
+        || !callback_has_no_sync_invocation(&call.args[0].expr)
+    {
+        return None;
+    }
+    match strip_parens(member.obj.as_ref()) {
+        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
+        _ => None,
+    }
+}
+
+fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
+    let Expr::Call(call) = strip_parens(expr) else {
+        return None;
+    };
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return None;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(member) = strip_parens(callee) else {
+        return None;
+    };
+    if !matches!(
+        &member.prop,
+        MemberProp::Ident(prop) if matches!(prop.sym.as_ref(), "filter" | "map")
+    ) || !callback_has_no_sync_invocation(&call.args[0].expr)
+    {
+        return None;
+    }
+    match strip_parens(member.obj.as_ref()) {
+        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
+        other => plain_array_map_filter_chain_root(other, graph),
+    }
+}
+
+fn callback_has_no_sync_invocation(expr: &Expr) -> bool {
+    let mut finder = SyncInvocationFinder::default();
+    match strip_parens(expr) {
+        Expr::Arrow(arrow) => arrow.body.visit_with(&mut finder),
+        Expr::Fn(function) => {
+            if let Some(body) = &function.function.body {
+                body.visit_with(&mut finder);
+            }
+        }
+        _ => return false,
+    }
+    !finder.found
+}
+
+#[derive(Default)]
+struct SyncInvocationFinder {
+    found: bool,
+}
+
+impl Visit for SyncInvocationFinder {
+    fn visit_call_expr(&mut self, _node: &CallExpr) {
+        self.found = true;
+    }
+
+    fn visit_opt_call(&mut self, _node: &OptCall) {
+        self.found = true;
+    }
+
+    fn visit_new_expr(&mut self, _node: &NewExpr) {
+        self.found = true;
+    }
+
+    fn visit_tagged_tpl(&mut self, _node: &TaggedTpl) {
+        self.found = true;
+    }
+
+    fn visit_function(&mut self, _node: &Function) {}
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
+    fn visit_class(&mut self, _node: &Class) {}
 }
 
 /// Walks a statement looking for an at-init (lazy-depth-0) call/new
@@ -912,6 +1133,244 @@ fn has_opaque_at_init_call(
     };
     item.visit_with(&mut finder);
     finder.found
+}
+
+fn has_untrusted_at_init_unresolved_inline_fn_call(
+    item: &ModuleItem,
+    hints: &AnalysisHints,
+) -> bool {
+    let mut finder = UntrustedAtInitInlineFnFallbackFinder {
+        no_sync_callback_members: &hints.no_sync_callback_members,
+        found: false,
+        lazy_depth: 0,
+    };
+    item.visit_with(&mut finder);
+    finder.found
+}
+
+fn no_sync_member_argument_fallback_sources(
+    item: &ModuleItem,
+    hints: &AnalysisHints,
+) -> PositionBucketed<BTreeSet<Id>> {
+    let mut collector = NoSyncMemberArgumentSourceCollector {
+        no_sync_callback_members: &hints.no_sync_callback_members,
+        sources: PositionBucketed::default(),
+        lazy_depth: 0,
+        past_await: false,
+    };
+    item.visit_with(&mut collector);
+    collector.sources
+}
+
+fn is_static_event_listener_registration(callee: &Expr, args: &[ExprOrSpread]) -> bool {
+    args.len() >= 2
+        && args
+            .first()
+            .is_some_and(|arg| is_static_event_name(&arg.expr))
+        && expr_is_add_event_listener_member(callee)
+}
+
+fn is_static_event_name(expr: &Expr) -> bool {
+    match strip_parens(expr) {
+        Expr::Lit(Lit::Str(_)) => true,
+        Expr::Tpl(Tpl { exprs, .. }) => exprs.is_empty(),
+        _ => false,
+    }
+}
+
+fn expr_is_add_event_listener_member(expr: &Expr) -> bool {
+    match strip_parens(expr) {
+        Expr::Member(member) => member_is_add_event_listener(member),
+        Expr::OptChain(opt) => match opt.base.as_ref() {
+            OptChainBase::Member(member) => member_is_add_event_listener(member),
+            OptChainBase::Call(_) => false,
+        },
+        _ => false,
+    }
+}
+
+fn member_is_add_event_listener(member: &MemberExpr) -> bool {
+    matches!(
+        &member.prop,
+        MemberProp::Ident(prop) if prop.sym.as_ref() == "addEventListener"
+    )
+}
+
+fn is_no_sync_callback_member_call(
+    callee: &Expr,
+    no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
+    match strip_parens(callee) {
+        Expr::Member(member) => member_matches_no_sync_callback(member, no_sync_callback_members),
+        Expr::OptChain(opt) => match opt.base.as_ref() {
+            OptChainBase::Member(member) => {
+                member_matches_no_sync_callback(member, no_sync_callback_members)
+            }
+            OptChainBase::Call(_) => false,
+        },
+        _ => false,
+    }
+}
+
+fn member_matches_no_sync_callback(
+    member: &MemberExpr,
+    no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
+    let Expr::Ident(receiver) = strip_parens(member.obj.as_ref()) else {
+        return false;
+    };
+    let MemberProp::Ident(prop) = &member.prop else {
+        return false;
+    };
+    no_sync_callback_members
+        .get(receiver.sym.as_ref())
+        .is_some_and(|props| props.contains(prop.sym.as_ref()))
+}
+
+struct NoSyncMemberArgumentSourceCollector<'a> {
+    no_sync_callback_members: &'a BTreeMap<String, BTreeSet<String>>,
+    sources: PositionBucketed<BTreeSet<Id>>,
+    lazy_depth: u32,
+    past_await: bool,
+}
+
+impl NoSyncMemberArgumentSourceCollector<'_> {
+    fn collect_no_sync_args(&mut self, args: &[ExprOrSpread]) {
+        if self.lazy_depth > 1 || (self.lazy_depth == 1 && self.past_await) {
+            return;
+        }
+        for arg in args {
+            let mut sources = UnresolvedCallSourceCollector::default();
+            arg.expr.visit_with(&mut sources);
+            for id in sources.idents {
+                self.sources.record(&id, self.lazy_depth, self.past_await);
+            }
+        }
+    }
+}
+
+impl LazyBoundary for NoSyncMemberArgumentSourceCollector<'_> {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
+    }
+
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+}
+
+impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && is_no_sync_callback_member_call(callee, self.no_sync_callback_members)
+        {
+            self.collect_no_sync_args(&node.args);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        if is_no_sync_callback_member_call(&node.callee, self.no_sync_callback_members) {
+            self.collect_no_sync_args(&node.args);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        node.visit_children_with(self);
+        self.past_await = true;
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        lazy_visit_function(self, node);
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        lazy_visit_arrow_expr(self, node);
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        lazy_visit_method_prop(self, node);
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        lazy_visit_getter_prop(self, node);
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        lazy_visit_setter_prop(self, node);
+    }
+    fn visit_class(&mut self, node: &Class) {
+        lazy_visit_class(self, node);
+    }
+}
+
+struct UntrustedAtInitInlineFnFallbackFinder<'a> {
+    no_sync_callback_members: &'a BTreeMap<String, BTreeSet<String>>,
+    found: bool,
+    lazy_depth: u32,
+}
+
+impl UntrustedAtInitInlineFnFallbackFinder<'_> {
+    fn is_no_sync_callback_member_call(&self, node: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &node.callee else {
+            return false;
+        };
+        is_no_sync_callback_member_call(callee, self.no_sync_callback_members)
+    }
+
+    fn node_has_inline_fn<N: VisitWith<UnresolvedCallSourceCollector>>(&self, node: &N) -> bool {
+        let mut sources = UnresolvedCallSourceCollector::default();
+        node.visit_with(&mut sources);
+        sources.inline_fn
+    }
+}
+
+impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if self.found {
+            return;
+        }
+        if self.lazy_depth == 0 {
+            match &node.callee {
+                Callee::Expr(callee) => match strip_parens(callee) {
+                    Expr::Ident(_) => {}
+                    _ if self.node_has_inline_fn(node)
+                        && !is_static_event_listener_registration(callee, &node.args)
+                        && !self.is_no_sync_callback_member_call(node) =>
+                    {
+                        self.found = true;
+                        return;
+                    }
+                    _ => {}
+                },
+                Callee::Import(_) | Callee::Super(_) => {}
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        if self.lazy_depth == 0
+            && self.node_has_inline_fn(node)
+            && !is_static_event_listener_registration(&node.callee, &node.args)
+        {
+            self.found = true;
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        if self.lazy_depth == 0 && self.node_has_inline_fn(node) {
+            self.found = true;
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, _node: &Function) {}
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
+    fn visit_method_prop(&mut self, _node: &MethodProp) {}
+    fn visit_getter_prop(&mut self, _node: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _node: &SetterProp) {}
+    fn visit_class(&mut self, _node: &Class) {}
 }
 
 fn item_purity(
@@ -1251,6 +1710,47 @@ fn declares_direct_function(item: &ModuleItem) -> bool {
     }
 }
 
+fn collect_async_direct_function_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<Id> {
+    body.iter()
+        .filter_map(|item| async_direct_function_binding(item.as_module_item()))
+        .collect()
+}
+
+fn async_direct_function_binding(item: &ModuleItem) -> Option<Id> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(fn_decl))) if fn_decl.function.is_async => {
+            Some(fn_decl.ident.to_id())
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Fn(fn_decl) if fn_decl.function.is_async => Some(fn_decl.ident.to_id()),
+            _ => var_decl_of_item(item).and_then(async_var_function_binding),
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Fn(fn_expr) if fn_expr.function.is_async => {
+                fn_expr.ident.as_ref().map(|ident| ident.to_id())
+            }
+            _ => None,
+        },
+        _ => var_decl_of_item(item).and_then(async_var_function_binding),
+    }
+}
+
+fn async_var_function_binding(var: &VarDecl) -> Option<Id> {
+    if var.decls.len() != 1 {
+        return None;
+    }
+    let Pat::Ident(binding) = &var.decls[0].name else {
+        return None;
+    };
+    let init = var.decls[0].init.as_deref().map(strip_parens)?;
+    let is_async = match init {
+        Expr::Fn(fn_expr) => fn_expr.function.is_async,
+        Expr::Arrow(arrow) => arrow.is_async,
+        _ => false,
+    };
+    is_async.then(|| binding.id.to_id())
+}
+
 /// Shared trait for visitors that track lazy nesting depth and the
 /// per-body "past first await" boundary.
 ///
@@ -1333,16 +1833,24 @@ struct StatementFactsCollector {
     /// (`globalThis`, `window`, ...). See
     /// [`unshadowed_global_object_aliases`].
     global_object_names: BTreeSet<&'static str>,
+    async_direct_function_bindings: BTreeSet<Id>,
+    promise_global_unshadowed: bool,
     lazy_depth: u32,
     past_await: bool,
 }
 
 impl StatementFactsCollector {
-    fn new(global_object_names: BTreeSet<&'static str>) -> Self {
+    fn new(
+        global_object_names: BTreeSet<&'static str>,
+        async_direct_function_bindings: BTreeSet<Id>,
+        promise_global_unshadowed: bool,
+    ) -> Self {
         Self {
             cell_writes_summarizable: true,
             dataflow_summarizable: true,
             global_object_names,
+            async_direct_function_bindings,
+            promise_global_unshadowed,
             ..Self::default()
         }
     }
@@ -1368,19 +1876,114 @@ impl StatementFactsCollector {
     /// statement takes the read-closure fallback over those sources;
     /// in a first-order body they propagate to at-init callers
     /// through the promotion call graph.
-    fn record_unresolved_call<N: VisitWith<UnresolvedCallSourceCollector>>(&mut self, node: &N) {
+    fn record_unresolved_call<N>(&mut self, node: &N)
+    where
+        N: VisitWith<UnresolvedCallSourceCollector> + VisitWith<SyncInlineEffectCollector>,
+    {
         if self.lazy_depth > 1 || (self.lazy_depth == 1 && self.past_await) {
             return;
         }
         let mut sources = UnresolvedCallSourceCollector::default();
         node.visit_with(&mut sources);
+        let needs_owner_inline_fallback = if sources.inline_fn && self.lazy_depth > 0 {
+            let mut inline_effects =
+                SyncInlineEffectCollector::new(self.lazy_depth, self.past_await);
+            node.visit_with(&mut inline_effects);
+            let needs_owner_fallback = inline_effects.needs_owner_fallback;
+            self.merge_sync_inline_effects(inline_effects.effects);
+            needs_owner_fallback
+        } else {
+            sources.inline_fn
+        };
         if self.lazy_depth == 0 {
             self.at_init_unresolved_sources.extend(sources.idents);
-            self.at_init_unresolved_inline_fn |= sources.inline_fn;
+            self.at_init_unresolved_inline_fn |= needs_owner_inline_fallback;
         } else {
             self.first_order_unresolved_sources.extend(sources.idents);
-            self.first_order_unresolved_inline_fn |= sources.inline_fn;
+            self.first_order_unresolved_inline_fn |= needs_owner_inline_fallback;
         }
+    }
+
+    fn merge_sync_inline_effects(&mut self, effects: SyncInlineEffects) {
+        self.reads.extend(effects.reads);
+        self.rebinds.extend(effects.rebinds);
+        self.calls.extend(effects.calls);
+        self.at_init_unresolved_sources
+            .extend(effects.unresolved_sources.eager);
+        self.first_order_unresolved_sources
+            .extend(effects.unresolved_sources.first_order_lazy);
+    }
+
+    fn is_known_promise_reaction_call(&self, node: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &node.callee else {
+            return false;
+        };
+        let Expr::Member(member) = strip_parens(callee) else {
+            return false;
+        };
+        if !matches!(
+            &member.prop,
+            MemberProp::Ident(prop)
+                if matches!(prop.sym.as_ref(), "then" | "catch" | "finally")
+        ) {
+            return false;
+        }
+        self.is_known_promise_expr(member.obj.as_ref())
+    }
+
+    fn is_known_promise_expr(&self, expr: &Expr) -> bool {
+        match strip_parens(expr) {
+            Expr::Call(call) => {
+                self.is_async_direct_function_call(call) || self.is_promise_static_call(call)
+            }
+            Expr::New(new_expr) => {
+                self.promise_global_unshadowed
+                    && matches!(strip_parens(&new_expr.callee), Expr::Ident(ident) if ident.sym.as_ref() == "Promise")
+            }
+            _ => false,
+        }
+    }
+
+    fn is_known_event_listener_registration_call(&self, node: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &node.callee else {
+            return false;
+        };
+        is_static_event_listener_registration(callee, &node.args)
+    }
+
+    fn is_known_event_listener_registration_opt_call(&self, node: &OptCall) -> bool {
+        is_static_event_listener_registration(&node.callee, &node.args)
+    }
+
+    fn is_async_direct_function_call(&self, call: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let Expr::Ident(ident) = strip_parens(callee) else {
+            return false;
+        };
+        self.async_direct_function_bindings.contains(&ident.to_id())
+    }
+
+    fn is_promise_static_call(&self, call: &CallExpr) -> bool {
+        if !self.promise_global_unshadowed {
+            return false;
+        }
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let Expr::Member(member) = strip_parens(callee) else {
+            return false;
+        };
+        matches!(strip_parens(member.obj.as_ref()), Expr::Ident(obj) if obj.sym.as_ref() == "Promise")
+            && matches!(
+                &member.prop,
+                MemberProp::Ident(prop)
+                    if matches!(
+                        prop.sym.as_ref(),
+                        "resolve" | "reject" | "all" | "allSettled" | "any" | "race"
+                    )
+            )
     }
 
     /// Bail only the S-chain's "which cells does this touch"
@@ -1458,6 +2061,210 @@ impl Visit for UnresolvedCallSourceCollector {
     }
     fn visit_setter_prop(&mut self, _node: &SetterProp) {
         self.inline_fn = true;
+    }
+}
+
+#[derive(Default)]
+struct SyncInlineEffects {
+    reads: PositionBucketed<BTreeSet<Id>>,
+    rebinds: PositionBucketed<BTreeSet<Id>>,
+    calls: PositionBucketed<BTreeSet<Id>>,
+    unresolved_sources: PositionBucketed<BTreeSet<Id>>,
+}
+
+/// Effects from inline function arguments that an unresolved call may
+/// invoke synchronously. The containing statement/function already has
+/// its own lazy-depth position; if the callback fires immediately, the
+/// callback body's pre-await effects happen at that same position.
+struct SyncInlineEffectCollector {
+    effects: SyncInlineEffects,
+    outer_lazy_depth: u32,
+    outer_past_await: bool,
+    inline_depth: u32,
+    past_await: bool,
+    needs_owner_fallback: bool,
+}
+
+impl SyncInlineEffectCollector {
+    fn new(outer_lazy_depth: u32, outer_past_await: bool) -> Self {
+        Self {
+            effects: SyncInlineEffects::default(),
+            outer_lazy_depth,
+            outer_past_await,
+            inline_depth: 0,
+            past_await: false,
+            needs_owner_fallback: false,
+        }
+    }
+
+    fn active(&self) -> bool {
+        self.inline_depth > 0 && !self.outer_past_await && !self.past_await
+    }
+
+    fn record_read(&mut self, id: &Id) {
+        if self.active() {
+            self.effects
+                .reads
+                .record(id, self.outer_lazy_depth, self.outer_past_await);
+        }
+    }
+
+    fn record_write(&mut self, id: &Id) {
+        if self.active() {
+            self.effects
+                .rebinds
+                .record(id, self.outer_lazy_depth, self.outer_past_await);
+        }
+    }
+
+    fn record_call(&mut self, id: &Id) {
+        if self.active() {
+            self.effects
+                .calls
+                .record(id, self.outer_lazy_depth, self.outer_past_await);
+        }
+    }
+
+    fn record_unresolved_call<N: VisitWith<UnresolvedCallSourceCollector>>(&mut self, node: &N) {
+        if !self.active() {
+            return;
+        }
+        let mut sources = UnresolvedCallSourceCollector::default();
+        node.visit_with(&mut sources);
+        for id in sources.idents {
+            self.effects.unresolved_sources.record(
+                &id,
+                self.outer_lazy_depth,
+                self.outer_past_await,
+            );
+        }
+    }
+
+    fn visit_inline_function_body(&mut self, visit_body: impl FnOnce(&mut Self)) {
+        if self.outer_past_await || self.past_await {
+            return;
+        }
+        let saved_past_await = self.past_await;
+        self.past_await = false;
+        self.inline_depth += 1;
+        visit_body(self);
+        self.inline_depth -= 1;
+        self.past_await = saved_past_await;
+    }
+}
+
+impl TargetAccessRecorder for SyncInlineEffectCollector {
+    fn record_binding_write(&mut self, id: &Id) {
+        self.record_write(id);
+    }
+
+    fn record_member_write(&mut self, _id: &Id) {}
+}
+
+impl Visit for SyncInlineEffectCollector {
+    fn visit_ident(&mut self, node: &Ident) {
+        self.record_read(&node.to_id());
+    }
+
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_function(&mut self, node: &Function) {
+        self.visit_inline_function_body(|s| {
+            for param in &node.params {
+                param.visit_with(s);
+            }
+            if let Some(body) = &node.body {
+                body.visit_with(s);
+            }
+        });
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.visit_inline_function_body(|s| {
+            for param in &node.params {
+                param.visit_with(s);
+            }
+            node.body.visit_with(s);
+        });
+    }
+
+    fn visit_class(&mut self, _node: &Class) {
+        self.needs_owner_fallback = true;
+    }
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        node.arg.visit_with(self);
+        if self.inline_depth > 0 {
+            self.past_await = true;
+        }
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee {
+            callee.visit_with(self);
+        }
+        for arg in &node.args {
+            arg.visit_with(self);
+        }
+        if self.active() {
+            match &node.callee {
+                Callee::Expr(callee) => match strip_parens(callee) {
+                    Expr::Ident(ident) => self.record_call(&ident.to_id()),
+                    _ => self.record_unresolved_call(node),
+                },
+                Callee::Import(_) | Callee::Super(_) => {}
+            }
+        }
+    }
+
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        node.callee.visit_with(self);
+        for arg in &node.args {
+            arg.visit_with(self);
+        }
+        self.record_unresolved_call(node);
+    }
+
+    fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        node.tag.visit_with(self);
+        node.tpl.visit_with(self);
+        self.record_unresolved_call(node);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if self.active() {
+            record_assign_target(&node.left, self);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        if self.active() {
+            record_update_target(&node.arg, self);
+        }
+        node.arg.visit_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if self.active()
+            && let ForHead::Pat(pattern) = &node.left
+        {
+            record_pat_write(pattern, self);
+        }
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+        node.body.visit_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if self.active()
+            && let ForHead::Pat(pattern) = &node.left
+        {
+            record_pat_write(pattern, self);
+        }
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+        node.body.visit_with(self);
     }
 }
 
@@ -1621,10 +2428,24 @@ impl Visit for StatementFactsCollector {
     // ...)` / `Reflect.defineProperty(globalThis, ...)`, and
     // `new Proxy(globalThis, ...)`.
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        // Callee/argument expressions evaluate before the call. If one
+        // of them contains an `await` in an async body, the call itself
+        // happens after suspension and must not be first-order.
+        if let Callee::Expr(callee) = &node.callee {
+            callee.visit_with(self);
+        }
+        for arg in &node.args {
+            arg.visit_with(self);
+        }
         match &node.callee {
             Callee::Expr(callee) => match strip_parens(callee) {
                 Expr::Ident(ident) => self.record_call(&ident.to_id()),
-                _ => self.record_unresolved_call(node),
+                _ if !self.is_known_promise_reaction_call(node)
+                    && !self.is_known_event_listener_registration_call(node) =>
+                {
+                    self.record_unresolved_call(node);
+                }
+                _ => {}
             },
             // `import(...)` evaluates another chunk asynchronously —
             // it never synchronously runs this chunk's functions.
@@ -1654,10 +2475,15 @@ impl Visit for StatementFactsCollector {
                 self.bail_cell_writes();
             }
         }
-        node.visit_children_with(self);
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
+        node.callee.visit_with(self);
+        if let Some(args) = &node.args {
+            for arg in args {
+                arg.visit_with(self);
+            }
+        }
         if self.lazy_depth == 0
             && let Expr::Ident(ident) = strip_parens(&node.callee)
         {
@@ -1676,20 +2502,25 @@ impl Visit for StatementFactsCollector {
                 _ => {}
             }
         }
-        node.visit_children_with(self);
     }
 
     fn visit_opt_call(&mut self, node: &OptCall) {
         // `f?.()` / `obj?.m()`: the callee is never a resolvable
         // bare-Ident shape for promotion.
-        self.record_unresolved_call(node);
-        node.visit_children_with(self);
+        node.callee.visit_with(self);
+        for arg in &node.args {
+            arg.visit_with(self);
+        }
+        if !self.is_known_event_listener_registration_opt_call(node) {
+            self.record_unresolved_call(node);
+        }
     }
 
     fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
         // `` tag`...` `` invokes the tag function.
+        node.tag.visit_with(self);
+        node.tpl.visit_with(self);
         self.record_unresolved_call(node);
-        node.visit_children_with(self);
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {

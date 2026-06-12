@@ -134,6 +134,23 @@ fn at_init_call_to_cross_module_function_does_not_promote_body_reads() {
 }
 
 #[test]
+fn at_init_call_to_cross_module_setter_does_not_colocate_caller_with_state() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let state = "initial";
+function setState(value) { state = value; }
+setState("updated");
+console.log(state);
+export { state, setState };
+"#,
+        vec![logical_module(
+            "mod_state",
+            &[Member::new("state"), Member::new("setState")],
+        )],
+    ));
+    assert_entry_output(&fixture, "updated\n");
+}
+
+#[test]
 fn at_init_call_keeps_owner_edge_marked_with_callee() {
     // The promoted owner edge is retained in the owner graph (the
     // analyzer's IR keeps it as evidence of the promotion), but with

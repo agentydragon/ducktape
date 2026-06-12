@@ -177,6 +177,23 @@ pub struct OwnerGraphOptions {
     /// check.
     #[serde(default)]
     pub dataflow_aware_s_chain: bool,
+    /// Author-trusted refinement for chunks using
+    /// `dataflow_aware_s_chain`: let statements whose ordinary
+    /// dataflow summary is conservative-but-present use that syntactic
+    /// read/write summary instead of becoming opaque S-chain barriers.
+    ///
+    /// This preserves the conservative default added for generic JS.
+    /// Enabling it shifts the same review burden as other
+    /// conditionally-correct options to the spec author: every such
+    /// top-level statement must be audited either to have no observable
+    /// order dependency with unrelated top-level effects, or to expose
+    /// all ordering-relevant state through the analyzer's binding/global
+    /// property summaries. Shapes that defeat write-cell extraction
+    /// outright (`eval`, `with`, `Function`, computed global-object
+    /// keys, global `defineProperty`, global `Proxy`) still fall back to
+    /// conservative barriers regardless of this flag.
+    #[serde(default)]
+    pub trusted_dataflow_summaries: bool,
     /// Input-chunk admission checks (docs/design.md A1/A3/A5) the
     /// spec author has audited and explicitly disabled for this
     /// chunk. YAML surface is a list of check names
@@ -1028,6 +1045,16 @@ pub struct Member {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
     pub pure_members: Vec<String>,
+    /// Property names on the bound value whose calls may receive callback-like
+    /// arguments but do not synchronously invoke them. The call remains an
+    /// opaque side-effecting member call for purity / S-chain purposes; this
+    /// only narrows at-init call promotion by not treating inline functions,
+    /// object literals containing functions, or first-order argument callbacks
+    /// as synchronously reachable fallback roots for audited callback-storing
+    /// APIs.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub no_sync_callback_members: Vec<String>,
     /// Optional human-readable comment emitted as a `// ...` block
     /// immediately above the binding's owner statement in the
     /// generated JS. Per-line literal `// ` prefix; empty input

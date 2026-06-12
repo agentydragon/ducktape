@@ -224,6 +224,7 @@ pub(super) fn materialize_logical_chunk(
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }
+        hints.trusted_dataflow_summaries = owner_graph_options.trusted_dataflow_summaries;
         hints
     });
     let line_index = time_phase!(timings, "build_source_line_index", {

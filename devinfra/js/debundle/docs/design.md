@@ -394,7 +394,12 @@ the chunk spec picks one of two modes via
     (`(0, eval)(...)`) executes arbitrary writes. Classifier-Pure
     calls are exempt: `Pure` guarantees no observable writes and
     no global-prop reads, and binding-cell ordering is enforced by
-    binding edges + rebind co-location rather than the S-chain;
+    binding edges + rebind co-location rather than the S-chain.
+    A chunk may opt into the author-trusted
+    `trusted_dataflow_summaries` refinement to let this class of
+    opaque calls/news use the syntactic dataflow summary anyway;
+    shapes that defeat write-cell extraction outright still force
+    conservative barriers regardless of that flag;
   - member writes through a tracked binding (`obj.x = 1`,
     `obj.x++`, destructuring targets containing member
     expressions) — aliasing makes the written heap cell
@@ -741,6 +746,17 @@ projection: residual is the ESM DFS root and evaluates last, so an
 at-init call from residual code cannot observe a TDZ, and the
 emitter emits no entry-side phantom imports the gate could
 otherwise assume.
+
+**Audited callback-storage APIs.** Member-specific
+`no_sync_callback_members` hints narrow only the fallback roots for
+calls like `registry.register(fn)` or `state.set({ onDone() {} })`
+where the audited API stores callback-like arguments without
+synchronously invoking them. Receiver, callee, and non-callback
+arguments still evaluate and still feed normal read/rebind/effect
+summaries; the call also remains impure for S-chain ordering unless a
+separate purity hint applies. The hint suppresses the conservative
+"the callback may have run now" edge for inline functions, object
+literals containing functions, and first-order argument callbacks.
 
 **Residual limitations.** The fallback (and promotion generally)
 does not model function values that reach a call site through:

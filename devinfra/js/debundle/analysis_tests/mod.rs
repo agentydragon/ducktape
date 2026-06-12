@@ -256,6 +256,281 @@ fn first_order_body_call_skips_after_await_in_async_body() {
 }
 
 #[test]
+fn promise_reaction_on_async_function_call_does_not_sync_promote_handler() {
+    let module = parse(
+        "async function setup() { await Promise.resolve(); } \
+         function handler() {} \
+         function boot() { setup().catch(() => handler()); }",
+    );
+    let facts = analyze_facts(&module);
+    assert_eq!(
+        facts[2].calls.first_order_lazy,
+        BTreeSet::from([test_id("setup")])
+    );
+    assert!(facts[2].calls.lazy.contains(&test_id("handler")));
+    assert!(
+        !facts[2]
+            .calls
+            .first_order_lazy
+            .contains(&test_id("handler"))
+    );
+    assert!(facts[2].first_order_unresolved_sources.is_empty());
+    assert!(!facts[2].first_order_unresolved_inline_fn);
+}
+
+#[test]
+fn arbitrary_member_catch_promotes_inline_callback_body_precisely() {
+    let module = parse(
+        "function makeThenable() { return { catch(f) { f(); } }; } \
+         function handler() {} \
+         function boot() { makeThenable().catch(() => handler()); }",
+    );
+    let facts = analyze_facts(&module);
+    assert!(
+        facts[2]
+            .first_order_unresolved_sources
+            .contains(&test_id("makeThenable"))
+    );
+    assert_eq!(
+        facts[2].calls.first_order_lazy,
+        BTreeSet::from([test_id("makeThenable"), test_id("handler")])
+    );
+    assert!(!facts[2].first_order_unresolved_inline_fn);
+}
+
+#[test]
+fn first_order_unresolved_inline_callback_collects_only_pre_await_effects() {
+    let module = parse(
+        "function before() {} \
+         function after() {} \
+         async function boot(items) { \
+           items.map(() => before()); \
+           await Promise.resolve(); \
+           items.map(() => after()); \
+         }",
+    );
+    let facts = analyze_facts(&module);
+    assert_eq!(
+        facts[2].calls.first_order_lazy,
+        BTreeSet::from([test_id("before")])
+    );
+    assert!(facts[2].calls.lazy.contains(&test_id("after")));
+    assert!(
+        !facts[2].calls.first_order_lazy.contains(&test_id("after")),
+        "post-await inline callbacks must not be treated as synchronously \
+         firing from an at-init caller"
+    );
+    assert!(!facts[2].first_order_unresolved_inline_fn);
+}
+
+#[test]
+fn parent_call_after_nested_await_is_not_first_order() {
+    let module = parse(
+        "function after() {} \
+         async function boot(store) { \
+           await (await store.keys()).reduce(async () => after(), Promise.resolve({})); \
+         }",
+    );
+    let facts = analyze_facts(&module);
+    assert!(facts[1].calls.lazy.contains(&test_id("after")));
+    assert!(
+        !facts[1].calls.first_order_lazy.contains(&test_id("after")),
+        "callbacks passed to a call whose receiver resumes after an inner \
+         await must not be promoted as first-order"
+    );
+    assert!(
+        !facts[1].first_order_unresolved_inline_fn,
+        "the post-await reduce call must not trigger whole-owner inline fallback"
+    );
+}
+
+#[test]
+fn load_feature_flags_reduce_callback_after_nested_await_is_not_first_order() {
+    let module = parse(
+        "const FeatureFlag = {}; \
+         function setFeatureEnabledForUser() {} \
+         async function loadFeatureFlags(featureFlagLocalForage) { \
+           return ( \
+             await Promise.all(Object.keys({}).map((i) => featureFlagLocalForage.setItem(i, true))), \
+             await (await featureFlagLocalForage.keys()).reduce(async (i, l) => { \
+               const d = await i; \
+               if (await featureFlagLocalForage.getItem(l)) { \
+                 d[l] = true; \
+                 const u = FeatureFlag[l]; \
+                 if (u) { \
+                   const p = await setFeatureEnabledForUser(u); \
+                   for (const h of p) d[FeatureFlag[h]] = true; \
+                 } \
+               } \
+               return d; \
+             }, Promise.resolve({})) \
+           ); \
+         }",
+    );
+    let facts = analyze_facts(&module);
+    assert!(
+        facts[2]
+            .calls
+            .lazy
+            .contains(&test_id("setFeatureEnabledForUser"))
+    );
+    assert!(
+        !facts[2]
+            .calls
+            .first_order_lazy
+            .contains(&test_id("setFeatureEnabledForUser")),
+        "calls inside the reducer callback happen after the keys() await"
+    );
+}
+
+#[test]
+fn no_sync_callback_member_hint_suppresses_at_init_inline_fallback() {
+    let module = parse(
+        "const later = 'ready'; \
+         const state = {}; \
+         state.setPending(() => later);",
+    );
+    let default_facts = analyze_facts(&module);
+    assert!(default_facts[2].at_init_unresolved_inline_fn);
+
+    let hints = AnalysisHints {
+        no_sync_callback_members: BTreeMap::from([(
+            "state".to_string(),
+            BTreeSet::from(["setPending".to_string()]),
+        )]),
+        ..AnalysisHints::default()
+    };
+    let facts = analyze_facts_with_hints(&module, &hints);
+    assert!(
+        facts[2]
+            .at_init_unresolved_sources
+            .contains(&test_id("state"))
+    );
+    assert!(
+        !facts[2].at_init_unresolved_inline_fn,
+        "audited callback-storing member calls should not promote \
+         callback bodies as at-init"
+    );
+    assert!(facts[2].reads.lazy.contains(&test_id("later")));
+}
+
+#[test]
+fn no_sync_callback_member_hint_does_not_cover_other_members() {
+    let module = parse(
+        "const later = 'ready'; \
+         const state = {}; \
+         state.invokeNow(() => later);",
+    );
+    let hints = AnalysisHints {
+        no_sync_callback_members: BTreeMap::from([(
+            "state".to_string(),
+            BTreeSet::from(["setPending".to_string()]),
+        )]),
+        ..AnalysisHints::default()
+    };
+    let facts = analyze_facts_with_hints(&module, &hints);
+    assert!(facts[2].at_init_unresolved_inline_fn);
+}
+
+#[test]
+fn no_sync_callback_member_hint_suppresses_argument_fallback_roots() {
+    let module = parse(
+        "const registry = { registerProvider() {} }; \
+         const data = 'ready'; \
+         const provider = { name: 'p', read() { return data; } }; \
+         registry.registerProvider(provider);",
+    );
+    let default_facts = analyze_facts(&module);
+    assert!(
+        default_facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("provider"))
+    );
+
+    let hints = AnalysisHints {
+        no_sync_callback_members: BTreeMap::from([(
+            "registry".to_string(),
+            BTreeSet::from(["registerProvider".to_string()]),
+        )]),
+        ..AnalysisHints::default()
+    };
+    let facts = analyze_facts_with_hints(&module, &hints);
+    assert!(
+        facts[3].reads.eager.contains(&test_id("provider")),
+        "the provider argument is still evaluated at init"
+    );
+    assert!(
+        facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("registry")),
+        "the unresolved member receiver still participates in fallback"
+    );
+    assert!(
+        !facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("provider")),
+        "audited registration calls should not treat provider arguments \
+         as synchronously invoked fallback roots"
+    );
+
+    let graph = build_owner_graph(&facts).unwrap();
+    assert!(
+        graph.iter_edges().all(|edge| {
+            !(edge.from == OwnerId(3)
+                && edge.to == OwnerId(1)
+                && edge.reason.kind == DepKind::EagerUse)
+        }),
+        "provider method body reads must not be promoted through \
+         audited registration calls: {:#?}",
+        graph.iter_edges().collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn no_sync_callback_member_hint_suppresses_first_order_argument_fallback_roots() {
+    let module = parse(
+        "const registry = { registerProvider() {} }; \
+         const data = 'ready'; \
+         const provider = { name: 'p', read() { return data; } }; \
+         function boot() { registry.registerProvider(provider); } \
+         boot();",
+    );
+    let hints = AnalysisHints {
+        no_sync_callback_members: BTreeMap::from([(
+            "registry".to_string(),
+            BTreeSet::from(["registerProvider".to_string()]),
+        )]),
+        ..AnalysisHints::default()
+    };
+    let facts = analyze_facts_with_hints(&module, &hints);
+    assert!(
+        facts[3]
+            .reads
+            .first_order_lazy
+            .contains(&test_id("provider")),
+        "the provider argument is still evaluated when boot runs"
+    );
+    assert!(
+        !facts[3]
+            .first_order_unresolved_sources
+            .contains(&test_id("provider")),
+        "audited registration calls inside a first-order body should not \
+         seed provider arguments as fallback roots"
+    );
+
+    let graph = build_owner_graph(&facts).unwrap();
+    assert!(
+        graph.iter_edges().all(|edge| {
+            !(edge.from == OwnerId(4)
+                && edge.to == OwnerId(1)
+                && edge.reason.kind == DepKind::EagerUse)
+        }),
+        "provider method body reads must not be promoted through boot(): {:#?}",
+        graph.iter_edges().collect::<Vec<_>>(),
+    );
+}
+
+#[test]
 fn function_body_reads_are_lazy() {
     let module = parse("function f() { return X; } const Y = 1;");
     let facts = analyze_facts(&module);

@@ -50,6 +50,13 @@ pub struct ChunkCodeGraph {
     /// classified separately at its declaration site; only the
     /// *value* class matters here. See `collect_primitive_const_bindings`.
     primitive_const_bindings: BTreeSet<String>,
+    /// Chunk-top `const X = [..]` bindings that remain static ordinary
+    /// arrays under the same no-escape scan as `PlainData`, and are
+    /// never used as the receiver of unknown/mutating array methods.
+    /// At-init fallback uses this to avoid treating `X.map(cb)` /
+    /// `X.forEach(cb)` as if those built-ins might invoke functions
+    /// held inside `X`; the callback body is still modeled separately.
+    plain_array_bindings: BTreeSet<String>,
     /// Purity verdict for chunk-top bindings that are imports of a
     /// function from another module, keyed by local binding name.
     /// Populated by the program-level cross-module purity oracle;
@@ -199,6 +206,7 @@ impl ChunkCodeGraph {
             pure_new_constructors: declared_pure_new.clone(),
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings: collect_primitive_const_bindings(body),
+            plain_array_bindings: collect_plain_array_bindings(body, shadowed),
             imported_purities: imported_purities.clone(),
             fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
         };
@@ -275,6 +283,12 @@ impl ChunkCodeGraph {
     /// `ChunkBinding::PlainData`).
     pub(crate) fn is_plain_data(&self, name: &str) -> bool {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
+    }
+
+    /// Whether `name` is a static ordinary array binding suitable for
+    /// array-method at-init fallback refinement.
+    pub(crate) fn is_plain_array(&self, name: &str) -> bool {
+        self.plain_array_bindings.contains(name)
     }
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
@@ -766,6 +780,93 @@ fn collect_plain_data_bindings(
         .into_iter()
         .filter(|n| !disqualified.contains(n))
         .collect()
+}
+
+const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
+const ARRAY_PRODUCING_METHODS: &[&str] = &["filter", "flatMap", "map", "slice"];
+
+fn collect_plain_array_bindings(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+) -> BTreeSet<String> {
+    let mut const_inits = Vec::new();
+    for item in body {
+        const_inits.extend(
+            plain_data_var_candidates(item.as_module_item())
+                .into_iter()
+                .filter_map(|(name, init, kind)| {
+                    (kind == VarDeclKind::Const).then_some((name, init))
+                }),
+        );
+    }
+    let mut candidates = BTreeSet::new();
+    loop {
+        let before = candidates.len();
+        for (name, init) in &const_inits {
+            if expr_returns_plain_array(init, &candidates) {
+                candidates.insert(name.clone());
+            }
+        }
+        if candidates.len() == before {
+            break;
+        }
+    }
+    if candidates.is_empty() {
+        return BTreeSet::new();
+    }
+
+    let mut plain_data_scanner = PlainDataWriteScanner {
+        candidates: &candidates,
+        shadowed,
+        disqualified: BTreeSet::new(),
+        shadowing_scopes: Vec::new(),
+    };
+    let mut method_scanner = PlainArrayMethodScanner {
+        candidates: &candidates,
+        disqualified: BTreeSet::new(),
+        shadowing_scopes: Vec::new(),
+    };
+    for item in body {
+        let item = item.as_module_item();
+        item.visit_with(&mut plain_data_scanner);
+        item.visit_with(&mut method_scanner);
+    }
+
+    let mut disqualified = plain_data_scanner.disqualified;
+    disqualified.extend(method_scanner.disqualified);
+    candidates
+        .into_iter()
+        .filter(|name| !disqualified.contains(name))
+        .collect()
+}
+
+fn expr_returns_plain_array(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
+    match strip_parens(expr) {
+        Expr::Array(_) => true,
+        Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return false;
+            };
+            let Expr::Member(member) = strip_parens(callee) else {
+                return false;
+            };
+            matches!(
+                &member.prop,
+                MemberProp::Ident(prop) if ARRAY_PRODUCING_METHODS.contains(&prop.sym.as_ref())
+            ) && expr_is_plain_array_receiver(member.obj.as_ref(), known_plain_arrays)
+        }
+        _ => false,
+    }
+}
+
+fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
+    match strip_parens(expr) {
+        Expr::Array(_) => true,
+        Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
+        Expr::Call(_) => expr_returns_plain_array(expr, known_plain_arrays),
+        _ => false,
+    }
 }
 
 /// Chunk-top `const X = <init>` names whose init evaluates to a
@@ -1711,6 +1812,109 @@ impl Visit for PlainDataWriteScanner<'_> {
                 BlockStmtOrExpr::Expr(expr) if matches!(strip_parens(expr), Expr::Ident(_)) => {}
                 body => body.visit_with(s),
             }
+        });
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        let scope = self.shadowed_by_params(node.params.iter().map(|p| &p.pat));
+        self.with_scope(scope, |s| node.visit_children_with(s));
+    }
+}
+
+struct PlainArrayMethodScanner<'a> {
+    candidates: &'a BTreeSet<String>,
+    disqualified: BTreeSet<String>,
+    shadowing_scopes: Vec<BTreeSet<String>>,
+}
+
+impl PlainArrayMethodScanner<'_> {
+    fn is_shadowed(&self, name: &str) -> bool {
+        self.shadowing_scopes
+            .iter()
+            .any(|scope| scope.contains(name))
+    }
+
+    fn with_scope<F: FnOnce(&mut Self)>(&mut self, scope: BTreeSet<String>, f: F) {
+        self.shadowing_scopes.push(scope);
+        f(self);
+        self.shadowing_scopes.pop();
+    }
+
+    fn disqualify_if_candidate(&mut self, name: &str) {
+        if !self.is_shadowed(name) && self.candidates.contains(name) {
+            self.disqualified.insert(name.to_string());
+        }
+    }
+
+    fn shadowed_by_params<'a, I>(&self, params: I) -> BTreeSet<String>
+    where
+        I: IntoIterator<Item = &'a Pat>,
+    {
+        let mut out = BTreeSet::new();
+        for param in params {
+            self.collect_shadowed_by_pat(param, &mut out);
+        }
+        out
+    }
+
+    fn collect_shadowed_by_pat(&self, pat: &Pat, out: &mut BTreeSet<String>) {
+        match pat {
+            Pat::Ident(ident) => {
+                let name = ident.id.sym.as_ref();
+                if self.candidates.contains(name) {
+                    out.insert(name.to_string());
+                }
+            }
+            Pat::Rest(rest) => self.collect_shadowed_by_pat(&rest.arg, out),
+            Pat::Assign(assign) => self.collect_shadowed_by_pat(&assign.left, out),
+            Pat::Array(array) => {
+                for elem in array.elems.iter().flatten() {
+                    self.collect_shadowed_by_pat(elem, out);
+                }
+            }
+            Pat::Object(object) => {
+                for prop in &object.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(kv) => self.collect_shadowed_by_pat(&kv.value, out),
+                        ObjectPatProp::Assign(assign) => {
+                            let name = assign.key.sym.as_ref();
+                            if self.candidates.contains(name) {
+                                out.insert(name.to_string());
+                            }
+                        }
+                        ObjectPatProp::Rest(rest) => self.collect_shadowed_by_pat(&rest.arg, out),
+                    }
+                }
+            }
+            Pat::Expr(_) | Pat::Invalid(_) => {}
+        }
+    }
+}
+
+impl Visit for PlainArrayMethodScanner<'_> {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = strip_parens(callee)
+            && let Expr::Ident(recv) = strip_parens(member.obj.as_ref())
+        {
+            let allowed = match &member.prop {
+                MemberProp::Ident(prop) => SAFE_PLAIN_ARRAY_METHODS.contains(&prop.sym.as_ref()),
+                MemberProp::Computed(_) | MemberProp::PrivateName(_) => false,
+            };
+            if !allowed {
+                self.disqualify_if_candidate(recv.sym.as_ref());
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        let scope = self.shadowed_by_params(node.params.iter());
+        self.with_scope(scope, |s| {
+            for param in &node.params {
+                param.visit_with(s);
+            }
+            node.body.visit_with(s);
         });
     }
 
@@ -2908,6 +3112,22 @@ fn classify_callee_call(
             graph,
         ));
     }
+    // Vite/Rollup namespace facade:
+    // `Object.defineProperty({ __proto__: null, ...exports },
+    // Symbol.toStringTag, { value: "Module" })`. The mutation targets a
+    // fresh object and installs a data descriptor only, so no user code
+    // fires. The generic `Object.defineProperty(t, ...)` form remains
+    // unknown below.
+    if is_pure_object_define_property_on_fresh_namespace(
+        callee_expr,
+        args,
+        shadowed,
+        local_shadowed,
+        declared_pure,
+        graph,
+    ) {
+        return Purity::Pure;
+    }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
     // non-Pure callee inherits its reasons (so the chain points
@@ -3031,6 +3251,145 @@ fn callee_summary(callee_expr: &Expr) -> Option<String> {
     }
 }
 
+fn is_pure_object_define_property_on_fresh_namespace(
+    callee_expr: &Expr,
+    args: &[ExprOrSpread],
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let Expr::Member(member) = strip_parens(callee_expr) else {
+        return false;
+    };
+    if !matches!(
+        (member.obj.as_ref(), &member.prop),
+        (Expr::Ident(obj), MemberProp::Ident(prop))
+            if obj.sym.as_ref() == "Object" && prop.sym.as_ref() == "defineProperty"
+    ) || shadowed.contains("Object")
+        || local_shadowed.contains("Object")
+        || args.len() != 3
+        || args.iter().any(|arg| arg.spread.is_some())
+    {
+        return false;
+    }
+    is_fresh_namespace_object_literal(
+        &args[0].expr,
+        shadowed,
+        local_shadowed,
+        declared_pure,
+        graph,
+    ) && is_symbol_to_string_tag(&args[1].expr, shadowed, local_shadowed)
+        && is_data_descriptor_literal(
+            &args[2].expr,
+            shadowed,
+            local_shadowed,
+            declared_pure,
+            graph,
+        )
+}
+
+fn is_fresh_namespace_object_literal(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let Expr::Object(obj) = strip_parens(expr) else {
+        return false;
+    };
+    obj.props.iter().all(|prop| match prop {
+        PropOrSpread::Spread(_) => false,
+        PropOrSpread::Prop(prop) => match prop.as_ref() {
+            Prop::Shorthand(_) => true,
+            Prop::KeyValue(kv) => {
+                if prop_name_is(&kv.key, "__proto__") {
+                    return matches!(strip_parens(&kv.value), Expr::Lit(Lit::Null(_)));
+                }
+                prop_name_is_static_data_key(&kv.key)
+                    && classify_expr_purity(
+                        &kv.value,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    )
+                    .is_pure()
+            }
+            Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) | Prop::Assign(_) => false,
+        },
+    })
+}
+
+fn is_symbol_to_string_tag(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+) -> bool {
+    let Expr::Member(member) = strip_parens(expr) else {
+        return false;
+    };
+    matches!(
+        (member.obj.as_ref(), &member.prop),
+        (Expr::Ident(obj), MemberProp::Ident(prop))
+            if obj.sym.as_ref() == "Symbol"
+                && prop.sym.as_ref() == "toStringTag"
+                && !shadowed.contains("Symbol")
+                && !local_shadowed.contains("Symbol")
+    )
+}
+
+fn is_data_descriptor_literal(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    local_shadowed: &BTreeSet<String>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let Expr::Object(obj) = strip_parens(expr) else {
+        return false;
+    };
+    obj.props.iter().all(|prop| match prop {
+        PropOrSpread::Spread(_) => false,
+        PropOrSpread::Prop(prop) => match prop.as_ref() {
+            Prop::KeyValue(kv) => {
+                prop_name_is_static_data_key(&kv.key)
+                    && !prop_name_is(&kv.key, "get")
+                    && !prop_name_is(&kv.key, "set")
+                    && classify_expr_purity(
+                        &kv.value,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    )
+                    .is_pure()
+            }
+            Prop::Shorthand(_)
+            | Prop::Getter(_)
+            | Prop::Setter(_)
+            | Prop::Method(_)
+            | Prop::Assign(_) => false,
+        },
+    })
+}
+
+fn prop_name_is_static_data_key(name: &PropName) -> bool {
+    matches!(
+        name,
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_)
+    )
+}
+
+fn prop_name_is(name: &PropName, expected: &str) -> bool {
+    match name {
+        PropName::Ident(ident) => ident.sym.as_ref() == expected,
+        PropName::Str(s) => s.value.to_string_lossy() == expected,
+        PropName::Num(_) | PropName::BigInt(_) | PropName::Computed(_) => false,
+    }
+}
+
 /// Whether `arg` is a sound argument shape for the
 /// `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admission rule at the given
 /// `Object.<prop>` callsite. Two admissible shapes:
@@ -3098,6 +3457,19 @@ fn is_pure_plain_data_arg_for(
         // sources) is handled by the standard literal classifier.
         Expr::Array(_) => {
             classify_expr_purity(arg, shadowed, local_shadowed, declared_pure, graph).is_pure()
+        }
+        Expr::Call(call) if prop == "freeze" => {
+            let Callee::Expr(callee) = &call.callee else {
+                return false;
+            };
+            is_pure_object_define_property_on_fresh_namespace(
+                callee,
+                &call.args,
+                shadowed,
+                local_shadowed,
+                declared_pure,
+                graph,
+            )
         }
         _ => false,
     }

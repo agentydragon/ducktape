@@ -17,6 +17,7 @@ use debundle_e2e_support::*;
 fn logical_module_at_catchall_target_renames_and_absorbs_overflow() {
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"function a() { return 1; }

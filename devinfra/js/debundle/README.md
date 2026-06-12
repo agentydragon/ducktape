@@ -219,6 +219,18 @@ every statement containing an unproven call is conservatively
 chained. That is the intended trade — the relaxation only fires where
 the analyzer can actually prove non-interference.
 
+Specs that have independently audited a call-heavy or annotation-heavy
+chunk may opt into `trusted_dataflow_summaries` alongside
+`dataflow_aware_s_chain`. That author-trusted flag restores the
+pre-tightening behavior for conservative-but-present summaries:
+unproven top-level calls/news, member writes, and similar ordinary
+summary bails stay impure, but use their syntactic
+binding/global-property read-write summary instead of becoming opaque
+barriers. Shapes that defeat write-cell extraction outright (`eval`,
+`with`, `Function`, computed global-object keys, global
+`defineProperty`, global `Proxy`) still fall back to conservative
+barriers regardless of the flag.
+
 Unshadowed `window` / `self` / `frames` / `top` are treated as the
 same object as `globalThis` for cell tracking: `window.tag = 1` and
 `globalThis.tag` are the same cell. A chunk-top-level declaration or

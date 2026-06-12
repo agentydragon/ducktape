@@ -523,6 +523,10 @@ pub struct FixtureOpts<'a> {
     /// adjacent-impure chain. Tests that exercise the relaxation set
     /// this `true`.
     pub dataflow_aware_s_chain: bool,
+    /// Author-trusted companion to `dataflow_aware_s_chain`: conservative
+    /// but present dataflow summaries are used instead of global S-chain
+    /// barriers.
+    pub trusted_dataflow_summaries: bool,
     /// Input-chunk admission checks to disable for this chunk
     /// (`chunk_analysis_options.<chunk>.admission_overrides`), e.g.
     /// `&["a1_eval"]`. Default empty — all admission checks enforced.
@@ -559,6 +563,7 @@ impl<'a> FixtureOpts<'a> {
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
             dataflow_aware_s_chain: false,
+            trusted_dataflow_summaries: false,
             admission_overrides: &[],
             local_property_effects: false,
             extra_files: &[],
@@ -592,6 +597,12 @@ impl<'a> FixtureOpts<'a> {
     /// `chunk_analysis_options:` in YAML.
     pub fn with_dataflow_aware_s_chain(mut self) -> Self {
         self.dataflow_aware_s_chain = true;
+        self
+    }
+
+    /// Enable the trusted dataflow-summary opt-in for this chunk.
+    pub fn with_trusted_dataflow_summaries(mut self) -> Self {
+        self.trusted_dataflow_summaries = true;
         self
     }
 
@@ -1039,6 +1050,9 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
     let mut analysis_options = serde_json::Map::new();
     if opts.dataflow_aware_s_chain {
         analysis_options.insert("dataflow_aware_s_chain".to_string(), Value::Bool(true));
+    }
+    if opts.trusted_dataflow_summaries {
+        analysis_options.insert("trusted_dataflow_summaries".to_string(), Value::Bool(true));
     }
     if opts.local_property_effects {
         analysis_options.insert("local_property_effects".to_string(), Value::Bool(true));

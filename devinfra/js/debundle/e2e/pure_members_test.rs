@@ -15,12 +15,34 @@
 //! AGENTS.md "Declared purity".
 
 use debundle_e2e_support::*;
-use serde_json::json;
+use serde_json::{Value, json};
 
 const VENDOR_FILE: &[(&str, &str)] = &[(
     "static/app/vendor.js",
-    "export function makePure(arg) { return arg; }\n",
+    "export function makePure(arg) { return arg; }\n\
+     export function forwardRef(render) { return { render }; }\n",
 )];
+
+fn owner_for_binding(graph: &Value, binding: &str) -> String {
+    graph
+        .get("nodes")
+        .and_then(Value::as_array)
+        .and_then(|nodes| {
+            nodes.iter().find(|node| {
+                node.get("declared_bindings")
+                    .and_then(Value::as_array)
+                    .is_some_and(|bindings| {
+                        bindings
+                            .iter()
+                            .any(|b| b.get("binding").and_then(Value::as_str) == Some(binding))
+                    })
+            })
+        })
+        .and_then(|node| node.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("no owner-graph node declares binding `{binding}`"))
+        .to_string()
+}
 
 /// Cycle-forcing fixture body parameterized by the per-case knobs.
 ///
@@ -137,4 +159,72 @@ fn pure_members_call_with_impure_arg_does_not_admit() {
         &["makePure"],
     );
     expect_rejection_containing_all(case.opts(), &["cycle", "b_module", "residual"]);
+}
+
+#[test]
+fn pure_members_member_call_does_not_promote_callback_body_reads() {
+    // React-style factories such as `forwardRef` store the render
+    // callback but do not invoke it at module init. The pure-members
+    // assertion already says `ns.forwardRef(...)` is an audited pure
+    // call site; at-init promotion must still record ordinary eager
+    // argument reads, but it must not treat the callback body's lazy
+    // reads as if they fired during the wrapper declaration.
+    let pure_members = json!({
+        "members": [
+            {
+                "name": "ReactLike",
+                "selector": {
+                    "binding": {
+                        "name": "ns",
+                        "kind": "import_specifier",
+                    },
+                },
+                "pure_members": ["forwardRef"],
+            },
+        ],
+    });
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import * as ns from "./vendor.js";
+const component = ns.forwardRef(() => later);
+const later = "ready";
+console.log(typeof component, later);
+export { component, later };
+"#,
+            vec![logical_module(
+                "component_module",
+                &[Member::new("component")],
+            )],
+        )
+        .with_chunk_renames(pure_members)
+        .with_extra_files(VENDOR_FILE),
+    );
+
+    let graph: Value = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let component_owner = owner_for_binding(&graph, "component");
+    let later_owner = owner_for_binding(&graph, "later");
+    let promoted: Vec<_> = graph
+        .get("edges")
+        .and_then(Value::as_array)
+        .expect("owner graph edges array")
+        .iter()
+        .filter(|edge| {
+            edge.get("source").and_then(Value::as_str) == Some(component_owner.as_str())
+                && edge.get("target").and_then(Value::as_str) == Some(later_owner.as_str())
+                && edge.get("edge_kind").and_then(Value::as_str) == Some("eager_use")
+                && edge
+                    .get("role")
+                    .and_then(|role| role.get("kind"))
+                    .and_then(Value::as_str)
+                    == Some("promoted_at_init")
+        })
+        .collect();
+
+    assert!(
+        promoted.is_empty(),
+        "`ns.forwardRef(() => later)` should not promote the callback \
+         body's lazy read of `later` into an at-init eager edge; got \
+         {promoted:#?}\n\nFull owner graph: {graph:#?}",
+    );
+    assert_entry_output(&fixture, "object ready\n");
 }

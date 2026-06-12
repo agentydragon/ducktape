@@ -96,6 +96,13 @@ fn dataflow_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) 
     FixtureOpts::new(source, logical_modules).with_dataflow_aware_s_chain()
 }
 
+fn trusted_dataflow_opts<'a>(
+    source: &'a str,
+    logical_modules: Vec<LogicalModuleEntry>,
+) -> FixtureOpts<'a> {
+    dataflow_opts(source, logical_modules).with_trusted_dataflow_summaries()
+}
+
 fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
     let node = graph
         .nodes
@@ -233,6 +240,44 @@ export { Holder1, Holder2, instA, instB };
     let owner_a = owner_for_binding(&graph, "instA");
     let owner_b = owner_for_binding(&graph, "instB");
     assert_kept_sequenced_between(&graph, owner_a, owner_b);
+}
+
+#[test]
+fn trusted_constructor_calls_use_dataflow_summary() {
+    // The default above remains conservative because an unproven
+    // `new` may have arbitrary observable effects. Some real bundle
+    // specs are separately audited and accept the old dataflow
+    // assumption for conservative-but-present summaries: calls/news
+    // stay impure, but they do not become barriers against every
+    // prior impure owner. In that trusted mode these two constructor
+    // calls touch disjoint binding cells, so there is no S-edge
+    // between them.
+    let fixture = run_fixture(trusted_dataflow_opts(
+        r#"class Holder1 { constructor() { this.kind = "h1"; } }
+class Holder2 { constructor() { this.kind = "h2"; } }
+const instA = new Holder1();
+const instB = new Holder2();
+console.log(instA.kind, instB.kind);
+export { Holder1, Holder2, instA, instB };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
+            logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "h1 h2\n");
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let owner_a = owner_for_binding(&graph, "instA");
+    let owner_b = owner_for_binding(&graph, "instB");
+    let offending = sequenced_edges_between(&graph, owner_a, owner_b);
+    assert!(
+        offending.is_empty(),
+        "trusted dataflow summarization should not add an unrelated S-edge \
+         between constructor calls whose syntactic summaries touch disjoint \
+         binding cells. Offending edges: {offending:#?}\n\nFull graph: {graph:#?}",
+    );
 }
 
 #[test]

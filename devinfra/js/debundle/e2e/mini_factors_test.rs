@@ -19,6 +19,7 @@ export const b = 2;
 fn catchall_keeps_unclaimed_bindings_in_residual() {
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: FIXTURE_SOURCE,
@@ -49,6 +50,7 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
 fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: FIXTURE_SOURCE,

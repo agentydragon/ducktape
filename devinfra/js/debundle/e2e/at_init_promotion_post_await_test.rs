@@ -127,3 +127,29 @@ export { state, setState, asyncSetup };
     ));
     assert_entry_output(&fixture, "initial\n");
 }
+
+#[test]
+fn promise_catch_handler_on_async_call_is_not_promoted_as_at_init() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let handled = "no";
+function markHandled() { handled = "yes"; }
+async function asyncSetup() {
+    await Promise.resolve();
+}
+function boot() {
+    asyncSetup().catch(() => markHandled());
+}
+boot();
+console.log(handled);
+export { handled, markHandled, asyncSetup, boot };
+"#,
+        vec![
+            logical_module(
+                "mod_handler",
+                &[Member::new("handled"), Member::new("markHandled")],
+            ),
+            logical_module("mod_setup", &[Member::new("asyncSetup")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "no\n");
+}

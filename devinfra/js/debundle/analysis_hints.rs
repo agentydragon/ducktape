@@ -41,8 +41,20 @@ pub struct AnalysisHints {
     /// keyed binding and `<prop>` is in the value set.
     /// See AGENTS.md "Declared purity".
     pub declared_pure_members: BTreeMap<String, BTreeSet<String>>,
+    /// Member names on a binding whose calls may receive callback-like
+    /// arguments but do not synchronously invoke them. The call itself is
+    /// still impure/ordered unless another hint says otherwise; this only
+    /// narrows at-init call promotion by not treating inline functions,
+    /// object literals containing functions, or first-order argument
+    /// callbacks as synchronously reachable fallback roots.
+    pub no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     pub known_effects: BTreeMap<String, KnownEffect>,
     pub local_effect_policy: LocalEffectPolicy,
+    /// Author-trusted chunk-level opt-in that lets conservative-but-present
+    /// syntactic dataflow summaries drive S-chain emission instead of
+    /// falling back to opaque barriers. Set from
+    /// `OwnerGraphOptions::trusted_dataflow_summaries`.
+    pub trusted_dataflow_summaries: bool,
     /// Cross-module purity verdicts for this chunk's imported function
     /// bindings, keyed by local binding name. Produced by the program-level
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
@@ -63,8 +75,10 @@ impl AnalysisHints {
             declared_pure: declared_pure.clone(),
             declared_pure_new: BTreeSet::new(),
             declared_pure_members: BTreeMap::new(),
+            no_sync_callback_members: BTreeMap::new(),
             known_effects: BTreeMap::new(),
             local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
+            trusted_dataflow_summaries: false,
             imported_purities: BTreeMap::new(),
             fluent_bindings: BTreeSet::new(),
         }

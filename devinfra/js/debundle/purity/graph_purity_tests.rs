@@ -262,6 +262,14 @@ fn is_plain_data(src: &str, name: &str) -> bool {
     graph.is_plain_data(name)
 }
 
+fn is_plain_array(src: &str, name: &str) -> bool {
+    let module = parse(src);
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    graph.is_plain_array(name)
+}
+
 #[test]
 fn plain_data_const_object_literal_is_tracked() {
     // A vanilla data shape: KeyValue with non-computed keys,
@@ -274,6 +282,49 @@ fn plain_data_const_object_literal_is_tracked() {
 #[test]
 fn plain_data_const_array_literal_is_tracked() {
     assert!(is_plain_data("const TA = [1, 2, 3];", "TA"));
+}
+
+#[test]
+fn plain_array_const_collection_methods_are_tracked() {
+    let src = r#"
+const later = "ready";
+const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
+const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+const ids = [...tools.filter((tool) => tool.systemNodeId).map((tool) => tool.systemNodeId)];
+tools.forEach((tool) => {
+  tool.systemNodeId && (globalThis.byId = tool.name);
+});
+export { tools };
+"#;
+    assert!(is_plain_array(src, "tools"));
+}
+
+#[test]
+fn plain_array_const_derived_by_non_mutating_methods_is_tracked() {
+    let src = r#"
+const later = "ready";
+const pairs = [["tool", "tool-id"]];
+const tools = pairs.map(([name, systemNodeId]) => ({
+  name,
+  systemNodeId,
+  run: () => later,
+}));
+const filtered = tools.filter((tool) => tool.systemNodeId);
+const cloned = filtered.slice();
+export { tools, filtered, cloned };
+"#;
+    assert!(is_plain_array(src, "pairs"));
+    assert!(is_plain_array(src, "tools"));
+    assert!(is_plain_array(src, "filtered"));
+    assert!(is_plain_array(src, "cloned"));
+}
+
+#[test]
+fn plain_array_const_mutating_method_is_not_tracked() {
+    assert!(!is_plain_array(
+        "const values = []; values.push(1);",
+        "values"
+    ));
 }
 
 #[test]

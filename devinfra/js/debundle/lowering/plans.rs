@@ -59,6 +59,10 @@ pub(super) struct MemberRequest {
     /// AGENTS.md "Declared purity". Empty when the spec doesn't carry a
     /// `pure_members` entry for this member.
     pub(super) pure_members: Vec<String>,
+    /// Property names on the bound value whose calls do not
+    /// synchronously invoke callback arguments. The call may still be
+    /// impure; this only narrows callback-body at-init promotion.
+    pub(super) no_sync_callback_members: Vec<String>,
     /// Per-member human-readable comment from the spec. Emitted as a
     /// `// ...` block above the binding's owner statement in the
     /// generated module body. See [`spec::Member::comment`].
@@ -105,6 +109,13 @@ impl MemberRequest {
                 .entry(self.binding.clone())
                 .or_default()
                 .extend(self.pure_members.iter().cloned());
+        }
+        if !self.no_sync_callback_members.is_empty() {
+            hints
+                .no_sync_callback_members
+                .entry(self.binding.clone())
+                .or_default()
+                .extend(self.no_sync_callback_members.iter().cloned());
         }
         if let Some(effect) = known_effect_from_member_effect(self.effect) {
             hints.known_effects.insert(self.binding.clone(), effect);
@@ -276,6 +287,7 @@ pub(super) fn build_members(
                 purity: m.purity,
                 effect: m.effect,
                 pure_members: m.pure_members.clone(),
+                no_sync_callback_members: m.no_sync_callback_members.clone(),
                 comment: m.comment.clone(),
             })
         })
@@ -293,6 +305,7 @@ pub(super) fn build_members(
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
+                no_sync_callback_members: Vec::new(),
                 comment: None,
             });
         }

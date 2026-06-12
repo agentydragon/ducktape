@@ -1143,6 +1143,42 @@ fn object_freeze_on_plain_object_literal_classifies_pure() {
 }
 
 #[test]
+fn object_freeze_on_vite_namespace_facade_classifies_pure() {
+    assert!(
+        (classify(
+            r#"Object.freeze(Object.defineProperty(
+                { __proto__: null, run: handler },
+                Symbol.toStringTag,
+                { value: "Module" }
+            ))"#,
+        ))
+        .is_pure()
+    );
+}
+
+#[test]
+fn object_define_property_namespace_facade_requires_fresh_target() {
+    assert!(
+        !(classify(r#"Object.defineProperty(target, Symbol.toStringTag, { value: "Module" })"#))
+            .is_pure()
+    );
+}
+
+#[test]
+fn object_define_property_namespace_facade_rejects_accessor_descriptor() {
+    assert!(
+        !(classify(
+            r#"Object.defineProperty(
+                { __proto__: null, run: handler },
+                Symbol.toStringTag,
+                { get: () => handler }
+            )"#,
+        ))
+        .is_pure()
+    );
+}
+
+#[test]
 fn object_keys_on_plain_array_literal_classifies_pure() {
     // Array literals are ordinary objects with integer-index
     // own data properties — same admission as object literals.

@@ -30,6 +30,7 @@ fn chunk_rename_propagates_into_peeled_module_body() {
     // and its `const b = cx();` callsite both need the new alias.
     let opts = FixtureOpts {
         local_property_effects: false,
+        trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
         source: r#"import { f as cx } from "./vendor.js";
