@@ -73,6 +73,12 @@ Hard max for this stack: `nebula1 = 1440`, `MTU = 1440` → pod 1390 (exact-fit,
 
 Both are infra-managed (OpenTofu + Talos machine config / Helm), **not Flux**.
 
+Gotcha: Nebula's `lighthouse.local_allow_list` (in `nebula.tf` and
+`nix/nixos/modules/nebula.nix`) must keep excluding `cilium*`/`lxc*` interfaces
+from endpoint advertisement — otherwise overlay pod IPs get advertised as
+Nebula endpoints and you get a tunnel-in-tunnel amplification loop. Incident:
+<lessons_learned/2026_04_07_nebula_cilium_vxlan_loop.md>.
+
 ## Changing MTUs safely (live, no re-bootstrap)
 
 1. **Nebula** (`tun.mtu`): flows into each node's Talos machine config. Apply

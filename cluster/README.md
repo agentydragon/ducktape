@@ -56,8 +56,8 @@ lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 
 ## Services
 
-Key services (not exhaustive — see `k8s/` and `k8s/authentik/proxy-routes/` for all
-HTTPRoutes):
+Key services (curated — this table is not the SSOT; the full set is the
+HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 
 | Service        | URL                                | Purpose                       |
 | -------------- | ---------------------------------- | ----------------------------- |
@@ -79,7 +79,9 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-All storage is region-local — no cross-site synchronous replication.
+All storage is region-local — no cross-site synchronous replication. Key
+classes below (curated — SSOT is the `StorageClass` manifests under `k8s/`,
+e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 
 | StorageClass         | Provisioner            | Region    | Notes                                                                              |
 | -------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------- |

@@ -55,9 +55,8 @@ Two things are being demonstrated:
 
 1. That FastMCP's `OIDCProxy` + Authentik implements the full **MCP remote
    authorization protocol** that claude.ai and Claude Code use for remote MCP
-   servers with their own auth (OAuth 2.1 + PKCE, RFC 9728 protected-resource
-   metadata, RFC 8414 AS metadata discovery, RFC 7591 dynamic client
-   registration, RFC 8707 resource indicators).
+   servers with their own auth (the OAuth 2.1/PKCE/DCR RFC stack — see
+   <../../docs/mcp_remote_auth.md>).
 2. That a single user identity flows through **two independent Authentik
    providers** — once when the MCP server validates the user's Authentik JWT,
    and again when the Authentik proxy outpost in front of the backend

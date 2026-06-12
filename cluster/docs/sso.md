@@ -62,7 +62,7 @@ Always add a `state: absent` tombstone entry — never just remove the `state: p
 block. The worker re-applies blueprints every 60 min; the absent entry is what actually
 removes the stale resource. Follow the `CLEANUP` tombstone convention from <../../STYLE.md>.
 Place absent entries in the app's existing blueprint, or in a dedicated cleanup blueprint
-(e.g., `k8s/authentik/blueprints/headscale-cleanup.yaml`) when the app itself is gone.
+under `k8s/authentik/app/blueprints/` when the app itself is gone.
 Remove the entries after a few reconcile cycles once confirmed clean.
 
 **Exception**: When migrating a provider from blueprints to TF, use tombstones to delete
