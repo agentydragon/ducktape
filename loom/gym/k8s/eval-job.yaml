@@ -61,9 +61,10 @@ spec:
             - manifold-
             # Cap concurrent samples (one docker sandbox each) well under docker-ci's
             # ~31-network address pool, leaving margin against orphaned networks from
-            # any interrupted run.
+            # any interrupted run. Keep this conservative while cold Wayback misses
+            # are bottlenecked on IA CDX/replay acquisition queues.
             - --max-samples
-            - "8"
+            - "4"
             - --message-limit
             - "1000"
             # GLM-4.5 has a 128k context window; compact around 90% so the

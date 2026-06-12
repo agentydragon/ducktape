@@ -11,7 +11,9 @@ use log::warn;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt, PutPayload};
-use prometheus::{Encoder, GaugeVec, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{
+    Encoder, GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
+};
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -33,6 +35,9 @@ pub const DEFAULT_REPLAY_TIMEOUT: Duration = Duration::from_secs(60);
 const RETRY_AFTER_SECONDS: u64 = 30;
 const HEALTH_WINDOW: Duration = Duration::from_secs(30);
 const HEALTH_MIN_SAMPLES: usize = 10;
+const DURATION_BUCKETS: [f64; 16] = [
+    0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 300.0,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Endpoint {
@@ -92,25 +97,163 @@ impl AcquisitionFailureReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct AcquisitionFailureKey {
-    endpoint: Endpoint,
-    reason: AcquisitionFailureReason,
-    status: Option<u16>,
+enum UpstreamFetchResult {
+    Stored,
+    BodyTooLarge,
+    UpstreamRetryAfter,
+    UpstreamTransientStatus,
+    UpstreamFetchTimeout,
+    UpstreamFetchError,
 }
 
-#[derive(Debug, Default)]
+impl UpstreamFetchResult {
+    fn outcome(self) -> &'static str {
+        match self {
+            UpstreamFetchResult::Stored | UpstreamFetchResult::BodyTooLarge => "success",
+            UpstreamFetchResult::UpstreamRetryAfter
+            | UpstreamFetchResult::UpstreamTransientStatus
+            | UpstreamFetchResult::UpstreamFetchTimeout
+            | UpstreamFetchResult::UpstreamFetchError => "failure",
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            UpstreamFetchResult::Stored => "stored",
+            UpstreamFetchResult::BodyTooLarge => "body_too_large",
+            UpstreamFetchResult::UpstreamRetryAfter => {
+                AcquisitionFailureReason::UpstreamRetryAfter.as_str()
+            }
+            UpstreamFetchResult::UpstreamTransientStatus => {
+                AcquisitionFailureReason::UpstreamTransientStatus.as_str()
+            }
+            UpstreamFetchResult::UpstreamFetchTimeout => {
+                AcquisitionFailureReason::UpstreamFetchTimeout.as_str()
+            }
+            UpstreamFetchResult::UpstreamFetchError => {
+                AcquisitionFailureReason::UpstreamFetchError.as_str()
+            }
+        }
+    }
+}
+
+impl UpstreamFetchResult {
+    fn from_upstream_failure(reason: AcquisitionFailureReason) -> Self {
+        match reason {
+            AcquisitionFailureReason::UpstreamRetryAfter => UpstreamFetchResult::UpstreamRetryAfter,
+            AcquisitionFailureReason::UpstreamTransientStatus => {
+                UpstreamFetchResult::UpstreamTransientStatus
+            }
+            AcquisitionFailureReason::UpstreamFetchTimeout => {
+                UpstreamFetchResult::UpstreamFetchTimeout
+            }
+            AcquisitionFailureReason::UpstreamFetchError => UpstreamFetchResult::UpstreamFetchError,
+            AcquisitionFailureReason::SingleFlightQueueTimeout
+            | AcquisitionFailureReason::LimiterQueueTimeout => unreachable!(
+                "queue failures happen before upstream fetches and have no fetch duration"
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum LimiterWaitOutcome {
+    Acquired,
+    Timeout,
+}
+
+impl LimiterWaitOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            LimiterWaitOutcome::Acquired => "acquired",
+            LimiterWaitOutcome::Timeout => "timeout",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum SingleFlightWaitOutcome {
+    Owner,
+    FilledByPeer,
+    Timeout,
+}
+
+impl SingleFlightWaitOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            SingleFlightWaitOutcome::Owner => "owner",
+            SingleFlightWaitOutcome::FilledByPeer => "filled_by_peer",
+            SingleFlightWaitOutcome::Timeout => "timeout",
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ArchiveMetrics {
-    acquisition_attempts: StdMutex<HashMap<Endpoint, u64>>,
-    acquisition_failures: StdMutex<HashMap<AcquisitionFailureKey, u64>>,
+    acquisition_attempts: IntCounterVec,
+    acquisition_failures: IntCounterVec,
+    upstream_fetch_duration: HistogramVec,
+    limiter_wait_duration: HistogramVec,
+    single_flight_wait_duration: HistogramVec,
+    single_flight_waiters: StdMutex<HashMap<Endpoint, usize>>,
+}
+
+impl Default for ArchiveMetrics {
+    fn default() -> Self {
+        Self {
+            acquisition_attempts: IntCounterVec::new(
+                Opts::new(
+                    "wayback_archive_acquisition_attempts_total",
+                    "Archive miss acquisitions attempted against IA.",
+                ),
+                &["endpoint"],
+            )
+            .expect("acquisition_attempts metric definition is valid"),
+            acquisition_failures: IntCounterVec::new(
+                Opts::new(
+                    "wayback_archive_acquisition_failures_total",
+                    "Archive miss acquisitions that returned a retryable/backpressure response before storing a result.",
+                ),
+                &["endpoint", "reason", "status"],
+            )
+            .expect("acquisition_failures metric definition is valid"),
+            upstream_fetch_duration: HistogramVec::new(
+                HistogramOpts::new(
+                    "wayback_archive_upstream_fetch_duration_seconds",
+                    "Duration of upstream IA fetches after acquiring an endpoint limiter slot.",
+                )
+                .buckets(DURATION_BUCKETS.to_vec()),
+                &["archive_endpoint", "outcome", "reason", "status"],
+            )
+            .expect("upstream_fetch_duration metric definition is valid"),
+            limiter_wait_duration: HistogramVec::new(
+                HistogramOpts::new(
+                    "wayback_archive_limiter_wait_duration_seconds",
+                    "Duration spent waiting for endpoint limiter capacity or backoff.",
+                )
+                .buckets(DURATION_BUCKETS.to_vec()),
+                &["archive_endpoint", "outcome"],
+            )
+            .expect("limiter_wait_duration metric definition is valid"),
+            single_flight_wait_duration: HistogramVec::new(
+                HistogramOpts::new(
+                    "wayback_archive_single_flight_wait_duration_seconds",
+                    "Duration spent waiting for an identical archive fill already in flight.",
+                )
+                .buckets(DURATION_BUCKETS.to_vec()),
+                &["archive_endpoint", "outcome"],
+            )
+            .expect("single_flight_wait_duration metric definition is valid"),
+            single_flight_waiters: StdMutex::new(HashMap::new()),
+        }
+    }
 }
 
 impl ArchiveMetrics {
     fn record_acquisition_attempt(&self, endpoint: Endpoint) {
-        let mut attempts = self
-            .acquisition_attempts
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *attempts.entry(endpoint).or_default() += 1;
+        self.acquisition_attempts
+            .with_label_values(&[endpoint.as_str()])
+            .inc();
     }
 
     fn record_acquisition_failure(
@@ -119,35 +262,100 @@ impl ArchiveMetrics {
         reason: AcquisitionFailureReason,
         status: Option<u16>,
     ) {
-        let key = AcquisitionFailureKey {
+        self.acquisition_failures
+            .with_label_values(&[endpoint.as_str(), reason.as_str(), &status_label(status)])
+            .inc();
+    }
+
+    fn record_upstream_fetch_duration(
+        &self,
+        endpoint: Endpoint,
+        result: UpstreamFetchResult,
+        status: Option<u16>,
+        duration: Duration,
+    ) {
+        self.upstream_fetch_duration
+            .with_label_values(&[
+                endpoint.as_str(),
+                result.outcome(),
+                result.reason(),
+                &status_label(status),
+            ])
+            .observe(duration.as_secs_f64());
+    }
+
+    fn record_limiter_wait_duration(
+        &self,
+        endpoint: Endpoint,
+        outcome: LimiterWaitOutcome,
+        duration: Duration,
+    ) {
+        self.limiter_wait_duration
+            .with_label_values(&[endpoint.as_str(), outcome.as_str()])
+            .observe(duration.as_secs_f64());
+    }
+
+    fn record_single_flight_wait_duration(
+        &self,
+        endpoint: Endpoint,
+        outcome: SingleFlightWaitOutcome,
+        duration: Duration,
+    ) {
+        self.single_flight_wait_duration
+            .with_label_values(&[endpoint.as_str(), outcome.as_str()])
+            .observe(duration.as_secs_f64());
+    }
+
+    fn begin_single_flight_wait(self: &Arc<Self>, endpoint: Endpoint) -> SingleFlightWaitGuard {
+        {
+            let mut waiters = self
+                .single_flight_waiters
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *waiters.entry(endpoint).or_default() += 1;
+        }
+        SingleFlightWaitGuard {
+            metrics: Arc::clone(self),
             endpoint,
-            reason,
-            status,
-        };
-        let mut failures = self
-            .acquisition_failures
+        }
+    }
+
+    fn finish_single_flight_wait(&self, endpoint: Endpoint) {
+        let mut waiters = self
+            .single_flight_waiters
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *failures.entry(key).or_default() += 1;
+        if let Some(count) = waiters.get_mut(&endpoint) {
+            *count = count.saturating_sub(1);
+        }
     }
 
-    fn acquisition_failure_counts(&self) -> Vec<(AcquisitionFailureKey, u64)> {
-        self.acquisition_failures
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .map(|(key, count)| (*key, *count))
-            .collect()
-    }
-
-    fn acquisition_attempt_counts(&self) -> Vec<(Endpoint, u64)> {
-        self.acquisition_attempts
+    fn single_flight_waiter_counts(&self) -> Vec<(Endpoint, usize)> {
+        self.single_flight_waiters
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
             .map(|(endpoint, count)| (*endpoint, *count))
             .collect()
     }
+}
+
+#[derive(Debug)]
+struct SingleFlightWaitGuard {
+    metrics: Arc<ArchiveMetrics>,
+    endpoint: Endpoint,
+}
+
+impl Drop for SingleFlightWaitGuard {
+    fn drop(&mut self) {
+        self.metrics.finish_single_flight_wait(self.endpoint);
+    }
+}
+
+fn status_label(status: Option<u16>) -> String {
+    status
+        .map(|status| status.to_string())
+        .unwrap_or_else(|| "none".to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -992,6 +1200,7 @@ struct LimiterEvent {
 struct LimiterState {
     current_limit: usize,
     in_flight: usize,
+    waiters: usize,
     backoff_until: Option<Instant>,
     events: VecDeque<LimiterEvent>,
 }
@@ -1000,6 +1209,7 @@ struct LimiterState {
 pub struct LimiterSnapshot {
     pub current_limit: usize,
     pub in_flight: usize,
+    pub waiters: usize,
     pub backoff_seconds: Option<u64>,
     pub recent_events: usize,
     pub recent_failures: usize,
@@ -1015,6 +1225,11 @@ pub struct AdaptiveLimiter {
 #[derive(Debug)]
 #[must_use = "dropping a limiter permit releases its in-flight slot"]
 pub struct LimiterPermit {
+    limiter: Option<Arc<AdaptiveLimiter>>,
+}
+
+#[derive(Debug)]
+struct LimiterWaitGuard {
     limiter: Option<Arc<AdaptiveLimiter>>,
 }
 
@@ -1040,12 +1255,34 @@ impl Drop for LimiterPermit {
     }
 }
 
+impl LimiterWaitGuard {
+    fn new(limiter: Arc<AdaptiveLimiter>) -> Self {
+        {
+            let mut state = limiter.lock_state();
+            state.waiters += 1;
+        }
+        Self {
+            limiter: Some(limiter),
+        }
+    }
+}
+
+impl Drop for LimiterWaitGuard {
+    fn drop(&mut self) {
+        if let Some(limiter) = self.limiter.take() {
+            let mut state = limiter.lock_state();
+            state.waiters = state.waiters.saturating_sub(1);
+        }
+    }
+}
+
 impl AdaptiveLimiter {
     pub fn new(config: LimiterConfig) -> Self {
         Self {
             state: StdMutex::new(LimiterState {
                 current_limit: config.initial,
                 in_flight: 0,
+                waiters: 0,
                 backoff_until: None,
                 events: VecDeque::new(),
             }),
@@ -1070,9 +1307,11 @@ impl AdaptiveLimiter {
                 deadline.checked_duration_since(now)
             };
             let wait = wait?;
+            let waiter = LimiterWaitGuard::new(self.clone());
             if timeout(wait, self.notify.notified()).await.is_err() {
                 return None;
             }
+            drop(waiter);
         }
     }
 
@@ -1161,6 +1400,7 @@ impl AdaptiveLimiter {
         LimiterSnapshot {
             current_limit: state.current_limit,
             in_flight: state.in_flight,
+            waiters: state.waiters,
             backoff_seconds: state
                 .backoff_until
                 .and_then(|until| until.checked_duration_since(now))
@@ -1290,6 +1530,20 @@ impl ArchiveService {
             ),
             &["endpoint"],
         )?;
+        let limiter_queue_length = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_queue_length",
+                "Current requests waiting for endpoint limiter capacity or backoff.",
+            ),
+            &["archive_endpoint"],
+        )?;
+        let single_flight_queue_length = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_single_flight_queue_length",
+                "Current requests waiting for an identical archive fill already in flight.",
+            ),
+            &["archive_endpoint"],
+        )?;
         let backoff_seconds = GaugeVec::new(
             Opts::new(
                 "wayback_archive_limiter_backoff_seconds",
@@ -1311,21 +1565,6 @@ impl ArchiveService {
             ),
             &["endpoint"],
         )?;
-        let acquisition_attempts = IntCounterVec::new(
-            Opts::new(
-                "wayback_archive_acquisition_attempts_total",
-                "Archive miss acquisitions attempted against IA.",
-            ),
-            &["endpoint"],
-        )?;
-        let acquisition_failures = IntCounterVec::new(
-            Opts::new(
-                "wayback_archive_acquisition_failures_total",
-                "Archive miss acquisitions that returned a retryable/backpressure response before storing a result.",
-            ),
-            &["endpoint", "reason", "status"],
-        )?;
-
         for endpoint in Endpoint::ALL {
             let limiter = match endpoint {
                 Endpoint::Availability => self.availability_limiter.clone(),
@@ -1340,6 +1579,9 @@ impl ArchiveService {
             in_flight
                 .with_label_values(labels)
                 .set(snapshot.in_flight as f64);
+            limiter_queue_length
+                .with_label_values(labels)
+                .set(snapshot.waiters as f64);
             backoff_seconds
                 .with_label_values(labels)
                 .set(snapshot.backoff_seconds.unwrap_or(0) as f64);
@@ -1350,28 +1592,29 @@ impl ArchiveService {
                 .with_label_values(labels)
                 .set(snapshot.recent_failures as f64);
         }
-        for (endpoint, count) in self.metrics.acquisition_attempt_counts() {
-            acquisition_attempts
+        let single_flight_waiters = self
+            .metrics
+            .single_flight_waiter_counts()
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        for endpoint in Endpoint::ALL {
+            single_flight_queue_length
                 .with_label_values(&[endpoint.as_str()])
-                .inc_by(count);
-        }
-        for (key, count) in self.metrics.acquisition_failure_counts() {
-            let status = key
-                .status
-                .map(|status| status.to_string())
-                .unwrap_or_else(|| "none".to_string());
-            acquisition_failures
-                .with_label_values(&[key.endpoint.as_str(), key.reason.as_str(), &status])
-                .inc_by(count);
+                .set(*single_flight_waiters.get(&endpoint).unwrap_or(&0) as f64);
         }
 
         registry.register(Box::new(limit))?;
         registry.register(Box::new(in_flight))?;
+        registry.register(Box::new(limiter_queue_length))?;
+        registry.register(Box::new(single_flight_queue_length))?;
         registry.register(Box::new(backoff_seconds))?;
         registry.register(Box::new(recent_events))?;
         registry.register(Box::new(recent_failures))?;
-        registry.register(Box::new(acquisition_attempts))?;
-        registry.register(Box::new(acquisition_failures))?;
+        registry.register(Box::new(self.metrics.acquisition_attempts.clone()))?;
+        registry.register(Box::new(self.metrics.acquisition_failures.clone()))?;
+        registry.register(Box::new(self.metrics.upstream_fetch_duration.clone()))?;
+        registry.register(Box::new(self.metrics.limiter_wait_duration.clone()))?;
+        registry.register(Box::new(self.metrics.single_flight_wait_duration.clone()))?;
 
         let mut output = Vec::new();
         TextEncoder::new().encode(&registry.gather(), &mut output)?;
@@ -1459,22 +1702,46 @@ impl ArchiveService {
     }
 
     async fn enter_fill(&self, key: &ReplayKey) -> bool {
+        let started = Instant::now();
         let deadline = Instant::now() + self.queue_wait;
         loop {
             let notify = {
                 let mut flights = self.replay_flights.lock().await;
                 if flights.in_progress.insert(key.clone()) {
+                    self.metrics.record_single_flight_wait_duration(
+                        Endpoint::Replay,
+                        SingleFlightWaitOutcome::Owner,
+                        started.elapsed(),
+                    );
                     return true;
                 }
                 flights.notify.clone()
             };
             let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+                self.metrics.record_single_flight_wait_duration(
+                    Endpoint::Replay,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
                 return false;
             };
+            let waiter = self.metrics.begin_single_flight_wait(Endpoint::Replay);
             if timeout(wait, notify.notified()).await.is_err() {
+                drop(waiter);
+                self.metrics.record_single_flight_wait_duration(
+                    Endpoint::Replay,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
                 return false;
             }
+            drop(waiter);
             if matches!(self.store.get_replay(key).await, Ok(Some(_))) {
+                self.metrics.record_single_flight_wait_duration(
+                    Endpoint::Replay,
+                    SingleFlightWaitOutcome::FilledByPeer,
+                    started.elapsed(),
+                );
                 return false;
             }
         }
@@ -1490,22 +1757,46 @@ impl ArchiveService {
     }
 
     async fn enter_metadata_fill(&self, key: &MetadataKey) -> bool {
+        let started = Instant::now();
         let deadline = Instant::now() + self.queue_wait;
         loop {
             let notify = {
                 let mut flights = self.metadata_flights.lock().await;
                 if flights.in_progress.insert(key.clone()) {
+                    self.metrics.record_single_flight_wait_duration(
+                        key.endpoint,
+                        SingleFlightWaitOutcome::Owner,
+                        started.elapsed(),
+                    );
                     return true;
                 }
                 flights.notify.clone()
             };
             let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+                self.metrics.record_single_flight_wait_duration(
+                    key.endpoint,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
                 return false;
             };
+            let waiter = self.metrics.begin_single_flight_wait(key.endpoint);
             if timeout(wait, notify.notified()).await.is_err() {
+                drop(waiter);
+                self.metrics.record_single_flight_wait_duration(
+                    key.endpoint,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
                 return false;
             }
+            drop(waiter);
             if matches!(self.store.get_metadata(key).await, Ok(Some(_))) {
+                self.metrics.record_single_flight_wait_duration(
+                    key.endpoint,
+                    SingleFlightWaitOutcome::FilledByPeer,
+                    started.elapsed(),
+                );
                 return false;
             }
         }
@@ -1522,7 +1813,13 @@ impl ArchiveService {
 
     async fn fill_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
         let limiter = self.metadata_limiter(request.key.endpoint);
+        let limiter_wait_started = Instant::now();
         let Some(permit) = limiter.clone().acquire().await else {
+            self.metrics.record_limiter_wait_duration(
+                request.key.endpoint,
+                LimiterWaitOutcome::Timeout,
+                limiter_wait_started.elapsed(),
+            );
             warn!(
                 "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
                 request.key.endpoint.as_str(),
@@ -1539,14 +1836,27 @@ impl ArchiveService {
                 limiter.retry_after().await,
             );
         };
+        self.metrics.record_limiter_wait_duration(
+            request.key.endpoint,
+            LimiterWaitOutcome::Acquired,
+            limiter_wait_started.elapsed(),
+        );
         self.metrics
             .record_acquisition_attempt(request.key.endpoint);
+        let upstream_started = Instant::now();
         let upstream = self
             .client
             .fetch_metadata(&request, self.max_metadata_bytes)
             .await;
+        let upstream_duration = upstream_started.elapsed();
         match upstream {
             Ok(response) if response.body.len() > self.max_metadata_bytes => {
+                self.metrics.record_upstream_fetch_duration(
+                    request.key.endpoint,
+                    UpstreamFetchResult::BodyTooLarge,
+                    Some(response.status),
+                    upstream_duration,
+                );
                 permit.record(AcquisitionOutcome::Healthy);
                 let metadata = StoredMetadata::BodyTooLarge {
                     key: request.key,
@@ -1567,6 +1877,12 @@ impl ArchiveService {
                 } else {
                     AcquisitionFailureReason::UpstreamTransientStatus
                 };
+                self.metrics.record_upstream_fetch_duration(
+                    request.key.endpoint,
+                    UpstreamFetchResult::from_upstream_failure(reason),
+                    Some(response.status),
+                    upstream_duration,
+                );
                 warn!(
                     "wayback archive acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
                     request.key.endpoint.as_str(),
@@ -1588,6 +1904,12 @@ impl ArchiveService {
                 ArchiveResponse::retry_after_duration(request.key.endpoint, retry_after)
             }
             Ok(response) => {
+                self.metrics.record_upstream_fetch_duration(
+                    request.key.endpoint,
+                    UpstreamFetchResult::Stored,
+                    Some(response.status),
+                    upstream_duration,
+                );
                 permit.record(AcquisitionOutcome::Healthy);
                 let record = MetadataRecord {
                     key: request.key,
@@ -1607,17 +1929,21 @@ impl ArchiveService {
                 stored_metadata_response(metadata)
             }
             Err(error) => {
+                let reason = upstream_error_reason(&error);
+                self.metrics.record_upstream_fetch_duration(
+                    request.key.endpoint,
+                    UpstreamFetchResult::from_upstream_failure(reason),
+                    None,
+                    upstream_duration,
+                );
                 warn!(
                     "wayback archive acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
                     request.key.endpoint.as_str(),
-                    upstream_error_reason(&error).as_str(),
+                    reason.as_str(),
                     request.key
                 );
-                self.metrics.record_acquisition_failure(
-                    request.key.endpoint,
-                    upstream_error_reason(&error),
-                    None,
-                );
+                self.metrics
+                    .record_acquisition_failure(request.key.endpoint, reason, None);
                 permit.record(AcquisitionOutcome::TransientFailure);
                 ArchiveResponse::retry_after(request.key.endpoint)
             }
@@ -1626,7 +1952,13 @@ impl ArchiveService {
 
     async fn fill_replay(&self, key: ReplayKey) -> ArchiveResponse {
         let limiter = self.replay_limiter.clone();
+        let limiter_wait_started = Instant::now();
         let Some(permit) = limiter.clone().acquire().await else {
+            self.metrics.record_limiter_wait_duration(
+                Endpoint::Replay,
+                LimiterWaitOutcome::Timeout,
+                limiter_wait_started.elapsed(),
+            );
             warn!(
                 "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
                 Endpoint::Replay.as_str(),
@@ -1643,10 +1975,23 @@ impl ArchiveService {
                 limiter.retry_after().await,
             );
         };
+        self.metrics.record_limiter_wait_duration(
+            Endpoint::Replay,
+            LimiterWaitOutcome::Acquired,
+            limiter_wait_started.elapsed(),
+        );
         self.metrics.record_acquisition_attempt(Endpoint::Replay);
+        let upstream_started = Instant::now();
         let upstream = self.client.fetch_replay(&key, self.max_body_bytes).await;
+        let upstream_duration = upstream_started.elapsed();
         match upstream {
             Ok(response) if response.body.len() > self.max_body_bytes => {
+                self.metrics.record_upstream_fetch_duration(
+                    Endpoint::Replay,
+                    UpstreamFetchResult::BodyTooLarge,
+                    Some(response.status),
+                    upstream_duration,
+                );
                 permit.record(AcquisitionOutcome::Healthy);
                 let replay = StoredReplay::BodyTooLarge {
                     key,
@@ -1667,6 +2012,12 @@ impl ArchiveService {
                 } else {
                     AcquisitionFailureReason::UpstreamTransientStatus
                 };
+                self.metrics.record_upstream_fetch_duration(
+                    Endpoint::Replay,
+                    UpstreamFetchResult::from_upstream_failure(reason),
+                    Some(response.status),
+                    upstream_duration,
+                );
                 warn!(
                     "wayback archive acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
                     Endpoint::Replay.as_str(),
@@ -1688,6 +2039,12 @@ impl ArchiveService {
                 ArchiveResponse::retry_after_duration(Endpoint::Replay, retry_after)
             }
             Ok(response) => {
+                self.metrics.record_upstream_fetch_duration(
+                    Endpoint::Replay,
+                    UpstreamFetchResult::Stored,
+                    Some(response.status),
+                    upstream_duration,
+                );
                 permit.record(AcquisitionOutcome::Healthy);
                 let record = ReplayRecord {
                     key,
@@ -1708,17 +2065,21 @@ impl ArchiveService {
                 stored_replay_response(replay)
             }
             Err(error) => {
+                let reason = upstream_error_reason(&error);
+                self.metrics.record_upstream_fetch_duration(
+                    Endpoint::Replay,
+                    UpstreamFetchResult::from_upstream_failure(reason),
+                    None,
+                    upstream_duration,
+                );
                 warn!(
                     "wayback archive acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
                     Endpoint::Replay.as_str(),
-                    upstream_error_reason(&error).as_str(),
+                    reason.as_str(),
                     key
                 );
-                self.metrics.record_acquisition_failure(
-                    Endpoint::Replay,
-                    upstream_error_reason(&error),
-                    None,
-                );
+                self.metrics
+                    .record_acquisition_failure(Endpoint::Replay, reason, None);
                 permit.record(AcquisitionOutcome::TransientFailure);
                 ArchiveResponse::retry_after(Endpoint::Replay)
             }

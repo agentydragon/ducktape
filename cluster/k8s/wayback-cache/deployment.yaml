@@ -42,8 +42,10 @@ spec:
               value: https://web.archive.org
             - name: WAYBACK_ARCHIVE_AVAILABILITY_UPSTREAM
               value: https://archive.org
+            # Keep below the wayback proxy's 300s total upstream timeout while
+            # allowing bursty eval requests to wait for scarce IA slots.
             - name: WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS
-              value: "60"
+              value: "180"
             - name: WAYBACK_ARCHIVE_AVAILABILITY_TIMEOUT_SECONDS
               value: "15"
             - name: WAYBACK_ARCHIVE_CDX_TIMEOUT_SECONDS
