@@ -2,7 +2,7 @@
 
 These exercise `_apply_tlh_harvest` + the sale-time basis give-back end-to-end through the dense
 engine, complementing the pure-core invariants in `tlh_harvest_test.py`. The four required
-correctness properties (see `augur/plans/tax_loss_harvesting.md`):
+correctness properties:
   - down months harvest strictly more loss than flat months; a long bull run ossifies to the floor,
   - a harvested short-term loss offsets a concurrent realized gain → lower tax than no-harvest,
   - the basis give-back at sale repays exactly the cumulative harvest (deferral, not free money),

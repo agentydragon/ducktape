@@ -629,8 +629,8 @@ class HarvestPolicy(BaseModel):
     function* of the index path (see `augur/sim/tlh_harvest.py`), not a real below-basis amount
     realized by selling specific underwater names. All `HarvestYieldParams` are `[HEURISTIC]`,
     anchored only to the account's first-year (TY2025) 1099-B. See the engine phase
-    `_apply_tlh_harvest` and `augur/plans/tax_loss_harvesting.md` for the full rationale and for
-    the "what a more honest implementation would look like" note (the plan's options #3/#4).
+    `_apply_tlh_harvest` for the full rationale; `finance/augur/sim/TODO.md`
+    tracks the more honest representative-sleeve upgrade path.
 
     The policy is keyed to the lots of one (agent, account, asset) pool — typically the Plaid
     SP500 proxy sleeve. Each month the engine harvests a calibrated capital LOSS into that

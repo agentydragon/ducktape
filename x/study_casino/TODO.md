@@ -3,7 +3,8 @@
 ## After Postgres migration — possible refactors
 
 These are not required, just nice-to-haves surfaced during the
-2026-05-16 SQLite→Postgres cutover. Defer until there's a real need.
+2026-05-16 SQLite→Postgres cutover and the server-authoritative casino cutover.
+Defer until there's a real need.
 
 - [ ] Push `username` into the `ServerActionMutator` signature instead of
       passing via closure. Today every endpoint's mutator captures `username`
@@ -38,3 +39,4 @@ These are not required, just nice-to-haves surfaced during the
   `ledger_events` (`source="legacy_client_sync"`) stay readable forever; the
   Literal unions in `events.py` keep both source values so old rows
   deserialize. Do not write a migration that rewrites them.
+- Database backup/restore work is tracked in <../../cluster/k8s/TODO.md>.

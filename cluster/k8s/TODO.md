@@ -2,13 +2,12 @@
 
 Audit findings deferred for later.
 
-## Study Casino PVC backups
+## Study Casino database backups
 
-- [ ] Choose and deploy a cluster PVC backup solution, then enable backups for
-      `study-casino/study-casino-data` every 3 hours. Preserve `/data`
-      SQLite state (`casino-*.db`, WAL/SHM files when present), keep enough
-      retention to use the available storage comfortably, and include a tested
-      restore path before relying on it.
+- [ ] Choose and deploy the backup/restore path for the CNPG
+      `study-casino/study-casino-db` cluster. Schedule regular backups, keep
+      enough retention to use the available storage comfortably, and run a
+      restore drill before relying on the backups.
 
 ## Mitmproxy: forward in-cluster + label-selector fix (DRAFT, uncommitted)
 

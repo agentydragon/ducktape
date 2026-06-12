@@ -4,8 +4,8 @@ LIMITED / DELIBERATELY-APPROXIMATE MODEL. This table drives `_apply_tlh_harvest`
 engine. It does NOT model the direct-indexing sleeve's individual constituent stocks: the
 harvested loss is a *calibrated* function of the index path (`augur/sim/tlh_harvest.py`), and
 the basis give-back is a single scalar per (policy, rollout). See `HarvestPolicy` and the
-engine phase for the full "this is fake on purpose" rationale, and
-`augur/plans/tax_loss_harvesting.md` for the upgrade path (options #3/#4).
+engine phase for the full "this is fake on purpose" rationale; the upgrade path
+is tracked in `finance/augur/sim/TODO.md`.
 
 Mirrors the per-policy + lot-mask shape of `private_equity.py`. One row per `HarvestPolicy`:
 its yield-curve params, the index level-series index driving the period return, the owner's

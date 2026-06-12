@@ -18,6 +18,20 @@ survived the deleted plan:
   `--remote_run_header` overrides `--test_env` in a way inner Bazel flags
   cannot unset.
 
+## Dev environment consolidation leftovers
+
+The repo dev tools are already shared through `flake.nix`/`packages.devtools`,
+and Prettier now runs as a Nix-provided `language: system` pre-commit hook with
+the Svelte plugin on `NODE_PATH`. Remaining low-priority work:
+
+- Consider defining overlapping secret mappings once in Nix and generating a
+  small `activate-secrets` script that decrypts SOPS sources and writes standard
+  user paths such as `~/.config/bazel/buildbuddy.bazelrc` and `~/.kube/config`.
+  Home-manager activation, `web_setup.sh`, and optionally the devshell shell hook
+  could call the same script. Keep SSH keys and attic secrets in sops-nix, and
+  keep the per-session Bazelrc overlay separate because proxy/JVM/platform
+  settings are session-local.
+
 ## Decide whether the `bb` shim should inject the session bazelrc
 
 The Rust `bazel`/`bazelisk` shims inject `--bazelrc=<session>/bazelrc` so

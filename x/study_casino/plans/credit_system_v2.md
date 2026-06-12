@@ -1,5 +1,10 @@
 # Credit System v2 — Design Document
 
+Status: future design, not implemented. This predates the Postgres-only,
+server-authoritative cutover; any implementation should use the current
+`balance`, `sessions`, `ledger_events`, and action endpoints documented in
+<../README.md>, not the old Y.Doc/CRDT storage model.
+
 ## Overview
 
 The current credit system is simple: 1 minute studied = 1 credit (integer),
@@ -53,10 +58,10 @@ touched.
 
 ### Cents-as-integer for all DB columns
 
-All credit/token amounts in Postgres are stored as integers representing
-cents (value × 100). The Y.Doc balance stores the float for display.
-Server code uses `Decimal` internally, multiplies by 100 on DB write,
-divides by 100 on DB read. No `Float` columns — avoids IEEE 754 drift.
+All credit/token amounts in Postgres should be stored as integers representing
+cents (value × 100). The read-side JSON can expose decimal display values, but
+server code should use `Decimal` internally, multiply by 100 on DB write, and
+divide on DB read. No `Float` columns — avoids IEEE 754 drift.
 
 ### 100-day ramp to 2x
 
@@ -75,19 +80,20 @@ and awards that many credits. The fractional minute is lost.
 
 ### New behavior
 
-Credits become **floats stored with 2 decimal places** (hundredths). Every
-credit-earning operation computes fractional amounts and writes the float
-to the Y.Doc balance. The UI displays credits rounded to 1 decimal place
-(e.g., "127.3 credits"). Internal storage uses 2 decimals to avoid
-accumulated floating-point drift — round to `Decimal("0.01")` on every
-write.
+Credits become **decimal display values backed by integer cents**. Every
+credit-earning operation computes fractional amounts, stores integer cents in
+Postgres, and returns decimal values through `/state`. The UI displays credits
+rounded to 1 decimal place (e.g., "127.3 credits"). Internal computation uses 2
+decimals to avoid accumulated floating-point drift — round to `Decimal("0.01")`
+on every write.
 
 ### Server changes
 
-- `_credits()` returns `float` instead of `int`.
-- `_set_balance()` writes floats.
-- All credit computations use `Decimal` internally and convert to `float`
-  on write.
+- Credit helpers return `Decimal` or integer cents instead of whole-credit `int`.
+- Balance writes persist integer cents and read-side serializers divide for the
+  wire shape.
+- All credit computations use `Decimal` internally and convert only at the
+  read-side wire boundary.
 - `credits_nonneg` validator checks `credits < 0` (works for float).
 - DB columns (`LedgerEventRow.credits_before`, `.credits_after`, etc.) stay
   `Integer` — they store cents (value × 100). Multiply by 100 on write,
@@ -102,10 +108,8 @@ write.
 
 ### Migration
 
-On next `data.import` or on first access after deploy, existing integer
-credits are valid as-is (an integer is a valid float). No explicit
-migration needed for the Y.Doc. If we go the "multiply by 100" route for
-the DB, we need a one-time conversion in an Alembic migration.
+Existing integer credits need a one-time Alembic conversion to cents if the DB
+columns are changed in-place.
 
 ---
 
@@ -132,7 +136,7 @@ Where:
 ### Persistence
 
 The streak state is stored server-side in the user's Postgres database in a
-new `streak_state` table (or as a JSON column on `DocRow`):
+new `streak_state` table:
 
 ```python
 class StreakState:
@@ -142,7 +146,7 @@ class StreakState:
     rest_days_used: int                # total rest days consumed (for stats)
 ```
 
-This cannot live in the Y.Doc because the server must compute it
+This state must stay server-side because the server computes it
 authoritatively on every session completion.
 
 ### Computation
@@ -349,7 +353,7 @@ toward the next milestone.
 
 ### Persistence
 
-Server-side in `credit_state` (not in the Y.Doc — prevents manipulation):
+Server-side in `credit_state`:
 
 ```
 break_started_at_ms: int | None       # when session stopped, None = not on break

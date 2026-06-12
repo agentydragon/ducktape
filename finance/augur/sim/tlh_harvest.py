@@ -4,14 +4,15 @@ This is the calibratable math behind a direct-indexing harvest process: given th
 period's index return and a position's embedded-gain fraction, it produces the
 *gross realized loss* harvested this period as a fraction of market value. It does
 **not** touch the sim engine — `augur/sim/engine` wires it in (see the
-"Implementation proposal" in `augur/plans/tax_loss_harvesting.md`), reading
-MV/basis and the index path per rollout, clamping the output to the loss actually
-available below basis, and feeding it into the Piece-1 capital-loss netting.
+`_apply_tlh_harvest` phase), reading MV/basis and the index path per rollout,
+clamping the output to the loss actually available below basis, and feeding it
+into the Piece-1 capital-loss netting.
 
 Why reduced-form (not constituent simulation): a single S&P 500 series has no
 cross-sectional dispersion, so harvestable losses must be modeled as a calibrated
 function of the index path Augur already samples rather than emerging from
-hundreds of simulated names. See the plan doc for the full rationale.
+hundreds of simulated names. `HarvestPolicy` documents the boundary and
+upgrade path.
 
 Shape and calibration anchor: harvesting is **front-loaded**. A cash-funded
 account starts with cost basis = market value (embedded-gain fraction `e ≈ 0`) and
@@ -22,7 +23,8 @@ as `(1 - e) ** maturity_decay_exponent`, and is amplified in drawdowns. This sha
 is taken from Vanguard's "Tax-loss harvesting: Why a personalized approach is
 important" (July 2024); the magnitude of TLH alpha and the wash-sale haircut are
 bounded by Chaudhuri, Burnham & Lo, "An Empirical Evaluation of Tax-Loss-Harvesting
-Alpha," Financial Analysts Journal 76(3) 2020. Full citations: plan References.
+Alpha," Financial Analysts Journal 76(3) 2020. Remaining follow-ups live in
+`finance/augur/sim/TODO.md`.
 
 All parameters are `[HEURISTIC]`: with only the account's first-year (TY2025)
 1099-B there is no in-account history to fit the decay rate, so the curve's shape

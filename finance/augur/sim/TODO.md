@@ -12,7 +12,8 @@ Anything fully shipped is removed — git history is the record of done work.
     `[HEURISTIC]` — the account opened in 2025, so there's no prior-year 1099-B to
     fit decay; the curve shape is an external prior ([VANGUARD-2024]). As TY2026+
     forms arrive, fit the decay; replace the heuristic with a fitted rate once ≥2
-    forms exist. See <plans/tax_loss_harvesting.md>.
+    forms exist. The TY2025 anchor was roughly 5%/yr gross harvested loss,
+    essentially all short-term.
   - **`representative_sleeve_tlh` variant (plan option #3 — the honest model).**
     A sibling of the `reduced_form_tlh` discriminator: ~5–10 representative sleeves
     (index factor + scaled idiosyncratic noise) running real FIFO harvesting on
@@ -24,6 +25,10 @@ Anything fully shipped is removed — git history is the record of done work.
     codec/decoder if we want harvested-loss visibility in the rollout detail / UI.
   - **Wash-sale gate.** Not modeled — TY2025 had zero wash sales, so the continuous
     replacement-buying assumption holds; revisit if the sleeve's behavior changes.
+  - References for the reduced-form shape: Chaudhuri, Burnham & Lo, "An Empirical
+    Evaluation of Tax-Loss-Harvesting Alpha" (Financial Analysts Journal 76(3),
+    2020), and Vanguard, "Tax-loss harvesting: Why a personalized approach is
+    important" (July 2024).
 
 - Replace the `dense.decode()` → `SimulationRun` polars materialization
   step on the rollout-detail endpoint with `ProjectionRun` read models
