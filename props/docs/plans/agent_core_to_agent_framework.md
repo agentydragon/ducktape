@@ -145,7 +145,7 @@ So none of props' control behaviors is a hard blocker — they're middleware shi
 
 This also incidentally widens model options: MAF's chat-client ecosystem makes the **Anthropic-shaped
 z.ai path** (the union-tool-input escape hatch from the GLM-4.6 work — see
-<../../../docs/z_ai_api.md> and `agent_core/test_zai_chat_adapter_live.py`) easier to adopt than in
+<../../../docs/zai_api.md> and `agent_core/test_zai_chat_adapter_live.py`) easier to adopt than in
 `agent_core`, which today only has OpenAI Responses + Chat Completions adapters.
 
 ## Open questions (resolve with a short spike before committing)

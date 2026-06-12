@@ -42,7 +42,7 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # ZAI_API_KEY env var (litellm-zai-key secret). Routing GLM through the Anthropic shape
 # avoids the union-tool-input bug GLM hits on the OpenAI chat shape (z.ai's Anthropic
 # adapter parses GLM's XML tool calls back into proper JSON `tool_use.input` objects). See
-# docs/z_ai_api.md. LiteLLM fronts it so it logs to Langfuse (via `litellm_metadata`) and
+# docs/zai_api.md. LiteLLM fronts it so it logs to Langfuse (via `litellm_metadata`) and
 # props need not hold ZAI_API_KEY. Exposed via LiteLLM's `/v1/messages` endpoint; props'
 # llm-proxy routes its /v1/messages here. The OpenAI-shaped coding-plan route was removed
 # in favor of this one.

@@ -4,9 +4,10 @@
 **Environment:** Claude Code container with gVisor sandbox
 
 > **Archived**: Claude Code sessions moved to Firecracker microVMs with a
-> real kernel; none of the workarounds below apply there. Current guidance:
-> <../docker*evaluation_results.md>. Kept because the workarounds are still
-> correct \_on actual gVisor hosts*, should one ever reappear.
+> real kernel; none of the workarounds below apply there. See the
+> [current Docker guidance](../docker_evaluation_results.md). Kept because the
+> workarounds are still correct _on actual gVisor hosts_, should one ever
+> reappear.
 
 ## Executive Summary
 

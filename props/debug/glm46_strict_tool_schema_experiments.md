@@ -131,4 +131,4 @@ Two options for unblocking glm-4.6 tool inputs:
 All shapes above are canaried live in `agent_core/test_zai_chat_adapter_live.py`
 (`test_zai_object_tool_param_returned_as_object_live` passes; the chat-completions `anyOf`/`oneOf`
 variant is `xfail`; the Anthropic-shape union variant passes). See also
-<../../docs/z_ai_api.md> "Tool Use / Function Calling".
+<../../docs/zai_api.md> "Tool Use / Function Calling".

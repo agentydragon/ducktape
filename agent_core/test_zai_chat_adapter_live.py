@@ -158,7 +158,7 @@ async def test_zai_flat_tool_params_returned_live() -> None:
 @pytest.mark.parametrize("combinator", ["anyOf", "oneOf"])
 @pytest.mark.xfail(
     reason="glm-4.6 stringifies anyOf/oneOf union object tool params instead of emitting a nested "
-    "object (see docs/z_ai_api.md). xfail(strict=False) so a future z.ai fix surfaces as xpass, "
+    "object (see docs/zai_api.md). xfail(strict=False) so a future z.ai fix surfaces as xpass, "
     "signalling the union-flattening workaround can be dropped.",
     strict=False,
 )

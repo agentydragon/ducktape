@@ -59,6 +59,6 @@ a viable _debugging_ venue for network-topology tests in current sessions.
 
 The 2026-02 evaluation (Podman-vs-Docker workaround comparison, the
 `iptables/bridge/data-root` workaround config, ~35-layer overlay limit,
-no-bridge-networking constraint) is archived at
-<archive/2026*02_docker_gvisor_evaluation.md>. Those findings remain correct
-\_on actual gVisor hosts* only.
+no-bridge-networking constraint) is archived in the
+[2026-02 gVisor evaluation](archive/2026_02_docker_gvisor_evaluation.md).
+Those findings remain correct _on actual gVisor hosts_ only.

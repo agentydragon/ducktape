@@ -100,7 +100,7 @@ z.ai does **not** accept forced named OpenAI tool-choice objects:
 That returns `400` / code `1210`. If z.ai needs to call a specific tool, use
 prompt instructions plus `tool_choice: "auto"` unless/until props gains a
 provider capability flag for this quirk. The detailed API notes live in
-`docs/z_ai_api.md`.
+`docs/zai_api.md`.
 
 ## Remaining Deployment Work
 

@@ -19,7 +19,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `openai_utils/`    | OpenAI API utilities                      |
 | `tana/`            | Tana export toolkit                       |
 | `finance/`         | Portfolio tracking (Rust)                 |
-| `augur/`           | Probabilistic financial-futures simulator |
+| `finance/augur/`   | Probabilistic financial-futures simulator |
 | `loom/`            | Prediction markets → rollout interpolator |
 | `idea/`            | Lightweight future project ideas          |
 | `trilium/`         | Trilium Notes extensions                  |
@@ -114,7 +114,7 @@ bb run //devinfra/lint:buildifier    # Format Bazel files
 
 ### `x/` — Experimental
 
-`x/` subdirectories (e.g. `x/agent_server/`, `augur/x/`) mark experimental, in-flux, or one-off code that hasn't stabilized. Any directory at any level can have an `x/` subfolder. Don't expect stable APIs or finished design from code under `x/`.
+`x/` subdirectories (e.g. `x/agent_server/`, `finance/augur/x/`) mark experimental, in-flux, or one-off code that hasn't stabilized. Any directory at any level can have an `x/` subfolder. Don't expect stable APIs or finished design from code under `x/`.
 
 ### `TODO.md`
 

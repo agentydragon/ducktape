@@ -60,7 +60,7 @@ behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
 
 - <namespace/namespace.yaml> — PSS dropped to `baseline` (TODO to retighten
   to `restricted` once upstream agent Deployments set proper securityContext).
-- <../../../../docs/z_ai_api.md> — z.ai endpoint shapes, including the coding
+- <../../../../docs/zai_api.md> — z.ai endpoint shapes, including the coding
   plan vs general distinction.
 - <../../../../docs/self_hosted_coding_agent_platforms.md> — broader survey of
   options if kagent's rough edges become disqualifying.
