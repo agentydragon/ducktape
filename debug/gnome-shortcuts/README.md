@@ -151,12 +151,12 @@ strip arrow variants from Pop Shell focus (hjkl only).
 
 ## Key Files
 
-| File                                           | Purpose                                       |
-| ---------------------------------------------- | --------------------------------------------- |
-| <nix/home/modules/gnome-shell-keybindings.nix> | Our dconf shortcut config                     |
-| <nix/home/home.nix>                            | Extension list                                |
-| <debug/gnome-shortcuts/predictions.md>         | Experiment predictions and results log        |
-| <wm-shortcuts.md>                              | Live system keybinding inventory (2026-03-16) |
+| File                                           | Purpose                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
+| <nix/home/modules/gnome-shell-keybindings.nix> | Our dconf shortcut config                                         |
+| <nix/home/home.nix>                            | Extension list                                                    |
+| <debug/gnome-shortcuts/predictions.md>         | Experiment predictions and results log                            |
+| `wm-shortcuts.md`                              | Keybinding inventory (2026-03-16, local capture, never committed) |
 
 ### Pop Shell source (cloned at `~/code/pop-shell`, branch `master_noble`)
 

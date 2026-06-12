@@ -1,3 +1,5 @@
+@README.md
+
 # Debundler Implementation Constraints
 
 > The canonical design — what debundling means as a problem, what

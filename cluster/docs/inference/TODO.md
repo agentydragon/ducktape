@@ -148,7 +148,7 @@ some operational workflow.
   <runs/2026-04-28_gemma_followup/>); not worth the yak-shave.
 - **Custom RE / FreeCAD evals as a primary path** — those are a
   separate workstream tracked under
-  <../../../plans/port-re-eval-to-inspect-ai.md> and the freecad skill
+  <../../../skills/reverse_engineer/evals/> and the freecad skill
   eval dir. Off-the-shelf proxies first; custom tasks are an orthogonal
   scaffolding investment.
 

@@ -106,7 +106,8 @@ tana-mcp, mitmproxy, props, atuin.
 
 ## Grocy MCP startup probe
 
-The MCP servers (grocy-mcp-sf, grocy-mcp-vallejo) crash-loop on first boot
+The Grocy MCP server (`grocy-mcp-server` deployment, instantiated per site in
+the `grocy-sf` and `grocy-vallejo` namespaces) crash-loops on first boot
 until Grocy receives its first HTTP request (which triggers database migrations).
 The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
 errors until migrations complete. After a manual visit to the Grocy web UI,

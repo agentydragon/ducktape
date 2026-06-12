@@ -116,8 +116,7 @@ extension that already shows the same data. Options:
 
 ## Consider reviving PostToolUse lint integration
 
-Removed in <https://github.com/agentydragon/ducktape/pull/...> after
-deciding the per-edit lint-and-revert flow was effectively spam — issues
+Removed after deciding the per-edit lint-and-revert flow was effectively spam — issues
 get caught (and fixed by the same auto-apply hooks) when the agent runs
 `pre-commit run` or commits via the `git` shim, which already invokes the
 project's full pre-commit config. Running the same hooks on every Edit/Write

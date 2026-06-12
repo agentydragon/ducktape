@@ -1,6 +1,6 @@
 # VRAM Analysis for 2x RTX 5090
 
-For the model search log and download list, see <model-download-list.md>.
+For the model search log and download list, see <model_download_history.md>.
 
 ## Hardware
 
@@ -392,7 +392,7 @@ For full 131K+ context, you'd need:
 
 ## Summary
 
-For model tables, experiment log, and download status, see <model-download-list.md>.
+For model tables, experiment log, and download status, see <model_download_history.md>.
 
 **Critical vLLM fixes discovered:**
 

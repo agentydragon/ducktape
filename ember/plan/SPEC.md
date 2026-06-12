@@ -41,7 +41,8 @@ Two tools form the v0 surface:
 
 - `MATRIX_BASE_URL`, `MATRIX_ADMIN_USER_ID` via config map or TOML.
 - Matrix token and OpenAI API key projected into `/var/run/ember/secrets/`.
-- Model defaults to `gpt-5`; overridable via `OPENAI_MODEL` or TOML.
+- Model selected via `OPENAI_MODEL` env or the TOML `model` key; the default
+  lives in `config.py`.
 
 ### Runtime loop
 
@@ -66,7 +67,7 @@ Two tools form the v0 surface:
 
 ## Ontology
 
-See <docs/agent_ontology.md>.
+See <../docs/agent_ontology.md>.
 
 ## Not yet implemented
 

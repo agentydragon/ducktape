@@ -335,7 +335,8 @@ The Proxmox control plane node (`talos-pve-cp-0`) runs Talos v1.12.3. The stalls
 
 Cascading failure on 2026-03-30: removing pve-cp-0 during debugging left 2-member etcd.
 VPS nodes (no `NoSchedule` taint) absorbed workload pods → OOM → nebula tunnel broke →
-etcd no leader → full cluster outage. See <debug/wyrm2-chrome-network-changed.md>.
+etcd no leader → full cluster outage. (The wyrm2 Chrome `ERR_NETWORK_CHANGED`
+note, `debug/wyrm2-chrome-network-changed.md`, has since been trimmed.)
 
 ## Fix Applied: `clearcpuid=510` on host (2026-03-31)
 
@@ -381,5 +382,4 @@ All items verified:
 ## Related
 
 - <debug/pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
-- <debug/wyrm2-chrome-network-changed.md> — Chrome ERR_NETWORK_CHANGED (downstream effect)
 - <debug/atlas/wyrm2-freezes.md> — wyrm2 QXL TTM bug (different issue, resolved)

@@ -32,7 +32,7 @@ Created `BackendTLSPolicy` resource referencing `kube-root-ca.crt` ConfigMap
 for upstream CA validation. Resource was accepted (valid CRD) but had no
 `.status` — Cilium never processed it. The apiserver received plain HTTP.
 
-See <../k8s/kube-api-proxy/> for the original design in the previous commit.
+See <../../k8s/kube-api-proxy/> for the original design in the previous commit.
 
 ### 2. `appProtocol: https` via GEP-1911
 
@@ -100,9 +100,9 @@ This works because:
 
 ## Files
 
-| File                                   | Purpose                                         |
-| -------------------------------------- | ----------------------------------------------- |
-| <../k8s/kube-api-proxy/service.yaml>   | nginx proxy Deployment + Service + ConfigMap    |
-| <../k8s/kube-api-proxy/httproute.yaml> | HTTPRoute → kubeapi-proxy:8080                  |
-| <../k8s/kube-api-proxy/README.md>      | Topology and design rationale                   |
-| <../terraform/main/cilium-values.yaml> | `enableAppProtocol: true` (kept for future use) |
+| File                                      | Purpose                                         |
+| ----------------------------------------- | ----------------------------------------------- |
+| <../../k8s/kube-api-proxy/service.yaml>   | nginx proxy Deployment + Service + ConfigMap    |
+| <../../k8s/kube-api-proxy/httproute.yaml> | HTTPRoute → kubeapi-proxy:8080                  |
+| <../../k8s/kube-api-proxy/README.md>      | Topology and design rationale                   |
+| <../../terraform/main/cilium-values.yaml> | `enableAppProtocol: true` (kept for future use) |

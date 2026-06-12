@@ -1593,7 +1593,7 @@ not the module level. A 1300-module SCC closing through one
 constraining `(mod_A, mod_B)` edge surfaces as "binding `iRe` in
 `mod_A` reads binding `Y` in `mod_B` at-init; move them together,"
 not "you have a cycle of 1300 modules." See
-[validation.rs::render_cycle_summary](validation.rs) for the
+[validation.rs::render_cycle_summary](../validation.rs) for the
 binding-pair blame format.
 
 ### Corollary: the role of the validator

@@ -174,16 +174,6 @@ local-only runs that need the session config, use `bazelisk run //target -- ...`
 RBE-bound work (`bbr ...`) is unaffected because runner VMs don't use the session
 truststore.
 
-### Updating `requirements_bazel.txt`
-
-Use RBE to build, download the output, then regenerate the Gazelle manifest locally:
-
-```bash
-bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
-cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
-bb run //devinfra:gazelle_python_manifest.update
-```
-
 ### Unpushed commits
 
 `bbr` aborts if local `devel` differs from `origin/devel`. Fix: `git push` first, or use a feature branch.
