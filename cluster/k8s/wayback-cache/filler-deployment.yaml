@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: wayback-cache-filler
+  name: wayback-cache-filler-workers
   namespace: wayback-cache
   labels:
-    app.kubernetes.io/name: wayback-cache
+    app.kubernetes.io/name: wayback-cache-filler
     app.kubernetes.io/component: filler
   annotations:
     reloader.stakater.com/auto: "true"
@@ -12,12 +12,12 @@ spec:
   replicas: 5
   selector:
     matchLabels:
-      app.kubernetes.io/name: wayback-cache
+      app.kubernetes.io/name: wayback-cache-filler
       app.kubernetes.io/component: filler
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: wayback-cache
+        app.kubernetes.io/name: wayback-cache-filler
         app.kubernetes.io/component: filler
     spec:
       nodeSelector:
@@ -28,14 +28,14 @@ spec:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: wayback-cache
+              app.kubernetes.io/name: wayback-cache-filler
               app.kubernetes.io/component: filler
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
                 matchLabels:
-                  app.kubernetes.io/name: wayback-cache
+                  app.kubernetes.io/name: wayback-cache-filler
                   app.kubernetes.io/component: filler
               topologyKey: kubernetes.io/hostname
       securityContext:

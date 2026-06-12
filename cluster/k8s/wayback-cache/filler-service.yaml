@@ -4,11 +4,11 @@ metadata:
   name: wayback-cache-filler
   namespace: wayback-cache
   labels:
-    app.kubernetes.io/name: wayback-cache
+    app.kubernetes.io/name: wayback-cache-filler
     app.kubernetes.io/component: filler
 spec:
   selector:
-    app.kubernetes.io/name: wayback-cache
+    app.kubernetes.io/name: wayback-cache-filler
     app.kubernetes.io/component: filler
   ports:
     - port: 8080
