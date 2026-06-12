@@ -1,10 +1,9 @@
 # Wayback write-through archive service plan
 
-Status: plan drafted 2026-06-12; v0 replacement PR in progress. The PR
-replaces nginx/PVC `wayback-cache` in place with one Rust archive-service pod,
-one CNPG instance, and SeaweedFS S3 replay bodies. After merge, wait for image
-publish and Flux reconcile, smoke-test the live service, then run the eval
-comparison.
+Status: plan drafted 2026-06-12; v0 replacement merged, reconciled, and
+smoke-tested. The PR replaced nginx/PVC `wayback-cache` in place with one Rust
+archive-service pod, one CNPG instance, and SeaweedFS S3 replay bodies. The
+first full cold eval completed; see "First eval result" below.
 Companion to
 <../plans/wayback_ia_throttling.md>, <../wayback_proxy/README.md>, and
 <../docs/archive_org_apis.md>.
@@ -33,6 +32,69 @@ The per-agent `wayback_proxy` remains the policy layer for intercepted live-web
 URLs: it enforces `WAYBACK_AS_OF`, rejects future captures, emits evidence
 manifests, and points at this cluster service as its upstream.
 
+## First eval result
+
+Run date: 2026-06-12. Job: `claude-sandbox/loom-gym-eval`. Target:
+`http://wayback-cache.wayback-cache.svc.cluster.local:8080`. Model/config:
+`glm-4.5`, `--task-filter manifold-`, `--max-samples 8`, old
+`message_limit=80`.
+
+Result:
+
+- status: success;
+- wall time: 2:22:15;
+- submitted answers: 15/33;
+- no-answer / `nan`: 18/33;
+- mean proper-loss over submitted samples: 1.218;
+- total model usage: 15,044,226 tokens;
+- served fetch mentions in final driver summary: 1,084;
+- upstream-error records in final driver summary: `855x 503`, `5x 403`.
+
+This did not beat the previous nginx/PVC cache runs on score, wall time, or
+submission rate. It did change the failure mode: direct IA refusals/`502`s are
+no longer the primary visible problem, but archive-service `503` backpressure
+and slow cold acquisition still make agents spend too much of the loop on failed
+or delayed archive probes. That is acceptable for a first cold-fill proof of
+plumbing, not sufficient for the eval goal.
+
+Important caveat: this run predated the merged eval-harness update that raises
+the default message budget to `1000` and enables Inspect summary compaction with
+`--compaction-threshold-tokens 115000` for the GLM-4.5 job. That config is still
+useful, but cache warmth is unlikely to solve the core problem by itself:
+agents choose new URLs, so online miss behavior remains the eval-critical path.
+
+Follow-up diagnosis: the high-error URLs generally were not unarchived. For the
+worst sample (`scotus-upholds-trump-tariffs`), the archive DB has Availability
+`200` rows and replay `200` rows for all six unique fetched sites at or before
+the task's `2026-01-10` clamp. A live Availability probe for
+`http://www.reuters.com/` returned `200` in about 0.3s, but the exact CDX query
+for the same URL/as-of waited about 60s and returned our
+`503 archive acquisition is backing off`. Metrics at that point showed
+`wayback_archive_limiter_limit{endpoint="cdx"} 1` and
+`wayback_archive_limiter_in_flight{endpoint="cdx"} 1`. That means fresh CDX
+misses can spend the whole queue budget waiting for a slot rather than proving
+anything about capture availability.
+
+Immediate follow-ups:
+
+- limiter permits are now cancellation-safe/RAII in the Rust archive service, so
+  dropped or wedged acquisitions release `in_flight` without recording a false
+  health sample;
+- acquisition failures now emit counters/logs split by endpoint, reason, and
+  upstream status, so queue-wait `503` can be separated from upstream
+  timeout/backoff `503`;
+- after deploy, manually reprobe the known bad CDX path and burst cold misses to
+  verify `in_flight` returns to zero and the new reason counters move;
+- then rerun the 33-task panel with the 1000-turn + compaction job config;
+- record archive-service status counters by endpoint/path in final eval notes,
+  not just the driver-level `503` aggregate;
+- reduce cache-side `503` volume from acquisition backpressure: CDX stayed at
+  concurrency 1 under load, which protects IA but serializes cold misses enough
+  to hurt the agent loop;
+- `wayback_proxy` treats `503 + Retry-After` as an enforced wait/retry while it
+  still has retry budget, and returns `503 + Retry-After` to the agent only when
+  that wait would exceed the proxy budget.
+
 ## Non-goals
 
 - Do not try to enumerate or prefetch the eval URL universe. Agents discover
@@ -45,7 +107,7 @@ manifests, and points at this cluster service as its upstream.
 
 ## Current reality
 
-Before this PR, `cluster/k8s/wayback-cache/` was nginx `proxy_cache`. The v0
+Before the replacement, `cluster/k8s/wayback-cache/` was nginx `proxy_cache`. The v0
 replacement keeps the `wayback-cache` Service/hostname but swaps the backend to
 the Rust archive service. The nginx behavior below is the baseline being
 replaced.
@@ -472,16 +534,17 @@ Follow-up hardening:
 
 Post-merge rollout checklist:
 
-1. Confirm GHCR image publish and Flux image automation update the
+1. ✅ Confirm GHCR image publish and Flux image automation update the
    `wayback-cache` Deployment image.
-2. Confirm Flux reconciles `wayback-cache-namespace`, `wayback-archive-db`,
+2. ✅ Confirm Flux reconciles `wayback-cache-namespace`, `wayback-archive-db`,
    `seaweedfs-wayback-archive-bucket`, `seaweedfs-secrets`, and `wayback-cache`.
-3. Smoke-test in-cluster `/healthz`, `/metrics`, `/wayback/available`, `/cdx`,
+3. ✅ Smoke-test in-cluster `/healthz`, `/metrics`, `/wayback/available`, `/cdx`,
    and replay miss fill.
-4. Smoke-test public `wayback-cache.allegedly.works` through the bearer-auth
+4. ✅ Smoke-test public `wayback-cache.allegedly.works` through the bearer-auth
    `:8090` listener.
-5. Run the eval comparison against the replacement service and compare it to the
-   prior approaches.
+5. ✅ Run the first cold eval comparison against the replacement service.
+6. TODO: fix the stuck/leaked CDX limiter path, then rerun with the merged
+   1000-turn + compaction eval job config.
 
 ## Acceptance criteria
 

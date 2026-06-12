@@ -1,6 +1,6 @@
 # Wayback cache vs. Internet Archive rate-limiting — findings & plan
 
-Status as of **2026-06-11**. Handoff for whoever next works on making the
+Status as of **2026-06-12**. Handoff for whoever next works on making the
 `loom/gym` eval's archived web access reliable. Companion to
 <../wayback_proxy/README.md> (the proxy implementation),
 <../docs/archive_org_apis.md> (API notes), and <../gym/TODO.md>.
@@ -8,17 +8,22 @@ Status as of **2026-06-11**. Handoff for whoever next works on making the
 ## TL;DR
 
 The `loom/gym` eval now runs end-to-end in `claude-sandbox` (it was fully hung;
-see "What shipped" below). The remaining quality problem is **archive.org
-failing a large fraction of our cold CDX-index queries** — typically ~900-950
-HTTP `502`/`504` per 33-task run — which makes agents loop on failed fetches and
-burn their message budget, yielding ~8-13 `nan` (no-answer) samples per run.
+see "What shipped" below). The original nginx/PVC cache failure was
+**archive.org failing a large fraction of cold CDX-index queries** — typically
+~900-950 HTTP `502`/`504` per 33-task run — which made agents loop on failed
+fetches and burn their message budget, yielding ~8-13 `nan` (no-answer) samples
+per run.
 
-We added Prometheus metrics and proved that the static mitigations we tried
-(bigger keepalive pool, longer CDX TTL, lower concurrency) **shuffle the failure
-mode without reducing the failure volume**. The next moves are _not_ more static
-tuning: **(1) route the timestamp clamp off the rate-limited CDX endpoint onto
-the availability API; (2) capture IA's own rate-limit signal and back off
-adaptively.** Details below.
+The Rust write-through archive replacement is now merged/deployed and changed
+the failure shape, but did **not** improve the cold eval outcome yet. The
+2026-06-12 run completed in 2:22:15 with 15/33 submissions, 18/33 no-answer
+samples, mean proper-loss 1.218 over submitted samples, and 860 upstream-error
+records in the driver summary (`855x 503`, `5x 403`). The old direct IA
+TCP-refusal / `502` mode is gone; the visible failure is now cache-side `503`
+backpressure/acquisition miss delay. The next PR fixes the stuck/leaked CDX
+limiter path, adds queue-timeout/upstream-failure visibility, and verifies proxy
+`503 + Retry-After` retry behavior. After it deploys, rerun with the merged
+1000-turn + Inspect compaction config.
 
 ## What shipped this session (all merged to `devel`)
 
@@ -70,6 +75,93 @@ Conclusion: the bottleneck is **IA failing our cold-CDX volume regardless of how
 politely we hold the socket**. Levers that can actually move it must _reduce or
 reroute that cold volume_, or _react_ to IA's failures — not adjust connection
 mechanics.
+
+## Rust archive cold-run result (2026-06-12)
+
+After replacing the nginx/PVC cache with `loom/wayback_archive` and deploying it
+under the existing `wayback-cache` service, the first full eval was:
+
+- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 8`,
+  `message_limit=80` (the run predated the merged 1000-turn + compaction config);
+- job: `claude-sandbox/loom-gym-eval`, completed successfully;
+- wall time: 2:22:15;
+- submitted answers: 15/33;
+- no-answer / `nan`: 18/33;
+- mean proper-loss over submitted samples: 1.218;
+- total model usage: 15,044,226 tokens
+  (`1,163,969` input, `13,505,106` cache read, `375,151` output);
+- served fetch mentions in the driver summary: 1,084;
+- upstream-error records in the driver summary: `855x 503`, `5x 403`.
+
+Worst upstream-error samples:
+
+| sample                                | result | upstream errors     |
+| ------------------------------------- | ------ | ------------------- |
+| `scotus-upholds-trump-tariffs`        | nan    | `65x 503`           |
+| `labor-wins-2025-australian-election` | nan    | `53x 503`, `1x 403` |
+| `trump-2025-nobel-peace-prize`        | scored | `46x 503`           |
+| `russia-ukraine-ceasefire-aug-2025`   | scored | `43x 503`, `1x 403` |
+| `verstappen-2024-f1-title`            | nan    | `36x 503`, `1x 403` |
+| `afd-beats-spd-2025`                  | nan    | `35x 503`           |
+| `uk-wealth-tax-2025`                  | scored | `35x 503`           |
+| `capital-one-discover-merger`         | nan    | `34x 503`           |
+| `mangione-murder-conviction-2025`     | nan    | `33x 503`           |
+| `us-govt-shutdown-2025`               | nan    | `32x 503`           |
+
+Interpretation:
+
+- This is worse than the prior nginx/PVC runs on wall time and no-answer rate.
+  Do not expect cache warmth alone to fix this: agents branch to new URLs, so a
+  second run only partially reuses the first run's fills.
+- The no-answer samples are still non-submissions after exhausting the agent
+  loop, not evaluator crashes. Partial structured logs showed every no-answer
+  sample available at that point had exactly 80 messages and an empty answer
+  (`JSONDecodeError`); final logs show the same empty-answer signature for the
+  additional no-answer samples.
+- The failure mode moved from direct IA connection refusals / IA `502` to
+  archive-service `503` backpressure while acquisitions are slow or backing off.
+  That is the right _shape_ operationally, but it still consumes too much agent
+  budget.
+- A post-merge metrics scrape showed no active limiter backoff, with limits
+  `availability=16`, `cdx=1`, `replay=8` and one in-flight CDX/replay request at
+  scrape time. CDX being pinned at `1` during/after the run is consistent with
+  the service protecting IA but serializing enough cold misses to hurt eval
+  throughput. Follow-up live probes showed the sharper issue: with
+  `limit=1` and `in_flight=1`, fresh CDX misses wait the 60s queue budget and
+  return `503 + Retry-After` without ever proving the URL has no capture.
+
+Follow-up diagnosis on the highest-error URLs:
+
+- The failures were mostly **not missing captures**. For
+  `scotus-upholds-trump-tariffs`, the eval only fetched six unique sites
+  (`reuters`, `apnews`, `bbc`, `wsj`, `abajournal`, `foxnews`) but recorded
+  `65x 503`. The archive DB has Availability `200` rows and replay `200` rows
+  at or before `2026-01-10T23:59:59` for all six.
+- A live probe for the exact SCOTUS CDX query
+  `url=http://www.reuters.com/&to=20260110235959&output=json&limit=-1`
+  returned our `503` after about 60s with body
+  `archive acquisition is backing off`, while the corresponding Availability
+  query returned `200` in about 0.3s with capture `20260110235953`.
+- Partial structured samples show the same pattern. `afd-beats-spd-2025`
+  served 50 captures; its 35 upstream errors were our backing-off `503`s
+  (`31` CDX, `4` replay). `verstappen-2024-f1-title` had 36 backing-off CDX
+  `503`s plus one real CDX `403` for an IA-auth-gated query.
+- The durable fix should come before another comparison run: limiter permits are
+  now cancellation-safe/RAII so a dropped or wedged acquisition cannot leak
+  `in_flight`, and archive acquisition failures now emit counters/logs split by
+  endpoint, reason, and upstream status (`single_flight_queue_timeout`,
+  `limiter_queue_timeout`, `upstream_retry_after`,
+  `upstream_transient_status`, `upstream_fetch_timeout`,
+  `upstream_fetch_error`). The 1000-turn + compaction config is still useful,
+  but it should not mask a stuck CDX limiter.
+
+Next comparison should use the merged eval config from #2141:
+`--message-limit 1000` plus `--compaction-threshold-tokens 115000` for GLM-4.5.
+Run it after deploying the limiter/telemetry PR so we compare against a healthy
+online-fill service rather than a CDX queue that has stopped admitting new work.
+Track: submissions, wall time, served fetches, archive `503` by reason/status,
+IA transient classifications, limiter limits/in-flight, queue wait expirations,
+and second-run hit rate as a secondary signal.
 
 ## What we learned about archive.org's behavior
 

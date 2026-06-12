@@ -69,24 +69,28 @@ async def addon(fake_upstream: str, manifest: io.StringIO) -> AsyncIterator[Wayb
 @pytest.fixture
 def fetch(addon: WaybackAddon) -> Fetch:
     async def fetch_via_addon(url: str) -> FetchResult:
-        # Set request components from the URL directly (rather than the
-        # round-trip-lossy Request.url setter) so nested archive paths like
-        # /web/<ts>/https://… survive verbatim into the addon.
-        parsed = URL(url, encoded=True)
-        assert parsed.host is not None
-        flow = tflow.tflow()
-        flow.response = None
-        flow.request.scheme = parsed.scheme
-        flow.request.host = parsed.host
-        flow.request.port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        flow.request.path = parsed.raw_path_qs
-        flow.request.headers["host"] = parsed.host
-        await addon.request(flow)
-        response = flow.response
-        assert response is not None, "addon must set flow.response for every request"
-        return FetchResult(status=response.status_code, headers=response.headers, body=response.content)
+        return await _fetch_with_addon(addon, url)
 
     return fetch_via_addon
+
+
+async def _fetch_with_addon(addon: WaybackAddon, url: str) -> FetchResult:
+    # Set request components from the URL directly (rather than the
+    # round-trip-lossy Request.url setter) so nested archive paths like
+    # /web/<ts>/https://… survive verbatim into the addon.
+    parsed = URL(url, encoded=True)
+    assert parsed.host is not None
+    flow = tflow.tflow()
+    flow.response = None
+    flow.request.scheme = parsed.scheme
+    flow.request.host = parsed.host
+    flow.request.port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    flow.request.path = parsed.raw_path_qs
+    flow.request.headers["host"] = parsed.host
+    await addon.request(flow)
+    response = flow.response
+    assert response is not None, "addon must set flow.response for every request"
+    return FetchResult(status=response.status_code, headers=response.headers, body=response.content)
 
 
 async def test_serves_newest_capture_at_or_before_as_of(fetch: Fetch) -> None:
@@ -125,6 +129,23 @@ async def test_retry_after_503_is_waited_and_retried(fetch: Fetch, manifest: io.
     assert records[0]["status"] == 503
     assert records[0]["headers"]["retry-after"] == "0"
     assert records[1]["kind"] == "served"
+
+
+async def test_retry_after_503_returns_to_agent_when_wait_exceeds_budget(
+    fake_upstream: str, manifest: io.StringIO
+) -> None:
+    config = Config(as_of=fake_ia.AS_OF, upstream=fake_upstream, port=0, upstream_retry_max_wait_seconds=0.001)
+    async with aiohttp.ClientSession() as session:
+        addon = WaybackAddon(WaybackResolver(config, session, manifest))
+        result = await _fetch_with_addon(addon, fake_ia.REPLAY_RETRY_AFTER_EXHAUSTS_BUDGET_URL)
+
+    assert result.status == 503
+    assert result.headers["retry-after"] == "5"
+
+    records = [json.loads(line) for line in manifest.getvalue().splitlines()]
+    assert records[0]["kind"] == "upstream_error"
+    assert records[0]["status"] == 503
+    assert records[0]["headers"]["retry-after"] == "5"
 
 
 async def test_manifest_records_served_evidence(fetch: Fetch, manifest: io.StringIO) -> None:
