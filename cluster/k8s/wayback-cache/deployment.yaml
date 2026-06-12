@@ -5,111 +5,102 @@ metadata:
   namespace: wayback-cache
   labels:
     app.kubernetes.io/name: wayback-cache
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: wayback-cache
-  strategy:
-    type: Recreate # RWO PVC; restart also re-resolves web.archive.org DNS
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: wayback-cache
     spec:
       nodeSelector:
-        # Same zone pinning as other seaweedfs-ovh consumers (forgejo): the
-        # cache lives on always-on OVH nodes, independent of home Proxmox.
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
-        # nginx:alpine workers run as uid/gid 101; make the PVC writable.
-        fsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
-        - name: nginx
-          image: docker.io/library/nginx:alpine
-          ports:
-            - containerPort: 8080
-              name: http
-            - containerPort: 8090
-              name: authed
+        - name: archive
+          image: ghcr.io/agentydragon/wayback-archive:latest # {"$imagepolicy": "flux-system:wayback-archive"}
+          imagePullPolicy: Always
           env:
-            # nginx:alpine entrypoint renders templates/*.template with
-            # envsubst, substituting only WAYBACK_CACHE_TOKEN (the filter) so
-            # nginx's own $variables survive. Output overwrites nginx.conf.
-            - name: WAYBACK_CACHE_TOKEN
+            - name: RUST_LOG
+              value: info
+            - name: WAYBACK_ARCHIVE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: wayback-archive-db-app
+                  key: uri
+            - name: WAYBACK_ARCHIVE_WEB_UPSTREAM
+              value: https://web.archive.org
+            - name: WAYBACK_ARCHIVE_AVAILABILITY_UPSTREAM
+              value: https://archive.org
+            - name: WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS
+              value: "60"
+            - name: WAYBACK_ARCHIVE_MAX_BODY_BYTES
+              value: "10485760"
+            - name: WAYBACK_ARCHIVE_MAX_METADATA_BYTES
+              value: "10485760"
+            - name: WAYBACK_ARCHIVE_S3_ENDPOINT
+              value: http://seaweedfs-s3.seaweedfs.svc:8333
+            - name: WAYBACK_ARCHIVE_S3_BUCKET
+              value: wayback-archive
+            - name: WAYBACK_ARCHIVE_S3_REGION
+              value: us-east-1
+            - name: WAYBACK_ARCHIVE_S3_ALLOW_HTTP
+              value: "true"
+            - name: WAYBACK_ARCHIVE_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-wayback-archive
+                  key: accessKey
+            - name: WAYBACK_ARCHIVE_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-wayback-archive
+                  key: secretKey
+            - name: WAYBACK_ARCHIVE_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: wayback-cache-token
                   key: token
-            - name: NGINX_ENVSUBST_FILTER
-              value: WAYBACK_CACHE_TOKEN
-            - name: NGINX_ENVSUBST_OUTPUT_DIR
-              value: /etc/nginx
-          volumeMounts:
-            - name: config
-              mountPath: /etc/nginx/templates/nginx.conf.template
-              subPath: nginx.conf
-              readOnly: true
-            - name: cache
-              mountPath: /cache
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          # Probes hit tier 1, which serves cache hits without touching the
-          # IA rate limiter — limit_req delays cannot fail probes.
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: authed
+              containerPort: 8090
+              protocol: TCP
           livenessProbe:
-            tcpSocket:
-              port: 8080
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 10
-          readinessProbe:
-            tcpSocket:
-              port: 8080
-            initialDelaySeconds: 2
-            periodSeconds: 5
-        # Turns the nginx access log into Prometheus metrics. nginx streams the
-        # lean `wayback_metrics` line over loopback syslog (udp :5140, same pod
-        # netns); this parses it and serves /metrics on :4040 (scraped by the
-        # ServiceMonitor). Stateless — no shared log file, so no rotation needed.
-        - name: metrics
-          image: quay.io/martinhelmich/prometheus-nginxlog-exporter:v1.11.0
-          args:
-            - -config-file=/etc/nginxlog-exporter/config.hcl
-          ports:
-            - containerPort: 4040
-              name: metrics
-          volumeMounts:
-            - name: exporter-config
-              mountPath: /etc/nginxlog-exporter
-              readOnly: true
+            timeoutSeconds: 3
           resources:
             requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
               cpu: 100m
-              memory: 64Mi
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 65534
             capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-      volumes:
-        - name: config
-          configMap:
-            name: wayback-cache-config
-        - name: exporter-config
-          configMap:
-            name: wayback-cache-exporter-config
-        - name: cache
-          persistentVolumeClaim:
-            claimName: wayback-cache-data-ovh
+              drop:
+                - ALL

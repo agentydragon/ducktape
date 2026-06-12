@@ -1,6 +1,6 @@
 # Wayback write-through archive service plan
 
-Status: plan drafted 2026-06-12; first storage implementation slice in progress.
+Status: plan drafted 2026-06-12; v0 replacement implementation in progress.
 Companion to
 <../plans/wayback_ia_throttling.md>, <../plans/wayback_proxy.md>, and
 <../plans/archive_org_apis.md>.
@@ -41,7 +41,8 @@ manifests, and points at this cluster service as its upstream.
 
 ## Current reality
 
-Today `cluster/k8s/wayback-cache/` is nginx `proxy_cache`.
+Until this replacement, `cluster/k8s/wayback-cache/` was nginx
+`proxy_cache`.
 
 What it does well:
 
@@ -421,17 +422,22 @@ Current implementation slice:
   replay bodies.
 - Stable `body_too_large` policy results and non-caching IA transient replay
   failures.
+- Cluster deployment on the existing `wayback-cache` service/hostname, replacing
+  the nginx/PVC implementation instead of running as a parallel v2.
+- Public bearer-auth compatibility through a dedicated `:8090` archive-service
+  listener using the existing `wayback-cache-token`.
+- Prometheus metrics exported directly by the archive service.
+- `wayback_proxy` retry/wait handling for `503 + Retry-After`.
 
-Still needed before replacing nginx:
+Follow-up hardening:
 
 - Validated Availability fallback to CDX inside the archive service, if we want
   the service itself to make timestamp-selection decisions rather than leaving
   that to `wayback_proxy`.
-- Cross-replica Postgres fill leases.
+- TODO before scaling replicas above one: add Postgres-backed fill leases or
+  advisory locks keyed by endpoint and semantic request key so identical misses
+  across pods cannot duplicate IA fetches.
 - Archive URL alias rows for IA canonicalization redirects.
-- Cluster deployment, CNPG cluster, SeaweedFS bucket credentials, image
-  automation, and metrics.
-- `wayback_proxy` retry/wait handling for `503 + Retry-After`.
 
 1. Build the archive service against `fake_ia.py`-style tests.
 2. Add CNPG metadata schema plus SeaweedFS S3 blob storage wiring.
@@ -441,16 +447,15 @@ Still needed before replacing nginx:
 5. Add CDX passthrough/storage for direct clamped CDX requests and fallback.
 6. Add adaptive per-endpoint acquisition concurrency/backoff and remove blind
    retry amplification.
-7. Deploy one replica alongside current nginx as `wayback-cache-v2`.
-8. Point one eval job at v2 and compare:
+7. Replace the current nginx/PVC `wayback-cache` Deployment with one archive
+   service replica backed by CNPG metadata and SeaweedFS S3 replay bodies.
+8. Point one eval job at the replacement service and compare:
    - IA requests per run;
    - transient `502/503/504` count;
    - cache/shard hit rate;
    - `nan` samples;
    - scored mean proper loss;
    - second-run reuse of objects filled by the first run.
-9. Replace the current `wayback-cache` service once v2 is better on both
-   coverage and IA pressure.
 
 ## Acceptance criteria
 
@@ -485,5 +490,3 @@ Still needed before replacing nginx:
   metadata and negative facts may need refresh windows for backfills/takedowns.
 - HEAD and Range support: likely unnecessary for the eval, but direct clients
   may eventually expect them.
-- Whether to keep nginx as a static file frontend in front of the archive
-  service after v0, or let the service serve blobs directly.

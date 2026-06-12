@@ -2,20 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - namespace.yaml
-  - pvc.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
   - servicemonitor.yaml
   - token.sops.yaml
-
-configMapGenerator:
-  - name: wayback-cache-config
-    namespace: wayback-cache
-    files:
-      - config/nginx.conf
-  - name: wayback-cache-exporter-config
-    namespace: wayback-cache
-    files:
-      - config.hcl=config/nginxlog-exporter.hcl

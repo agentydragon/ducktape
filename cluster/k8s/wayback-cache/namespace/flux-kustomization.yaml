@@ -1,19 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: wayback-archive-db
+  name: wayback-cache-namespace
   namespace: flux-system
 spec:
   retryInterval: 1m
   interval: 10m
-  timeout: 10m
+  timeout: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/wayback-cache/db
-  prune: true
+  path: ./cluster/k8s/wayback-cache/namespace
+  prune: false
   wait: true
-  dependsOn:
-    - name: wayback-cache-namespace
-    - name: cnpg
-    - name: local-path-provisioner

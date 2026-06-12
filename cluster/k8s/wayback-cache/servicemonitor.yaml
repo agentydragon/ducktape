@@ -8,6 +8,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: wayback-cache
   endpoints:
-    - port: metrics
+    - port: http
       path: /metrics
       interval: 30s

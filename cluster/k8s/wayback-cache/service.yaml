@@ -1,6 +1,5 @@
-# ClusterIP only, deliberately: the gateway only exposes public hostnames,
-# and a publicly reachable pull-through cache would be an open relay to
-# web.archive.org. Dev access: kubectl port-forward.
+# The unauthed :8080 listener stays ClusterIP-only. The public HTTPRoute targets
+# the bearer-authed :8090 listener for out-of-cluster eval/dev agents.
 apiVersion: v1
 kind: Service
 metadata:
@@ -21,8 +20,3 @@ spec:
       targetPort: 8090
       protocol: TCP
       name: authed
-    # prometheus-nginxlog-exporter sidecar; scraped by the ServiceMonitor.
-    - port: 4040
-      targetPort: 4040
-      protocol: TCP
-      name: metrics

@@ -297,10 +297,10 @@ resources:
   - proxmox-proxy/agent-rbac/flux-kustomization.yaml
 
   # --- wayback-cache ---
-  - wayback-cache/flux-kustomization.yaml
+  - wayback-cache/namespace/flux-kustomization.yaml
   - wayback-cache/agent-rbac/flux-kustomization.yaml
   - wayback-cache/db/flux-kustomization.yaml
-  - wayback-cache/archive/flux-kustomization.yaml
+  - wayback-cache/flux-kustomization.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml

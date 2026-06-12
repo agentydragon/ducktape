@@ -14,5 +14,5 @@ spec:
     name: flux-system
   timeout: 2m
   dependsOn:
-    - name: wayback-cache
+    - name: wayback-cache-namespace
     - name: claude-rbac

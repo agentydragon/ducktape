@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::{OriginalUri, State};
-use axum::http::{HeaderName, HeaderValue, Response, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header};
 use axum::{Router, routing::get};
 use log::info;
 use wayback_archive::{
@@ -74,17 +74,50 @@ async fn main() -> Result<()> {
         .with_max_body_bytes(max_body_bytes)
         .with_max_metadata_bytes(max_metadata_bytes),
     );
+
     let app = Router::new()
         .route("/healthz", get(|| async { "ok\n" }))
         .route("/readyz", get(|| async { "ok\n" }))
         .route("/metrics", get(metrics))
         .fallback(handle)
-        .with_state(service);
+        .with_state(service.clone());
     let address = SocketAddr::from(([0, 0, 0, 0], port));
     info!("wayback archive listening on {address}");
     let listener = tokio::net::TcpListener::bind(address).await?;
-    axum::serve(listener, app).await?;
+
+    if let Some(auth_token) = std::env::var("WAYBACK_ARCHIVE_AUTH_TOKEN")
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        let auth_port = std::env::var("WAYBACK_ARCHIVE_AUTH_PORT")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .unwrap_or(8090);
+        let auth_address = SocketAddr::from(([0, 0, 0, 0], auth_port));
+        let auth_listener = tokio::net::TcpListener::bind(auth_address).await?;
+        let auth_state = Arc::new(AuthedState {
+            service,
+            authorization_header: HeaderValue::from_str(&format!("Bearer {auth_token}"))?,
+        });
+        let auth_app = Router::new()
+            .route("/healthz", get(handle_authed_health))
+            .route("/readyz", get(handle_authed_health))
+            .fallback(handle_authed)
+            .with_state(auth_state);
+        info!("wayback archive bearer-authed listener on {auth_address}");
+        tokio::try_join!(async { axum::serve(listener, app).await }, async {
+            axum::serve(auth_listener, auth_app).await
+        },)?;
+    } else {
+        axum::serve(listener, app).await?;
+    }
     Ok(())
+}
+
+#[derive(Clone)]
+struct AuthedState {
+    service: Arc<ArchiveService>,
+    authorization_header: HeaderValue,
 }
 
 async fn handle(
@@ -92,6 +125,43 @@ async fn handle(
     OriginalUri(uri): OriginalUri,
 ) -> Response<Body> {
     into_axum_response(service.handle_request(uri.path(), uri.query()).await)
+}
+
+async fn handle_authed(
+    State(state): State<Arc<AuthedState>>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+) -> Response<Body> {
+    if !is_authorized(&state, &headers) {
+        return unauthorized_response();
+    }
+
+    into_axum_response(state.service.handle_request(uri.path(), uri.query()).await)
+}
+
+async fn handle_authed_health(
+    State(state): State<Arc<AuthedState>>,
+    headers: HeaderMap,
+) -> Response<Body> {
+    if !is_authorized(&state, &headers) {
+        return unauthorized_response();
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from("ok\n"))
+        .expect("response construction should not fail")
+}
+
+fn is_authorized(state: &AuthedState, headers: &HeaderMap) -> bool {
+    headers.get(header::AUTHORIZATION) == Some(&state.authorization_header)
+}
+
+fn unauthorized_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header(header::WWW_AUTHENTICATE, "Bearer")
+        .body(Body::from("unauthorized\n"))
+        .expect("response construction should not fail")
 }
 
 async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<Body> {

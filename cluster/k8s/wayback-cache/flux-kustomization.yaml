@@ -23,5 +23,10 @@ spec:
       name: wayback-cache
       namespace: wayback-cache
   dependsOn:
-    - name: seaweedfs-csi
-    - name: monitoring-stack # ServiceMonitor CRD for the metrics sidecar
+    - name: wayback-cache-namespace
+    - name: wayback-archive-db
+    - name: seaweedfs-wayback-archive-bucket
+    - name: seaweedfs-secrets
+    - name: reflector
+    - name: flux-image-automation-ghcr
+    - name: monitoring-stack # ServiceMonitor CRD
