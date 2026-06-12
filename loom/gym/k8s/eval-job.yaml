@@ -66,6 +66,8 @@ spec:
             - "8"
             - --wayback-upstream
             - http://wayback-cache.wayback-cache.svc.cluster.local:8080
+            - --langfuse-tags
+            - loom-gym,wayback-archive,manifold
             - --log-dir
             - /work/logs
           env:

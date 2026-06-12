@@ -168,6 +168,16 @@ py_library(
 )
 
 py_test(
+    name = "test_agent_eval",
+    srcs = ["test_agent_eval.py"],
+    deps = [
+        ":agent_eval",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_baseline_llm",
     srcs = ["test_baseline_llm.py"],
     deps = [
