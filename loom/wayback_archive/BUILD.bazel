@@ -1,0 +1,46 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+rust_library(
+    name = "wayback_archive_lib",
+    srcs = [
+        "lib.rs",
+    ],
+    crate_name = "wayback_archive",
+    edition = "2024",
+    proc_macro_deps = [
+        "@crates//:async-trait",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:bytes",
+        "@crates//:http",
+        "@crates//:object_store",
+        "@crates//:reqwest",
+        "@crates//:sea-orm",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+        "@crates//:tokio",
+    ],
+)
+
+rust_binary(
+    name = "wayback_archive",
+    srcs = ["main.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":wayback_archive_lib",
+        "@crates//:anyhow",
+        "@crates//:axum",
+        "@crates//:env_logger",
+        "@crates//:log",
+        "@crates//:tokio",
+    ],
+)
+
+rust_test(
+    name = "wayback_archive_test",
+    crate = ":wayback_archive_lib",
+)
