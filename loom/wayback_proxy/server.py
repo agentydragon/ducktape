@@ -6,7 +6,7 @@ CA cert lives at ``<confdir>/mitmproxy-ca-cert.pem`` (generated on first run);
 mount that into the agent's trust store so ``https://`` requests validate.
 
 Manifest evidence lines go to ``WAYBACK_MANIFEST_PATH`` (or stdout); mitmproxy
-and diagnostic logs go to stderr. See loom/plans/wayback_proxy.md and README.md.
+and diagnostic logs go to stderr. See ``loom/wayback_proxy/README.md``.
 """
 
 from __future__ import annotations

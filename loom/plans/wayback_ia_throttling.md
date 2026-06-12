@@ -2,8 +2,8 @@
 
 Status as of **2026-06-11**. Handoff for whoever next works on making the
 `loom/gym` eval's archived web access reliable. Companion to
-<wayback_proxy.md> (the proxy design), <archive_org_apis.md> (API notes), and
-<../gym/TODO.md>.
+<../wayback_proxy/README.md> (the proxy implementation),
+<../docs/archive_org_apis.md> (API notes), and <../gym/TODO.md>.
 
 ## TL;DR
 

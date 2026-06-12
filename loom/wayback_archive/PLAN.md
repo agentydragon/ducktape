@@ -6,8 +6,8 @@ one CNPG instance, and SeaweedFS S3 replay bodies. After merge, wait for image
 publish and Flux reconcile, smoke-test the live service, then run the eval
 comparison.
 Companion to
-<../plans/wayback_ia_throttling.md>, <../plans/wayback_proxy.md>, and
-<../plans/archive_org_apis.md>.
+<../plans/wayback_ia_throttling.md>, <../wayback_proxy/README.md>, and
+<../docs/archive_org_apis.md>.
 
 ## Summary
 

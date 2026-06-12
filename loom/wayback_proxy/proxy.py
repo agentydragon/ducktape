@@ -5,7 +5,7 @@ at-or-before ``WAYBACK_AS_OF``, served as raw ``id_`` bytes (no IA banner or
 rewriting). This module is the framework-neutral core: it takes a target
 ``URL`` and returns a :class:`ProxyResponse` (or raises one of the typed
 errors below). The mitmproxy wiring that turns it into a forward/MITM proxy
-lives in ``addon.py`` / ``server.py``. See loom/plans/wayback_proxy.md.
+lives in ``addon.py`` / ``server.py``. See ``loom/wayback_proxy/README.md``.
 
 Configuration (env, parsed by :class:`Config`): ``WAYBACK_AS_OF`` (required ISO
 date, inclusive), ``WAYBACK_UPSTREAM`` (default ``https://web.archive.org``;

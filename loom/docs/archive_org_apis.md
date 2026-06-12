@@ -1,8 +1,8 @@
-# Archive.org APIs relevant to the Wayback proxy/cache
+# Archive.org APIs for Loom Wayback Access
 
-Status: notes from official Internet Archive developer docs checked on
-2026-06-11, plus loom-specific observations from the current
-`wayback-cache`/`wayback_proxy` work.
+Reference notes from official Internet Archive developer docs checked on
+2026-06-11, plus loom-specific observations from the `wayback-cache`,
+`wayback_proxy`, and write-through archive-service work.
 
 The short version for loom: use the **Availability API** for the normal
 "pick a capture near `as_of`" path if it validates cleanly, use **Wayback

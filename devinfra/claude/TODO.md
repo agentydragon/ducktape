@@ -1,5 +1,23 @@
 # claude_hooks TODO
 
+## Session start simplification leftovers
+
+The broad simplification work is complete; only these low-priority follow-ups
+survived the deleted plan:
+
+- Consider making `ci_env.sh` a fuller CI setup step (registry logins, release
+  PAT handling) after auditing in-repo consumers of those env vars.
+- Consider splitting the statusline hook into its own package if the duplicate
+  home-manager + devshell installations become annoying enough to justify the
+  closure churn.
+- Consider caching `env_script_exports` alongside the profile instead of
+  threading it through `app.state` -> `handle_session_start()` -> session env
+  file. The current path works.
+- Revisit `DUCKTAPE_DOCKER_CLIENT_KEY` once docker-ci is reachable from RBE
+  workers; today `_common.sh` disables it, and `bbr.py` forwarding via
+  `--remote_run_header` overrides `--test_env` in a way inner Bazel flags
+  cannot unset.
+
 ## Decide whether the `bb` shim should inject the session bazelrc
 
 The Rust `bazel`/`bazelisk` shims inject `--bazelrc=<session>/bazelrc` so

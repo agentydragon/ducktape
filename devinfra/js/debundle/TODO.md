@@ -132,6 +132,12 @@ resolution through those views when it next matters.
 
 ## Completed-plan follow-ups
 
+- **Chunk IR / schedule split remains deferred.** The completed IR cleanup plan
+  left one deliberately deferred refactor: split the "everything about chunk K
+  under partition P" state into a pure `ChunkIR` plus a `Schedule` only if a
+  downstream consumer actually needs one half without the other. If this happens,
+  move the `owner_report_ids_by_binding` cache to its report-only consumer and
+  have peelability build directly from `(ir, partition)`.
 - **Inter-cell cycle policing at assignment/render time.** The exact gate does
   not reject mutually-cyclic residual cells itself; `peel/factorize.rs` reports
   them as `BlockedResidualDependency`. If that is insufficient for

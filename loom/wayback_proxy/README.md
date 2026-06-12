@@ -1,18 +1,23 @@
 # Wayback proxy — date-clamped web access for sandboxed agents
 
-The per-agent "time machine" from the [wayback proxy plan](../plans/wayback_proxy.md):
-a forward proxy that answers every URL with the newest Internet Archive capture
-at-or-before `WAYBACK_AS_OF`, served as raw `id_` bytes. Normal URLs resolve via
-the Wayback Availability API first, with CDX as a fallback for cases Availability
-does not represent cleanly (for example archived non-200 captures). No capture at
-or before the cutoff → 404. Explicit `web.archive.org/web/<ts>/…` requests are
-clamped (`ts ≤ as_of`), CDX queries get their `to=` bound clamped, and redirect
-hops are re-clamped (IA canonicalizes toward the _closest_ capture, which can
-walk forward in time). Every served response is logged as a JSONL evidence line
+The per-agent "time machine" is a forward proxy that answers every URL with the
+newest Internet Archive capture at-or-before `WAYBACK_AS_OF`, served as raw
+`id_` bytes. Normal URLs resolve via the Wayback Availability API first, with
+CDX as a fallback for cases Availability does not represent cleanly (for example
+archived non-200 captures). No capture at or before the cutoff -> 404. Explicit
+`web.archive.org/web/<ts>/...` requests are clamped (`ts <= as_of`), CDX queries
+get their `to=` bound clamped, and redirect hops are re-clamped (IA canonicalizes
+toward the _closest_ capture, which can walk forward in time). Every served
+response is logged as a JSONL evidence line
 `{kind: "served", url, capture_ts, sha256, size}` on stdout; an unexpected
-upstream failure (IA/cache HTTP ≥400 that isn't an archived error page) is logged
-on the same stream as `{kind: "upstream_error", request_url, status, body}` (body
-truncated) so a degraded run is diagnosable rather than collapsing into an opaque 502.
+upstream failure (IA/cache HTTP >=400 that isn't an archived error page) is
+logged on the same stream as
+`{kind: "upstream_error", request_url, status, body}` (body truncated) so a
+degraded run is diagnosable rather than collapsing into an opaque 502.
+
+See [Archive.org APIs for Loom Wayback Access](../docs/archive_org_apis.md) for
+the IA API contract and [loom/gym TODO](../gym/TODO.md) for current eval
+reliability follow-ups.
 
 It runs as an embedded [mitmproxy](https://mitmproxy.org/) (a
 [`WaybackAddon`](addon.py) answers every flow from the archive), so **agents

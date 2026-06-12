@@ -370,7 +370,8 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   in CI on the RBE Docker workers — no quota spent. Python stack inside the
   sandbox is `python:3.13-slim` for now; a custom image with pandas/numpy
   is a follow-up.
-- **Dated web access in the sandbox — ✅ landed** (<wayback_proxy.md>): the
+- **Dated web access in the sandbox — ✅ landed**
+  (<../wayback_proxy/README.md>): the
   harness generates a per-`as_of` sandbox compose — the agent container's
   only network route is the wayback-proxy sidecar (`loom/wayback_proxy/`),
   which answers every URL with the newest Wayback capture ≤ the task's
@@ -389,8 +390,9 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   the **in-cluster authed cache**; the first end-to-end smoke (glm-4.5, an
   open-ended no-starting-URL market) confirmed genuine open-ended archive
   research over `https://` with no URL rewriting. Follow-ups it surfaced are
-  tracked in <wayback_proxy.md> (mitmproxy `connection_strategy=lazy`,
-  per-model task refusals, cache 5xx under IA pressure).
+  tracked in <wayback_ia_throttling.md> and <../gym/TODO.md>
+  (per-model task refusals, cache 5xx under IA pressure, archive-service
+  follow-up).
 - **Bundle tasks — ✅ landed** (`bundle_tasks.py`): one dossier, one
   submission, **many named sub-questions** — more metrics per sampled
   token, and joint structure becomes scoreable. A bundle is a set of
