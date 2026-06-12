@@ -324,11 +324,11 @@ classification in the archive service because it needs Wayback-specific context.
 
 Initial v0 guesses from the eval data:
 
-| endpoint     | initial | min | max | timeout | reasoning                                                                                                                                  |
-| ------------ | ------- | --- | --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Availability | 8       | 1   | 32  | 10s     | Recent eval saw Availability stay healthy; keep it from becoming the bottleneck, but still back off on signal.                             |
-| CDX          | 2       | 1   | 6   | 120s    | CDX was around half `5xx` under the current static setup and has 10-25s latency, so start much lower than the implied old in-flight level. |
-| Replay       | 2       | 1   | 8   | 60s     | Replay was also high-`5xx`; allow modest parallelism for independent content fetches but adapt separately from CDX.                        |
+| endpoint     | initial | min | max | timeout | reasoning                                                                                                                                                                                       |
+| ------------ | ------- | --- | --- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Availability | 8       | 1   | 32  | 15s     | Recent eval saw Availability stay healthy; keep it from becoming the bottleneck, but still back off on signal.                                                                                  |
+| CDX          | 2       | 1   | 6   | 45s     | CDX was around half `5xx` under the current static setup and can hang; keep the request timeout below the 60s queue budget so one stuck fill does not pin the limiter after all waiters expire. |
+| Replay       | 2       | 1   | 8   | 60s     | Replay was also high-`5xx`; allow modest parallelism for independent content fetches but adapt separately from CDX.                                                                             |
 
 Window rules for v0:
 
@@ -342,6 +342,8 @@ Window rules for v0:
 - if `Retry-After` is present, set the endpoint limit to 0 until that deadline;
 - if a request waits more than the configured queue budget, return
   `503 + Retry-After` rather than letting the agent spin.
+- apply endpoint-specific upstream request timeouts in the IA client so stuck
+  fills are recorded as transient failures and release their limiter slots.
 
 Expose metrics per endpoint:
 

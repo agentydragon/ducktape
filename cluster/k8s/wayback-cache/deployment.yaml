@@ -44,6 +44,12 @@ spec:
               value: https://archive.org
             - name: WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS
               value: "60"
+            - name: WAYBACK_ARCHIVE_AVAILABILITY_TIMEOUT_SECONDS
+              value: "15"
+            - name: WAYBACK_ARCHIVE_CDX_TIMEOUT_SECONDS
+              value: "45"
+            - name: WAYBACK_ARCHIVE_REPLAY_TIMEOUT_SECONDS
+              value: "60"
             - name: WAYBACK_ARCHIVE_MAX_BODY_BYTES
               value: "10485760"
             - name: WAYBACK_ARCHIVE_MAX_METADATA_BYTES

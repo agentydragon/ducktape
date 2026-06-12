@@ -26,6 +26,9 @@ use tokio::time::timeout;
 pub const DEFAULT_MAX_QUEUE_WAIT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
 pub const DEFAULT_MAX_METADATA_BYTES: usize = 10 * 1024 * 1024;
+pub const DEFAULT_AVAILABILITY_TIMEOUT: Duration = Duration::from_secs(15);
+pub const DEFAULT_CDX_TIMEOUT: Duration = Duration::from_secs(45);
+pub const DEFAULT_REPLAY_TIMEOUT: Duration = Duration::from_secs(60);
 
 const RETRY_AFTER_SECONDS: u64 = 30;
 const HEALTH_WINDOW: Duration = Duration::from_secs(30);
@@ -713,10 +716,50 @@ pub struct ReqwestIaClient {
     web_upstream: String,
     availability_upstream: String,
     client: reqwest::Client,
+    timeouts: UpstreamTimeouts,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpstreamTimeouts {
+    pub availability: Duration,
+    pub cdx: Duration,
+    pub replay: Duration,
+}
+
+impl Default for UpstreamTimeouts {
+    fn default() -> Self {
+        Self {
+            availability: DEFAULT_AVAILABILITY_TIMEOUT,
+            cdx: DEFAULT_CDX_TIMEOUT,
+            replay: DEFAULT_REPLAY_TIMEOUT,
+        }
+    }
+}
+
+impl UpstreamTimeouts {
+    fn for_endpoint(self, endpoint: Endpoint) -> Duration {
+        match endpoint {
+            Endpoint::Availability => self.availability,
+            Endpoint::Cdx => self.cdx,
+            Endpoint::Replay => self.replay,
+        }
+    }
 }
 
 impl ReqwestIaClient {
     pub fn new(web_upstream: String, availability_upstream: String) -> Result<Self> {
+        Self::with_timeouts(
+            web_upstream,
+            availability_upstream,
+            UpstreamTimeouts::default(),
+        )
+    }
+
+    pub fn with_timeouts(
+        web_upstream: String,
+        availability_upstream: String,
+        timeouts: UpstreamTimeouts,
+    ) -> Result<Self> {
         Ok(Self {
             web_upstream: web_upstream.trim_end_matches('/').to_string(),
             availability_upstream: availability_upstream.trim_end_matches('/').to_string(),
@@ -725,6 +768,7 @@ impl ReqwestIaClient {
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent("ducktape-wayback-archive/1 (+agentydragon@gmail.com)")
                 .build()?,
+            timeouts,
         })
     }
 
@@ -748,6 +792,7 @@ impl ReqwestIaClient {
             .client
             .get(format!("{base_url}{path}{query_suffix}"))
             .header(reqwest::header::ACCEPT_ENCODING, "identity")
+            .timeout(self.timeouts.for_endpoint(request.key.endpoint))
             .send()
             .await?;
         let status = response.status().as_u16();
@@ -772,6 +817,7 @@ impl IaClient for ReqwestIaClient {
             .client
             .get(format!("{}{}", self.web_upstream, key.ia_path()))
             .header(reqwest::header::ACCEPT_ENCODING, "identity")
+            .timeout(self.timeouts.replay)
             .send()
             .await?;
         let status = response.status().as_u16();
@@ -1988,6 +2034,40 @@ mod tests {
         assert!(limiter.acquire().await);
         limiter.record(AcquisitionOutcome::TransientFailure).await;
         assert_eq!(limiter.current_limit().await, 2);
+    }
+
+    #[tokio::test]
+    async fn reqwest_metadata_fetch_honors_endpoint_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (_socket, _peer) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+        let client = ReqwestIaClient::with_timeouts(
+            format!("http://{address}"),
+            format!("http://{address}"),
+            UpstreamTimeouts {
+                availability: Duration::from_millis(100),
+                cdx: Duration::from_secs(5),
+                replay: Duration::from_secs(5),
+            },
+        )
+        .unwrap();
+        let request = parse_metadata_request(
+            "/wayback/available",
+            Some("url=https://example.com/&timestamp=20200101000000"),
+        )
+        .unwrap();
+
+        let started = Instant::now();
+        let result = client
+            .fetch_metadata(&request, DEFAULT_MAX_METADATA_BYTES)
+            .await;
+
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        server.abort();
     }
 
     fn content_type_headers() -> HeaderMap {

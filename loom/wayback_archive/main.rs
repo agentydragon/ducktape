@@ -9,9 +9,10 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, heade
 use axum::{Router, routing::get};
 use log::info;
 use wayback_archive::{
-    AdaptiveLimiter, ArchiveResponse, ArchiveService, ArchiveStore, DEFAULT_MAX_BODY_BYTES,
-    DEFAULT_MAX_METADATA_BYTES, DEFAULT_MAX_QUEUE_WAIT, LimiterConfig, MemoryArchiveStore,
-    PostgresArchiveStore, ReqwestIaClient, S3BlobStore,
+    AdaptiveLimiter, ArchiveResponse, ArchiveService, ArchiveStore, DEFAULT_AVAILABILITY_TIMEOUT,
+    DEFAULT_CDX_TIMEOUT, DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_METADATA_BYTES,
+    DEFAULT_MAX_QUEUE_WAIT, DEFAULT_REPLAY_TIMEOUT, LimiterConfig, MemoryArchiveStore,
+    PostgresArchiveStore, ReqwestIaClient, S3BlobStore, UpstreamTimeouts,
 };
 
 #[tokio::main]
@@ -38,6 +39,17 @@ async fn main() -> Result<()> {
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_MAX_QUEUE_WAIT);
+    let timeouts = UpstreamTimeouts {
+        availability: duration_from_env_secs(
+            "WAYBACK_ARCHIVE_AVAILABILITY_TIMEOUT_SECONDS",
+            DEFAULT_AVAILABILITY_TIMEOUT,
+        ),
+        cdx: duration_from_env_secs("WAYBACK_ARCHIVE_CDX_TIMEOUT_SECONDS", DEFAULT_CDX_TIMEOUT),
+        replay: duration_from_env_secs(
+            "WAYBACK_ARCHIVE_REPLAY_TIMEOUT_SECONDS",
+            DEFAULT_REPLAY_TIMEOUT,
+        ),
+    };
 
     let store: Arc<dyn ArchiveStore> =
         if let Ok(database_url) = std::env::var("WAYBACK_ARCHIVE_DATABASE_URL") {
@@ -63,7 +75,11 @@ async fn main() -> Result<()> {
     let service = Arc::new(
         ArchiveService::new(
             store,
-            Arc::new(ReqwestIaClient::new(web_upstream, availability_upstream)?),
+            Arc::new(ReqwestIaClient::with_timeouts(
+                web_upstream,
+                availability_upstream,
+                timeouts,
+            )?),
         )
         .with_endpoint_limiters(
             availability_limiter,
@@ -112,6 +128,14 @@ async fn main() -> Result<()> {
         axum::serve(listener, app).await?;
     }
     Ok(())
+}
+
+fn duration_from_env_secs(name: &str, default: Duration) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(default)
 }
 
 #[derive(Clone)]
