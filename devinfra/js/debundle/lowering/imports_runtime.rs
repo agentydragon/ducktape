@@ -99,10 +99,9 @@ pub(super) fn source_chunk_imports_for_moved_body(
             // Bare specifier (npm package etc.) — pass through unchanged.
             info.src.clone()
         };
-        // Boundary-rename name mapping from the vendor plan
-        // (vendor_into_emission §2.4 "boundary-renamed construction"):
-        // overrides the recorded imported name with the vendor chunk's
-        // public export name.
+        // Boundary-rename name mapping from the vendor plan overrides
+        // the recorded imported name with the vendor chunk's public
+        // export name.
         let specifier = match imported_overrides.get(&local_id) {
             Some(public) => runtime_reimport_named_specifier(&local_id, public),
             None => runtime_reimport_specifier(&local_id, info),

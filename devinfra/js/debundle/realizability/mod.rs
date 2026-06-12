@@ -303,8 +303,7 @@ pub fn check_realizability(
 /// from-scratch verdict, restricted to diagnoses involving `module`.
 ///
 /// This is the gate ladder's **reference predicate**
-/// (`plans/incremental_gate_unification.md` §2): a speculative merge
-/// with post-merge module `M` is acceptable iff
+/// for a speculative merge: a post-merge module `M` is acceptable iff
 /// `check_realizability_touching(owner_graph, post_partition, M)`
 /// `.is_realizable()`. Pre-existing violations not touching `M` are
 /// intentionally ignored, matching
@@ -560,8 +559,7 @@ impl RealizabilityIndex {
     }
 
     /// Tier-laddered decision for a hypothetical owner move, filtered
-    /// to the target module (`plans/incremental_gate_unification.md`
-    /// §3; PR 3 of §8). Exactly equal to
+    /// to the target module. Exactly equal to
     /// `verdict_after_moving_owners_touching(..).is_realizable()` with
     /// evidence materialization elided: tiers 0–2 are short-circuits
     /// whose skip conditions are theorems about the predicate, tier 3

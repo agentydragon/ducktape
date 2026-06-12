@@ -115,8 +115,7 @@ pub(super) enum EdgeContributionKind {
     Import { constraining: bool, sequenced: bool },
 }
 
-/// How the gate ladder decided one boolean realizability query
-/// (`plans/incremental_gate_unification.md` §3; PR 3 of §8). Each
+/// How the gate ladder decided one boolean realizability query. Each
 /// variant names the tier that decided and the skip-condition theorem
 /// (or exact evaluation) certifying the decision — the differential
 /// harness asserts per-variant tier-skip soundness against the pure
@@ -1048,8 +1047,7 @@ impl IncrementalQuotient {
             .any(|rebind| rebind.from == module || rebind.to == module)
     }
 
-    /// Tier-laddered boolean evaluation of the touching predicate
-    /// (`plans/incremental_gate_unification.md` §3): each tier either
+    /// Tier-laddered boolean evaluation of the touching predicate: each tier either
     /// decides — its skip condition is a theorem about
     /// `verdict_with_overlay_touching(module, overlay)` — or
     /// escalates, and tier 3 runs the same scoped-simulator

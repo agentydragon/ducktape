@@ -113,7 +113,7 @@ def generate_chunk(n_statements: int, rng: random.Random) -> Chunk:
     # I-SCC with one constraining edge. The extra block-const references give
     # the greedy a reason to pull the two owners into different block cells,
     # turning the pair into a cross-module I-cycle the ladder must escalate
-    # past tier 1 for (plan `incremental_gate_unification.md` tiers 2-3).
+    # past tier 1 for.
     for pair in range(ASYMMETRIC_CYCLE_PAIRS):
         fwd, back = rng.sample(consts, k=2)
         lines.append(f"function x{pair}_f() {{ return x{pair}_v[0] + {fwd}; }}")

@@ -1044,8 +1044,7 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
 
 #[test]
 fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_consumers() {
-    // `references_rewritten` parity pin (plans/vendor_into_emission.md §5,
-    // open question 6): the manifest must count *emitted* consumer
+    // `references_rewritten` parity pin: the manifest must count *emitted* consumer
     // references identically whether a reference lives in a pass-through
     // file (the caller chunk's residual entry, rewritten by the
     // post-materialize wave) or in a materialized module body (whose
@@ -2572,8 +2571,8 @@ fn suppress_vendor_chunk_passes_through_unchanged() {
 
 #[test]
 fn suppress_vendor_chunk_skips_specifier_canonicalization() {
-    // Golden pin for vendor_into_emission open question 3: suppress
-    // means hands-off, so the pass-through emission rewriter skips
+    // Golden pin for the suppress contract: suppress means hands-off,
+    // so the pass-through emission rewriter skips
     // suppress-marked chunks entirely — even directives the
     // canonicalizer rewrites in every other chunk (`./helper-X.js` →
     // `../helper-X/entry.js`) keep their original spelling, making the

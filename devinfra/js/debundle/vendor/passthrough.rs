@@ -1,5 +1,4 @@
-//! Unified pass-through emission rewriter (vendor_into_emission §2.4,
-//! PR 4): the single position-preserving directive rewriter for files
+//! Unified pass-through emission rewriter: the single position-preserving directive rewriter for files
 //! that are emitted without lowering — chunk entries (including
 //! materialized chunks' residual entries) and runtime files. Driven by
 //! `vendor::emission::apply_emission_rewrites`, which applies it to
@@ -25,8 +24,7 @@
 //! import construction is the other application site for materialized
 //! module bodies (`FileRole::Module` files are skipped here). Files of
 //! `suppress`-marked chunks are skipped entirely — suppress means
-//! hands-off, so their directives pass through byte-identical
-//! (vendor_into_emission open question 3).
+//! hands-off, so their directives pass through byte-identical.
 
 use std::collections::{BTreeMap, BTreeSet};
 

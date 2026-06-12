@@ -171,9 +171,8 @@ pub fn run_transform_cli_with_options(
 
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
-    // tables once, and runs the plan-time consumer gate
-    // (plans/vendor_into_emission.md §3.2) and the full-swap caller
-    // import-alignment check before anything is written. Vendor
+    // tables once, and runs the plan-time consumer gate and the
+    // full-swap caller import-alignment check before anything is written. Vendor
     // application below consumes this plan instead of re-resolving the
     // spec mid-pipeline.
     let swap_cfg = &spec.swap_vendor_chunks;
@@ -190,8 +189,7 @@ pub fn run_transform_cli_with_options(
     )?;
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
-    // Full swaps are an emission-set exclusion
-    // (plans/vendor_into_emission.md §2.5): the swapped chunks stay in
+    // Full swaps are an emission-set exclusion: the swapped chunks stay in
     // the bundle — nothing removes them, and the owner graph never
     // contained vendor chunks — but emission, the rename queue, the
     // emit-shape check, and the chunk reports skip them. Their
@@ -264,8 +262,7 @@ pub fn run_transform_cli_with_options(
         })?;
     }
 
-    // Emission rewrites (plans/vendor_into_emission.md §2.4–§2.5), one
-    // artifact pass over two disjoint file sets:
+    // Emission rewrites, one artifact pass over two disjoint file sets:
     //
     // * the unified pass-through directive rewrite over files emitted
     //   without lowering in non-vendor chunks — specifier
@@ -312,7 +309,7 @@ pub fn run_transform_cli_with_options(
 
     // Vendor emission outputs: full-swap wrappers and bundled bundle
     // copies / facades, plus the combined manifest — all write-gated
-    // behind `swap_vendor_chunks.write` (vendor_into_emission §2.5).
+    // behind `swap_vendor_chunks.write`.
     if write_vendor_outputs {
         write_planned_vendor_outputs(&vendor_plan)?;
     }

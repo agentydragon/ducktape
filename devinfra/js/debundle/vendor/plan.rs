@@ -79,8 +79,7 @@ pub struct VendorResolutionPlan {
     pub(crate) bundled_partial_swaps: BTreeMap<ChunkId, ChunkBundledPartialSwapPlan>,
     /// `suppress`-marked chunks: hands-off for every rewrite — the
     /// pass-through emission rewriter skips their files entirely, so
-    /// their emitted directives stay byte-identical to the prepared
-    /// input (vendor_into_emission open question 3).
+    /// their emitted directives stay byte-identical to the prepared input.
     pub(crate) suppressed: BTreeSet<ChunkId>,
 }
 
@@ -148,8 +147,8 @@ impl VendorResolutionPlan {
         })
     }
 
-    /// Boundary-rename mapping consult for construction-time naming
-    /// (vendor_into_emission §2.4): vendor-local export name → public
+    /// Boundary-rename mapping consult for construction-time naming:
+    /// vendor-local export name → public
     /// name for a `boundary_rename` / `swap` chunk. Load-bearing:
     /// source ASTs reach lowering with the vendor-local names, and the
     /// public name is applied at import construction.
@@ -176,8 +175,7 @@ impl VendorResolutionPlan {
     /// Chunks excluded from the emission set: fully-swapped chunks stay
     /// in the `ChunkBundle` (nothing removes them; the owner graph
     /// never contained vendor chunks) but `write_js_tree` / harness
-    /// emission and the emission-output validations skip them
-    /// (vendor_into_emission §2.5).
+    /// emission and the emission-output validations skip them.
     pub fn full_swap_chunk_ids(&self) -> BTreeSet<ChunkId> {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
@@ -385,7 +383,7 @@ fn validate_full_swap_import_alignment(
     Ok(())
 }
 
-/// Plan-time consumer gate (vendor_into_emission §3.2): enumerate every
+/// Plan-time consumer gate: enumerate every
 /// consumer directive targeting a partially-swapped chunk and reject the
 /// shapes that have no live rewrite at either application site — before
 /// any output is written. The classification is the same one the

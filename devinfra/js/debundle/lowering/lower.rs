@@ -905,8 +905,7 @@ fn lower_single_plan(inputs: LowerSinglePlanInputs<'_>) -> Result<LoweredModuleO
             renamer.captured,
         );
     }
-    // Vendor consultation for the planned runtime re-imports
-    // (vendor_into_emission §2.4): named re-imports whose source
+    // Vendor consultation for the planned runtime re-imports: named re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
     // are constructed as package / facade imports straight from the
     // plan oracle; everything else stays a chunk re-import (with the
@@ -1001,8 +1000,8 @@ fn lower_single_plan(inputs: LowerSinglePlanInputs<'_>) -> Result<LoweredModuleO
     }
     // External package / facade imports join the runtime re-import
     // block after the retained chunk re-imports, deterministic in
-    // first-need order (vendor_into_emission §2.2: external targets
-    // are outside the per-chunk I-graph the gate orders). Spliced
+    // first-need order. External targets are outside the per-chunk
+    // I-graph the gate orders. Spliced
     // after the chunk_renames application so the locals they
     // introduce are never subject to spec renames — matching the
     // post-hoc wave, which introduced them after every rename had run.
@@ -1023,8 +1022,7 @@ fn lower_single_plan(inputs: LowerSinglePlanInputs<'_>) -> Result<LoweredModuleO
     // RenameLedger entry — ident→member-expression replacement is an
     // expression rewrite, not a rename — so it runs as a separate
     // plan-driven visitor sequenced after the sealed rename
-    // application, like the runtime-URL rewrite above
-    // (vendor_into_emission §2.4).
+    // application, like the runtime-URL rewrite above.
     if !vendor_body_rewrites.is_empty() {
         time_phase!(timings, "module.vendor_body_rewrites", {
             // `cross_module_chunk_renames` may have renamed an import

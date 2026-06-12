@@ -1,5 +1,5 @@
 //! Construction-time vendor consultation for materialized module
-//! bodies (plans/vendor_into_emission.md §2.4): classify each planned
+//! bodies: classify each planned
 //! runtime re-import against the `VendorResolutionPlan` and, for
 //! vendor-swapped targets, construct the package / facade import plus
 //! the body-replacement map directly. Pass-through files (chunk
@@ -14,8 +14,7 @@ use vendor::{
 
 use super::*;
 
-/// Planner-boundary target vocabulary for one runtime re-import
-/// (vendor_into_emission §2.2). Intra-chunk import lists stay keyed by
+/// Planner-boundary target vocabulary for one runtime re-import. Intra-chunk import lists stay keyed by
 /// dense `ModuleId`s — the gate's universe never sees vendor targets —
 /// so the design sketch's `Module(ModuleId)` variant is deferred until
 /// a list actually mixes module and external targets.

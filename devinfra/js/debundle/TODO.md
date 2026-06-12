@@ -130,6 +130,36 @@ are claimed via `source_match` under-reports in `debundle coverage` /
 `describe <module>`. Diagnostics-only (no soundness impact); wire the same
 resolution through those views when it next matters.
 
+## Completed-plan follow-ups
+
+- **Inter-cell cycle policing at assignment/render time.** The exact gate does
+  not reject mutually-cyclic residual cells itself; `peel/factorize.rs` reports
+  them as `BlockedResidualDependency`. If that is insufficient for
+  `bindings assign`, add a render-time cell-DAG / proposal-shape check rather
+  than reintroducing a realizability-gate rule.
+- **Proptest coverage for the gate differential harness.** Migrate
+  `peel/gate_differential_test.rs` from its deterministic xorshift sweep to
+  proptest strategies, matching the condensation-order and `RenameLedger`
+  proptest suites.
+- **Materialize-into-emit.** Let lowered outputs feed `write_js_tree` /
+  harness emission directly, dropping the `materialize_logical_modules`
+  bundle round-trip and post-materialize index rebuild. Details live in
+  <ARCHITECTURE_BACKLOG.md>.
+- **Post-strip consumer scan retirement.** Retire
+  `vendor/mod.rs::validate_partial_swap_consumers` only after construction
+  paths consult `VendorResolutionPlan` and e2e fixtures pin synthesized
+  consumer-directive shapes that fail without the scan. Details live in
+  <ARCHITECTURE_BACKLOG.md>.
+- **Program facts unification.** Fold
+  `program_analysis.rs::analyze_program_shallow` into the full program-facts
+  path, or derive it from that path, so the two top-level fact walks cannot
+  drift. Also tracked in <CODE_REVIEW.md>.
+- **Sanitization-era test cleanup.** Clean up the remaining small fixture debt:
+  consolidate the `logical_module_with_*` helpers in `e2e/support.rs`, remove
+  the hardcoded entry path from
+  `assert_generated_module_after_entry_script`, and replace brittle
+  whitespace OR-chain assertions. Also tracked in <CODE_REVIEW.md>.
+
 ## Structural selector language
 
 `source_match` and same-module `binding_groups` exist, but the selector

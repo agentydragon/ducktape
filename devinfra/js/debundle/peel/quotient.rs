@@ -28,9 +28,8 @@
 //! (`gate::check_realizability(&OwnerGraph, &Partition)` — the same
 //! predicate the materializer's `validate_factorization` computes),
 //! evaluated at **module** granularity under the kernel's projection
-//! (`plans/incremental_gate_unification.md` §2): a speculative merge
-//! with post-merge module `M` is acceptable iff the post-merge
-//! partition has no clause-2 or clause-3 violation touching `M`.
+//! by checking whether a speculative merge's post-merge module `M`
+//! has no clause-2 or clause-3 violation touching `M`.
 //!
 //! The kernel must not reimplement the gate over the JSON
 //! `OwnerGraphReport` adjacency: a constraining-only projection drops
@@ -680,7 +679,7 @@ impl QuotientGraph {
     /// 4. The post-merge partition, under the kernel's module
     ///    projection, has no clause-2 or clause-3 violation touching
     ///    the post-merge module (the tier-laddered realizability
-    ///    predicate, `plans/incremental_gate_unification.md` §2).
+    ///    predicate).
     ///
     /// State mutation: this hot boolean path does not materialize
     /// diagnostic evidence — the ladder short-circuits without
@@ -1088,7 +1087,7 @@ impl QuotientGraph {
     }
 
     /// Tier-laddered boolean gate decision for the speculative merge
-    /// `(c1, c2)` (`plans/incremental_gate_unification.md` §3).
+    /// `(c1, c2)`.
     /// Derives the same single-target move
     /// `realizability_cycles_after_contract` computes and routes it
     /// through the index's ladder instead of the evidence-producing
@@ -2052,9 +2051,8 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate 
 
     // Cycle-reduction key: 0 if the merge dissolves part of an
     // unrealizable SCC — i.e. both classes' modules sit in the same
-    // multi-module SCC of the maintained constraining condensation
-    // (the `O(α)` DSU probe of `plans/incremental_gate_unification.md`
-    // §6) — 1 otherwise. On realizable committed states (the normal
+    // multi-module SCC of the maintained constraining condensation —
+    // 1 otherwise. On realizable committed states (the normal
     // greedy regime) Pass 1 is clean, so no multi-module constraining
     // SCC exists and the key is 1 for every pair — matching the
     // deleted `cached_cycles` probe, which was empty on healthy

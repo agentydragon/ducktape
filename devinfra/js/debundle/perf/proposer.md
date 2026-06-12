@@ -7,10 +7,9 @@ items are deleted.
 
 ## Current state
 
-The gate-ladder cutover (`plans/incremental_gate_unification.md`,
-PRs #2087/#2090/#2095/#2102) routed the hot boolean merge gate
-through the `RealizabilityIndex`'s tier ladder and deleted the
-kernel-side Pearce–Kelly walk, cone-DFS fallback, and
+The gate-ladder cutover (PRs #2087/#2090/#2095/#2102) routed the hot
+boolean merge gate through the `RealizabilityIndex`'s tier ladder and
+deleted the kernel-side Pearce–Kelly walk, cone-DFS fallback, and
 `cached_cycles` machinery.
 
 The historical baseline corpus (a private downstream fixture, 9709

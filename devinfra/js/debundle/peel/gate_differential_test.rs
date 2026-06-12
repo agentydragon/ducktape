@@ -1,8 +1,7 @@
-//! Differential harness for the gate-ladder unification
-//! (`plans/incremental_gate_unification.md` §7.1).
+//! Differential harness for the gate-ladder unification.
 //!
 //! Compares the kernel's hot boolean merge gate
-//! (`QuotientGraph::merge_preserves_invariants`) against the plan-§2
+//! (`QuotientGraph::merge_preserves_invariants`) against the
 //! **reference predicate**: `gate(c1, c2)` accepts iff
 //! `check_realizability_touching(owner_graph, post_partition, M)` is
 //! realizable, where `M` is the post-merge module and

@@ -1,4 +1,4 @@
-//! Emission-time vendor application (vendor_into_emission §2.5, PR 5).
+//! Emission-time vendor application.
 //!
 //! One artifact pass with two disjoint file sets:
 //!
@@ -289,8 +289,8 @@ fn extract_residual_job<'a>(
     })
 }
 
-/// The residual computation (vendor_into_emission §2.5) as one function
-/// body. Per pass-through file of the swapped chunk:
+/// The residual computation as one function body. Per pass-through
+/// file of the swapped chunk:
 ///
 /// 1. **canonicalize** — the unified directive rewrite (§2.4), which
 ///    also applies any consumer-side surgery the chunk's own files need

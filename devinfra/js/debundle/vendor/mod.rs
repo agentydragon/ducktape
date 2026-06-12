@@ -428,7 +428,7 @@ fn prop_name(name: &PropName) -> Option<String> {
 /// from every application site (lowering construction, pass-through
 /// rewrite, bundled self-rewrite) into `references_rewritten` — the
 /// manifest counts **emitted** references regardless of which site
-/// produced them (vendor_into_emission §5).
+/// produced them.
 pub fn build_partial_swap_resolutions(
     plan: &VendorResolutionPlan,
     rewrite_counts: &BTreeMap<(ChunkId, String), usize>,

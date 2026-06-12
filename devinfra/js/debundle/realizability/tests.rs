@@ -85,8 +85,7 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
     );
 }
 
-/// The touching-filtered reference predicate
-/// (`plans/incremental_gate_unification.md` §2): an SCC diagnosis is
+/// The touching-filtered reference predicate: an SCC diagnosis is
 /// kept only when the queried module participates in it. A module
 /// outside every diagnosis sees a realizable verdict even though the
 /// full verdict is unrealizable.
@@ -1011,10 +1010,9 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
 }
 
 // ---------------------------------------------------------------------
-// Gate-ladder tests (plans/incremental_gate_unification.md §3; PR 3
-// of §8): the tier-laddered boolean must equal the evidence-producing
-// overlay verdict on every move query, with each fixture pinning the
-// tier expected to decide it.
+// Gate-ladder tests: the tier-laddered boolean must equal the
+// evidence-producing overlay verdict on every move query, with each
+// fixture pinning the tier expected to decide it.
 // ---------------------------------------------------------------------
 
 /// Assert the ladder, the boolean wrapper, and the overlay verdict

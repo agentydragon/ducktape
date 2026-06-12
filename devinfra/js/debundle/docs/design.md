@@ -2249,11 +2249,11 @@ The pipeline (`pipeline.rs`) is a fixed composition over three layers:
   exclusion, not an artifact removal; wrappers / facades / manifests
   are emission outputs.
 
-This is the landed shape of the vendor-into-emission collapse
-(`plans/vendor_into_emission.md`, tombstoned 2026-06): the former
-stage braid — specifier rewriting, vendor renaming, and swapping
-braided around materialization across seven artifact mutations — is
-gone, and vendor operations contribute zero mutation waves.
+This is the landed shape of the 2026-06 vendor-into-emission
+collapse: the former stage braid — specifier rewriting, vendor
+renaming, and swapping braided around materialization across seven
+artifact mutations — is gone, and vendor operations contribute zero
+mutation waves.
 
 The remaining trajectory step is collapsing materialize-into-emit:
 `materialize_logical_modules` still writes lowered module files back

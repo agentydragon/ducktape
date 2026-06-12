@@ -195,11 +195,10 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
     assert_ne!(q.class_of(b1_idx), q.class_of(b2_idx));
 }
 
-// ---------- Gate-ladder pinning tests (plans/incremental_gate_unification.md §7.3). ----------
+// ---------- Gate-ladder pinning tests. ----------
 //
-// These pin the module-level gate predicate decided in the plan's §2,
-// which `check_merge_boolean` routes through since the §8 PR 4
-// cutover. The third §7.3 case — preservation of
+// These pin the module-level gate predicate that `check_merge_boolean`
+// routes through. The third historical case — preservation of
 // `seed_skips_unrealizable_spec_module_contraction_and_reports` —
 // is the existing test above.
 

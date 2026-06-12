@@ -1,6 +1,5 @@
 //! Incremental SCC-condensation order: the tier-1/2 structure of the
-//! incremental-gate unification design
-//! (`plans/incremental_gate_unification.md` §4).
+//! incremental-gate unification design.
 //!
 //! Generalizes the peel kernel's deleted Pearce–Kelly `TopoOrder`
 //! (formerly `peel/topo_order.rs`; absorbed here by the §8 PR 4
@@ -31,7 +30,7 @@
 //! tier 1 of the gate ladder rejects on. Contracting two modules that
 //! already share an SCC therefore *decrements* the count (a 2-module
 //! mutual cycle contracted into one module is realizable — the
-//! atomic-unit anomaly fix of plan §2).
+//! atomic-unit anomaly fix.
 //!
 //! ## Mutation protocol
 //!
@@ -199,8 +198,8 @@ where
     }
 
     /// Whether `u` and `v` sit in the same multi-module SCC. The
-    /// `O(α)` DSU probe backing the greedy's cycle-reduction sort key
-    /// (`plans/incremental_gate_unification.md` §6): a merge of two
+    /// `O(α)` DSU probe backing the greedy's cycle-reduction sort key:
+    /// a merge of two
     /// modules inside one multi-module SCC dissolves part of an
     /// unrealizable cycle. Rebuilds first if stale.
     pub fn same_multi_scc(&mut self, base: &RollbackDiGraph<N>, u: N, v: N) -> bool {

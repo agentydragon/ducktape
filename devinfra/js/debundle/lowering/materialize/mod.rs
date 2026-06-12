@@ -28,8 +28,8 @@ pub(super) struct ChunkContext<'a> {
     /// Program-level cross-module purity output; this chunk's entries land
     /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
     pub(super) cross_module_purities: &'a super::cross_module::CrossModulePurities,
-    /// Vendor-plan consultation for runtime re-import construction
-    /// (vendor_into_emission §2.4); `None` when no vendor mark could
+    /// Vendor-plan consultation for runtime re-import construction;
+    /// `None` when no vendor mark could
     /// affect construction.
     pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }

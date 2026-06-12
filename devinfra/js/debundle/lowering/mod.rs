@@ -153,7 +153,7 @@ pub struct MaterializeLogicalModulesResult {
     /// (swapped chunk, chunk export). Folded into the vendor waves'
     /// `references_rewritten` manifest fields by the pipeline so the
     /// manifest keeps counting emitted references across both
-    /// application sites (vendor_into_emission §5).
+    /// application sites.
     pub vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in the source chunk. Previously dropped
@@ -320,8 +320,7 @@ pub fn materialize_logical_modules(
     );
 
     let artifact_ref: &ChunkBundle = &artifact;
-    // Vendor consultation for lowering's import construction
-    // (vendor_into_emission §2.4): runtime re-imports whose source
+    // Vendor consultation for lowering's import construction: runtime re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
     // are constructed as package / facade imports from the plan oracle
     // instead of chunk re-imports the post-materialize wave would
