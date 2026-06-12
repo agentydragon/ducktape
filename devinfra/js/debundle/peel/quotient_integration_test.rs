@@ -3,7 +3,7 @@
 //! public API as a separate crate — the same surface external
 //! consumers of the kernel see.
 //!
-//! Test list (commit 1 + 1b of `plans/peel_proposer_contraction_model.md`):
+//! Core behavior covered here:
 //!
 //! - `seed_pre_contracts_atomic_units`
 //! - `seed_pre_contracts_spec_modules`
@@ -12,12 +12,11 @@
 //! - `seed_rejection_diagnostic_is_canonical`
 //! - `contract_never_un_contracts`
 //! - `factorize_golden_output_unchanged` — load-bearing snapshot
-//!   assertion that the renderer-over-quotient produces byte-identical
-//!   output to the pre-commit-1 binary.
+//!   assertion that the renderer-over-quotient produces stable output.
 //! - `partition_constructor_contracts_each_group` — internal
-//!   invariant of commit 1b: the partition-based kernel constructor
-//!   collapses each input group into one class, regardless of
-//!   pre-existing edges between the owners.
+//!   invariant: the partition-based kernel constructor collapses each
+//!   input group into one class, regardless of pre-existing edges
+//!   between the owners.
 
 use analysis::{
     AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity, SourceLocation,
@@ -508,11 +507,9 @@ fn contract_never_un_contracts() {
 
 #[test]
 fn partition_constructor_contracts_each_group() {
-    // Internal invariant of the renderer-over-quotient refactor
-    // (commit 1b): `from_report_with_partition` materializes a
-    // quotient whose equivalence classes are exactly the input
-    // groups. This is the bridge between today's cell-discovery
-    // pass and the kernel that `emit_proposals` reads.
+    // Internal invariant of the renderer-over-quotient path:
+    // `from_report_with_partition` materializes a quotient whose
+    // equivalence classes are exactly the input groups.
     //
     // - Owners not listed in any group remain singletons.
     // - Each group's owners share a class.
@@ -586,14 +583,10 @@ fn partition_constructor_contracts_each_group() {
 
 #[test]
 fn factorize_golden_output_unchanged() {
-    // Golden test for commit 1b: factorize's output is byte-identical
-    // to the pre-commit-1 binary's output for the same input. The
-    // baselines were captured by running `factorize` on these
-    // fixtures at HEAD = 3c75ae9ae (pre-commit-1, post-anon-only
-    // extension), then verified to match commit-1's output (which
-    // adds the kernel as a pure-side-effect diagnostic, no behavior
-    // change). The renderer-over-quotient refactor (this commit)
-    // must keep these outputs stable.
+    // Golden test: factorize's output stays byte-identical for the
+    // same representative inputs. The renderer-over-quotient path
+    // must keep these outputs stable unless the proposal contract
+    // intentionally changes.
     //
     // Each fixture exercises a representative shape:
     //   - `residual_singletons`: two unrelated residual owners,
@@ -627,15 +620,15 @@ fn factorize_golden_output_unchanged() {
 
     assert_eq!(
         json1, golden1,
-        "residual_singletons fixture diverged from pre-commit-1 baseline",
+        "residual_singletons fixture diverged from golden baseline",
     );
     assert_eq!(
         json2, golden2,
-        "closed_residual_unit fixture diverged from pre-commit-1 baseline",
+        "closed_residual_unit fixture diverged from golden baseline",
     );
     assert_eq!(
         json3, golden3,
-        "extend_active_via_anon fixture diverged from pre-commit-1 baseline",
+        "extend_active_via_anon fixture diverged from golden baseline",
     );
 }
 
@@ -696,7 +689,7 @@ fn golden_extend_active_via_anon() -> OwnerGraphReport {
     )
 }
 
-// ---------- Commit 2: greedy merge to convergence tests. ----------
+// ---------- Greedy merge to convergence tests. ----------
 //
 // The greedy operates over a quotient whose initial partition the
 // caller has chosen — typically the seed quotient (atomic units +
@@ -704,11 +697,11 @@ fn golden_extend_active_via_anon() -> OwnerGraphReport {
 // renderer has marked as pre-existing active modules. The kernel
 // distinguishes "pre-existing module" classes from "residual orphan"
 // classes via the `is_pre_existing_module` bit on each class; the
-// commit-2 mergeability restriction lets greedy only contract an
-// orphan into a module, never two modules together (that's commit 3).
+// mergeability rules govern whether greedy may extend a module with an
+// orphan, merge existing modules, or stop.
 //
 // All fixtures below use `from_report_with_partition_extended`, the
-// commit-2 constructor that takes per-group metadata (lines + the
+// constructor that takes per-group metadata (lines + the
 // pre-existing-module bit). Owners not in any group remain singletons
 // with their per-owner residual flag derived from the report.
 
@@ -1454,10 +1447,10 @@ fn greedy_on_gaffer_chunk_completes_under_one_minute() {
     );
 }
 
-// ---------- Commit 3: full mergeability + merge output shape. ----------
+// ---------- Full mergeability + merge output shape. ----------
 //
-// The commit-3 gate allows two pre-existing-module classes to merge
-// (with or without absorbing residual orphans). The renderer carries
+// The gate allows two pre-existing-module classes to merge (with or
+// without absorbing residual orphans). The renderer carries
 // `merge_into: Option<Vec<String>>` on proposals whose operands
 // include ≥2 pre-existing-module groups.
 
@@ -1715,29 +1708,24 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
     );
 }
 
-// ---------- Commit 4: unify cell discovery into seeding. ----------
+// ---------- Cell discovery through seeding. ----------
 //
-// The commit-4 refactor deletes `proposal_cells_from_atomic_graph` and
-// its `Cell` IR; the equivalent partition is now produced by a third
-// gated contraction pass in `build_seed_quotient`. Behavior on
-// well-formed input is byte-identical to the commit-1b snapshots
-// (locked down by `factorize_golden_output_unchanged` above). Behavior
-// on input whose atomic-DAG reachability closure would form a cycle
-// is intentionally different: today's cell discovery would have
-// silently formed the closure and let the downstream realizability
-// gate report a generic cycle; the unified seeding refuses the
-// pass-3 contraction and emits a `SeedContractionRejected::AtomicReachability`
-// diagnostic pinpointing the rejected pair.
+// The historical parallel cell IR is gone; the equivalent partition is
+// now produced by a third gated contraction pass in
+// `build_seed_quotient`. Well-formed input stays stable (locked down
+// by `factorize_golden_output_unchanged` above). Input whose
+// atomic-DAG reachability closure would form a cycle now gets a
+// `SeedContractionRejected::AtomicReachability` diagnostic
+// pinpointing the rejected pair.
 
 #[test]
 fn unification_byte_identical_on_well_formed_inputs() {
-    // Companion to `factorize_golden_output_unchanged`. The plan's
-    // commit-4 spec calls out that the three commit-1b golden
-    // snapshots (residual_singletons, closed_residual_unit,
-    // extend_active_via_anon) produce zero rejections under the
-    // gated seeding and therefore must stay byte-identical after
-    // unification. This test asserts the "zero rejections" half;
-    // the byte-identity half is covered by
+    // Companion to `factorize_golden_output_unchanged`. The three
+    // golden snapshots (residual_singletons, closed_residual_unit,
+    // extend_active_via_anon) produce zero rejections under gated
+    // seeding and therefore must stay byte-identical. This test
+    // asserts the "zero rejections" half; the byte-identity half is
+    // covered by
     // `factorize_golden_output_unchanged`.
     let claims_active = claims(&[("BindingA", "ui/x")]);
 
@@ -2648,11 +2636,10 @@ fn incremental_kernel_query_matches_rebuild_after_each_contract() {
 // ---------------------------------------------------------------------
 // Lazy-PQ vs. full-scan byte-equality corpus.
 //
-// See `plans/peel_lazy_pq_greedy.md` "Output equivalence to the
-// current greedy" — this is the load-bearing correctness gate for
-// the PQ-driven greedy. Every fixture below builds a quotient and
-// runs both drivers from identical starting states; the contraction
-// sequences must be byte-equal.
+// See `devinfra/js/debundle/docs/peel_proposer.md`. This is the
+// load-bearing correctness gate for the PQ-driven greedy. Every
+// fixture below builds a quotient and runs both drivers from identical
+// starting states; the contraction sequences must be byte-equal.
 // ---------------------------------------------------------------------
 
 /// Build a fixture quotient from a report + spec module groups. Two

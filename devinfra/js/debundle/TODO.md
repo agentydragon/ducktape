@@ -132,6 +132,12 @@ resolution through those views when it next matters.
 
 ## Completed-plan follow-ups
 
+- **Peel proposer contraction cleanup.** The quotient-contraction
+  proposer and lazy-priority-queue greedy driver are implemented and
+  documented in <docs/peel_proposer.md>. Remaining cleanup is narrow:
+  retire the hidden full-scan greedy reference only after the lazy-PQ
+  path has had release-cycle confidence, and add a diagnostic-only seed
+  rejection mode only if spec authors need a focused debugging surface.
 - **Chunk IR / schedule split remains deferred.** The completed IR cleanup plan
   left one deliberately deferred refactor: split the "everything about chunk K
   under partition P" state into a pure `ChunkIR` plus a `Schedule` only if a

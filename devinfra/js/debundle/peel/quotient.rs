@@ -12,15 +12,15 @@
 //! `merge_preserves_invariants` and recording a
 //! `SeedContractionRejected` diagnostic if the contraction would have
 //! created cycles. See
-//! `plans/peel_proposer_contraction_model.md` (commit 1) for the
-//! mental model.
+//! `devinfra/js/debundle/docs/peel_proposer.md` for the current
+//! proposer model.
 //!
-//! Commit 2 of the plan adds:
-//! - `greedy_merge_to_convergence` — the greedy contraction loop
-//!   with deterministic `pick_best` tiebreaks.
-//! - `is_pre_existing_module` per-class metadata. Required by the
-//!   commit-2 greedy mergeability restriction ("extension of
-//!   existing module by orphaned residual class").
+//! The public greedy entry point is `greedy_merge_to_convergence`:
+//! a deterministic lazy-priority-queue contraction loop. Each class
+//! also tracks `is_pre_existing_module`, which lets the greedy
+//! distinguish active spec modules from residual orphan classes when
+//! deciding whether a merge can be rendered as an extension or
+//! existing-module merge.
 //!
 //! ## The unified realizability gate (Track A)
 //!
@@ -139,13 +139,10 @@ pub enum SeedContractionRejected {
         cycle: CycleEvidence,
     },
     /// Pass-3 (atomic-DAG reachability closure) contraction rejected.
-    /// Pre-commit-4 behavior was: silently form the closure into a
-    /// "cell" even when cyclic; downstream realizability gate would
-    /// then report the cycle as a generic SCC. Post-commit-4: the
-    /// kernel refuses the merge at seeding time and emits this
+    /// The kernel refuses the merge at seeding time and emits this
     /// diagnostic naming the source/target atomic-DAG edge whose
     /// contraction would have created the cycle. See
-    /// `plans/peel_proposer_contraction_model.md`, commit 4.
+    /// `devinfra/js/debundle/docs/peel_proposer.md`.
     AtomicReachability {
         /// The atomic-DAG edge id whose contraction was refused.
         edge_id: String,
@@ -190,7 +187,7 @@ pub struct SpecModuleGroup {
 
 /// One input group for `QuotientGraph::from_report_with_partition_extended`.
 /// Used by the renderer to materialize cells-derived partitions with
-/// per-class metadata the commit-2 greedy needs.
+/// per-class metadata the greedy needs.
 #[derive(Debug, Clone)]
 pub struct PartitionGroup {
     pub owner_idxs: Vec<OwnerIdx>,
@@ -230,8 +227,8 @@ struct ClassData {
     is_residual: bool,
     /// `true` if this class was seeded by a `PartitionGroup` with
     /// `is_pre_existing_module = true`. Sticky across merges (a
-    /// merge of two pre-existing-module classes — only allowed in
-    /// commit 3 — produces a class that is itself pre-existing).
+    /// merge of two pre-existing-module classes produces a class
+    /// that is itself pre-existing).
     /// Default `false` for singletons constructed from
     /// `from_report` or for residual atomic-DAG-closure classes
     /// seeded by `from_report_with_partition`.
@@ -517,17 +514,13 @@ impl QuotientGraph {
     /// one per input group, in the same order as `groups`.
     ///
     /// Used by `peel::factorize::emit_proposals` to render off a
-    /// cells-derived quotient (Path B in
-    /// `plans/peel_proposer_contraction_model.md`'s commit 1b): the
-    /// cell-discovery pass produces equivalence classes that are not
-    /// derivable from the seeding protocol's gated contractions, so
-    /// the kernel hosts them as a partition rather than as a sequence
-    /// of gated contractions.
+    /// externally supplied partition: the caller may already have
+    /// equivalence classes that should be hosted directly rather than
+    /// replayed as a sequence of gated contractions.
     ///
     /// Groups containing owners already implicitly co-located with
     /// other groups (overlap) are not supported and will panic; the
-    /// caller is expected to pre-coalesce overlapping groups, which
-    /// `proposal_cells_from_atomic_graph` already does.
+    /// caller is expected to pre-coalesce overlapping groups.
     pub fn from_report_with_partition(
         report: &OwnerGraphReport,
         cap_lines: usize,
@@ -547,8 +540,8 @@ impl QuotientGraph {
     /// Like `from_report_with_partition`, but each group carries
     /// per-class metadata (`is_pre_existing_module`, optional
     /// `label`). The greedy's mergeability check consults
-    /// `is_pre_existing_module` to restrict commit-2 merges to
-    /// "extend existing module by orphaned residual class."
+    /// `is_pre_existing_module` to distinguish extension candidates
+    /// from existing-module merge candidates.
     pub fn from_report_with_partition_extended(
         report: &OwnerGraphReport,
         cap_lines: usize,
@@ -618,8 +611,8 @@ impl QuotientGraph {
         self.classes[c.0].is_residual
     }
 
-    /// Designate `c` as the residual catch-all class — the class the
-    /// commit-2 greedy refuses to merge into. Seed-time construction
+    /// Designate `c` as the residual catch-all class, which greedy
+    /// refuses to merge into. Seed-time construction
     /// leaves every class non-residual (the factorizer peels
     /// residual-destined owners OUT into fresh modules); callers that
     /// model a sticky residual sink mark it explicitly.
@@ -1448,7 +1441,7 @@ impl QuotientGraph {
     /// Update class adjacency after `loser` is absorbed into `winner`.
     /// Relabels all loser-incident entries to winner, dropping self-
     /// loops. O(|out_edges[loser.0]| + |in_neighbors[loser.0]|) —
-    /// typically small for the commit-2 orphan shape.
+    /// typically small for sparse orphan-extension shapes.
     ///
     /// Walks `loser`'s outgoing edges first, folding each `(loser, x)`
     /// into `(winner, x)` by summing `EdgeState` fields and
@@ -1521,8 +1514,8 @@ impl QuotientGraph {
     /// i.e., it was constructed from a `PartitionGroup` with
     /// `is_pre_existing_module = true`, or marked by the seeding
     /// protocol's spec-module pass. The greedy uses this to
-    /// restrict commit-2 merges to "extend module by orphan" and
-    /// commit-3 merges to module↔module fusions.
+    /// distinguish "extend module by orphan" from module↔module
+    /// fusions.
     pub fn class_is_pre_existing_module(&self, c: ClassId) -> bool {
         self.classes[c.0].is_pre_existing_module
     }
@@ -1648,10 +1641,10 @@ impl QuotientGraph {
 }
 
 // ---------------------------------------------------------------------
-// Greedy merge to convergence (commit 2).
+// Greedy merge to convergence.
 // ---------------------------------------------------------------------
 
-/// Commit-3 mergeability gate. Allows two shapes:
+/// Mergeability gate. Allows two shapes:
 ///   1. Two pre-existing-module classes (merge modules A and B).
 ///      May happen with or without first absorbing residual orphans
 ///      into either side via successive shape-(2) merges.
@@ -1659,7 +1652,7 @@ impl QuotientGraph {
 ///      (extend module A with an orphan); requires the orphan's
 ///      cross-edges to pre-existing modules to target exactly one
 ///      module — the merge partner. The "unambiguous extension"
-///      check matches today's
+///      check matches the
 ///      `promote_anonymous_only_cell_to_extension` post-pass.
 ///
 /// Orphan↔orphan merges are NOT permitted by this gate: today's
@@ -1757,7 +1750,7 @@ pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
 /// initialized once over all cross-class pairs; each contract pushes
 /// fresh entries for the winner's new neighborhood and pop-time
 /// staleness checks re-rank entries whose coupling has drifted. See
-/// `plans/peel_lazy_pq_greedy.md` for the algorithm and
+/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
 /// `greedy_merge_to_convergence_full_scan` for the byte-equal
 /// reference driver retained as a correctness gate.
 pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
@@ -1782,7 +1775,7 @@ pub fn greedy_merge_to_convergence_full_scan(q: &mut QuotientGraph) -> Vec<(Clas
 // ---------------------------------------------------------------------
 // Lazy priority-queue greedy driver.
 //
-// See `plans/peel_lazy_pq_greedy.md` for the spec. The PQ stores one
+// See `devinfra/js/debundle/docs/peel_proposer.md` for the spec. The PQ stores one
 // entry per unordered cross-class pair, ordered by the same sort key
 // `pick_best_candidate` uses. On pop we re-check class existence,
 // mergeability, and coupling drift; on a successful contract we push
@@ -1897,7 +1890,7 @@ fn repush_affected_neighborhood(
 
 /// Lazy-PQ greedy driver. Same output as
 /// `greedy_merge_to_convergence_full_scan` modulo the byte-equality
-/// gate. See `plans/peel_lazy_pq_greedy.md` for the algorithm.
+/// gate. See `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm.
 fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
     let mut heap = initialize_candidate_queue(q);
@@ -2232,10 +2225,10 @@ pub fn build_seed_quotient(
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
     //      edge `u → v` whose target unit has any residual member,
     //      contract `class(rep(u))` with `class(rep(v))` through
-    //      the gated protocol. Subsumes today's
-    //      `proposal_cells_from_atomic_graph` (atomic-DAG
-    //      transitive closure + overlap coalesce) by reading the
-    //      same edge set, but rejections fire at the per-edge
+    //      the gated protocol. This replaces the old
+    //      cell-discovery path (atomic-DAG transitive closure +
+    //      overlap coalesce) by reading the same edge set, but
+    //      rejections fire at the per-edge
     //      granularity instead of silently forming cyclic cells.
     //
     //      Overlap coalesce: when two edges `u₁ → v` and `u₂ → v`

@@ -18,9 +18,10 @@
 //!
 //! ## Renderer over `QuotientGraph`
 //!
-//! Commit 4 of `plans/peel_proposer_contraction_model.md` unifies cell
+//! The quotient-contraction proposer (documented in
+//! `devinfra/js/debundle/docs/peel_proposer.md`) unifies cell
 //! discovery and seed-quotient construction into a single, gated
-//! contraction protocol. The factorize pipeline is now:
+//! contraction protocol. The factorize pipeline is:
 //!
 //!   1. `build_seed_quotient` — atomic-unit + spec-module +
 //!      atomic-DAG-reachability contractions, each gated by
@@ -33,10 +34,9 @@
 //!   3. `emit_proposals` — walks the surviving classes and
 //!      materializes each as a `FactorizeProposal`.
 //!
-//! Pre-commit-4 the renderer ran off a parallel `Vec<CellClassRecord>`
-//! produced by `proposal_cells_from_atomic_graph`. Both that helper
-//! and its `Cell` IR are gone; the quotient is now the single source
-//! of truth for "which owners are in which proposed class."
+//! The historical renderer used a parallel cell IR. That IR is gone;
+//! the quotient is now the single source of truth for "which owners
+//! are in which proposed class."
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -94,7 +94,7 @@ pub struct PeelFactorizeReport {
     /// well-formed input; populated when the spec declares an
     /// unrealizable owner grouping. Skipped from JSON output when
     /// empty so existing well-formed fixtures stay byte-identical.
-    /// See `plans/peel_proposer_contraction_model.md`.
+    /// See `devinfra/js/debundle/docs/peel_proposer.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub seed_rejections: Vec<SeedContractionRejected>,
 }
@@ -718,8 +718,7 @@ struct CandidateEdgeStats {
 /// surviving class whose proposal size exceeds the cap. Uses the same
 /// `class_proposal_lines` measure as `emit_proposals`' cap filter, so
 /// a class is either a proposal or a size-cap diagnostic — never both,
-/// never neither. The pre-commit-4 cell pipeline computed this from
-/// cell closures; the new pipeline reads it from the post-greedy
+/// never neither. The current pipeline reads it from the post-greedy
 /// quotient.
 fn collect_size_cap_diagnostics(
     quotient: &QuotientGraph,
@@ -835,8 +834,7 @@ fn build_proposal(
         .then(|| label_vec[0].clone())
         .or_else(|| {
             // For merge proposals, choose a canonical
-            // `extends_module_id` = the first label (sorted). Pre-
-            // commit-4 emitted merges this way too.
+            // `extends_module_id` = the first label (sorted).
             (label_vec.len() >= 2).then(|| label_vec[0].clone())
         });
 

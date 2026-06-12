@@ -1792,6 +1792,10 @@ queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `show-source`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
 
+<peel_proposer.md> is the current-state implementation note for how
+`modules propose` builds and greedily extends its quotient before
+rendering proposal rows.
+
 `debundle modules propose` labels each proposal owner set with a status:
 
 - **`peelable_now`** — this closed atomic-DAG owner set has no outgoing
