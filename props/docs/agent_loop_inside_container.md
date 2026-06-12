@@ -234,7 +234,7 @@ grading_pending view         ◄──────────  wait_until_grade
 **`llm_requests` table:**
 
 - `id`, `agent_run_id` (FK), `created_at`
-- `api_shape` - `responses` or `chat_completions`
+- `api_shape` - `responses`, `chat_completions`, or `anthropic`
 - `request_body` (JSONB) - full OpenAI-compatible request in that API shape
 - `response_body` (JSONB) - full response including `usage` field when provided
 - `model` (denormalized for filtering)

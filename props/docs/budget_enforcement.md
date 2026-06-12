@@ -16,7 +16,8 @@ Every agent run has an explicit `budget_usd` limit. The LLM proxy enforces this 
 
 ## Budget Checking
 
-The LLM proxy (`/v1/responses` and `/v1/chat/completions`) checks budget before forwarding:
+The LLM proxy (`/v1/responses`, `/v1/chat/completions`, and `/v1/messages`)
+checks budget before forwarding:
 
 ```python
 # Compute consumed cost via recursive CTE (self + all descendants)

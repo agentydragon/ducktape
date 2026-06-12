@@ -24,8 +24,8 @@ genuinely open; `resolution_date` is the market's actual resolution time
 (UTC date part).
 
 The data lives as `MarketSeedRecord` rows minted into gym tasks — the shape
-that mirror-harvested markets (see `loom/plans/manifold_mirror.md`) will join,
-and the seed of the mirror's market-id roster. Evidence is optional per task,
+that mirror-harvested markets join, and the seed of the mirror's market-id
+roster. Evidence is optional per task,
 attached only where a cheap contemporaneous capture existed. Contestants see
 the original page URLs as a titleless list (a `/data/sources.txt` file in the
 container harness, a URL list in the bare-LLM prompt) — possible research

@@ -1,6 +1,6 @@
 # plaid_utils/mcp_server
 
-Plaid v0 runtime package.
+Plaid link-management runtime package.
 
 The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
 management plus a shared synchronous full-refresh sync engine. The agent-facing
@@ -22,7 +22,7 @@ The web and sync entrypoints use `PlaidWebSettings`:
 - `DATABASE_URL` — writer Postgres URL, usually CNPG secret `plaid-mcp-db-app`.
 - `PLAID_MCP_PUBLIC_BASE_URL` — public UI origin; defaults to
   `https://plaid-mcp.allegedly.works`.
-- `PLAID_MCP_TRANSACTION_DAYS` / `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` — v0
+- `PLAID_MCP_TRANSACTION_DAYS` / `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` —
   full-refresh windows.
 
 Access tokens are one Kubernetes Secret per Plaid Item and are never stored in
@@ -47,6 +47,12 @@ Plaid fixes `transactions.days_requested` when Transactions is first added to an
 Item. Existing Items cannot be expanded by sending a larger value later; the UI
 therefore records the value for new links and shows an observed synced range for
 inherited links whose original Link request was not logged.
+
+The production sync path still uses date-window full refreshes:
+`/transactions/get`, `/investments/transactions/get`, `/accounts/get`,
+`/investments/holdings/get`, and `/liabilities/get`. The `links` table has
+reserved cursor/status columns for future Plaid `/transactions/sync` work, but
+the current CronJob leaves them null.
 
 All new-link and update-mode flows use the same Plaid OAuth redirect URI:
 `https://plaid-mcp.allegedly.works/link/callback`. Keep that allowlisted in the

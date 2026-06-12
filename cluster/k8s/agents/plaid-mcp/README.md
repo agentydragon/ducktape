@@ -4,7 +4,7 @@ Self-contained Plaid link management and synced Postgres read path.
 
 ## Architecture
 
-v0 has two public surfaces:
+The deployment has two public surfaces:
 
 ```text
 Browser -> https://plaid-mcp.allegedly.works/link
@@ -21,7 +21,7 @@ Claude / MCP client -> https://plaid-db.allegedly.works/mcp
     - Pg Airman restricted mode keeps SQL execution read-only
 ```
 
-There are no bespoke Plaid MCP tools in v0. Agents read `links`, `accounts`,
+There are no bespoke Plaid MCP tools. Agents read `links`, `accounts`,
 `transactions`, holdings, liabilities, snapshots, `sync_runs`, and
 `plaid_api_events` through SQL.
 
@@ -40,9 +40,10 @@ Use `https://plaid-mcp.allegedly.works/link` to add or remove links. The UI asks
 product profile before opening Plaid Link so each institution is initialized only for
 the data surfaces it needs.
 
-`plaid-mcp-sync` runs every 12 hours and performs the v0 full-refresh mirror. It does
-not call real-time balance endpoints; cached balances from product responses are
-snapshotted into Postgres.
+`plaid-mcp-sync` runs every 12 hours and performs the full-refresh mirror. It
+uses date-window `/transactions/get` and `/investments/transactions/get`, not
+stateful `/transactions/sync` cursors yet. It does not call real-time balance
+endpoints; cached balances from product responses are snapshotted into Postgres.
 
 ## Verification
 

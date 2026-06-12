@@ -2,14 +2,13 @@
 
 ## Langfuse
 
-- [ ] **TODO(tracing): LiteLLM Responses API logging** — `props/` speaks the
-      OpenAI Responses API through cluster LiteLLM, but LiteLLM
-      `1.86.3` does not emit Langfuse OTEL traces for the z.ai
-      Responses-to-chat bridge path. Checked upstream `1.87.1` and
-      `1.88.0-rc.3`; same code shape, not expected fixed. See
-      `cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`.
-      One possible mitigation is first-class props Chat Completions support; see
-      `props/docs/plans/chat_completions_api.md`.
+- [ ] **TODO(tracing): Langfuse traces for every active API shape** — the old
+      z.ai Responses-to-chat bridge did not emit LiteLLM Langfuse OTEL traces
+      (`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`).
+      Props now supports native Chat Completions and Anthropic Messages proxy
+      shapes; the current GLM models in `config.toml` use Anthropic because
+      z.ai's Chat Completions tool-call parser mishandles union-shaped tool
+      parameters. Keep one live smoke per active shape when changing routing.
 
 - [ ] **TODO(reliability): ClickHouse replication** — Currently single-node on
       OVH `local-path-ovh`. For production use, deploy a replicated ClickHouse

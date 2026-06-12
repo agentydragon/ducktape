@@ -397,46 +397,49 @@ re-scraping. The Manifold dump mirror is done and declarative: the
 `manifold-dump-mirror` Job in `cluster/k8s/loom-harvest/` re-verifies it on
 every apply (idempotent skip-if-present, sha256-pinned).
 
-### Manifold mirroring via the live API (recent markets; design 2026-06-10)
-
-Implementation plan: <manifold_mirror.md> (fold into the existing
-augur-evidence scraper as a second source kind — decided 2026-06-10).
+### Manifold mirroring via the live API (recent markets)
 
 **No newer dump exists** (verified 2026-06-10: the docs page says "Data dumps
 last updated: July 6, 2024", and the Firebase `trade-dumps/` listing holds
 only the 2023-04 and 2024-07 generations). Everything after 2024-07 — the
 window where modern contestants like glm-4.5 are admissible — therefore comes
-from the live API, which we mirror ourselves:
+from the live API, which we mirror ourselves.
 
-- **Shape**: a configured roster of markets to mirror + a syncer running well
-  under the ~500 req/min limit, pulling per market: `/v0/market/{id}` (full
-  detail), `/v0/bets?contractId=` (append-only → incremental fetch after the
-  newest stored bet), `/v0/comments?contractId=`. The curated panel's market
-  ids become roster entries when the panel materializes, so panel data becomes
-  reproducible from the mirror rather than ad-hoc fetches. The roster is
-  deployment config (a ConfigMap-mounted YAML, schema
+The shared floor is implemented (2026-06):
+
+- The scraper runs from a configured market roster under
+  `finance/scraper/market_mirror.py`, pulling `/v0/market/{id}`,
+  `/v0/bets?contractId=`, and `/v0/comments?contractId=`. Bets append
+  incrementally; comments rewrite deterministically because upstream comments
+  can be edited or deleted.
+- The roster is deployment config (a ConfigMap-mounted YAML, schema
   `finance.evidence.markets.MarketRoster`), unioned with every market the
   calibration catalogs reference (`--catalog`).
-- **Shared floor (implemented 2026-06)**: the scraper lives in
+- The shared platform record models and loaders live in
   `finance/scraper/` (mirror sync in `market_mirror.py`), the platform record
   models + loaders in `finance/evidence/{markets,manifold,kalshi,polymarket}.py`
   — both importable by loom without touching augur. Augur's live per-platform
   clients and the read-through valkey cache were deleted: calibration reads the
   mirror via `finance/augur/calibration/evidence_clients.py`.
-- **Storage split** (canonical vs bulk vs cache):
-  - **augur-evidence git = the canonical mirror.** Same pattern as the
-    FRED/Yahoo scrapes: the scraper CronJob (which already has per-source
-    freshness skip) commits dated raw files; consumers `ensure_checkout()`.
-    Bets as append-only JSONL diff cleanly. The decisive bonus: **git history
-    timestamps every sync**, so the mirror doubles as the M2 forward-capture
-    record — checking out an old commit _is_ the as-of view of what the
-    market said then, for still-unresolved markets.
-  - **Bucket (`s3://loom-gym/harvest/raw/`)** = bulk one-shot archives (the
-    2024 dump lives there) and the overflow home if per-market mirrors
-    outgrow git comfort (hundreds of MB).
-  - ~~Valkey~~ (removed 2026-06): the calibration server now reads the git
-    mirror directly (git-sync sidecar keeps the checkout ≤1m behind), so the
-    volatile cache layer is gone.
+- `test_market_seed_tasks` asserts the curated gym panel's markets stay covered
+  by the production roster.
+
+Storage split:
+
+- **augur-evidence git = the canonical mirror.** Same pattern as the FRED/Yahoo
+  scrapes: the scraper CronJob commits dated raw files; consumers
+  `ensure_checkout()`. Bets as append-only JSONL diff cleanly. Git history
+  timestamps every sync, so checking out an old commit is the as-of view for
+  still-unresolved markets.
+- **Bucket (`s3://loom-gym/harvest/raw/`)** = bulk one-shot archives (the 2024
+  dump lives there) and the overflow home if per-market mirrors outgrow git
+  comfort.
+- ~~Valkey~~ (removed 2026-06): the calibration server now reads the git mirror
+  directly (git-sync sidecar keeps the checkout <=1m behind), so the volatile
+  cache layer is gone.
+
+Remaining mirror follow-ups: skip-resolved hardening if the roster grows enough
+that no-op resolved-market checks matter, and roster growth from G1/H3 harvest.
 
 ### Phasing
 

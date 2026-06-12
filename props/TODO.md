@@ -12,6 +12,19 @@
 - Reimplement `fix` command as critic-driven loop: run critic, fix issues, rerun until clean or max iterations
 - Agent timeout warning handler: inject "5 minutes remaining" messages using `created_at` + `timeout_seconds`
 
+## LLM Proxy
+
+- Add a richer Chat Completions transcript renderer if the raw JSON fallback
+  becomes painful. Keep the raw fallback even after adding a renderer because
+  provider-specific fields such as `reasoning_content` are useful during
+  debugging.
+- Add a first-class provider/model capability only if we route z.ai through
+  Chat Completions again. The live GLM path uses the Anthropic Messages shape
+  because z.ai's Chat Completions tool-call parser mishandles union-shaped tool
+  parameters; see `props/debug/glm46_strict_tool_schema_experiments.md`.
+- Defer a dedicated `correlation_id` column until DB-to-Langfuse joins need it.
+  Current correlation rides in injected props metadata.
+
 ## Testing
 
 - Anthropic-shape agent e2e test. The agent e2e tests (critic/grader/critic_dev) only
