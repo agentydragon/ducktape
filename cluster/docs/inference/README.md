@@ -75,4 +75,4 @@ incident or migration, write a focused doc and link it from this README.
 
 - <../../k8s/ollama/> — current cluster Ollama deployment
 - <../../../x/local_llm/> — wyrm2 host scripts (vLLM/Ollama/comfyui)
-- <../../README.md#gpu-nvidia> — GPU/CDI runtime stack on wyrm2
+- <../gpu.md> — GPU/CDI runtime stack on wyrm2

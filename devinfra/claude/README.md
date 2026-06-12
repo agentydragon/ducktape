@@ -3,11 +3,6 @@
 Session hooks, statusline, and Claude Code API models for Claude Code
 web environments.
 
-## References
-
-- [Claude Code Hooks API](https://docs.anthropic.com/en/docs/claude-code/hooks)
-- [Settings JSON Schema](https://json.schemastore.org/claude-code-settings.json)
-
 ## Networking
 
 Current Claude Code web containers reach the internet without any per-tool
@@ -30,10 +25,6 @@ what the Rust hook daemon guarantees to every Claude Code session (on CLI and on
 web). Read that first if you want to know **what** the daemon does for the
 agent — this README covers **how** those behaviors are implemented.
 
-## Components
-
-- **Session Start Hook**: Sets up the development environment for Claude Code web sessions.
-
 ## Session Start Hook
 
 The hook runs at the start of each Claude Code web session and:
@@ -45,39 +36,31 @@ follow-up.
 
 ### PATH Shims (self-contained Rust runtime)
 
-7. Bazelisk binary provided by Nix devShell (on PATH)
-8. Installs PATH shims at `<session_dir>/bin/{bazelisk,bazel,bb,bbr}` — small
-   shell scripts that `exec claude-hook shim <name>` (PATH-resolved at invocation
-   time). The Rust shim runtime resolves the real binary outside the shim dir
-   and never calls back into the session-start daemon.
+Installs PATH shims at `<session_dir>/bin/{bazelisk,bazel,bb,bbr}` — small
+shell scripts that `exec claude-hook shim <name>` (PATH-resolved at invocation
+time). The Rust shim runtime resolves the real binary outside the shim dir
+and never calls back into the session-start daemon.
 
-   `bazel` and `bazelisk` inject the session bazelrc and translate any inherited
-   `HTTP_PROXY` / `HTTPS_PROXY` value into Java proxy JVM properties so Bazel's
-   grpc-java clients can reach BuildBuddy through Claude's proxy. `bb` and `bbr`
-   are real-binary resolution wrappers only.
+`bazel` and `bazelisk` inject the session bazelrc and translate any inherited
+`HTTP_PROXY` / `HTTPS_PROXY` value into Java proxy JVM properties so Bazel's
+grpc-java clients can reach BuildBuddy through Claude's proxy. `bb` and `bbr`
+are real-binary resolution wrappers only.
 
-   The `git` shim is installed only when the active profile enables at least one
-   `git_shim` safety flag. Its per-flag policy can block `git add -A` / `git add .`,
-   `git stash`, or `git commit --amend`.
+The `git` shim is installed only when the active profile enables at least one
+`git_shim` safety flag. Its per-flag policy can block `git add -A` / `git add .`,
+`git stash`, or `git commit --amend`.
 
-   Because `claude-hook` is resolved via PATH at exec time (not baked as a store
-   path at install time), `nix profile install` / `home-manager switch` takes
-   effect for all subsequent shim invocations without restarting the session.
+Because `claude-hook` is resolved via PATH at exec time (not baked as a store
+path at install time), `nix profile install` / `home-manager switch` takes
+effect for all subsequent shim invocations without restarting the session.
 
-### Git Hooks
+### Git Hooks and Environment
 
-9. Installs git pre-commit hooks via pre-commit framework
-
-### Development Tools
-
-Note: flux, kustomize, helm are now Bazel-managed via `@multitool//tools/*`.
-Nix formatting uses `nixfmt` from the Nix devShell.
-
-### Environment Configuration
-
-12. Sets up environment variables in `CLAUDE_ENV_FILE`
-
-See `.claude/settings.json` for hook configuration.
+Installs git pre-commit hooks (pre-commit framework) and writes environment
+variables to `CLAUDE_ENV_FILE`. Bazelisk comes from the Nix devShell; flux,
+kustomize, helm are Bazel-managed via `@multitool//tools/*`; Nix formatting
+uses `nixfmt` from the devShell. See `.claude/settings.json` for hook
+configuration.
 
 ## Observed: `Setup` and `SessionStart` Use Different Session IDs
 
@@ -112,27 +95,6 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.
 
-## Historical: Explicit Egress Proxy
-
-Earlier Claude Code web containers injected `HTTPS_PROXY=http://<container_id>:<jwt>@<host>:<port>`
-into the process environment. The hook daemon previously ran a substantial
-subsystem under `devinfra/claude/auth_proxy/` to handle it:
-
-- Load the TLS inspection CA from `/usr/local/share/ca-certificates/swp-ca-production.crt`
-- Build a Java truststore (`cacerts.jks`) for Bazel JVM's HTTPS
-- Build a combined CA bundle (`combined_ca.pem`) for `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, etc.
-- Start a UDS proxy (`UdsRemoteProxy`) that Bazel used via `--remote_proxy=unix:<path>`
-  to work around gRPC-Java's `Authenticator` installation timing bug with HTTP
-  CONNECT proxies.
-- A BES interceptor that inspected Bazel build events and forwarded them to BuildBuddy.
-
-Current containers reach the internet without any of that — outbound
-HTTPS to public hosts just works, and Anthropic's CA is already in the
-system CA bundle if TLS is being inspected somewhere upstream. The
-entire `auth_proxy/` subsystem was removed; see git log for the
-removal. If Anthropic reverts to explicit proxy env vars, restore the
-subsystem from history.
-
 ## Configuration
 
 | Environment Variable                    | Default | Description          |
@@ -146,6 +108,8 @@ See `settings.py` for the full configuration schema.
 
 ## References
 
+- [Claude Code Hooks API](https://docs.anthropic.com/en/docs/claude-code/hooks)
+- [Settings JSON Schema](https://json.schemastore.org/claude-code-settings.json)
 - [Claude Code on the Web](https://www.anthropic.com/news/claude-code-on-the-web) - Product announcement
 - [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) - Network isolation architecture
 - [Enterprise Network Configuration](https://docs.anthropic.com/en/docs/claude-code/corporate-proxy) - Proxy and CA configuration
@@ -154,13 +118,7 @@ See `settings.py` for the full configuration schema.
 ## Files
 
 Agent shell files live under `<session_dir>` = `~/.claude/session-env/<session_id>/`.
-
-Historical Python container-runtime files (in `<session_dir>/supervisor/`):
-
-- `supervisord.conf` - Supervisor main configuration
-- `supervisord.{log,pid}` - Supervisor daemon state
-
-Note: the Rust daemon does not currently set up supervisor or Docker.
+The Rust daemon does not set up supervisor or Docker.
 
 Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 
@@ -170,22 +128,10 @@ Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 - `daemon.err.log` - Daemon stderr
 - `startup_failure.json` - client startup backoff marker
 
-## Known Limitations
+## Historical Context
 
-### Historical (gVisor era): 9p filesystem doesn't support Unix socket hard links
-
-**Affected**: gVisor-era Claude Code web sandbox, where root `/` was 9p.
-Current sessions run on Firecracker microVMs with an ext4 root, so the
-trigger no longer exists — kept because the TCP-socket configuration below is
-still what ships.
-
-**Root cause**: Supervisord uses hard links for atomic Unix socket creation (`link()` syscall). The 9p filesystem doesn't support hard linking Unix domain sockets, returning `EOPNOTSUPP` (errno 95). When the hard link fails, supervisord misinterprets this as a stale socket and enters an infinite retry loop.
-
-**Solution**: Use TCP socket (`inet_http_server`) instead of Unix socket. The supervisor_setup module now configures supervisor to listen on `127.0.0.1:19001` by default. This avoids the 9p filesystem limitation entirely.
-
-Configuration via environment variable:
-
-- `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
+The explicit egress proxy era (`auth_proxy/` subsystem) and the gVisor/9p origin of the
+TCP supervisor port: <archive/2026_06_12_gvisor_era_networking.md>.
 
 ## OTEL Tracing
 

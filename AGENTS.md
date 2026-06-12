@@ -105,63 +105,15 @@ Remote execution (RBE) and remote caching are the **expected defaults** — do n
 1. First, retry the Bash tool call with `dangerouslyDisableSandbox: true` — the Claude Code sandbox's `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
 2. If it still fails, **stop and report the connectivity issue to the user**. The user may need to recover the session start hook or check VPN/firewall state.
 
-### Downloading remote build outputs
+### Build outputs and invocation data
 
-`bbr` uses `--remote_download_minimal` by default, so artifacts stay on the runner. To fetch specific outputs:
-
-```bash
-# Fetch by regex (most common):
-bbr build //path/to:target --remote_download_regex='.*\.whl$'
-
-# Fetch all direct outputs of the requested targets:
-bbr build //path/to:target --remote_download_outputs=toplevel
-```
-
-Artifacts land at `bb-out/bazel-out/k8-fastbuild/bin/<pkg>/<name>` (not `bazel-bin/` — that symlink only exists in local workspaces).
-
-### Undeclared test outputs (golden PNGs, logs, HAR dumps)
-
-Tests write diagnostics to Bazel's `TEST_UNDECLARED_OUTPUTS_DIR`. These are
-uploaded to BuildBuddy automatically. Fetch them with `bbapi artifact`:
-
-```bash
-INV=$(cat ~/.cache/bbr/last_invocation_id)
-
-# List what's available (shows LABEL and NAME columns):
-bbapi artifact list "$INV"
-
-# Stream a specific file to stdout (pipe or redirect):
-bbapi artifact cat "$INV" pave_output.txt > local_copy.txt
-
-# Download to a file (defaults to the artifact's own filename):
-bbapi artifact download "$INV" pave_output.txt
-```
-
-`name-substr` is matched against `"label/name"` (e.g. `"test_render/test.outputs/empty.png"`).
-
-To update golden screenshots after a visual test run:
-
-```bash
-INV=$(cat ~/.cache/bbr/last_invocation_id)
-bbapi artifact download "$INV" "test.outputs/product_cash_runway.png"
-cp product_cash_runway.png augur/frontend/__screenshots__/product_cash_runway.png
-```
-
-The outer (bbr) invocation ID auto-resolves to the child Bazel invocation — either ID works.
-
-### Invocation tracking
-
-`bbr` writes the BuildBuddy invocation ID to `~/.cache/bbr/last_invocation_id`:
-
-```bash
-bbapi target <id>                    # List targets (auto-resolves workflow IDs)
-bbapi target log <id> <target>       # Fetch test log
-bbapi artifact list <id>             # List undeclared test outputs
-bbapi invocation <id>                # Invocation details (commit, branch, dirty)
-
-bbapi invocation list --tag session:<session-id>   # All invocations in this session
-bbapi target history --label //path:target          # Pass/fail timeline
-```
+`bbr` runs with `--remote_download_minimal`, so artifacts stay on the runner; fetch with
+`--remote_download_regex='...'` or `--remote_download_outputs=toplevel`. Fetched outputs
+land under `bb-out/bazel-out/k8-fastbuild/bin/<pkg>/<name>` (not `bazel-bin/` — that
+symlink only exists in local workspaces). `bbr` writes the invocation ID to
+`~/.cache/bbr/last_invocation_id`; undeclared test outputs, logs, target history, and
+invocation details come from `bbapi {artifact,target,invocation} ...`. Full recipes
+(golden screenshot updates, pass/fail timelines, log retrieval): `/buildbuddy_api` skill.
 
 ### Session bazelrc and `bb` vs `bazelisk`
 
@@ -205,7 +157,8 @@ applies at `spec.path` (e.g., `terraform.yaml`, `*.sops.yaml`). **Do not include
 `flux-kustomization.yaml` in local `kustomization.yaml` resources** — it causes
 redundant application.
 
-@cluster/docs/container-images.md
+Adding or publishing a container image (Bazel `oci_image`, GHCR push matrix, Flux image
+automation, tag policy): see <cluster/docs/container-images.md>.
 
 ## CI Configuration
 
@@ -290,39 +243,32 @@ if __name__ == "__main__":
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles or the RBE worker image.
 
-**Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with local-only execution for tests that assume RBE.
+**Docker tests run on RBE, never locally**: tests that use Docker (container E2E,
+mitmproxy testcontainers) target BuildBuddy RBE workers, which have Docker. Never skip,
+stub, or declare them "not runnable" because Docker is missing locally. If RBE is
+unreachable, recover it (connectivity steps above) — or abort and report; never fall
+back to local-only execution for tests that assume RBE. Use the `py_test` macro from
+`//devinfra/python:defs.bzl` (not raw `@rules_python`) with `requires_docker = True`;
+the macro handles `env_inherit`, tags, and Docker exec properties — don't add them
+manually.
 
-Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DUCKTAPE_DOCKER_CLIENT_KEY"]` or `tags = ["requires_docker"]` manually.
+**Use undeclared test outputs for log capture**: write diagnostics (container logs, HAR
+dumps, config snapshots) via `util.testing.undeclared_outputs.undeclared_outputs_dir()`,
+not test stdout/stderr. They upload to BuildBuddy and download to
+`bazel-testlogs/<target>/test.outputs/` (see "Build outputs and invocation data" above).
 
-**Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
+**Test timeouts mean hangs, not slowness**: a timeout means something is wedged
+(deadlock, container never ready, port nothing listens on) — do NOT bump
+`size`/`timeout`. Trace the blockage: `--test_output=streamed --test_arg=-s`, fixture
+logging, `docker ps`.
 
-```bash
-TEST_DIR=$(bb info bazel-testlogs)/path/to/test_target
-ls "$TEST_DIR/test.outputs/"          # list undeclared output files
-cat "$TEST_DIR/test.outputs/my.log"   # read a specific output
-```
+**Localizing test failures**: `bbapi target history` gives the pass/fail timeline —
+faster than `git bisect` since BuildBuddy already has the results. Recipes:
+`/buildbuddy_api` skill.
 
-On RBE, the outputs are downloaded to local testlogs dir after test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example.
-
-**Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
-
-**Localizing test failures with target history**: When a test is failing and you need to find when it broke, use `bbapi target history` to see the pass/fail timeline, then narrow to a commit range. This is faster than `git bisect` because BuildBuddy already has the results:
-
-```bash
-# 1. Check recent history for the failing target
-bbapi target history //path/to:test_target
-
-# 2. Identify the transition point (last pass → first fail)
-# 3. Use git log to find commits in that range
-git log --oneline <last-pass>..<first-fail>
-
-# 4. Read the test log from the first failing invocation
-bbapi target log <failing-invocation-id> test_target
-```
-
-Use the `/buildbuddy_api` skill for more details on the `bbapi` CLI.
-
-@devinfra/docs/syrupy_snapshots.md
+**Snapshot tests (syrupy)**: set `uses_syrupy = True` on `py_test` and put the `.ambr`
+files in `data`. Update/retrieval workflow (RBE and local):
+<devinfra/docs/syrupy_snapshots.md>.
 
 ### Live OpenAI API Tests
 

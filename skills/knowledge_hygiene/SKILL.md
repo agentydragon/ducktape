@@ -101,10 +101,38 @@ Examples of information to remove or compress:
 - Boilerplate descriptions of fixtures, examples, or generated files where the filename and surrounding convention already convey the same fact
 - Copied lists like "service `xyzzy` permits `foo` values `bar`, `baz`, `quux`" when `xyzzy.yaml` is the real owner of allowed values
 
-If a standard mechanism has one local wrinkle, keep only the wrinkle and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Local wrinkle: the job needs the `analytics-prod` profile."
+If a standard mechanism differs here in one respect, keep only the delta and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Delta: the job needs the `analytics-prod` profile."
 Usually replace volatile mirrors with a pointer plus any durable meaning, policy, or gotcha the source does not contain. Generated Markdown/reference output is an exception, not the default; suggest it only when readers genuinely need the full volatile list inline and there is already a natural generation path.
 
-### 5. Rank Suggestions
+### 5. Token-Cost Sweep
+
+Token cost = size × load frequency. Inventory which surfaces are **always loaded**
+into agent context versus read on demand:
+
+- The instruction-file transclusion closure from repo root (e.g. `CLAUDE.md` →
+  `AGENTS.md` → `README.md` + `@`-transcluded topic docs + style guides) — every session
+- Skill `description:` frontmatter, MCP server instructions, generated session
+  banners — every session
+- Per-tree instruction files (transcluding their READMEs) — every session touching
+  that tree
+- Everything else — only when actually read
+
+A 100-token cut in an always-loaded file outweighs a 1,000-token cut in an on-demand
+doc. Sweep the always-loaded surfaces for, in descending value:
+
+- **Teaching material for generic practice**: good/bad example pairs and rationale
+  paragraphs for rules a strong model already follows. State the rule in one
+  imperative line; keep an example only when it defines a repo-specific format.
+- **Task-specific docs transcluded wholesale**: convert the transclusion to a one-line
+  pointer so the doc loads on demand.
+- **Duplication with skills or reference docs**: keep the two-line essentials inline
+  and point at the canonical recipe.
+- **Human-oriented depth shipped to agents via README transclusion**: deep reference,
+  setup walkthroughs, and historical context move to linked (not transcluded) docs.
+- **Repetition for emphasis**: a rule stated three times with escalating bold is one
+  rule.
+
+### 6. Rank Suggestions
 
 Score each candidate by:
 
@@ -113,6 +141,7 @@ Score each candidate by:
 - Cost: small edit, link/redirect, consolidation, archive/tombstone, source-of-truth pointer, ownership/process change
 - Blast radius: one page, topic cluster, repo-wide docs, external KB, runtime docs
 - Decay rate: likelihood of drifting further if ignored
+- Load frequency: always-loaded agent context outweighs on-demand reading
 
 Favor high-confidence, high-impact, low-cost fixes first.
 
