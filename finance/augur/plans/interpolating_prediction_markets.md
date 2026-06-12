@@ -1,7 +1,7 @@
 # Interpolating prediction markets into trajectories (position)
 
 Status: **position / framing doc** (2026-06-04). States what augur's exogenous `model` _is_
-conceptually; the fitting mechanics live in the companion `augur/plans/unified_model_fit.md`.
+conceptually. The current execution target is the standalone `loom/` program.
 
 Execution home (2026-06-09): this position is being built out as the standalone `loom/`
 program — see `loom/plans/program_plan.md`. augur consumes its WorldSet artifacts through a
@@ -9,7 +9,7 @@ bridge on augur's side.
 
 Companion reading:
 
-- `augur/plans/unified_model_fit.md` — how to actually fit it (estimator, split, surfacing).
+- `loom/plans/program_plan.md` — how this framing is being built as a WorldSet-producing program.
 - `augur/plans/whole_model_calibration.md` / `augur/plans/prediction_market_calibration.md` — the
   calibration machinery and PE-channel fit as they stand today.
 
@@ -136,7 +136,7 @@ Open question below.)
    investment is the plumbing to capture **resolutions + price-as-of-date** so this test set
    accumulates over time. It is the only PM evaluation that ever measures skill rather than mimicry.
 
-## Implementation routes (sketch — mechanics in `unified_model_fit.md`)
+## Implementation routes (sketch — current mechanics live in `loom/plans/program_plan.md`)
 
 - **Base measure `Q`.** Either the structured models we already have (`state_space` / `vecm` +
   `private_equity_risk`), or LLM-proposed trajectories. An LLM base must emit **typed numeric
