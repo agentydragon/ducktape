@@ -20,7 +20,7 @@ Audit artifacts such as:
 - Issue/PR templates, release notes, changelogs, operational checklists, and automation output meant to be read as guidance
 
 Code, config, tests, schemas, and runtime probes are evidence sources, not the primary target, unless the user explicitly expands scope.
-Comments and docstrings are in scope when the problem is informational: e.g. they restate the name/signature, repeat obvious type facts, or describe a generic framework behavior without a local twist.
+Comments and docstrings are in scope when the problem is informational: e.g. they restate the name/signature, repeat obvious type facts, or describe a generic framework behavior without a local deviation.
 
 ## Non-Goals
 

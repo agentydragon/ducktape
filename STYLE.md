@@ -198,6 +198,15 @@ test.
 **Heuristics**: if deleting it loses zero information, delete it. "Why" earns its place;
 "what" rarely does. Public API boundaries tolerate more verbosity than internal code.
 
+### Deviations, Not Re-explanations
+
+When this repo uses a standard mechanism with a repo-specific difference, document only
+the difference, labeled **Deviation:**, with a brief pointer to the standard mechanism —
+never re-explain the standard behavior. Example: "Standard Flux image automation;
+deviation: register the `ImageRepository` with the webhook receiver." House vocabulary:
+**deviation** = intentional divergence from stock; **gotcha** = surprising behavior that
+bites.
+
 ### Local File Links in Markdown
 
 - `@path/to/file.md` (own line) — transclusion, for content agents must always load
