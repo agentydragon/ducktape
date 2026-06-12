@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wayback-cache-filler
+  namespace: wayback-cache
+  labels:
+    app.kubernetes.io/name: wayback-cache
+    app.kubernetes.io/component: filler
+spec:
+  selector:
+    app.kubernetes.io/name: wayback-cache
+    app.kubernetes.io/component: filler
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http

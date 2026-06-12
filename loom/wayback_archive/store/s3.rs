@@ -36,18 +36,6 @@ impl S3BlobStore {
             store: Arc::new(store),
         })
     }
-
-    pub fn from_env() -> Result<Self> {
-        Self::new(
-            required_env("WAYBACK_ARCHIVE_S3_ENDPOINT")?,
-            required_env("WAYBACK_ARCHIVE_S3_BUCKET")?,
-            required_env("WAYBACK_ARCHIVE_S3_ACCESS_KEY_ID")?,
-            required_env("WAYBACK_ARCHIVE_S3_SECRET_ACCESS_KEY")?,
-            std::env::var("WAYBACK_ARCHIVE_S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
-            std::env::var("WAYBACK_ARCHIVE_S3_ALLOW_HTTP")
-                .map_or(true, |value| value == "1" || value == "true"),
-        )
-    }
 }
 
 #[async_trait]
@@ -78,8 +66,4 @@ impl BlobStore for S3BlobStore {
             .bytes()
             .await?)
     }
-}
-
-fn required_env(name: &str) -> Result<String> {
-    std::env::var(name).with_context(|| format!("{name} must be set"))
 }

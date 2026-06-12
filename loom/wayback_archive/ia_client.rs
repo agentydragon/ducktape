@@ -10,7 +10,7 @@ use crate::{DEFAULT_AVAILABILITY_TIMEOUT, DEFAULT_CDX_TIMEOUT, DEFAULT_REPLAY_TI
 
 #[derive(Debug, Clone)]
 pub struct UpstreamResponse {
-    pub status: u16,
+    pub status: http::StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
 }
@@ -113,7 +113,7 @@ impl ReqwestIaClient {
             .timeout(self.timeouts.for_endpoint(request.key.endpoint))
             .send()
             .await?;
-        let status = response.status().as_u16();
+        let status = response.status();
         let headers = response.headers().clone();
         let body = response.bytes().await?;
         Ok(UpstreamResponse {
@@ -138,7 +138,7 @@ impl IaClient for ReqwestIaClient {
             .timeout(self.timeouts.replay)
             .send()
             .await?;
-        let status = response.status().as_u16();
+        let status = response.status();
         let headers = response.headers().clone();
         let body = response.bytes().await?;
         Ok(UpstreamResponse {

@@ -1,13 +1,18 @@
+mod backend;
+mod frontend;
 mod ia_client;
 mod limiter;
 mod metrics;
 mod path;
 mod response;
 mod service;
+mod shared;
 mod store;
 mod types;
 mod util;
 
+pub use backend::ArchiveFiller;
+pub use frontend::ArchiveInputService;
 pub use ia_client::{IaClient, ReqwestIaClient, UpstreamResponse, UpstreamTimeouts};
 pub use limiter::{
     AcquisitionOutcome, AdaptiveLimiter, LimiterConfig, LimiterPermit, LimiterSnapshot,
@@ -15,13 +20,17 @@ pub use limiter::{
 pub use path::{parse_metadata_request, parse_replay_path};
 pub use response::ArchiveResponse;
 pub use service::ArchiveService;
+pub use shared::{
+    ArchiveConfig, ArchiveSettings, archive_config_from_env, archive_settings_from_env,
+    archive_store_from_config, archive_store_from_env,
+};
 pub use store::{
     ArchiveStore, BlobRef, BlobStore, MemoryArchiveStore, MemoryBlobStore, PostgresArchiveStore,
     S3BlobStore,
 };
 pub use types::{
-    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
-    StoredMetadata, StoredReplay,
+    Endpoint, FillAttemptResult, FillLeaseKey, FillRequest, MetadataKey, MetadataRecord,
+    MetadataRequest, ReplayKey, ReplayRecord, StoredMetadata, StoredReplay,
 };
 
 use std::time::Duration;
@@ -46,7 +55,7 @@ mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use http::header::CONTENT_TYPE;
-    use http::{HeaderMap, HeaderValue};
+    use http::{HeaderMap, HeaderValue, StatusCode};
     use tokio::sync::{Mutex, oneshot};
 
     use super::*;
@@ -58,9 +67,9 @@ mod tests {
     fn response_header(response: &ArchiveResponse, name: &str) -> Option<String> {
         response
             .headers
-            .iter()
-            .find(|(header_name, _)| header_name == name)
-            .map(|(_, value)| value.clone())
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
     }
 
     #[test]
@@ -108,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn availability_miss_is_fetched_and_cached_by_normalized_query() {
         let client = Arc::new(CountingClient::ok_json(
-            200,
+            StatusCode::OK,
             br#"{"archived_snapshots":{"closest":{"available":true}}}"#,
         ));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
@@ -126,8 +135,8 @@ mod tests {
             )
             .await;
 
-        assert_eq!(first.status, 200);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::OK);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(second.body, first.body);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
@@ -135,7 +144,7 @@ mod tests {
     #[tokio::test]
     async fn cdx_miss_is_fetched_and_cached() {
         let client = Arc::new(CountingClient::ok_json(
-            200,
+            StatusCode::OK,
             br#"[["timestamp","original"],["20200101000000","https://example.com/"]]"#,
         ));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
@@ -153,8 +162,8 @@ mod tests {
             )
             .await;
 
-        assert_eq!(first.status, 200);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::OK);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(second.body, first.body);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
@@ -163,12 +172,12 @@ mod tests {
     async fn metadata_502_is_not_cached() {
         let client = Arc::new(CountingClient::new(vec![
             UpstreamResponse {
-                status: 502,
+                status: StatusCode::BAD_GATEWAY,
                 headers: HeaderMap::new(),
                 body: Bytes::from_static(b"bad gateway"),
             },
             UpstreamResponse {
-                status: 200,
+                status: StatusCode::OK,
                 headers: json_headers(),
                 body: Bytes::from_static(br#"{"ok":true}"#),
             },
@@ -214,8 +223,8 @@ mod tests {
             )
             .await;
 
-        assert_eq!(first.status, 503);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(second.body, Bytes::from_static(br#"{"ok":true}"#));
         assert_eq!(client.calls.load(Ordering::SeqCst), 2);
     }
@@ -225,7 +234,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("retry-after", header_value("7"));
         let client = Arc::new(CountingClient::new(vec![UpstreamResponse {
-            status: 503,
+            status: StatusCode::SERVICE_UNAVAILABLE,
             headers,
             body: Bytes::from_static(b"try later"),
         }]));
@@ -263,7 +272,7 @@ mod tests {
             )
             .await;
 
-        assert_eq!(response.status, 503);
+        assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(
             response_header(&response, "retry-after").as_deref(),
             Some("7")
@@ -283,7 +292,10 @@ mod tests {
 
     #[tokio::test]
     async fn limiter_queue_timeout_is_reported_by_reason() {
-        let client = Arc::new(CountingClient::ok(200, b"won't be fetched".as_slice()));
+        let client = Arc::new(CountingClient::ok(
+            StatusCode::OK,
+            b"won't be fetched".as_slice(),
+        ));
         let limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
             initial: 1,
             min: 1,
@@ -300,7 +312,7 @@ mod tests {
             .handle_path("/web/20200115103000id_/https://example.com/")
             .await;
 
-        assert_eq!(response.status, 503);
+        assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(client.calls.load(Ordering::SeqCst), 0);
         assert!(service.metrics().await.unwrap().contains(
             "wayback_archive_acquisition_failures_total{endpoint=\"replay\",reason=\"limiter_queue_timeout\",status=\"none\"} 1"
@@ -310,7 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_metadata_is_stable_policy_result() {
-        let client = Arc::new(CountingClient::ok_json(200, b"too big"));
+        let client = Arc::new(CountingClient::ok_json(StatusCode::OK, b"too big"));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone())
             .with_max_metadata_bytes(3);
 
@@ -327,21 +339,21 @@ mod tests {
             )
             .await;
 
-        assert_eq!(first.status, 413);
-        assert_eq!(second.status, 413);
+        assert_eq!(first.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(second.status, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn replay_miss_is_fetched_and_cached() {
-        let client = Arc::new(CountingClient::ok(200, b"hello".as_slice()));
+        let client = Arc::new(CountingClient::ok(StatusCode::OK, b"hello".as_slice()));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
         let path = "/web/20200115103000id_/https://example.com/";
 
         let first = service.handle_path(path).await;
         let second = service.handle_path(path).await;
 
-        assert_eq!(first.status, 200);
+        assert_eq!(first.status, StatusCode::OK);
         assert_eq!(first.body, Bytes::from_static(b"hello"));
         assert_eq!(second.body, Bytes::from_static(b"hello"));
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
@@ -355,7 +367,7 @@ mod tests {
             header_value("Wed, 15 Jan 2020 10:30:00 GMT"),
         );
         let client = Arc::new(CountingClient::new(vec![UpstreamResponse {
-            status: 404,
+            status: StatusCode::NOT_FOUND,
             headers,
             body: Bytes::from_static(b"archived not found"),
         }]));
@@ -368,8 +380,8 @@ mod tests {
             .handle_path("/web/20200115103000id_/http://gone.example/page")
             .await;
 
-        assert_eq!(first.status, 404);
-        assert_eq!(second.status, 404);
+        assert_eq!(first.status, StatusCode::NOT_FOUND);
+        assert_eq!(second.status, StatusCode::NOT_FOUND);
         assert_eq!(second.body, Bytes::from_static(b"archived not found"));
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
@@ -378,12 +390,12 @@ mod tests {
     async fn ia_502_is_not_cached() {
         let client = Arc::new(CountingClient::new(vec![
             UpstreamResponse {
-                status: 502,
+                status: StatusCode::BAD_GATEWAY,
                 headers: HeaderMap::new(),
                 body: Bytes::from_static(b"bad gateway"),
             },
             UpstreamResponse {
-                status: 200,
+                status: StatusCode::OK,
                 headers: content_type_headers(),
                 body: Bytes::from_static(b"eventual success"),
             },
@@ -404,8 +416,8 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(2)).await;
         let second = service.handle_path(path).await;
 
-        assert_eq!(first.status, 503);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(second.body, Bytes::from_static(b"eventual success"));
         assert_eq!(client.calls.load(Ordering::SeqCst), 2);
     }
@@ -415,7 +427,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("retry-after", header_value("11"));
         let client = Arc::new(CountingClient::new(vec![UpstreamResponse {
-            status: 503,
+            status: StatusCode::SERVICE_UNAVAILABLE,
             headers,
             body: Bytes::from_static(b"try later"),
         }]));
@@ -424,7 +436,7 @@ mod tests {
             .handle_path("/web/20200115103000id_/https://example.com/")
             .await;
 
-        assert_eq!(response.status, 503);
+        assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(
             response_header(&response, "retry-after").as_deref(),
             Some("11")
@@ -433,7 +445,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_replay_is_stable_policy_result() {
-        let client = Arc::new(CountingClient::ok(200, b"too big".as_slice()));
+        let client = Arc::new(CountingClient::ok(StatusCode::OK, b"too big".as_slice()));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone())
             .with_max_body_bytes(3);
         let path = "/web/20200115103000id_/https://example.com/";
@@ -441,8 +453,8 @@ mod tests {
         let first = service.handle_path(path).await;
         let second = service.handle_path(path).await;
 
-        assert_eq!(first.status, 413);
-        assert_eq!(second.status, 413);
+        assert_eq!(first.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(second.status, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
 
@@ -474,8 +486,8 @@ mod tests {
 
         let first = first.await.unwrap();
         let second = second.await.unwrap();
-        assert_eq!(first.status, 200);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::OK);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
 
@@ -506,8 +518,8 @@ mod tests {
 
         let first = first.await.unwrap();
         let second = second.await.unwrap();
-        assert_eq!(first.status, 200);
-        assert_eq!(second.status, 200);
+        assert_eq!(first.status, StatusCode::OK);
+        assert_eq!(second.status, StatusCode::OK);
         assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
 
@@ -607,7 +619,7 @@ mod tests {
     }
 
     impl CountingClient {
-        fn ok(status: u16, body: &[u8]) -> Self {
+        fn ok(status: StatusCode, body: &[u8]) -> Self {
             Self::new(vec![UpstreamResponse {
                 status,
                 headers: content_type_headers(),
@@ -615,7 +627,7 @@ mod tests {
             }])
         }
 
-        fn ok_json(status: u16, body: &[u8]) -> Self {
+        fn ok_json(status: StatusCode, body: &[u8]) -> Self {
             Self::new(vec![UpstreamResponse {
                 status,
                 headers: json_headers(),
@@ -655,7 +667,7 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut responses = self.responses.lock().await;
             Ok(responses.pop_front().unwrap_or_else(|| UpstreamResponse {
-                status: 200,
+                status: StatusCode::OK,
                 headers: content_type_headers(),
                 body: Bytes::from_static(b"default success"),
             }))
@@ -679,7 +691,7 @@ mod tests {
                 release.await.unwrap();
             }
             Ok(UpstreamResponse {
-                status: 200,
+                status: StatusCode::OK,
                 headers: content_type_headers(),
                 body: Bytes::from_static(b"single flight"),
             })

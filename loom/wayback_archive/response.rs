@@ -1,25 +1,27 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use http::StatusCode;
+use http::{HeaderMap, HeaderValue, StatusCode, header};
 
-use crate::types::Endpoint;
+use crate::types::{Endpoint, StoredMetadata, StoredReplay};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
+    pub status: StatusCode,
+    pub headers: HeaderMap,
     pub body: Bytes,
 }
 
 impl ArchiveResponse {
     pub(crate) fn text(status: StatusCode, text: impl Into<String>) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
         Self {
-            status: status.as_u16(),
-            headers: vec![(
-                "content-type".to_string(),
-                "text/plain; charset=utf-8".to_string(),
-            )],
+            status,
+            headers,
             body: Bytes::from(text.into()),
         }
     }
@@ -29,22 +31,53 @@ impl ArchiveResponse {
     }
 
     pub(crate) fn retry_after_duration(endpoint: Endpoint, duration: Option<Duration>) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        headers.insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_str(
+                &retry_after_seconds(duration)
+                    .unwrap_or_else(|| endpoint.retry_after_seconds())
+                    .to_string(),
+            )
+            .expect("retry-after seconds must be a valid header value"),
+        );
         Self {
-            status: StatusCode::SERVICE_UNAVAILABLE.as_u16(),
-            headers: vec![
-                (
-                    "content-type".to_string(),
-                    "text/plain; charset=utf-8".to_string(),
-                ),
-                (
-                    "retry-after".to_string(),
-                    retry_after_seconds(duration)
-                        .unwrap_or_else(|| endpoint.retry_after_seconds())
-                        .to_string(),
-                ),
-            ],
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            headers,
             body: Bytes::from("archive acquisition is backing off\n"),
         }
+    }
+}
+
+pub(crate) fn stored_replay_response(replay: StoredReplay) -> ArchiveResponse {
+    match replay {
+        StoredReplay::Capture(record) => ArchiveResponse {
+            status: record.status,
+            headers: record.headers,
+            body: record.body,
+        },
+        StoredReplay::BodyTooLarge { observed_size, .. } => ArchiveResponse::text(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("archived replay body is too large: {observed_size} bytes\n"),
+        ),
+    }
+}
+
+pub(crate) fn stored_metadata_response(metadata: StoredMetadata) -> ArchiveResponse {
+    match metadata {
+        StoredMetadata::Response(record) => ArchiveResponse {
+            status: record.status,
+            headers: record.headers,
+            body: record.body,
+        },
+        StoredMetadata::BodyTooLarge { observed_size, .. } => ArchiveResponse::text(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("archived metadata response is too large: {observed_size} bytes\n"),
+        ),
     }
 }
 

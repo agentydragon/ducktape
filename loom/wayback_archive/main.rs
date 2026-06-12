@@ -1,94 +1,24 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::{OriginalUri, State};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::{Router, routing::get};
 use log::info;
 use wayback_archive::{
-    AdaptiveLimiter, ArchiveResponse, ArchiveService, ArchiveStore, DEFAULT_AVAILABILITY_TIMEOUT,
-    DEFAULT_CDX_TIMEOUT, DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_METADATA_BYTES,
-    DEFAULT_MAX_QUEUE_WAIT, DEFAULT_REPLAY_TIMEOUT, LimiterConfig, MemoryArchiveStore,
-    PostgresArchiveStore, ReqwestIaClient, S3BlobStore, UpstreamTimeouts,
+    ArchiveInputService, ArchiveResponse, archive_config_from_env, archive_store_from_config,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8080);
-    let web_upstream = std::env::var("WAYBACK_ARCHIVE_WEB_UPSTREAM")
-        .unwrap_or_else(|_| "https://web.archive.org".to_string());
-    let availability_upstream = std::env::var("WAYBACK_ARCHIVE_AVAILABILITY_UPSTREAM")
-        .unwrap_or_else(|_| "https://archive.org".to_string());
-    let max_body_bytes = std::env::var("WAYBACK_ARCHIVE_MAX_BODY_BYTES")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_MAX_BODY_BYTES);
-    let max_metadata_bytes = std::env::var("WAYBACK_ARCHIVE_MAX_METADATA_BYTES")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_MAX_METADATA_BYTES);
-    let queue_wait = std::env::var("WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_MAX_QUEUE_WAIT);
-    let timeouts = UpstreamTimeouts {
-        availability: duration_from_env_secs(
-            "WAYBACK_ARCHIVE_AVAILABILITY_TIMEOUT_SECONDS",
-            DEFAULT_AVAILABILITY_TIMEOUT,
-        ),
-        cdx: duration_from_env_secs("WAYBACK_ARCHIVE_CDX_TIMEOUT_SECONDS", DEFAULT_CDX_TIMEOUT),
-        replay: duration_from_env_secs(
-            "WAYBACK_ARCHIVE_REPLAY_TIMEOUT_SECONDS",
-            DEFAULT_REPLAY_TIMEOUT,
-        ),
-    };
-
-    let store: Arc<dyn ArchiveStore> =
-        if let Ok(database_url) = std::env::var("WAYBACK_ARCHIVE_DATABASE_URL") {
-            info!("using Postgres metadata store and S3 blob store");
-            let blobs = Arc::new(S3BlobStore::from_env()?);
-            Arc::new(PostgresArchiveStore::new(database_url, blobs).await?)
-        } else {
-            info!("using in-memory archive store");
-            Arc::new(MemoryArchiveStore::new())
-        };
-    let replay_limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
-        queue_wait,
-        ..LimiterConfig::replay()
-    }));
-    let availability_limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
-        queue_wait,
-        ..LimiterConfig::availability()
-    }));
-    let cdx_limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
-        queue_wait,
-        ..LimiterConfig::cdx()
-    }));
+    let config = archive_config_from_env()?;
+    let settings = config.settings();
     let service = Arc::new(
-        ArchiveService::new(
-            store,
-            Arc::new(ReqwestIaClient::with_timeouts(
-                web_upstream,
-                availability_upstream,
-                timeouts,
-            )?),
-        )
-        .with_endpoint_limiters(
-            availability_limiter,
-            cdx_limiter,
-            replay_limiter,
-            queue_wait,
-        )
-        .with_max_body_bytes(max_body_bytes)
-        .with_max_metadata_bytes(max_metadata_bytes),
+        ArchiveInputService::new(archive_store_from_config(&config).await?)
+            .with_queue_wait(settings.queue_wait),
     );
 
     let app = Router::new()
@@ -97,19 +27,12 @@ async fn main() -> Result<()> {
         .route("/metrics", get(metrics))
         .fallback(handle)
         .with_state(service.clone());
-    let address = SocketAddr::from(([0, 0, 0, 0], port));
-    info!("wayback archive listening on {address}");
+    let address = SocketAddr::from(([0, 0, 0, 0], settings.port));
+    info!("listening on {address}");
     let listener = tokio::net::TcpListener::bind(address).await?;
 
-    if let Some(auth_token) = std::env::var("WAYBACK_ARCHIVE_AUTH_TOKEN")
-        .ok()
-        .filter(|value| !value.is_empty())
-    {
-        let auth_port = std::env::var("WAYBACK_ARCHIVE_AUTH_PORT")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok())
-            .unwrap_or(8090);
-        let auth_address = SocketAddr::from(([0, 0, 0, 0], auth_port));
+    if let Some(auth_token) = settings.auth_token {
+        let auth_address = SocketAddr::from(([0, 0, 0, 0], settings.auth_port));
         let auth_listener = tokio::net::TcpListener::bind(auth_address).await?;
         let auth_state = Arc::new(AuthedState {
             service,
@@ -120,7 +43,7 @@ async fn main() -> Result<()> {
             .route("/readyz", get(handle_authed_health))
             .fallback(handle_authed)
             .with_state(auth_state);
-        info!("wayback archive bearer-authed listener on {auth_address}");
+        info!("bearer-authed listener on {auth_address}");
         tokio::try_join!(async { axum::serve(listener, app).await }, async {
             axum::serve(auth_listener, auth_app).await
         },)?;
@@ -130,22 +53,14 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn duration_from_env_secs(name: &str, default: Duration) -> Duration {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or(default)
-}
-
 #[derive(Clone)]
 struct AuthedState {
-    service: Arc<ArchiveService>,
+    service: Arc<ArchiveInputService>,
     authorization_header: HeaderValue,
 }
 
 async fn handle(
-    State(service): State<Arc<ArchiveService>>,
+    State(service): State<Arc<ArchiveInputService>>,
     OriginalUri(uri): OriginalUri,
 ) -> Response<Body> {
     into_axum_response(service.handle_request(uri.path(), uri.query()).await)
@@ -188,7 +103,7 @@ fn unauthorized_response() -> Response<Body> {
         .expect("response construction should not fail")
 }
 
-async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<Body> {
+async fn metrics(State(service): State<Arc<ArchiveInputService>>) -> Response<Body> {
     match service.metrics().await {
         Ok(metrics) => Response::builder()
             .status(StatusCode::OK)
@@ -207,15 +122,9 @@ async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<Body> {
 }
 
 fn into_axum_response(response: ArchiveResponse) -> Response<Body> {
-    let mut builder = Response::builder()
-        .status(StatusCode::from_u16(response.status).unwrap_or(StatusCode::BAD_GATEWAY));
-    for (name, value) in response.headers {
-        if let (Ok(name), Ok(value)) = (
-            HeaderName::from_bytes(name.as_bytes()),
-            HeaderValue::from_str(&value),
-        ) {
-            builder = builder.header(name, value);
-        }
+    let mut builder = Response::builder().status(response.status);
+    for (name, value) in response.headers.iter() {
+        builder = builder.header(name, value);
     }
     builder
         .body(Body::from(response.body))

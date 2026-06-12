@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use http::{HeaderMap, StatusCode};
+use http::{HeaderMap, HeaderName, StatusCode};
 use log::warn;
 use prometheus::{Encoder, GaugeVec, Opts, Registry, TextEncoder};
 use tokio::sync::{Mutex, Notify};
@@ -17,11 +17,11 @@ use crate::metrics::{
     UpstreamFetchResult,
 };
 use crate::path::{parse_metadata_request, parse_replay_path};
-use crate::response::ArchiveResponse;
+use crate::response::{ArchiveResponse, stored_metadata_response, stored_replay_response};
 use crate::store::ArchiveStore;
 use crate::types::{
-    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
-    StoredMetadata, StoredReplay,
+    Endpoint, FillAttemptResult, FillLeaseKey, FillRequest, MetadataKey, MetadataRecord,
+    MetadataRequest, ReplayKey, ReplayRecord, StoredMetadata, StoredReplay,
 };
 use crate::util::sha256_hex;
 use crate::{DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_METADATA_BYTES, DEFAULT_MAX_QUEUE_WAIT};
@@ -239,6 +239,14 @@ impl ArchiveService {
         String::from_utf8(output).context("prometheus text encoder emitted invalid UTF-8")
     }
 
+    pub async fn process_fill_request(&self, request: FillRequest) -> FillAttemptResult {
+        let response = match request {
+            FillRequest::Metadata(request) => self.fill_metadata(request).await,
+            FillRequest::Replay(key) => self.fill_replay(key).await,
+        };
+        fill_response_result(&response)
+    }
+
     pub async fn handle_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
         match self.store.get_metadata(&request.key).await {
             Ok(Some(metadata)) => return stored_metadata_response(metadata),
@@ -262,7 +270,7 @@ impl ArchiveService {
                 }
             }
             warn!(
-                "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+                "acquisition failed endpoint={} reason={} status=none key={}",
                 request.key.endpoint.as_str(),
                 AcquisitionFailureReason::SingleFlightQueueTimeout.as_str(),
                 request.key
@@ -302,7 +310,7 @@ impl ArchiveService {
                 }
             }
             warn!(
-                "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+                "acquisition failed endpoint={} reason={} status=none key={}",
                 Endpoint::Replay.as_str(),
                 AcquisitionFailureReason::SingleFlightQueueTimeout.as_str(),
                 key
@@ -450,7 +458,7 @@ impl ArchiveService {
                 Ok(None) => {}
                 Err(error) => {
                     warn!(
-                        "wayback archive metadata cache read failed while waiting for lease key={lease_key} error={error:#}"
+                        "metadata cache read failed while waiting for lease key={lease_key} error={error:#}"
                     );
                     return ArchiveResponse::text(
                         StatusCode::BAD_GATEWAY,
@@ -474,17 +482,13 @@ impl ArchiveService {
                     }
                     let response = self.fill_metadata(request.clone()).await;
                     if let Err(error) = self.store.release_fill_lease(&lease_key, &owner).await {
-                        warn!(
-                            "wayback archive fill lease release failed key={lease_key} error={error:#}"
-                        );
+                        warn!("fill lease release failed key={lease_key} error={error:#}");
                     }
                     return response;
                 }
                 Ok(false) => {}
                 Err(error) => {
-                    warn!(
-                        "wayback archive fill lease acquire failed key={lease_key} error={error:#}"
-                    );
+                    warn!("fill lease acquire failed key={lease_key} error={error:#}");
                     return self.fill_metadata(request).await;
                 }
             }
@@ -526,7 +530,7 @@ impl ArchiveService {
                 Ok(None) => {}
                 Err(error) => {
                     warn!(
-                        "wayback archive cache read failed while waiting for lease key={lease_key} error={error:#}"
+                        "cache read failed while waiting for lease key={lease_key} error={error:#}"
                     );
                     return ArchiveResponse::text(
                         StatusCode::BAD_GATEWAY,
@@ -550,17 +554,13 @@ impl ArchiveService {
                     }
                     let response = self.fill_replay(key.clone()).await;
                     if let Err(error) = self.store.release_fill_lease(&lease_key, &owner).await {
-                        warn!(
-                            "wayback archive fill lease release failed key={lease_key} error={error:#}"
-                        );
+                        warn!("fill lease release failed key={lease_key} error={error:#}");
                     }
                     return response;
                 }
                 Ok(false) => {}
                 Err(error) => {
-                    warn!(
-                        "wayback archive fill lease acquire failed key={lease_key} error={error:#}"
-                    );
+                    warn!("fill lease acquire failed key={lease_key} error={error:#}");
                     return self.fill_replay(key).await;
                 }
             }
@@ -593,7 +593,7 @@ impl ArchiveService {
 
     fn record_shared_fill_timeout(&self, endpoint: Endpoint, key: &FillLeaseKey) {
         warn!(
-            "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+            "acquisition failed endpoint={} reason={} status=none key={}",
             endpoint.as_str(),
             AcquisitionFailureReason::SingleFlightQueueTimeout.as_str(),
             key
@@ -615,7 +615,7 @@ impl ArchiveService {
                 limiter_wait_started.elapsed(),
             );
             warn!(
-                "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+                "acquisition failed endpoint={} reason={} status=none key={}",
                 request.key.endpoint.as_str(),
                 AcquisitionFailureReason::LimiterQueueTimeout.as_str(),
                 request.key
@@ -648,7 +648,7 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     request.key.endpoint,
                     UpstreamFetchResult::BodyTooLarge,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 permit.record(AcquisitionOutcome::Healthy);
@@ -674,21 +674,21 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     request.key.endpoint,
                     UpstreamFetchResult::from_upstream_failure(reason),
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 warn!(
-                    "wayback archive acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
+                    "acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
                     request.key.endpoint.as_str(),
                     reason.as_str(),
-                    response.status,
+                    response.status.as_u16(),
                     request.key,
                     retry_after
                 );
                 self.metrics.record_acquisition_failure(
                     request.key.endpoint,
                     reason,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                 );
                 permit.record(
                     retry_after
@@ -701,7 +701,7 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     request.key.endpoint,
                     UpstreamFetchResult::Stored,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 permit.record(AcquisitionOutcome::Healthy);
@@ -731,7 +731,7 @@ impl ArchiveService {
                     upstream_duration,
                 );
                 warn!(
-                    "wayback archive acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
+                    "acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
                     request.key.endpoint.as_str(),
                     reason.as_str(),
                     request.key
@@ -754,7 +754,7 @@ impl ArchiveService {
                 limiter_wait_started.elapsed(),
             );
             warn!(
-                "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+                "acquisition failed endpoint={} reason={} status=none key={}",
                 Endpoint::Replay.as_str(),
                 AcquisitionFailureReason::LimiterQueueTimeout.as_str(),
                 key
@@ -783,7 +783,7 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     Endpoint::Replay,
                     UpstreamFetchResult::BodyTooLarge,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 permit.record(AcquisitionOutcome::Healthy);
@@ -809,21 +809,21 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     Endpoint::Replay,
                     UpstreamFetchResult::from_upstream_failure(reason),
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 warn!(
-                    "wayback archive acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
+                    "acquisition failed endpoint={} reason={} status={} key={} retry_after={:?}",
                     Endpoint::Replay.as_str(),
                     reason.as_str(),
-                    response.status,
+                    response.status.as_u16(),
                     key,
                     retry_after
                 );
                 self.metrics.record_acquisition_failure(
                     Endpoint::Replay,
                     reason,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                 );
                 permit.record(
                     retry_after
@@ -836,7 +836,7 @@ impl ArchiveService {
                 self.metrics.record_upstream_fetch_duration(
                     Endpoint::Replay,
                     UpstreamFetchResult::Stored,
-                    Some(response.status),
+                    Some(response.status.as_u16()),
                     upstream_duration,
                 );
                 permit.record(AcquisitionOutcome::Healthy);
@@ -867,7 +867,7 @@ impl ArchiveService {
                     upstream_duration,
                 );
                 warn!(
-                    "wayback archive acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
+                    "acquisition failed endpoint={} reason={} status=none key={} error={error:#}",
                     Endpoint::Replay.as_str(),
                     reason.as_str(),
                     key
@@ -889,64 +889,53 @@ impl ArchiveService {
     }
 }
 
-fn stored_replay_response(replay: StoredReplay) -> ArchiveResponse {
-    match replay {
-        StoredReplay::Capture(record) => ArchiveResponse {
-            status: record.status,
-            headers: record.headers,
-            body: record.body,
-        },
-        StoredReplay::BodyTooLarge { observed_size, .. } => ArchiveResponse::text(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("archived replay body is too large: {observed_size} bytes\n"),
-        ),
+fn fill_response_result(response: &ArchiveResponse) -> FillAttemptResult {
+    if response.status == StatusCode::SERVICE_UNAVAILABLE
+        || response.status == StatusCode::BAD_GATEWAY
+        || response.status == StatusCode::GATEWAY_TIMEOUT
+    {
+        return FillAttemptResult::RetryAfter {
+            retry_after: retry_after_response_duration(response),
+            status: Some(response.status.as_u16()),
+        };
     }
+    FillAttemptResult::Completed
 }
 
-fn stored_metadata_response(metadata: StoredMetadata) -> ArchiveResponse {
-    match metadata {
-        StoredMetadata::Response(record) => ArchiveResponse {
-            status: record.status,
-            headers: record.headers,
-            body: record.body,
-        },
-        StoredMetadata::BodyTooLarge { observed_size, .. } => ArchiveResponse::text(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("archived metadata response is too large: {observed_size} bytes\n"),
-        ),
+fn retry_after_response_duration(response: &ArchiveResponse) -> Option<Duration> {
+    response
+        .headers
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
+
+fn selected_headers(headers: &HeaderMap) -> HeaderMap {
+    selected_header_names(headers, &["content-type", "location", "memento-datetime"])
+}
+
+fn selected_metadata_headers(headers: &HeaderMap) -> HeaderMap {
+    selected_header_names(headers, &["content-type", "retry-after"])
+}
+
+fn selected_header_names(headers: &HeaderMap, names: &[&'static str]) -> HeaderMap {
+    let mut selected = HeaderMap::new();
+    for name in names {
+        if let Some(value) = headers.get(*name) {
+            selected.insert(HeaderName::from_static(name), value.clone());
+        }
     }
-}
-
-fn selected_headers(headers: &HeaderMap) -> Vec<(String, String)> {
-    ["content-type", "location", "memento-datetime"]
-        .into_iter()
-        .filter_map(|name| {
-            headers
-                .get(name)
-                .and_then(|value| value.to_str().ok())
-                .map(|value| (name.to_string(), value.to_string()))
-        })
-        .collect()
-}
-
-fn selected_metadata_headers(headers: &HeaderMap) -> Vec<(String, String)> {
-    ["content-type", "retry-after"]
-        .into_iter()
-        .filter_map(|name| {
-            headers
-                .get(name)
-                .and_then(|value| value.to_str().ok())
-                .map(|value| (name.to_string(), value.to_string()))
-        })
-        .collect()
+    selected
 }
 
 fn is_transient_replay_failure(response: &UpstreamResponse) -> bool {
-    response.status >= 400 && response.headers.get("memento-datetime").is_none()
+    (response.status.is_client_error() || response.status.is_server_error())
+        && response.headers.get("memento-datetime").is_none()
 }
 
 fn is_transient_metadata_failure(response: &UpstreamResponse) -> bool {
-    response.status == 429 || response.status >= 500
+    response.status == StatusCode::TOO_MANY_REQUESTS || response.status.is_server_error()
 }
 
 fn upstream_error_reason(error: &anyhow::Error) -> AcquisitionFailureReason {

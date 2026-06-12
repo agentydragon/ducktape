@@ -11,6 +11,10 @@ exports_files([
 rust_library(
     name = "wayback_archive_lib",
     srcs = [
+        "backend/mod.rs",
+        "backend/worker.rs",
+        "frontend/mod.rs",
+        "frontend/service.rs",
         "ia_client.rs",
         "lib.rs",
         "limiter.rs",
@@ -18,6 +22,8 @@ rust_library(
         "path.rs",
         "response.rs",
         "service.rs",
+        "shared/config.rs",
+        "shared/mod.rs",
         "store/memory.rs",
         "store/mod.rs",
         "store/postgres.rs",
@@ -42,6 +48,7 @@ rust_library(
         "@crates//:sea-orm",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
         "@crates//:sha2",
         "@crates//:tokio",
     ],
@@ -62,6 +69,21 @@ rust_binary(
     ],
 )
 
+rust_binary(
+    name = "wayback_archive_filler",
+    srcs = ["filler_main.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":wayback_archive_lib",
+        "@crates//:anyhow",
+        "@crates//:axum",
+        "@crates//:env_logger",
+        "@crates//:log",
+        "@crates//:tokio",
+    ],
+)
+
 rust_test(
     name = "wayback_archive_test",
     crate = ":wayback_archive_lib",
@@ -69,7 +91,10 @@ rust_test(
 
 pkg_tar(
     name = "binary_layer",
-    srcs = [":wayback_archive"],
+    srcs = [
+        ":wayback_archive",
+        ":wayback_archive_filler",
+    ],
     package_dir = "/usr/local/bin",
 )
 

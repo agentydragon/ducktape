@@ -4,19 +4,26 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use bytes::Bytes;
+use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use log::{info, warn};
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::sqlx::postgres::PgListener;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait,
-    QueryFilter, Schema, Set, TryInsertResult,
+    QueryFilter, QueryOrder, Schema, Set, Statement, TryInsertResult,
 };
 use serde_json::Value;
+use tokio::sync::broadcast;
+use tokio::time::timeout;
 
-use crate::store::{ArchiveStore, BlobStore};
+use crate::store::{ArchiveStore, BlobStore, ClaimedFill};
 use crate::types::{
-    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, ReplayKey, ReplayRecord, StoredMetadata,
-    StoredReplay,
+    Endpoint, FillLeaseKey, FillRequest, MetadataKey, MetadataRecord, ReplayKey, ReplayRecord,
+    StoredMetadata, StoredReplay,
 };
+
+const FILL_NOTIFY_CHANNEL: &str = "wayback_fill_changed";
 
 mod replay_record {
     use sea_orm::entity::prelude::*;
@@ -90,16 +97,49 @@ mod fill_lease {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+mod fill_queue {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "wayback_fill_queue")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub endpoint: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub fill_key: String,
+        pub request: Json,
+        pub attempts: i32,
+        pub next_attempt_at_ms: i64,
+        pub lease_owner: Option<String>,
+        pub lease_expires_at_ms: Option<i64>,
+        pub last_status: Option<i32>,
+        pub last_error: Option<String>,
+        pub updated_at_ms: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub struct PostgresArchiveStore {
     db: DatabaseConnection,
     blobs: Arc<dyn BlobStore>,
+    notifications: broadcast::Sender<String>,
 }
 
 impl PostgresArchiveStore {
     pub async fn new(database_url: String, blobs: Arc<dyn BlobStore>) -> Result<Self> {
         let db = Database::connect(database_url).await?;
-        let store = Self { db, blobs };
+        let (notifications, _) = broadcast::channel(1024);
+        let store = Self {
+            db,
+            blobs,
+            notifications,
+        };
         store.migrate().await?;
+        store.spawn_notification_listener();
         Ok(store)
     }
 
@@ -126,6 +166,65 @@ impl PostgresArchiveStore {
         self.db
             .execute(self.db.get_database_backend().build(&create_table))
             .await?;
+        let create_table = schema
+            .create_table_from_entity(fill_queue::Entity)
+            .if_not_exists()
+            .to_owned();
+        self.db
+            .execute(self.db.get_database_backend().build(&create_table))
+            .await?;
+        Ok(())
+    }
+
+    fn spawn_notification_listener(&self) {
+        let pool = self.db.get_postgres_connection_pool().clone();
+        let sender = self.notifications.clone();
+        tokio::spawn(async move {
+            loop {
+                match PgListener::connect_with(&pool).await {
+                    Ok(mut listener) => {
+                        listener.ignore_pool_close_event(true);
+                        if let Err(error) = listener.listen(FILL_NOTIFY_CHANNEL).await {
+                            warn!(
+                                "Postgres LISTEN setup failed channel={FILL_NOTIFY_CHANNEL} error={error:#}"
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                        info!("listening for Postgres fill notifications");
+                        loop {
+                            match listener.recv().await {
+                                Ok(notification) => {
+                                    let _ = sender.send(notification.payload().to_string());
+                                }
+                                Err(error) => {
+                                    warn!("Postgres notification receive failed error={error:#}");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        warn!("Postgres LISTEN connection failed error={error:#}");
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
+
+    async fn notify_fill_changed(&self, key: &FillLeaseKey) -> Result<()> {
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT pg_notify($1, $2)",
+                [
+                    FILL_NOTIFY_CHANNEL.to_string().into(),
+                    key.to_string().into(),
+                ],
+            ))
+            .await?;
+        let _ = self.notifications.send(key.to_string());
         Ok(())
     }
 }
@@ -158,11 +257,11 @@ impl ArchiveStore for PostgresArchiveStore {
         let body = self.blobs.get_body(&blob_key).await?;
         Ok(Some(StoredReplay::Capture(ReplayRecord {
             key: key.clone(),
-            status: row
-                .status
-                .ok_or_else(|| anyhow!("replay row missing status for {key}"))?
-                .try_into()?,
-            headers: serde_json::from_value(row.headers)?,
+            status: stored_status(
+                row.status
+                    .ok_or_else(|| anyhow!("replay row missing status for {key}"))?,
+            )?,
+            headers: headers_from_json(row.headers)?,
             blob_key: Some(blob_key),
             sha256: row
                 .sha256
@@ -183,17 +282,18 @@ impl ArchiveStore for PostgresArchiveStore {
                 record.blob_key = Some(blob.key.clone());
                 record.sha256 = blob.sha256.clone();
                 record.body_size = blob.size;
-                let classification = if record.status >= 400 {
-                    "archived_error"
-                } else {
-                    "served_capture"
-                };
+                let classification =
+                    if record.status.is_client_error() || record.status.is_server_error() {
+                        "archived_error"
+                    } else {
+                        "served_capture"
+                    };
                 let active = replay_record::ActiveModel {
                     capture_ts: Set(record.key.capture_ts),
                     modifier: Set(record.key.modifier),
                     canonical_original_url: Set(record.key.original_url),
-                    status: Set(Some(record.status as i32)),
-                    headers: Set(serde_json::to_value(&record.headers)?),
+                    status: Set(Some(i32::from(record.status.as_u16()))),
+                    headers: Set(headers_to_json(&record.headers)?),
                     blob_key: Set(Some(blob.key)),
                     sha256: Set(Some(blob.sha256)),
                     body_size: Set(Some(blob.size as i64)),
@@ -257,11 +357,11 @@ impl ArchiveStore for PostgresArchiveStore {
             .ok_or_else(|| anyhow!("metadata row missing body for {key}"))?;
         Ok(Some(StoredMetadata::Response(MetadataRecord {
             key,
-            status: row
-                .status
-                .ok_or_else(|| anyhow!("metadata row missing status"))?
-                .try_into()?,
-            headers: serde_json::from_value(row.headers)?,
+            status: stored_status(
+                row.status
+                    .ok_or_else(|| anyhow!("metadata row missing status"))?,
+            )?,
+            headers: headers_from_json(row.headers)?,
             sha256: row
                 .sha256
                 .ok_or_else(|| anyhow!("metadata row missing sha256"))?,
@@ -280,8 +380,8 @@ impl ArchiveStore for PostgresArchiveStore {
                 let active = metadata_record::ActiveModel {
                     endpoint: Set(record.key.endpoint.as_str().to_string()),
                     normalized_query: Set(record.key.normalized_query),
-                    status: Set(Some(record.status as i32)),
-                    headers: Set(serde_json::to_value(&record.headers)?),
+                    status: Set(Some(i32::from(record.status.as_u16()))),
+                    headers: Set(headers_to_json(&record.headers)?),
                     body: Set(Some(record.body.to_vec())),
                     sha256: Set(Some(record.sha256)),
                     body_size: Set(Some(record.body_size as i64)),
@@ -312,6 +412,153 @@ impl ArchiveStore for PostgresArchiveStore {
             }
         }
         Ok(())
+    }
+
+    async fn enqueue_fill(&self, request: FillRequest) -> Result<()> {
+        let key = request.lease_key();
+        let now_ms = epoch_ms();
+        let active = fill_queue::ActiveModel {
+            endpoint: Set(key.endpoint.as_str().to_string()),
+            fill_key: Set(key.key.clone()),
+            request: Set(serde_json::to_value(&request)?),
+            attempts: Set(0),
+            next_attempt_at_ms: Set(now_ms),
+            lease_owner: Set(None),
+            lease_expires_at_ms: Set(None),
+            last_status: Set(None),
+            last_error: Set(None),
+            updated_at_ms: Set(now_ms),
+        };
+        let mut conflict =
+            OnConflict::columns([fill_queue::Column::Endpoint, fill_queue::Column::FillKey]);
+        conflict.do_nothing();
+        fill_queue::Entity::insert(active)
+            .on_conflict(conflict.to_owned())
+            .do_nothing()
+            .exec(&self.db)
+            .await?;
+        self.notify_fill_changed(&key).await?;
+        Ok(())
+    }
+
+    async fn claim_next_fill(&self, owner: &str, ttl: Duration) -> Result<Option<ClaimedFill>> {
+        for _ in 0..5 {
+            let now_ms = epoch_ms();
+            let Some(row) = fill_queue::Entity::find()
+                .filter(fill_due_condition(now_ms))
+                .order_by_asc(fill_queue::Column::NextAttemptAtMs)
+                .one(&self.db)
+                .await?
+            else {
+                return Ok(None);
+            };
+            let updated = fill_queue::Entity::update_many()
+                .col_expr(
+                    fill_queue::Column::LeaseOwner,
+                    Expr::value(owner.to_string()),
+                )
+                .col_expr(
+                    fill_queue::Column::LeaseExpiresAtMs,
+                    Expr::value(now_ms + duration_ms(ttl)),
+                )
+                .col_expr(fill_queue::Column::UpdatedAtMs, Expr::value(now_ms))
+                .filter(fill_row_condition(&row.endpoint, &row.fill_key))
+                .filter(fill_due_condition(now_ms))
+                .exec(&self.db)
+                .await?;
+            if updated.rows_affected == 0 {
+                continue;
+            }
+            let request = serde_json::from_value(row.request)?;
+            return Ok(Some(ClaimedFill {
+                request,
+                owner: owner.to_string(),
+            }));
+        }
+        Ok(None)
+    }
+
+    async fn complete_fill(&self, job: &ClaimedFill) -> Result<()> {
+        let key = job.request.lease_key();
+        fill_queue::Entity::delete_many()
+            .filter(fill_row_condition(key.endpoint.as_str(), &key.key))
+            .filter(fill_queue::Column::LeaseOwner.eq(job.owner.clone()))
+            .exec(&self.db)
+            .await?;
+        self.notify_fill_changed(&key).await?;
+        Ok(())
+    }
+
+    async fn retry_fill(
+        &self,
+        job: &ClaimedFill,
+        retry_after: Option<Duration>,
+        status: Option<u16>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let key = job.request.lease_key();
+        let now_ms = epoch_ms();
+        let retry_after = retry_after
+            .unwrap_or_else(|| Duration::from_secs(job.request.endpoint().retry_after_seconds()));
+        fill_queue::Entity::update_many()
+            .col_expr(
+                fill_queue::Column::Attempts,
+                Expr::col(fill_queue::Column::Attempts).add(1),
+            )
+            .col_expr(
+                fill_queue::Column::NextAttemptAtMs,
+                Expr::value(now_ms + duration_ms(retry_after)),
+            )
+            .col_expr(
+                fill_queue::Column::LeaseOwner,
+                Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                fill_queue::Column::LeaseExpiresAtMs,
+                Expr::value(Option::<i64>::None),
+            )
+            .col_expr(
+                fill_queue::Column::LastStatus,
+                Expr::value(status.map(i32::from)),
+            )
+            .col_expr(
+                fill_queue::Column::LastError,
+                Expr::value(error.map(str::to_string)),
+            )
+            .col_expr(fill_queue::Column::UpdatedAtMs, Expr::value(now_ms))
+            .filter(fill_row_condition(key.endpoint.as_str(), &key.key))
+            .filter(fill_queue::Column::LeaseOwner.eq(job.owner.clone()))
+            .exec(&self.db)
+            .await?;
+        self.notify_fill_changed(&key).await?;
+        Ok(())
+    }
+
+    async fn wait_for_fill_queue_change(&self, wait: Duration) -> Result<bool> {
+        let mut receiver = self.notifications.subscribe();
+        let notified = async move {
+            matches!(
+                receiver.recv().await,
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_))
+            )
+        };
+        Ok(timeout(wait, notified).await.unwrap_or(false))
+    }
+
+    async fn wait_for_fill_change(&self, key: &FillLeaseKey, wait: Duration) -> Result<bool> {
+        let key = key.to_string();
+        let mut receiver = self.notifications.subscribe();
+        let notified = async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(payload) if payload == key => return true,
+                    Ok(_) => {}
+                    Err(broadcast::error::RecvError::Lagged(_)) => return true,
+                    Err(broadcast::error::RecvError::Closed) => return false,
+                }
+            }
+        };
+        Ok(timeout(wait, notified).await.unwrap_or(false))
     }
 
     async fn try_acquire_fill_lease(
@@ -409,12 +656,24 @@ fn metadata_upsert_conflict() -> OnConflict {
     conflict.to_owned()
 }
 
+fn fill_due_condition(now_ms: i64) -> Condition {
+    Condition::all()
+        .add(fill_queue::Column::NextAttemptAtMs.lte(now_ms))
+        .add(
+            Condition::any()
+                .add(fill_queue::Column::LeaseOwner.is_null())
+                .add(fill_queue::Column::LeaseExpiresAtMs.lte(now_ms)),
+        )
+}
+
+fn fill_row_condition(endpoint: &str, fill_key: &str) -> Condition {
+    Condition::all()
+        .add(fill_queue::Column::Endpoint.eq(endpoint.to_string()))
+        .add(fill_queue::Column::FillKey.eq(fill_key.to_string()))
+}
+
 fn metadata_endpoint_from_str(endpoint: &str) -> Option<Endpoint> {
-    match endpoint {
-        "availability" => Some(Endpoint::Availability),
-        "cdx" => Some(Endpoint::Cdx),
-        _ => None,
-    }
+    Endpoint::from_str(endpoint).filter(|endpoint| *endpoint != Endpoint::Replay)
 }
 
 fn epoch_ms() -> i64 {
@@ -428,4 +687,37 @@ fn epoch_ms() -> i64 {
 
 fn duration_ms(duration: Duration) -> i64 {
     duration.as_millis().try_into().unwrap_or(i64::MAX)
+}
+
+fn stored_status(status: i32) -> Result<StatusCode> {
+    let status: u16 = status
+        .try_into()
+        .map_err(|_| anyhow!("stored status out of range: {status}"))?;
+    StatusCode::from_u16(status).map_err(|error| anyhow!("stored status invalid: {error}"))
+}
+
+fn headers_to_json(headers: &HeaderMap) -> Result<Value> {
+    Ok(Value::Array(
+        headers
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| Value::Array(vec![name.as_str().into(), value.into()]))
+            })
+            .collect(),
+    ))
+}
+
+fn headers_from_json(value: Value) -> Result<HeaderMap> {
+    let pairs = serde_json::from_value::<Vec<(String, String)>>(value)?;
+    let mut headers = HeaderMap::new();
+    for (name, value) in pairs {
+        headers.insert(
+            HeaderName::from_bytes(name.as_bytes())?,
+            HeaderValue::from_str(&value)?,
+        );
+    }
+    Ok(headers)
 }

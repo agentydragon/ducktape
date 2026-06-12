@@ -3,6 +3,11 @@ kind: Kustomization
 
 resources:
   - deployment.yaml
+  - input-config.yaml
+  - filler-deployment.yaml
+  - filler-config.yaml
+  - filler-service.yaml
+  - filler-servicemonitor.yaml
   - service.yaml
   - httproute.yaml
   - servicemonitor.yaml
