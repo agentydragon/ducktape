@@ -1,6 +1,7 @@
 # Agent Infrastructure
 
-This document covers the OCI image architecture for agents. For the in-container agent loop, see <agent_loop_inside_container.md>.
+This document covers the agent runtime, OCI image, and data-plane architecture.
+For the in-container agent loop, see <agent_loop_inside_container.md>.
 
 ## Directory Structure
 
@@ -20,6 +21,40 @@ props/
 ├── testing/                # Test fixtures and mocks
 └── docs/                   # Documentation
 ```
+
+## Deployed Runtime
+
+The Kubernetes deployment uses `executor.type = "kubernetes"` in
+`cluster/k8s/props/app/config.toml`. The backend owns orchestration, but agents
+use split-out data-plane services:
+
+- `props-llm-proxy` handles `/v1/responses`, `/v1/chat/completions`, and
+  `/v1/messages`, enforces budgets, and writes `llm_requests`.
+- `props-registry-proxy` handles `/v2/*`, enforces registry ACLs, streams large
+  payloads to Forgejo, and records pushed images as `agent_definitions`.
+- PostgreSQL remains the source of truth for runs, RLS, model metadata, budget
+  accounting, and grader drift.
+- Forgejo remains the upstream registry storage behind the proxy.
+
+The backend/frontend is the control and read plane: dashboard APIs, run
+creation, run log/transcript access, and the `GraderSupervisor`. It does not
+serve the LLM or registry proxy routes.
+
+### Agent Pods
+
+`AgentRegistry` creates one bare Pod per run through `K8sExecutor`; pods use
+`restartPolicy: Never`, no service-account token, and a per-run Postgres role
+created before pod launch. This keeps privileged DB credentials and Kubernetes
+write RBAC in the backend/controller, not inside agent pods.
+
+Snapshot graders are also controller-managed bare Pods rather than Deployments.
+`GraderSupervisor` reconciles desired state against actual Pods listed from the
+runtime API, so backend restarts adopt existing graders instead of duplicating
+them. It also reaps duplicate, orphaned, terminal, or wrong-image graders.
+
+Container logs are shipped to Loki and exposed through
+`GET /api/runs/{id}/logs`; LLM transcripts live in `llm_requests` and are
+exposed through `GET /api/runs/{id}/llm_requests`.
 
 ## Agent Images
 
@@ -63,6 +98,14 @@ AgentRegistry:
 ```
 
 ## Registry Architecture
+
+In Kubernetes, the registry proxy is the `props-registry-proxy` Deployment and
+the public pull host is `props-registry.allegedly.works`. Kubelet pull
+credentials come from the `props-registry-pull` imagePullSecret rendered from
+the CNPG `props-db-app` credentials.
+
+Local Docker fixtures keep a separate Docker-network topology for development
+and E2E tests:
 
 ### Docker Networks
 

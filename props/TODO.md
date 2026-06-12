@@ -43,3 +43,19 @@
   glm-4.6's placeholder rates (input 0.39 / output 1.74 per 1M). Set real-ish per-model z.ai
   rates so budget accounting is accurate. Low urgency: z.ai is currently a flat prepaid
   subscription (quota-based), so per-token cost is largely cosmetic for budgeting.
+
+## Native Execution
+
+- Add a real Kubernetes API test harness for agent orchestration. The old kind
+  spike on BuildBuddy RBE was blocked because Firecracker workers lacked
+  `CONFIG_KEYS`, while OCI workers had the host kernel but no privilege. Viable
+  paths: get `CONFIG_KEYS=y` into the Firecracker worker kernel, maintain a
+  patched `kindest/node` that skips the keyring sysctls, or use envtest for
+  Pod-spec/reconcile logic while keeping Docker E2Es for container execution.
+- Namespace-isolate agent Pods from the backend and DB-admin-adjacent services.
+  Agents should reach logs through `GET /api/runs/{id}/logs` and the LLM through
+  `props-llm-proxy`, not by directly reaching infra endpoints in the shared
+  `props` namespace.
+- Replace the `grader_definition_changed`/builtin-tag image-roll trigger with a
+  Flux image-automation pointer for the current grader digest, then have
+  `GraderSupervisor` reconcile grader Pods onto that digest.

@@ -23,7 +23,7 @@
 # `github_branch_protection` apply attempts on gaffer-private have been
 # verified to fail with `403 Upgrade to GitHub Pro or make this repository
 # public to enable this feature`. Closing that gap requires a Pro upgrade
-# (~$4/mo). See plans/branch_protection.md.
+# (~$4/mo). See README.md.
 #
 # Auth: github-secrets-sync-pat (Administration:R/W on ducktape; deployed
 # by cluster/k8s/github-secrets-sync/secrets/).

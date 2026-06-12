@@ -1,10 +1,13 @@
 # `ducktape-automation` GitHub App
 
-GitHub App on the `agentydragon` personal account, used as a ruleset
+GitHub App on the `agentydragon` personal account. It is used as a ruleset
 bypass actor for branch-protected default branches on `agentydragon/ducktape`
-and `agentydragon/gaffer-private`. Workflows that need to push directly
-mint installation tokens via `actions/create-github-app-token` instead of
-using `GITHUB_TOKEN`.
+and as Git auth for Flux / image automation against both `ducktape` and
+`gaffer-private`. Workflows that need to push directly mint installation
+tokens via `actions/create-github-app-token` instead of using `GITHUB_TOKEN`.
+
+`gaffer-private` itself is not branch-protected on the current GitHub plan; see
+`tf/gitops/github-branch-protection/README.md` for that plan limit.
 
 ## Public identifiers (not secrets)
 

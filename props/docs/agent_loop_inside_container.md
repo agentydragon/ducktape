@@ -39,8 +39,8 @@ run_loop_agent()
 | Entrypoint | Standard Dockerfile `CMD` (not `/init` convention)                           |
 | Completion | Exit code 0 = success, non-zero = failure                                    |
 | Status     | Host determines status (agents cannot update their own status due to RLS)    |
-| Abort      | Host hard-kills container (`docker kill`) on timeout                         |
-| Logs       | Capture and store container logs (see below)                                 |
+| Abort      | Host hard-kills container/Pod on timeout                                     |
+| Logs       | Runtime logs are shipped to Loki and read through the backend                |
 | Lifecycle  | Host records `started_at`, `ended_at`, `container_exit_code` in `agent_runs` |
 
 **Status determination (outside container):**
@@ -57,16 +57,20 @@ run_loop_agent()
 
 The LLM proxy is a separate service (`props/llm_proxy`) that reuses the backend LLM router.
 
-| Aspect            | Decision                                                       |
-| ----------------- | -------------------------------------------------------------- |
-| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (OpenAI-compatible API)    |
-| Token             | Same as existing Postgres password (`agent_{uuid}`)            |
-| Token validation  | Via Postgres (lookup agent_runs by username pattern)           |
-| Model restriction | One model per run, enforced by proxy                           |
-| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs |
-| Streaming         | Not supported (simplifies logging/budgeting)                   |
-| Implementation    | LLM proxy routes at `/v1/responses` and `/v1/chat/completions` |
-| Port              | 8000                                                           |
+| Aspect            | Decision                                                                        |
+| ----------------- | ------------------------------------------------------------------------------- |
+| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (OpenAI-compatible API)                     |
+| Token             | Same as existing Postgres password (`agent_{uuid}`)                             |
+| Token validation  | Via Postgres (lookup agent_runs by username pattern)                            |
+| Model restriction | One model per run, enforced by proxy                                            |
+| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs                  |
+| Streaming         | Not supported (simplifies logging/budgeting)                                    |
+| Implementation    | LLM proxy routes at `/v1/responses`, `/v1/chat/completions`, and `/v1/messages` |
+| Port              | 8000                                                                            |
+
+The route an agent may call is determined by `model_metadata.api_shape`.
+`responses` models use `/v1/responses`, `chat_completions` models use
+`/v1/chat/completions`, and `anthropic` models use `/v1/messages`.
 
 ### Registry Proxy
 
@@ -132,7 +136,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Aspect        | Decision                                                                      |
 | ------------- | ----------------------------------------------------------------------------- |
 | Location      | Inside container, part of props package                                       |
-| API style     | OpenAI Responses API                                                          |
+| API style     | OpenAI-compatible shape selected by `model_metadata.api_shape`                |
 | Max turns     | Don't enforce (cost/timeout are sufficient)                                   |
 | Context limit | Container's responsibility; compaction is future work                         |
 | Completion    | "submit" tool validates → returns errors (agent retries) or succeeds → exit 0 |
@@ -191,7 +195,8 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | --------------- | ------------------------------------------------------------------------------- |
 | Spawn           | REST API call to backend (`/api/runs/critic`)                                   |
 | Status query    | Direct Postgres query (no external call needed)                                 |
-| Results/logs    | Direct Postgres query                                                           |
+| Results/status  | Direct Postgres query                                                           |
+| Logs            | Backend `GET /api/runs/{id}/logs`                                               |
 | Cost accounting | Counts against parent's budget                                                  |
 | Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
 | Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
@@ -224,12 +229,12 @@ grading_pending view         ◄──────────  wait_until_grade
 
 ### Observability
 
-| Aspect         | Decision                                                        |
-| -------------- | --------------------------------------------------------------- |
-| LLM calls      | Logged by LLM proxy to `llm_requests` table                     |
-| Container logs | Capture stdout/stderr, store in columns on `agent_runs`         |
-| Access         | Critic-dev agents and humans can query logs from DB             |
-| Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run) |
+| Aspect         | Decision                                                                |
+| -------------- | ----------------------------------------------------------------------- |
+| LLM calls      | Logged by LLM proxy to `llm_requests` table                             |
+| Container logs | Shipped by Promtail to Loki, fetched by `GET /api/runs/{id}/logs`       |
+| Access         | Critic-dev agents and humans read logs through the backend's RLS checks |
+| Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run)         |
 
 **`llm_requests` table:**
 
@@ -251,22 +256,31 @@ grading_pending view         ◄──────────  wait_until_grade
 | Network           | Only LLM proxy, Postgres, subagent endpoint reachable |
 | Registry          | Critic-dev agents can push new images by digest       |
 
-### Docker Compose Topology
+### Runtime Topologies
 
-Services in `props/compose.yaml`:
+Kubernetes production uses split services: backend/frontend, `props-llm-proxy`,
+`props-registry-proxy`, CNPG PostgreSQL, and Forgejo registry storage. The
+backend injects `OPENAI_BASE_URL=<llm_proxy_url>/v1` and `PROPS_REGISTRY_URL`
+into agent Pods.
+
+The local Docker compose file is a lightweight development topology. Docker E2E
+fixtures start the split proxy services directly when they need production-like
+proxy behavior.
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
-- `backend` (8000:8000) - serves critic runs API at `/api/runs/critic` and dashboard API
-- `llm-proxy` (8000) - serves LLM proxy routes
-- `registry-proxy` (8000) - serves registry proxy routes at `/v2/*`
+- `backend` (8000:8000) - serves dashboard/control APIs in local dev
 
 **Network topology:**
 
 - `props-internal` (internal: true) - postgres, registry, backend
 - `props-agents` - postgres, backend (agent containers join this)
-- Agent containers reach LLM proxy at `props-backend:8000`
 
 ## Historical Notes
 
-Previous iterations used HTTP MCP servers (`CriticSubmitServer`, `GraderSubmitServer`, `PromptEvalServer`), an `events` table, and host-side agent loops. All have been removed in favor of in-container `DirectToolProvider` tools, `llm_requests` table, and container stdout/stderr capture.
+Previous iterations used HTTP MCP servers (`CriticSubmitServer`,
+`GraderSubmitServer`, `PromptEvalServer`), an `events` table, host-side agent
+loops, backend-hosted LLM/registry routes, and DB-persisted container stdout /
+stderr. These were replaced by in-container `DirectToolProvider` tools, the
+standalone LLM and registry proxies, `llm_requests`, and Loki-backed container
+logs.
