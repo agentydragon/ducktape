@@ -48,7 +48,9 @@ spec:
         kubeApiserverAvailability: true
         kubeApiserverSlos: true
         kubelet: true
-        kubeProxy: true
+        # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
+        # so the stock KubeProxyDown rule would always be noise here.
+        kubeProxy: false
         kubePrometheusGeneral: true
         kubePrometheusNodeRecording: true
         kubernetesApps: true
@@ -291,4 +293,6 @@ spec:
     kubeScheduler:
       enabled: true
     kubeProxy:
-      enabled: true
+      # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
+      # so do not create the stock kube-proxy Service/ServiceMonitor.
+      enabled: false
