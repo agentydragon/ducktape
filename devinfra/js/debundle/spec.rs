@@ -785,6 +785,7 @@ impl AnonymousStatement {
                 match_source: match_source.clone(),
                 identifiers: SourceMatchIdentifierMode::Exact,
                 target_binding: None,
+                target_statement: None,
                 wildcard_string_literals: BTreeSet::new(),
             }),
             (None, Some(source_match)) if source_match.target_binding.is_some() => {
@@ -830,6 +831,13 @@ pub struct SourceMatch {
     /// binding from it. Invalid on `anonymous_statements[].source_match`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_binding: Option<String>,
+    /// Zero-based top-level statement index to claim when this source match is
+    /// used as an `anonymous_statements[].source_match`. This lets a selector
+    /// include surrounding declarations as context while moving only the
+    /// intended anonymous statement. Invalid on `members[].selector.source_match`
+    /// and `binding_groups[].source_match`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_statement: Option<usize>,
     /// String-literal placeholder values in `match` that should match any
     /// candidate string literal at the same AST position. Use this for
     /// volatile generated literals while keeping all other strings exact.
@@ -845,6 +853,7 @@ impl SourceMatch {
             match_source: self.match_source.clone(),
             identifiers: self.identifiers,
             target_binding: self.target_binding.clone(),
+            target_statement: self.target_statement,
             wildcard_string_literals: self.wildcard_string_literals.clone(),
         }
     }
@@ -855,6 +864,7 @@ pub struct AnonymousStatementSelector {
     pub match_source: String,
     pub identifiers: SourceMatchIdentifierMode,
     pub target_binding: Option<String>,
+    pub target_statement: Option<usize>,
     pub wildcard_string_literals: BTreeSet<String>,
 }
 
@@ -864,6 +874,7 @@ impl AnonymousStatementSelector {
             match_source: match_source.into(),
             identifiers: SourceMatchIdentifierMode::Exact,
             target_binding: None,
+            target_statement: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }
@@ -1092,6 +1103,11 @@ impl MemberSelector {
     pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
         match (&self.binding, &self.source_match) {
             (Some(binding), None) => Ok(MemberSelectorSpec::Binding(binding.clone())),
+            (None, Some(source_match)) if source_match.target_statement.is_some() => {
+                Err(MemberSelectorError {
+                    message: "members[].selector.source_match cannot include `target_statement`",
+                })
+            }
             (None, Some(source_match)) => {
                 Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
             }

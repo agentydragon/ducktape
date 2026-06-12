@@ -361,11 +361,29 @@ reject the spec as ambiguous rather than picking by source order.
 Refine the selector with an exact statement, a stable literal/property
 difference, or a deliberately small surrounding context.
 
+When the anonymous statement needs surrounding declarations for a unique
+structural match, include that context and set `target_statement` to the
+zero-based index of the statement to claim:
+
+```yaml
+anonymous_statements:
+  - source_match:
+      identifiers: alpha_all
+      target_statement: 1
+      match: |
+        const selectedLeft = "left",
+          selectedRight = "right";
+        console.log(`${selectedLeft}:${selectedRight}`);
+```
+
+Only the indexed statement is claimed; the surrounding context is used for
+matching and must be claimed separately if it should move with the anonymous
+statement.
+
 Do not solve ambiguity with opaque hashes. A selector should be readable
-enough for a reviewer to audit and edit. When two selectors only differ
-by a large copied helper body plus one neighboring line, treat that as a
-tooling gap: prefer a future contextual selector (`before` / `after` /
-`near`) over spreading duplicated boilerplate.
+enough for a reviewer to audit and edit. When an anonymous statement needs
+nearby declarations to be unique, prefer `target_statement` over spreading
+duplicated boilerplate.
 
 Use syntactic holes as the normal way to keep structural selectors portable:
 pin the stable skeleton, and leave unstable minified details as holes instead

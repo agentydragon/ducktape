@@ -540,6 +540,45 @@ export { RuntimeSubject, Existing };
 }
 
 #[test]
+fn alpha_anonymous_statement_target_statement_uses_context_but_claims_only_target() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeLeft = "left",
+  runtimeRight = "right";
+console.log(`${runtimeLeft}:${runtimeRight}`);
+const Existing = "existing";
+console.log(Existing);
+export { runtimeLeft, runtimeRight, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statement(
+            "selected_pair",
+            &[Member::new("runtimeLeft"), Member::new("runtimeRight")],
+            r#"const selectedLeft = "left",
+  selectedRight = "right";
+console.log(`${selectedLeft}:${selectedRight}`);"#,
+            1,
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_pair.js",
+        &[
+            "const runtimeLeft",
+            "const runtimeRight",
+            "console.log(`${runtimeLeft}:${runtimeRight}`)",
+        ],
+        &["const Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const Existing"],
+        &["runtimeLeft}:${runtimeRight"],
+    );
+    assert_entry_output(&fixture, "left:right\nexisting\n");
+}
+
+#[test]
 fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const selectedValue = "selected";

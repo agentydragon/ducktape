@@ -97,6 +97,12 @@ pub fn binding_group_member_selectors(
              `target_binding`; use the `exports` keys to choose selector-local bindings"
         );
     }
+    if group.source_match.target_statement.is_some() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].source_match must not include \
+             `target_statement`; use it only on anonymous_statements[].source_match"
+        );
+    }
     let exports = effective_binding_group_exports(group, request_id)?;
     let unknown_comments = group
         .comments
@@ -253,6 +259,30 @@ pub fn find_anonymous_statement_body_indices(
         )
     })?;
     let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
+    if let Some(target_statement) = selector.target_statement {
+        if parsed_items.is_empty() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match with \
+                 target_statement parsed to zero statements:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        }
+        if target_statement >= parsed_items.len() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match \
+                 target_statement {target_statement} is out of range for {} parsed \
+                 top-level statements:\n{match_source}",
+                parsed_items.len(),
+                match_source = selector.match_source,
+            );
+        }
+        return Ok(
+            find_matching_body_ranges(runtime_module, &parsed.body, selector)
+                .into_iter()
+                .map(|body_idx| body_idx + target_statement)
+                .collect(),
+        );
+    }
     let needle = match parsed_items.as_slice() {
         [single] => *single,
         [] => bail!(
