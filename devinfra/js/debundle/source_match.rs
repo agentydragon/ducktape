@@ -2403,7 +2403,8 @@ impl<'a> AstWildcardMatcher<'a> {
     ) -> bool {
         match (needle, candidate) {
             (SimpleAssignTarget::Ident(needle), SimpleAssignTarget::Ident(candidate)) => {
-                needle.eq_ignore_span(candidate)
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_ident(&needle.id, &candidate.id)
             }
             (SimpleAssignTarget::Member(needle), SimpleAssignTarget::Member(candidate)) => {
                 self.match_member_expr(needle, candidate)

@@ -617,6 +617,38 @@ console.log("second selected");"#,
 }
 
 #[test]
+fn alpha_anonymous_statement_target_statements_match_assignment_targets_from_context() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeRecord, runtimeReplay;
+true && (runtimeReplay = "replay");
+false || (runtimeRecord = "record");
+console.log(`${runtimeReplay}:${runtimeRecord}`);
+export { runtimeRecord, runtimeReplay };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements(
+            "bridge_slots",
+            &[Member::new("runtimeRecord"), Member::new("runtimeReplay")],
+            r#"let selectedRecord, selectedReplay;
+true && (selectedReplay = "replay");
+false || (selectedRecord = "record");"#,
+            &[1, 2],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridge_slots.js",
+        &[
+            "let runtimeRecord",
+            "runtimeReplay = \"replay\"",
+            "runtimeRecord = \"record\"",
+        ],
+        &["selectedRecord", "selectedReplay"],
+    );
+    assert_entry_output(&fixture, "replay:record\n");
+}
+
+#[test]
 fn alpha_anonymous_statement_target_statements_all_supports_top_level_stmt_list_hole() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"console.log("before selected");
