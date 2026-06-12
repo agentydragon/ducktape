@@ -1,6 +1,10 @@
 # Wayback write-through archive service plan
 
-Status: plan drafted 2026-06-12; v0 replacement implementation in progress.
+Status: plan drafted 2026-06-12; v0 replacement PR in progress. The PR
+replaces nginx/PVC `wayback-cache` in place with one Rust archive-service pod,
+one CNPG instance, and SeaweedFS S3 replay bodies. After merge, wait for image
+publish and Flux reconcile, smoke-test the live service, then run the eval
+comparison.
 Companion to
 <../plans/wayback_ia_throttling.md>, <../plans/wayback_proxy.md>, and
 <../plans/archive_org_apis.md>.
@@ -41,8 +45,10 @@ manifests, and points at this cluster service as its upstream.
 
 ## Current reality
 
-Until this replacement, `cluster/k8s/wayback-cache/` was nginx
-`proxy_cache`.
+Before this PR, `cluster/k8s/wayback-cache/` was nginx `proxy_cache`. The v0
+replacement keeps the `wayback-cache` Service/hostname but swaps the backend to
+the Rust archive service. The nginx behavior below is the baseline being
+replaced.
 
 What it does well:
 
@@ -82,6 +88,9 @@ What it does not do:
 - Start with one archive-service replica. Still implement Postgres-backed fill
   leases before increasing replicas; the first implementation slice can use
   in-process single-flight because there is only one archive-service pod.
+- Start with one CNPG instance on `local-path-ovh` for v0. Move to a replicated
+  CNPG profile after the service has proven useful in eval and the app has the
+  cross-replica fill coordination needed to scale archive pods safely.
 - Do not require Valkey for v0.
 - Mildly prefer Rust for the archive service. It is a long-lived async proxy
   that may stream many response bodies and maintain endpoint limiters, so
@@ -152,11 +161,11 @@ Recommended split:
   metrics-friendly rolling windows. Anything needed for correctness must also be
   recoverable from Postgres. Do not require this for v0.
 
-CNPG should follow the cluster's OVH-HA profile because `wayback-cache` and the
-SeaweedFS-backed storage live on OVH: two instances, `local-path-ovh`,
-anti-affinity by hostname, and the archive service pinned to the same region. If a
-Valkey is added, use the existing operator-managed replicated Valkey pattern in
-the same region.
+For v0, run a single CNPG instance on `local-path-ovh` in the same OVH zone as
+the archive service and SeaweedFS-backed storage. The HA follow-up is to move to
+the cluster's OVH-HA profile: two CNPG instances, anti-affinity by hostname, and
+the archive service pinned to the same region. If a Valkey is added later, use
+the existing operator-managed replicated Valkey pattern in the same region.
 
 Prefer the SeaweedFS S3 API over a mounted durable PVC for replay bodies. Replay
 bytes are immutable objects, so S3 matches the model better than POSIX files and
@@ -437,6 +446,8 @@ Follow-up hardening:
 - TODO before scaling replicas above one: add Postgres-backed fill leases or
   advisory locks keyed by endpoint and semantic request key so identical misses
   across pods cannot duplicate IA fetches.
+- TODO before HA database rollout: decide the backup/failover policy for
+  `wayback-archive-db`, then move from one CNPG instance to the OVH-HA profile.
 - Archive URL alias rows for IA canonicalization redirects.
 
 1. Build the archive service against `fake_ia.py`-style tests.
@@ -456,6 +467,19 @@ Follow-up hardening:
    - `nan` samples;
    - scored mean proper loss;
    - second-run reuse of objects filled by the first run.
+
+Post-merge rollout checklist:
+
+1. Confirm GHCR image publish and Flux image automation update the
+   `wayback-cache` Deployment image.
+2. Confirm Flux reconciles `wayback-cache-namespace`, `wayback-archive-db`,
+   `seaweedfs-wayback-archive-bucket`, `seaweedfs-secrets`, and `wayback-cache`.
+3. Smoke-test in-cluster `/healthz`, `/metrics`, `/wayback/available`, `/cdx`,
+   and replay miss fill.
+4. Smoke-test public `wayback-cache.allegedly.works` through the bearer-auth
+   `:8090` listener.
+5. Run the eval comparison against the replacement service and compare it to the
+   prior approaches.
 
 ## Acceptance criteria
 
