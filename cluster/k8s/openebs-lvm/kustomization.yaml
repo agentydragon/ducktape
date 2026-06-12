@@ -8,3 +8,4 @@ resources:
   - sc-lvm-proxmox-hdd.yaml
   - sc-lvm-proxmox-hdd-shared.yaml
   - sc-lvm-proxmox-hdd-block.yaml
+  - volumesnapshotclass.yaml

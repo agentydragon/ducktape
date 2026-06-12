@@ -29,7 +29,7 @@ spec:
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
       volumeMode: Filesystem
-  cloneStrategy: copy
+  cloneStrategy: snapshot
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
@@ -39,7 +39,7 @@ spec:
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
       volumeMode: Block
-  cloneStrategy: copy
+  cloneStrategy: snapshot
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
@@ -49,7 +49,7 @@ spec:
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
       volumeMode: Filesystem
-  cloneStrategy: copy
+  cloneStrategy: snapshot
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
@@ -59,7 +59,7 @@ spec:
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
       volumeMode: Filesystem
-  cloneStrategy: copy
+  cloneStrategy: snapshot
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
@@ -69,7 +69,7 @@ spec:
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
       volumeMode: Block
-  cloneStrategy: copy
+  cloneStrategy: snapshot
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
