@@ -1,7 +1,7 @@
 # Wayback write-through archive service plan
 
-Status: plan drafted 2026-06-12; first replay-storage implementation slice in
-progress. Companion to
+Status: plan drafted 2026-06-12; first storage implementation slice in progress.
+Companion to
 <wayback_ia_throttling.md>, <wayback_proxy.md>, and <archive_org_apis.md>.
 
 ## Summary
@@ -410,19 +410,22 @@ Keep `wayback_proxy` focused on sandbox policy:
 
 Current implementation slice:
 
-- Rust archive-service binary with `/web/<timestamp><modifier>/<url>` replay
-  miss fill.
+- Rust archive-service binary with `/web/<timestamp><modifier>/<url>`,
+  `/wayback/available?...`, and `/cdx/search/cdx?...` miss fill.
 - In-process single-flight for identical replay misses, suitable for the
   one-replica v0.
-- Adaptive replay acquisition limiter with configurable queue wait and cooldown
-  defaults.
-- SeaORM-managed CNPG replay metadata and `object_store` S3 replay bodies.
+- Adaptive per-endpoint acquisition limiters with configurable queue wait and
+  cooldown defaults.
+- SeaORM-managed CNPG replay/Availability/CDX metadata and `object_store` S3
+  replay bodies.
 - Stable `body_too_large` policy results and non-caching IA transient replay
   failures.
 
 Still needed before replacing nginx:
 
-- Availability and CDX metadata storage.
+- Validated Availability fallback to CDX inside the archive service, if we want
+  the service itself to make timestamp-selection decisions rather than leaving
+  that to `wayback_proxy`.
 - Cross-replica Postgres fill leases.
 - Archive URL alias rows for IA canonicalization redirects.
 - Cluster deployment, CNPG cluster, SeaweedFS bucket credentials, image

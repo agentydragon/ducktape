@@ -23,6 +23,7 @@ use tokio::time::timeout;
 
 pub const DEFAULT_MAX_QUEUE_WAIT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
+pub const DEFAULT_MAX_METADATA_BYTES: usize = 10 * 1024 * 1024;
 
 const RETRY_AFTER_SECONDS: u64 = 30;
 const HEALTH_WINDOW: Duration = Duration::from_secs(30);
@@ -40,6 +41,22 @@ impl Endpoint {
         match self {
             Endpoint::Availability => 5,
             Endpoint::Cdx | Endpoint::Replay => RETRY_AFTER_SECONDS,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Endpoint::Availability => "availability",
+            Endpoint::Cdx => "cdx",
+            Endpoint::Replay => "replay",
+        }
+    }
+
+    fn metadata_path(self) -> Option<&'static str> {
+        match self {
+            Endpoint::Availability => Some("/wayback/available"),
+            Endpoint::Cdx => Some("/cdx/search/cdx"),
+            Endpoint::Replay => None,
         }
     }
 }
@@ -86,6 +103,43 @@ pub struct ReplayRecord {
     pub headers: Vec<(String, String)>,
     pub body: Bytes,
     pub blob_key: Option<String>,
+    pub sha256: String,
+    pub body_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MetadataKey {
+    pub endpoint: Endpoint,
+    pub normalized_query: String,
+}
+
+impl Display for MetadataKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}?{}", self.endpoint.as_str(), self.normalized_query)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataRequest {
+    pub key: MetadataKey,
+    pub raw_query: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoredMetadata {
+    Response(MetadataRecord),
+    BodyTooLarge {
+        key: MetadataKey,
+        observed_size: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataRecord {
+    pub key: MetadataKey,
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Bytes,
     pub sha256: String,
     pub body_size: usize,
 }
@@ -138,6 +192,8 @@ pub struct UpstreamResponse {
 pub trait ArchiveStore: Send + Sync {
     async fn get_replay(&self, key: &ReplayKey) -> Result<Option<StoredReplay>>;
     async fn put_replay(&self, replay: StoredReplay) -> Result<()>;
+    async fn get_metadata(&self, key: &MetadataKey) -> Result<Option<StoredMetadata>>;
+    async fn put_metadata(&self, metadata: StoredMetadata) -> Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,11 +216,17 @@ pub trait IaClient: Send + Sync {
         key: &ReplayKey,
         max_body_bytes: usize,
     ) -> Result<UpstreamResponse>;
+    async fn fetch_metadata(
+        &self,
+        request: &MetadataRequest,
+        max_body_bytes: usize,
+    ) -> Result<UpstreamResponse>;
 }
 
 #[derive(Default)]
 pub struct MemoryArchiveStore {
     replays: Mutex<HashMap<ReplayKey, StoredReplay>>,
+    metadata: Mutex<HashMap<MetadataKey, StoredMetadata>>,
 }
 
 impl MemoryArchiveStore {
@@ -185,6 +247,19 @@ impl ArchiveStore for MemoryArchiveStore {
             StoredReplay::BodyTooLarge { key, .. } => key.clone(),
         };
         self.replays.lock().await.insert(key, replay);
+        Ok(())
+    }
+
+    async fn get_metadata(&self, key: &MetadataKey) -> Result<Option<StoredMetadata>> {
+        Ok(self.metadata.lock().await.get(key).cloned())
+    }
+
+    async fn put_metadata(&self, metadata: StoredMetadata) -> Result<()> {
+        let key = match &metadata {
+            StoredMetadata::Response(record) => record.key.clone(),
+            StoredMetadata::BodyTooLarge { key, .. } => key.clone(),
+        };
+        self.metadata.lock().await.insert(key, metadata);
         Ok(())
     }
 }
@@ -339,6 +414,31 @@ mod replay_record {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+mod metadata_record {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "wayback_metadata_records")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub endpoint: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub normalized_query: String,
+        pub status: Option<i32>,
+        pub headers: Json,
+        pub body: Option<Vec<u8>>,
+        pub sha256: Option<String>,
+        pub body_size: Option<i64>,
+        pub classification: String,
+        pub observed_size: Option<i64>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub struct PostgresArchiveStore {
     db: DatabaseConnection,
     blobs: Arc<dyn BlobStore>,
@@ -356,6 +456,13 @@ impl PostgresArchiveStore {
         let schema = Schema::new(DbBackend::Postgres);
         let create_table = schema
             .create_table_from_entity(replay_record::Entity)
+            .if_not_exists()
+            .to_owned();
+        self.db
+            .execute(self.db.get_database_backend().build(&create_table))
+            .await?;
+        let create_table = schema
+            .create_table_from_entity(metadata_record::Entity)
             .if_not_exists()
             .to_owned();
         self.db
@@ -436,7 +543,7 @@ impl ArchiveStore for PostgresArchiveStore {
                     observed_size: Set(None),
                 };
                 replay_record::Entity::insert(active)
-                    .on_conflict(upsert_conflict())
+                    .on_conflict(replay_upsert_conflict())
                     .exec(&self.db)
                     .await?;
             }
@@ -454,7 +561,94 @@ impl ArchiveStore for PostgresArchiveStore {
                     observed_size: Set(Some(observed_size as i64)),
                 };
                 replay_record::Entity::insert(active)
-                    .on_conflict(upsert_conflict())
+                    .on_conflict(replay_upsert_conflict())
+                    .exec(&self.db)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_metadata(&self, key: &MetadataKey) -> Result<Option<StoredMetadata>> {
+        let row = metadata_record::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(metadata_record::Column::Endpoint.eq(key.endpoint.as_str()))
+                    .add(metadata_record::Column::NormalizedQuery.eq(key.normalized_query.clone())),
+            )
+            .one(&self.db)
+            .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let endpoint = metadata_endpoint_from_str(&row.endpoint)
+            .ok_or_else(|| anyhow!("metadata row has unknown endpoint {}", row.endpoint))?;
+        let key = MetadataKey {
+            endpoint,
+            normalized_query: row.normalized_query,
+        };
+        if row.classification == "body_too_large" {
+            return Ok(Some(StoredMetadata::BodyTooLarge {
+                key,
+                observed_size: row.observed_size.unwrap_or(0).try_into().unwrap_or(0),
+            }));
+        }
+
+        let body = row
+            .body
+            .ok_or_else(|| anyhow!("metadata row missing body for {key}"))?;
+        Ok(Some(StoredMetadata::Response(MetadataRecord {
+            key,
+            status: row
+                .status
+                .ok_or_else(|| anyhow!("metadata row missing status"))?
+                .try_into()?,
+            headers: serde_json::from_value(row.headers)?,
+            sha256: row
+                .sha256
+                .ok_or_else(|| anyhow!("metadata row missing sha256"))?,
+            body_size: row
+                .body_size
+                .unwrap_or(body.len() as i64)
+                .try_into()
+                .unwrap_or(body.len()),
+            body: Bytes::from(body),
+        })))
+    }
+
+    async fn put_metadata(&self, metadata: StoredMetadata) -> Result<()> {
+        match metadata {
+            StoredMetadata::Response(record) => {
+                let active = metadata_record::ActiveModel {
+                    endpoint: Set(record.key.endpoint.as_str().to_string()),
+                    normalized_query: Set(record.key.normalized_query),
+                    status: Set(Some(record.status as i32)),
+                    headers: Set(serde_json::to_value(&record.headers)?),
+                    body: Set(Some(record.body.to_vec())),
+                    sha256: Set(Some(record.sha256)),
+                    body_size: Set(Some(record.body_size as i64)),
+                    classification: Set("served_metadata".to_string()),
+                    observed_size: Set(None),
+                };
+                metadata_record::Entity::insert(active)
+                    .on_conflict(metadata_upsert_conflict())
+                    .exec(&self.db)
+                    .await?;
+            }
+            StoredMetadata::BodyTooLarge { key, observed_size } => {
+                let active = metadata_record::ActiveModel {
+                    endpoint: Set(key.endpoint.as_str().to_string()),
+                    normalized_query: Set(key.normalized_query),
+                    status: Set(None),
+                    headers: Set(Value::Array(Vec::new())),
+                    body: Set(None),
+                    sha256: Set(None),
+                    body_size: Set(None),
+                    classification: Set("body_too_large".to_string()),
+                    observed_size: Set(Some(observed_size as i64)),
+                };
+                metadata_record::Entity::insert(active)
+                    .on_conflict(metadata_upsert_conflict())
                     .exec(&self.db)
                     .await?;
             }
@@ -463,7 +657,7 @@ impl ArchiveStore for PostgresArchiveStore {
     }
 }
 
-fn upsert_conflict() -> OnConflict {
+fn replay_upsert_conflict() -> OnConflict {
     let mut conflict = OnConflict::columns([
         replay_record::Column::CaptureTs,
         replay_record::Column::Modifier,
@@ -481,20 +675,79 @@ fn upsert_conflict() -> OnConflict {
     conflict.to_owned()
 }
 
+fn metadata_upsert_conflict() -> OnConflict {
+    let mut conflict = OnConflict::columns([
+        metadata_record::Column::Endpoint,
+        metadata_record::Column::NormalizedQuery,
+    ]);
+    conflict.update_columns([
+        metadata_record::Column::Status,
+        metadata_record::Column::Headers,
+        metadata_record::Column::Body,
+        metadata_record::Column::Sha256,
+        metadata_record::Column::BodySize,
+        metadata_record::Column::Classification,
+        metadata_record::Column::ObservedSize,
+    ]);
+    conflict.to_owned()
+}
+
+fn metadata_endpoint_from_str(endpoint: &str) -> Option<Endpoint> {
+    match endpoint {
+        "availability" => Some(Endpoint::Availability),
+        "cdx" => Some(Endpoint::Cdx),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ReqwestIaClient {
     web_upstream: String,
+    availability_upstream: String,
     client: reqwest::Client,
 }
 
 impl ReqwestIaClient {
-    pub fn new(web_upstream: String) -> Result<Self> {
+    pub fn new(web_upstream: String, availability_upstream: String) -> Result<Self> {
         Ok(Self {
             web_upstream: web_upstream.trim_end_matches('/').to_string(),
+            availability_upstream: availability_upstream.trim_end_matches('/').to_string(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent("ducktape-wayback-archive/1 (+agentydragon@gmail.com)")
                 .build()?,
+        })
+    }
+
+    async fn fetch_raw_metadata(
+        &self,
+        base_url: &str,
+        request: &MetadataRequest,
+    ) -> Result<UpstreamResponse> {
+        let path = request.key.endpoint.metadata_path().ok_or_else(|| {
+            anyhow!(
+                "{} is not a metadata endpoint",
+                request.key.endpoint.as_str()
+            )
+        })?;
+        let query_suffix = if request.raw_query.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", request.raw_query)
+        };
+        let response = self
+            .client
+            .get(format!("{base_url}{path}{query_suffix}"))
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
+            .send()
+            .await?;
+        let status = response.status().as_u16();
+        let headers = response.headers().clone();
+        let body = response.bytes().await?;
+        Ok(UpstreamResponse {
+            status,
+            headers,
+            body,
         })
     }
 }
@@ -520,6 +773,21 @@ impl IaClient for ReqwestIaClient {
             headers,
             body,
         })
+    }
+
+    async fn fetch_metadata(
+        &self,
+        request: &MetadataRequest,
+        _max_body_bytes: usize,
+    ) -> Result<UpstreamResponse> {
+        match request.key.endpoint {
+            Endpoint::Availability => {
+                self.fetch_raw_metadata(&self.availability_upstream, request)
+                    .await
+            }
+            Endpoint::Cdx => self.fetch_raw_metadata(&self.web_upstream, request).await,
+            Endpoint::Replay => Err(anyhow!("replay is not a metadata endpoint")),
+        }
     }
 }
 
@@ -688,12 +956,12 @@ impl AdaptiveLimiter {
 }
 
 #[derive(Debug)]
-struct FillFlights {
-    in_progress: HashSet<ReplayKey>,
+struct FillFlights<T> {
+    in_progress: HashSet<T>,
     notify: Arc<Notify>,
 }
 
-impl Default for FillFlights {
+impl<T> Default for FillFlights<T> {
     fn default() -> Self {
         Self {
             in_progress: HashSet::new(),
@@ -705,9 +973,13 @@ impl Default for FillFlights {
 pub struct ArchiveService {
     store: Arc<dyn ArchiveStore>,
     client: Arc<dyn IaClient>,
+    availability_limiter: Arc<AdaptiveLimiter>,
+    cdx_limiter: Arc<AdaptiveLimiter>,
     replay_limiter: Arc<AdaptiveLimiter>,
-    fill_flights: Mutex<FillFlights>,
+    metadata_flights: Mutex<FillFlights<MetadataKey>>,
+    replay_flights: Mutex<FillFlights<ReplayKey>>,
     max_body_bytes: usize,
+    max_metadata_bytes: usize,
     queue_wait: Duration,
 }
 
@@ -716,11 +988,29 @@ impl ArchiveService {
         Self {
             store,
             client,
+            availability_limiter: Arc::new(AdaptiveLimiter::new(LimiterConfig::availability())),
+            cdx_limiter: Arc::new(AdaptiveLimiter::new(LimiterConfig::cdx())),
             replay_limiter: Arc::new(AdaptiveLimiter::new(LimiterConfig::replay())),
-            fill_flights: Mutex::new(FillFlights::default()),
+            metadata_flights: Mutex::new(FillFlights::default()),
+            replay_flights: Mutex::new(FillFlights::default()),
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
+            max_metadata_bytes: DEFAULT_MAX_METADATA_BYTES,
             queue_wait: DEFAULT_MAX_QUEUE_WAIT,
         }
+    }
+
+    pub fn with_endpoint_limiters(
+        mut self,
+        availability_limiter: Arc<AdaptiveLimiter>,
+        cdx_limiter: Arc<AdaptiveLimiter>,
+        replay_limiter: Arc<AdaptiveLimiter>,
+        queue_wait: Duration,
+    ) -> Self {
+        self.availability_limiter = availability_limiter;
+        self.cdx_limiter = cdx_limiter;
+        self.replay_limiter = replay_limiter;
+        self.queue_wait = queue_wait;
+        self
     }
 
     pub fn with_limits(
@@ -738,7 +1028,19 @@ impl ArchiveService {
         self
     }
 
+    pub fn with_max_metadata_bytes(mut self, max_metadata_bytes: usize) -> Self {
+        self.max_metadata_bytes = max_metadata_bytes;
+        self
+    }
+
     pub async fn handle_path(&self, path: &str) -> ArchiveResponse {
+        self.handle_request(path, None).await
+    }
+
+    pub async fn handle_request(&self, path: &str, query: Option<&str>) -> ArchiveResponse {
+        if let Some(request) = parse_metadata_request(path, query) {
+            return self.handle_metadata(request).await;
+        }
         let Some(key) = parse_replay_path(path) else {
             return ArchiveResponse::text(
                 StatusCode::NOT_FOUND,
@@ -746,6 +1048,35 @@ impl ArchiveService {
             );
         };
         self.handle_replay(key).await
+    }
+
+    pub async fn handle_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
+        match self.store.get_metadata(&request.key).await {
+            Ok(Some(metadata)) => return stored_metadata_response(metadata),
+            Ok(None) => {}
+            Err(_) => {
+                return ArchiveResponse::text(
+                    StatusCode::BAD_GATEWAY,
+                    "archive metadata cache read failed\n",
+                );
+            }
+        }
+        if !self.enter_metadata_fill(&request.key).await {
+            match self.store.get_metadata(&request.key).await {
+                Ok(Some(metadata)) => return stored_metadata_response(metadata),
+                Ok(None) => {}
+                Err(_) => {
+                    return ArchiveResponse::text(
+                        StatusCode::BAD_GATEWAY,
+                        "archive metadata cache read failed\n",
+                    );
+                }
+            }
+            return ArchiveResponse::retry_after(request.key.endpoint);
+        }
+        let response = self.fill_metadata(request.clone()).await;
+        self.leave_metadata_fill(&request.key).await;
+        response
     }
 
     pub async fn handle_replay(&self, key: ReplayKey) -> ArchiveResponse {
@@ -781,7 +1112,7 @@ impl ArchiveService {
         let deadline = Instant::now() + self.queue_wait;
         loop {
             let notify = {
-                let mut flights = self.fill_flights.lock().await;
+                let mut flights = self.replay_flights.lock().await;
                 if flights.in_progress.insert(key.clone()) {
                     return true;
                 }
@@ -801,11 +1132,102 @@ impl ArchiveService {
 
     async fn leave_fill(&self, key: &ReplayKey) {
         let notify = {
-            let mut flights = self.fill_flights.lock().await;
+            let mut flights = self.replay_flights.lock().await;
             flights.in_progress.remove(key);
             flights.notify.clone()
         };
         notify.notify_waiters();
+    }
+
+    async fn enter_metadata_fill(&self, key: &MetadataKey) -> bool {
+        let deadline = Instant::now() + self.queue_wait;
+        loop {
+            let notify = {
+                let mut flights = self.metadata_flights.lock().await;
+                if flights.in_progress.insert(key.clone()) {
+                    return true;
+                }
+                flights.notify.clone()
+            };
+            let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+            if timeout(wait, notify.notified()).await.is_err() {
+                return false;
+            }
+            if matches!(self.store.get_metadata(key).await, Ok(Some(_))) {
+                return false;
+            }
+        }
+    }
+
+    async fn leave_metadata_fill(&self, key: &MetadataKey) {
+        let notify = {
+            let mut flights = self.metadata_flights.lock().await;
+            flights.in_progress.remove(key);
+            flights.notify.clone()
+        };
+        notify.notify_waiters();
+    }
+
+    async fn fill_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
+        let limiter = self.metadata_limiter(request.key.endpoint);
+        if !limiter.acquire().await {
+            return ArchiveResponse::retry_after(request.key.endpoint);
+        }
+        let upstream = self
+            .client
+            .fetch_metadata(&request, self.max_metadata_bytes)
+            .await;
+        match upstream {
+            Ok(response) if response.body.len() > self.max_metadata_bytes => {
+                limiter.record(AcquisitionOutcome::Healthy).await;
+                let metadata = StoredMetadata::BodyTooLarge {
+                    key: request.key,
+                    observed_size: response.body.len(),
+                };
+                if self.store.put_metadata(metadata.clone()).await.is_err() {
+                    return ArchiveResponse::text(
+                        StatusCode::BAD_GATEWAY,
+                        "archive metadata cache write failed\n",
+                    );
+                }
+                stored_metadata_response(metadata)
+            }
+            Ok(response) if is_transient_metadata_failure(&response) => {
+                limiter
+                    .record(
+                        retry_after_duration(&response.headers)
+                            .map(AcquisitionOutcome::RetryAfter)
+                            .unwrap_or(AcquisitionOutcome::TransientFailure),
+                    )
+                    .await;
+                ArchiveResponse::retry_after(request.key.endpoint)
+            }
+            Ok(response) => {
+                limiter.record(AcquisitionOutcome::Healthy).await;
+                let record = MetadataRecord {
+                    key: request.key,
+                    status: response.status,
+                    headers: selected_metadata_headers(&response.headers),
+                    sha256: sha256_hex(&response.body),
+                    body_size: response.body.len(),
+                    body: response.body,
+                };
+                let metadata = StoredMetadata::Response(record);
+                if self.store.put_metadata(metadata.clone()).await.is_err() {
+                    return ArchiveResponse::text(
+                        StatusCode::BAD_GATEWAY,
+                        "archive metadata cache write failed\n",
+                    );
+                }
+                stored_metadata_response(metadata)
+            }
+            Err(_error) => {
+                limiter.record(AcquisitionOutcome::TransientFailure).await;
+                ArchiveResponse::retry_after(request.key.endpoint)
+            }
+        }
     }
 
     async fn fill_replay(&self, key: ReplayKey) -> ArchiveResponse {
@@ -866,6 +1288,14 @@ impl ArchiveService {
             }
         }
     }
+
+    fn metadata_limiter(&self, endpoint: Endpoint) -> Arc<AdaptiveLimiter> {
+        match endpoint {
+            Endpoint::Availability => self.availability_limiter.clone(),
+            Endpoint::Cdx => self.cdx_limiter.clone(),
+            Endpoint::Replay => self.replay_limiter.clone(),
+        }
+    }
 }
 
 fn stored_replay_response(replay: StoredReplay) -> ArchiveResponse {
@@ -882,6 +1312,20 @@ fn stored_replay_response(replay: StoredReplay) -> ArchiveResponse {
     }
 }
 
+fn stored_metadata_response(metadata: StoredMetadata) -> ArchiveResponse {
+    match metadata {
+        StoredMetadata::Response(record) => ArchiveResponse {
+            status: record.status,
+            headers: record.headers,
+            body: record.body,
+        },
+        StoredMetadata::BodyTooLarge { observed_size, .. } => ArchiveResponse::text(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("archived metadata response is too large: {observed_size} bytes\n"),
+        ),
+    }
+}
+
 fn selected_headers(headers: &HeaderMap) -> Vec<(String, String)> {
     ["content-type", "location", "memento-datetime"]
         .into_iter()
@@ -894,8 +1338,57 @@ fn selected_headers(headers: &HeaderMap) -> Vec<(String, String)> {
         .collect()
 }
 
+fn selected_metadata_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    ["content-type", "retry-after"]
+        .into_iter()
+        .filter_map(|name| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| (name.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
 fn is_transient_replay_failure(response: &UpstreamResponse) -> bool {
     response.status >= 400 && response.headers.get("memento-datetime").is_none()
+}
+
+fn is_transient_metadata_failure(response: &UpstreamResponse) -> bool {
+    response.status == 429 || response.status >= 500
+}
+
+fn retry_after_duration(headers: &HeaderMap) -> Option<Duration> {
+    headers
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
+
+pub fn parse_metadata_request(path: &str, query: Option<&str>) -> Option<MetadataRequest> {
+    let endpoint = match path {
+        "/wayback/available" => Endpoint::Availability,
+        "/cdx/search/cdx" => Endpoint::Cdx,
+        _ => return None,
+    };
+    let raw_query = query.unwrap_or_default().to_string();
+    Some(MetadataRequest {
+        key: MetadataKey {
+            endpoint,
+            normalized_query: normalize_query(query.unwrap_or_default()),
+        },
+        raw_query,
+    })
+}
+
+fn normalize_query(query: &str) -> String {
+    let mut parts = query
+        .split('&')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    parts.sort_unstable();
+    parts.join("&")
 }
 
 pub fn parse_replay_path(path: &str) -> Option<ReplayKey> {
@@ -948,6 +1441,173 @@ mod tests {
         );
         assert!(parse_replay_path("/cdx/search/cdx").is_none());
         assert!(parse_replay_path("/web/not-a-ts/http://example.com").is_none());
+    }
+
+    #[test]
+    fn parses_metadata_request_with_normalized_query() {
+        assert_eq!(
+            parse_metadata_request(
+                "/wayback/available",
+                Some("url=https://example.com/&timestamp=20200101000000")
+            ),
+            Some(MetadataRequest {
+                key: MetadataKey {
+                    endpoint: Endpoint::Availability,
+                    normalized_query: "timestamp=20200101000000&url=https://example.com/"
+                        .to_string(),
+                },
+                raw_query: "url=https://example.com/&timestamp=20200101000000".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_metadata_request("/cdx/search/cdx", Some("limit=-1&url=https://example.com/"))
+                .unwrap()
+                .key
+                .normalized_query,
+            "limit=-1&url=https://example.com/"
+        );
+        assert!(
+            parse_metadata_request("/web/20200101000000id_/https://example.com/", None).is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn availability_miss_is_fetched_and_cached_by_normalized_query() {
+        let client = Arc::new(CountingClient::ok_json(
+            200,
+            br#"{"archived_snapshots":{"closest":{"available":true}}}"#,
+        ));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
+
+        let first = service
+            .handle_request(
+                "/wayback/available",
+                Some("url=https://example.com/&timestamp=20200101000000"),
+            )
+            .await;
+        let second = service
+            .handle_request(
+                "/wayback/available",
+                Some("timestamp=20200101000000&url=https://example.com/"),
+            )
+            .await;
+
+        assert_eq!(first.status, 200);
+        assert_eq!(second.status, 200);
+        assert_eq!(second.body, first.body);
+        assert_eq!(client.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cdx_miss_is_fetched_and_cached() {
+        let client = Arc::new(CountingClient::ok_json(
+            200,
+            br#"[["timestamp","original"],["20200101000000","https://example.com/"]]"#,
+        ));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
+
+        let first = service
+            .handle_request(
+                "/cdx/search/cdx",
+                Some("url=https://example.com/&output=json&to=20200101000000"),
+            )
+            .await;
+        let second = service
+            .handle_request(
+                "/cdx/search/cdx",
+                Some("to=20200101000000&output=json&url=https://example.com/"),
+            )
+            .await;
+
+        assert_eq!(first.status, 200);
+        assert_eq!(second.status, 200);
+        assert_eq!(second.body, first.body);
+        assert_eq!(client.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn metadata_502_is_not_cached() {
+        let client = Arc::new(CountingClient::new(vec![
+            UpstreamResponse {
+                status: 502,
+                headers: HeaderMap::new(),
+                body: Bytes::from_static(b"bad gateway"),
+            },
+            UpstreamResponse {
+                status: 200,
+                headers: json_headers(),
+                body: Bytes::from_static(br#"{"ok":true}"#),
+            },
+        ]));
+        let availability = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let cdx = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let replay = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone())
+            .with_endpoint_limiters(availability, cdx, replay, Duration::from_millis(50));
+
+        let first = service
+            .handle_request(
+                "/wayback/available",
+                Some("url=https://example.com/&timestamp=20200101000000"),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        let second = service
+            .handle_request(
+                "/wayback/available",
+                Some("url=https://example.com/&timestamp=20200101000000"),
+            )
+            .await;
+
+        assert_eq!(first.status, 503);
+        assert_eq!(second.status, 200);
+        assert_eq!(second.body, Bytes::from_static(br#"{"ok":true}"#));
+        assert_eq!(client.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn oversized_metadata_is_stable_policy_result() {
+        let client = Arc::new(CountingClient::ok_json(200, b"too big"));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone())
+            .with_max_metadata_bytes(3);
+
+        let first = service
+            .handle_request(
+                "/cdx/search/cdx",
+                Some("url=https://example.com/&output=json&to=20200101000000"),
+            )
+            .await;
+        let second = service
+            .handle_request(
+                "/cdx/search/cdx",
+                Some("url=https://example.com/&output=json&to=20200101000000"),
+            )
+            .await;
+
+        assert_eq!(first.status, 413);
+        assert_eq!(second.status, 413);
+        assert_eq!(client.calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -1097,6 +1757,12 @@ mod tests {
         headers
     }
 
+    fn json_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, header_value("application/json"));
+        headers
+    }
+
     struct CountingClient {
         calls: AtomicUsize,
         responses: Mutex<VecDeque<UpstreamResponse>>,
@@ -1107,6 +1773,14 @@ mod tests {
             Self::new(vec![UpstreamResponse {
                 status,
                 headers: content_type_headers(),
+                body: Bytes::copy_from_slice(body),
+            }])
+        }
+
+        fn ok_json(status: u16, body: &[u8]) -> Self {
+            Self::new(vec![UpstreamResponse {
+                status,
+                headers: json_headers(),
                 body: Bytes::copy_from_slice(body),
             }])
         }
@@ -1126,6 +1800,20 @@ mod tests {
             _key: &ReplayKey,
             _max_body_bytes: usize,
         ) -> Result<UpstreamResponse> {
+            self.pop_response().await
+        }
+
+        async fn fetch_metadata(
+            &self,
+            _request: &MetadataRequest,
+            _max_body_bytes: usize,
+        ) -> Result<UpstreamResponse> {
+            self.pop_response().await
+        }
+    }
+
+    impl CountingClient {
+        async fn pop_response(&self) -> Result<UpstreamResponse> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut responses = self.responses.lock().await;
             Ok(responses.pop_front().unwrap_or_else(|| UpstreamResponse {
@@ -1157,6 +1845,22 @@ mod tests {
                 headers: content_type_headers(),
                 body: Bytes::from_static(b"single flight"),
             })
+        }
+
+        async fn fetch_metadata(
+            &self,
+            _request: &MetadataRequest,
+            _max_body_bytes: usize,
+        ) -> Result<UpstreamResponse> {
+            self.fetch_replay(
+                &ReplayKey {
+                    capture_ts: "20200101000000".to_string(),
+                    modifier: "id_".to_string(),
+                    original_url: "https://example.com/".to_string(),
+                },
+                DEFAULT_MAX_BODY_BYTES,
+            )
+            .await
         }
     }
 }

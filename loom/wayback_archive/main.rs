@@ -10,8 +10,8 @@ use axum::{Router, routing::get};
 use log::info;
 use wayback_archive::{
     AdaptiveLimiter, ArchiveResponse, ArchiveService, ArchiveStore, DEFAULT_MAX_BODY_BYTES,
-    DEFAULT_MAX_QUEUE_WAIT, LimiterConfig, MemoryArchiveStore, PostgresArchiveStore,
-    ReqwestIaClient, S3BlobStore,
+    DEFAULT_MAX_METADATA_BYTES, DEFAULT_MAX_QUEUE_WAIT, LimiterConfig, MemoryArchiveStore,
+    PostgresArchiveStore, ReqwestIaClient, S3BlobStore,
 };
 
 #[tokio::main]
@@ -23,10 +23,16 @@ async fn main() -> Result<()> {
         .unwrap_or(8080);
     let web_upstream = std::env::var("WAYBACK_ARCHIVE_WEB_UPSTREAM")
         .unwrap_or_else(|_| "https://web.archive.org".to_string());
+    let availability_upstream = std::env::var("WAYBACK_ARCHIVE_AVAILABILITY_UPSTREAM")
+        .unwrap_or_else(|_| "https://archive.org".to_string());
     let max_body_bytes = std::env::var("WAYBACK_ARCHIVE_MAX_BODY_BYTES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_MAX_BODY_BYTES);
+    let max_metadata_bytes = std::env::var("WAYBACK_ARCHIVE_MAX_METADATA_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_MAX_METADATA_BYTES);
     let queue_wait = std::env::var("WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -46,10 +52,27 @@ async fn main() -> Result<()> {
         queue_wait,
         ..LimiterConfig::replay()
     }));
+    let availability_limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+        queue_wait,
+        ..LimiterConfig::availability()
+    }));
+    let cdx_limiter = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+        queue_wait,
+        ..LimiterConfig::cdx()
+    }));
     let service = Arc::new(
-        ArchiveService::new(store, Arc::new(ReqwestIaClient::new(web_upstream)?))
-            .with_limits(replay_limiter, queue_wait)
-            .with_max_body_bytes(max_body_bytes),
+        ArchiveService::new(
+            store,
+            Arc::new(ReqwestIaClient::new(web_upstream, availability_upstream)?),
+        )
+        .with_endpoint_limiters(
+            availability_limiter,
+            cdx_limiter,
+            replay_limiter,
+            queue_wait,
+        )
+        .with_max_body_bytes(max_body_bytes)
+        .with_max_metadata_bytes(max_metadata_bytes),
     );
     let app = Router::new()
         .route("/healthz", get(|| async { "ok\n" }))
@@ -66,7 +89,7 @@ async fn handle(
     State(service): State<Arc<ArchiveService>>,
     OriginalUri(uri): OriginalUri,
 ) -> Response<Body> {
-    into_axum_response(service.handle_path(uri.path()).await)
+    into_axum_response(service.handle_request(uri.path(), uri.query()).await)
 }
 
 fn into_axum_response(response: ArchiveResponse) -> Response<Body> {
