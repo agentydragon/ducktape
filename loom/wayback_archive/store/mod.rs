@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 
-use crate::types::{MetadataKey, ReplayKey, StoredMetadata, StoredReplay};
+use crate::types::{FillLeaseKey, MetadataKey, ReplayKey, StoredMetadata, StoredReplay};
 
 mod memory;
 mod postgres;
@@ -18,6 +20,13 @@ pub trait ArchiveStore: Send + Sync {
     async fn put_replay(&self, replay: StoredReplay) -> Result<()>;
     async fn get_metadata(&self, key: &MetadataKey) -> Result<Option<StoredMetadata>>;
     async fn put_metadata(&self, metadata: StoredMetadata) -> Result<()>;
+    async fn try_acquire_fill_lease(
+        &self,
+        key: &FillLeaseKey,
+        owner: &str,
+        ttl: Duration,
+    ) -> Result<bool>;
+    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

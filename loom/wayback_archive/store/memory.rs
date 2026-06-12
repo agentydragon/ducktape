@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
@@ -6,13 +7,20 @@ use bytes::Bytes;
 use tokio::sync::Mutex;
 
 use crate::store::{ArchiveStore, BlobRef, BlobStore, blob_key};
-use crate::types::{MetadataKey, ReplayKey, StoredMetadata, StoredReplay};
+use crate::types::{FillLeaseKey, MetadataKey, ReplayKey, StoredMetadata, StoredReplay};
 use crate::util::sha256_hex;
 
 #[derive(Default)]
 pub struct MemoryArchiveStore {
     replays: Mutex<HashMap<ReplayKey, StoredReplay>>,
     metadata: Mutex<HashMap<MetadataKey, StoredMetadata>>,
+    leases: Mutex<HashMap<FillLeaseKey, MemoryLease>>,
+}
+
+#[derive(Debug, Clone)]
+struct MemoryLease {
+    owner: String,
+    expires_at: Instant,
 }
 
 impl MemoryArchiveStore {
@@ -46,6 +54,38 @@ impl ArchiveStore for MemoryArchiveStore {
             StoredMetadata::BodyTooLarge { key, .. } => key.clone(),
         };
         self.metadata.lock().await.insert(key, metadata);
+        Ok(())
+    }
+
+    async fn try_acquire_fill_lease(
+        &self,
+        key: &FillLeaseKey,
+        owner: &str,
+        ttl: Duration,
+    ) -> Result<bool> {
+        let mut leases = self.leases.lock().await;
+        let now = Instant::now();
+        if leases
+            .get(key)
+            .is_some_and(|lease| lease.expires_at > now && lease.owner != owner)
+        {
+            return Ok(false);
+        }
+        leases.insert(
+            key.clone(),
+            MemoryLease {
+                owner: owner.to_string(),
+                expires_at: now + ttl,
+            },
+        );
+        Ok(true)
+    }
+
+    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()> {
+        let mut leases = self.leases.lock().await;
+        if leases.get(key).is_some_and(|lease| lease.owner == owner) {
+            leases.remove(key);
+        }
         Ok(())
     }
 }

@@ -64,6 +64,34 @@ impl Display for ReplayKey {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FillLeaseKey {
+    pub endpoint: Endpoint,
+    pub key: String,
+}
+
+impl FillLeaseKey {
+    pub(crate) fn replay(key: &ReplayKey) -> Self {
+        Self {
+            endpoint: Endpoint::Replay,
+            key: key.to_string(),
+        }
+    }
+
+    pub(crate) fn metadata(key: &MetadataKey) -> Self {
+        Self {
+            endpoint: key.endpoint,
+            key: key.normalized_query.clone(),
+        }
+    }
+}
+
+impl Display for FillLeaseKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.endpoint.as_str(), self.key)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoredReplay {
     Capture(ReplayRecord),

@@ -1,19 +1,21 @@
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use bytes::Bytes;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait,
-    QueryFilter, Schema, Set,
+    QueryFilter, Schema, Set, TryInsertResult,
 };
 use serde_json::Value;
 
 use crate::store::{ArchiveStore, BlobStore};
 use crate::types::{
-    Endpoint, MetadataKey, MetadataRecord, ReplayKey, ReplayRecord, StoredMetadata, StoredReplay,
+    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, ReplayKey, ReplayRecord, StoredMetadata,
+    StoredReplay,
 };
 
 mod replay_record {
@@ -68,6 +70,26 @@ mod metadata_record {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+mod fill_lease {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "wayback_fill_leases")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub endpoint: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub lease_key: String,
+        pub owner: String,
+        pub expires_at_ms: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub struct PostgresArchiveStore {
     db: DatabaseConnection,
     blobs: Arc<dyn BlobStore>,
@@ -92,6 +114,13 @@ impl PostgresArchiveStore {
             .await?;
         let create_table = schema
             .create_table_from_entity(metadata_record::Entity)
+            .if_not_exists()
+            .to_owned();
+        self.db
+            .execute(self.db.get_database_backend().build(&create_table))
+            .await?;
+        let create_table = schema
+            .create_table_from_entity(fill_lease::Entity)
             .if_not_exists()
             .to_owned();
         self.db
@@ -284,6 +313,65 @@ impl ArchiveStore for PostgresArchiveStore {
         }
         Ok(())
     }
+
+    async fn try_acquire_fill_lease(
+        &self,
+        key: &FillLeaseKey,
+        owner: &str,
+        ttl: Duration,
+    ) -> Result<bool> {
+        let now_ms = epoch_ms();
+        let expires_at_ms = now_ms + duration_ms(ttl);
+        let endpoint = key.endpoint.as_str().to_string();
+        let lease_key = key.key.clone();
+
+        let updated = fill_lease::Entity::update_many()
+            .col_expr(fill_lease::Column::Owner, Expr::value(owner.to_string()))
+            .col_expr(fill_lease::Column::ExpiresAtMs, Expr::value(expires_at_ms))
+            .filter(
+                Condition::all()
+                    .add(fill_lease::Column::Endpoint.eq(endpoint.clone()))
+                    .add(fill_lease::Column::LeaseKey.eq(lease_key.clone()))
+                    .add(fill_lease::Column::ExpiresAtMs.lte(now_ms)),
+            )
+            .exec(&self.db)
+            .await?;
+        if updated.rows_affected > 0 {
+            return Ok(true);
+        }
+
+        let active = fill_lease::ActiveModel {
+            endpoint: Set(endpoint),
+            lease_key: Set(lease_key),
+            owner: Set(owner.to_string()),
+            expires_at_ms: Set(expires_at_ms),
+        };
+        let mut conflict =
+            OnConflict::columns([fill_lease::Column::Endpoint, fill_lease::Column::LeaseKey]);
+        conflict.do_nothing();
+        match fill_lease::Entity::insert(active)
+            .on_conflict(conflict.to_owned())
+            .do_nothing()
+            .exec(&self.db)
+            .await?
+        {
+            TryInsertResult::Inserted(_) => Ok(true),
+            TryInsertResult::Conflicted | TryInsertResult::Empty => Ok(false),
+        }
+    }
+
+    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()> {
+        fill_lease::Entity::delete_many()
+            .filter(
+                Condition::all()
+                    .add(fill_lease::Column::Endpoint.eq(key.endpoint.as_str()))
+                    .add(fill_lease::Column::LeaseKey.eq(key.key.clone()))
+                    .add(fill_lease::Column::Owner.eq(owner.to_string())),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
 }
 
 fn replay_upsert_conflict() -> OnConflict {
@@ -327,4 +415,17 @@ fn metadata_endpoint_from_str(endpoint: &str) -> Option<Endpoint> {
         "cdx" => Some(Endpoint::Cdx),
         _ => None,
     }
+}
+
+fn epoch_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock must be after unix epoch")
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
+}
+
+fn duration_ms(duration: Duration) -> i64 {
+    duration.as_millis().try_into().unwrap_or(i64::MAX)
 }

@@ -20,7 +20,7 @@ pub use store::{
     S3BlobStore,
 };
 pub use types::{
-    Endpoint, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
+    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
     StoredMetadata, StoredReplay,
 };
 
@@ -465,6 +465,38 @@ mod tests {
         });
         let second = tokio::spawn({
             let service = service.clone();
+            async move { service.handle_path(path).await }
+        });
+        while client.calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        release_send.send(()).unwrap();
+
+        let first = first.await.unwrap();
+        let second = second.await.unwrap();
+        assert_eq!(first.status, 200);
+        assert_eq!(second.status, 200);
+        assert_eq!(client.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_identical_misses_share_fill_lease_across_services() {
+        let (release_send, release_recv) = oneshot::channel();
+        let client = Arc::new(BlockingClient {
+            calls: AtomicUsize::new(0),
+            release: Mutex::new(Some(release_recv)),
+        });
+        let store = Arc::new(MemoryArchiveStore::new());
+        let first_service = Arc::new(ArchiveService::new(store.clone(), client.clone()));
+        let second_service = Arc::new(ArchiveService::new(store, client.clone()));
+        let path = "/web/20200115103000id_/https://example.com/";
+
+        let first = tokio::spawn({
+            let service = first_service.clone();
+            async move { service.handle_path(path).await }
+        });
+        let second = tokio::spawn({
+            let service = second_service.clone();
             async move { service.handle_path(path).await }
         });
         while client.calls.load(Ordering::SeqCst) == 0 {

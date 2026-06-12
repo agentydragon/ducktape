@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -7,7 +8,7 @@ use http::{HeaderMap, StatusCode};
 use log::warn;
 use prometheus::{Encoder, GaugeVec, Opts, Registry, TextEncoder};
 use tokio::sync::{Mutex, Notify};
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 use crate::ia_client::{IaClient, UpstreamResponse};
 use crate::limiter::{AcquisitionOutcome, AdaptiveLimiter, LimiterConfig};
@@ -19,11 +20,14 @@ use crate::path::{parse_metadata_request, parse_replay_path};
 use crate::response::ArchiveResponse;
 use crate::store::ArchiveStore;
 use crate::types::{
-    Endpoint, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
+    Endpoint, FillLeaseKey, MetadataKey, MetadataRecord, MetadataRequest, ReplayKey, ReplayRecord,
     StoredMetadata, StoredReplay,
 };
 use crate::util::sha256_hex;
 use crate::{DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_METADATA_BYTES, DEFAULT_MAX_QUEUE_WAIT};
+
+const SHARED_FILL_POLL_INTERVAL: Duration = Duration::from_millis(250);
+static NEXT_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 struct FillFlights<T> {
@@ -52,10 +56,14 @@ pub struct ArchiveService {
     max_body_bytes: usize,
     max_metadata_bytes: usize,
     queue_wait: Duration,
+    instance_id: String,
+    lease_counter: AtomicU64,
 }
 
 impl ArchiveService {
     pub fn new(store: Arc<dyn ArchiveStore>, client: Arc<dyn IaClient>) -> Self {
+        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "local".to_string());
+        let instance_sequence = NEXT_INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         Self {
             store,
             client,
@@ -68,6 +76,8 @@ impl ArchiveService {
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
             max_metadata_bytes: DEFAULT_MAX_METADATA_BYTES,
             queue_wait: DEFAULT_MAX_QUEUE_WAIT,
+            instance_id: format!("{hostname}:{}:{instance_sequence}", std::process::id()),
+            lease_counter: AtomicU64::new(0),
         }
     }
 
@@ -264,7 +274,7 @@ impl ArchiveService {
             );
             return ArchiveResponse::retry_after(request.key.endpoint);
         }
-        let response = self.fill_metadata(request.clone()).await;
+        let response = self.fill_metadata_with_shared_lease(request.clone()).await;
         self.leave_metadata_fill(&request.key).await;
         response
     }
@@ -304,7 +314,7 @@ impl ArchiveService {
             );
             return ArchiveResponse::retry_after(Endpoint::Replay);
         }
-        let response = self.fill_replay(key.clone()).await;
+        let response = self.fill_replay_with_shared_lease(key.clone()).await;
         self.leave_fill(&key).await;
         response
     }
@@ -417,6 +427,182 @@ impl ArchiveService {
             flights.notify.clone()
         };
         notify.notify_waiters();
+    }
+
+    async fn fill_metadata_with_shared_lease(&self, request: MetadataRequest) -> ArchiveResponse {
+        let endpoint = request.key.endpoint;
+        let lease_key = FillLeaseKey::metadata(&request.key);
+        let owner = self.next_lease_owner();
+        let started = Instant::now();
+        let deadline = started + self.queue_wait;
+        let mut waiter = None;
+        loop {
+            match self.store.get_metadata(&request.key).await {
+                Ok(Some(metadata)) => {
+                    drop(waiter);
+                    self.metrics.record_single_flight_wait_duration(
+                        endpoint,
+                        SingleFlightWaitOutcome::FilledByPeer,
+                        started.elapsed(),
+                    );
+                    return stored_metadata_response(metadata);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        "wayback archive metadata cache read failed while waiting for lease key={lease_key} error={error:#}"
+                    );
+                    return ArchiveResponse::text(
+                        StatusCode::BAD_GATEWAY,
+                        "archive metadata cache read failed\n",
+                    );
+                }
+            }
+            match self
+                .store
+                .try_acquire_fill_lease(&lease_key, &owner, self.fill_lease_ttl())
+                .await
+            {
+                Ok(true) => {
+                    if let Some(waiter) = waiter.take() {
+                        drop(waiter);
+                        self.metrics.record_single_flight_wait_duration(
+                            endpoint,
+                            SingleFlightWaitOutcome::Owner,
+                            started.elapsed(),
+                        );
+                    }
+                    let response = self.fill_metadata(request.clone()).await;
+                    if let Err(error) = self.store.release_fill_lease(&lease_key, &owner).await {
+                        warn!(
+                            "wayback archive fill lease release failed key={lease_key} error={error:#}"
+                        );
+                    }
+                    return response;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    warn!(
+                        "wayback archive fill lease acquire failed key={lease_key} error={error:#}"
+                    );
+                    return self.fill_metadata(request).await;
+                }
+            }
+
+            if waiter.is_none() {
+                waiter = Some(self.metrics.begin_single_flight_wait(endpoint));
+            }
+            let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+                drop(waiter);
+                self.metrics.record_single_flight_wait_duration(
+                    endpoint,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
+                self.record_shared_fill_timeout(endpoint, &lease_key);
+                return ArchiveResponse::retry_after(endpoint);
+            };
+            sleep(wait.min(SHARED_FILL_POLL_INTERVAL)).await;
+        }
+    }
+
+    async fn fill_replay_with_shared_lease(&self, key: ReplayKey) -> ArchiveResponse {
+        let lease_key = FillLeaseKey::replay(&key);
+        let owner = self.next_lease_owner();
+        let started = Instant::now();
+        let deadline = started + self.queue_wait;
+        let mut waiter = None;
+        loop {
+            match self.store.get_replay(&key).await {
+                Ok(Some(replay)) => {
+                    drop(waiter);
+                    self.metrics.record_single_flight_wait_duration(
+                        Endpoint::Replay,
+                        SingleFlightWaitOutcome::FilledByPeer,
+                        started.elapsed(),
+                    );
+                    return stored_replay_response(replay);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        "wayback archive cache read failed while waiting for lease key={lease_key} error={error:#}"
+                    );
+                    return ArchiveResponse::text(
+                        StatusCode::BAD_GATEWAY,
+                        "archive cache read failed\n",
+                    );
+                }
+            }
+            match self
+                .store
+                .try_acquire_fill_lease(&lease_key, &owner, self.fill_lease_ttl())
+                .await
+            {
+                Ok(true) => {
+                    if let Some(waiter) = waiter.take() {
+                        drop(waiter);
+                        self.metrics.record_single_flight_wait_duration(
+                            Endpoint::Replay,
+                            SingleFlightWaitOutcome::Owner,
+                            started.elapsed(),
+                        );
+                    }
+                    let response = self.fill_replay(key.clone()).await;
+                    if let Err(error) = self.store.release_fill_lease(&lease_key, &owner).await {
+                        warn!(
+                            "wayback archive fill lease release failed key={lease_key} error={error:#}"
+                        );
+                    }
+                    return response;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    warn!(
+                        "wayback archive fill lease acquire failed key={lease_key} error={error:#}"
+                    );
+                    return self.fill_replay(key).await;
+                }
+            }
+
+            if waiter.is_none() {
+                waiter = Some(self.metrics.begin_single_flight_wait(Endpoint::Replay));
+            }
+            let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+                drop(waiter);
+                self.metrics.record_single_flight_wait_duration(
+                    Endpoint::Replay,
+                    SingleFlightWaitOutcome::Timeout,
+                    started.elapsed(),
+                );
+                self.record_shared_fill_timeout(Endpoint::Replay, &lease_key);
+                return ArchiveResponse::retry_after(Endpoint::Replay);
+            };
+            sleep(wait.min(SHARED_FILL_POLL_INTERVAL)).await;
+        }
+    }
+
+    fn next_lease_owner(&self) -> String {
+        let sequence = self.lease_counter.fetch_add(1, Ordering::Relaxed);
+        format!("{}:{sequence}", self.instance_id)
+    }
+
+    fn fill_lease_ttl(&self) -> Duration {
+        self.queue_wait + Duration::from_secs(120)
+    }
+
+    fn record_shared_fill_timeout(&self, endpoint: Endpoint, key: &FillLeaseKey) {
+        warn!(
+            "wayback archive acquisition failed endpoint={} reason={} status=none key={}",
+            endpoint.as_str(),
+            AcquisitionFailureReason::SingleFlightQueueTimeout.as_str(),
+            key
+        );
+        self.metrics.record_acquisition_failure(
+            endpoint,
+            AcquisitionFailureReason::SingleFlightQueueTimeout,
+            None,
+        );
     }
 
     async fn fill_metadata(&self, request: MetadataRequest) -> ArchiveResponse {

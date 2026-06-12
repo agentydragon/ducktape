@@ -3,9 +3,10 @@
 Last trimmed: 2026-06-12.
 
 Status: v0 is live. The old nginx/PVC `wayback-cache` backend was replaced in
-place by the Rust archive service: one pod, one CNPG instance, SeaweedFS S3
-replay bodies, Prometheus metrics, and a public bearer-auth `:8090` listener.
-This file now tracks only current service shape and remaining reliability work.
+place by the Rust archive service: CNPG metadata, SeaweedFS S3 replay bodies,
+Prometheus metrics, and a public bearer-auth `:8090` listener. The archive
+service now runs one replica per OVH node and uses shared fill leases so
+identical cold misses do not stampede IA across replicas.
 
 Companions:
 
@@ -47,22 +48,26 @@ Storage is semantic, not opaque HTTP cache files.
 - Replay identity is `(capture_ts, modifier, canonical_original_url)`.
 - Replay bodies live in SeaweedFS S3, keyed by content hash.
 - CNPG Postgres is authoritative for replay records, Availability/CDX metadata,
-  aliases, stable negatives, fill attempts, limiter snapshots, and audit/debug
-  history.
+  cross-replica fill leases, aliases, stable negatives, fill attempts, limiter
+  snapshots, and audit/debug history.
 - A DB metadata row must not commit before its referenced blob exists. If an S3
   write succeeds and the DB commit fails, the result is an orphan blob that can
   be garbage-collected later.
 - Replay bodies over the configured cap, default 10 MiB, are classified as
   `body_too_large`; they are not retried as transient IA failures.
 
-The v0 deployment intentionally runs one archive-service pod. In-process
-single-flight is sufficient for identical misses inside that pod. Before
-scaling above one replica, add Postgres-backed fill leases or advisory locks
-keyed by endpoint and semantic request key.
+The v0 deployment runs multiple archive-service pods, spread across OVH nodes
+so cold IA fills can use distinct node egress IPs. In-process single-flight
+deduplicates identical misses inside a pod. Postgres-backed fill leases
+deduplicate identical misses across pods, keyed by endpoint and semantic
+request key. Lease waiters poll the shared store today; `LISTEN/NOTIFY` would
+be a cleaner wakeup path once this coordination becomes hot enough to matter.
 
 IA acquisition is endpoint-aware:
 
-- Availability, CDX, and replay have separate adaptive in-flight limiters.
+- Availability, CDX, and replay have separate adaptive in-flight limiters in
+  each pod. This is intentional while pod placement is tied to node egress IP:
+  one node/IP getting throttled should not globally stop other node/IPs.
 - Queue waits are bounded by `WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS`
   (default 60s).
 - Over-budget waits return `503 + Retry-After`.
@@ -113,7 +118,8 @@ to fix the core issue because agents choose new URLs dynamically.
 
 ## Active Next Steps
 
-1. Verify the deployed limiter telemetry fix in the live service.
+1. Verify the deployed multi-replica lease + limiter behavior in the live
+   service.
    - Reprobe the known bad CDX path.
    - Burst cold CDX and replay misses.
    - Confirm `wayback_archive_limiter_in_flight{endpoint="cdx"}` returns to 0.
@@ -131,6 +137,14 @@ to fix the core issue because agents choose new URLs dynamically.
 5. Keep `wayback_proxy` retry/wait behavior covered: `503 + Retry-After` should
    be an enforced wait while the proxy has budget, and an agent-visible failure
    only after waiting would exceed that budget.
+6. Decide whether to split the service into two binaries/containers:
+   - `archive-input`: accepts agent/proxy HTTP, serves cache hits, owns request
+     parsing and cache policy.
+   - `archive-filler`: node-pinned egress workers with per-node IA
+     limiter/backoff state.
+     This would separate input routing from output egress-IP selection. Postgres
+     has the primitives for the middle: lease rows, queue rows with
+     `FOR UPDATE SKIP LOCKED`, and `LISTEN/NOTIFY` for wakeups.
 
 ## Hardening Backlog
 
@@ -139,8 +153,12 @@ to fix the core issue because agents choose new URLs dynamically.
   `wayback_proxy`.
 - Add alias rows for IA canonicalization redirects and equivalent replay URL
   spellings.
-- Add Postgres fill leases/advisory locks before scaling archive-service pods
-  above one replica.
+- Replace cross-replica lease polling with Postgres `LISTEN/NOTIFY` so waiters
+  wake immediately when a peer fills or releases a semantic key.
+- If random Service input routing still sends requests to pods whose node/IP is
+  backed off while another node/IP is healthy, split input and filler/egress as
+  above or add an output-side scheduler/Envoy layer that understands per-egress
+  health.
 - Decide `wayback-archive-db` backup/failover policy before moving from a
   single CNPG instance to the OVH-HA profile.
 - Add orphan-blob garbage collection.
