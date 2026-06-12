@@ -101,7 +101,7 @@ Examples of information to remove or compress:
 - Boilerplate descriptions of fixtures, examples, or generated files where the filename and surrounding convention already convey the same fact
 - Copied lists like "service `xyzzy` permits `foo` values `bar`, `baz`, `quux`" when `xyzzy.yaml` is the real owner of allowed values
 
-If a standard mechanism differs here in one respect, keep only the delta and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Delta: the job needs the `analytics-prod` profile."
+If a standard mechanism differs here in one respect, keep only the deviation and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Deviation: the job needs the `analytics-prod` profile."
 Usually replace volatile mirrors with a pointer plus any durable meaning, policy, or gotcha the source does not contain. Generated Markdown/reference output is an exception, not the default; suggest it only when readers genuinely need the full volatile list inline and there is already a natural generation path.
 
 ### 5. Token-Cost Sweep
