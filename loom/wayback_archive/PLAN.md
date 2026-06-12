@@ -4,9 +4,9 @@ Last trimmed: 2026-06-12.
 
 Status: v0 is live. The old nginx/PVC `wayback-cache` backend was replaced in
 place by the Rust archive service: CNPG metadata, SeaweedFS S3 replay bodies,
-Prometheus metrics, and a public bearer-auth `:8090` listener. The current PR
-splits that service into input pods and filler pods connected by a Postgres fill
-queue with `LISTEN/NOTIFY` wakeups.
+Prometheus metrics, and a public bearer-auth `:8090` listener. The service is
+split into input pods and filler pods connected by a Postgres fill queue with
+`LISTEN/NOTIFY` wakeups.
 
 Companions:
 
@@ -120,9 +120,54 @@ CDX limit and in-flight were both 1, so fresh CDX misses could spend the whole
 queue budget waiting for the single slot.
 
 The run predates the current eval harness defaults: `--message-limit 1000` and
-Inspect summary compaction via `--compaction-threshold-tokens 115000`.
-Rerunning with that config is still needed, but cache warmth alone is unlikely
-to fix the core issue because agents choose new URLs dynamically.
+Inspect summary compaction via `--compaction-threshold-tokens 115000`. The
+rerun below shows those harness changes eliminated no-answer samples, but cache
+warmth alone is unlikely to fix the core issue because agents choose new URLs
+dynamically.
+
+## Second Eval Finding
+
+Rerun after the input/filler split, proxy `503 + Retry-After` handling, limiter
+RAII, and eval harness `message_limit=1000` / compaction defaults:
+
+- date: 2026-06-12;
+- job: `claude-sandbox/loom-gym-eval`;
+- Langfuse session: `loom-gym-20260612T105627Z`;
+- target: `http://wayback-cache.wayback-cache.svc.cluster.local:8080`;
+- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 4`,
+  `--message-limit 1000`, `--compaction-threshold-tokens 115000`;
+- result: 33 scored answers out of 33, `0` no-answer, `0` `nan`;
+- mean proper loss: 1.164;
+- wall time: 2:39:58;
+- model usage: 31,759,673 tokens total
+  (`I=1,318,383`, `CR=29,916,020`, `O=525,270`, `CW=0`);
+- driver upstream-error summary from sample metadata: `500x 503`, `20x 403`.
+
+The run still saw many archive failures, but the failures no longer translated
+into no-answer samples. Agents were able to continue and submit every answer.
+
+Post-rollout filler logs, covering the tail of the run after the separate filler
+Deployment was reconciled:
+
+| filler pod | claimed |    CDX | Availability | Replay | completed | retryable | upstream fetch timeout | limiter queue timeout | upstream transient |
+| ---------- | ------: | -----: | -----------: | -----: | --------: | --------: | ---------------------: | --------------------: | -----------------: |
+| `25zzs`    |      74 |     30 |           24 |     20 |        66 |         8 |                      3 |                     3 |                  2 |
+| `2wl6n`    |      33 |     16 |           11 |      6 |        26 |         7 |                      2 |                     2 |                  3 |
+| `99w2r`    |      25 |     12 |            6 |      7 |        17 |         8 |                      3 |                     3 |                  2 |
+| `ccb2p`    |      29 |     18 |            8 |      3 |        23 |         6 |                      0 |                     3 |                  3 |
+| `n8cdl`    |      18 |     11 |            2 |      5 |        10 |         8 |                      3 |                     4 |                  1 |
+| **total**  | **179** | **87** |       **51** | **41** |   **142** |    **37** |                 **11** |                **15** |             **11** |
+
+Interpretation:
+
+- Postgres leasing spread work across all five filler pods; this was not a
+  single-hot-worker problem.
+- CDX remained the dominant fill class and the dominant retry source.
+- Queue timeouts and upstream timeouts both mattered. The service needs both
+  endpoint limiter tuning and better visibility into input-side wait time before
+  raising concurrency broadly.
+- Availability and replay were materially healthier than CDX in this window,
+  so endpoint-specific concurrency/backoff remains the right shape.
 
 ## Active Next Steps
 
@@ -136,15 +181,10 @@ to fix the core issue because agents choose new URLs dynamically.
      separates limiter queue timeout from upstream retry/backoff.
    - Confirm input-side fill waits are visible in
      `wayback_archive_input_fill_wait_duration_seconds`.
-2. Rerun the 33-task `glm-4.5` panel with:
-   - `--message-limit 1000`
-   - `--compaction-threshold-tokens 115000`
-3. Record archive-service endpoint counters in the final eval notes, not just
-   driver-level aggregate `503` counts.
-4. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at
+2. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at
    low concurrency protects IA but serializes cold misses enough to hurt the
    agent loop.
-5. Keep `wayback_proxy` retry/wait behavior covered: `503 + Retry-After` should
+3. Keep `wayback_proxy` retry/wait behavior covered: `503 + Retry-After` should
    be an enforced wait while the proxy has budget, and an agent-visible failure
    only after waiting would exceed that budget.
 
