@@ -27,7 +27,7 @@ LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \
     --model-id glm-4.5 --log-dir /tmp/gym-logs --no-archive
 ```
 
-Status: gym core landed; pipeline at plan stage — see <plans/program_plan.md>.
+Status: gym core landed; pipeline at plan stage — see <PLAN.md>.
 The position and prior experiments this program executes live in augur:
 `finance/augur/plans/interpolating_prediction_markets.md`,
 `finance/augur/plans/exogenous_rollout_architecture.md`, and the
