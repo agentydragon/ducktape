@@ -64,6 +64,12 @@ spec:
             # any interrupted run.
             - --max-samples
             - "8"
+            - --message-limit
+            - "1000"
+            # GLM-4.5 has a 128k context window; compact around 90% so the
+            # next turn still has room for tool schemas and output.
+            - --compaction-threshold-tokens
+            - "115000"
             - --wayback-upstream
             - http://wayback-cache.wayback-cache.svc.cluster.local:8080
             - --langfuse-tags

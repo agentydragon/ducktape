@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -16,7 +17,8 @@ import yaml
 
 # Aliased to avoid shadowing the builtin.
 from inspect_ai import eval as inspect_eval
-from inspect_ai.model import ModelOutput, get_model
+from inspect_ai.model import CompactionSummary, ModelOutput, get_model
+from inspect_ai.solver import Generate, Solver, TaskState
 from more_itertools import one
 
 from loom.gym.dossier import series_dossier
@@ -100,6 +102,27 @@ def test_submit_tool_enforces_answer_shape() -> None:
     assert tool.parameters.additionalProperties is False
     # A well-formed call echoes the structured args as JSON for the scorer to parse.
     assert json.loads(asyncio.run(tool.tool(p=0.8))) == {"p": 0.8}
+
+
+def test_agent_eval_task_wires_optional_summary_compaction(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    react_kwargs: dict[str, Any] = {}
+
+    def fake_react(**kwargs: Any) -> Solver:
+        react_kwargs.update(kwargs)
+
+        async def fake_solver(state: TaskState, generate: Generate) -> TaskState:
+            del generate
+            return state
+
+        return fake_solver
+
+    monkeypatch.setattr("loom.gym.inspect_harness.react", fake_react)
+
+    one(agent_eval_task([EVIDENCE_TASK], [RAMP], compose_dir=tmp_path, compaction_threshold_tokens=115_000))
+
+    compaction = react_kwargs["compaction"]
+    assert isinstance(compaction, CompactionSummary)
+    assert compaction.threshold == 115_000
 
 
 def test_evidence_lands_as_url_file_never_in_prompt(tmp_path: Path) -> None:

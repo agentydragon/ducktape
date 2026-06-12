@@ -39,6 +39,7 @@ import yaml
 from inspect_ai import Task as InspectTask
 from inspect_ai.agent import AgentSubmit, react
 from inspect_ai.dataset import MemoryDataset, Sample
+from inspect_ai.model import CompactionSummary
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolDef, ToolParams, ToolResult, bash
@@ -221,7 +222,6 @@ AGENT_PROMPT_NO_ARCHIVE = (
     "When confident, call the submit tool with your forecast — its arguments are the structured "
     "answer fields, which the tool schema enforces."
 )
-
 # Container path the proxy sidecar writes its served-evidence manifest to;
 # the scorer reads it back per sample (W3 of the wayback proxy plan).
 MANIFEST_PATH = "/tmp/wayback-manifest.jsonl"
@@ -378,6 +378,7 @@ def agent_eval_task(
     agent_image: str = SANDBOX_IMAGE_TAG,
     compose_dir: Path | None = None,
     archive: bool = True,
+    compaction_threshold_tokens: int | None = None,
 ) -> list[InspectTask]:
     """Inspect tasks over gym tasks: one sandbox compose per distinct as_of, and
     one Inspect task per distinct answer schema. The react submit tool carries a
@@ -399,6 +400,9 @@ def agent_eval_task(
     by_schema: dict[str, list[Task]] = defaultdict(list)
     for task in tasks:
         by_schema[json.dumps(question_schema(task.question), sort_keys=True)].append(task)
+    compaction = (
+        CompactionSummary(threshold=compaction_threshold_tokens) if compaction_threshold_tokens is not None else None
+    )
     return [
         InspectTask(
             name=f"agent_eval_{group[0].question.kind}_{index}",
@@ -409,6 +413,7 @@ def agent_eval_task(
                 prompt=AGENT_PROMPT if archive else AGENT_PROMPT_NO_ARCHIVE,
                 tools=[bash(timeout=180)],
                 submit=AgentSubmit(tool=_submit_tool(group[0].question), answer_only=True),
+                compaction=compaction,
             ),
             scorer=gym_proper_loss(archive=archive),
         )

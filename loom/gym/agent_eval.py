@@ -98,7 +98,7 @@ def main() -> None:
         "knowledge. The --wayback-upstream* args are then unused.",
     )
     parser.add_argument("--log-dir", type=Path, required=True, help="Inspect eval log directory.")
-    parser.add_argument("--message-limit", type=int, default=80, help="Max conversation turns per sample.")
+    parser.add_argument("--message-limit", type=int, default=1000, help="Max conversation turns per sample.")
     parser.add_argument(
         "--max-samples",
         type=int,
@@ -115,6 +115,12 @@ def main() -> None:
         "--langfuse-session-id",
         default=None,
         help="Session id attached to LiteLLM/Langfuse traces; default is a generated loom-gym timestamp.",
+    )
+    parser.add_argument(
+        "--compaction-threshold-tokens",
+        type=int,
+        default=0,
+        help="Enable Inspect LLM-summary compaction above this input-token estimate; 0 disables compaction.",
     )
     args = parser.parse_args()
     api_key = os.environ.get(args.api_key_env) or Path("/tmp/litellm_key").read_text().strip()
@@ -160,6 +166,7 @@ def main() -> None:
             wayback_upstream=args.wayback_upstream,
             wayback_upstream_auth=os.environ.get(args.wayback_upstream_auth_env, ""),
             archive=not args.no_archive,
+            compaction_threshold_tokens=args.compaction_threshold_tokens or None,
         ),
         model=model,
         log_dir=str(args.log_dir),
