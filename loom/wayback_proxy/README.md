@@ -72,11 +72,11 @@ upstream; defaults to `https://archive.org` in direct-IA mode and to
 (default `~/.mitmproxy`) is where the CA is generated; the demo points it at a
 volume shared read-only with the agent.
 
-## Using the shared cluster cache
+## Using the shared cluster archive service
 
-`cluster/k8s/wayback-cache/` runs a two-tier nginx pull-through cache
-(ClusterIP only) so repeated lookups never re-hit IA and the upstream hop is
-rate-limited. Point the proxy at it through a port-forward:
+`cluster/k8s/wayback-cache/` runs the shared write-through archive service
+(ClusterIP only) so repeated lookups reuse stored metadata and replay bodies
+without re-hitting IA. Point the proxy at it through a port-forward:
 
 ```bash
 # --address 0.0.0.0: host.docker.internal resolves to the docker bridge
