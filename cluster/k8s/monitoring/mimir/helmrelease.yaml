@@ -183,6 +183,12 @@ spec:
 
     gateway:
       replicas: 1
+      # The gateway is nginx and serves /ready/proxy routes, not Mimir's
+      # Prometheus /metrics endpoint. Keep it out of the chart-generated
+      # ServiceMonitor so TargetDown only covers real Mimir components.
+      service:
+        labels:
+          prometheus.io/service-monitor: "false"
       resources:
         requests:
           cpu: 10m
