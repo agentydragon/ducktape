@@ -2,7 +2,8 @@
 
 Status: plan drafted 2026-06-12; first storage implementation slice in progress.
 Companion to
-<wayback_ia_throttling.md>, <wayback_proxy.md>, and <archive_org_apis.md>.
+<../plans/wayback_ia_throttling.md>, <../plans/wayback_proxy.md>, and
+<../plans/archive_org_apis.md>.
 
 ## Summary
 
