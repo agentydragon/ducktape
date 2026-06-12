@@ -91,13 +91,3 @@ PRECOMMIT_PROFILE=1 bazelisk run //devinfra/precommit
 # Count bazel invocations (should be 2 due to batching)
 pre-commit run bazel-precommit --all-files 2>&1 | grep -c "Running command line"
 ```
-
-## Historical Context
-
-Original times (before optimization):
-
-- bazel-format: 55.7s
-- bazel-validate: 55.7s
-- Total: ~160s
-
-Root cause: Bazel client lock contention when pre-commit ran hooks in parallel.

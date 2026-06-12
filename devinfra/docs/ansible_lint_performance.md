@@ -1,178 +1,31 @@
-# Ansible-Lint Performance Guide
+# Ansible-Lint Performance
 
-## Quick Start: What We Did and Why
+## Setup
 
-**TL;DR**: Switched pre-commit from full ansible-lint to fast syntax-check. 42s → 1-3s locally, CI still validates everything.
-
-### Current Setup ✅
-
-**Pre-commit: Fast Syntax Check (1-3s)**
-
-```bash
-# Uses ansible-playbook --syntax-check via ansible/scripts/run-syntax-check.sh
-cd ansible
-ansible-playbook --syntax-check wyrm.yaml  # 1-2 seconds
-```
-
-**What syntax-check catches:**
-
-- ✅ YAML syntax errors
-- ✅ Undefined variables
-- ✅ Invalid module names
-- ✅ Template syntax errors
-- ✅ Basic Ansible structure issues
-
-**CI: Full ansible-lint (42s)**
-
-```bash
-# Via .github/scripts/run-ansible-lint.sh
-# Runs full ansible-lint on all playbooks when ansible/ changes
-```
-
-**What only CI ansible-lint catches:**
-
-- Style issues (naming conventions, formatting)
-- Best practices (fqcn, no-changed-when, etc.)
-- Deprecated modules
-- Security issues
-
-### Performance Comparison
-
-| Scenario                       | Time | What It Validates                              |
-| ------------------------------ | ---- | ---------------------------------------------- |
-| **Pre-commit syntax-check**    | 1-3s | Syntax errors, undefined vars, invalid modules |
-| **Full ansible-lint (single)** | ~15s | Everything (style, best practices, security)   |
-| **Full ansible-lint (all)**    | ~42s | Everything on all playbooks                    |
-| **CI ansible-lint**            | ~42s | Same as local, but only runs on changes        |
-
-**Speedup**: ~15x faster pre-commit feedback!
-
-### Testing the Setup
-
-```bash
-# Test syntax check on a playbook
-cd ansible
-ansible-playbook --syntax-check wyrm.yaml
-# Should complete in 1-2 seconds
-
-# Test via pre-commit (will run prettier + syntax-check)
-pre-commit run --files ansible/wyrm.yaml
-# Should complete in 2-3 seconds
-
-# Full ansible-lint (what CI runs)
-ansible-lint --config-file ../.ansible-lint.yaml wyrm.yaml
-# Takes ~15-17s (this is normal and expected)
-```
-
-### When You Need Full Linting Locally
-
-If you want to run the full ansible-lint validation locally (same as CI):
+Two-tier: pre-commit runs `ansible-playbook --syntax-check` per playbook
+(~1–3s, via `ansible/scripts/run-syntax-check.sh`) — catches YAML/template
+syntax errors, undefined variables, invalid module names. CI runs full
+`ansible-lint` on all playbooks when `ansible/` changes (~42s, via
+`.github/scripts/run-ansible-lint.sh`) — adds style, best-practice,
+deprecation, and security rules. Full lint locally when needed:
 
 ```bash
 cd ansible
-
-# Single playbook (takes ~15-17s)
-ansible-lint --config-file ../.ansible-lint.yaml wyrm.yaml
-
-# All playbooks (takes ~42s, same as CI)
-ansible-lint --config-file ../.ansible-lint.yaml
+ansible-lint --config-file ../.ansible-lint.yaml [wyrm.yaml]
 ```
 
-**Note:** Usually you don't need to run full ansible-lint locally - CI will catch style issues.
+## Why CI takes 42s (expected)
 
-### Benefits
+`ansible-playbook --syntax-check` spawns a fresh Ansible per playbook
+(0.6–2s each; no multi-playbook invocation exists) — upstream limitation
+confirmed in [ansible-lint discussion #1256](https://github.com/ansible/ansible-lint/discussions/1256);
+no fix available. Our 191 files at 0.22s/file is better than typical
+(zuul-roles: 330+ files, 80s). If `python3 -c "import yaml; print(yaml.__with_libyaml__)"`
+prints `False`, reinstalling pyyaml with libyaml shaves a few seconds.
 
-- ✅ **~15x faster pre-commit** (42s → 1-3s for syntax check)
-- ✅ Syntax errors caught immediately
-- ✅ CI still enforces all rules (no loss of coverage)
-- ✅ Better developer experience (no 42s blocking waits)
-- ✅ Fast feedback loop for development
+## Potential Upstream Optimizations (Not Yet Submitted)
 
----
-
-## Why ansible-lint Is This Slow (And That's Normal)
-
-**42 seconds for 191 files is EXPECTED and NORMAL.**
-
-- **Root cause**: ansible-playbook takes 0.6-2s per playbook (can't batch multiple playbooks)
-- **90% of time**: Spent in Ansible's own code (not ansible-lint)
-- **Your performance**: 0.22s/file is actually **better than average**
-- **Upstream status**: Well-known issue (GitHub Discussion #1256), no fundamental fix available
-
-### Evidence from Upstream
-
-#### GitHub Discussion #1256: "Why is ansible-lint so slow?"
-
-A user reported **~45 seconds for a small repository** - almost identical to our experience.
-
-The ansible-lint maintainer confirmed the root causes:
-
-**1. Ansible Subprocess Overhead (90% of total time)**
-
-- Each playbook requires `ansible-playbook --syntax-check` in a separate subprocess
-- Takes **0.6-2 seconds PER playbook**
-- **ansible-playbook cannot process multiple playbooks in one invocation**
-- Re-instantiates Ansible for EVERY playbook
-- This overhead is in Ansible's code, not ansible-lint
-
-**2. No Caching Between Runs**
-
-- ansible-lint does minimal caching
-- Each run re-checks everything
-- No incremental analysis
-
-**3. Complex Dependency Resolution**
-
-- Playbooks reference roles, but roles don't know which playbooks use them
-- Result: Over-linting to be safe
-
-**4. Multiple YAML Parsers**
-
-- Uses both ruamel.yaml and pyyaml
-- Needed for comment preservation (noqa feature)
-- Double parsing overhead
-
-### Performance Comparison (Other Repositories)
-
-| Repository            | Files | Time | Time/File | Notes                   |
-| --------------------- | ----- | ---- | --------- | ----------------------- |
-| **ducktape**          | 191   | 42s  | **0.22s** | **Better than average** |
-| Small repo (GH #1256) | ~50   | 45s  | 0.9s      | Much worse              |
-| zuul-roles (large)    | 330+  | 80s  | 0.24s     | Similar to ours         |
-
-**Conclusion**: Our 42s runtime is normal and actually performs well per-file.
-
-## Fundamental Limitations (Can't Be Fixed)
-
-### 1. Ansible's Slow Boot Time
-
-- Ansible itself has poor instantiation performance
-- ansible-lint can't fix Ansible's architecture
-
-### 2. No Multi-Playbook Syntax Check
-
-- Ansible doesn't support: `ansible-playbook --syntax-check playbook1.yaml playbook2.yaml`
-- Each playbook = new Ansible process
-- Massive unavoidable overhead
-
-### 3. Complex Dependency Graphs
-
-- Roles, includes, imports create complex graphs
-- Hard to determine minimal set of files to check
-
-### What Upstream Has Tried
-
-- ✅ Async syntax checks (helps a bit)
-- ✅ Container caching (helps installation)
-- ❌ Multi-playbook processing (blocked by Ansible's limitations)
-- ❌ Incremental linting (too complex with current architecture)
-- ❌ Aggressive caching (risk of stale results)
-
----
-
-## Potential Upstream Optimizations (Not Yet Implemented)
-
-These optimizations could be submitted as PRs to ansible/ansible-lint:
+From profiling this repo's runs; could be PRs to ansible/ansible-lint:
 
 ### Issue #1: Cache Package Version Lookups (5-6s savings)
 
@@ -193,8 +46,6 @@ def get_deps_versions() -> dict[str, Version | None]:
 
 **Impact**: 5-6 seconds, trivial complexity, zero risk
 
----
-
 ### Issue #2: Cache File Type Detection (2-3s savings)
 
 **Location**: `src/ansiblelint/file_utils.py:139` in `kind_from_path()`
@@ -213,8 +64,6 @@ def kind_from_path(path: Path, *, base: bool = False) -> FileType:
 ```
 
 **Impact**: 2-3 seconds, trivial complexity, low risk
-
----
 
 ### Issue #3: Optimize Deep Copying (1.5-2s savings)
 
@@ -246,29 +95,18 @@ def _sanitize_task(task: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
 
 **Impact**: 1.5-2 seconds, medium complexity, medium risk
 
----
-
 ### Issue #4: Reduce Subprocess Overhead (2-4s savings)
 
-**Problem**: Multiple ansible subprocess calls per run:
+**Problem**: Multiple ansible subprocess calls per run: `ansible-config dump`,
+`ansible --version`, `ansible-galaxy collection install/list` (~0.75s each),
+plus the per-playbook syntax check (1.15s each).
 
-- `ansible-config dump` (0.76s)
-- `ansible --version` (0.76s)
-- `ansible-galaxy collection install` (0.77s)
-- `ansible-galaxy collection list` (0.74s)
-- `ansible-playbook --syntax-check` (1.15s per playbook)
-
-**Optimizations**:
-
-1. Cache collection metadata (0.5-1s savings)
-2. Skip version checks in offline mode (combined with Issue #1: 5-6s total)
-3. Cache ansible-doc module info (1-2s savings)
+**Optimizations**: cache collection metadata, skip version checks in offline
+mode, cache ansible-doc module info.
 
 **Impact**: 2-4 seconds, medium complexity, low risk
 
----
-
-### Summary of Potential Upstream Improvements
+### Summary
 
 | Issue                   | Fix            | Complexity | Savings | Risk   |
 | ----------------------- | -------------- | ---------- | ------- | ------ |
@@ -277,75 +115,5 @@ def _sanitize_task(task: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
 | #3: Deep copying        | Selective copy | Medium     | 1.5-2s  | Medium |
 | #4: Subprocess overhead | Multiple fixes | Medium     | 2-4s    | Low    |
 
-**Total potential improvement: 11-15 seconds (42s → 27-31s)**
-
-Even with these optimizations, the fundamental ansible-playbook subprocess overhead (~20s) remains unavoidable.
-
----
-
-## Quick Performance Check: libyaml
-
-One user reported **6s → 1.5s** speedup by ensuring libyaml (compiled YAML parser) is installed:
-
-```bash
-python3 -c "import yaml; print(yaml.__with_libyaml__)"
-# Should print: True
-```
-
-If False, install:
-
-```bash
-pip install --force-reinstall --no-cache-dir pyyaml
-```
-
-This won't dramatically change ansible-lint performance (most time is in Ansible subprocesses), but could shave off a few seconds.
-
----
-
-## Monitoring and Profiling
-
-### Time a specific playbook
-
-```bash
-cd ansible
-time ansible-playbook --syntax-check wyrm.yaml
-```
-
-### Profile with cProfile
-
-```bash
-python3 -m cProfile -s cumulative -m ansiblelint --offline wyrm.yaml 2>&1 | head -50
-```
-
-### Count files processed
-
-```bash
-ansible-lint --offline wyrm.yaml 2>&1 | grep "files processed"
-```
-
-### Check for file stat overhead
-
-```bash
-strace -c ansible-lint --offline wyrm.yaml
-# Look for high counts of stat(), lstat(), fstat()
-```
-
----
-
-## Bottom Line
-
-**Yes, it's this slow. Yes, upstream knows. No, there's no magic fix.**
-
-- **Pre-commit**: Uses fast syntax-check (1-3s) ✅ Optimal
-- **CI**: Uses full ansible-lint (42s) ✅ Normal and expected
-- **Further improvements**: Require fixing Ansible itself (out of scope)
-
-The current two-tier strategy provides fast local feedback while ensuring thorough validation in CI.
-
----
-
-## References
-
-- GitHub Discussion #1256: <https://github.com/ansible/ansible-lint/discussions/1256>
-- Ansible slow boot: <https://www.jeffgeerling.com/blog/2021/ansible-might-be-running-slow-if-libyaml-not-available>
-- Kubespray ansible-lint CI issue: <https://github.com/kubernetes-sigs/kubespray/issues/4565>
+Total potential: 11-15s (42s → 27-31s); the ~20s of per-playbook subprocess
+overhead remains unavoidable regardless.

@@ -76,24 +76,7 @@ Bazel in the test sandbox). Bazel downloads undeclared test outputs to
 
 And adds `//util/testing:bazel_snapshot_extension` to deps.
 
-### Syrupy extension class hierarchy (reference)
-
-```
-SnapshotSerializer          (ABC: serialize())
-SnapshotCollectionStorage   (ABC: read/write/delete, get_location, dirname)
-SnapshotReporter            (diff rendering)
-SnapshotComparator          (matches())
-    └── AbstractSyrupyExtension  (combines all four)
-            └── AmberSnapshotExtension  (file_extension="ambr")
-                    └── BazelAmberExtension  (post-write copy to undeclared outputs)
-```
-
-Key write-path methods on `SnapshotCollectionStorage`:
-
-| Method                           | Type                           | Notes                               |
-| -------------------------------- | ------------------------------ | ----------------------------------- |
-| `write_snapshot(...)`            | `@classmethod`, marked "final" | Groups snapshots, calls next method |
-| `write_snapshot_collection(...)` | `@classmethod @abstractmethod` | Override point — writes to disk     |
-
-All methods are classmethods. Syrupy stores the extension class (not instance) in
-`_queued_snapshot_writes` and calls `extension_class.write_snapshot(...)` during flush.
+Gotcha when extending: syrupy stores the extension **class** (not an instance) in
+`_queued_snapshot_writes` and calls classmethod `write_snapshot(...)` at flush;
+`write_snapshot_collection` is the abstract override point. See syrupy source for
+the full extension hierarchy.

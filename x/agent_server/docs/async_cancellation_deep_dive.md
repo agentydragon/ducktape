@@ -1,115 +1,13 @@
 # Async Cancellation Deep Dive: Container Cleanup Failure
 
-> **Status:** Current reference. Documents the FastMCP cancellation behavior that affects Docker container cleanup. See also `mcp_infra/docs/fastmcp_lifecycle_analysis.md` for the concise technical summary. This doc is intentionally pedagogical (explains async from first principles).
+> **Status:** Current reference. Documents the FastMCP cancellation behavior that affects Docker container cleanup. See also `mcp_infra/docs/fastmcp_lifecycle_analysis.md` for the concise technical summary.
 
-## From First Principles
-
-Explains async, cancellation, scopes, lifespans, and shields from scratch.
-
-### What is Async/Await?
-
-**Normal (synchronous) code** runs one step at a time:
-
-```python
-def download_file():
-    data = network.read()  # Blocks here, waiting for network
-    return data
-```
-
-When `network.read()` is waiting for bytes from the network, your entire program is frozen, doing nothing.
-
-**Async code** can say "I'm waiting, go do other things":
-
-```python
-async def download_file():
-    data = await network.read()  # Says "I'm waiting, run other tasks"
-    return data
-```
-
-The `await` keyword means: "This will take time. While waiting, the event loop can run other tasks."
-
-### What is Cancellation?
-
-Sometimes you want to **interrupt** an async operation before it finishes:
-
-```python
-async def long_operation():
-    await asyncio.sleep(60)  # Sleep for 1 minute
-    return "done"
-
-task = asyncio.create_task(long_operation())
-await asyncio.sleep(1)  # Wait 1 second
-task.cancel()  # DON'T wait the full 60 seconds, stop now!
-```
-
-When you call `.cancel()`, Python raises a **`CancelledError`** at the next `await` point in that task.
-
-**Crucially**: Cancellation happens AT `await` points. If you're running synchronous code, cancellation can't interrupt you:
-
-```python
-async def mixed():
-    compute_for_10_seconds()  # Synchronous - can't be cancelled mid-execution
-    await asyncio.sleep(1)    # ← Cancellation hits HERE
-```
-
-### What is a Cancel Scope?
-
-A **cancel scope** is a way to cancel **multiple** tasks together as a group.
-
-**anyio** (a library FastMCP uses) provides structured cancellation via task groups:
-
-```python
-async with anyio.create_task_group() as tg:
-    tg.start_soon(task1)
-    tg.start_soon(task2)
-    tg.start_soon(task3)
-# When this context exits, ALL three tasks are cancelled
-```
-
-The `create_task_group()` creates a **cancel scope** that controls all tasks started with `tg.start_soon()`.
-
-When you exit the `async with` block, `tg.cancel_scope.cancel()` is called, which cancels ALL tasks in the group.
-
-### What is a Lifespan?
-
-A **lifespan** is a pattern for managing **server-scoped resources** - things that should live as long as the server is running and be cleaned up when it stops.
-
-Think of it like `__init__` and `__del__` for a web server, but async:
-
-```python
-@asynccontextmanager
-async def lifespan(app):
-    # Setup (like __init__)
-    db_pool = await create_database_pool()
-    redis = await connect_to_redis()
-
-    yield {"db": db_pool, "redis": redis}  # Server runs here
-
-    # Cleanup (like __del__)
-    await db_pool.close()
-    await redis.disconnect()
-```
-
-FastMCP servers have a lifespan that runs when the server starts and cleans up when the server stops.
-
-### What is asyncio.shield()?
-
-`asyncio.shield()` is supposed to **protect** an operation from cancellation:
-
-```python
-async def important_cleanup():
-    await database.commit()  # Must complete!
-
-try:
-    await asyncio.shield(important_cleanup())
-except CancelledError:
-    # The task calling this got cancelled, but important_cleanup() finished
-    pass
-```
-
-**BUT**: `shield()` only works against **asyncio cancellation**, not anyio cancel scopes!
-
----
+Primitives assumed (see Python/anyio docs): `task.cancel()` raises
+`CancelledError` at the task's next `await` point (synchronous stretches can't
+be interrupted); anyio task groups cancel all member tasks via their cancel
+scope on context exit; ASGI lifespans manage server-scoped setup/teardown.
+The load-bearing trap for everything below: **`asyncio.shield()` protects only
+against asyncio cancellation, not anyio cancel scopes.**
 
 ## The Actual Problem: Step-by-Step Execution Trace
 

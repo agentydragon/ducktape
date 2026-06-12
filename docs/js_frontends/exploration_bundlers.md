@@ -275,17 +275,10 @@ Turbopack's design borrows from Bazel's philosophy of "never do the same work tw
 
 ## Module Identity Problem (Playwright Issue)
 
-### Root Cause
-
-When using pnpm workspaces with aspect_rules_js, each workspace member gets its own `node_modules` symlink tree. This means:
-
-1. `/props/frontend/node_modules/@playwright/test` → symlink to pnpm store
-2. `/agent_server/web/node_modules/@playwright/test` → symlink to same package, different path
-3. JavaScript module loading: Both resolve to the same package version, but are **different module instances**
-
-### Why Playwright Breaks
-
-Playwright's test framework uses JavaScript object identity to track execution context. When `test()` is called, it checks if the caller is the same module instance that was initialized. pnpm workspaces violate this assumption—the test runner initializes one instance, but the test file imports from a different path, creating a second instance.
+pnpm workspaces (as used by aspect_rules_js) give each workspace member its own
+`node_modules` symlink tree, so the same package loads as a different module
+instance per importer — which trips Playwright's module-identity check. Known
+upstream pnpm/Playwright issue, not specific to this repo.
 
 ### Potential Solutions
 

@@ -12,13 +12,9 @@ remain authoritative for agent execution: Bazel-family commands (`bazel`,
 
 ## The Boundary
 
-Bazel's analysis state is server-local state under one output base. It is not a
-content-addressed cache that can be shared safely between worktrees. Do not point
-multiple worktrees at one `--output_base`: Bazel expects one workspace/server
-owner, takes an output-base lock, and keeps path-sensitive Skyframe state there.
-
-What can be shared is the expensive content cache underneath separate output
-bases:
+Never point multiple worktrees at one `--output_base` — it's single-owner, locked,
+path-sensitive Skyframe state, not a shareable cache. What can be shared is the
+expensive content cache underneath separate output bases:
 
 - `--output_user_root`: common parent for per-worktree output bases. This keeps
   all Bazel state under one mount, but each worktree still receives a separate

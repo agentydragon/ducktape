@@ -164,11 +164,9 @@ These tools automatically handle binary patching when building Python projects w
 
 ## Lessons Learned
 
-1. **This is a known issue** - The Nix community has multiple solutions for this problem
-2. **PyPI wheels assume FHS** - Binary wheels from PyPI expect libraries in standard Linux locations
-3. **Nix Python + pip needs special handling** - Either use nix-ld, fix-python, or FHS environments
-4. **pyenv as escape hatch** - pyenv-installed Python works because it's built against system libraries
-5. **uv is not the issue** - The problem exists with pip, poetry, or any tool installing PyPI wheels
+Known Nix-community issue (PyPI binary wheels assume FHS library paths; standard
+fixes are nix-ld / fix-python / FHS envs, tool-agnostic — not a uv problem). Our
+escape hatch: pyenv-built Python, which links against system libraries.
 
 ## Working .envrc (Current Solution)
 
