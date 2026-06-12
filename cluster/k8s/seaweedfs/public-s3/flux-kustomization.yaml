@@ -11,16 +11,17 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  # The two write-capable identities target the drivefs-artifacts and vm-images
-  # buckets, so gate on those Bucket CRs. claude-reader also reads attic,
-  # augur-assets, and listing-monitor-captures, which already exist (and for
-  # gaffer-side buckets are reconciled from a different repo) — SeaweedFS
-  # tolerates bucket-scoped read actions for buckets it doesn't manage, so they
-  # are not gated here.
+  # Gate on Bucket CRs managed in this repo that the public identities target.
+  # claude-reader also reads attic, augur-assets, and listing-monitor-captures,
+  # which already exist (and for gaffer-side buckets are reconciled from a
+  # different repo) — SeaweedFS tolerates bucket-scoped read actions for buckets
+  # it doesn't manage, so they are not gated here.
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
       namespace: flux-system
     - name: seaweedfs-vm-images-bucket
+      namespace: flux-system
+    - name: seaweedfs-wayback-archive-bucket
       namespace: flux-system
     - name: seaweedfs-secrets
       namespace: flux-system

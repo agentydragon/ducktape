@@ -12,3 +12,5 @@ spec:
   access:
     - user: wayback-archive
       actions: [Read, Write, List, Tagging]
+    - user: claude-reader
+      actions: [Read, List]
