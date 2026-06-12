@@ -390,9 +390,8 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   the **in-cluster authed cache**; the first end-to-end smoke (glm-4.5, an
   open-ended no-starting-URL market) confirmed genuine open-ended archive
   research over `https://` with no URL rewriting. Follow-ups it surfaced are
-  tracked in <wayback_ia_throttling.md> and <../gym/TODO.md>
-  (per-model task refusals, cache 5xx under IA pressure, archive-service
-  follow-up).
+  tracked in <../gym/TODO.md> and <../wayback_archive/PLAN.md> (per-model task
+  refusals, cache 5xx under IA pressure, archive-service follow-up).
 - **Bundle tasks — ✅ landed** (`bundle_tasks.py`): one dossier, one
   submission, **many named sub-questions** — more metrics per sampled
   token, and joint structure becomes scoreable. A bundle is a set of

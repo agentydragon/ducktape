@@ -7,8 +7,9 @@
   `wayback_archive_acquisition_failures_total{endpoint,reason,status}` separates
   queue timeout from upstream retry/backoff. Then rerun the 33-task `glm-4.5`
   panel with `--message-limit 1000` and `--compaction-threshold-tokens 115000`.
-  Findings and the runbook are in <../plans/wayback_ia_throttling.md>; the
-  archive-service design/status is in <../wayback_archive/PLAN.md>.
+  Archive-service design/status is in <../wayback_archive/PLAN.md>, the
+  eval-run procedure is in <k8s/README.md>, and IA API notes are in
+  <../docs/archive_org_apis.md>.
 
 - **Rename `baseline_llm.py`.** Once the bare one-shot LLM scaffold is gone, the
   module is purely the shared answer-schema + parse library (`question_schema`,

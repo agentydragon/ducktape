@@ -3,10 +3,9 @@
 Status: plan drafted 2026-06-12; v0 replacement merged, reconciled, and
 smoke-tested. The PR replaced nginx/PVC `wayback-cache` in place with one Rust
 archive-service pod, one CNPG instance, and SeaweedFS S3 replay bodies. The
-first full cold eval completed; see "First eval result" below.
-Companion to
-<../plans/wayback_ia_throttling.md>, <../wayback_proxy/README.md>, and
-<../docs/archive_org_apis.md>.
+first full cold eval completed; see "First eval result" below. Companion to
+<../wayback_proxy/README.md>, <../docs/archive_org_apis.md>, <../gym/TODO.md>,
+and <../gym/k8s/README.md>.
 
 ## Summary
 

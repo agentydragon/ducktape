@@ -31,3 +31,23 @@ kubectl -n claude-sandbox cp "${POD#pod/}:/work/logs" ./eval-logs
 ```
 
 Tune model / task-filter / arms via `args` in `eval-job.yaml`.
+
+## Operational Gotchas
+
+- Delete the prior Job before re-applying. A run is not idempotent and
+  `backoffLimit: 0` is intentional.
+- Inspect prints the score summary at the end; watch the `eval` container log
+  during the run.
+- `kubectl exec` and `port-forward` can fail through the kube-api MITM streaming
+  path. Prefer throwaway probe pods plus `kubectl logs` for in-cluster curl or
+  docker API checks.
+- The shared `docker-ci` daemon has a finite network pool. A killed eval can
+  leave orphaned compose containers/networks; keep `--max-samples 8` unless the
+  daemon is dedicated to this eval, and clean stale `inspect-*` containers plus
+  `docker network prune` through the docker API if the pool is exhausted.
+- IA/archive failures often surface as no-answer samples: exhausted agent loop,
+  empty answer, `JSONDecodeError`, and `value=nan`. Treat the `nan` count as an
+  archive reliability signal before assuming a model or scoring bug.
+- Archive-service status, first cold-run results, and limiter follow-ups live in
+  `../../wayback_archive/PLAN.md`. Archive.org API behavior and signal-header
+  notes live in `../../docs/archive_org_apis.md`.

@@ -256,6 +256,12 @@ responses. Next cache changes should log enough upstream headers to distinguish:
 - IA-specific signals: observed `x-rl`, `x-na`, `x-app-server`, `x-ts`, `x-tr`;
 - overload/failure: `502`/`504` without retry hints.
 
+Probe gotcha: agent-shell egress can be blocked differently from the cluster
+egress used by the eval. In particular, direct `web.archive.org` probes from an
+agent session have returned `403` with `x-block-reason: hostname_blocked`.
+Measure IA behavior from the in-cluster Wayback service path when debugging eval
+traffic.
+
 ## Proxy/cache division after the Availability change
 
 Proxy responsibilities:
