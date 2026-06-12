@@ -34,6 +34,91 @@ pub(super) struct ExplicitRequestContext<'a> {
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
 }
 
+fn resolve_request_source_matches(
+    request: &mut LogicalRequest,
+    runtime_module: &Module,
+) -> Result<()> {
+    let mut grouped_by_selector: BTreeMap<spec::AnonymousStatementSelector, Vec<usize>> =
+        BTreeMap::new();
+    for (idx, member) in request.members.iter().enumerate() {
+        let Some(selector) = &member.source_match else {
+            continue;
+        };
+        if selector.target_binding.is_none() {
+            continue;
+        }
+        let mut group_selector = selector.clone();
+        group_selector.target_binding = None;
+        grouped_by_selector
+            .entry(group_selector)
+            .or_default()
+            .push(idx);
+    }
+
+    let mut resolved_member_indices = BTreeSet::new();
+    for (selector, member_indices) in grouped_by_selector {
+        if member_indices.len() < 2 {
+            continue;
+        }
+        let mut exports_by_target = BTreeMap::new();
+        let mut has_duplicate_target = false;
+        for idx in &member_indices {
+            let member = &request.members[*idx];
+            let target_binding = member
+                .source_match
+                .as_ref()
+                .and_then(|selector| selector.target_binding.clone())
+                .expect("grouped selectors always have target_binding");
+            if exports_by_target
+                .insert(target_binding, member.export_name.clone())
+                .is_some()
+            {
+                has_duplicate_target = true;
+            }
+        }
+        if has_duplicate_target {
+            continue;
+        }
+        let resolved = source_match::resolve_member_binding_group(
+            runtime_module,
+            &request.id,
+            &selector,
+            &exports_by_target,
+        )?;
+        for idx in member_indices {
+            let member = &mut request.members[idx];
+            let target_binding = member
+                .source_match
+                .as_ref()
+                .and_then(|selector| selector.target_binding.as_ref())
+                .expect("grouped selectors always have target_binding");
+            let resolved = resolved.get(target_binding).with_context(|| {
+                format!("binding group resolver did not return target_binding `{target_binding}`")
+            })?;
+            apply_resolved_member_binding(member, resolved.clone());
+            resolved_member_indices.insert(idx);
+        }
+    }
+
+    let mut source_match_cache = BTreeMap::new();
+    for (idx, member) in request.members.iter_mut().enumerate() {
+        if resolved_member_indices.contains(&idx) {
+            continue;
+        }
+        member.resolve_source_match(runtime_module, &request.id, &mut source_match_cache)?;
+    }
+    Ok(())
+}
+
+fn apply_resolved_member_binding(
+    member: &mut MemberRequest,
+    resolved: source_match::ResolvedMemberBinding,
+) {
+    member.binding = resolved.binding_name;
+    member.is_import_specifier = matches!(resolved.kind, Some(BindingSourceKind::ImportSpecifier));
+    member.source_match = None;
+}
+
 /// Builds a `ChunkPlan` from spec requests and chunk AST analysis.
 ///
 /// Owns the five mutable maps (`binding_assignment`,
@@ -113,9 +198,7 @@ impl ChunkPlanBuilder {
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
-        for member in &mut request.members {
-            member.resolve_source_match(ctx.runtime_module, &request.id)?;
-        }
+        resolve_request_source_matches(request, ctx.runtime_module)?;
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims =

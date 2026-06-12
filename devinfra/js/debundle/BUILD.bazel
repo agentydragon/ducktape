@@ -47,6 +47,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "source_match_test",
+    crate = ":source_match",
+    edition = "2024",
+)
+
 rust_library(
     name = "anonymous_resolution",
     srcs = ["anonymous_resolution.rs"],

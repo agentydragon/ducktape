@@ -282,6 +282,137 @@ pub fn resolve_member_binding(
     }
 }
 
+pub fn resolve_member_binding_group(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+    if selector.target_binding.is_some() {
+        bail!(
+            "logical_module {request_id}: binding group resolver received a selector with \
+             target_binding already set"
+        );
+    }
+    let parsed = js_ast::parse_js_module_ast(
+        &format!("<binding group source_match in {request_id}>"),
+        &selector.match_source,
+    )
+    .with_context(|| {
+        format!(
+            "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
+            selector.match_source
+        )
+    })?;
+    if parsed.body.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].source_match parsed to zero \
+             statements; selector source must contain at least one top-level statement:\n{match_source}",
+            match_source = selector.match_source,
+        );
+    }
+    if parsed.body.len() == 1 && selector_single_var_declarator(&parsed.body[0]).is_some() {
+        let mut resolved = BTreeMap::new();
+        for (target_binding, export_name) in exports_by_target {
+            let mut selector = selector.clone();
+            selector.target_binding = Some(target_binding.clone());
+            resolved.insert(
+                target_binding.clone(),
+                resolve_member_binding(runtime_module, request_id, export_name, &selector)?,
+            );
+        }
+        return Ok(resolved);
+    }
+
+    let mut target_locations = BTreeMap::new();
+    for target_binding in exports_by_target.keys() {
+        target_locations.insert(
+            target_binding.clone(),
+            selector_binding_location(&parsed.body, request_id, selector, target_binding)?,
+        );
+    }
+
+    let target_hint = exports_by_target
+        .iter()
+        .map(|(target_binding, export_name)| {
+            format!("target_binding `{target_binding}` for export `{export_name}`")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ranges = find_matching_body_ranges(runtime_module, &parsed.body, selector);
+    let body_idx = match ranges.as_slice() {
+        [single] => *single,
+        [] => bail!(
+            "logical_module {request_id}: binding_groups[].source_match for targets \
+             `{target_hint}` did not match any top-level declaration range in the chunk. \
+             Selector:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: binding_groups[].source_match for targets \
+             `{target_hint}` is ambiguous — matched {} top-level declaration ranges at body \
+             indices {:?}. Refine the selector. Source:\n{match_source}",
+            multiple.len(),
+            multiple,
+            match_source = selector.match_source,
+        ),
+    };
+
+    let mut resolved = BTreeMap::new();
+    for (target_binding, (target_item_idx, target_binding_idx)) in target_locations {
+        let matched_body_idx = body_idx + target_item_idx;
+        let item = runtime_module.body.get(matched_body_idx).with_context(|| {
+            format!("body index {matched_body_idx} disappeared while resolving source_match")
+        })?;
+        let declared = declared_bindings(item);
+        let Some(binding) = declared.get(target_binding_idx) else {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match target_binding \
+                 `{target_binding}` matched top-level statement at body index {matched_body_idx}, but \
+                 the matched statement declares only {} bindings. Source:\n{match_source}",
+                declared.len(),
+                match_source = selector.match_source,
+            );
+        };
+        resolved.insert(target_binding, binding.clone());
+    }
+    Ok(resolved)
+}
+
+fn selector_binding_location(
+    needles: &[ModuleItem],
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+) -> Result<(usize, usize)> {
+    let selector_binding_locations: Vec<(usize, usize)> = needles
+        .iter()
+        .enumerate()
+        .flat_map(|(item_idx, item)| {
+            declared_bindings(item).into_iter().enumerate().filter_map(
+                move |(binding_idx, binding)| {
+                    (binding.binding_name == target_binding).then_some((item_idx, binding_idx))
+                },
+            )
+        })
+        .collect();
+    match selector_binding_locations.as_slice() {
+        [single] => Ok(*single),
+        [] => bail!(
+            "logical_module {request_id}: members[].selector.source_match target_binding \
+             `{target_binding}` is not declared by the selector source:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: members[].selector.source_match target_binding \
+             `{target_binding}` is ambiguous within the selector source at statement/binding \
+             indices {:?}. Refine the selector source:\n{match_source}",
+            multiple,
+            match_source = selector.match_source,
+        ),
+    }
+}
+
 fn find_member_binding_matches(
     runtime_module: &Module,
     request_id: &str,
@@ -379,32 +510,8 @@ fn find_matching_target_bindings(
     selector: &AnonymousStatementSelector,
     target_binding: &str,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let selector_binding_locations: Vec<(usize, usize)> = needles
-        .iter()
-        .enumerate()
-        .flat_map(|(item_idx, item)| {
-            declared_bindings(item).into_iter().enumerate().filter_map(
-                move |(binding_idx, binding)| {
-                    (binding.binding_name == target_binding).then_some((item_idx, binding_idx))
-                },
-            )
-        })
-        .collect();
-    let (target_item_idx, target_binding_idx) = match selector_binding_locations.as_slice() {
-        [single] => *single,
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is not declared by the selector source:\n{match_source}",
-            match_source = selector.match_source,
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is ambiguous within the selector source at statement/binding \
-             indices {:?}. Refine the selector source:\n{match_source}",
-            multiple,
-            match_source = selector.match_source,
-        ),
-    };
+    let (target_item_idx, target_binding_idx) =
+        selector_binding_location(needles, request_id, selector, target_binding)?;
     let mut matches = Vec::new();
     for body_idx in find_matching_body_ranges(runtime_module, needles, selector) {
         let matched_body_idx = body_idx + target_item_idx;

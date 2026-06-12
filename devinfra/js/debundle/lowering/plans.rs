@@ -74,16 +74,24 @@ impl MemberRequest {
         &mut self,
         runtime_module: &Module,
         request_id: &str,
+        cache: &mut BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
     ) -> Result<()> {
         let Some(selector) = self.source_match.take() else {
             return Ok(());
         };
-        let resolved = source_match::resolve_member_binding(
-            runtime_module,
-            request_id,
-            &self.export_name,
-            &selector,
-        )?;
+        let resolved = match cache.get(&selector) {
+            Some(resolved) => resolved.clone(),
+            None => {
+                let resolved = source_match::resolve_member_binding(
+                    runtime_module,
+                    request_id,
+                    &self.export_name,
+                    &selector,
+                )?;
+                cache.insert(selector, resolved.clone());
+                resolved
+            }
+        };
         self.binding = resolved.binding_name;
         self.is_import_specifier =
             matches!(resolved.kind, Some(BindingSourceKind::ImportSpecifier));
