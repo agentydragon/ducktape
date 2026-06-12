@@ -411,10 +411,10 @@ pub fn gate_post_edit_partition(
                     let mut selectors = module.claims.member_selectors.clone();
                     let request_id = module.path.to_string_lossy();
                     for group in &module.claims.binding_groups {
-                        for (_, selector) in
+                        for expanded in
                             source_match::binding_group_member_selectors(&request_id, group)?
                         {
-                            selectors.insert(selector);
+                            selectors.insert(expanded.selector);
                         }
                     }
                     Ok(selectors)

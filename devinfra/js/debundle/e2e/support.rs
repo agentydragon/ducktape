@@ -44,6 +44,7 @@ pub struct BindingGroup {
     source_match: FixtureSourceMatch,
     adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
+    comments: BTreeMap<&'static str, &'static str>,
 }
 
 impl BindingGroup {
@@ -63,6 +64,7 @@ impl BindingGroup {
             },
             adopt_names: None,
             exports: exports.iter().copied().collect(),
+            comments: BTreeMap::new(),
         }
     }
 
@@ -76,6 +78,7 @@ impl BindingGroup {
             },
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: BTreeMap::new(),
+            comments: BTreeMap::new(),
         }
     }
 
@@ -92,6 +95,7 @@ impl BindingGroup {
             },
             adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
             exports: BTreeMap::new(),
+            comments: BTreeMap::new(),
         }
     }
 
@@ -108,7 +112,13 @@ impl BindingGroup {
             },
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: exports.iter().copied().collect(),
+            comments: BTreeMap::new(),
         }
+    }
+
+    pub fn with_comments(mut self, comments: &[(&'static str, &'static str)]) -> Self {
+        self.comments = comments.iter().copied().collect();
+        self
     }
 }
 
@@ -216,6 +226,8 @@ struct FixtureBindingGroup {
     adopt_names: Option<FixtureAdoptNames>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     exports: BTreeMap<&'static str, &'static str>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    comments: BTreeMap<&'static str, &'static str>,
 }
 
 #[derive(Clone, Serialize)]
@@ -357,6 +369,7 @@ fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBinding
             source_match: group.source_match.clone(),
             adopt_names: group.adopt_names.clone(),
             exports: group.exports.clone(),
+            comments: group.comments.clone(),
         })
         .collect()
 }

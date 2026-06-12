@@ -302,19 +302,17 @@ pub(super) fn build_members(
         .collect::<Result<Vec<_>>>()?;
 
     for group in binding_groups {
-        for (export_name, selector) in
-            source_match::binding_group_member_selectors(request_id, group)?
-        {
+        for expanded in source_match::binding_group_member_selectors(request_id, group)? {
             requests.push(MemberRequest {
                 binding: String::new(),
-                export_name,
-                source_match: Some(selector),
+                export_name: expanded.export_name,
+                source_match: Some(expanded.selector),
                 is_import_specifier: false,
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
-                comment: None,
+                comment: expanded.comment,
             });
         }
     }

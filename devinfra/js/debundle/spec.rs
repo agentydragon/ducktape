@@ -750,6 +750,12 @@ pub struct BindingGroup {
     pub adopt_names: BindingGroupAdoptNames,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub exports: BTreeMap<String, String>,
+    /// Optional per-binding comments keyed by selector-local binding name.
+    /// These are equivalent to `members[].comment` after the binding group is
+    /// expanded, but stay attached to the structural binding selected by the
+    /// group even when `exports` renames it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub comments: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]

@@ -144,6 +144,41 @@ export { first, second };
 }
 
 #[test]
+fn binding_group_comments_emit_for_each_target_binding() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var first = 1 + 2, second = Number.parseInt("4", 10);
+console.log(first + second);
+export { first, second };
+"#,
+        vec![logical_module_with_binding_groups(
+            "pair",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"var left = EXPR_LEFT, right = EXPR_RIGHT;"#,
+                &[("left", "first_value"), ("right", "second_value")],
+            )
+            .with_comments(&[
+                ("left", "First selected value."),
+                ("right", "Second selected value."),
+            ])],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "7\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/pair.js",
+        &[
+            "// First selected value.",
+            "var first_value = 1 + 2",
+            "// Second selected value.",
+            r#"var second_value = Number.parseInt("4", 10)"#,
+        ],
+        &[],
+    );
+}
+
+#[test]
 fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"if (true) {

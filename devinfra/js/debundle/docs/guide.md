@@ -307,6 +307,8 @@ binding_groups:
       localPart: SYSTEM_EMAIL_LOCAL_PART
       domain: SYSTEM_EMAIL_DOMAIN
       address: systemEmailAddress
+    comments:
+      address: Primary address shown to operators.
 ```
 
 When the selector source already uses the desired public names, use
@@ -325,7 +327,8 @@ binding_groups:
 
 `adopt_names: [nameOne, nameTwo]` adopts only the listed selector-local
 bindings. An explicit `exports` entry on the same group overrides the adopted
-public name for that selector-local binding.
+public name for that selector-local binding. `comments` is keyed by
+selector-local binding name and emits like `members[].comment` after expansion.
 
 For anonymous side-effect statements, prefer `source_match` when
 minified helper or class names drift, but keep selectors unique. If two

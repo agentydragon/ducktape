@@ -76,10 +76,16 @@ pub fn source_match_declared_binding_names(
 /// member assembly (`lowering::build_members`) and the CLI edit gate
 /// consume, so the two always agree on which owners a binding group
 /// claims.
+pub struct BindingGroupMemberSelector {
+    pub export_name: String,
+    pub selector: AnonymousStatementSelector,
+    pub comment: Option<String>,
+}
+
 pub fn binding_group_member_selectors(
     request_id: &str,
     group: &BindingGroup,
-) -> Result<Vec<(String, AnonymousStatementSelector)>> {
+) -> Result<Vec<BindingGroupMemberSelector>> {
     if group.source_match.target_binding.is_some() {
         bail!(
             "logical_module {request_id}: binding_groups[].source_match must not include \
@@ -87,12 +93,30 @@ pub fn binding_group_member_selectors(
         );
     }
     let exports = effective_binding_group_exports(group, request_id)?;
+    let unknown_comments = group
+        .comments
+        .keys()
+        .filter(|name| !exports.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown_comments.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].comments names bindings that \
+             are not exported by the group: {}",
+            unknown_comments.join(", ")
+        );
+    }
     Ok(exports
         .into_iter()
         .map(|(target_binding, export_name)| {
             let mut selector = group.source_match.selector();
-            selector.target_binding = Some(target_binding);
-            (export_name, selector)
+            selector.target_binding = Some(target_binding.clone());
+            let comment = group.comments.get(&target_binding).cloned();
+            BindingGroupMemberSelector {
+                export_name,
+                selector,
+                comment,
+            }
         })
         .collect())
 }
