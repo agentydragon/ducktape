@@ -168,3 +168,4 @@ litellm_settings:
   drop_params: true
   callbacks:
     - langfuse_otel
+    - prometheus

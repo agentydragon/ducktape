@@ -12,3 +12,6 @@ spec:
       path: /metrics
       interval: 15s
       scrapeTimeout: 10s
+      bearerTokenSecret:
+        name: litellm-master-key
+        key: api-key

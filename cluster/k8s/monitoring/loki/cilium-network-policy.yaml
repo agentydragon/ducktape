@@ -9,12 +9,13 @@
 #   - Alloy (monitoring namespace, OTel log forwarding)
 #   - Gatus (gatus namespace, health checks)
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
-#   - Loki itself (SimpleScalable: read↔backend↔write on 3100/9095/7946)
+#   - Alloy (monitoring namespace, Loki canary metrics)
+#   - Loki itself (SimpleScalable: read/backend/write/gateway/canary)
 #
 # Allowed egress from Loki:
 #   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
 #   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
-#   - Loki itself (intra-cluster gossip + gRPC + HTTP on 7946/9095/3100)
+#   - Loki itself (intra-cluster gossip, gRPC, HTTP, and gateway)
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -67,6 +68,16 @@ spec:
             - port: "3100"
               protocol: TCP
 
+    # Alloy → Loki canary metrics (ServiceMonitor scraping)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3500"
+              protocol: TCP
+
     # Gatus → Loki (health checks)
     - fromEndpoints:
         - matchLabels:
@@ -86,14 +97,17 @@ spec:
             - port: "3100"
               protocol: TCP
 
-    # Loki ↔ Loki (SimpleScalable: read/write/backend talk on memberlist,
-    # gRPC, and HTTP).
+    # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: loki
             k8s:io.kubernetes.pod.namespace: loki
       toPorts:
         - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
             - port: "3100"
               protocol: TCP
             - port: "9095"
@@ -135,13 +149,17 @@ spec:
             - port: "8333"
               protocol: TCP
 
-    # Loki ↔ Loki (SimpleScalable: memberlist gossip, gRPC, HTTP)
+    # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: loki
             k8s:io.kubernetes.pod.namespace: loki
       toPorts:
         - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
             - port: "7946"
               protocol: TCP
             - port: "9095"

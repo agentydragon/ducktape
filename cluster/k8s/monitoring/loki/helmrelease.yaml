@@ -131,7 +131,17 @@ spec:
           memory: 256Mi
 
     gateway:
-      enabled: false
+      enabled: true
+      # Loki canary's default target is loki-gateway. Keep the internal gateway
+      # enabled for read/write API routing; the chart labels the nginx gateway
+      # service out of ServiceMonitor discovery.
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
 
     # Disable bundled monitoring (we have kube-prometheus-stack)
     monitoring:
