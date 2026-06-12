@@ -21,9 +21,9 @@ py_library(
     srcs = ["handler.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//x/claude_linter_v2:checkers_v2",
         "//x/claude_linter_v2:claude_code_api",
         "//x/claude_linter_v2:claude_outcomes",
-        "//x/claude_linter_v2:checkers_v2",
         "//x/claude_linter_v2:llm_analyzer",
         "//x/claude_linter_v2:notifications",
         "//x/claude_linter_v2:pattern_matcher",
