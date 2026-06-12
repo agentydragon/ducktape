@@ -7,6 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode};
+use log::warn;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt, PutPayload};
@@ -720,6 +721,7 @@ impl ReqwestIaClient {
             web_upstream: web_upstream.trim_end_matches('/').to_string(),
             availability_upstream: availability_upstream.trim_end_matches('/').to_string(),
             client: reqwest::Client::builder()
+                .use_rustls_tls()
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent("ducktape-wayback-archive/1 (+agentydragon@gmail.com)")
                 .build()?,
@@ -1352,7 +1354,12 @@ impl ArchiveService {
                 }
                 stored_metadata_response(metadata)
             }
-            Err(_error) => {
+            Err(error) => {
+                warn!(
+                    "IA metadata fetch failed for endpoint={} query={}: {error:#}",
+                    request.key.endpoint.as_str(),
+                    request.key.normalized_query
+                );
                 limiter.record(AcquisitionOutcome::TransientFailure).await;
                 ArchiveResponse::retry_after(request.key.endpoint)
             }
@@ -1417,7 +1424,11 @@ impl ArchiveService {
                 }
                 stored_replay_response(replay)
             }
-            Err(_error) => {
+            Err(error) => {
+                warn!(
+                    "IA replay fetch failed for capture_ts={} modifier={} original_url={}: {error:#}",
+                    key.capture_ts, key.modifier, key.original_url
+                );
                 self.replay_limiter
                     .record(AcquisitionOutcome::TransientFailure)
                     .await;

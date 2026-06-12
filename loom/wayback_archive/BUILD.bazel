@@ -23,6 +23,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:bytes",
         "@crates//:http",
+        "@crates//:log",
         "@crates//:object_store",
         "@crates//:prometheus",
         "@crates//:reqwest",
