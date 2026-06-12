@@ -62,6 +62,7 @@ Find durable claims and their apparent source of truth:
 - Decisions, rationale, rejected alternatives, and migration status
 
 Flag claims that have no obvious canonical owner, appear in multiple competing places, or exist only in fragile locations such as comments, stale tickets, old plans, or copied examples.
+Also flag volatile facts that merely mirror a canonical source, such as copied enum values, defaults, routes, flags, generated fields, service lists, table columns, dependency versions, or command output.
 
 ### 3. Verify Before Suggesting
 
@@ -80,6 +81,7 @@ For present-tense operational claims, prefer live evidence when available and ap
 Prioritize findings in these categories:
 
 - **SSOT drift**: duplicated facts, conflicting explanations, unclear canonical owner, copied setup steps, generated output edited by hand
+- **Documentation change-detectors**: copied volatile details that readers could look up from the source of truth, and that mainly create another place to update when the source changes
 - **Zero-value obviousness**: comments, docstrings, README entries, examples, or help text that only restate names, signatures, headings, obvious file purposes, or generic tool behavior
 - **Background-knowledge bloat**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer, unless this repo intentionally differs
 - **Staleness**: dead links, old commands, renamed concepts, outdated screenshots, obsolete support guidance, plans that look active after completion
@@ -90,15 +92,17 @@ Prioritize findings in these categories:
 - **Actionability gaps**: troubleshooting steps without observable checks, runbooks without rollback or success criteria, examples without expected output
 - **Maintenance gaps**: no owner, no regeneration path, no test/link check, no policy for tombstoning completed plans
 
-Distinguish root problem from symptom. For example, three stale environment-variable descriptions may mean the real fix is a generated config reference and links to it.
+Distinguish root problem from symptom. For example, three stale environment-variable descriptions may mean the real fix is a canonical config source and links to it, not editing all three copies.
 
 Examples of information to remove or compress:
 
 - Javadocs/docstrings that say `sortArray()` takes an array and returns it sorted, then repeat the return type already visible in the signature
 - README sections that explain standard commands for an obvious artifact, such as running a plain Kubernetes manifest named `scrape-job.yaml` with `kubectl apply -f scrape-job.yaml`
 - Boilerplate descriptions of fixtures, examples, or generated files where the filename and surrounding convention already convey the same fact
+- Copied lists like "service `xyzzy` permits `foo` values `bar`, `baz`, `quux`" when `xyzzy.yaml` is the real owner of allowed values
 
 If a standard mechanism has one local wrinkle, keep only the wrinkle and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Local wrinkle: the job needs the `analytics-prod` profile."
+Usually replace volatile mirrors with a pointer plus any durable meaning, policy, or gotcha the source does not contain. Generated Markdown/reference output is an exception, not the default; suggest it only when readers genuinely need the full volatile list inline and there is already a natural generation path.
 
 ### 5. Rank Suggestions
 
@@ -106,7 +110,7 @@ Score each candidate by:
 
 - Impact: user/operator/developer/agent confusion or risk reduced
 - Confidence: directly verified evidence versus inference
-- Cost: small edit, link/redirect, consolidation, archive/tombstone, generated reference, ownership/process change
+- Cost: small edit, link/redirect, consolidation, archive/tombstone, source-of-truth pointer, ownership/process change
 - Blast radius: one page, topic cluster, repo-wide docs, external KB, runtime docs
 - Decay rate: likelihood of drifting further if ignored
 
@@ -124,21 +128,19 @@ Found 2 high-priority SSOT fixes, 3 likely consolidations, and 2 optional archiv
 
 ## Action Menu
 
-A. **Make setup instructions canonical in `docs/setup.md`**
-   - Priority: High
-   - Evidence: `README.md`, `docs/onboarding.md`, and `runbooks/dev-env.md` give different install commands
-   - Why: New contributors can follow conflicting paths
-   - Change: Keep the full procedure in `docs/setup.md`; replace other copies with scoped summaries and links
-   - Verify: Run the documented commands or the repo's setup smoke check
-   - Effort: Small
+A. [P1] **Make setup instructions canonical in `docs/setup.md`**
 
-B. **Tombstone completed migration plan**
-   - Priority: Medium
-   - Evidence: `plans/auth-migration.md` reads active, but current docs and deploy config show the migration is complete
-   - Why: Agents may treat old migration work as pending
-   - Change: Add a completion banner, link to the current auth contract, and move remaining TODOs to the active tracker
-   - Verify: Search for remaining links to the old active-plan wording
-   - Effort: Small
+- Evidence: `README.md`, `docs/onboarding.md`, and `runbooks/dev-env.md` give different install commands
+- Why: New contributors can follow conflicting paths
+- Change: Keep the full procedure in `docs/setup.md`; replace other copies with scoped summaries and links
+- Verify: A reader can find exactly one full setup procedure, and other pages only summarize or link to it
+
+B. [P2] **Tombstone completed migration plan**
+
+- Evidence: `plans/auth-migration.md` reads active, but current docs and deploy config show the migration is complete
+- Why: Agents may treat old migration work as pending
+- Change: Add a completion banner, link to the current auth contract, and move remaining TODOs to the active tracker
+- Verify: A reader can tell within the first screen that the plan is completed and where the current auth contract lives
 ```
 
 ### ID Rules
@@ -149,17 +151,26 @@ B. **Tombstone completed migration plan**
 - If there are more than 26 items, use `AA`, `AB`, etc.
 - Do not reuse an ID for a different item.
 
+### Priority Markers
+
+Put priority in the title immediately after the item ID:
+
+- `[P0]` Critical
+- `[P1]` High
+- `[P2]` Medium
+- `[P3]` Low
+- `[P4]` Optional
+- `[INV]` Investigation / not ready to execute
+
 ### Item Requirements
 
 Each item includes:
 
-- Shorthand ID and short title
-- Priority: Critical, High, Medium, Low, Optional, or Investigation
+- Shorthand ID, compact priority marker, and short title
 - Evidence: exact files, pages, headings, links, quoted short snippets, commands, or observed behavior
 - Why it matters
 - Concrete proposed change
-- Verification command, search, link check, or human review criterion
-- Estimated effort: Small, Medium, Large, or Investigation
+- Verification criterion: a command, search, link check, runtime check, or plain-language human review condition
 
 Use short quotes only when necessary to identify the claim. Prefer paraphrase plus file/heading references.
 
@@ -182,6 +193,7 @@ When executing selected items:
 - Keep changes scoped to the selected IDs
 - Preserve unrelated worktree changes
 - Run the verification listed for each completed item when feasible
+- For human-language verification criteria, inspect the result and state whether the criterion is satisfied
 - If a selected item becomes invalid after re-checking, stop that item and report why
 
 Do not execute unselected menu items unless the user explicitly broadens scope.
