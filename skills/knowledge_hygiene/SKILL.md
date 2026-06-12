@@ -83,7 +83,7 @@ Prioritize findings in these categories:
 - **SSOT drift**: duplicated facts, conflicting explanations, unclear canonical owner, copied setup steps, generated output edited by hand
 - **Documentation change-detectors**: copied volatile details that readers could look up from the source of truth, and that mainly create another place to update when the source changes
 - **Zero-value obviousness**: comments, docstrings, README entries, examples, or help text that only restate names, signatures, headings, obvious file purposes, or generic tool behavior
-- **Background-knowledge bloat**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer, unless this repo intentionally differs
+- **Background-knowledge bloat / framework re-explanation**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer. The test for each explanatory sentence about a well-known tool: would it be true in any repo using that tool? If yes, cut it — naming the mechanism is enough. Keep only what is false elsewhere: deviations, version pins, local config, gotchas.
 - **Staleness**: dead links, old commands, renamed concepts, outdated screenshots, obsolete support guidance, plans that look active after completion
 - **Ambiguous status**: drafts, archives, investigations, and current contracts not distinguishable at a glance
 - **Audience mismatch**: beginner tutorials mixed with operator runbooks, implementation notes inside user docs, historical rationale presented as current behavior
@@ -100,6 +100,7 @@ Examples of information to remove or compress:
 - README sections that explain standard commands for an obvious artifact, such as running a plain Kubernetes manifest named `scrape-job.yaml` with `kubectl apply -f scrape-job.yaml`
 - Boilerplate descriptions of fixtures, examples, or generated files where the filename and surrounding convention already convey the same fact
 - Copied lists like "service `xyzzy` permits `foo` values `bar`, `baz`, `quux`" when `xyzzy.yaml` is the real owner of allowed values
+- Sections that teach a well-known framework's stock behavior (how Flux reconciles from git, what a Kubernetes Deployment is, how pytest fixtures resolve, what OAuth scopes are) — name the mechanism and state the local deviations/specifics; delete the tutorial
 
 If a standard mechanism differs here in one respect, keep only the deviation and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Deviation: the job needs the `analytics-prod` profile."
 Usually replace volatile mirrors with a pointer plus any durable meaning, policy, or gotcha the source does not contain. Generated Markdown/reference output is an exception, not the default; suggest it only when readers genuinely need the full volatile list inline and there is already a natural generation path.
