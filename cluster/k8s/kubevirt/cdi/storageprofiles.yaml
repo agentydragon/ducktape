@@ -1,0 +1,94 @@
+# CDI creates StorageProfile objects automatically, but it cannot infer PVC
+# claim properties for our local/custom provisioners. Declare the safe defaults
+# so DataVolumes do not have to guess access mode or volume mode.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: local-path-ovh
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: local-path-proxmox
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: lvm-proxmox-hdd
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: lvm-proxmox-hdd-block
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Block
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: lvm-proxmox-hdd-shared
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: lvm-proxmox-ssd
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: lvm-proxmox-ssd-block
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Block
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: proxmox-csi-retain
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: seaweedfs-ovh
+spec:
+  claimPropertySets:
+    - accessModes: [ReadWriteMany]
+      volumeMode: Filesystem
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+  cloneStrategy: copy
