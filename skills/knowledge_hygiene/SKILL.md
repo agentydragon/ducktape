@@ -133,7 +133,42 @@ doc. Sweep the always-loaded surfaces for, in descending value:
 - **Repetition for emphasis**: a rule stated three times with escalating bold is one
   rule.
 
-### 6. Rank Suggestions
+### 6. Structure And Promotion Sweep
+
+Organizing rule: a fact's canonical home is the file someone must touch when the
+fact changes (**update locality**). The full treatment of a concept (the hub)
+lives at the lowest common ancestor of its consumers; every other mention is a
+one-line scoped pointer stating only the local deviation. Do not propose manually
+maintained backlink / "who links here" notes — if backlinks become needed, that
+is a format/tooling change, not doc content to hand-maintain.
+
+Gather actions for:
+
+- **Wrong home**: a hub far from the artifacts it describes; a concept consumed
+  by two siblings but documented inside one (hoist to the common ancestor); a
+  durable rule trapped in the wrong document kind — operational truth inside a
+  `debug/` investigation, a decision still phrased as a plan, cross-component
+  behavior explained in one code comment.
+- **Missing update path**: a hub with no answer to "what change in the world
+  forces an edit here, and how does the editor notice?" Prefer proposing a
+  change-time convention near the artifact ("update <hub> when changing <X>")
+  over a one-off correction — change-time gardening beats scheduled sweeps.
+- **Promotion candidates** — knowledge living somewhere worse than a doc:
+  - the same question investigated or explained more than once (agent session
+    logs, PR review threads, chat) — the strongest signal;
+  - commit/PR messages that explain a system rather than a change;
+  - `debug/` notes whose conclusions are durable rules — extract the rule to
+    docs with a pointer back; the frozen narrative stays put;
+  - code comments that outgrew one location;
+  - procedures improvised twice (promote to a runbook).
+- **Demotion candidates**: a doc nothing references that hasn't changed while
+  its subject did — verify once, then archive (dated) or delete.
+
+Promotion bar by destination: always-loaded instruction chains take only what
+every session needs; on-demand docs take durable facts with ≥2 consumers in
+space or time; knowledge scoped to one code location stays a comment.
+
+### 7. Rank Suggestions
 
 Score each candidate by:
 
