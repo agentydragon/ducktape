@@ -5,6 +5,7 @@
 //!   identifier expressions; they match one arbitrary expression subtree.
 //! - Statement holes (`STMT` / `STMT_name`) are selector-local bare
 //!   expression statements; they match exactly one statement.
+//!
 //! The bare single-node keyword matches independently at every occurrence;
 //! the named form binds for cross-occurrence equality.
 //!
@@ -20,6 +21,7 @@
 //! - `DECLARATORS` / `DECLARATORS_name = null` in a variable declaration
 //!   absorbs a run of declarators — e.g. match a few stable entries in a
 //!   wider `const` list without spelling unrelated siblings.
+//!
 //! List-hole suffixes are labels for readability; they do not bind the
 //! absorbed run for equality.
 //!
