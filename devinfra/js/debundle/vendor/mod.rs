@@ -1116,9 +1116,7 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
     }))
 }
 
-/// Post-strip cross-chunk soundness gate for partial vendor swaps —
-/// retained as a **differential tripwire** behind the plan-time
-/// consumer gate (vendor_into_emission §3.2, open question 4).
+/// Post-strip cross-chunk soundness gate for partial vendor swaps.
 ///
 /// The pass-through emission rewriter and lowering's import
 /// construction rewrite `ImportDecl` named specifiers (and, for
@@ -1132,14 +1130,17 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
 ///   for swapped members;
 /// * `export *` silently drops the swapped names from the re-exporter.
 ///
-/// The plan-time gate rejects these shapes before any emission; this
-/// scan re-checks the post-strip artifact, additionally covering
-/// directives that lowering moved into or synthesized inside
-/// materialized module bodies (e.g. `export … from` re-exports in moved
-/// bodies and `BindingKind::Imported` re-export imports — shapes with
-/// no live rewrite at the construction site). PR 6 of the plan retires
-/// it only with fixture evidence that the plan-time gate fires on every
-/// case this scan does.
+/// The plan-time gate (`plan.rs::validate_consumer_shapes`) rejects
+/// these shapes in input space before any emission. This scan is not a
+/// redundant tripwire behind it: it re-checks the post-materialize
+/// artifact, covering directives that lowering moved into or
+/// synthesized inside materialized module bodies (`export … from`
+/// re-exports in moved bodies, `BindingKind::Imported` re-export
+/// imports) — shapes with no live rewrite at the construction site,
+/// invisible to the plan-time gate's input-space enumeration. Retire it
+/// only after those construction paths consult the plan and fixtures
+/// pin the synthesized-directive shapes (ARCHITECTURE_BACKLOG.md
+/// "Post-strip consumer scan retirement condition").
 ///
 /// Scan every retained file of every chunk and bail with a precise
 /// diagnostic on the first surviving consumer. Over-restriction is the

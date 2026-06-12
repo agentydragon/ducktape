@@ -1,5 +1,39 @@
 # Debundle sanitization program — 2026-06
 
+> **Status (2026-06-12): program complete**, except the explicitly
+> deferred items below — each re-filed in its tracking doc, none
+> silently dropped. Track A landed (A1 `IndexedArtifact` threading in
+> #2077, A2 crate split, A3 decision batch closed). Track B
+> (RenameLedger) complete. Track C (vendor-into-emission) complete —
+> `plans/vendor_into_emission.md` is tombstoned with the PR list
+> (#2110/#2112/#2119/#2123/#2127/#2129 + close-out) and per-open-question
+> resolutions; `validate_emitted_exports` was kept as a tripwire (the
+> collapse did not make it provably redundant), and the post-strip
+> consumer scan was also kept (open question 4's escape clause fired —
+> see the tombstone). Track D landed except item 4. Track E landed.
+> Track F: F1/F2 landed except F1's remaining harness migration; F4
+> partially landed; F3 deferred.
+>
+> Still open after program close:
+>
+> - **F3 Excalidraw public smoke** — deferred pending maintainer
+>   discussion; the design entry stays in TODO.md ("Excalidraw
+>   live-browser smoke").
+> - **Track D item 4** — the `program_analysis.rs` fold into the facts
+>   walk, deferred with the architectural rationale recorded below
+>   (prepare-time vs stage-one computation and crate boundaries);
+>   CODE_REVIEW.md's "Two parallel top-level fact extractors" P1 entry
+>   stays open.
+> - **F1 remaining step** — migrating `peel/gate_differential_test.rs`
+>   from its deterministic xorshift sweep to proptest strategies (the
+>   condensation-order and rename-ledger proptest suites landed; the
+>   harness still carries its "placeholder for the Track F1 proptest"
+>   marker).
+> - **F4 small test debt** — support.rs builder consolidation, the
+>   hardcoded entry path in `assert_generated_module_after_entry_script`,
+>   and whitespace OR-chain assertions remain open as CODE_REVIEW.md P5
+>   entries.
+
 A ~3-week program of structural cleanups following the 2026-06-11 full review
 and its 16-PR fix wave (#2044–#2073). Goal: convert the remaining
 convention-held invariants into structure, make module boundaries

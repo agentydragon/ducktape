@@ -12,7 +12,7 @@ The simulator (`realizability/esm_simulator.rs`), the incremental quotient + ove
 
 ### `vendor/mod.rs` further split
 
-Remaining: strip-specific helpers and export/package-resolution helpers could each lift out into their own modules alongside the already-extracted `vendor/{manifests,plan,strip,validate,wrappers}.rs`.
+The vendor-into-emission collapse left `vendor/{emission,manifests,passthrough,plan,strip,validate,wrappers}.rs` extracted and deleted the dispatcher/job plumbing; `mod.rs` (~1.3K lines + tests) still mixes package/subpath resolution helpers, export-surface collection helpers, `MaterializedOutputChunkIndex`, the shared import factories (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and the `make_*` constructors), and the post-strip consumer scan — each liftable into its own module.
 
 ### `purity/mod.rs` (~2570 lines) — remaining concerns
 
@@ -161,6 +161,6 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 1. **Extract `gate_perf_counters` from `realizability/mod.rs`** — see the P0 item; needs the recording-API entanglement untangled first.
 
-2. **Continue splitting `vendor/mod.rs`** — manifests, plan, strip, wrappers, and validate/resolve helpers extracted; remaining: strip-specific helpers, export/package-resolution helpers.
+2. **Continue splitting `vendor/mod.rs`** — emission, manifests, passthrough, plan, strip, validate, wrappers extracted; remaining: package-resolution helpers, export-surface helpers, the import factories, the consumer scan.
 
 3. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong.

@@ -299,10 +299,11 @@ pub fn run_transform_cli_with_options(
     vendor_report.strip_stats = strip_stats;
 
     if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
-        // Post-strip differential tripwire behind the plan-time
-        // consumer gate (vendor_into_emission §3.2, open question 4):
-        // no retained file may still consume the stripped portion of a
-        // partially-swapped chunk's export surface.
+        // Post-strip consumer gate: no retained file may still consume
+        // the stripped portion of a partially-swapped chunk's export
+        // surface. Load-bearing behind the plan-time gate — it covers
+        // directives lowering synthesized inside materialized module
+        // bodies (see `validate_partial_swap_consumers`).
         validate_partial_swap_consumers(indexed.artifact(), &vendor_plan, indexed.indexes())?;
     }
     (vendor_report.partial, vendor_report.bundled_partial) =

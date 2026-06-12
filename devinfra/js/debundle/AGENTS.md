@@ -202,9 +202,9 @@ Syntax-derived facts likewise come from the SWC-backed parse/analysis
 path and flow through artifact manifests / indexes — not from
 phase-local rescans. The pipeline parses each chunk once in
 `prepare_js_chunks` and records imports, exports, dynamic-import
-shape, etc. on `ChunkManifest`; downstream stages (vendor renaming,
-specifier rewriting, owner-graph construction) consume those manifest
-facts through the centralized `ArtifactIndexes` query API
+shape, etc. on `ChunkManifest`; downstream consumers (vendor planning,
+emission-time specifier rewriting, owner-graph construction) consume
+those manifest facts through the centralized `ArtifactIndexes` query API
 (`resolve_runtime_import_reference`, `manifest_imports_targeting_chunk`,
 etc.) rather than re-walking the AST to answer "which chunk does this
 import resolve to" or "which chunks import this binding". Mutation
@@ -514,12 +514,12 @@ keep call sites typed.
 
 ## Spec-level `inputs`
 
-`load_js_chunks`, `prepare_js_chunks`, and `rewrite_chunk_entry_specifiers`
-are always-on preparation steps. The spec configures the load step via
-`inputs: { input_root, js_list_path }`; chunk preparation parses selected
-chunks, computes shallow program facts, and canonicalizes chunk entries in one
-parallel per-chunk pass. Specifier rewriting runs automatically after
-preparation and before data-gated transforms.
+`load_js_chunks` and `prepare_js_chunks` are always-on preparation steps.
+The spec configures the load step via `inputs: { input_root, js_list_path }`;
+chunk preparation parses selected chunks, computes shallow program facts, and
+canonicalizes chunk entries in one parallel per-chunk pass. Import-specifier
+canonicalization is applied at emission time by the unified pass-through
+directive rewriter (`vendor/passthrough.rs`), not as a separate stage.
 
 ## Spec-level declarative sections
 
@@ -545,9 +545,10 @@ structs in <spec.rs>.
 - `chunk_renames` — keyed by chunk id, then binding name. These are in-place
   readability renames for bindings that remain in the chunk entry.
 
-Transforms run in a fixed canonical order. Vendor and module materialization
-are gated by their data maps; tree and harness emission are gated by their
-output config fields. `rewrite_chunk_entry_specifiers` is always-on.
+Transforms run in a fixed canonical order. Vendor planning and module
+materialization are gated by their data maps; tree and harness emission are
+gated by their output config fields. The emission rewrite pass (specifier
+canonicalization plus vendor consumer surgery) is always-on.
 
 ## Materialize logical-modules `target_dir`
 

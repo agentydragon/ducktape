@@ -2102,8 +2102,9 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
 // "<chunk>"` namespace imports. Re-exports of `named`/`default`/`namespace`
 // kind symbols are rewritten against the upstream package; everything else
 // (member-kind re-exports, namespace imports, `export *`) must make the
-// pipeline bail — the strip pass removes those names from the chunk's
-// export surface, so an unrewritten consumer either link-fails (re-export)
+// pipeline bail (the plan-time consumer gate rejects them before any
+// output) — the strip pass removes those names from the chunk's export
+// surface, so an unrewritten consumer either link-fails (re-export)
 // or silently reads `undefined` (namespace member).
 
 fn setup_partial_swap_consumer_fixture(
@@ -2326,8 +2327,8 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
 fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
     // `import * as M from "<chunk>"` then `M.e6` — the strip pass removes
     // `e6` from the chunk's export surface, so the member read would
-    // silently evaluate to `undefined` at runtime. The post-strip consumer
-    // gate must reject the spec instead of emitting the broken tree.
+    // silently evaluate to `undefined` at runtime. The consumer gate must
+    // reject the spec instead of emitting the broken tree.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
         "vendor-partial-swap-namespace-consumer-",
         "export const e6 = () => true;\nexport const keepMe = () => 7;\n",

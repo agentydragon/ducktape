@@ -150,8 +150,7 @@ impl VendorResolutionPlan {
 
     /// Boundary-rename mapping consult for construction-time naming
     /// (vendor_into_emission §2.4): vendor-local export name → public
-    /// name for a `boundary_rename` / `swap` chunk. Load-bearing since
-    /// the pre-materialize `rename_vendor_exports` wave was deleted:
+    /// name for a `boundary_rename` / `swap` chunk. Load-bearing:
     /// source ASTs reach lowering with the vendor-local names, and the
     /// public name is applied at import construction.
     pub fn boundary_public_export_name(&self, chunk: ChunkId, vendor_local: &str) -> Option<&str> {
@@ -391,10 +390,11 @@ fn validate_full_swap_import_alignment(
 /// shapes that have no live rewrite at either application site — before
 /// any output is written. The classification is the same one the
 /// rewriters perform, so a consumer the rewriter misses cannot pass the
-/// gate. The post-strip `validate_partial_swap_consumers` scan stays on
-/// as a differential tripwire (it additionally covers directives that
-/// lowering moves or synthesizes inside materialized module bodies)
-/// until PR 6 retires it with fixture evidence.
+/// gate. This enumeration sees input space only; the post-strip
+/// `validate_partial_swap_consumers` scan stays on as load-bearing
+/// coverage for directives that lowering moves or synthesizes inside
+/// materialized module bodies (see its doc for the retirement
+/// condition).
 ///
 /// Over-restriction is the accepted failure mode: a namespace consumer
 /// reading only unswapped members is still rejected.

@@ -9,6 +9,33 @@ Re-check file paths and line numbers against current `HEAD` before
 acting; this file intentionally describes shapes rather than frozen
 review line references.
 
+### Materialize-into-emit (next pipeline-trajectory step)
+
+The vendor collapse (`plans/vendor_into_emission.md`, tombstoned
+2026-06-12) removed every vendor mutation wave; the one remaining
+artifact mutation is `materialize_logical_modules`, which writes
+lowered module files back into the chunk bundle for `write_js_tree` /
+`emit_browser_harness` to re-read. The recorded next step
+(vendor_into_emission §4; docs/design.md "Pipeline trajectory"):
+lowered outputs feed tree / harness emission directly, dropping the
+bundle round-trip and the post-materialize index rebuild. The
+emission rewrites (`apply_emission_rewrites`) would become per-file
+emit steps in the same pass. No timetable; the e2e suite is the
+safety net.
+
+### Post-strip consumer scan retirement condition
+
+`vendor/mod.rs::validate_partial_swap_consumers` was kept at the end
+of the vendor collapse (open question 4's escape clause in the
+tombstoned plan): lowering can synthesize consumer directives inside
+materialized module bodies (`BindingKind::Imported` re-export imports
+in `lowering/lower.rs`, `export … from` re-exports in moved bodies)
+with no live rewrite at the construction site, and the plan-time
+gate's input-space enumeration cannot see them. Retire the scan only
+after (a) those construction paths consult the `VendorResolutionPlan`
+(live rewrite or plan-time rejection) and (b) e2e fixtures pin the
+synthesized-directive shapes failing without the scan.
+
 ### `owner` → `node` rename (deferred)
 
 Folding `OwnerId`/`OwnerIdx` into one `NodeId`, renaming `OwnerGraph*` →

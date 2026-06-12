@@ -998,8 +998,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   rejected — soundness over completeness: the target cannot be
   proven external. Non-literal specifiers in lazy positions are
   allowed and remain a documented residual gap (only `Lit::Str`
-  counts as literal, matching `prepare_js_chunks` /
-  `rewrite_chunk_entry_specifiers`).
+  counts as literal, matching `prepare_js_chunks` and the
+  pass-through emission rewriter in `vendor/passthrough.rs`).
 - **A4. No `with` blocks.** Banned in strict mode (which ESM is
   by spec). **Enforced (at parse)**: even with the parser's
   `no_early_errors: true` TypeScript syntax, `with` surfaces as a
@@ -2211,33 +2211,42 @@ status without building emitted JS.
 
 ### Pipeline trajectory
 
-The current pipeline (`pipeline.rs`) enumerates a long sequence of
-named stages — `LoadJsChunks`, `PrepareJsChunks`, `BuildArtifactIndexes`,
-`RewriteChunkEntrySpecifiers`, `ApplyVendorAnnotations`,
-`RenameVendorExports`, `SwapVendorChunks`, `MaterializeLogicalModules`,
-`ApplyPartialVendorSwaps`, `StripSwappedVendorExports`, `WriteJsTree`,
-`EmitBrowserHarness` — that read like a JS-file-tree-rewriting pipeline.
-That shape is a holdover: an earlier incarnation passed trees of JS
-files between stages and each stage rewrote them in place.
+The pipeline (`pipeline.rs`) is a fixed composition over three layers:
 
-The current analyzer operates on the owner graph and a partition, with
-late materialization to emitted JS at the end. Most of the named stages
-are orchestration overhead around what is, semantically, a small set of
-functions over `(owner_graph, partition)` plus the shared realizability
-primitive.
+- **Classify (input space).** Load + prepare (one parallel per-chunk
+  parse computing shallow program facts), then one read-only vendor
+  resolution pass (`build_vendor_resolution_plan`) that validates every
+  `vendor` mark, resolves boundary mappings / swap targets / per-symbol
+  tables, and runs the plan-time consumer gate before anything is
+  written. Spec selectors always match prepare-time input-space ASTs;
+  nothing mutates them.
+- **Plan.** Lowering plans plus the `VendorResolutionPlan` as the
+  single resolution oracle for import construction — both lowering's
+  per-plan directive construction and the emission-time rewriting of
+  non-lowered files consult it.
+- **Emit.** `materialize_logical_modules` is the single artifact
+  mutation wave; `apply_emission_rewrites` then performs the
+  pass-through directive rewrite (specifier canonicalization,
+  boundary-rename mapping, partial-swap consumer surgery) and computes
+  each partially-swapped vendor chunk's residual (self-rewrite + strip)
+  as one function body. Fully-swapped chunks are an emission-set
+  exclusion, not an artifact removal; wrappers / facades / manifests
+  are emission outputs.
 
-The direction of travel is to collapse the stage structure. Each stage
-becomes a function over the analyzer's typed state, the JS-tree
-intermediate snapshots between stages are dropped, and the pipeline
-becomes the composition of those functions. The unification of the
-gate and planner checks on the realizability primitive is a precondition
-for this collapse: it removes the parallel walks and planner-internal
-caches that made the stage boundaries necessary as state-passing seams.
+This is the landed shape of the vendor-into-emission collapse
+(`plans/vendor_into_emission.md`, tombstoned 2026-06): the former
+stage braid — specifier rewriting, vendor renaming, and swapping
+braided around materialization across seven artifact mutations — is
+gone, and vendor operations contribute zero mutation waves.
 
-The e2e tests in `devinfra/js/debundle/e2e/` pin observable chunk →
-emitted-JS behavior. They are the safety net that makes this collapse
-possible without behaviour drift. No timetable is committed; this
-section documents the direction.
+The remaining trajectory step is collapsing materialize-into-emit:
+`materialize_logical_modules` still writes lowered module files back
+into the chunk bundle for the emission stages to re-read, where the
+lowered outputs could feed `write_js_tree` / harness emission directly
+without the bundle round-trip. Tracked in ARCHITECTURE_BACKLOG.md; no
+timetable is committed. The e2e tests in `devinfra/js/debundle/e2e/`
+pin observable chunk → emitted-JS behavior and are the safety net for
+that step, as they were for the vendor collapse.
 
 ## Selector vocabulary and matching
 
@@ -2829,9 +2838,10 @@ and `owner_y`, then re-run quotient validation."
 
 The transform is a fixed data flow over explicit artifact phases:
 input loading produces loaded chunk data; preparation produces the
-parsed/prepared chunk artifact consumed by rewrite, vendor,
-logical-materialization, and output stages. The pipeline should not
-grow a second mutable "state" object parallel to those phase outputs.
+parsed/prepared chunk artifact consumed by the vendor plan,
+logical materialization, emission rewrites, and output emission. The
+pipeline should not grow a second mutable "state" object parallel to
+those phase outputs.
 
 The flat transform spec is YAML decoded directly into typed serde
 structures. It carries inputs, declarative data maps, and optional
@@ -2851,20 +2861,19 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                             | Module                       | Runs when                                                                                                                                                          |
-| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `load_transform_spec`            | <pipeline.rs>                | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                         |
-| `validate_transform_spec`        | <spec.rs>                    | Always after spec load.                                                                                                                                            |
-| `load_js_chunks`                 | <artifact.rs>                | Always; configured by `inputs`.                                                                                                                                    |
-| `prepare_js_chunks`              | <prepare_chunks.rs>          | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                    |
-| `build_artifact_indexes`         | <artifact.rs>                | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>      | Always, after chunk preparation and before data-gated transforms.                                                                                                  |
-| `apply_vendor_annotations`       | <vendor/>                    | When the `vendor` map is non-empty.                                                                                                                                |
-| `rename_vendor_exports`          | <vendor/>                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                               |
-| `swap_vendor_chunks`             | <vendor/>                    | When a `vendor` entry has `level: swap`.                                                                                                                           |
-| `materialize_logical_modules`    | <lowering/> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.              |
-| `write_js_tree`                  | <write_tree.rs>              | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                |
-| `emit_browser_harness`           | <emit_harness.rs>            | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist. |
+| Step                           | Module                        | Runs when                                                                                                                                                                                                                               |
+| ------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load_transform_spec`          | <pipeline.rs>                 | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                                                                                              |
+| `validate_transform_spec`      | <spec.rs>                     | Always after spec load.                                                                                                                                                                                                                 |
+| `load_js_chunks`               | <artifact.rs>                 | Always; configured by `inputs`.                                                                                                                                                                                                         |
+| `prepare_js_chunks`            | <prepare_chunks.rs>           | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                                                                                         |
+| `build_artifact_indexes`       | <artifact.rs>                 | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                                                                                     |
+| `build_vendor_resolution_plan` | <vendor/plan.rs>              | Always after index build. Read-only: validates every `vendor` mark, resolves boundary mappings / swap targets / partial-swap symbol tables, runs the plan-time consumer gate.                                                           |
+| `materialize_logical_modules`  | <lowering/> + analysis files  | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                                                                                   |
+| `apply_emission_rewrites`      | <vendor/emission.rs>          | Always. Pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer surgery) over files emitted without lowering, plus the per-vendor-chunk residual composition (self-rewrite + strip). |
+| `validate_emitted_exports`     | <validate_emitted_exports.rs> | Always; duplicate-public-export tripwire over the emission set (excluded full-swap chunks are skipped).                                                                                                                                 |
+| `write_js_tree`                | <write_tree.rs>               | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                                                                                     |
+| `emit_browser_harness`         | <emit_harness.rs>             | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist.                                                                      |
 
 Within `materialize_logical_modules`, the substages are:
 
@@ -2922,29 +2931,51 @@ rather than missing features are documented here.
 
 ### Full swap: callers are proxy/import-map-dependent
 
-`level: swap` removes the vendor chunk from the artifact. Caller
-imports of the removed chunk are **intentionally left dangling** in
-the plain `write_js_tree` output: the live-proxy / import-map layer
-(<../live_proxy/>) resolves the dangling chunk specifier to the
-swapped package at serve time. The plain emitted tree is therefore
-not directly runnable under bare Node when a full swap is configured.
-Pinned by `full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy`
+`level: swap` excludes the vendor chunk from the **emission set** —
+nothing removes it from the artifact, and the owner graph never
+contained vendor chunks; `write_js_tree`, harness emission, the
+emit-shape check, and the chunk reports skip it, and a wrapper module
+is written in its place. Caller imports of the excluded chunk are
+**intentionally left dangling** in the plain `write_js_tree` output:
+the live-proxy / import-map layer (<../live_proxy/>) resolves the
+dangling chunk specifier to the swapped package at serve time. The
+plain emitted tree is therefore not directly runnable under bare Node
+when a full swap is configured. Pinned by
+`full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy`
 in <../e2e/vendor_swap_test.rs>.
 
-### Partial swap: consumer rewrites and the post-strip gate
+### Partial swap: consumer rewrites and the consumer gates
 
-Per-symbol partial swaps rewrite two consumer shapes in retained
-files: named `ImportDecl` specifiers and `export { x } from
-"<chunk>"` re-exports of swapped names (`kind: named` / `default` /
-`namespace`). Shapes with no live rewrite — `import * as M` namespace
-imports of the chunk, `export *` from the chunk, and re-exports of
-`kind: member` symbols or bundled-swap symbols — are rejected by the
-**post-strip consumer gate** (`validate_partial_swap_consumers`),
-which scans every retained file after the strip pass and bails on any
-surviving reference to the stripped export surface. Over-restriction
-is the accepted failure mode: a namespace consumer that happens to
-read only non-swapped members is still rejected, because per-member
-usage is not analyzed.
+Per-symbol partial swaps rewrite two consumer shapes — named
+`ImportDecl` specifiers and `export { x } from "<chunk>"` re-exports
+of swapped names (`kind: named` / `default` / `namespace`) — at two
+application sites driven by the same `VendorResolutionPlan` oracle:
+lowering's import construction for materialized module bodies, and
+the pass-through emission rewriter for files emitted without
+lowering. Shapes with no live rewrite — `import * as M` namespace
+imports of the chunk, `export *` from the chunk, re-exports of
+`kind: member` symbols or bundled-swap symbols, and any rewrite-needing
+consumer inside a hands-off `suppress`-marked chunk — are rejected by
+the **plan-time consumer gate**
+(`vendor/plan.rs::validate_consumer_shapes`) before any output is
+written.
+
+A second, post-strip scan (`validate_partial_swap_consumers` in
+<../vendor/mod.rs>) re-checks every retained file of the
+post-materialize artifact and bails on any surviving reference to the
+stripped export surface. It is load-bearing, not a redundant
+tripwire: lowering can synthesize consumer directives inside
+materialized module bodies (`BindingKind::Imported` re-export
+imports, `export … from` re-exports in moved bodies) that have no
+live rewrite at the construction site and that the plan-time gate —
+which enumerates input-space directives — cannot see. Retiring it
+requires construction-site coverage plus fixtures first (see
+ARCHITECTURE_BACKLOG.md "Post-strip consumer scan retirement
+condition").
+
+Over-restriction is the accepted failure mode for both gates: a
+namespace consumer that happens to read only non-swapped members is
+still rejected, because per-member usage is not analyzed.
 
 ### Deliberate split-brain bypasses in the strip pass
 
@@ -3582,9 +3613,9 @@ Primary:
 
 Secondary:
 
-- <vendor/>, <rewrite_specifiers.rs>, <emit_harness.rs>,
-  <write_tree.rs>, <identifier_rename_queue.rs> — supporting
-  transforms and side-output producers.
+- <vendor/>, <emit_harness.rs>, <write_tree.rs>,
+  <identifier_rename_queue.rs> — supporting transforms and
+  side-output producers.
 
 Tracking:
 

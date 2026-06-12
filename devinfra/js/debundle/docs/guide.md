@@ -645,7 +645,7 @@ Typical debundle outputs include:
 - executable JS under `app/`
 - root reports under `reports/`: `output.json`, `chunks.json`,
   `runtime.json`, `source_assets.json`, `provenance.json`,
-  `rename_queue.json`, `vendor_swaps.json` when those stages run
+  `rename_queue.json`, `vendor_swaps.json` when those outputs are configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
   `modules.json`, `owner_graph.json`
 - `reports/tree/<chunk-id>/cycles.json` or

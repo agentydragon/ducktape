@@ -1,5 +1,59 @@
 # Vendor-into-emission: collapsing the vendor waves into plan/emit
 
+> **TOMBSTONE (2026-06-12): completed.** All six PRs landed — #2110
+> (this design), #2112 (PR 1: `vendor/validate.rs` extraction + typed
+> `ChunkId`), #2119 (PR 2: `VendorResolutionPlan` computed once
+> post-prepare; manifests become plan projections), #2123 (PR 3:
+> lowering constructs vendor-swap imports for materialized module
+> bodies), #2127 (PR 4: unified pass-through directive rewriter +
+> plan-time consumer gate; `rewrite_specifiers.rs` deleted), #2129
+> (PR 5: full swap → emission-set exclusion; strip → vendor emission as
+> one function body), and the PR 6 close-out. The pipeline body is
+> load → prepare → classify/plan → materialize → emission rewrites →
+> emit → reports; vendor contributes zero mutation waves. docs/design.md
+> ("Pipeline trajectory", "Vendor chunk swapping") describes the landed
+> shape. The §4 next trajectory step — materialize-into-emit — is filed
+> in ARCHITECTURE_BACKLOG.md. The body below is retained as design
+> history only.
+>
+> Open-question resolutions:
+>
+> 1. **`ImportTarget` placement** — landed per recommendation as a
+>    planner-boundary enum, narrower still than the sketch:
+>    `lowering/vendor_imports.rs::ImportTarget` is lowering-local and
+>    even the `Module(ModuleId)` variant is deferred until a list
+>    actually mixes module and external targets. `ModuleId` untouched.
+> 2. **External import ordering inside module files** — accepted as
+>    designed: package imports join the runtime re-import block; entry /
+>    pass-through directives are rewritten in position. Pinned by the
+>    bundled-swap runtime fixture.
+> 3. **Suppress-level byte-compat** — resolved per recommendation:
+>    suppress-marked chunks skip the emission rewriter wholesale
+>    (`vendor/passthrough.rs`), making the documented "hands-off"
+>    contract true; the plan-time consumer gate rejects suppress files
+>    whose imports would have needed rewriting.
+> 4. **Retiring the post-emission consumer scan** — **the escape clause
+>    fired; the scan stays.** The #2062 fixtures all fail at plan time
+>    (they are pass-through consumers), but §3.2's "coverage is equal by
+>    construction" claim is corrected: the scan covers a class the
+>    plan-time gate's input-space enumeration cannot see — consumer
+>    directives lowering synthesizes inside materialized module bodies
+>    (`BindingKind::Imported` re-export imports in `lowering/lower.rs`,
+>    `export … from` re-exports in moved bodies), which have no live
+>    rewrite at the construction site. `validate_partial_swap_consumers`
+>    is therefore retained as load-bearing coverage, not a differential
+>    tripwire; the retirement condition (construction-site coverage +
+>    fixtures) is filed in ARCHITECTURE_BACKLOG.md.
+> 5. **Strip's local re-analysis** — kept as designed: the residual
+>    computation re-runs `analyze_chunk` on the post-self-rewrite
+>    module; the manifest-facts rule governs input-space facts only.
+> 6. **`references_rewritten` drift** — no drift to adjudicate: the
+>    PR 3 parity fixture pinned count equality across the application
+>    sites; the field keeps counting emitted references.
+>
+> `validate_emitted_exports` is kept per the §3.3 ruling, re-pointed at
+> the emission set in PR 5 (it skips excluded full-swap chunks).
+
 Design for Track C of `plans/sanitization_program_2026_06.md` — the last
 genuinely unnatural pipeline ordering: vendor operations braided around
 materialization (full swaps before, partial swaps + strip after), three

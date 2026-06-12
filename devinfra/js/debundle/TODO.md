@@ -42,7 +42,7 @@ Not the round-trip minimum — the spec should exercise realistic-ish
 module extraction and rename paths, the same shape a private-corpus
 spec runs. Concretely:
 
-- `apply_vendor_annotations` + `swap_vendor_chunks` over a couple of
+- `vendor` marks with `level: swap` over a couple of
   Excalidraw's actual vendor chunks (React, Roughjs, Pointers, etc.)
   so vendor-swap edge cases (`named_from_default`,
   `named_from_module_default`, default-only, JSON-default) get covered
@@ -56,9 +56,9 @@ spec runs. Concretely:
 - A small set of `logical_modules` rename entries on identifiers
   visible in the compiled output. Goal: exercise the rename pipeline
   at realistic aggressiveness.
-- `emit_browser_harness`, relying on the always-on
-  `rewrite_chunk_entry_specifiers` transform, so the output is a
-  runnable app the live proxy can serve.
+- `emit_browser_harness`, relying on the always-on emission-time
+  specifier canonicalization, so the output is a runnable app the
+  live proxy can serve.
 
 The exact module list / rename list is part of the implementation —
 pick stable shapes that are unlikely to drift wildly when Excalidraw
