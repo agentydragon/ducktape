@@ -351,7 +351,15 @@ apt.install(
     lock = "//loom/gym:bookworm_loom_gym_eval.lock.json",
     manifest = "//loom/gym:bookworm_loom_gym_eval.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_jwt_rotation")
+
+# wayback archive service: libssl + CA bundle on debian:trixie-slim for the
+# Rust runtime image.
+apt.install(
+    name = "trixie_wayback_archive",
+    lock = "//loom/wayback_archive:trixie_wayback_archive.lock.json",
+    manifest = "//loom/wayback_archive:trixie_wayback_archive.yaml",
+)
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_jwt_rotation", "trixie_wayback_archive")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

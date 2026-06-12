@@ -2,6 +2,12 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "trixie_wayback_archive.yaml",
+    "trixie_wayback_archive.lock.json",
+])
+
 rust_library(
     name = "wayback_archive_lib",
     srcs = [
@@ -56,10 +62,13 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = ["/usr/local/bin/wayback_archive"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
+    tars = [
+        "@trixie_wayback_archive//:flat",
+        ":binary_layer",
+    ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
