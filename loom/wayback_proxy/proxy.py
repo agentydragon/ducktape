@@ -19,18 +19,20 @@ the gym scorer reads it out of the sandbox per sample).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TextIO
 
 import aiohttp
-from multidict import CIMultiDictProxy
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from yarl import URL
 
@@ -63,6 +65,14 @@ class ClampViolationError(Exception):
 
 class UpstreamError(Exception):
     """Archive/cache failed in an unexpected way → HTTP 502."""
+
+
+class UpstreamUnavailableError(UpstreamError):
+    """Archive/cache asked us to retry later → HTTP 503 if retry budget is exhausted."""
+
+    def __init__(self, message: str, retry_after: float) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 def pad_ts(ts: str) -> str:
@@ -175,6 +185,8 @@ class Config:
     # Base URL for /wayback/available. If None, direct web.archive.org upstreams
     # use archive.org; custom/cache upstreams use the same base as `upstream`.
     availability_upstream: str | None = None
+    upstream_retry_max_wait_seconds: float = 60.0
+    upstream_retry_max_attempts: int = 3
 
     @classmethod
     def from_env(cls) -> Config:
@@ -197,6 +209,8 @@ class Config:
                 if availability_env
                 else (upstream if upstream_env else f"https://{AVAILABILITY_HOST}")
             ),
+            upstream_retry_max_wait_seconds=float(os.environ.get("WAYBACK_UPSTREAM_RETRY_MAX_WAIT_SECONDS", "60")),
+            upstream_retry_max_attempts=int(os.environ.get("WAYBACK_UPSTREAM_RETRY_MAX_ATTEMPTS", "3")),
         )
 
     @property
@@ -237,6 +251,14 @@ class ProxyResponse:
 
     status: int
     headers: dict[str, str]
+    body: bytes
+
+
+@dataclass(frozen=True)
+class UpstreamFetch:
+    url: str
+    status: int
+    headers: Mapping[str, str]
     body: bytes
 
 
@@ -287,16 +309,18 @@ class WaybackResolver:
         params["to"] = (
             min(requested_to.ljust(14, "9"), self._config.as_of_ts) if requested_to else self._config.as_of_ts
         )
-        async with self._session.get(
-            URL(self._config.upstream + CDX_PATH), params=params, headers=self._auth_headers_for(self._config.upstream)
-        ) as response:
-            body = await response.content.read(MAX_BODY_BYTES)
-            if response.status != 200:
-                self._emit_upstream_error(str(response.url), response.status, body, response.headers)
-                raise UpstreamError(f"CDX query failed with HTTP {response.status}")
-            return ProxyResponse(
-                status=200, headers={"Content-Type": response.headers.get("Content-Type", "text/plain")}, body=body
-            )
+        response = await self._get_with_retry_after(
+            URL(self._config.upstream + CDX_PATH),
+            params=params,
+            headers=self._auth_headers_for(self._config.upstream),
+            read_limit=MAX_BODY_BYTES,
+        )
+        if response.status != 200:
+            self._emit_upstream_error(response.url, response.status, response.body, response.headers)
+            raise UpstreamError(f"CDX query failed with HTTP {response.status}")
+        return ProxyResponse(
+            status=200, headers={"Content-Type": response.headers.get("Content-Type", "text/plain")}, body=response.body
+        )
 
     async def _resolve_capture(self, target: URL) -> tuple[str, str]:
         """Newest (timestamp, original URL) capture of `target` at or before as_of."""
@@ -307,14 +331,18 @@ class WaybackResolver:
     async def _resolve_capture_via_availability(self, target: URL) -> tuple[str, str] | None:
         params = {"url": str(target), "timestamp": self._config.as_of_ts}
         availability_base = self._config.availability_base
-        async with self._session.get(
-            URL(availability_base + AVAILABILITY_PATH), params=params, headers=self._auth_headers_for(availability_base)
-        ) as response:
-            if response.status != 200:
-                body = await response.content.read(MAX_ERROR_BODY_BYTES)
-                self._emit_upstream_error(str(response.url), response.status, body, response.headers)
-                raise UpstreamError(f"Availability lookup failed with HTTP {response.status}")
-            raw = await response.content.read(MAX_BODY_BYTES)
+        response = await self._get_with_retry_after(
+            URL(availability_base + AVAILABILITY_PATH),
+            params=params,
+            headers=self._auth_headers_for(availability_base),
+            read_limit=MAX_BODY_BYTES,
+        )
+        if response.status != 200:
+            self._emit_upstream_error(
+                response.url, response.status, response.body[:MAX_ERROR_BODY_BYTES], response.headers
+            )
+            raise UpstreamError(f"Availability lookup failed with HTTP {response.status}")
+        raw = response.body
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as e:
@@ -324,18 +352,18 @@ class WaybackResolver:
     async def _resolve_capture_via_cdx(self, target: URL) -> tuple[str, str]:
         """CDX fallback for unavailable/future Availability answers and archived non-200 captures."""
         params = {"url": str(target), "to": self._config.as_of_ts, "output": "json", "limit": "-1"}
-        async with self._session.get(
-            URL(self._config.upstream + CDX_PATH), params=params, headers=self._auth_headers_for(self._config.upstream)
-        ) as response:
-            if response.status != 200:
-                self._emit_upstream_error(
-                    str(response.url),
-                    response.status,
-                    await response.content.read(MAX_ERROR_BODY_BYTES),
-                    response.headers,
-                )
-                raise UpstreamError(f"CDX lookup failed with HTTP {response.status}")
-            raw = await response.content.read(MAX_BODY_BYTES)
+        response = await self._get_with_retry_after(
+            URL(self._config.upstream + CDX_PATH),
+            params=params,
+            headers=self._auth_headers_for(self._config.upstream),
+            read_limit=MAX_BODY_BYTES,
+        )
+        if response.status != 200:
+            self._emit_upstream_error(
+                response.url, response.status, response.body[:MAX_ERROR_BODY_BYTES], response.headers
+            )
+            raise UpstreamError(f"CDX lookup failed with HTTP {response.status}")
+        raw = response.body
         if not raw.strip():
             raise NoCaptureError(f"no archived capture of {target} at or before {self._config.as_of}")
         try:
@@ -365,41 +393,41 @@ class WaybackResolver:
         final_ts = ts
         for _ in range(MAX_REDIRECT_HOPS):
             headers = {"Accept-Encoding": "identity", **self._auth_headers_for(self._config.upstream)}
-            async with self._session.get(current, allow_redirects=False, headers=headers) as response:
-                if response.status in (301, 302, 303, 307, 308):
-                    location = response.headers.get("Location")
-                    if location is None:
-                        raise UpstreamError(f"redirect without Location from {current}")
-                    next_url = current.join(URL(location, encoded=True))
-                    on_archive = next_url.host in (ARCHIVE_HOST, self._config.upstream_host)
-                    if on_archive and (parsed := parse_web_path(next_url.raw_path_qs)) is not None:
-                        hop_ts, _, _ = parsed
-                        if not ts_allowed(hop_ts, self._config.as_of_ts):
-                            raise ClampViolationError(
-                                f"archive redirected to capture {hop_ts}, after as_of {self._config.as_of}"
-                            )
-                        final_ts = hop_ts
-                        # Re-anchor on the configured upstream so redirect
-                        # targets are also fetched through the shared cache.
-                        current = URL(self._config.upstream + next_url.raw_path_qs, encoded=True)
-                        continue
-                    # Captured live-web redirect: hand it to the client as-is so
-                    # the follow-up request re-enters this proxy. HTTPS stays
-                    # https now that the proxy MITMs TLS — no http downgrade.
-                    return Snapshot(
-                        ts=final_ts, status=response.status, content_type="", body=b"", location=str(next_url)
-                    )
-                body = await response.content.read(MAX_BODY_BYTES + 1)
-                if len(body) > MAX_BODY_BYTES:
-                    raise UpstreamError(f"capture body exceeds {MAX_BODY_BYTES} bytes")
-                # Replayed captures carry Memento-Datetime — even archived
-                # 404s/500s (which are correct as-of content). Error statuses
-                # without it are the archive/cache itself failing.
-                if response.status >= 400 and "Memento-Datetime" not in response.headers:
-                    self._emit_upstream_error(str(response.url), response.status, body, response.headers)
-                    raise UpstreamError(f"archive upstream returned HTTP {response.status} for {current}")
-                content_type = response.headers.get("Content-Type", "application/octet-stream")
-                return Snapshot(ts=final_ts, status=response.status, content_type=content_type, body=body)
+            response = await self._get_with_retry_after(
+                current, allow_redirects=False, headers=headers, read_limit=MAX_BODY_BYTES + 1
+            )
+            if response.status in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                if location is None:
+                    raise UpstreamError(f"redirect without Location from {current}")
+                next_url = current.join(URL(location, encoded=True))
+                on_archive = next_url.host in (ARCHIVE_HOST, self._config.upstream_host)
+                if on_archive and (parsed := parse_web_path(next_url.raw_path_qs)) is not None:
+                    hop_ts, _, _ = parsed
+                    if not ts_allowed(hop_ts, self._config.as_of_ts):
+                        raise ClampViolationError(
+                            f"archive redirected to capture {hop_ts}, after as_of {self._config.as_of}"
+                        )
+                    final_ts = hop_ts
+                    # Re-anchor on the configured upstream so redirect
+                    # targets are also fetched through the shared cache.
+                    current = URL(self._config.upstream + next_url.raw_path_qs, encoded=True)
+                    continue
+                # Captured live-web redirect: hand it to the client as-is so
+                # the follow-up request re-enters this proxy. HTTPS stays
+                # https now that the proxy MITMs TLS — no http downgrade.
+                return Snapshot(ts=final_ts, status=response.status, content_type="", body=b"", location=str(next_url))
+            body = response.body
+            if len(body) > MAX_BODY_BYTES:
+                raise UpstreamError(f"capture body exceeds {MAX_BODY_BYTES} bytes")
+            # Replayed captures carry Memento-Datetime — even archived
+            # 404s/500s (which are correct as-of content). Error statuses
+            # without it are the archive/cache itself failing.
+            if response.status >= 400 and "Memento-Datetime" not in response.headers:
+                self._emit_upstream_error(response.url, response.status, body, response.headers)
+                raise UpstreamError(f"archive upstream returned HTTP {response.status} for {current}")
+            content_type = response.headers.get("Content-Type", "application/octet-stream")
+            return Snapshot(ts=final_ts, status=response.status, content_type=content_type, body=body)
         raise UpstreamError(f"redirect chain exceeded {MAX_REDIRECT_HOPS} hops for {url}")
 
     def _respond(self, served_url: str, snapshot: Snapshot) -> ProxyResponse:
@@ -429,8 +457,43 @@ class WaybackResolver:
             return {"Authorization": self._config.upstream_auth}
         return {}
 
+    async def _get_with_retry_after(
+        self,
+        url: URL,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+        allow_redirects: bool = True,
+        read_limit: int,
+    ) -> UpstreamFetch:
+        deadline = asyncio.get_running_loop().time() + self._config.upstream_retry_max_wait_seconds
+        attempt = 0
+        while True:
+            attempt += 1
+            async with self._session.get(
+                url, params=params, headers=headers, allow_redirects=allow_redirects
+            ) as response:
+                body = await response.content.read(read_limit)
+                fetch = UpstreamFetch(
+                    url=str(response.url), status=response.status, headers=response.headers.copy(), body=body
+                )
+
+            retry_after = _parse_retry_after(fetch.headers.get("Retry-After"))
+            if fetch.status != 503 or retry_after is None:
+                return fetch
+
+            self._emit_upstream_error(fetch.url, fetch.status, fetch.body[:MAX_ERROR_BODY_BYTES], fetch.headers)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if attempt >= self._config.upstream_retry_max_attempts or retry_after > remaining:
+                raise UpstreamUnavailableError(
+                    f"archive upstream returned HTTP 503 with Retry-After={retry_after:g}s for {url}",
+                    retry_after=max(0.0, retry_after),
+                )
+            logger.info("archive upstream asked for retry after %.3fs: %s", retry_after, fetch.url)
+            await asyncio.sleep(retry_after)
+
     def _emit_upstream_error(
-        self, request_url: str, status: int, body: bytes, headers: CIMultiDictProxy[str] | None = None
+        self, request_url: str, status: int, body: bytes, headers: Mapping[str, str] | None = None
     ) -> None:
         """Upstream-failure record: archive/cache returned HTTP ≥400 unexpectedly
         (an IA bad gateway or a rate-limit notice, not an archived error page).
@@ -452,3 +515,19 @@ class WaybackResolver:
                 record["headers"] = signal_headers
         line = json.dumps(record)
         print(line, file=self._manifest, flush=True)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(0.0, (parsed - datetime.now(UTC)).total_seconds())

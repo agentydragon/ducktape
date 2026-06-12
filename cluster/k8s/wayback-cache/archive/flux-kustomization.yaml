@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: wayback-archive
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/wayback-cache/archive
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: wayback-archive
+      namespace: wayback-cache
+  dependsOn:
+    - name: wayback-cache
+    - name: wayback-archive-db
+    - name: seaweedfs-wayback-archive-bucket
+    - name: seaweedfs-secrets
+    - name: reflector
+    - name: flux-image-automation-ghcr
+    - name: monitoring-stack

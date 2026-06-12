@@ -131,6 +131,11 @@ jobs:
           # Wayback MITM proxy sidecar: the in-cluster eval driver pulls this from
           # GHCR and tags it wayback-proxy:latest into the docker-ci daemon.
           - { image: "//loom/wayback_proxy:image", image_name: wayback-proxy, test_target: "//loom/wayback_proxy/..." }
+          - {
+              image: "//loom/wayback_archive:image",
+              image_name: wayback-archive,
+              test_target: "//loom/wayback_archive:wayback_archive_test",
+            }
           # Untested images: always-push if content changed. Explicit
           # `test_target: ""` so the `matrix.test_target != ''` check on
           # the test step evaluates the same as on test-gated rows —

@@ -15,11 +15,18 @@ the proxy is the only egress and it only ever speaks the archive.
 from __future__ import annotations
 
 import logging
+import math
 
 from mitmproxy import http
 from yarl import URL
 
-from loom.wayback_proxy.proxy import ClampViolationError, NoCaptureError, UpstreamError, WaybackResolver
+from loom.wayback_proxy.proxy import (
+    ClampViolationError,
+    NoCaptureError,
+    UpstreamError,
+    UpstreamUnavailableError,
+    WaybackResolver,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +39,11 @@ _TEXT = "text/plain; charset=utf-8"
 
 def _text_response(status: int, message: str) -> http.Response:
     return http.Response.make(status, f"{message}\n".encode(), {"content-type": _TEXT})
+
+
+def _retry_after_response(message: str, retry_after: float) -> http.Response:
+    retry_after_seconds = str(max(0, math.ceil(retry_after)))
+    return http.Response.make(503, f"{message}\n".encode(), {"content-type": _TEXT, "retry-after": retry_after_seconds})
 
 
 class WaybackAddon:
@@ -50,6 +62,9 @@ class WaybackAddon:
             flow.response = _text_response(404, str(e))
         except ClampViolationError as e:
             flow.response = _text_response(403, str(e))
+        except UpstreamUnavailableError as e:
+            logger.warning("upstream unavailable for %s: %s", target, e)
+            flow.response = _retry_after_response(str(e), e.retry_after)
         except UpstreamError as e:
             logger.warning("upstream error for %s: %s", target, e)
             flow.response = _text_response(502, str(e))

@@ -84,6 +84,7 @@ proptest = "^1.6.0"
 # tana/firebase_session_extractor
 rusty-leveldb = "^4.0.1"
 v8_valueserializer = "^0.1.2"
+prometheus = "^0.13.4"
 
 [[bin]]
 name = "ducktape_fake"

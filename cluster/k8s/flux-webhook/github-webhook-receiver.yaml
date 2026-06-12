@@ -97,6 +97,9 @@ spec:
       name: study-casino
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: wayback-archive
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: tana-firebase-resigner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

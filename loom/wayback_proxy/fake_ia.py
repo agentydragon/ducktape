@@ -72,6 +72,11 @@ CDX_BROKEN_URL = "http://cdx-broken.example/"
 CDX_FAILS_BUT_AVAILABLE_URL = "http://available-only.example/"
 CDX_FAILS_BUT_AVAILABLE_BODY = b"served without touching cdx\n"
 
+# Replay returns a cache-style 503 + Retry-After once, then succeeds. Exercises
+# proxy-side Retry-After honoring without making tests sleep.
+REPLAY_RETRY_AFTER_ONCE_URL = "http://retry-after-once.example/"
+REPLAY_RETRY_AFTER_ONCE_BODY = b"served after retry-after\n"
+
 
 @dataclass(frozen=True)
 class Replay:
@@ -90,6 +95,7 @@ CDX_CAPTURES: dict[str, list[tuple[str, str]]] = {
     MOVED_URL: [(GOOD_TS, MOVED_URL)],
     GONE_URL: [(GOOD_TS, GONE_URL)],
     CDX_FAILS_BUT_AVAILABLE_URL: [(GOOD_TS, CDX_FAILS_BUT_AVAILABLE_URL)],
+    REPLAY_RETRY_AFTER_ONCE_URL: [(GOOD_TS, REPLAY_RETRY_AFTER_ONCE_URL)],
 }
 
 # Replay table: (timestamp, original URL) -> response.
@@ -103,7 +109,10 @@ REPLAYS: dict[tuple[str, str], Replay] = {
     (GOOD_TS, MOVED_URL): Replay(redirect_to=MOVED_TARGET),
     (GOOD_TS, GONE_URL): Replay(status=404, body=GONE_BODY),
     (GOOD_TS, CDX_FAILS_BUT_AVAILABLE_URL): Replay(body=CDX_FAILS_BUT_AVAILABLE_BODY),
+    (GOOD_TS, REPLAY_RETRY_AFTER_ONCE_URL): Replay(body=REPLAY_RETRY_AFTER_ONCE_BODY),
 }
+
+REPLAY_RETRY_AFTER_COUNTS: dict[tuple[str, str], int] = {}
 
 
 def _scheme_insensitive_key(url: str) -> str:
@@ -180,6 +189,12 @@ async def handle(request: web.BaseRequest) -> web.StreamResponse:
         return _cdx_response(request)
     if (match := _WEB_RE.match(raw_path)) is not None:
         ts, _modifier, inner = match.groups()
+        if (ts, inner) == (GOOD_TS, REPLAY_RETRY_AFTER_ONCE_URL):
+            key = (ts, inner)
+            count = REPLAY_RETRY_AFTER_COUNTS.get(key, 0)
+            REPLAY_RETRY_AFTER_COUNTS[key] = count + 1
+            if count == 0:
+                return web.Response(status=503, text="archive shard busy\n", headers={"Retry-After": "0"})
         replay = REPLAYS.get((ts, inner))
         if replay is None:
             return web.Response(status=404, text="snapshot not found\n")  # IA-level miss: no Memento header
@@ -193,6 +208,7 @@ async def handle(request: web.BaseRequest) -> web.StreamResponse:
 
 async def start(port: int = 0, host: str = "127.0.0.1") -> web.ServerRunner:
     """Start the fake; bound port is in runner.addresses."""
+    REPLAY_RETRY_AFTER_COUNTS.clear()
     runner = web.ServerRunner(web.Server(handle))
     await runner.setup()
     await web.TCPSite(runner, host, port).start()

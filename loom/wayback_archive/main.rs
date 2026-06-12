@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::{OriginalUri, State};
-use axum::http::{HeaderName, HeaderValue, Response, StatusCode};
+use axum::http::{HeaderName, HeaderValue, Response, StatusCode, header};
 use axum::{Router, routing::get};
 use log::info;
 use wayback_archive::{
@@ -76,6 +76,8 @@ async fn main() -> Result<()> {
     );
     let app = Router::new()
         .route("/healthz", get(|| async { "ok\n" }))
+        .route("/readyz", get(|| async { "ok\n" }))
+        .route("/metrics", get(metrics))
         .fallback(handle)
         .with_state(service);
     let address = SocketAddr::from(([0, 0, 0, 0], port));
@@ -90,6 +92,24 @@ async fn handle(
     OriginalUri(uri): OriginalUri,
 ) -> Response<Body> {
     into_axum_response(service.handle_request(uri.path(), uri.query()).await)
+}
+
+async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<Body> {
+    match service.metrics().await {
+        Ok(metrics) => Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                "text/plain; version=0.0.4; charset=utf-8",
+            )
+            .body(Body::from(metrics))
+            .expect("response construction should not fail"),
+        Err(error) => Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(Body::from(format!("metrics encoding failed: {error}\n")))
+            .expect("response construction should not fail"),
+    }
 }
 
 fn into_axum_response(response: ArchiveResponse) -> Response<Body> {

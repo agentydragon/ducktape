@@ -10,6 +10,7 @@ use http::{HeaderMap, StatusCode};
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt, PutPayload};
+use prometheus::{Encoder, GaugeVec, Opts, Registry, TextEncoder};
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -164,6 +165,10 @@ impl ArchiveResponse {
     }
 
     fn retry_after(endpoint: Endpoint) -> Self {
+        Self::retry_after_duration(endpoint, None)
+    }
+
+    fn retry_after_duration(endpoint: Endpoint, duration: Option<Duration>) -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE.as_u16(),
             headers: vec![
@@ -173,7 +178,9 @@ impl ArchiveResponse {
                 ),
                 (
                     "retry-after".to_string(),
-                    endpoint.retry_after_seconds().to_string(),
+                    retry_after_seconds(duration)
+                        .unwrap_or_else(|| endpoint.retry_after_seconds())
+                        .to_string(),
                 ),
             ],
             body: Bytes::from("archive acquisition is backing off\n"),
@@ -857,6 +864,15 @@ struct LimiterState {
     events: VecDeque<LimiterEvent>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimiterSnapshot {
+    pub current_limit: usize,
+    pub in_flight: usize,
+    pub backoff_seconds: Option<u64>,
+    pub recent_events: usize,
+    pub recent_failures: usize,
+}
+
 #[derive(Debug)]
 pub struct AdaptiveLimiter {
     config: LimiterConfig,
@@ -900,6 +916,17 @@ impl AdaptiveLimiter {
                 return false;
             }
         }
+    }
+
+    pub async fn retry_after(&self) -> Option<Duration> {
+        let mut state = self.state.lock().await;
+        let now = Instant::now();
+        if state.backoff_until.is_some_and(|until| until <= now) {
+            state.backoff_until = None;
+        }
+        state
+            .backoff_until
+            .and_then(|until| until.checked_duration_since(now))
     }
 
     pub async fn record(&self, outcome: AcquisitionOutcome) {
@@ -952,6 +979,31 @@ impl AdaptiveLimiter {
 
     pub async fn current_limit(&self) -> usize {
         self.state.lock().await.current_limit
+    }
+
+    pub async fn snapshot(&self) -> LimiterSnapshot {
+        let mut state = self.state.lock().await;
+        let now = Instant::now();
+        if state.backoff_until.is_some_and(|until| until <= now) {
+            state.backoff_until = None;
+        }
+        while state
+            .events
+            .front()
+            .is_some_and(|event| now.duration_since(event.at) > HEALTH_WINDOW)
+        {
+            state.events.pop_front();
+        }
+        LimiterSnapshot {
+            current_limit: state.current_limit,
+            in_flight: state.in_flight,
+            backoff_seconds: state
+                .backoff_until
+                .and_then(|until| until.checked_duration_since(now))
+                .and_then(|duration| retry_after_seconds(Some(duration))),
+            recent_events: state.events.len(),
+            recent_failures: state.events.iter().filter(|event| event.failed).count(),
+        }
     }
 }
 
@@ -1048,6 +1100,79 @@ impl ArchiveService {
             );
         };
         self.handle_replay(key).await
+    }
+
+    pub async fn metrics(&self) -> Result<String> {
+        let registry = Registry::new();
+        let limit = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_limit",
+                "Current adaptive concurrency limit.",
+            ),
+            &["endpoint"],
+        )?;
+        let in_flight = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_in_flight",
+                "Current in-flight IA acquisitions.",
+            ),
+            &["endpoint"],
+        )?;
+        let backoff_seconds = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_backoff_seconds",
+                "Remaining endpoint backoff seconds.",
+            ),
+            &["endpoint"],
+        )?;
+        let recent_events = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_recent_events",
+                "Recent limiter health samples.",
+            ),
+            &["endpoint"],
+        )?;
+        let recent_failures = GaugeVec::new(
+            Opts::new(
+                "wayback_archive_limiter_recent_failures",
+                "Recent limiter failure samples.",
+            ),
+            &["endpoint"],
+        )?;
+
+        for (endpoint, limiter) in [
+            (Endpoint::Availability, self.availability_limiter.clone()),
+            (Endpoint::Cdx, self.cdx_limiter.clone()),
+            (Endpoint::Replay, self.replay_limiter.clone()),
+        ] {
+            let snapshot = limiter.snapshot().await;
+            let labels = &[endpoint.as_str()];
+            limit
+                .with_label_values(labels)
+                .set(snapshot.current_limit as f64);
+            in_flight
+                .with_label_values(labels)
+                .set(snapshot.in_flight as f64);
+            backoff_seconds
+                .with_label_values(labels)
+                .set(snapshot.backoff_seconds.unwrap_or(0) as f64);
+            recent_events
+                .with_label_values(labels)
+                .set(snapshot.recent_events as f64);
+            recent_failures
+                .with_label_values(labels)
+                .set(snapshot.recent_failures as f64);
+        }
+
+        registry.register(Box::new(limit))?;
+        registry.register(Box::new(in_flight))?;
+        registry.register(Box::new(backoff_seconds))?;
+        registry.register(Box::new(recent_events))?;
+        registry.register(Box::new(recent_failures))?;
+
+        let mut output = Vec::new();
+        TextEncoder::new().encode(&registry.gather(), &mut output)?;
+        String::from_utf8(output).context("prometheus text encoder emitted invalid UTF-8")
     }
 
     pub async fn handle_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
@@ -1173,7 +1298,10 @@ impl ArchiveService {
     async fn fill_metadata(&self, request: MetadataRequest) -> ArchiveResponse {
         let limiter = self.metadata_limiter(request.key.endpoint);
         if !limiter.acquire().await {
-            return ArchiveResponse::retry_after(request.key.endpoint);
+            return ArchiveResponse::retry_after_duration(
+                request.key.endpoint,
+                limiter.retry_after().await,
+            );
         }
         let upstream = self
             .client
@@ -1195,14 +1323,15 @@ impl ArchiveService {
                 stored_metadata_response(metadata)
             }
             Ok(response) if is_transient_metadata_failure(&response) => {
+                let retry_after = retry_after_duration(&response.headers);
                 limiter
                     .record(
-                        retry_after_duration(&response.headers)
+                        retry_after
                             .map(AcquisitionOutcome::RetryAfter)
                             .unwrap_or(AcquisitionOutcome::TransientFailure),
                     )
                     .await;
-                ArchiveResponse::retry_after(request.key.endpoint)
+                ArchiveResponse::retry_after_duration(request.key.endpoint, retry_after)
             }
             Ok(response) => {
                 limiter.record(AcquisitionOutcome::Healthy).await;
@@ -1232,7 +1361,10 @@ impl ArchiveService {
 
     async fn fill_replay(&self, key: ReplayKey) -> ArchiveResponse {
         if !self.replay_limiter.acquire().await {
-            return ArchiveResponse::retry_after(Endpoint::Replay);
+            return ArchiveResponse::retry_after_duration(
+                Endpoint::Replay,
+                self.replay_limiter.retry_after().await,
+            );
         }
         let upstream = self.client.fetch_replay(&key, self.max_body_bytes).await;
         match upstream {
@@ -1253,10 +1385,15 @@ impl ArchiveService {
                 stored_replay_response(replay)
             }
             Ok(response) if is_transient_replay_failure(&response) => {
+                let retry_after = retry_after_duration(&response.headers);
                 self.replay_limiter
-                    .record(AcquisitionOutcome::TransientFailure)
+                    .record(
+                        retry_after
+                            .map(AcquisitionOutcome::RetryAfter)
+                            .unwrap_or(AcquisitionOutcome::TransientFailure),
+                    )
                     .await;
-                ArchiveResponse::retry_after(Endpoint::Replay)
+                ArchiveResponse::retry_after_duration(Endpoint::Replay, retry_after)
             }
             Ok(response) => {
                 self.replay_limiter
@@ -1366,6 +1503,10 @@ fn retry_after_duration(headers: &HeaderMap) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
+fn retry_after_seconds(duration: Option<Duration>) -> Option<u64> {
+    duration.map(|duration| duration.as_secs() + u64::from(duration.subsec_nanos() > 0))
+}
+
 pub fn parse_metadata_request(path: &str, query: Option<&str>) -> Option<MetadataRequest> {
     let endpoint = match path {
         "/wayback/available" => Endpoint::Availability,
@@ -1427,6 +1568,14 @@ mod tests {
 
     fn header_value(value: &str) -> HeaderValue {
         HeaderValue::from_str(value).expect("test header value must be valid")
+    }
+
+    fn response_header(response: &ArchiveResponse, name: &str) -> Option<String> {
+        response
+            .headers
+            .iter()
+            .find(|(header_name, _)| header_name == name)
+            .map(|(_, value)| value.clone())
     }
 
     #[test]
@@ -1587,6 +1736,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn metadata_retry_after_is_propagated() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", header_value("7"));
+        let client = Arc::new(CountingClient::new(vec![UpstreamResponse {
+            status: 503,
+            headers,
+            body: Bytes::from_static(b"try later"),
+        }]));
+        let availability = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let cdx = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let replay = Arc::new(AdaptiveLimiter::new(LimiterConfig {
+            initial: 1,
+            min: 1,
+            max: 1,
+            queue_wait: Duration::from_millis(50),
+            failure_cooldown: Duration::from_millis(1),
+            severe_failure_cooldown: Duration::from_millis(1),
+        }));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client)
+            .with_endpoint_limiters(availability.clone(), cdx, replay, Duration::from_millis(50));
+
+        let response = service
+            .handle_request(
+                "/wayback/available",
+                Some("url=https://example.com/&timestamp=20200101000000"),
+            )
+            .await;
+
+        assert_eq!(response.status, 503);
+        assert_eq!(
+            response_header(&response, "retry-after").as_deref(),
+            Some("7")
+        );
+        assert!(availability.snapshot().await.backoff_seconds.is_some());
+        assert!(
+            service
+                .metrics()
+                .await
+                .unwrap()
+                .contains("wayback_archive_limiter_backoff_seconds{endpoint=\"availability\"}")
+        );
+    }
+
+    #[tokio::test]
     async fn oversized_metadata_is_stable_policy_result() {
         let client = Arc::new(CountingClient::ok_json(200, b"too big"));
         let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone())
@@ -1686,6 +1893,27 @@ mod tests {
         assert_eq!(second.status, 200);
         assert_eq!(second.body, Bytes::from_static(b"eventual success"));
         assert_eq!(client.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn replay_retry_after_is_propagated() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", header_value("11"));
+        let client = Arc::new(CountingClient::new(vec![UpstreamResponse {
+            status: 503,
+            headers,
+            body: Bytes::from_static(b"try later"),
+        }]));
+        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client);
+        let response = service
+            .handle_path("/web/20200115103000id_/https://example.com/")
+            .await;
+
+        assert_eq!(response.status, 503);
+        assert_eq!(
+            response_header(&response, "retry-after").as_deref(),
+            Some("11")
+        );
     }
 
     #[tokio::test]

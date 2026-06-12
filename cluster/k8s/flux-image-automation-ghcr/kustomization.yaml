@@ -57,3 +57,5 @@ resources:
   - rtl-tcp-image-policy.yaml
   - study-casino-image-repository.yaml
   - study-casino-image-policy.yaml
+  - wayback-archive-image-repository.yaml
+  - wayback-archive-image-policy.yaml

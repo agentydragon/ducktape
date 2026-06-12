@@ -299,6 +299,8 @@ resources:
   # --- wayback-cache ---
   - wayback-cache/flux-kustomization.yaml
   - wayback-cache/agent-rbac/flux-kustomization.yaml
+  - wayback-cache/db/flux-kustomization.yaml
+  - wayback-cache/archive/flux-kustomization.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml
@@ -344,6 +346,7 @@ resources:
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml
   - seaweedfs/langfuse-bucket/flux-kustomization.yaml
   - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
+  - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml

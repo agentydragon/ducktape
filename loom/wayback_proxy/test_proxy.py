@@ -113,6 +113,20 @@ async def test_normal_lookup_uses_availability_not_cdx(fetch: Fetch) -> None:
     assert result.headers["X-Wayback-Timestamp"] == fake_ia.GOOD_TS
 
 
+async def test_retry_after_503_is_waited_and_retried(fetch: Fetch, manifest: io.StringIO) -> None:
+    result = await fetch(fake_ia.REPLAY_RETRY_AFTER_ONCE_URL)
+    assert result.status == 200
+    assert result.body == fake_ia.REPLAY_RETRY_AFTER_ONCE_BODY
+    assert result.headers["X-Wayback-Timestamp"] == fake_ia.GOOD_TS
+    assert fake_ia.REPLAY_RETRY_AFTER_COUNTS[(fake_ia.GOOD_TS, fake_ia.REPLAY_RETRY_AFTER_ONCE_URL)] == 2
+
+    records = [json.loads(line) for line in manifest.getvalue().splitlines()]
+    assert records[0]["kind"] == "upstream_error"
+    assert records[0]["status"] == 503
+    assert records[0]["headers"]["retry-after"] == "0"
+    assert records[1]["kind"] == "served"
+
+
 async def test_manifest_records_served_evidence(fetch: Fetch, manifest: io.StringIO) -> None:
     await fetch(fake_ia.EXAMPLE_URL)
     record = json.loads(manifest.getvalue())

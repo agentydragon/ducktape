@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: wayback-archive
+  namespace: seaweedfs
+spec:
+  name: wayback-archive
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: wayback-archive
+      actions: [Read, Write, List, Tagging]
