@@ -89,8 +89,8 @@ bodies copied verbatim across modules (a duplication smell — route a worker to
 collapse them to one contextual selector), fragile name-only minified
 selectors, and — with `--against <prior-spec-modules>` — selectors whose
 minified binding drifted across a re-pin (candidates to re-express
-structurally). The architect surfaces these as findings; workers apply the
-edits.
+as structural AST-shaped selectors with holes/placeholders for volatile
+subtrees). The architect surfaces these as findings; workers apply the edits.
 
 ## Tree Shape Audit
 
