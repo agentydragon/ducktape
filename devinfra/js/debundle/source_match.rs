@@ -9,29 +9,30 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result, bail};
 use spec::{
     AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
-    SourceMatch, SourceMatchIdentifierMode,
+    SourceMatch, SourceMatchIdentifierMode, TargetStatements, TargetStatementsAll,
 };
 use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-/// Syntactic-hole keywords. The **bare keyword** is the anonymous form:
-/// it matches independently at every occurrence and never binds, so
-/// authors don't have to mint a unique name per throwaway placeholder. A
-/// `<keyword>_<name>` identifier is the **named** form, which binds for
-/// cross-occurrence equality — the same name must match the same
-/// subtree/statement everywhere it appears.
+/// Syntactic-hole keywords. For single-node holes, the **bare keyword**
+/// is the anonymous form: it matches independently at every occurrence
+/// and never binds, so authors don't have to mint a unique name per
+/// throwaway placeholder. A `<keyword>_<name>` identifier is the
+/// **named** form, which binds for cross-occurrence equality — the same
+/// name must match the same subtree/statement everywhere it appears.
 ///
 /// `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-/// statement. `STMT_LIST` and `CLASS_REST` are variable-length list holes
-/// (see [`AstWildcardMatcher::match_list_with_holes`]): `STMT_LIST`
-/// absorbs a run of block statements and `CLASS_REST` a run of class
-/// members; several may appear in one list, splitting the pinned
-/// elements into an ordered subsequence with gaps. `DECLARATORS`
-/// similarly absorbs a run of variable declarators inside one
-/// `var`/`let`/`const` declaration, so selectors can pin a few stable
-/// declarators without naming the unrelated siblings around them.
+/// statement. `ARGS`, `STMT_LIST`, `CLASS_REST`, and `DECLARATORS` are
+/// variable-length list holes (see
+/// [`AstWildcardMatcher::match_list_with_holes`]): `ARGS` absorbs a run
+/// of call/new arguments, `STMT_LIST` absorbs a run of block statements
+/// (or top-level anonymous selector statements), `CLASS_REST` absorbs a
+/// run of class members, and `DECLARATORS` absorbs a run of variable
+/// declarators inside one `var`/`let`/`const` declaration. List-hole
+/// suffixes are labels for readability; they do not bind the absorbed
+/// sequence for cross-occurrence equality.
 /// `STMT_LIST` must be checked before `STMT`, since `STMT` is a
 /// keyword-prefix of it.
 const EXPR_HOLE_KEYWORD: &str = "EXPR";
@@ -39,6 +40,7 @@ const STMT_HOLE_KEYWORD: &str = "STMT";
 const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
+const ARGS_HOLE_KEYWORD: &str = "ARGS";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -101,6 +103,12 @@ pub fn binding_group_member_selectors(
         bail!(
             "logical_module {request_id}: binding_groups[].source_match must not include \
              `target_statement`; use it only on anonymous_statements[].source_match"
+        );
+    }
+    if group.source_match.target_statements.is_some() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].source_match must not include \
+             `target_statements`; use it only on anonymous_statements[].source_match"
         );
     }
     let exports = effective_binding_group_exports(group, request_id)?;
@@ -224,17 +232,35 @@ pub fn resolve_anonymous_statement_body_index(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<usize> {
-    let matches = find_anonymous_statement_body_indices(runtime_module, request_id, selector)?;
+    let matches = resolve_anonymous_statement_body_indices(runtime_module, request_id, selector)?;
     match matches.as_slice() {
         [single] => Ok(*single),
+        multiple => bail!(
+            "logical_module {request_id}: anonymous_statements[].source_match resolved to {} \
+             top-level statements at body indices {:?}; expected exactly one. Use the plural \
+             resolver for selectors with `target_statements`.",
+            multiple.len(),
+            multiple,
+        ),
+    }
+}
+
+pub fn resolve_anonymous_statement_body_indices(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<usize>> {
+    let matches = find_anonymous_statement_body_index_groups(runtime_module, request_id, selector)?;
+    match matches.as_slice() {
+        [single] => Ok(single.clone()),
         [] => bail!(
             "logical_module {request_id}: anonymous_statements[].match did not match any \
-             top-level statement in the chunk. Selector:\n{match_source}",
+             top-level statement group in the chunk. Selector:\n{match_source}",
             match_source = selector.match_source,
         ),
         multiple => bail!(
             "logical_module {request_id}: anonymous_statements[].match is ambiguous — \
-             matched {} top-level statements at body indices {:?}. Refine the selector. \
+             matched {} top-level statement groups at body indices {:?}. Refine the selector. \
              Source:\n{match_source}",
             multiple.len(),
             multiple,
@@ -248,6 +274,19 @@ pub fn find_anonymous_statement_body_indices(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<usize>> {
+    Ok(
+        find_anonymous_statement_body_index_groups(runtime_module, request_id, selector)?
+            .into_iter()
+            .flatten()
+            .collect(),
+    )
+}
+
+pub fn find_anonymous_statement_body_index_groups(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<Vec<usize>>> {
     let parsed = js_ast::parse_js_module_ast(
         &format!("<anonymous_statement match in {request_id}>"),
         &selector.match_source,
@@ -258,48 +297,25 @@ pub fn find_anonymous_statement_body_indices(
             selector.match_source
         )
     })?;
-    let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
-    if let Some(target_statement) = selector.target_statement {
-        if parsed_items.is_empty() {
-            bail!(
-                "logical_module {request_id}: anonymous_statements[].source_match with \
-                 target_statement parsed to zero statements:\n{match_source}",
-                match_source = selector.match_source,
-            );
+    let target_indices =
+        anonymous_selector_target_statement_indices(request_id, selector, &parsed.body)?;
+    let mut groups = Vec::new();
+    for alignment in find_matching_body_group_alignments(runtime_module, &parsed.body, selector) {
+        let mut group = Vec::with_capacity(target_indices.len());
+        for target_idx in &target_indices {
+            let Some(Some(body_idx)) = alignment.get(*target_idx) else {
+                bail!(
+                    "logical_module {request_id}: anonymous_statements[].source_match \
+                     target statement {target_idx} was matched by a STMT_LIST hole instead \
+                     of a pinned selector statement. Refine the selector:\n{match_source}",
+                    match_source = selector.match_source,
+                );
+            };
+            group.push(*body_idx);
         }
-        if target_statement >= parsed_items.len() {
-            bail!(
-                "logical_module {request_id}: anonymous_statements[].source_match \
-                 target_statement {target_statement} is out of range for {} parsed \
-                 top-level statements:\n{match_source}",
-                parsed_items.len(),
-                match_source = selector.match_source,
-            );
-        }
-        return Ok(
-            find_matching_body_ranges(runtime_module, &parsed.body, selector)
-                .into_iter()
-                .map(|body_idx| body_idx + target_statement)
-                .collect(),
-        );
+        groups.push(group);
     }
-    let needle = match parsed_items.as_slice() {
-        [single] => *single,
-        [] => bail!(
-            "logical_module {request_id}: anonymous_statements[].match parsed to zero \
-             statements; selector source must contain exactly one top-level \
-             statement:\n{match_source}",
-            match_source = selector.match_source,
-        ),
-        _ => bail!(
-            "logical_module {request_id}: anonymous_statements[].match parsed to {} \
-             statements; selector source must contain exactly one top-level \
-             statement:\n{match_source}",
-            parsed_items.len(),
-            match_source = selector.match_source,
-        ),
-    };
-    Ok(find_matching_body_indices(runtime_module, needle, selector))
+    Ok(groups)
 }
 
 pub fn resolve_member_binding(
@@ -1118,6 +1134,214 @@ fn find_matching_body_ranges(
                 .then_some(body_idx)
         })
         .collect()
+}
+
+fn find_matching_body_group_alignments(
+    runtime_module: &Module,
+    needles: &[ModuleItem],
+    selector: &AnonymousStatementSelector,
+) -> Vec<Vec<Option<usize>>> {
+    if needles.is_empty() {
+        return Vec::new();
+    }
+    let mut segments: Vec<(usize, usize)> = Vec::new();
+    let mut idx = 0;
+    while idx < needles.len() {
+        if module_item_list_hole_name(&needles[idx]).is_some() {
+            idx += 1;
+            continue;
+        }
+        let start = idx;
+        while idx < needles.len() && module_item_list_hole_name(&needles[idx]).is_none() {
+            idx += 1;
+        }
+        segments.push((start, idx - start));
+    }
+    if segments.is_empty() {
+        return Vec::new();
+    }
+
+    let wildcard_idents = wildcard_ident_names_for_module_items(needles);
+    let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
+    SyntaxContext::within_ignored_ctxt(|| {
+        let mut matcher = AstWildcardMatcher::new(selector, &wildcard_idents, alpha);
+        let search = SegmentSearch {
+            needle: needles,
+            candidate: &runtime_module.body,
+            segments: &segments,
+            anchored_left: false,
+            anchored_right: false,
+        };
+        let mut alignment = vec![None; needles.len()];
+        let mut matches = Vec::new();
+        place_module_item_segments(&mut matcher, &search, 0, 0, &mut alignment, &mut matches);
+        matches
+    })
+}
+
+fn place_module_item_segments(
+    matcher: &mut AstWildcardMatcher<'_>,
+    search: &SegmentSearch<'_, ModuleItem>,
+    seg_idx: usize,
+    cand_min: usize,
+    alignment: &mut [Option<usize>],
+    matches: &mut Vec<Vec<Option<usize>>>,
+) {
+    let Some(&(needle_start, seg_len)) = search.segments.get(seg_idx) else {
+        matches.push(alignment.to_vec());
+        return;
+    };
+    let remaining: usize = search.segments[seg_idx..].iter().map(|(_, len)| len).sum();
+    let Some(latest_start) = search.candidate.len().checked_sub(remaining) else {
+        return;
+    };
+    for start in cand_min..=latest_start {
+        let snapshot = matcher.snapshot();
+        let alignment_snapshot = alignment.to_vec();
+        let mut segment_ok = true;
+        for offset in 0..seg_len {
+            let needle_idx = needle_start + offset;
+            let candidate_idx = start + offset;
+            if !matcher
+                .match_module_item(&search.needle[needle_idx], &search.candidate[candidate_idx])
+            {
+                segment_ok = false;
+                break;
+            }
+            alignment[needle_idx] = Some(candidate_idx);
+        }
+        if segment_ok {
+            place_module_item_segments(
+                matcher,
+                search,
+                seg_idx + 1,
+                start + seg_len,
+                alignment,
+                matches,
+            );
+        }
+        matcher.restore(snapshot);
+        alignment.copy_from_slice(&alignment_snapshot);
+    }
+}
+
+fn anonymous_selector_target_statement_indices(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    parsed_items: &[ModuleItem],
+) -> Result<Vec<usize>> {
+    if selector.target_statement.is_some() && selector.target_statements.is_some() {
+        bail!(
+            "logical_module {request_id}: anonymous_statements[].source_match cannot include \
+             both `target_statement` and `target_statements`:\n{match_source}",
+            match_source = selector.match_source,
+        );
+    }
+    if let Some(target_statement) = selector.target_statement {
+        if parsed_items.is_empty() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match with \
+                 target_statement parsed to zero statements:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        }
+        return validate_anonymous_target_statement_indices(
+            request_id,
+            selector,
+            parsed_items,
+            vec![target_statement],
+            "target_statement",
+        );
+    }
+    if let Some(target_statements) = &selector.target_statements {
+        if parsed_items.is_empty() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match with \
+                 target_statements parsed to zero statements:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        }
+        let indices = match target_statements {
+            TargetStatements::Indices(indices) => indices.clone(),
+            TargetStatements::All(TargetStatementsAll::All) => parsed_items
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, item)| module_item_list_hole_name(item).is_none().then_some(idx))
+                .collect(),
+        };
+        return validate_anonymous_target_statement_indices(
+            request_id,
+            selector,
+            parsed_items,
+            indices,
+            "target_statements",
+        );
+    }
+
+    match parsed_items {
+        [] => bail!(
+            "logical_module {request_id}: anonymous_statements[].match parsed to zero \
+             statements; selector source must contain exactly one top-level statement:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        [single] if module_item_list_hole_name(single).is_some() => bail!(
+            "logical_module {request_id}: anonymous_statements[].match parsed to a STMT_LIST \
+             hole; selector source must contain a pinned top-level statement to claim:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        [_] => Ok(vec![0]),
+        _ => bail!(
+            "logical_module {request_id}: anonymous_statements[].match parsed to {} statements; \
+             selector source must contain exactly one top-level statement unless \
+             `target_statement` or `target_statements` is set:\n{match_source}",
+            parsed_items.len(),
+            match_source = selector.match_source,
+        ),
+    }
+}
+
+fn validate_anonymous_target_statement_indices(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    parsed_items: &[ModuleItem],
+    indices: Vec<usize>,
+    field_name: &str,
+) -> Result<Vec<usize>> {
+    if indices.is_empty() {
+        bail!(
+            "logical_module {request_id}: anonymous_statements[].source_match \
+             `{field_name}` selected no top-level statements:\n{match_source}",
+            match_source = selector.match_source,
+        );
+    }
+    let mut seen = BTreeSet::new();
+    for idx in &indices {
+        if !seen.insert(*idx) {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match \
+                 `{field_name}` contains duplicate index {idx}:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        }
+        if *idx >= parsed_items.len() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match \
+                 `{field_name}` index {idx} is out of range for {} parsed top-level \
+                 statements:\n{match_source}",
+                parsed_items.len(),
+                match_source = selector.match_source,
+            );
+        }
+        if module_item_list_hole_name(&parsed_items[*idx]).is_some() {
+            bail!(
+                "logical_module {request_id}: anonymous_statements[].source_match \
+                 `{field_name}` index {idx} points at a STMT_LIST hole, not a pinned \
+                 selector statement:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        }
+    }
+    Ok(indices)
 }
 
 /// Needle-derived matching state hoisted out of the per-candidate
@@ -1991,7 +2215,7 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_call_expr(&mut self, needle: &CallExpr, candidate: &CallExpr) -> bool {
         needle.type_args.eq_ignore_span(&candidate.type_args)
             && self.match_callee(&needle.callee, &candidate.callee)
-            && self.match_slice(&needle.args, &candidate.args, Self::match_expr_or_spread)
+            && self.match_expr_or_spread_slice(&needle.args, &candidate.args)
     }
 
     fn match_callee(&mut self, needle: &Callee, candidate: &Callee) -> bool {
@@ -2019,6 +2243,30 @@ impl<'a> AstWildcardMatcher<'a> {
             (Some(needle), Some(candidate)) => self.match_expr_or_spread(needle, candidate),
             (None, None) => true,
             _ => false,
+        }
+    }
+
+    /// Match a call/new argument list. `ARGS` / `ARGS_*` holes split
+    /// the needle into fixed argument segments matched as an ordered
+    /// subsequence with gaps; with no hole this is an exact element-wise
+    /// match.
+    fn match_expr_or_spread_slice(
+        &mut self,
+        needle: &[ExprOrSpread],
+        candidate: &[ExprOrSpread],
+    ) -> bool {
+        if needle
+            .iter()
+            .any(|arg| argument_list_hole_name(arg).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |arg| argument_list_hole_name(arg).is_some(),
+                Self::match_expr_or_spread,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_expr_or_spread)
         }
     }
 
@@ -2206,7 +2454,7 @@ impl<'a> AstWildcardMatcher<'a> {
             (OptChainBase::Call(needle), OptChainBase::Call(candidate)) => {
                 needle.type_args.eq_ignore_span(&candidate.type_args)
                     && self.match_expr(&needle.callee, &candidate.callee)
-                    && self.match_slice(&needle.args, &candidate.args, Self::match_expr_or_spread)
+                    && self.match_expr_or_spread_slice(&needle.args, &candidate.args)
             }
             _ => false,
         }
@@ -2500,9 +2748,7 @@ impl<'a> AstWildcardMatcher<'a> {
         candidate: &Option<Vec<ExprOrSpread>>,
     ) -> bool {
         match (needle, candidate) {
-            (Some(needle), Some(candidate)) => {
-                self.match_slice(needle, candidate, Self::match_expr_or_spread)
-            }
+            (Some(needle), Some(candidate)) => self.match_expr_or_spread_slice(needle, candidate),
             (None, None) => true,
             _ => false,
         }
@@ -2810,6 +3056,8 @@ impl AlphaIdentCanonicalizer {
                 .iter()
                 .chain(&wildcard_idents.statements)
                 .chain(&wildcard_idents.statement_lists)
+                .chain(&wildcard_idents.declarator_lists)
+                .chain(&wildcard_idents.argument_lists)
                 .cloned()
                 .collect(),
             ..Self::default()
@@ -2891,6 +3139,9 @@ struct WildcardIdents {
     /// pseudo-declarators and must not be alpha-canonicalized as real
     /// bindings.
     declarator_lists: BTreeSet<String>,
+    /// `ARGS` argument-list hole names. These are pseudo-arguments and
+    /// must route to ordered-subsequence argument matching.
+    argument_lists: BTreeSet<String>,
     /// Whether the selector contains any `CLASS_REST` class-member
     /// hole. The marker is a class field key (an `IdentName`, not an
     /// `Ident`), so it survives alpha-canonicalization without being
@@ -2908,8 +3159,17 @@ impl WildcardIdents {
             && self.statements.is_empty()
             && self.statement_lists.is_empty()
             && self.declarator_lists.is_empty()
+            && self.argument_lists.is_empty()
             && !self.class_rest_present
     }
+}
+
+fn wildcard_ident_names_for_module_items(needles: &[ModuleItem]) -> WildcardIdents {
+    let mut collector = WildcardIdentCollector::default();
+    for needle in needles {
+        needle.visit_with(&mut collector);
+    }
+    collector.idents
 }
 
 fn wildcard_ident_names(needle: &ModuleItem) -> WildcardIdents {
@@ -2963,6 +3223,14 @@ impl Visit for WildcardIdentCollector {
         }
         declarator.visit_children_with(self);
     }
+
+    fn visit_expr_or_spread(&mut self, expr_or_spread: &ExprOrSpread) {
+        if let Some(hole_name) = argument_list_hole_name(expr_or_spread) {
+            self.idents.argument_lists.insert(hole_name.to_string());
+            return;
+        }
+        expr_or_spread.visit_children_with(self);
+    }
 }
 
 fn expression_hole_name(expr: &Expr) -> Option<&str> {
@@ -2988,6 +3256,16 @@ fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
     hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
 }
 
+/// The name of a top-level statement-list hole (`STMT_LIST` /
+/// `STMT_LIST_*;`) if `item` is one. Module declarations cannot be
+/// holes because the selector syntax is an expression statement.
+fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
+    let ModuleItem::Stmt(stmt) = item else {
+        return None;
+    };
+    statement_list_hole_name(stmt)
+}
+
 /// The name of a declarator-list hole (`DECLARATORS` /
 /// `DECLARATORS_*`) if `declarator` is one. The initializer is ignored:
 /// `const` syntax requires one, so selectors usually write
@@ -2997,6 +3275,20 @@ fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
         return None;
     };
     hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
+}
+
+/// The name of an argument-list hole (`ARGS` / `ARGS_*`) if
+/// `expr_or_spread` is one. The hole token itself is a plain identifier
+/// argument; the run it absorbs may contain spread or non-spread
+/// arguments.
+fn argument_list_hole_name(expr_or_spread: &ExprOrSpread) -> Option<&str> {
+    if expr_or_spread.spread.is_some() {
+        return None;
+    }
+    let Expr::Ident(ident) = expr_or_spread.expr.as_ref() else {
+        return None;
+    };
+    hole_name_for(ident.sym.as_ref(), ARGS_HOLE_KEYWORD)
 }
 
 /// If `name` is a hole identifier for `keyword` — the bare keyword

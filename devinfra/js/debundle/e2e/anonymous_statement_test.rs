@@ -579,6 +579,81 @@ console.log(`${selectedLeft}:${selectedRight}`);"#,
 }
 
 #[test]
+fn alpha_anonymous_statement_target_statements_claims_multiple_targets_from_one_selector() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeContext = "context";
+console.log("first selected");
+console.log("second selected");
+const Existing = "existing";
+console.log(Existing);
+export { runtimeContext, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements(
+            "selected_logs",
+            &[],
+            r#"const selectorContext = "context";
+console.log("first selected");
+console.log("second selected");"#,
+            &[1, 2],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_logs.js",
+        &[
+            r#"console.log("first selected")"#,
+            r#"console.log("second selected")"#,
+        ],
+        &["runtimeContext", "Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const runtimeContext", "const Existing"],
+        &["first selected", "second selected"],
+    );
+    assert_entry_output(&fixture, "first selected\nsecond selected\nexisting\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_target_statements_all_supports_top_level_stmt_list_hole() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"console.log("before selected");
+const skippedContext = "skip";
+console.log("after selected");
+const Existing = "existing";
+console.log(Existing);
+export { skippedContext, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements_all(
+            "selected_logs",
+            &[],
+            r#"console.log("before selected");
+STMT_LIST;
+console.log("after selected");"#,
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_logs.js",
+        &[
+            r#"console.log("before selected")"#,
+            r#"console.log("after selected")"#,
+        ],
+        &["skippedContext", "Existing", "STMT_LIST"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const skippedContext", "const Existing"],
+        &["before selected", "after selected"],
+    );
+    assert_entry_output(&fixture, "before selected\nafter selected\nexisting\n");
+}
+
+#[test]
 fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const selectedValue = "selected";

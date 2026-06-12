@@ -249,9 +249,10 @@ Default to this ladder when writing or repairing selectors:
 1. Use `selector.source_match` / `binding_groups` for the declaration,
    statement, class, or small surrounding AST shape that is semantically
    stable.
-2. Add `EXPR`, `STMT`, `STMT_LIST`, or `CLASS_REST` holes for volatile
-   minified subtrees, helper bodies, statement runs, or class members that
-   are not part of the durable identity of the target.
+2. Add `EXPR`, `STMT`, `ARGS`, `STMT_LIST`, `CLASS_REST`, or `DECLARATORS`
+   holes for volatile minified subtrees, noisy arguments, helper bodies,
+   statement runs, class members, or sibling declarators that are not part of
+   the durable identity of the target.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
 4. Use `selector.binding.name` only for already-stable semantic names or as
@@ -380,6 +381,34 @@ Only the indexed statement is claimed; the surrounding context is used for
 matching and must be claimed separately if it should move with the anonymous
 statement.
 
+Use `target_statements` when one structural selector should claim several
+anonymous statements. It accepts either an explicit zero-based index list, or
+`all` to claim every non-hole top-level statement in the selector:
+
+```yaml
+anonymous_statements:
+  - source_match:
+      identifiers: alpha_all
+      target_statements: [1, 2]
+      match: |
+        const contextValue = "stable";
+        console.log("first side effect");
+        console.log("second side effect");
+
+  - source_match:
+      identifiers: alpha_all
+      target_statements: all
+      match: |
+        console.log("before");
+        STMT_LIST;
+        console.log("after");
+```
+
+At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
+module-body statements that should be used only as skipped context. A
+`target_statement` or `target_statements` index must point at a pinned
+statement, not at the `STMT_LIST` hole.
+
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
 nearby declarations to be unique, prefer `target_statement` over spreading
@@ -409,11 +438,11 @@ anonymous_statements:
         }
 ```
 
-Each hole keyword has two forms. The **bare keyword** is an anonymous
+Single-node holes have two forms. The **bare keyword** is an anonymous
 wildcard: every occurrence matches independently, so there's no need to mint a
 unique name per throwaway placeholder. The **named form** `KEYWORD_name` binds
-for cross-occurrence equality — the same name must match the same
-candidate subtree/statement everywhere it appears. So `EXPR` is the identifier
+for cross-occurrence equality — the same name must match the same candidate
+subtree/statement everywhere it appears. So `EXPR` is the identifier
 expression that matches one arbitrary expression subtree, and `EXPR_left`
 matches one too but forces every `EXPR_left` to be the same subtree; `STMT` and
 `STMT_setup` are the single-statement equivalents. For example, `foo(EXPR)`
@@ -423,16 +452,27 @@ matches a call whose two arguments are identical. These are still structural
 selectors: surrounding syntax is exact after the identifier policy is applied,
 and ambiguous matches are rejected rather than resolved by source order.
 
-Two variable-length **list holes** absorb a contiguous run rather than a
-single node — ideal for pinning a class by a stable skeleton without copying
-its whole minified body:
+Variable-length **list holes** absorb a contiguous run rather than a single
+node. Their optional suffixes are labels for readability; they do not bind the
+absorbed sequence for cross-occurrence equality.
 
-- A bare `STMT_LIST;` statement (or named `STMT_LIST_name;`) in a block body
-  matches any run of statements (including none) at that position — e.g. a
-  method or function body you do not want to spell out.
-- A bare `CLASS_REST;` class field (no initializer) matches a run of class
+- `ARGS` (or `ARGS_name`) in a call or `new` argument list matches any run of
+  arguments, including none. Use it to pin stable arguments without spelling
+  volatile generated siblings:
+
+  ```js
+  register("stable", ARGS_BEFORE, selectedValue, ARGS_AFTER);
+  ```
+
+- `STMT_LIST;` (or `STMT_LIST_name;`) in a block body matches any run of
+  statements, including none. At top level it is supported in
+  `anonymous_statements[].source_match` selectors that use `target_statement`
+  or `target_statements`.
+- `CLASS_REST;` as a class field (no initializer) matches a run of class
   members — "this class by these members, ignore the rest". `CLASS_REST` is an
   exact token (not a prefix).
+- `DECLARATORS` (or `DECLARATORS_name = null`) inside one variable declaration
+  matches a run of declarators.
 
 ```yaml
 members:

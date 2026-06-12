@@ -297,35 +297,39 @@ fn resolve_anonymous_statement_claims_in_globals(
 
     for (module_idx, claims) in claims_by_module.iter().enumerate() {
         for selector in claims.selectors {
-            let mut matches = Vec::<(String, OwnerId)>::new();
+            let mut match_groups = Vec::<Vec<(String, OwnerId)>>::new();
             for (source_path, parsed) in &parsed_by_source {
-                let body_indices = source_match::find_anonymous_statement_body_indices(
+                let body_index_groups = source_match::find_anonymous_statement_body_index_groups(
                     &parsed.module,
                     &claims.module_path.to_string_lossy(),
                     selector,
                 )?;
-                for body_idx in body_indices {
-                    let statement_ordinal =
-                        js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
-                    let Some(&owner) = anonymous_owner_by_source_ordinal
-                        .get(&(source_path.clone(), statement_ordinal))
-                    else {
-                        bail!(
-                            "module {} anonymous statement selector matched source {} body index \
-                             {} / statement ordinal {}, but owner_graph.json has no anonymous \
-                             owner at that source position",
-                            claims.module_path.display(),
-                            source_path,
-                            body_idx,
-                            statement_ordinal,
-                        );
-                    };
-                    matches.push((source_path.clone(), owner));
+                for body_indices in body_index_groups {
+                    let mut owners = Vec::with_capacity(body_indices.len());
+                    for body_idx in body_indices {
+                        let statement_ordinal =
+                            js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
+                        let Some(&owner) = anonymous_owner_by_source_ordinal
+                            .get(&(source_path.clone(), statement_ordinal))
+                        else {
+                            bail!(
+                                "module {} anonymous statement selector matched source {} body \
+                                 index {} / statement ordinal {}, but owner_graph.json has no \
+                                 anonymous owner at that source position",
+                                claims.module_path.display(),
+                                source_path,
+                                body_idx,
+                                statement_ordinal,
+                            );
+                        };
+                        owners.push((source_path.clone(), owner));
+                    }
+                    match_groups.push(owners);
                 }
             }
-            match matches.as_slice() {
-                [(_, owner)] => {
-                    out[module_idx].insert(*owner);
+            match match_groups.as_slice() {
+                [owners] => {
+                    out[module_idx].extend(owners.iter().map(|(_, owner)| *owner));
                 }
                 [] => bail!(
                     "module {} anonymous statement selector did not match any source statement:\n{}",
@@ -333,8 +337,8 @@ fn resolve_anonymous_statement_claims_in_globals(
                     selector.match_source,
                 ),
                 multiple => bail!(
-                    "module {} anonymous statement selector matched {} source statements; refine \
-                     the selector:\n{}",
+                    "module {} anonymous statement selector matched {} source statement groups; \
+                     refine the selector:\n{}",
                     claims.module_path.display(),
                     multiple.len(),
                     selector.match_source,

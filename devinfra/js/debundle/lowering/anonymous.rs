@@ -21,17 +21,19 @@ pub(super) fn resolve_anonymous_statement_ordinals(
     request: &LogicalRequest,
     runtime_module: &Module,
 ) -> Result<Vec<ResolvedAnonymousStatement>> {
-    let mut resolved = Vec::with_capacity(request.anonymous_statements.len());
+    let mut resolved = Vec::new();
     for statement in &request.anonymous_statements {
-        let ordinal = source_match::resolve_anonymous_statement_body_index(
+        let ordinals = source_match::resolve_anonymous_statement_body_indices(
             runtime_module,
             &request.id,
             &statement.selector,
         )?;
-        resolved.push(ResolvedAnonymousStatement {
-            ordinal,
-            comment: statement.comment.clone(),
-        });
+        for ordinal in ordinals {
+            resolved.push(ResolvedAnonymousStatement {
+                ordinal,
+                comment: statement.comment.clone(),
+            });
+        }
     }
     Ok(resolved)
 }

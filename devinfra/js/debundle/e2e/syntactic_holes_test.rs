@@ -1,16 +1,17 @@
 //! End-to-end coverage for `source_match` syntactic holes.
 //!
-//! Each hole keyword has a bare anonymous form (matches independently,
-//! never binds) and a named `KEYWORD_name` form (binds for
-//! cross-occurrence equality).
-//!
 //! Single-node holes:
 //! - Expression holes (`EXPR` / `EXPR_name`) are selector-local
 //!   identifier expressions; they match one arbitrary expression subtree.
 //! - Statement holes (`STMT` / `STMT_name`) are selector-local bare
 //!   expression statements; they match exactly one statement.
+//! The bare single-node keyword matches independently at every occurrence;
+//! the named form binds for cross-occurrence equality.
 //!
 //! List holes (variable-length):
+//! - `ARGS` / `ARGS_name` in a call or `new` argument list absorbs a run
+//!   of arguments (including an empty run) — e.g. match a stable
+//!   important argument without spelling noisy generated siblings.
 //! - `STMT_LIST` / `STMT_LIST_name;` in a block body absorbs a run of
 //!   statements (including an empty run) — e.g. a method body you don't
 //!   want to pin.
@@ -19,6 +20,8 @@
 //! - `DECLARATORS` / `DECLARATORS_name = null` in a variable declaration
 //!   absorbs a run of declarators — e.g. match a few stable entries in a
 //!   wider `const` list without spelling unrelated siblings.
+//! List-hole suffixes are labels for readability; they do not bind the
+//! absorbed run for equality.
 //!
 //! Several list holes may appear in one block or class body: they split
 //! the pinned statements/members into an ordered subsequence with gaps,
@@ -108,6 +111,48 @@ export { actual };
             "true ? 10 : 11",
         ],
         &[],
+    );
+}
+
+#[test]
+fn member_source_match_argument_list_holes_skip_unimportant_arguments() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function joinParts(...parts) {
+  return parts.join("|");
+}
+function ignoredPart(label) {
+  return `ignored:${label}`;
+}
+const importantValue = "important";
+const actual = joinParts("stable", ignoredPart("left"), importantValue, ignoredPart("right"));
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "joined",
+            &[Member::source_alpha(
+                "joinedValue",
+                r#"const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "stable|ignored:left|important|ignored:right\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/joined.js",
+        &["joinedValue"],
+        &["actual"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/joined.js",
+        &[
+            "ignoredPart(\"left\")",
+            "importantValue",
+            "ignoredPart(\"right\")",
+        ],
+        &["ARGS_BEFORE", "ARGS_AFTER"],
     );
 }
 
