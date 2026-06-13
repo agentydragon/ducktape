@@ -436,8 +436,15 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
     match args.command {
         DebundleCommand::Run(args) => {
             let dry_run = args.dry_run;
+            let keep_going = args.keep_going;
             let cli = args.resolve()?;
-            run_transform_cli_with_options(&cli, TransformRunOptions { dry_run })?;
+            run_transform_cli_with_options(
+                &cli,
+                TransformRunOptions {
+                    dry_run,
+                    keep_going,
+                },
+            )?;
             if dry_run {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }
@@ -1195,12 +1202,14 @@ mod tests {
                 "--spec",
                 "spec.yaml",
                 "--dry-run",
+                "--keep-going",
                 "--package-root",
                 "pkg=/tmp/pkg",
                 "--packages-root",
                 "/tmp/packages",
             ]);
             assert!(args.dry_run);
+            assert!(args.keep_going);
             let cli = args.resolve().expect("resolve cli");
             assert_eq!(
                 cli.spec_source,

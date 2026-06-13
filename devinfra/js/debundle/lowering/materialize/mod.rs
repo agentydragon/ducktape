@@ -24,6 +24,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) chunk_id: &'a str,
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
+    pub(super) keep_going: bool,
     pub(super) report_emission: &'a ReportEmission,
     /// Program-level cross-module purity output; this chunk's entries land
     /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
@@ -82,6 +83,7 @@ pub(super) fn materialize_logical_chunk(
         chunk_id,
         file,
         target_dir,
+        keep_going,
         report_emission,
         cross_module_purities,
         vendor_import_oracle,
@@ -157,7 +159,7 @@ pub(super) fn materialize_logical_chunk(
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
     let build_module_plans_started = Instant::now();
-    let mut builder = ChunkPlanBuilder::new();
+    let mut builder = ChunkPlanBuilder::new(keep_going);
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
@@ -279,7 +281,7 @@ pub(super) fn materialize_logical_chunk(
         bindings_catalogue,
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
-    } = builder.finalize();
+    } = builder.finalize()?;
     // Plan structure is final — collect the explicit rename contributors
     // into the chunk's rename ledger and seal it. Seal hard-errors when
     // same-priority intents disagree on one binding's target; the sealed

@@ -942,6 +942,12 @@ pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run"])
 }
 
+/// Like [`run_dry_run_rejection_fixture`] but asks the pipeline to continue
+/// through supported diagnostics and report all findings from the pass.
+pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
+}
+
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");

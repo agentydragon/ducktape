@@ -12,6 +12,74 @@
 use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
 
+#[derive(Debug, Clone)]
+struct DuplicateClaimSite {
+    module_id: String,
+    export_name: Option<String>,
+    claim_origin: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct DuplicateBindingClaim {
+    chunk_id: String,
+    binding: String,
+    existing: DuplicateClaimSite,
+    duplicate: DuplicateClaimSite,
+}
+
+impl DuplicateBindingClaim {
+    fn render(&self) -> String {
+        format!(
+            "binding {:?} in chunk {:?}: already claimed by {}; duplicate claim by {}",
+            self.binding,
+            self.chunk_id,
+            render_duplicate_claim_site(&self.existing),
+            render_duplicate_claim_site(&self.duplicate),
+        )
+    }
+}
+
+fn render_duplicate_claim_site(site: &DuplicateClaimSite) -> String {
+    let export = site
+        .export_name
+        .as_deref()
+        .map(|name| format!(" as `{name}`"))
+        .unwrap_or_default();
+    let origin = site
+        .claim_origin
+        .as_deref()
+        .map(|origin| format!(" ({origin})"))
+        .unwrap_or_default();
+    format!("module {}{export}{origin}", site.module_id)
+}
+
+fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> String {
+    let mut duplicates = duplicates.iter().collect::<Vec<_>>();
+    duplicates.sort_by(|a, b| {
+        (
+            a.chunk_id.as_str(),
+            a.binding.as_str(),
+            a.duplicate.module_id.as_str(),
+            a.duplicate.export_name.as_deref().unwrap_or_default(),
+        )
+            .cmp(&(
+                b.chunk_id.as_str(),
+                b.binding.as_str(),
+                b.duplicate.module_id.as_str(),
+                b.duplicate.export_name.as_deref().unwrap_or_default(),
+            ))
+    });
+    let mut report = format!(
+        "Duplicate binding claim report: {} duplicate claim(s) found. Each binding may belong to exactly one logical module. Different selector forms (`{{name: foo}}` vs `{{name: foo, kind: class_declaration}}`) that resolve to the same source declaration still count as duplicates. To expose a binding under multiple readable names, list all the renames in one module.",
+        duplicates.len()
+    );
+    for duplicate in &duplicates {
+        report.push_str("\n- ");
+        report.push_str(&duplicate.render());
+    }
+    report
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -170,10 +238,20 @@ pub(super) struct ChunkPlanBuilder {
     /// name-collision checks. The map is dropped by
     /// `drop_explicit_request_scratch`.
     catalogue_index_by_name: HashMap<String, BindingKind>,
+    /// Duplicate binding claims found while processing explicit
+    /// requests. We keep scanning later requests after recording a
+    /// duplicate so one run can report all duplicate claim sites in
+    /// this chunk.
+    duplicate_binding_claims: Vec<DuplicateBindingClaim>,
+    /// Opt-in diagnostics mode. When false, duplicate binding claims
+    /// keep the historical fail-fast behavior. When true, duplicate
+    /// members are skipped from canonical ownership state so later
+    /// requests in this chunk can still be checked and reported.
+    keep_going: bool,
 }
 
 impl ChunkPlanBuilder {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(keep_going: bool) -> Self {
         Self {
             binding_assignment: HashMap::new(),
             anonymous_ordinal_assignment: BTreeMap::new(),
@@ -182,6 +260,8 @@ impl ChunkPlanBuilder {
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
+            duplicate_binding_claims: Vec::new(),
+            keep_going,
         }
     }
 
@@ -242,61 +322,63 @@ impl ChunkPlanBuilder {
             .collect();
         let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
+        let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
-                let (existing_id, existing_export_name, existing_origin) = match existing_kind {
+                let existing = match existing_kind {
                     BindingKind::Owned {
                         module: ModuleId(LogicalModuleIndex(owner_index)),
                     } => {
                         let plan = self.module_plans.get(*owner_index);
-                        (
-                            plan.map(|plan| plan.id.clone())
+                        DuplicateClaimSite {
+                            module_id: plan
+                                .map(|plan| plan.id.clone())
                                 .unwrap_or_else(|| format!("<plan#{owner_index}>")),
-                            plan.and_then(|plan| plan.bindings.get(member.binding.as_str()))
+                            export_name: plan
+                                .and_then(|plan| plan.bindings.get(member.binding.as_str()))
                                 .cloned(),
-                            plan.and_then(|plan| {
-                                plan.binding_claim_origins.get(member.binding.as_str())
-                            })
-                            .cloned(),
-                        )
+                            claim_origin: plan
+                                .and_then(|plan| {
+                                    plan.binding_claim_origins.get(member.binding.as_str())
+                                })
+                                .cloned(),
+                        }
                     }
                     BindingKind::Imported {
                         re_exporter: ModuleId(LogicalModuleIndex(re_index)),
                         public_name,
                         ..
-                    } => (
-                        self.module_plans
-                            .get(*re_index)
-                            .map(|plan| plan.id.clone())
-                            .unwrap_or_else(|| format!("<plan#{re_index}>")),
-                        Some(public_name.to_string()),
-                        None,
-                    ),
+                    } => {
+                        let plan = self.module_plans.get(*re_index);
+                        DuplicateClaimSite {
+                            module_id: plan
+                                .map(|plan| plan.id.clone())
+                                .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                            export_name: Some(public_name.to_string()),
+                            claim_origin: plan
+                                .and_then(|plan| {
+                                    plan.binding_claim_origins.get(member.binding.as_str())
+                                })
+                                .cloned(),
+                        }
+                    }
                 };
-                let existing_export = existing_export_name
-                    .as_deref()
-                    .map(|name| format!(" as `{name}`"))
-                    .unwrap_or_default();
-                let existing_origin = existing_origin
-                    .as_deref()
-                    .map(|origin| format!(" ({origin})"))
-                    .unwrap_or_default();
-                bail!(
-                    "Duplicate binding claim for {:?} in chunk {:?}: already \
-                     claimed by module {existing_id}{existing_export}{existing_origin} \
-                     and now also claimed by module {} as `{}` ({}). Each binding \
-                     may belong to exactly one logical module. \
-                     Different selector forms (`{{name: foo}}` vs \
-                     `{{name: foo, kind: class_declaration}}`) that resolve to the \
-                     same source declaration still count as duplicates. To expose a \
-                     binding under multiple readable names, list all the renames in \
-                     one module.",
-                    member.binding,
-                    ctx.chunk_id,
-                    request.id,
-                    member.export_name,
-                    member.claim_origin,
-                );
+                let duplicate = DuplicateBindingClaim {
+                    chunk_id: ctx.chunk_id.to_string(),
+                    binding: member.binding.clone(),
+                    existing,
+                    duplicate: DuplicateClaimSite {
+                        module_id: request.id.clone(),
+                        export_name: Some(member.export_name.clone()),
+                        claim_origin: Some(member.claim_origin.clone()),
+                    },
+                };
+                if !self.keep_going {
+                    bail!("{}", render_duplicate_binding_claims(&[duplicate]));
+                }
+                self.duplicate_binding_claims.push(duplicate);
+                duplicate_bindings.insert(member.binding.clone());
+                continue;
             }
             if member.is_import_specifier {
                 let (imported_name, imported_from) = resolve_imported_binding(
@@ -354,6 +436,7 @@ impl ChunkPlanBuilder {
         let binding_comments: BTreeMap<String, String> = request
             .members
             .iter()
+            .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
                     .comment
@@ -364,6 +447,7 @@ impl ChunkPlanBuilder {
         let binding_claim_origins: BTreeMap<String, String> = request
             .members
             .iter()
+            .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .map(|member| (member.binding.clone(), member.claim_origin.clone()))
             .collect();
         self.module_plans.push(ModulePlan {
@@ -757,13 +841,19 @@ impl ChunkPlanBuilder {
         self.residual_plan_index
     }
 
-    pub(super) fn finalize(self) -> ChunkPlan {
-        ChunkPlan {
+    pub(super) fn finalize(self) -> Result<ChunkPlan> {
+        if !self.duplicate_binding_claims.is_empty() {
+            bail!(
+                "{}",
+                render_duplicate_binding_claims(&self.duplicate_binding_claims)
+            );
+        }
+        Ok(ChunkPlan {
             module_plans: self.module_plans,
             binding_assignment: self.binding_assignment,
             bindings_catalogue: self.bindings_catalogue,
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
-        }
+        })
     }
 }

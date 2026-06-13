@@ -213,6 +213,11 @@ Still to do:
 
 - Full lowering matrix: binding placement reports, attached side-effects,
   staged-shell edge cases beyond the focused fixture.
+- Extend `debundle run --keep-going` beyond materialization duplicate binding
+  claims. Source-match selector misses currently fail during selector
+  resolution before plan-building has an accumulator, so batching those needs a
+  request-level diagnostic collection pass that can keep enough unresolved
+  claim context without mutating the canonical lowering plan.
 - Owner-fragment modeling parity for nested declarations and re-exports.
 - Keep new analysis tooling on the existing owner graph and embedded atomic
   DAG side outputs; do not add parallel selected-owner cache formats.

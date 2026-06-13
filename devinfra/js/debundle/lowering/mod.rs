@@ -258,6 +258,7 @@ pub struct MaterializeLogicalModulesOptions {
     pub chunk_ids: Vec<String>,
     pub file: Option<String>,
     pub prune_other_chunks: bool,
+    pub keep_going: bool,
     pub report_emission: ReportEmission,
     pub target_dir: String,
 }
@@ -344,6 +345,7 @@ pub fn materialize_logical_modules(
                             chunk_id,
                             file: options.file.as_deref(),
                             target_dir: &target_dir,
+                            keep_going: options.keep_going,
                             report_emission: &options.report_emission,
                             cross_module_purities: &cross_module_purities,
                             vendor_import_oracle: vendor_import_oracle.as_ref(),

@@ -36,6 +36,7 @@ pub struct TransformCli {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TransformRunOptions {
     pub dry_run: bool,
+    pub keep_going: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +77,11 @@ pub struct TransformArgs {
     /// Run pipeline checks without writing emitted JS or reports.
     #[arg(long)]
     pub dry_run: bool,
+    /// Continue through supported spec-diagnostic failures and report all
+    /// findings from the pass. Currently aggregates duplicate binding claims
+    /// during materialization plan building.
+    #[arg(long)]
+    pub keep_going: bool,
 }
 
 impl TransformArgs {
@@ -239,6 +245,7 @@ pub fn run_transform_cli_with_options(
                     chunk_ids: materialise_chunk_ids,
                     file,
                     prune_other_chunks,
+                    keep_going: options.keep_going,
                     // Dry-run keeps the no-output contract on the
                     // accept path but still materializes rejection
                     // evidence (owner graph + cycles/conflicts) at the
@@ -883,7 +890,10 @@ mod tests {
                     package_roots: HashMap::new(),
                     packages_root: None,
                 },
-                TransformRunOptions { dry_run: true },
+                TransformRunOptions {
+                    dry_run: true,
+                    keep_going: false,
+                },
             )?;
 
             assert!(js_out.join("stale.txt").exists());

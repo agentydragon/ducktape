@@ -275,6 +275,76 @@ export { runtimeProcessor };
 }
 
 #[test]
+fn duplicate_top_level_decl_claims_are_reported_together() {
+    let opts = FixtureOpts::new(
+        r#"const runtimeService = "service";
+const runtimeCache = "cache";
+console.log(runtimeService, runtimeCache);
+export { runtimeService, runtimeCache };
+"#,
+        vec![
+            (
+                "owners/service".to_string(),
+                json!({
+                    "members": [{
+                        "name": "service",
+                        "selector": { "binding": { "name": "runtimeService" } },
+                    }],
+                }),
+            ),
+            (
+                "duplicates/service".to_string(),
+                json!({
+                    "members": [{
+                        "name": "serviceAgain",
+                        "selector": { "binding": { "name": "runtimeService" } },
+                    }],
+                }),
+            ),
+            (
+                "owners/cache".to_string(),
+                json!({
+                    "members": [{
+                        "name": "cache",
+                        "selector": { "binding": { "name": "runtimeCache" } },
+                    }],
+                }),
+            ),
+            (
+                "duplicates/cache".to_string(),
+                json!({
+                    "members": [{
+                        "name": "cacheAgain",
+                        "selector": { "binding": { "name": "runtimeCache" } },
+                    }],
+                }),
+            ),
+        ],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let stderr = rejected.stderr;
+    for required in [
+        "Duplicate binding claim report: 2 duplicate claim(s) found",
+        "\"runtimeService\"",
+        "owners/service",
+        "as `service`",
+        "duplicates/service",
+        "as `serviceAgain`",
+        "\"runtimeCache\"",
+        "owners/cache",
+        "as `cache`",
+        "duplicates/cache",
+        "as `cacheAgain`",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+}
+
+#[test]
 fn duplicate_source_match_class_claims_report_exports_and_selector_origins() {
     let class_selector = r#"class K {
   CLASS_REST;
