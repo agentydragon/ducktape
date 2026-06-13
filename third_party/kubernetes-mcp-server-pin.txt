@@ -1,4 +1,4 @@
-# CLEANUP(2026-04-19): Remove this file and the kubernetes-mcp-server workflow
+# CLEANUP(added 2026-04-19): Remove this file and the kubernetes-mcp-server workflow
 # job once upstream releases a version with the /.well-known/oauth-authorization-server
 # 404 fallback (fix is on main post-v0.0.60 but unreleased). Track upstream releases
 # at https://github.com/containers/kubernetes-mcp-server/releases.

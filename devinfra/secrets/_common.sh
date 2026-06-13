@@ -110,7 +110,7 @@ try_export() {
 # BuildBuddy API key
 try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
 
-# CLEANUP(2026-06-11): The external-RBE docker-ci path is dormant. docker-ci's
+# CLEANUP(added 2026-06-11): The external-RBE docker-ci path is dormant. docker-ci's
 # PKI moved to cert-manager (cluster-internal-ca) and the SOPS client key was
 # deleted, so nothing exports DUCKTAPE_DOCKER_CLIENT_KEY and the docker_mtls
 # pytest fixture no-ops (util/testing/docker_mtls.py). Reviving `bbr test`

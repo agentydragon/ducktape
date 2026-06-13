@@ -125,17 +125,21 @@ instead, so they load on demand.
 ## Tombstones
 
 When a removal can't be atomic — downstream consumers need a transition period — leave a
-**tombstone**: a dated marker recording what was removed and the verifiable condition for
+**tombstone**: a marker recording what was removed and the verifiable condition for
 deleting the marker itself:
 
 ```python
-# CLEANUP(2026-03-22): Remove field once all clients are on ≥v2.3
+# CLEANUP(added 2026-03-22): Remove field once all props clients are on ≥v2.3
 #   (commit abc123 drops the last reader).
 old_field: str | None = None
 ```
 
-- The condition must be specific and verifiable ("after YYYY-MM-DD", "once commit X
-  ships"), not "when safe".
+- The tag date is **when the tombstone was added** — it is never a deadline. The
+  removal trigger lives entirely in the condition text.
+- The condition must name a **verifiable gate**: an explicit date ("remove after
+  2026-07-01"), a version ("once nixpkgs ships libqmi ≥1.38"), a tracked change
+  ("once nixpkgs#510952 merges"), or a last-reader check ("once nothing imports X") —
+  never "when safe" or "once upstream fixes it" with no reference.
 - Delete the tombstone (and what it guards) once the condition is met — it's an active
   work item, not a historical comment ("used to do X" gets deleted, not tombstoned).
 - Cross-cutting cleanup spanning many files goes in `TODO.md`; tombstones are for

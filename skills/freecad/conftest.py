@@ -14,7 +14,7 @@ from util.bazel.runfiles import get_required_path
 from util.bazel.subprocess import _merge_pythonpath
 from util.testing.otel_tracing import configure_tracing
 
-# CLEANUP(2026-04-10): Unused — tests migrated to conda fixtures. eval/run_eval.py
+# CLEANUP(added 2026-04-10): Unused — tests migrated to conda fixtures. eval/run_eval.py
 # has its own OciImage. Remove once confirmed no new Docker-based tests are planned.
 # FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
 

@@ -23,7 +23,7 @@ from finance.augur.model.exogenous import SampledExogenousBundle, level_value_ro
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series_model import SeriesModelBundle, materialize_series_values
 
-# CLEANUP(2026-05-30): Phase 2 stage D retypes the sim intern table + the
+# CLEANUP(added 2026-05-30): Phase 2 stage D retypes the sim intern table + the
 # projections asset↔series join to typed keys; this flat `series_id`-string frame
 # (and `series_values_from_bundle_shim`) go away then. Until then the sim keeps
 # its single flat working frame, rebuilt from the bundle's per-magisterium frames.

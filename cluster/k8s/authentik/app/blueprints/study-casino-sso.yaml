@@ -5,7 +5,7 @@ metadata:
     blueprints.goauthentik.io/description: "Study Casino — application managed by TF (tf/gitops/sso-providers/provider_study_casino.tf)"
 
 entries:
-  # CLEANUP(2026-04-27): Proxy provider tombstone — the casino now uses its
+  # CLEANUP(added 2026-04-27): Proxy provider tombstone — the casino now uses its
   # own OIDC Authorization Code flow with a TF-managed confidential client.
   # Remove once confirmed absent in the live Authentik instance.
   - model: authentik_providers_proxy.proxyprovider

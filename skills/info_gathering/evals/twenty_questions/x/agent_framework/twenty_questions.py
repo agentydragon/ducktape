@@ -129,7 +129,7 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
 
 
 def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentSession) -> list[FunctionTool]:
-    # CLEANUP(2026-04-26): Consider replacing this closure-based dispatch with
+    # CLEANUP(added 2026-04-26): Consider replacing this closure-based dispatch with
     # `sim_agent.as_tool(propagate_session=True)` plumbed into the guesser's
     # tool list. Would expose the simulator as a typed tool with a real
     # schema, drop the `last_sim_response` shared-state passing, and let AF

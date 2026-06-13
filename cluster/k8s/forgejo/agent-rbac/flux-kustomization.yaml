@@ -1,4 +1,4 @@
-# CLEANUP(2026-06-02): TEMPORARY — delete this file and the whole
+# CLEANUP(added 2026-06-02): TEMPORARY — delete this file and the whole
 #   cluster/k8s/forgejo/agent-rbac/ directory, and remove the
 #   forgejo/agent-rbac/flux-kustomization.yaml line from
 #   cluster/k8s/kustomization.yaml, after 2026-06-04. See the RoleBinding for why.

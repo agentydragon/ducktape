@@ -184,15 +184,19 @@ the tightest-locality knowledge surface:
   — promote to docs, leave one line. A doc paragraph mirroring a volatile
   implementation detail belongs the other way: demote it to a comment next to
   the code that changes with it.
-- **Lifecycle**: `CLEANUP(date)` tombstones with met/expired conditions are
-  action items, not history. `SYNC:` marker pairs must still exist on both
-  ends and point at each other.
+- **Lifecycle**: `CLEANUP(added <date>)` tombstones — the date records when the
+  marker was added, never a deadline; only a met condition makes one
+  actionable. Flag conditions lacking a verifiable gate. `SYNC:` marker pairs
+  must still exist on both ends and point at each other.
 - **Always-loaded exception**: Pydantic `Field(description=...)`, MCP tool
   docstrings, and anything else that ships into JSON schemas or tool
   definitions is paid by every session using that server — weight it with the
   always-loaded surfaces from the token sweep, not like ordinary comments
   (paid only on file read). Tool descriptions state contract and local
-  semantics, never generic API mechanics the model already knows.
+  semantics, never generic API mechanics the model already knows. Do NOT flag
+  duplication between tool/field descriptions and MCP server instructions as a
+  defect: many MCP clients never surface server instructions to the model, so
+  semantics the model must see ride on the tool surface itself.
 
 ### 8. Rank Suggestions
 

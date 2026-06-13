@@ -27,7 +27,7 @@
 # Historical --impl=<python|rust> arguments are accepted for compatibility, but
 # active sessions always install the Rust claude-hook implementation.
 #
-# CLEANUP(2026-04-19): this script runs TWICE per session — once as the
+# CLEANUP(added 2026-04-19): this script runs TWICE per session — once as the
 # init script (no user-UI env vars, always installs python default) and
 # once via the Setup hook (web_setup_hook.sh, has UI env vars). Once the Setup hook
 # is confirmed to fire reliably across all session modes (new / resume

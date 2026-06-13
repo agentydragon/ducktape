@@ -5,7 +5,7 @@ DUCKTAPE_DOCKER_CLIENT_KEY so docker.from_env() / aiodocker.Docker() pick up mTL
 to the docker-ci DinD automatically. Loaded into every `requires_docker` test via
 `-p util.testing.docker_mtls` (devinfra/python/defs.bzl).
 
-CLEANUP(2026-06-11): This is the external-RBE path for `bbr test` against
+CLEANUP(added 2026-06-11): This is the external-RBE path for `bbr test` against
 docker-ci, and it is NOT wired up — devinfra/secrets/_common.sh never exports
 DUCKTAPE_DOCKER_CLIENT_KEY (that block is commented out), so the fixture always
 no-ops. The in-cluster eval Job (loom/gym) reaches docker-ci over its own

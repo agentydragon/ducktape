@@ -4,7 +4,7 @@ resources:
   - source.yaml
   - bridge.yaml
   - image-update-automation.yaml
-  # CLEANUP(2026-05-03): retire deploy-key-tf.yaml + the PAT below once
+  # CLEANUP(added 2026-05-03): retire deploy-key-tf.yaml + the PAT below once
   # ducktape-automation GitHub App auth on `gaffer-private` is verified
   # stable. See deploy-key-tf.yaml header for the full retirement steps.
   - deploy-key-tf.yaml

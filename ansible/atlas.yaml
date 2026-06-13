@@ -189,7 +189,7 @@
         # CPUID 0x8000000A_EDX[30]). This feature (merged kernel 6.15) causes
         # guest vCPU stalls and spurious NMIs on AMD Zen 5. See
         # debug/kernel-6.18-amd-kvm-stall.md.
-        # CLEANUP(2026-03-31): Remove once upstream fix lands.
+        # CLEANUP(added 2026-03-31): Remove once upstream fix lands.
         content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1 clearcpuid=510"
         mode: "0644"
         backup: true
@@ -252,7 +252,7 @@
     # fixes idle stalls but does NOT fully fix stalls under load — there
     # are likely multiple bug paths. Still worth applying as a partial
     # mitigation. See debug/kernel-6.18-amd-kvm-stall.md.
-    # CLEANUP(2026-03-30): Remove once the upstream fix lands (Red Hat
+    # CLEANUP(added 2026-03-30): Remove once the upstream fix lands (Red Hat
     # Bugzilla #2448303, AMD Idle HLT Intercept).
     - name: Disable KVM halt polling (kernel 6.18 AMD stall workaround)
       ansible.builtin.copy:

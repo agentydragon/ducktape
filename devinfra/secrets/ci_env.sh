@@ -25,7 +25,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Attic binary cache writer token for `main` namespace.
 # Auto-rotated by the attic-rotate-ducktape-ci-writer CronJob in the cluster
 # (see cluster/k8s/agents/attic-jwt-rotation/).
-# CLEANUP(2026-05-04): Delete secrets/ci/attic-token.sops.yaml once no
+# CLEANUP(added 2026-05-04): Delete secrets/ci/attic-token.sops.yaml once no
 # out-of-tree consumer reads it.
 try_export ATTIC_TOKEN "$REPO_ROOT/secrets/ci/attic-main-writer.sops.yaml" '["attic_token"]'
 

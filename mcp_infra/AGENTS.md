@@ -10,6 +10,7 @@
 - **Error handling**: do not wrap tool bodies in broad try/except. Uncaught exceptions become MCP errors (`isError=true`). Prefer Pydantic models for inputs/outputs.
 - **Typing**: convert loose external API objects at the boundary so internal code sees a single concrete type. Centralize boundary conversions.
 - **Server state**: constructors accept per-agent state (no globals/singletons). In-proc servers mount on a `Compositor` via `mount_inproc(...)`.
+- **Server instructions don't reliably reach the model**: many MCP clients never surface `instructions` to the LLM. Anything the model must know to call a tool correctly (parameter conventions, safety caveats) belongs in the tool/field descriptions themselves — repeating it from server instructions there is intentional redundancy, not drift.
 
 ### CallToolResult Conventions
 

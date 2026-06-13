@@ -123,7 +123,7 @@ The blueprint binds the TF-managed user into the group via `!Find [authentik_cor
 
 ### State migration (one-time)
 
-The previous version of <tf/gitops/sso-providers/service_account_claude.tf> had `authentik_rbac_role.claude_diagnostics` and `authentik_group.claude_diagnostics` as TF-owned resources. To hand them off to the blueprint without an API DELETE (which would cause a permissions outage during the gap before the next blueprint reconciliation), the TF file carries `removed { from = ...; lifecycle { destroy = false } }` blocks for both, tagged `CLEANUP(2026-05-05)`. After the migration apply has run against `sso-providers-tf` in production and the blueprint has reconciled them as its own, the `removed` blocks should be deleted in a follow-up.
+The previous version of <tf/gitops/sso-providers/service_account_claude.tf> had `authentik_rbac_role.claude_diagnostics` and `authentik_group.claude_diagnostics` as TF-owned resources. To hand them off to the blueprint without an API DELETE (which would cause a permissions outage during the gap before the next blueprint reconciliation), the TF file carries `removed { from = ...; lifecycle { destroy = false } }` blocks for both, tagged `CLEANUP(added 2026-05-05)`. After the migration apply has run against `sso-providers-tf` in production and the blueprint has reconciled them as its own, the `removed` blocks should be deleted in a follow-up.
 
 ### Long-term fix
 

@@ -33,7 +33,7 @@ Live investigation log for the Foxconn DW5934e WWAN modem setup on the Dell Rugg
   `{enabling,disabled,failed}` + `power-state=low` for ≥ 12 s, runs
   FoxFlss + restarts MM (cooldown 120 s). Belt-and-suspenders backstop
   for the case where MM gives up after a script failure. Marked
-  `CLEANUP(2026-04-30)` — try retiring after a month of zero fires.
+  `CLEANUP(added 2026-04-30)` — try retiring after a month of zero fires.
 - **RF calibration** (`FoxFlss -f Check_RF_SSKU`): PASSES when modem is
   in clean state. Calibration data persists in modem NVRAM — does not
   need to be re-run unless firmware is wiped. RF cal does NOT

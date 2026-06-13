@@ -1,4 +1,4 @@
-# CLEANUP(2026-06-02): TEMPORARY diagnostic grant — remove this whole
+# CLEANUP(added 2026-06-02): TEMPORARY diagnostic grant — remove this whole
 #   cluster/k8s/forgejo/agent-rbac/ directory (and its entry in
 #   cluster/k8s/kustomization.yaml) after 2026-06-04. Added so the Claude sandbox
 #   group can read forgejo pod logs (namespace-diagnostics-reader includes

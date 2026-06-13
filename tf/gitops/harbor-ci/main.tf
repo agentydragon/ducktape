@@ -1,6 +1,6 @@
 # Harbor CI infrastructure
 #
-# CLEANUP(2026-04-06): All ducktape project images fully migrated to GHCR.
+# CLEANUP(added 2026-04-06): All ducktape project images fully migrated to GHCR.
 # The CI robot account is unused. The pull robot is needed only by props
 # (agent images in Harbor's `props` project). The harbor webhook token and
 # receiver have been removed (all ImageRepositories track GHCR now).

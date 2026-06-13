@@ -1,6 +1,6 @@
 # Gaffer-private Flux deploy-key.
 #
-# CLEANUP(2026-05-03): superseded by ducktape-automation GitHub App auth
+# CLEANUP(added 2026-05-03): superseded by ducktape-automation GitHub App auth
 # (cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml).
 # `gaffer-private` GitRepository now references that Secret directly. To
 # retire this module: drop prevent_destroy on all three resources below,

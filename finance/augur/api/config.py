@@ -132,7 +132,7 @@ class Config(ApiModel):
     portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
-    # CLEANUP(2026-06-02): `default_rollout_samples` is no longer surfaced on the wire — the
+    # CLEANUP(added 2026-06-02): `default_rollout_samples` is no longer surfaced on the wire — the
     #   frontend seeds its rollout count from a local constant clamped to `max_rollout_samples`,
     #   so nothing reads this. Remove the field once gaffer-private's config YAML drops the key
     #   (ApiModel's extra="forbid" rejects unknown keys, so it must outlive deployments still

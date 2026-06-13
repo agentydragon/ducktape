@@ -258,7 +258,7 @@ in
     networking.firewall.checkReversePath = lib.mkForce false;
 
     # Containerd
-    # CLEANUP(2026-05-15): Remove override once nixos-25.11 ships containerd ≥2.2.3.
+    # CLEANUP(added 2026-05-15): Remove override once nixos-25.11 ships containerd ≥2.2.3.
     #   containerd 2.2.1 (current in nixos-25.11) is built with Go 1.24, which
     #   rejects absolute symlinks inside container image layers. NixOS-based images
     #   (e.g., ghcr.io/zhaofengli/attic) use absolute symlinks for /etc/passwd and

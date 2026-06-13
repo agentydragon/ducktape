@@ -65,7 +65,7 @@ class Property(ApiModel):
     @field_validator("notes", mode="before")
     @classmethod
     def _collapse_list_notes(cls, value: object) -> object:
-        # CLEANUP(2026-05-25): Drop once gaffer-private/k8s/augur/properties.yaml
+        # CLEANUP(added 2026-05-25): Drop once gaffer-private/k8s/augur/properties.yaml
         #   has been migrated to single-string `notes:` (deploy currently authors
         #   per-paragraph YAML lists). Until then, fold the list into one blob.
         if isinstance(value, (list, tuple)):

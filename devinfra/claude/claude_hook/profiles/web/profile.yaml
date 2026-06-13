@@ -2,7 +2,7 @@ startup_env_script: devinfra/secrets/web_env.sh
 
 idle_watchdog: false
 
-# CLEANUP(2026-05-30): the keys below were removed because the Rust `claude-hook`
+# CLEANUP(added 2026-05-30): the keys below were removed because the Rust `claude-hook`
 # daemon IGNORES them — serde drops unknown fields (see config.rs), so they were
 # honored only by the retired Python daemon. Leaving them implied behavior that
 # does not happen: `setup_docker: true` did NOT start Docker (confirmed by the

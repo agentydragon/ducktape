@@ -59,7 +59,7 @@ let
   # FCC unlock + RF calibration for ModemManager fcc-unlock.d.
   # Called by MM with: <script> <dbus-path> <port1> [<port2> ...]
   #
-  # CLEANUP(2026-04-30): Drop the closed-source FoxFlss binary once nixpkgs
+  # CLEANUP(added 2026-04-30): Drop the closed-source FoxFlss binary once nixpkgs
   #   ships libqmi >= 1.38.0 (currently 1.36.0). Upstream MM's
   #   fcc-unlock.available.d/105b script does the job via
   #   `qmicli --fox-set-fcc-authentication` over the FOX service (0xE3),
@@ -235,7 +235,7 @@ in
       "${pkgs.modemmanager}/sbin/ModemManager --test-low-power-suspend-resume"
     ];
 
-    # CLEANUP(2026-04-30): Try retiring this service after ~1 month of
+    # CLEANUP(added 2026-04-30): Try retiring this service after ~1 month of
     #   uneventful operation. It was added before we found the dmidecode
     #   root cause and turned out never to have been the actual unlock
     #   path on any failure we observed — MM's wired fcc-unlock.d does
