@@ -668,9 +668,98 @@ export { Counter };
         &[
             "static/app::shapes",
             "did not match",
-            "Nearest candidate: top-level body index 0",
+            "Nearest class candidates:",
             "declares `Counter`",
             "selector class pinned member `a`",
+        ],
+    );
+}
+
+#[test]
+fn class_source_match_miss_reports_best_anchored_class_candidate() {
+    // The selector has all of the intended class's method anchors in order,
+    // but one method body is too exact. Diagnostics should point at that class
+    // and body mismatch, not at a later unrelated class that merely misses an
+    // anchor method.
+    let opts = FixtureOpts::new(
+        r#"class CatalogCache {
+  field = new Map();
+  constructor() {
+    this.ready = true;
+  }
+  refreshEntriesNow(scope, filter) {
+    if (filter.enabled) {
+      this.loadBatch(scope, filter);
+    }
+  }
+  loadBatch(scope, filter) {
+    return scope.prefix + filter.kind;
+  }
+  lookupEntryByKey(key, record) {
+    return key + record.id;
+  }
+  dropEntryByKey(key, record) {
+    return key;
+  }
+}
+class LaterCatalog {
+  configure() {
+    return true;
+  }
+  loadBatch(scope, filter) {
+    return scope.prefix + filter.kind;
+  }
+  lookupEntryByKey(key, record) {
+    return key + record.id;
+  }
+  dropEntryByKey(key, record) {
+    return key;
+  }
+}
+console.log(new CatalogCache().lookupEntryByKey("a", { id: "b" }));
+export { CatalogCache };
+"#,
+        vec![logical_module(
+            "catalog",
+            &[Member::source_alpha(
+                "CatalogCache",
+                r#"class K {
+  CLASS_REST;
+  refreshEntriesNow(scope, filter) {
+    if (filter.active) {
+      this.loadBatch(scope, filter);
+    }
+  }
+  CLASS_REST;
+  loadBatch(scope, filter) {
+    STMT_LIST;
+  }
+  CLASS_REST;
+  lookupEntryByKey(key, record) {
+    STMT_LIST;
+  }
+  CLASS_REST;
+  dropEntryByKey(key, record) {
+    STMT_LIST;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::catalog",
+            "did not match",
+            "Nearest class candidates:",
+            "declares `CatalogCache`",
+            "members: `field`, `constructor`, `refreshEntriesNow`",
+            "matched 4/4 pinned member names in order",
+            "class member `refreshEntriesNow` matched by name",
+            "declares `LaterCatalog`",
+            "matched 0/4 pinned member names in order",
         ],
     );
 }

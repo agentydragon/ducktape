@@ -1195,6 +1195,15 @@ struct MismatchReason {
     reason: String,
 }
 
+struct ClassCandidateHint {
+    body_idx: usize,
+    declared: Vec<String>,
+    member_labels: Vec<String>,
+    matched_pinned_labels: usize,
+    pinned_label_count: usize,
+    reason: MismatchReason,
+}
+
 fn source_match_no_match_hint(
     runtime_module: &Module,
     selector: &AnonymousStatementSelector,
@@ -1210,6 +1219,15 @@ fn source_match_no_match_hint(
     let wildcard_idents = wildcard_ident_names(needle);
     let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
     SyntaxContext::within_ignored_ctxt(|| {
+        if let Some(hint) = class_source_match_no_match_hint(
+            runtime_module,
+            needle,
+            selector,
+            &wildcard_idents,
+            alpha,
+        ) {
+            return Some(hint);
+        }
         runtime_module
             .body
             .iter()
@@ -1246,6 +1264,187 @@ fn source_match_no_match_hint(
                 )
             })
     })
+}
+
+fn class_source_match_no_match_hint(
+    runtime_module: &Module,
+    needle: &ModuleItem,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> Option<String> {
+    let needle_class = module_item_class_decl(needle)?;
+    let pinned_label_count = needle_class
+        .class
+        .body
+        .iter()
+        .filter(|member| !is_class_rest_hole(member) && class_member_label(member).is_some())
+        .count();
+    if pinned_label_count == 0 {
+        return None;
+    }
+
+    let mut candidates = runtime_module
+        .body
+        .iter()
+        .enumerate()
+        .filter_map(|(body_idx, candidate)| {
+            let candidate_class = module_item_class_decl(candidate)?;
+            let reason = first_class_decl_mismatch_reason(
+                needle_class,
+                candidate_class,
+                selector,
+                wildcard_idents,
+                alpha,
+            )?;
+            let declared = declared_bindings(candidate)
+                .into_iter()
+                .map(|binding| binding.binding_name)
+                .collect::<Vec<_>>();
+            let member_labels = candidate_class
+                .class
+                .body
+                .iter()
+                .filter_map(class_member_label)
+                .collect::<Vec<_>>();
+            let matched_pinned_labels = count_pinned_class_member_labels_in_order(
+                &needle_class.class,
+                &candidate_class.class,
+            );
+            Some(ClassCandidateHint {
+                body_idx,
+                declared,
+                member_labels,
+                matched_pinned_labels,
+                pinned_label_count,
+                reason,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .matched_pinned_labels
+            .cmp(&left.matched_pinned_labels)
+            .then_with(|| right.reason.score.cmp(&left.reason.score))
+            .then_with(|| left.body_idx.cmp(&right.body_idx))
+    });
+
+    let rendered = candidates
+        .iter()
+        .take(3)
+        .map(render_class_candidate_hint)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Some(format!("\nNearest class candidates:\n{rendered}"))
+}
+
+fn first_class_decl_mismatch_reason(
+    needle: &ClassDecl,
+    candidate: &ClassDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> Option<MismatchReason> {
+    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+    if matcher.match_decl(
+        &Decl::Class(needle.clone()),
+        &Decl::Class(candidate.clone()),
+    ) {
+        return None;
+    }
+    Some(first_decl_mismatch_reason(
+        &Decl::Class(needle.clone()),
+        &Decl::Class(candidate.clone()),
+        selector,
+        wildcard_idents,
+        alpha,
+    ))
+}
+
+fn render_class_candidate_hint(candidate: &ClassCandidateHint) -> String {
+    let declared_hint = if candidate.declared.is_empty() {
+        "declares no bindings".to_string()
+    } else {
+        format!(
+            "declares {}",
+            candidate
+                .declared
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let member_hint = render_class_member_labels(&candidate.member_labels);
+    format!(
+        "- top-level body index {body_idx} ({declared_hint}); members: {member_hint}; \
+         matched {matched}/{total} pinned member names in order. First mismatch: {reason}",
+        body_idx = candidate.body_idx,
+        matched = candidate.matched_pinned_labels,
+        total = candidate.pinned_label_count,
+        reason = candidate.reason.reason,
+    )
+}
+
+fn render_class_member_labels(labels: &[String]) -> String {
+    const MAX_LABELS: usize = 12;
+    if labels.is_empty() {
+        return "<none>".to_string();
+    }
+    let mut rendered = labels
+        .iter()
+        .take(MAX_LABELS)
+        .map(|label| format!("`{label}`"))
+        .collect::<Vec<_>>();
+    if labels.len() > MAX_LABELS {
+        rendered.push(format!("... +{} more", labels.len() - MAX_LABELS));
+    }
+    rendered.join(", ")
+}
+
+fn count_pinned_class_member_labels_in_order(needle: &Class, candidate: &Class) -> usize {
+    let mut candidate_start = 0;
+    let mut matched = 0;
+    for needle_member in &needle.body {
+        if is_class_rest_hole(needle_member) {
+            continue;
+        }
+        let Some(needle_label) = class_member_label(needle_member) else {
+            continue;
+        };
+        let Some(candidate_idx) = candidate
+            .body
+            .iter()
+            .enumerate()
+            .skip(candidate_start)
+            .find_map(|(candidate_idx, candidate_member)| {
+                (class_member_label(candidate_member).as_deref() == Some(needle_label.as_str()))
+                    .then_some(candidate_idx)
+            })
+        else {
+            break;
+        };
+        matched += 1;
+        candidate_start = candidate_idx + 1;
+    }
+    matched
+}
+
+fn module_item_class_decl(item: &ModuleItem) -> Option<&ClassDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(class))) => Some(class),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Class(class),
+            ..
+        })) => Some(class),
+        _ => None,
+    }
 }
 
 fn first_mismatch_reason(

@@ -506,6 +506,13 @@ leftmost is used; that interior choice never changes _which_ declaration
 matched, and a selector that matches more than one top-level declaration is
 still a hard error.
 
+For class fingerprints, keep method bodies as loose as the selector permits.
+If a stable method name and order are the real anchors, put `STMT_LIST;` in the
+method body and let `CLASS_REST;` absorb unrelated members. Spell concrete
+statements inside an anchored method only when those statements are part of the
+intended fingerprint; otherwise small upstream body drift will make the class
+miss even though the method anchors are still present.
+
 A hole works in **any** position — leading, middle, or trailing. Under
 `alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
 it walks both trees, and a hole never contributes the identifiers it absorbs,
