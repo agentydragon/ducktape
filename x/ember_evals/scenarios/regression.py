@@ -4,8 +4,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from ember.evals import gitea as gitea_helpers
-from ember.evals.definitions import Scenario, ScenarioSuite
+from x.ember_evals import gitea as gitea_helpers
+from x.ember_evals.definitions import Scenario, ScenarioSuite
 
 WORKSPACE_ROOT = Path("/var/lib/ember/workspace")
 

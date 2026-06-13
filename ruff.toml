@@ -19,7 +19,7 @@ exclude = [
     "py_detectors/rules/**/bad/**",
     "py_detectors/rules/**/ok/**",
     "x/sandboxed_jupyter/testdata",
-    "sysrw/testdata",
+    "x/sysrw/testdata",
     "tana/testdata",
     "props/specimens/*/*/code",
     "x/orcaslicer_config",

@@ -6,7 +6,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 | Directory          | Purpose                                       |
 | ------------------ | --------------------------------------------- |
-| `agent_cli/`       | Agent REPL CLI                                |
+| `x/agent_cli/`     | Agent REPL CLI                                |
 | `x/agent_server/`  | FastAPI backend, runtime, policy              |
 | `cluster/`         | k8s cluster                                   |
 | `tf/`              | GitOps Terraform modules (tofu-ctrl)          |

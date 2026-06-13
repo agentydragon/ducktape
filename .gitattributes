@@ -14,7 +14,7 @@ py_detectors/rules/**/ok/** rules-lint-ignored=true
 x/claude_hooks/testdata/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
 x/sandboxed_jupyter/testdata/** rules-lint-ignored=true
-sysrw/testdata/** rules-lint-ignored=true
+x/sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
 
 # Generated lockfiles - large, not useful to diff

@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from ember.evals.definitions import Scenario
-from ember.integrations.gitea import GiteaClient, GiteaRepository
+from x.ember.integrations.gitea import GiteaClient, GiteaRepository
+from x.ember_evals.definitions import Scenario
 
 CHECKLIST_PATTERN = re.compile(r"- \[[ xX]\]")
 

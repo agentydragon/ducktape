@@ -1,0 +1,27 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "grader",
+    srcs = ["grader.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":strategies",
+        "//openai_utils:model",
+        "//openai_utils:types",
+        "//x/inop:config",
+        "//x/inop/engine:models",
+        "//x/inop/io:logging_utils",
+    ],
+)
+
+py_library(
+    name = "strategies",
+    srcs = ["strategies.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//x/inop:config",
+        "//x/inop/engine:models",
+        "//x/inop/io:yaml_loader",
+        "//x/inop/prompting:truncation_utils",
+    ],
+)
