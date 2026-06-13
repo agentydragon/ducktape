@@ -508,6 +508,58 @@ export { selectedA, selectedB, laterC };
 }
 
 #[test]
+fn declarator_hole_miss_reports_best_anchored_var_decl_candidate() {
+    let opts = FixtureOpts::new(
+        r#"function operation(kind, value) {
+  return `${kind}:${value}`;
+}
+function helper(value) {
+  return value;
+}
+const unrelatedOperation = operation("alpha", "small"),
+  unrelatedFreeze = Object.freeze({ ready: true });
+const clusterPrefix = helper("prefix"),
+  firstSelected = operation("alpha", "first"),
+  clusterMiddle = helper("middle"),
+  secondSelected = operation("beta", "second"),
+  clusterSuffix = helper("suffix");
+console.log(firstSelected, secondSelected);
+export { firstSelected, secondSelected };
+"#,
+        vec![logical_module_with_binding_groups(
+            "operations",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const DECLARATORS = null,
+  firstSelected = operation("alpha", EXPR),
+  DECLARATORS = null,
+  secondSelected = operation("gamma", EXPR),
+  DECLARATORS = null;"#,
+                &[
+                    ("firstSelected", "firstOperation"),
+                    ("secondSelected", "secondOperation"),
+                ],
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::operations",
+            "binding_groups[].source_match",
+            "did not match",
+            "Nearest variable declaration candidates:",
+            "declares `clusterPrefix`, `firstSelected`, `clusterMiddle`, `secondSelected`, `clusterSuffix`",
+            "declarators: `clusterPrefix = helper(...)`, `firstSelected = operation(...)`",
+            "matched 1/2 pinned declarators in order",
+            "selector pinned declarator #3 `secondSelected = operation(...)` was not found in order",
+            "remaining candidate declarators: `clusterMiddle = helper(...)`, `secondSelected = operation(...)`",
+        ],
+    );
+}
+
+#[test]
 fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"if (true) {

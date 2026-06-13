@@ -1228,6 +1228,16 @@ struct ClassCandidateHint {
     reason: MismatchReason,
 }
 
+struct VarDeclCandidateHint {
+    body_idx: usize,
+    declared: Vec<String>,
+    declarator_labels: Vec<String>,
+    matched_pinned_declarators: usize,
+    pinned_declarator_count: usize,
+    candidate_declarator_count: usize,
+    reason: MismatchReason,
+}
+
 fn source_match_no_match_hint(
     runtime_module: &Module,
     selector: &AnonymousStatementSelector,
@@ -1244,6 +1254,15 @@ fn source_match_no_match_hint(
     let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
     SyntaxContext::within_ignored_ctxt(|| {
         if let Some(hint) = class_source_match_no_match_hint(
+            runtime_module,
+            needle,
+            selector,
+            &wildcard_idents,
+            alpha,
+        ) {
+            return Some(hint);
+        }
+        if let Some(hint) = var_declarator_source_match_no_match_hint(
             runtime_module,
             needle,
             selector,
@@ -1368,6 +1387,103 @@ fn class_source_match_no_match_hint(
     Some(format!("\nNearest class candidates:\n{rendered}"))
 }
 
+fn var_declarator_source_match_no_match_hint(
+    runtime_module: &Module,
+    needle: &ModuleItem,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> Option<String> {
+    let needle_var = item_var_decl(needle)?;
+    if !needle_var
+        .decls
+        .iter()
+        .any(|declarator| declarator_list_hole_name(declarator).is_some())
+    {
+        return None;
+    }
+    let pinned_declarator_count = needle_var
+        .decls
+        .iter()
+        .filter(|declarator| declarator_list_hole_name(declarator).is_none())
+        .count();
+    if pinned_declarator_count == 0 {
+        return None;
+    }
+
+    let mut candidates = runtime_module
+        .body
+        .iter()
+        .enumerate()
+        .filter_map(|(body_idx, candidate)| {
+            let candidate_var = item_var_decl(candidate)?;
+            if needle_var.kind != candidate_var.kind {
+                return None;
+            }
+            let reason = first_var_decl_mismatch_reason(
+                needle_var,
+                candidate_var,
+                selector,
+                wildcard_idents,
+                alpha,
+            );
+            let declared = declared_bindings(candidate)
+                .into_iter()
+                .map(|binding| binding.binding_name)
+                .collect::<Vec<_>>();
+            let declarator_labels = candidate_var
+                .decls
+                .iter()
+                .map(render_var_declarator_label)
+                .collect::<Vec<_>>();
+            let matched_pinned_declarators = count_pinned_var_declarators_in_order(
+                needle_var,
+                candidate_var,
+                selector,
+                wildcard_idents,
+                alpha,
+            );
+            Some(VarDeclCandidateHint {
+                body_idx,
+                declared,
+                declarator_labels,
+                matched_pinned_declarators,
+                pinned_declarator_count,
+                candidate_declarator_count: candidate_var.decls.len(),
+                reason,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .matched_pinned_declarators
+            .cmp(&left.matched_pinned_declarators)
+            .then_with(|| {
+                right
+                    .candidate_declarator_count
+                    .cmp(&left.candidate_declarator_count)
+            })
+            .then_with(|| right.reason.score.cmp(&left.reason.score))
+            .then_with(|| left.body_idx.cmp(&right.body_idx))
+    });
+
+    let rendered = candidates
+        .iter()
+        .take(3)
+        .map(render_var_decl_candidate_hint)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Some(format!(
+        "\nNearest variable declaration candidates:\n{rendered}"
+    ))
+}
+
 fn first_class_decl_mismatch_reason(
     needle: &ClassDecl,
     candidate: &ClassDecl,
@@ -1432,6 +1548,106 @@ fn render_class_member_labels(labels: &[String]) -> String {
     rendered.join(", ")
 }
 
+fn render_var_decl_candidate_hint(candidate: &VarDeclCandidateHint) -> String {
+    let declared_hint = if candidate.declared.is_empty() {
+        "declares no bindings".to_string()
+    } else {
+        format!(
+            "declares {}",
+            candidate
+                .declared
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let declarator_hint = render_var_declarator_labels(&candidate.declarator_labels);
+    format!(
+        "- top-level body index {body_idx} ({declared_hint}); declarators: {declarator_hint}; \
+         matched {matched}/{total} pinned declarators in order. First mismatch: {reason}",
+        body_idx = candidate.body_idx,
+        matched = candidate.matched_pinned_declarators,
+        total = candidate.pinned_declarator_count,
+        reason = candidate.reason.reason,
+    )
+}
+
+fn render_var_declarator_labels(labels: &[String]) -> String {
+    const MAX_LABELS: usize = 10;
+    if labels.is_empty() {
+        return "<none>".to_string();
+    }
+    let mut rendered = labels.iter().take(MAX_LABELS).cloned().collect::<Vec<_>>();
+    if labels.len() > MAX_LABELS {
+        rendered.push(format!("... +{} more", labels.len() - MAX_LABELS));
+    }
+    rendered.join(", ")
+}
+
+fn render_var_declarator_label(declarator: &VarDeclarator) -> String {
+    if let Some(hole_name) = declarator_list_hole_name(declarator) {
+        return format!("`{hole_name}`");
+    }
+    let bindings = binding_targets::binding_name_strings(&declarator.name);
+    let binding_label = if bindings.is_empty() {
+        "<pattern>".to_string()
+    } else {
+        bindings.join("/")
+    };
+    match declarator.init.as_deref() {
+        Some(init) => format!("`{binding_label} = {}`", expr_shape_label(init)),
+        None => format!("`{binding_label}`"),
+    }
+}
+
+fn expr_shape_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Ident(ident) => ident.sym.to_string(),
+        Expr::Lit(lit) => lit_shape_label(lit),
+        Expr::Call(call) => format!("{}(...)", callee_shape_label(&call.callee)),
+        Expr::New(new) => format!("new {}(...)", expr_shape_label(&new.callee)),
+        Expr::Member(member) => member_expr_shape_label(member),
+        Expr::Object(_) => "{...}".to_string(),
+        Expr::Array(_) => "[...]".to_string(),
+        Expr::Arrow(_) => "(...) => ...".to_string(),
+        Expr::Fn(_) => "function(...)".to_string(),
+        Expr::Class(_) => "class {...}".to_string(),
+        Expr::Tpl(_) => "`...`".to_string(),
+        Expr::TaggedTpl(tagged) => format!("{} `...`", expr_shape_label(&tagged.tag)),
+        _ => "expression".to_string(),
+    }
+}
+
+fn callee_shape_label(callee: &Callee) -> String {
+    match callee {
+        Callee::Super(_) => "super".to_string(),
+        Callee::Import(_) => "import".to_string(),
+        Callee::Expr(expr) => expr_shape_label(expr),
+    }
+}
+
+fn member_expr_shape_label(member: &MemberExpr) -> String {
+    let obj = expr_shape_label(&member.obj);
+    match &member.prop {
+        MemberProp::Ident(prop) => format!("{obj}.{}", prop.sym),
+        MemberProp::PrivateName(prop) => format!("{obj}.#{}", prop.name),
+        MemberProp::Computed(_) => format!("{obj}[...]"),
+    }
+}
+
+fn lit_shape_label(lit: &Lit) -> String {
+    match lit {
+        Lit::Str(str_) => format!("\"{}\"", str_.value.to_string_lossy()),
+        Lit::Bool(bool_) => bool_.value.to_string(),
+        Lit::Null(_) => "null".to_string(),
+        Lit::Num(num) => num.value.to_string(),
+        Lit::BigInt(_) => "0n".to_string(),
+        Lit::Regex(_) => "/.../".to_string(),
+        Lit::JSXText(_) => "jsx-text".to_string(),
+    }
+}
+
 fn count_pinned_class_member_labels_in_order(needle: &Class, candidate: &Class) -> usize {
     let mut candidate_start = 0;
     let mut matched = 0;
@@ -1458,6 +1674,96 @@ fn count_pinned_class_member_labels_in_order(needle: &Class, candidate: &Class) 
         candidate_start = candidate_idx + 1;
     }
     matched
+}
+
+fn count_pinned_var_declarators_in_order(
+    needle: &VarDecl,
+    candidate: &VarDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> usize {
+    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+    let mut candidate_start = 0;
+    let mut matched = 0;
+    for needle_declarator in &needle.decls {
+        if declarator_list_hole_name(needle_declarator).is_some() {
+            continue;
+        }
+        let Some(candidate_idx) = candidate
+            .decls
+            .iter()
+            .enumerate()
+            .skip(candidate_start)
+            .find_map(|(candidate_idx, candidate_declarator)| {
+                let snapshot = matcher.snapshot();
+                if matcher.match_var_declarator(needle_declarator, candidate_declarator) {
+                    Some(candidate_idx)
+                } else {
+                    matcher.restore(snapshot);
+                    None
+                }
+            })
+        else {
+            break;
+        };
+        matched += 1;
+        candidate_start = candidate_idx + 1;
+    }
+    matched
+}
+
+fn first_pinned_var_declarator_mismatch_reason(
+    needle: &VarDecl,
+    candidate: &VarDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> String {
+    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+    let mut candidate_start = 0;
+    for (needle_idx, needle_declarator) in needle.decls.iter().enumerate() {
+        if declarator_list_hole_name(needle_declarator).is_some() {
+            continue;
+        }
+        let Some(candidate_idx) = candidate
+            .decls
+            .iter()
+            .enumerate()
+            .skip(candidate_start)
+            .find_map(|(candidate_idx, candidate_declarator)| {
+                let snapshot = matcher.snapshot();
+                if matcher.match_var_declarator(needle_declarator, candidate_declarator) {
+                    Some(candidate_idx)
+                } else {
+                    matcher.restore(snapshot);
+                    None
+                }
+            })
+        else {
+            let remaining = candidate
+                .decls
+                .iter()
+                .skip(candidate_start)
+                .map(render_var_declarator_label)
+                .collect::<Vec<_>>();
+            let remaining_hint = if remaining.is_empty() {
+                "no candidate declarators remain".to_string()
+            } else {
+                format!(
+                    "remaining candidate declarators: {}",
+                    render_var_declarator_labels(&remaining)
+                )
+            };
+            return format!(
+                "selector pinned declarator #{needle_idx} {} was not found in order ({remaining_hint})",
+                render_var_declarator_label(needle_declarator),
+            );
+        };
+        candidate_start = candidate_idx + 1;
+    }
+    "pinned declarators matched in order, but declaration flags or hole placement differed"
+        .to_string()
 }
 
 fn module_item_class_decl(item: &ModuleItem) -> Option<&ClassDecl> {
@@ -1645,14 +1951,26 @@ fn first_var_decl_mismatch_reason(
         .match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
         .is_none()
     {
-        return MismatchReason {
-            score: 55,
-            reason: format!(
+        let reason = if needle
+            .decls
+            .iter()
+            .any(|declarator| declarator_list_hole_name(declarator).is_some())
+        {
+            first_pinned_var_declarator_mismatch_reason(
+                needle,
+                candidate,
+                selector,
+                wildcard_idents,
+                alpha,
+            )
+        } else {
+            format!(
                 "variable declarators differ: selector has {} declarator(s), candidate has {}",
                 needle.decls.len(),
                 candidate.decls.len(),
-            ),
+            )
         };
+        return MismatchReason { score: 55, reason };
     }
     MismatchReason {
         score: 35,
