@@ -168,7 +168,33 @@ Promotion bar by destination: always-loaded instruction chains take only what
 every session needs; on-demand docs take durable facts with ≥2 consumers in
 space or time; knowledge scoped to one code location stays a comment.
 
-### 7. Rank Suggestions
+### 7. Code Documentation Sweep
+
+The same lenses applied to comments, docstrings, and schema descriptions —
+the tightest-locality knowledge surface:
+
+- **Deletion test at comment scope**: a comment or docstring that would be true
+  above any call to this API restates the signature — delete (name/signature
+  restatement, Args/Returns echoes, historical "used to", section banners).
+  Per-file scan prompts (e.g. `prompts/scans/useless_comments_and_docs.md`) are
+  the execution arm; this sweep picks which trees to point them at, reporting
+  high-density clusters rather than individual nitpicks.
+- **Boundary moves, both directions**: a comment explaining cross-component
+  flow, system architecture, or an operational procedure has outgrown its file
+  — promote to docs, leave one line. A doc paragraph mirroring a volatile
+  implementation detail belongs the other way: demote it to a comment next to
+  the code that changes with it.
+- **Lifecycle**: `CLEANUP(date)` tombstones with met/expired conditions are
+  action items, not history. `SYNC:` marker pairs must still exist on both
+  ends and point at each other.
+- **Always-loaded exception**: Pydantic `Field(description=...)`, MCP tool
+  docstrings, and anything else that ships into JSON schemas or tool
+  definitions is paid by every session using that server — weight it with the
+  always-loaded surfaces from the token sweep, not like ordinary comments
+  (paid only on file read). Tool descriptions state contract and local
+  semantics, never generic API mechanics the model already knows.
+
+### 8. Rank Suggestions
 
 Score each candidate by:
 
