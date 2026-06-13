@@ -332,12 +332,16 @@ pub fn resolve_member_binding(
         .unwrap_or_default();
     match matches.as_slice() {
         [single] => Ok(single.binding.clone()),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}`{target_binding_hint} did not match any top-level declaration in the chunk. \
-             Selector:\n{match_source}",
-            match_source = selector.match_source,
-        ),
+        [] => {
+            let hint = source_match_no_match_hint(runtime_module, selector);
+            bail!(
+                "logical_module {request_id}: members[].selector.source_match for export \
+                 `{export_name}`{target_binding_hint} did not match any top-level declaration in the chunk. \
+                 Selector:\n{match_source}{hint}",
+                match_source = selector.match_source,
+                hint = hint.unwrap_or_default(),
+            )
+        }
         multiple => bail!(
             "logical_module {request_id}: members[].selector.source_match for export \
              `{export_name}`{target_binding_hint} is ambiguous — matched {} top-level statements at body \
@@ -426,12 +430,16 @@ pub fn resolve_member_binding_group(
     let ranges = find_matching_body_ranges(runtime_module, &parsed.body, selector);
     let body_idx = match ranges.as_slice() {
         [single] => *single,
-        [] => bail!(
-            "logical_module {request_id}: binding_groups[].source_match for targets \
-             `{target_hint}` did not match any top-level declaration range in the chunk. \
-             Selector:\n{match_source}",
-            match_source = selector.match_source,
-        ),
+        [] => {
+            let hint = source_match_no_match_hint(runtime_module, selector);
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match for targets \
+                 `{target_hint}` did not match any top-level declaration range in the chunk. \
+                 Selector:\n{match_source}{hint}",
+                match_source = selector.match_source,
+                hint = hint.unwrap_or_default(),
+            )
+        }
         multiple => bail!(
             "logical_module {request_id}: binding_groups[].source_match for targets \
              `{target_hint}` is ambiguous — matched {} top-level declaration ranges at body \
@@ -829,11 +837,13 @@ fn resolve_member_binding_group_with_declarator_holes(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
+            let hint = source_match_no_match_hint(runtime_module, selector);
             bail!(
                 "logical_module {request_id}: binding_groups[].source_match for targets \
                  `{target_hint}` did not match any top-level declaration range in the chunk. \
-                 Selector:\n{match_source}",
+                 Selector:\n{match_source}{hint}",
                 match_source = selector.match_source,
+                hint = hint.unwrap_or_default(),
             )
         }
         multiple => bail!(
@@ -1177,6 +1187,396 @@ fn find_matching_body_group_alignments(
         place_module_item_segments(&mut matcher, &search, 0, 0, &mut alignment, &mut matches);
         matches
     })
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct MismatchReason {
+    score: usize,
+    reason: String,
+}
+
+fn source_match_no_match_hint(
+    runtime_module: &Module,
+    selector: &AnonymousStatementSelector,
+) -> Option<String> {
+    let parsed =
+        js_ast::parse_js_module_ast("<source_match diagnostic>", &selector.match_source).ok()?;
+    let [needle] = parsed.body.as_slice() else {
+        return None;
+    };
+    if module_item_list_hole_name(needle).is_some() {
+        return None;
+    }
+    let wildcard_idents = wildcard_ident_names(needle);
+    let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
+    SyntaxContext::within_ignored_ctxt(|| {
+        runtime_module
+            .body
+            .iter()
+            .enumerate()
+            .filter_map(|(body_idx, candidate)| {
+                first_mismatch_reason(needle, candidate, selector, &wildcard_idents, alpha).map(
+                    |reason| {
+                        let declared = declared_bindings(candidate)
+                            .into_iter()
+                            .map(|binding| binding.binding_name)
+                            .collect::<Vec<_>>();
+                        (body_idx, declared, reason)
+                    },
+                )
+            })
+            .max_by_key(|(_, _, reason)| reason.score)
+            .map(|(body_idx, declared, reason)| {
+                let declared_hint = if declared.is_empty() {
+                    "declares no bindings".to_string()
+                } else {
+                    format!(
+                        "declares {}",
+                        declared
+                            .iter()
+                            .map(|name| format!("`{name}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                format!(
+                    "\nNearest candidate: top-level body index {body_idx} ({declared_hint}).\
+                     \nFirst mismatch: {reason}",
+                    reason = reason.reason,
+                )
+            })
+    })
+}
+
+fn first_mismatch_reason(
+    needle: &ModuleItem,
+    candidate: &ModuleItem,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> Option<MismatchReason> {
+    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+    if matcher.match_module_item(needle, candidate) {
+        return None;
+    }
+    Some(match (needle, candidate) {
+        (ModuleItem::Stmt(needle), ModuleItem::Stmt(candidate)) => {
+            first_stmt_mismatch_reason(needle, candidate, selector, wildcard_idents, alpha)
+        }
+        (ModuleItem::ModuleDecl(needle), ModuleItem::ModuleDecl(candidate)) => {
+            first_module_decl_mismatch_reason(needle, candidate, selector, wildcard_idents, alpha)
+        }
+        _ => MismatchReason {
+            score: 1,
+            reason: format!(
+                "top-level item kind differs: selector is {}, candidate is {}",
+                module_item_kind(needle),
+                module_item_kind(candidate),
+            ),
+        },
+    })
+}
+
+fn first_module_decl_mismatch_reason(
+    needle: &ModuleDecl,
+    candidate: &ModuleDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> MismatchReason {
+    match (needle, candidate) {
+        (ModuleDecl::ExportDecl(needle), ModuleDecl::ExportDecl(candidate)) => {
+            first_decl_mismatch_reason(
+                &needle.decl,
+                &candidate.decl,
+                selector,
+                wildcard_idents,
+                alpha,
+            )
+        }
+        _ if std::mem::discriminant(needle) != std::mem::discriminant(candidate) => {
+            MismatchReason {
+                score: 10,
+                reason: format!(
+                    "module declaration kind differs: selector is {}, candidate is {}",
+                    module_decl_kind(needle),
+                    module_decl_kind(candidate),
+                ),
+            }
+        }
+        _ => MismatchReason {
+            score: 20,
+            reason: "module declaration shape differs".to_string(),
+        },
+    }
+}
+
+fn first_stmt_mismatch_reason(
+    needle: &Stmt,
+    candidate: &Stmt,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> MismatchReason {
+    match (needle, candidate) {
+        (Stmt::Decl(needle), Stmt::Decl(candidate)) => {
+            first_decl_mismatch_reason(needle, candidate, selector, wildcard_idents, alpha)
+        }
+        _ if std::mem::discriminant(needle) != std::mem::discriminant(candidate) => {
+            MismatchReason {
+                score: 10,
+                reason: format!(
+                    "statement kind differs: selector is {}, candidate is {}",
+                    stmt_kind(needle),
+                    stmt_kind(candidate),
+                ),
+            }
+        }
+        _ => MismatchReason {
+            score: 20,
+            reason: "statement shape differs".to_string(),
+        },
+    }
+}
+
+fn first_decl_mismatch_reason(
+    needle: &Decl,
+    candidate: &Decl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> MismatchReason {
+    match (needle, candidate) {
+        (Decl::Class(needle), Decl::Class(candidate)) => {
+            if !alpha && needle.ident.sym != candidate.ident.sym {
+                return MismatchReason {
+                    score: 40,
+                    reason: format!(
+                        "class name differs: selector `{}`, candidate `{}`",
+                        needle.ident.sym, candidate.ident.sym,
+                    ),
+                };
+            }
+            first_class_mismatch_reason(
+                &needle.class,
+                &candidate.class,
+                selector,
+                wildcard_idents,
+                alpha,
+            )
+        }
+        (Decl::Fn(needle), Decl::Fn(candidate)) => {
+            if !alpha && needle.ident.sym != candidate.ident.sym {
+                return MismatchReason {
+                    score: 40,
+                    reason: format!(
+                        "function name differs: selector `{}`, candidate `{}`",
+                        needle.ident.sym, candidate.ident.sym,
+                    ),
+                };
+            }
+            MismatchReason {
+                score: 35,
+                reason: "function signature or body differs".to_string(),
+            }
+        }
+        (Decl::Var(needle), Decl::Var(candidate)) => {
+            first_var_decl_mismatch_reason(needle, candidate, selector, wildcard_idents, alpha)
+        }
+        _ if std::mem::discriminant(needle) != std::mem::discriminant(candidate) => {
+            MismatchReason {
+                score: 30,
+                reason: format!(
+                    "declaration kind differs: selector is {}, candidate is {}",
+                    decl_kind(needle),
+                    decl_kind(candidate),
+                ),
+            }
+        }
+        _ => MismatchReason {
+            score: 35,
+            reason: "declaration shape differs".to_string(),
+        },
+    }
+}
+
+fn first_var_decl_mismatch_reason(
+    needle: &VarDecl,
+    candidate: &VarDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> MismatchReason {
+    if needle.kind != candidate.kind {
+        return MismatchReason {
+            score: 45,
+            reason: format!(
+                "variable declaration kind differs: selector is {}, candidate is {}",
+                var_decl_kind(needle.kind),
+                var_decl_kind(candidate.kind),
+            ),
+        };
+    }
+    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+    if matcher
+        .match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
+        .is_none()
+    {
+        return MismatchReason {
+            score: 55,
+            reason: format!(
+                "variable declarators differ: selector has {} declarator(s), candidate has {}",
+                needle.decls.len(),
+                candidate.decls.len(),
+            ),
+        };
+    }
+    MismatchReason {
+        score: 35,
+        reason: "variable declaration shape differs".to_string(),
+    }
+}
+
+fn first_class_mismatch_reason(
+    needle: &Class,
+    candidate: &Class,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> MismatchReason {
+    let mut candidate_start = 0;
+    for needle_member in &needle.body {
+        if is_class_rest_hole(needle_member) {
+            continue;
+        }
+        let Some(needle_label) = class_member_label(needle_member) else {
+            continue;
+        };
+        let mut found_label = false;
+        for (candidate_idx, candidate_member) in
+            candidate.body.iter().enumerate().skip(candidate_start)
+        {
+            if class_member_label(candidate_member).as_deref() != Some(needle_label.as_str()) {
+                continue;
+            }
+            found_label = true;
+            candidate_start = candidate_idx + 1;
+            let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
+            if !matcher.match_class_member(needle_member, candidate_member) {
+                return MismatchReason {
+                    score: 65,
+                    reason: format!(
+                        "class member `{needle_label}` matched by name, but its signature or body differs"
+                    ),
+                };
+            }
+            break;
+        }
+        if !found_label {
+            return MismatchReason {
+                score: 70,
+                reason: format!(
+                    "selector class pinned member `{needle_label}` was not found in the candidate class body in order"
+                ),
+            };
+        }
+    }
+    MismatchReason {
+        score: 45,
+        reason: "class heritage, decorators, or member order differs".to_string(),
+    }
+}
+
+fn class_member_label(member: &ClassMember) -> Option<String> {
+    match member {
+        ClassMember::Constructor(_) => Some("constructor".to_string()),
+        ClassMember::Method(method) => prop_name_label(&method.key),
+        ClassMember::PrivateMethod(method) => Some(format!("#{}", method.key.name)),
+        ClassMember::ClassProp(prop) => prop_name_label(&prop.key),
+        ClassMember::PrivateProp(prop) => Some(format!("#{}", prop.key.name)),
+        ClassMember::AutoAccessor(accessor) => match &accessor.key {
+            Key::Public(key) => prop_name_label(key),
+            Key::Private(key) => Some(format!("#{}", key.name)),
+        },
+        ClassMember::StaticBlock(_) => Some("static block".to_string()),
+        _ => None,
+    }
+}
+
+fn prop_name_label(name: &PropName) -> Option<String> {
+    match name {
+        PropName::Ident(ident) => Some(ident.sym.to_string()),
+        PropName::Str(str_) => Some(str_.value.to_string_lossy().to_string()),
+        PropName::Num(num) => Some(num.value.to_string()),
+        PropName::BigInt(bigint) => Some(bigint.value.to_string()),
+        PropName::Computed(_) => Some("<computed>".to_string()),
+    }
+}
+
+fn module_item_kind(item: &ModuleItem) -> &'static str {
+    match item {
+        ModuleItem::ModuleDecl(_) => "module declaration",
+        ModuleItem::Stmt(_) => "statement",
+    }
+}
+
+fn module_decl_kind(decl: &ModuleDecl) -> &'static str {
+    match decl {
+        ModuleDecl::Import(_) => "import",
+        ModuleDecl::ExportDecl(_) => "export declaration",
+        ModuleDecl::ExportNamed(_) => "named export",
+        ModuleDecl::ExportDefaultDecl(_) => "default declaration export",
+        ModuleDecl::ExportDefaultExpr(_) => "default expression export",
+        ModuleDecl::ExportAll(_) => "export all",
+        ModuleDecl::TsImportEquals(_) => "typescript import equals",
+        ModuleDecl::TsExportAssignment(_) => "typescript export assignment",
+        ModuleDecl::TsNamespaceExport(_) => "typescript namespace export",
+    }
+}
+
+fn stmt_kind(stmt: &Stmt) -> &'static str {
+    match stmt {
+        Stmt::Block(_) => "block",
+        Stmt::Empty(_) => "empty",
+        Stmt::Debugger(_) => "debugger",
+        Stmt::With(_) => "with",
+        Stmt::Return(_) => "return",
+        Stmt::Labeled(_) => "labeled",
+        Stmt::Break(_) => "break",
+        Stmt::Continue(_) => "continue",
+        Stmt::If(_) => "if",
+        Stmt::Switch(_) => "switch",
+        Stmt::Throw(_) => "throw",
+        Stmt::Try(_) => "try",
+        Stmt::While(_) => "while",
+        Stmt::DoWhile(_) => "do while",
+        Stmt::For(_) => "for",
+        Stmt::ForIn(_) => "for in",
+        Stmt::ForOf(_) => "for of",
+        Stmt::Decl(_) => "declaration",
+        Stmt::Expr(_) => "expression",
+    }
+}
+
+fn decl_kind(decl: &Decl) -> &'static str {
+    match decl {
+        Decl::Class(_) => "class",
+        Decl::Fn(_) => "function",
+        Decl::Var(_) => "variable",
+        Decl::Using(_) => "using",
+        Decl::TsInterface(_) => "typescript interface",
+        Decl::TsTypeAlias(_) => "typescript type alias",
+        Decl::TsEnum(_) => "typescript enum",
+        Decl::TsModule(_) => "typescript module",
+    }
+}
+
+fn var_decl_kind(kind: VarDeclKind) -> &'static str {
+    match kind {
+        VarDeclKind::Var => "var",
+        VarDeclKind::Let => "let",
+        VarDeclKind::Const => "const",
+    }
 }
 
 fn place_module_item_segments(

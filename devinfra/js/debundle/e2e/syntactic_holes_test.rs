@@ -663,7 +663,16 @@ export { Counter };
         )],
     );
 
-    expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::shapes",
+            "did not match",
+            "Nearest candidate: top-level body index 0",
+            "declares `Counter`",
+            "selector class pinned member `a`",
+        ],
+    );
 }
 
 #[test]
