@@ -99,8 +99,4 @@ container snapshot→diff, and documentation refresh.
 READMEs should describe the **current binary version only** — no historical
 change summaries, version diff sections, or accumulated change history.
 Previous versions are preserved in their own BuildID directories. The parent
-README reflects current state.
-
-### Current Plan
-
-See <PLAN.md> for current work items and priorities.
+README reflects current state; `diff_report.md` holds the live-vs-built diff.

@@ -240,7 +240,7 @@ bazel run //devinfra/claude/web_env/tools:build_and_diff
 ```
 
 Review `diff_report.md`. Update `exclusions.yaml` if new runtime artifacts
-need exclusion. Update `PLAN.md` with the new diff summary.
+need exclusion. Commit `diff_report.md` with the new diff summary.
 
 ---
 
@@ -250,7 +250,7 @@ Files to update:
 
 | File                                                       | What to update                             |
 | ---------------------------------------------------------- | ------------------------------------------ |
-| `devinfra/claude/web_env/PLAN.md`                          | Diff summary, change history entry         |
+| `devinfra/claude/web_env/diff_report.md`                   | Current live-vs-built diff summary         |
 | `devinfra/claude/web_env/docs/environment_discovery.md`    | env-manager version, help, flags, env vars |
 | `devinfra/claude/web_env/docs/container_spec.md`           | Binary info, new capabilities              |
 | `devinfra/claude/web_env/re/environment_manager/README.md` | Target binary table, source tree, CLI docs |

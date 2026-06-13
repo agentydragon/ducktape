@@ -1,5 +1,8 @@
 # WT Refactor Plan
 
+Server + client reliability, GitHub PR cache/refresh, watchers, handlers, and
+view rendering.
+
 ## Scope
 
 - Focus areas: `wt` server + client reliability, GitHub PR cache/refresh, watchers, handlers, and view rendering.
@@ -7,14 +10,7 @@
 
 ## Outstanding Work
 
-- Completed
-  - GitHub PR list construction now uses Pydantic field names (`head_ref_name`, `merged_at` ISO) — `wt/server/github_client.py`
-  - `PRService` catches `GitHubUnavailableError`; uses `asyncio.get_running_loop` — `wt/server/pr_service.py`
-  - GitHub refresh watcher stop is non-blocking via `asyncio.to_thread` — `wt/server/github_refresh.py`
-  - Removed double initial refresh; single deterministic cache fill at startup — `wt/server/github_refresh.py` + `wt/server/pr_service.py`
-  - Background task exception logging via `_log_task_done`; import hygiene tightened — `wt/server/handlers/status_handler.py`
-  - Tests: removed dead PyGithub shadow code; robust PR fixtures via `WT_TEST_MODE` — `wt/e2e/test_github_pr_display_real.py`
-  - Repo-wide strict import cleanup (moved non-optional/logging imports to top); LLM notifications tests passing
+### P1
 
 1. **PR hyperlinks respect configured repo**
    File: `wt/client/view_formatter.py`
