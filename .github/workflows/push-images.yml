@@ -153,7 +153,7 @@ jobs:
           - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
           - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
           - { image: "//openclaw/exec:image", image_name: openclaw-exec, test_target: "" }
-          - { image: "//third_party/activitywatch:image", image_name: aw-server, test_target: "" }
+          - { image: "@ducktape_activitywatch//:image", image_name: aw-server, test_target: "" }
           - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }
     steps:
       - uses: actions/checkout@v6
@@ -176,30 +176,6 @@ jobs:
           args: test ${{ matrix.test_target }}
           rbe_image: ${{ inputs.rbe_image }}
 
-      - name: Resolve image output paths
-        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
-        id: paths
-        shell: bash
-        env:
-          IMAGE: ${{ matrix.image }}
-        run: |
-          # //pkg:name → pkg, name
-          PKG="${IMAGE#//}"
-          PKG="${PKG%:*}"
-          NAME="${IMAGE##*:}"
-          # `bb remote build` downloads artifacts into
-          # `bb-out/bazel-out/<config>/bin/<pkg>/<name>`. The `<config>` is
-          # `k8-fastbuild` for the Linux x86_64 fastbuild we always use
-          # here (via --config=rbe --config=ci in the bb-remote action).
-          # There is no `bb-out/bazel-bin/` convenience symlink on `bb
-          # remote` output — that symlink only exists in local Bazel
-          # workspaces.
-          BIN="bb-out/bazel-out/k8-fastbuild/bin"
-          {
-            echo "oci_dir=${BIN}/${PKG}/${NAME}"
-            echo "digest_file=${BIN}/${PKG}/${NAME}.json.sha256"
-          } >> "$GITHUB_OUTPUT"
-
       # Phase 1 — download just the .digest sibling target (~70 bytes).
       - name: bb remote build digest
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
@@ -207,6 +183,34 @@ jobs:
         with:
           args: build ${{ matrix.image }}.digest --remote_download_outputs=toplevel
           rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Resolve image output paths
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        id: paths
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          NAME="${IMAGE##*:}"
+          # `bb remote build` downloads artifacts into
+          # `bb-out/bazel-out/<config>/bin/...`. The `<config>` is
+          # `k8-fastbuild` for the Linux x86_64 fastbuild we always use
+          # here (via --config=rbe --config=ci in the bb-remote action).
+          # External repos land below `external/<canonical-repo>/`, so derive
+          # the paths from the downloaded digest artifact rather than parsing
+          # Bazel label syntax.
+          BIN="bb-out/bazel-out/k8-fastbuild/bin"
+          mapfile -t DIGEST_FILES < <(find "$BIN" -path "*/${NAME}.json.sha256" -type f)
+          if [[ "${#DIGEST_FILES[@]}" -ne 1 ]]; then
+            printf 'Expected exactly one digest file for %s, found %s:\n' "$IMAGE" "${#DIGEST_FILES[@]}" >&2
+            printf '  %s\n' "${DIGEST_FILES[@]}" >&2
+            exit 1
+          fi
+          DIGEST_FILE="${DIGEST_FILES[0]}"
+          {
+            echo "oci_dir=${DIGEST_FILE%.json.sha256}"
+            echo "digest_file=${DIGEST_FILE}"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: imjasonh/setup-crane@v0.4
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'

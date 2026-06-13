@@ -1,0 +1,156 @@
+module(
+    name = "ducktape_activitywatch",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "package_metadata", version = "0.0.6")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+
+# Node.js toolchain
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+
+# Pin pnpm v9 to match pnpm-lock.yaml's lockfileVersion 9 format.
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
+# aw-webui standalone npm universe.
+#
+# update_pnpm_lock is disabled because pnpm_lock and npm_package_lock are in
+# different Bazel workspaces (// vs @aw_webui), and rules_js's seed_root check
+# rejects that combination. To regenerate after bumping the aw_webui archive,
+# run this from third_party/activitywatch:
+#   bazel run @pnpm//:package/bin/pnpm.cjs -- import \
+#        --lockfile-dir . \
+#        $(bazel info output_base)/external/aw_webui+/package-lock.json
+# Or copy upstream package-lock.json to a temp dir, run `pnpm import`, then copy
+# the generated pnpm-lock.yaml back here.
+npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+npm_activitywatch.npm_translate_lock(
+    name = "npm_aw_webui",
+    bins = {
+        "vite": ["vite=./bin/vite.js"],
+    },
+    # link_workspace must point to @aw_webui so generated store-target labels
+    # resolve in the http_archive where npm_link_all_packages() creates them.
+    link_workspace = "aw_webui",
+    npmrc = "//:.npmrc",
+    # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
+    # variant, but lifecycle hooks are disabled in sandboxed builds. Patch the
+    # default (Vue 3) stub to add the missing hasInjectionContext export that
+    # pinia@2.1.7 imports.
+    patches = {
+        "vue-demi@0.14.6": ["//patches:vue-demi-has-injection-context.patch"],
+    },
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # aw-webui imports axios directly (via NewReleaseNotification.vue) but
+    # axios is only a dependency of aw-client, not aw-webui itself.
+    # pnpm strict mode hides phantom deps; hoist axios so vite/rollup can resolve it.
+    public_hoist_packages = {
+        "axios": [""],
+    },
+    run_lifecycle_hooks = False,
+    update_pnpm_lock = False,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
+)
+use_repo(npm_activitywatch, "npm_aw_webui")
+
+# Rust toolchain
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.88.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# Separate from the main Ducktape crate universe to avoid Cargo.lock conflicts.
+aw_crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+    isolate = True,
+)
+aw_crate.from_cargo(
+    name = "aw_server_crates",
+    cargo_lockfile = "@aw_server_rust//:Cargo.lock",
+    lockfile = "//:Cargo.Bazel.lock",
+    manifests = [
+        "@aw_server_rust//:Cargo.toml",
+        "@aw_server_rust//:aw-client-rust/Cargo.toml",
+        "@aw_server_rust//:aw-datastore/Cargo.toml",
+        "@aw_server_rust//:aw-models/Cargo.toml",
+        "@aw_server_rust//:aw-query/Cargo.toml",
+        "@aw_server_rust//:aw-server/Cargo.toml",
+        "@aw_server_rust//:aw-sync/Cargo.toml",
+        "@aw_server_rust//:aw-transform/Cargo.toml",
+    ],
+)
+
+# build.rs reads AW_WEBUI_DIR and emits cargo:rustc-env=AW_WEBUI_DIR=<path>
+# so rust-embed's interpolate-folder-path proc macro can embed all web assets.
+aw_crate.annotation(
+    build_script_data = ["@aw_webui//:dist"],
+    build_script_env = {
+        "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
+    },
+    compile_data = ["@aw_webui//:dist"],
+    crate = "aw-server",
+    repositories = ["aw_server_crates"],
+)
+use_repo(aw_crate, "aw_server_crates")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+# Distroless cc Debian 13 (Trixie): glibc 2.40.
+# aw-server-rust is compiled by the RBE worker (rbe-ubuntu24-04, glibc 2.39) and
+# therefore requires GLIBC_2.39 at runtime. Debian 12 distroless only has 2.36,
+# so aw-server fails with "version 'GLIBC_2.39' not found". Debian 13 (glibc
+# 2.40) satisfies GLIBC_2.39 requirements. If the RBE toolchain ever upgrades
+# past glibc 2.40, bump this base image again.
+# To update: docker manifest inspect gcr.io/distroless/cc-debian13:latest | \
+#   python3 -c "import sys,json; [print(m['digest']) for m in json.load(sys.stdin)['manifests'] if m['platform']['architecture']=='amd64']"
+oci.pull(
+    name = "distroless_cc_debian13",
+    digest = "sha256:e1cc90d06703f5dc30ae869fbfce78fce688f21a97efecd226375233a882e62f",
+    image = "gcr.io/distroless/cc-debian13",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+use_repo(oci, "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# aw-webui: frontend for aw-server-rust, pinned to the submodule commit used by
+# aw-server-rust @ 9a8802a. BUILD file is overlaid.
+_AW_WEBUI_COMMIT = "cd5aafe2fdc27e621035621d83d9bcae4b587837"
+
+http_archive(
+    name = "aw_webui",
+    build_file = "//:aw-webui.BUILD.bazel",
+    # aw-webui references /logo.png (Header.vue template, vite-plugin-pwa
+    # manifest) but does not ship the file. A 1x1 transparent PNG keeps vite happy.
+    patch_cmds = ["mkdir -p static && echo iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII= | base64 -d > static/logo.png"],
+    sha256 = "d1b45b5bf81f532e303507176d9e9d04170e0179c21ab794ad09409fbac5223a",
+    strip_prefix = "aw-webui-" + _AW_WEBUI_COMMIT,
+    urls = ["https://github.com/ActivityWatch/aw-webui/archive/" + _AW_WEBUI_COMMIT + ".tar.gz"],
+)
+
+# aw-server-rust: Rust backend that embeds aw-webui at compile time via rust-embed.
+_AW_SERVER_RUST_COMMIT = "9a8802a374d8e9f587b343dfedf3859ec1a9bba2"
+
+http_archive(
+    name = "aw_server_rust",
+    build_file = "//:aw-server-rust.BUILD.bazel",
+    sha256 = "7e4e0d61f3eecd272f4f7a2985f9204327e554d126d721f4db70e8e20a106474",
+    strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,
+    urls = ["https://github.com/ActivityWatch/aw-server-rust/archive/" + _AW_SERVER_RUST_COMMIT + ".tar.gz"],
+)

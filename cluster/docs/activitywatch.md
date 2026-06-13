@@ -6,7 +6,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 
 - **Server**: `aw-server-rust` on Proxmox, SQLite on `local-path-proxmox` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
-- **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel (`//third_party/activitywatch:image`) and pushed by the `push-images.yml` GHA matrix
+- **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel (`@ducktape_activitywatch//:image`) and pushed by the `push-images.yml` GHA matrix
 - **Certs**: SOPS secret (`k8s/activitywatch/nebula-certs.sops.yaml`)
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces

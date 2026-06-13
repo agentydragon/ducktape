@@ -5,7 +5,7 @@ interpolate-folder-path feature: build.rs reads AW_WEBUI_DIR and emits
 cargo:rustc-env=AW_WEBUI_DIR=<path> so the proc macro can embed all files.
 
 Load for local testing:
-  bazel run //third_party/activitywatch:load
+  bazel run @ducktape_activitywatch//:load
   docker run --rm -p 5600:5600 -v /tmp/aw-data:/data aw-server:latest
 """
 
@@ -39,7 +39,7 @@ oci_image(
     # Use Debian 13 (Trixie, glibc 2.40) instead of Debian 12 (glibc 2.36).
     # The aw-server binary is compiled on rbe-ubuntu24-04 (glibc 2.39) and
     # fails at runtime with "GLIBC_2.39 not found" on Debian 12.
-    # See MODULE.bazel distroless_cc_debian13 comment for details.
+    # See the module-local MODULE.bazel distroless_cc_debian13 comment for details.
     base = "@distroless_cc_debian13_linux_amd64",
     entrypoint = [
         "/usr/local/bin/aw-server",
