@@ -67,6 +67,10 @@ pub(super) struct MemberRequest {
     /// `// ...` block above the binding's owner statement in the
     /// generated module body. See [`spec::Member::comment`].
     pub(super) comment: Option<String>,
+    /// Short spec-facing description of how this member claim was authored.
+    /// Used only in diagnostics after source-match selectors have resolved to
+    /// concrete source bindings.
+    pub(super) claim_origin: String,
 }
 
 impl MemberRequest {
@@ -169,6 +173,10 @@ pub(super) struct ModulePlan {
     /// the binding's owner statement in the generated module body.
     /// See [`spec::Member::comment`].
     pub(super) binding_comments: BTreeMap<String, String>,
+    /// Local-name → short spec-facing origin for each owned binding claim.
+    /// This is diagnostic metadata; lowering behavior is driven by
+    /// [`ModulePlan::bindings`].
+    pub(super) binding_claim_origins: BTreeMap<String, String>,
 }
 
 pub(super) fn logical_requests_for_chunk(
@@ -295,6 +303,22 @@ pub(super) fn build_members(
                     (String::new(), export_name, Some(selector), false)
                 }
             };
+            let claim_origin = match &m.selector.source_match {
+                Some(selector) => match selector.target_binding.as_deref() {
+                    Some(target) => format!(
+                        "members[].selector.source_match target_binding `{target}` as `{}`",
+                        m.name.as_deref().unwrap_or("<unnamed>")
+                    ),
+                    None => format!(
+                        "members[].selector.source_match as `{}`",
+                        m.name.as_deref().unwrap_or("<unnamed>")
+                    ),
+                },
+                None => format!(
+                    "members[].selector.binding as `{}`",
+                    m.name.as_deref().unwrap_or(&binding)
+                ),
+            };
             Ok(MemberRequest {
                 binding,
                 export_name,
@@ -305,12 +329,14 @@ pub(super) fn build_members(
                 pure_members: m.pure_members.clone(),
                 no_sync_callback_members: m.no_sync_callback_members.clone(),
                 comment: m.comment.clone(),
+                claim_origin,
             })
         })
         .collect::<Result<Vec<_>>>()?;
 
     for group in binding_groups {
         for expanded in source_match::binding_group_member_selectors(request_id, group)? {
+            let target_binding = expanded.selector.target_binding.clone();
             requests.push(MemberRequest {
                 binding: String::new(),
                 export_name: expanded.export_name,
@@ -321,6 +347,10 @@ pub(super) fn build_members(
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
                 comment: expanded.comment,
+                claim_origin: match target_binding {
+                    Some(target) => format!("binding_groups[].exports[`{target}`]"),
+                    None => "binding_groups[]".to_string(),
+                },
             });
         }
     }

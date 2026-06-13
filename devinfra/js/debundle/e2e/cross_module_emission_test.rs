@@ -215,13 +215,9 @@ console.log(w({ a: null, b: "d" }));
 
 #[test]
 fn duplicate_top_level_decl_claims_are_rejected() {
-    // Regression for the gaffer the upstream case: two YAMLs both claim the
-    // same input-bundle top-level binding (e.g. both `runtime.yaml`
-    // and `ai_conversation_node_accessor.yaml` export
-    // `AIConversationNodeAccessor` from binding `ho`). Previously the
-    // emitter put the body in one module and emitted
-    // `export { AIConversationNodeAccessor };` with no backing decl
-    // in the other — invalid JS that fails `import()` with
+    // Two YAMLs both claim the same input-bundle top-level binding. Previously
+    // the emitter put the body in one module and emitted `export { X };` with
+    // no backing decl in the other — invalid JS that fails `import()` with
     // "SyntaxError: Export 'X' is not defined in module".
     //
     // The spec author's options are: put both renames in one module,
@@ -237,19 +233,19 @@ fn duplicate_top_level_decl_claims_are_rejected() {
     // collapse to one `binding_assignment` entry, so the rejection
     // catches any way to spell the duplicate.
     let opts = FixtureOpts::new(
-        r#"class ho {
-  static isAIConversation() { return false; }
+        r#"class runtimeProcessor {
+  static isEnabled() { return false; }
 }
-console.log(ho);
-export { ho };
+console.log(runtimeProcessor);
+export { runtimeProcessor };
 "#,
         vec![
             (
                 "mod_a".to_string(),
                 json!({
                     "members": [{
-                        "name": "AIConversationNodeAccessor",
-                        "selector": { "binding": { "name": "ho", "kind": "class_declaration" } },
+                        "name": "RuntimeProcessor",
+                        "selector": { "binding": { "name": "runtimeProcessor", "kind": "class_declaration" } },
                     }],
                 }),
             ),
@@ -257,8 +253,8 @@ export { ho };
                 "mod_b".to_string(),
                 json!({
                     "members": [{
-                        "name": "AIConversationNodeAccessor",
-                        "selector": { "binding": { "name": "ho" } },
+                        "name": "RuntimeProcessorAlias",
+                        "selector": { "binding": { "name": "runtimeProcessor" } },
                     }],
                 }),
             ),
@@ -266,7 +262,74 @@ export { ho };
     );
     expect_rejection_containing_all(
         opts,
-        &["Duplicate binding claim", "\"ho\"", "mod_a", "mod_b"],
+        &[
+            "Duplicate binding claim",
+            "\"runtimeProcessor\"",
+            "mod_a",
+            "as `RuntimeProcessor`",
+            "members[].selector.binding as `RuntimeProcessor`",
+            "mod_b",
+            "as `RuntimeProcessorAlias`",
+        ],
+    );
+}
+
+#[test]
+fn duplicate_source_match_class_claims_report_exports_and_selector_origins() {
+    let class_selector = r#"class K {
+  CLASS_REST;
+  open() {
+    return "open";
+  }
+  CLASS_REST;
+  close() {
+    return "closed";
+  }
+  CLASS_REST;
+}"#;
+    let opts = FixtureOpts::new(
+        r#"class RuntimeCatalog {
+  constructor() {
+    this.count = 0;
+  }
+  open() {
+    return "open";
+  }
+  close() {
+    return "closed";
+  }
+}
+console.log(new RuntimeCatalog().close());
+export { RuntimeCatalog };
+"#,
+        vec![
+            logical_module(
+                "catalog/primary",
+                &[Member::source_alpha("PrimaryCatalog", class_selector)],
+            ),
+            logical_module(
+                "catalog/duplicate",
+                &[Member::source_alpha_target(
+                    "DuplicateCatalog",
+                    "K",
+                    class_selector,
+                )],
+            ),
+        ],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "Duplicate binding claim",
+            "\"RuntimeCatalog\"",
+            "catalog/primary",
+            "as `PrimaryCatalog`",
+            "members[].selector.source_match as `PrimaryCatalog`",
+            "catalog/duplicate",
+            "as `DuplicateCatalog`",
+            "members[].selector.source_match target_binding `K` as `DuplicateCatalog`",
+        ],
     );
 }
 

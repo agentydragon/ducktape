@@ -244,27 +244,48 @@ impl ChunkPlanBuilder {
         let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
-                let existing_id = match existing_kind {
+                let (existing_id, existing_export_name, existing_origin) = match existing_kind {
                     BindingKind::Owned {
                         module: ModuleId(LogicalModuleIndex(owner_index)),
-                    } => self
-                        .module_plans
-                        .get(*owner_index)
-                        .map(|plan| plan.id.clone())
-                        .unwrap_or_else(|| format!("<plan#{owner_index}>")),
+                    } => {
+                        let plan = self.module_plans.get(*owner_index);
+                        (
+                            plan.map(|plan| plan.id.clone())
+                                .unwrap_or_else(|| format!("<plan#{owner_index}>")),
+                            plan.and_then(|plan| plan.bindings.get(member.binding.as_str()))
+                                .cloned(),
+                            plan.and_then(|plan| {
+                                plan.binding_claim_origins.get(member.binding.as_str())
+                            })
+                            .cloned(),
+                        )
+                    }
                     BindingKind::Imported {
                         re_exporter: ModuleId(LogicalModuleIndex(re_index)),
+                        public_name,
                         ..
-                    } => self
-                        .module_plans
-                        .get(*re_index)
-                        .map(|plan| plan.id.clone())
-                        .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                    } => (
+                        self.module_plans
+                            .get(*re_index)
+                            .map(|plan| plan.id.clone())
+                            .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                        Some(public_name.to_string()),
+                        None,
+                    ),
                 };
+                let existing_export = existing_export_name
+                    .as_deref()
+                    .map(|name| format!(" as `{name}`"))
+                    .unwrap_or_default();
+                let existing_origin = existing_origin
+                    .as_deref()
+                    .map(|origin| format!(" ({origin})"))
+                    .unwrap_or_default();
                 bail!(
                     "Duplicate binding claim for {:?} in chunk {:?}: already \
-                     claimed by module {existing_id} and now also claimed by module \
-                     {}. Each binding may belong to exactly one logical module. \
+                     claimed by module {existing_id}{existing_export}{existing_origin} \
+                     and now also claimed by module {} as `{}` ({}). Each binding \
+                     may belong to exactly one logical module. \
                      Different selector forms (`{{name: foo}}` vs \
                      `{{name: foo, kind: class_declaration}}`) that resolve to the \
                      same source declaration still count as duplicates. To expose a \
@@ -273,6 +294,8 @@ impl ChunkPlanBuilder {
                     member.binding,
                     ctx.chunk_id,
                     request.id,
+                    member.export_name,
+                    member.claim_origin,
                 );
             }
             if member.is_import_specifier {
@@ -338,6 +361,11 @@ impl ChunkPlanBuilder {
                     .map(|c| (member.binding.clone(), c.clone()))
             })
             .collect();
+        let binding_claim_origins: BTreeMap<String, String> = request
+            .members
+            .iter()
+            .map(|member| (member.binding.clone(), member.claim_origin.clone()))
+            .collect();
         self.module_plans.push(ModulePlan {
             id: request.id.clone(),
             target_file: dest_target_file,
@@ -348,6 +376,7 @@ impl ChunkPlanBuilder {
             anonymous_statement_comments,
             comment: request.comment.clone(),
             binding_comments,
+            binding_claim_origins,
         });
         Ok(())
     }
@@ -501,6 +530,7 @@ impl ChunkPlanBuilder {
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
                     binding_comments: BTreeMap::new(),
+                    binding_claim_origins: BTreeMap::new(),
                 });
                 self.residual_plan_index = Some(residual_index);
             }
@@ -669,6 +699,7 @@ impl ChunkPlanBuilder {
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
                 binding_comments: BTreeMap::new(),
+                binding_claim_origins: BTreeMap::new(),
             });
         }
         Ok(())
