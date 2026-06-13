@@ -8,13 +8,13 @@ This document outlines the design for running complex E2E tests that require ext
 
 Tests declare infrastructure requirements via Bazel tags:
 
-| Tag                      | Meaning                         | Current Usage                              |
-| ------------------------ | ------------------------------- | ------------------------------------------ |
-| `requires_docker`        | Needs Docker daemon             | `agent_server/`, `editor_agent/`, `props/` |
-| `requires_runtime_image` | Needs pre-built container image | `agent_server/`                            |
-| `e2e`                    | Full end-to-end test            | `props/` E2E tests                         |
-| `visual`                 | Visual regression test          | `props/frontend/`                          |
-| `manual`                 | Excluded from `//...`           | Various                                    |
+| Tag                      | Meaning                         | Current Usage                                  |
+| ------------------------ | ------------------------------- | ---------------------------------------------- |
+| `requires_docker`        | Needs Docker daemon             | `x/agent_server/`, `x/editor_agent/`, `props/` |
+| `requires_runtime_image` | Needs pre-built container image | `x/agent_server/`                              |
+| `e2e`                    | Full end-to-end test            | `props/` E2E tests                             |
+| `visual`                 | Visual regression test          | `props/frontend/`                              |
+| `manual`                 | Excluded from `//...`           | Various                                        |
 
 Note: `requires_postgres` was removed — all PostgreSQL tests now use testcontainers (which only requires Docker).
 

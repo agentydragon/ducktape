@@ -1,6 +1,6 @@
 @README.md
 
-# Agent Guide for `agent_pkg`
+# Agent Guide for `x/editor_agent/agent_pkg`
 
 ## Building Images
 

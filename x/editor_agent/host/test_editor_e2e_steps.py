@@ -8,16 +8,16 @@ from hamcrest import assert_that
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import PlayGen, tool_roundtrip
-from editor_agent.host.agent_runner import run_editor_docker_agent
-from editor_agent.host.submit_server import SubmitStateSuccess
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.matchers import exited_successfully
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest
+from x.editor_agent.host.agent_runner import run_editor_docker_agent
+from x.editor_agent.host.submit_server import SubmitStateSuccess
 
 
 class HostDockerExecMock(MCPDecoratorMock):
-    """Mock for host-side docker exec into containers (editor_agent pattern)."""
+    """Mock for host-side docker exec into containers (x/editor_agent pattern)."""
 
     def docker_exec_roundtrip(
         self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"

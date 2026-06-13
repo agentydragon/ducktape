@@ -16,17 +16,17 @@ import aiodocker
 import anyio
 import typer
 
-from editor_agent.host.agent_runner import run_editor_docker_agent
-from editor_agent.host.runner import DEFAULT_NETWORK
-from editor_agent.host.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
 from openai_utils.client_factory import build_client
 from util.bazel import runfiles
 from util.logging import make_logging_callback
 from util.typer import async_run
+from x.editor_agent.host.agent_runner import run_editor_docker_agent
+from x.editor_agent.host.runner import DEFAULT_NETWORK
+from x.editor_agent.host.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
 EDITOR_IMAGE_TAG = "adgn-editor:latest"
-_EDITOR_LOAD_RLOCATION = "_main/editor_agent/runtime/load.sh"
+_EDITOR_LOAD_RLOCATION = "_main/x/editor_agent/runtime/load.sh"
 
 # Environment variable override for network
 _ENV_NETWORK = os.getenv("ADGN_EDITOR_DOCKER_NETWORK", DEFAULT_NETWORK)

@@ -5,7 +5,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    data = ["//editor_agent/runtime:image_info"],
+    data = ["//x/editor_agent/runtime:image_info"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":agent_runner",
@@ -23,7 +23,7 @@ py_library(
 
 py_binary(
     name = "adgn_editor_docker",
-    main_module = "editor_agent.host.cli",
+    main_module = "x.editor_agent.host.cli",
     visibility = ["//:__subpackages__"],
     deps = [":cli"],
 )
@@ -31,7 +31,7 @@ py_binary(
 py_test(
     name = "test_runner_session",
     srcs = ["test_runner_session.py"],
-    data = ["//editor_agent/runtime:image_info"],
+    data = ["//x/editor_agent/runtime:image_info"],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -46,7 +46,7 @@ py_test(
 py_test(
     name = "test_editor_e2e_steps",
     srcs = ["test_editor_e2e_steps.py"],
-    data = ["//editor_agent/runtime:image_info"],
+    data = ["//x/editor_agent/runtime:image_info"],
     requires_docker = True,
     deps = [
         ":agent_runner",
@@ -125,10 +125,10 @@ py_library(
     srcs = ["submit_server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//editor_agent/runtime:constants",
         "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
+        "//x/editor_agent/runtime:constants",
         "@pypi//fastmcp",
     ],
 )

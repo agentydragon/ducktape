@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
 
-from editor_agent.host.submit_server import (
+from x.editor_agent.host.submit_server import (
     EditorSubmitServer,
     SubmitFailureInput,
     SubmitStateSuccess,

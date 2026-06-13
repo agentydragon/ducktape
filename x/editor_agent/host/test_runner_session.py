@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from editor_agent.host.runner import editor_docker_session, writeback_success
-from editor_agent.host.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
+from x.editor_agent.host.runner import editor_docker_session, writeback_success
+from x.editor_agent.host.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
 
 
 async def test_editor_session_starts_and_cleans(tmp_path: Path, async_docker_client, editor_image_id):

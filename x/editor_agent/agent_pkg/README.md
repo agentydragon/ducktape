@@ -1,4 +1,4 @@
-# agent_pkg - Agent Packages
+# x.editor_agent.agent_pkg - Agent Packages
 
 Infrastructure for **agent packages** — Docker images that define agents running within dedicated containers.
 
@@ -20,5 +20,5 @@ Minimal dependencies since this is installed separately in container images.
 
 ## Users
 
-- **editor_agent** uses `agent_pkg` for in-container utilities.
-- **props** has its own agent infrastructure and does not depend on `agent_pkg`.
+- **x.editor_agent** uses this package for in-container utilities.
+- **props** has its own agent infrastructure and does not depend on this package.

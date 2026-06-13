@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.exceptions import ToolError
 
-from editor_agent.runtime.constants import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from x.editor_agent.runtime.constants import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 
 if TYPE_CHECKING:
     from fastmcp.server.auth import AuthProvider

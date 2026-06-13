@@ -8,8 +8,8 @@ functions with `Annotated[T, "description"]` parameters instead.
 
 | File                                         | Tool                       | Input model              |
 | -------------------------------------------- | -------------------------- | ------------------------ |
-| `editor_agent/host/submit_server.py`         | `submit_success`           | `SubmitSuccessInput`     |
-| `editor_agent/host/submit_server.py`         | `submit_failure`           | `SubmitFailureInput`     |
+| `x/editor_agent/host/submit_server.py`       | `submit_success`           | `SubmitSuccessInput`     |
+| `x/editor_agent/host/submit_server.py`       | `submit_failure`           | `SubmitFailureInput`     |
 | `git_commit_ai/agent_backend.py`             | `submit_commit_message`    | `CommitMessage`          |
 | `mcp_infra/compositor/resources_server.py`   | `list_resources`           | none (zero-arg)          |
 | `mcp_infra/compositor/resources_server.py`   | `list_templates`           | none (zero-arg)          |

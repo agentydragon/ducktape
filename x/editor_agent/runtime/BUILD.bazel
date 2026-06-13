@@ -9,9 +9,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
-        "//agent_pkg:mcp",
         "//util:logging",
         "//util:typer",
+        "//x/editor_agent/agent_pkg:mcp",
         "@pypi//anyio",
         "@pypi//typer",
     ],
@@ -34,7 +34,7 @@ oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
     env = {
-        "PATH": "/editor_agent/runtime:/editor_agent/runtime/_editor_submit.venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "PATH": "/x/editor_agent/runtime:/x/editor_agent/runtime/_editor_submit.venv/bin:/usr/local/bin:/usr/bin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
@@ -43,8 +43,8 @@ oci_image(
 )
 
 # Load image into local Docker daemon
-# Run: bazel run //editor_agent/runtime:load
-# For tarball: bazel build //editor_agent/runtime:load --output_groups=+tarball
+# Run: bazel run //x/editor_agent/runtime:load
+# For tarball: bazel build //x/editor_agent/runtime:load --output_groups=+tarball
 oci_load(
     name = "load",
     image = ":image",

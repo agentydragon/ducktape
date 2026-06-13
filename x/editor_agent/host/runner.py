@@ -12,7 +12,6 @@ import aiodocker
 import anyio
 from fastmcp.server.auth import StaticTokenVerifier
 
-from editor_agent.host.submit_server import EditorSubmitServer
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.constants import WORKING_DIR
@@ -21,10 +20,11 @@ from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.mounted import Mounted
 from util.docker import get_docker_network_gateway_async
 from util.net import pick_free_port
+from x.editor_agent.host.submit_server import EditorSubmitServer
 
 # TODO: The pattern of "create token + StaticTokenVerifier, start FastMCP on free port,
 # get docker gateway IP, pass MCP_SERVER_URL/TOKEN to container" is duplicated in
-# props/core/agent_setup.py. Extract to agent_pkg as shared infrastructure.
+# props/core/agent_setup.py. Extract to shared infrastructure if this stops being experimental.
 
 DEFAULT_NETWORK = "bridge"
 
