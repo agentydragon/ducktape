@@ -17,9 +17,9 @@ variable "talos_version" {
   default     = "v1.12.3"
 }
 
-# CLEANUP(added 2026-03-26): Remove once kernel 6.18 KVM+AMD stall bug is fixed upstream.
-#   Talos v1.12 (kernel 6.18) causes periodic CPU stalls on AMD KVM hosts.
-#   See debug/wyrm2-chrome-network-changed.md and Red Hat Bugzilla #2448303.
+# CLEANUP(added 2026-03-26): Remove once a Talos release ships a kernel with the
+#   RHBZ#2448303 fix (AMD Idle HLT Intercept; kernel 6.18 stalls AMD KVM guests).
+#   See debug/kernel-6.18-amd-kvm-stall.md.
 variable "proxmox_talos_version" {
   description = "Talos version for Proxmox nodes (downgraded due to kernel 6.18 AMD KVM bug)"
   type        = string

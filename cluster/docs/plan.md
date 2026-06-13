@@ -687,7 +687,7 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 ### GitHub Webhook Reconciliation
 
 Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
-`harbor-ci` Terraform (`github_repository_webhook.flux_receiver`).
+`flux-webhook-token` Terraform (`github_repository_webhook.flux_receiver`).
 
 ### SOPS-encrypt talosconfig and kubeconfig
 
