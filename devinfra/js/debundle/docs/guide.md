@@ -269,6 +269,17 @@ members:
         match: 'const config = { kind: "selected", enabled: true };'
 ```
 
+When a dry run spends too long resolving selectors, rerun with
+`DUCKTAPE_SOURCE_MATCH_TIMINGS=1` to print one stderr line per
+`source_match` resolution. Set `DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS`
+to show only selectors at or above that duration. Each line names the module,
+selector kind, match count or resolved binding, elapsed milliseconds, and a
+compact selector preview. It also includes `selector_key` and `body_key`
+hashes: group by `body_key` to find duplicated expensive selector bodies, and
+by `selector_key` to find identical selector+target forms. For private bundle
+logs, set `DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0` to hide selector source while
+keeping keys, body indices, request ids, and binding summaries.
+
 `identifiers: alpha_all` treats binding/value identifiers in the selector
 as alpha-renamable placeholders while keeping literals, operators,
 member property names, object keys, and AST structure significant. This

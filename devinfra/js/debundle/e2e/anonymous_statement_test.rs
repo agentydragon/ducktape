@@ -915,6 +915,96 @@ export { runtimeBinding, siblingBinding, Existing };
 }
 
 #[test]
+fn source_match_timing_env_reports_member_selector_resolution() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimeFormat };
+"#,
+            vec![logical_module(
+                "format",
+                &[Member::source_alpha(
+                    "formatValue",
+                    r#"function formatValue(value) {
+  return value.trim().toUpperCase();
+}"#,
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+
+    assert_entry_output(&fixture, "OK\n");
+    for required in [
+        "[debundle source_match]",
+        "request=static/app::format",
+        "kind=members[].selector.source_match export=`formatValue`",
+        "selector_key=",
+        "body_key=",
+        "body_indices=[0]",
+        "binding=runtimeFormat",
+        "selector=function formatValue(value) { return value.trim().toUpperCase(); }",
+    ] {
+        assert!(
+            fixture.stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{}",
+            fixture.stderr,
+        );
+    }
+}
+
+#[test]
+fn source_match_timing_preview_can_be_disabled() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"function runtimeNormalize(value) {
+  return value.trim().toLowerCase();
+}
+console.log(runtimeNormalize(" OK "));
+export { runtimeNormalize };
+"#,
+            vec![logical_module(
+                "normalize",
+                &[Member::source_alpha(
+                    "normalizeValue",
+                    r#"function normalizeValue(value) {
+  return value.trim().toLowerCase();
+}"#,
+                )],
+            )],
+        ),
+        &[
+            ("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1"),
+            ("DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW", "0"),
+        ],
+    );
+
+    assert_entry_output(&fixture, "ok\n");
+    for required in [
+        "[debundle source_match]",
+        "request=static/app::normalize",
+        "selector_key=",
+        "body_key=",
+        "body_indices=[0]",
+        "binding=runtimeNormalize",
+    ] {
+        assert!(
+            fixture.stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{}",
+            fixture.stderr,
+        );
+    }
+    assert!(
+        !fixture.stderr.contains("function normalizeValue"),
+        "timing preview should be hidden when DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0\nstderr:\n{}",
+        fixture.stderr,
+    );
+}
+
+#[test]
 fn member_source_match_target_binding_uses_multideclarator_context() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeLocalPart = "primary",

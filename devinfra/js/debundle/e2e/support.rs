@@ -847,12 +847,16 @@ pub struct RejectedFixture {
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
+    run_fixture_with_env(opts, &[])
+}
+
+pub fn run_fixture_with_env(opts: FixtureOpts<'_>, env: &[(&str, &str)]) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform(&spec_path);
+    let result = spawn_transform(&spec_path, env);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -944,7 +948,7 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform_with_args(&spec_path, extra_args);
+    let result = spawn_transform_with_args(&spec_path, extra_args, &[]);
     assert!(
         !result.status.success(),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
@@ -1329,15 +1333,22 @@ pub struct CommandResult {
     pub status: std::process::ExitStatus,
 }
 
-fn spawn_transform(spec_path: &Path) -> CommandResult {
-    run_debundler(spec_path, &[])
+fn spawn_transform(spec_path: &Path, env: &[(&str, &str)]) -> CommandResult {
+    run_debundler_with_env(spec_path, &[], env)
 }
 
-fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
+fn spawn_transform_with_args(
+    spec_path: &Path,
+    extra_args: &[&str],
+    env: &[(&str, &str)],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
     command.args(extra_args);
+    for (name, value) in env {
+        command.env(name, value);
+    }
     let output = command
         .output()
         .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
@@ -1352,6 +1363,14 @@ fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandRe
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
+    run_debundler_with_env(spec_path, package_roots, &[])
+}
+
+pub fn run_debundler_with_env(
+    spec_path: &Path,
+    package_roots: &[(&str, &Path)],
+    env: &[(&str, &str)],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
@@ -1359,6 +1378,9 @@ pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> Comma
         command
             .arg("--package-root")
             .arg(format!("{name}={}", dir.display()));
+    }
+    for (name, value) in env {
+        command.env(name, value);
     }
     let output = command
         .output()

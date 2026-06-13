@@ -5,6 +5,8 @@
 //! semantics such as alpha-equivalent identifier matching.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use spec::{
@@ -41,6 +43,236 @@ const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
+
+const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
+const SOURCE_MATCH_TIMING_THRESHOLD_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS";
+const SOURCE_MATCH_TIMING_PREVIEW_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW";
+
+#[derive(Debug)]
+struct SourceMatchTimingConfig {
+    threshold: Duration,
+    include_preview: bool,
+}
+
+fn source_match_timing_config() -> Option<&'static SourceMatchTimingConfig> {
+    static CONFIG: OnceLock<Option<SourceMatchTimingConfig>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let enabled = std::env::var(SOURCE_MATCH_TIMINGS_ENV).ok()?;
+            if matches!(
+                enabled.to_ascii_lowercase().as_str(),
+                "" | "0" | "false" | "off" | "no"
+            ) {
+                return None;
+            }
+            let threshold_ms = std::env::var(SOURCE_MATCH_TIMING_THRESHOLD_ENV)
+                .ok()
+                .and_then(|raw| raw.parse::<u64>().ok())
+                .unwrap_or(0);
+            let include_preview = std::env::var(SOURCE_MATCH_TIMING_PREVIEW_ENV)
+                .ok()
+                .is_none_or(|raw| {
+                    !matches!(
+                        raw.to_ascii_lowercase().as_str(),
+                        "" | "0" | "false" | "off" | "no"
+                    )
+                });
+            Some(SourceMatchTimingConfig {
+                threshold: Duration::from_millis(threshold_ms),
+                include_preview,
+            })
+        })
+        .as_ref()
+}
+
+fn trace_source_match<T>(
+    kind: &str,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    run: impl FnOnce() -> Result<T>,
+    summarize: impl FnOnce(&T) -> String,
+) -> Result<T> {
+    let Some(config) = source_match_timing_config() else {
+        return run();
+    };
+    let started = Instant::now();
+    let result = run();
+    let elapsed = started.elapsed();
+    if elapsed >= config.threshold {
+        let status = match &result {
+            Ok(value) => summarize(value),
+            Err(error) => format!("error={}", first_error_line(error)),
+        };
+        eprintln!(
+            "[debundle source_match] elapsed_ms={} request={} kind={} {} {}",
+            elapsed.as_millis(),
+            request_id,
+            kind,
+            status,
+            source_match_timing_selector_details(selector, config),
+        );
+    }
+    result
+}
+
+fn first_error_line(error: &anyhow::Error) -> String {
+    let mut line = error.to_string();
+    if let Some((first, _)) = line.split_once('\n') {
+        line = first.to_string();
+    }
+    truncate_for_log(&line, 160)
+}
+
+fn source_match_preview(source: &str) -> String {
+    let collapsed = source.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_for_log(&collapsed, 180)
+}
+
+fn source_match_timing_selector_details(
+    selector: &AnonymousStatementSelector,
+    config: &SourceMatchTimingConfig,
+) -> String {
+    let mut fields = vec![
+        format!("selector_key={}", selector_timing_key(selector)),
+        format!("body_key={}", selector_body_timing_key(selector)),
+    ];
+    if let Some(target_binding) = selector.target_binding.as_deref() {
+        fields.push(format!("target_binding=`{target_binding}`"));
+    }
+    if let Some(target_statement) = selector.target_statement {
+        fields.push(format!("target_statement={target_statement}"));
+    }
+    if let Some(target_statements) = &selector.target_statements {
+        fields.push(format!("target_statements={target_statements:?}"));
+    }
+    if config.include_preview {
+        fields.push(format!(
+            "selector={}",
+            source_match_preview(&selector.match_source)
+        ));
+    }
+    fields.join(" ")
+}
+
+fn selector_body_timing_key(selector: &AnonymousStatementSelector) -> String {
+    let mut state = Fnv1a64::new();
+    state.update(b"body");
+    state.update(format!("{:?}", selector.identifiers).as_bytes());
+    state.update(b"\0");
+    state.update(normalized_selector_source(&selector.match_source).as_bytes());
+    format!("{:016x}", state.finish())
+}
+
+fn selector_timing_key(selector: &AnonymousStatementSelector) -> String {
+    let mut state = Fnv1a64::new();
+    state.update(b"selector");
+    state.update(format!("{:?}", selector.identifiers).as_bytes());
+    state.update(b"\0");
+    state.update(normalized_selector_source(&selector.match_source).as_bytes());
+    state.update(b"\0");
+    if let Some(target_binding) = selector.target_binding.as_deref() {
+        state.update(b"target_binding=");
+        state.update(target_binding.as_bytes());
+    }
+    state.update(b"\0");
+    if let Some(target_statement) = selector.target_statement {
+        state.update(format!("target_statement={target_statement}").as_bytes());
+    }
+    state.update(b"\0");
+    if let Some(target_statements) = &selector.target_statements {
+        state.update(format!("target_statements={target_statements:?}").as_bytes());
+    }
+    format!("{:016x}", state.finish())
+}
+
+fn normalized_selector_source(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+struct Fnv1a64 {
+    value: u64,
+}
+
+impl Fnv1a64 {
+    const OFFSET: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x100000001b3;
+
+    fn new() -> Self {
+        Self {
+            value: Self::OFFSET,
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.value ^= u64::from(*byte);
+            self.value = self.value.wrapping_mul(Self::PRIME);
+        }
+    }
+
+    fn finish(&self) -> u64 {
+        self.value
+    }
+}
+
+fn truncate_for_log(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn render_timing_names<'a>(names: impl Iterator<Item = &'a str>) -> String {
+    const MAX_NAMES: usize = 6;
+    let names = names.collect::<Vec<_>>();
+    if names.is_empty() {
+        return "<none>".to_string();
+    }
+    let mut rendered = names
+        .iter()
+        .take(MAX_NAMES)
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>();
+    if names.len() > MAX_NAMES {
+        rendered.push(format!("+{} more", names.len() - MAX_NAMES));
+    }
+    rendered.join(",")
+}
+
+fn render_timing_groups(groups: &[Vec<usize>]) -> String {
+    const MAX_GROUPS: usize = 4;
+    if groups.is_empty() {
+        return "[]".to_string();
+    }
+    let mut rendered = groups
+        .iter()
+        .take(MAX_GROUPS)
+        .map(|group| format!("{group:?}"))
+        .collect::<Vec<_>>();
+    if groups.len() > MAX_GROUPS {
+        rendered.push(format!("+{} more", groups.len() - MAX_GROUPS));
+    }
+    rendered.join(",")
+}
+
+fn render_timing_body_indices<'a>(indices: impl Iterator<Item = &'a usize>) -> String {
+    const MAX_INDICES: usize = 8;
+    let indices = indices.copied().collect::<Vec<_>>();
+    if indices.is_empty() {
+        return "[]".to_string();
+    }
+    let mut rendered = indices
+        .iter()
+        .take(MAX_INDICES)
+        .map(usize::to_string)
+        .collect::<Vec<_>>();
+    if indices.len() > MAX_INDICES {
+        rendered.push(format!("+{} more", indices.len() - MAX_INDICES));
+    }
+    format!("[{}]", rendered.join(","))
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -236,12 +468,25 @@ pub fn member_binding_candidates(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<ResolvedMemberBinding>> {
-    Ok(
-        find_member_binding_matches(runtime_module, request_id, selector)?
-            .into_iter()
-            .map(|matched| matched.binding)
-            .collect(),
-    )
+    let matches = trace_source_match(
+        "members[].selector.source_match candidates",
+        request_id,
+        selector,
+        || find_member_binding_matches(runtime_module, request_id, selector),
+        |matches: &Vec<MemberBindingMatch>| {
+            format!(
+                "matches={} body_indices={} bindings={}",
+                matches.len(),
+                render_timing_body_indices(matches.iter().map(|matched| &matched.body_idx)),
+                render_timing_names(
+                    matches
+                        .iter()
+                        .map(|matched| matched.binding.binding_name.as_str())
+                )
+            )
+        },
+    )?;
+    Ok(matches.into_iter().map(|matched| matched.binding).collect())
 }
 
 pub fn resolve_anonymous_statement_body_index(
@@ -304,35 +549,51 @@ pub fn find_anonymous_statement_body_index_groups(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<Vec<usize>>> {
-    let parsed = js_ast::parse_js_module_ast(
-        &format!("<anonymous_statement match in {request_id}>"),
-        &selector.match_source,
+    trace_source_match(
+        "anonymous_statements[].source_match",
+        request_id,
+        selector,
+        || {
+            let parsed = js_ast::parse_js_module_ast(
+                &format!("<anonymous_statement match in {request_id}>"),
+                &selector.match_source,
+            )
+            .with_context(|| {
+                format!(
+                    "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{}",
+                    selector.match_source
+                )
+            })?;
+            let target_indices =
+                anonymous_selector_target_statement_indices(request_id, selector, &parsed.body)?;
+            let mut groups = Vec::new();
+            for alignment in
+                find_matching_body_group_alignments(runtime_module, &parsed.body, selector)
+            {
+                let mut group = Vec::with_capacity(target_indices.len());
+                for target_idx in &target_indices {
+                    let Some(Some(body_idx)) = alignment.get(*target_idx) else {
+                        bail!(
+                            "logical_module {request_id}: anonymous_statements[].source_match \
+                             target statement {target_idx} was matched by a STMT_LIST hole instead \
+                             of a pinned selector statement. Refine the selector:\n{match_source}",
+                            match_source = selector.match_source,
+                        );
+                    };
+                    group.push(*body_idx);
+                }
+                groups.push(group);
+            }
+            Ok(groups)
+        },
+        |groups: &Vec<Vec<usize>>| {
+            format!(
+                "matches={} body_indices={}",
+                groups.len(),
+                render_timing_groups(groups)
+            )
+        },
     )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{}",
-            selector.match_source
-        )
-    })?;
-    let target_indices =
-        anonymous_selector_target_statement_indices(request_id, selector, &parsed.body)?;
-    let mut groups = Vec::new();
-    for alignment in find_matching_body_group_alignments(runtime_module, &parsed.body, selector) {
-        let mut group = Vec::with_capacity(target_indices.len());
-        for target_idx in &target_indices {
-            let Some(Some(body_idx)) = alignment.get(*target_idx) else {
-                bail!(
-                    "logical_module {request_id}: anonymous_statements[].source_match \
-                     target statement {target_idx} was matched by a STMT_LIST hole instead \
-                     of a pinned selector statement. Refine the selector:\n{match_source}",
-                    match_source = selector.match_source,
-                );
-            };
-            group.push(*body_idx);
-        }
-        groups.push(group);
-    }
-    Ok(groups)
 }
 
 /// Source-aware fragility signal for selector-debt reporting.
@@ -427,44 +688,91 @@ pub fn resolve_member_binding(
     export_name: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<ResolvedMemberBinding> {
-    let matches = find_member_binding_matches(runtime_module, request_id, selector)?;
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
-    match matches.as_slice() {
-        [single] => Ok(single.binding.clone()),
-        [] => {
-            let hint = source_match_no_match_hint(runtime_module, selector);
-            bail!(
-                "logical_module {request_id}: members[].selector.source_match for export \
-                 `{export_name}`{target_binding_hint} did not match any top-level declaration in the chunk. \
-                 Selector:\n{match_source}{hint}",
-                match_source = selector.match_source,
-                hint = hint.unwrap_or_default(),
+    let kind = format!("members[].selector.source_match export=`{export_name}`");
+    let matched = trace_source_match(
+        &kind,
+        request_id,
+        selector,
+        || {
+            let matches = find_member_binding_matches(runtime_module, request_id, selector)?;
+            let target_binding_hint = selector
+                .target_binding
+                .as_deref()
+                .map(|target| format!(" target_binding `{target}`"))
+                .unwrap_or_default();
+            match matches.as_slice() {
+                [single] => Ok(single.clone()),
+                [] => {
+                    let hint = source_match_no_match_hint(runtime_module, selector);
+                    bail!(
+                        "logical_module {request_id}: members[].selector.source_match for export \
+                         `{export_name}`{target_binding_hint} did not match any top-level declaration in the chunk. \
+                         Selector:\n{match_source}{hint}",
+                        match_source = selector.match_source,
+                        hint = hint.unwrap_or_default(),
+                    )
+                }
+                multiple => bail!(
+                    "logical_module {request_id}: members[].selector.source_match for export \
+                     `{export_name}`{target_binding_hint} is ambiguous — matched {} top-level statements at body \
+                     indices {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
+                    multiple.len(),
+                    multiple
+                        .iter()
+                        .map(|matched| matched.body_idx)
+                        .collect::<Vec<_>>(),
+                    multiple
+                        .iter()
+                        .map(|matched| matched.binding.binding_name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    match_source = selector.match_source,
+                ),
+            }
+        },
+        |matched| {
+            format!(
+                "body_indices=[{}] binding={}",
+                matched.body_idx, matched.binding.binding_name
             )
-        }
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}`{target_binding_hint} is ambiguous — matched {} top-level statements at body \
-             indices {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
-            multiple.len(),
-            multiple
-                .iter()
-                .map(|matched| matched.body_idx)
-                .collect::<Vec<_>>(),
-            multiple
-                .iter()
-                .map(|matched| matched.binding.binding_name.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-            match_source = selector.match_source,
-        ),
-    }
+        },
+    )?;
+    Ok(matched.binding)
 }
 
 pub fn resolve_member_binding_group(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+    trace_source_match(
+        "binding_groups[].source_match",
+        request_id,
+        selector,
+        || {
+            resolve_member_binding_group_impl(
+                runtime_module,
+                request_id,
+                selector,
+                exports_by_target,
+            )
+        },
+        |resolved| {
+            format!(
+                "targets={} bindings={}",
+                resolved.len(),
+                render_timing_names(
+                    resolved
+                        .values()
+                        .map(|matched| matched.binding_name.as_str())
+                )
+            )
+        },
+    )
+}
+
+fn resolve_member_binding_group_impl(
     runtime_module: &Module,
     request_id: &str,
     selector: &AnonymousStatementSelector,
