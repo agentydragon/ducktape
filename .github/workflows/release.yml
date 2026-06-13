@@ -52,7 +52,7 @@ jobs:
             target: //:wheel
             # SYNC: keep this list aligned with `packages =` in //:ducktape_pkg
             # (root BUILD.bazel) so tests cover every module the wheel ships.
-            tests: //agent_core/... //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...
+            tests: //agent_core/... //difftree/... //git_commit_ai/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
           - pkg: aiquota
             target: //aiquota:aiquota_wheel //aiquota/gnome:aiquota_zip
