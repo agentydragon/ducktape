@@ -472,6 +472,42 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
 }
 
 #[test]
+fn binding_group_trailing_declarator_hole_absorbs_later_declarators() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const selectedA = () => "a",
+  selectedB = () => "b",
+  laterC = () => "c";
+console.log(selectedA() + selectedB() + laterC());
+export { selectedA, selectedB, laterC };
+"#,
+        vec![logical_module_with_binding_groups(
+            "bridges",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const selectedA = EXPR_A,
+  selectedB = EXPR_B,
+  DECLARATORS_AFTER = null;"#,
+                &[("selectedA", "recordBridge"), ("selectedB", "replayBridge")],
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "abc\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/bridges.js",
+        &["recordBridge", "replayBridge"],
+        &["selectedA", "selectedB"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridges.js",
+        &["const recordBridge", "const replayBridge"],
+        &["laterC", "DECLARATORS_AFTER"],
+    );
+}
+
+#[test]
 fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"if (true) {
