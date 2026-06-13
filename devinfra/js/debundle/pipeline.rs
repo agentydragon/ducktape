@@ -78,8 +78,8 @@ pub struct TransformArgs {
     #[arg(long)]
     pub dry_run: bool,
     /// Continue through supported spec-diagnostic failures and report all
-    /// findings from the pass. Currently aggregates duplicate binding claims
-    /// during materialization plan building.
+    /// findings from the pass. Currently aggregates materialization duplicate
+    /// binding claims plus member-form source_match misses and ambiguities.
     #[arg(long)]
     pub keep_going: bool,
 }

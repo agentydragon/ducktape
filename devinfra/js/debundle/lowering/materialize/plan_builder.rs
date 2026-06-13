@@ -80,6 +80,50 @@ fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> Stri
     report
 }
 
+#[derive(Debug, Clone)]
+struct SourceMatchDiagnostic {
+    module_id: String,
+    export_name: String,
+    claim_origin: String,
+    message: String,
+}
+
+impl SourceMatchDiagnostic {
+    fn render(&self) -> String {
+        format!(
+            "module {} as `{}` ({}): {}",
+            self.module_id, self.export_name, self.claim_origin, self.message
+        )
+    }
+}
+
+fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> String {
+    let mut diagnostics = diagnostics.iter().collect::<Vec<_>>();
+    diagnostics.sort_by(|a, b| {
+        (
+            a.module_id.as_str(),
+            a.export_name.as_str(),
+            a.claim_origin.as_str(),
+        )
+            .cmp(&(
+                b.module_id.as_str(),
+                b.export_name.as_str(),
+                b.claim_origin.as_str(),
+            ))
+    });
+    let mut report = format!(
+        "Source-match selector diagnostic report: {} unresolved selector(s) found. \
+         Under --keep-going, members with unresolved source_match selectors are skipped from \
+         canonical ownership so the rest of the chunk can still be checked.",
+        diagnostics.len()
+    );
+    for diagnostic in &diagnostics {
+        report.push_str("\n- ");
+        report.push_str(&diagnostic.render());
+    }
+    report
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -105,6 +149,8 @@ pub(super) struct ExplicitRequestContext<'a> {
 fn resolve_request_source_matches(
     request: &mut LogicalRequest,
     runtime_module: &Module,
+    keep_going: bool,
+    diagnostics: &mut Vec<SourceMatchDiagnostic>,
 ) -> Result<()> {
     let mut grouped_by_selector: BTreeMap<spec::AnonymousStatementSelector, Vec<usize>> =
         BTreeMap::new();
@@ -147,12 +193,28 @@ fn resolve_request_source_matches(
         if has_duplicate_target {
             continue;
         }
-        let resolved = source_match::resolve_member_binding_group(
+        let resolved = match source_match::resolve_member_binding_group(
             runtime_module,
             &request.id,
             &selector,
             &exports_by_target,
-        )?;
+        ) {
+            Ok(resolved) => resolved,
+            Err(error) if keep_going => {
+                let message = format!("{error:#}");
+                for idx in member_indices {
+                    let member = &request.members[idx];
+                    diagnostics.push(SourceMatchDiagnostic {
+                        module_id: request.id.clone(),
+                        export_name: member.export_name.clone(),
+                        claim_origin: member.claim_origin.clone(),
+                        message: message.clone(),
+                    });
+                }
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         for idx in member_indices {
             let member = &mut request.members[idx];
             let target_binding = member
@@ -173,7 +235,24 @@ fn resolve_request_source_matches(
         if resolved_member_indices.contains(&idx) {
             continue;
         }
-        member.resolve_source_match(runtime_module, &request.id, &mut source_match_cache)?;
+        if let Err(error) =
+            member.resolve_source_match(runtime_module, &request.id, &mut source_match_cache)
+        {
+            if !keep_going {
+                return Err(error);
+            }
+            diagnostics.push(SourceMatchDiagnostic {
+                module_id: request.id.clone(),
+                export_name: member.export_name.clone(),
+                claim_origin: member.claim_origin.clone(),
+                message: format!("{error:#}"),
+            });
+        }
+    }
+    if keep_going {
+        request
+            .members
+            .retain(|member| member.source_match.is_none());
     }
     Ok(())
 }
@@ -243,6 +322,11 @@ pub(super) struct ChunkPlanBuilder {
     /// duplicate so one run can report all duplicate claim sites in
     /// this chunk.
     duplicate_binding_claims: Vec<DuplicateBindingClaim>,
+    /// Member-form `source_match` selectors that did not resolve.
+    /// In keep-going mode, unresolved members are omitted from the
+    /// canonical plan so later modules in the chunk can still be
+    /// checked for independent selector and duplicate-claim failures.
+    source_match_diagnostics: Vec<SourceMatchDiagnostic>,
     /// Opt-in diagnostics mode. When false, duplicate binding claims
     /// keep the historical fail-fast behavior. When true, duplicate
     /// members are skipped from canonical ownership state so later
@@ -261,6 +345,7 @@ impl ChunkPlanBuilder {
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
+            source_match_diagnostics: Vec::new(),
             keep_going,
         }
     }
@@ -278,7 +363,12 @@ impl ChunkPlanBuilder {
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
-        resolve_request_source_matches(request, ctx.runtime_module)?;
+        resolve_request_source_matches(
+            request,
+            ctx.runtime_module,
+            self.keep_going,
+            &mut self.source_match_diagnostics,
+        )?;
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims =
@@ -842,11 +932,19 @@ impl ChunkPlanBuilder {
     }
 
     pub(super) fn finalize(self) -> Result<ChunkPlan> {
+        let mut reports = Vec::new();
+        if !self.source_match_diagnostics.is_empty() {
+            reports.push(render_source_match_diagnostics(
+                &self.source_match_diagnostics,
+            ));
+        }
         if !self.duplicate_binding_claims.is_empty() {
-            bail!(
-                "{}",
-                render_duplicate_binding_claims(&self.duplicate_binding_claims)
-            );
+            reports.push(render_duplicate_binding_claims(
+                &self.duplicate_binding_claims,
+            ));
+        }
+        if !reports.is_empty() {
+            bail!("{}", reports.join("\n\n"));
         }
         Ok(ChunkPlan {
             module_plans: self.module_plans,

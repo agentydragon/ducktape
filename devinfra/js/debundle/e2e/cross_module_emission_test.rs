@@ -404,6 +404,69 @@ export { RuntimeCatalog };
 }
 
 #[test]
+fn keep_going_reports_source_match_failures_and_duplicate_claims_together() {
+    let missing_selector = r#"function selectedFormatter(value) {
+  return value.toLowerCase();
+}"#;
+    let ambiguous_selector = r#"function repeatedHelper() {
+  return "shared";
+}"#;
+    let opts = FixtureOpts::new(
+        r#"function renderCard(value) {
+  return value.trim();
+}
+function decoratePrimary() {
+  return "shared";
+}
+function decorateSecondary() {
+  return "shared";
+}
+console.log(renderCard(" ok "), decoratePrimary(), decorateSecondary());
+export { renderCard, decoratePrimary, decorateSecondary };
+"#,
+        vec![
+            logical_module(
+                "diagnostics/missing",
+                &[Member::source_alpha("MissingFormatter", missing_selector)],
+            ),
+            logical_module("owners/card", &[Member::new("renderCard")]),
+            logical_module(
+                "duplicates/card",
+                &[Member::renamed("renderCardAgain", "renderCard")],
+            ),
+            logical_module(
+                "diagnostics/ambiguous",
+                &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
+            ),
+        ],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let stderr = rejected.stderr;
+    for required in [
+        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "diagnostics/missing",
+        "as `MissingFormatter`",
+        "did not match any top-level declaration",
+        "diagnostics/ambiguous",
+        "as `AmbiguousHelper`",
+        "is ambiguous",
+        "decoratePrimary",
+        "decorateSecondary",
+        "Duplicate binding claim report: 1 duplicate claim(s) found",
+        "\"renderCard\"",
+        "owners/card",
+        "duplicates/card",
+        "as `renderCardAgain`",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+}
+
+#[test]
 fn readable_import_without_collision() {
     // Single-plan sanity: a spec rename becomes the consumer-side import
     // local too; no input-bundle alias is needed when there is no collision.
