@@ -21,7 +21,7 @@ use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
 use peel::{
@@ -31,7 +31,10 @@ use peel::{
     run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
-use selector_debt::{SelectorDebtReport, compute_selector_debt, render_selector_debt_text};
+use selector_debt::{
+    SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
+    render_selector_debt_text,
+};
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
@@ -138,6 +141,26 @@ pub struct SelectorDebtArgs {
     /// Maximum rows to emit per section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Parse this JS chunk and flag structural selectors with near-matching siblings.
+    #[arg(long = "source-file")]
+    pub source_file: Option<PathBuf>,
+
+    /// Source root used with `--chunk`.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
+    /// Chunk path relative to `--source-root`, e.g. `static/index.js`.
+    #[arg(long = "chunk")]
+    pub chunk: Option<PathBuf>,
+
+    /// Minimum source-aware near-match score to report.
+    #[arg(long = "near-match-min-score", default_value_t = 55)]
+    pub near_match_min_score: usize,
+
+    /// Maximum near-match candidates kept per selector. Zero means unlimited.
+    #[arg(long = "near-match-limit", default_value_t = 3)]
+    pub near_match_limit: usize,
 
     /// Output format. Default `text` on tty, `json` on pipe. `ndjson`
     /// emits one tagged object per row plus a final `summary` line.
@@ -867,7 +890,19 @@ fn render_spec_stats_text_wrapper(stats: &SpecStats, out: &mut String) {
 }
 
 fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
-    let mut report = compute_selector_debt(&args.modules_root, args.against.as_deref())?;
+    let source_file = selector_debt_source_file(&args)?;
+    let source_aware = source_file
+        .as_deref()
+        .map(|source_file| SourceAwareSelectorDebtConfig {
+            source_file,
+            near_match_min_score: args.near_match_min_score,
+            near_match_limit: args.near_match_limit,
+        });
+    let mut report = compute_selector_debt_with_source(
+        &args.modules_root,
+        args.against.as_deref(),
+        source_aware.as_ref(),
+    )?;
     // `--min-score` filters the listed rows; the summary keeps the
     // spec-wide totals so the denominator stays visible.
     if args.min_score > 0 {
@@ -879,6 +914,7 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
         report.name_only.truncate(args.limit);
         report.repeated_source_match.truncate(args.limit);
         report.drifted_bindings.truncate(args.limit);
+        report.source_aware_near_ambiguous.truncate(args.limit);
     }
     let format = OutputFormat::resolve(args.format);
     if format == OutputFormat::Ndjson {
@@ -886,6 +922,22 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
         return Ok(());
     }
     print_report(&report, format, render_selector_debt_text).context("writing selector-debt output")
+}
+
+fn selector_debt_source_file(args: &SelectorDebtArgs) -> Result<Option<PathBuf>> {
+    match (&args.source_file, &args.chunk) {
+        (Some(_), Some(_)) => {
+            bail!("use either --source-file or --source-root/--chunk, not both")
+        }
+        (Some(source_file), None) => Ok(Some(source_file.clone())),
+        (None, Some(chunk)) => {
+            let Some(source_root) = &args.source_root else {
+                bail!("--chunk requires --source-root or DEBUNDLE_SOURCE_ROOT");
+            };
+            Ok(Some(source_root.join(chunk)))
+        }
+        (None, None) => Ok(None),
+    }
 }
 
 /// One tagged JSON object per row, then a final `summary` line — the
@@ -921,6 +973,15 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
             serde_json::to_string(&Line {
                 section: "drifted_binding",
                 row: drift,
+            })?
+        );
+    }
+    for selector in &report.source_aware_near_ambiguous {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "source_aware_near_ambiguous",
+                row: selector,
             })?
         );
     }

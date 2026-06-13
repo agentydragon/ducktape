@@ -20,18 +20,18 @@
 //!   but whose `selector.binding.name` changed. A name-only selector
 //!   that has *already* required updating is proven rebuild-fragile.
 //!
-//! Everything here reads only the on-disk modules tree (same walk as
-//! `spec stats` / `modules list`). It deliberately does **not** parse
-//! the chunk or load the owner graph, so it stays a fast spec query;
-//! source-aware debt (near-ambiguous structural matches) is a separate
-//! future report — see `TODO.md` § "Selector debt reporting".
+//! By default this reads only the on-disk modules tree (same walk as
+//! `spec stats` / `modules list`). With [`SourceAwareSelectorDebtConfig`],
+//! callers may also supply the current chunk source to flag structural
+//! selectors that resolve uniquely today but have close non-matching
+//! siblings in that chunk.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use spec::MemberSelectorSpec;
+use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 
 /// Minified-score at or above which a name-only selector is counted as
@@ -112,6 +112,28 @@ pub struct RepeatedSourceMatch {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SourceAwareNearMiss {
+    /// Top-level body index of the near-matching candidate in the current chunk.
+    pub body_idx: usize,
+    /// Binding names declared by that candidate, if any.
+    pub declared_bindings: Vec<String>,
+    /// Existing source_match mismatch-score heuristic. Higher means closer.
+    pub score: usize,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceAwareStructuralSelector {
+    pub module: String,
+    pub site: SelectorSite,
+    /// Readable export `name:` for `Member`-site occurrences.
+    pub export_name: Option<String>,
+    /// The exact top-level body indices matched by this selector today.
+    pub exact_body_indices: Vec<usize>,
+    pub near_misses: Vec<SourceAwareNearMiss>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DriftedBinding {
     pub module: String,
     pub export_name: String,
@@ -134,6 +156,13 @@ pub struct SelectorDebtSummary {
     pub source_match_total: usize,
     pub repeated_source_match_groups: usize,
     pub drifted_binding_total: usize,
+    /// Source-aware structural selectors checked against a chunk source.
+    /// Zero when source-aware mode was not requested.
+    pub source_aware_checked: usize,
+    /// Checked selectors with exactly one exact top-level body match.
+    pub source_aware_unique: usize,
+    /// Unique structural selectors that also had near-matching siblings.
+    pub source_aware_near_ambiguous: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -146,7 +175,19 @@ pub struct SelectorDebtReport {
     pub repeated_source_match: Vec<RepeatedSourceMatch>,
     /// Populated only when `--against` is supplied.
     pub drifted_bindings: Vec<DriftedBinding>,
+    /// Populated only when source-aware mode is supplied.
+    pub source_aware_near_ambiguous: Vec<SourceAwareStructuralSelector>,
     pub summary: SelectorDebtSummary,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceAwareSelectorDebtConfig<'a> {
+    /// Current chunk source to parse and compare `source_match` bodies against.
+    pub source_file: &'a Path,
+    /// Minimum near-miss score to report. See `source_match` mismatch scoring.
+    pub near_match_min_score: usize,
+    /// Maximum near-matches retained per selector. Zero means unlimited.
+    pub near_match_limit: usize,
 }
 
 /// Normalize a `match` body for copy-paste grouping: collapse every run
@@ -188,6 +229,27 @@ pub fn compute_selector_debt(
     modules_root: &Path,
     against: Option<&Path>,
 ) -> Result<SelectorDebtReport> {
+    compute_selector_debt_with_source(modules_root, against, None)
+}
+
+pub fn compute_selector_debt_with_source(
+    modules_root: &Path,
+    against: Option<&Path>,
+    source_aware: Option<&SourceAwareSelectorDebtConfig<'_>>,
+) -> Result<SelectorDebtReport> {
+    if source_aware.is_some() {
+        return js_ast::with_swc_globals(|| {
+            compute_selector_debt_impl(modules_root, against, source_aware)
+        });
+    }
+    compute_selector_debt_impl(modules_root, against, source_aware)
+}
+
+fn compute_selector_debt_impl(
+    modules_root: &Path,
+    against: Option<&Path>,
+    source_aware: Option<&SourceAwareSelectorDebtConfig<'_>>,
+) -> Result<SelectorDebtReport> {
     let files = collect_module_files(modules_root)
         .with_context(|| format!("walking {}", modules_root.display()))?;
 
@@ -196,6 +258,17 @@ pub fn compute_selector_debt(
     let mut by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>> = BTreeMap::new();
     let mut source_match_total = 0usize;
     let mut current_drift: DriftMap = DriftMap::new();
+    let runtime_module = source_aware
+        .map(|config| {
+            let source = std::fs::read_to_string(config.source_file)
+                .with_context(|| format!("reading {}", config.source_file.display()))?;
+            js_ast::parse_js_module_ast(&config.source_file.display().to_string(), &source)
+                .with_context(|| format!("parsing {}", config.source_file.display()))
+        })
+        .transpose()?;
+    let mut source_aware_checked = 0usize;
+    let mut source_aware_unique = 0usize;
+    let mut source_aware_near_ambiguous = Vec::new();
 
     for file in &files {
         let module_path = module_path_from_file(file, modules_root);
@@ -223,6 +296,17 @@ pub fn compute_selector_debt(
                 }
                 MemberSelectorSpec::SourceMatch(selector) => {
                     source_match_total += 1;
+                    collect_source_aware_debt(
+                        &mut source_aware_checked,
+                        &mut source_aware_unique,
+                        &mut source_aware_near_ambiguous,
+                        source_aware,
+                        runtime_module.as_ref(),
+                        &module_path,
+                        SelectorSite::Member,
+                        member.name.clone(),
+                        &selector,
+                    )?;
                     by_normalized
                         .entry(normalize_match(&selector.match_source))
                         .or_default()
@@ -238,6 +322,18 @@ pub fn compute_selector_debt(
 
         for group in &module.binding_groups {
             source_match_total += 1;
+            let selector = group.source_match.selector();
+            collect_source_aware_debt(
+                &mut source_aware_checked,
+                &mut source_aware_unique,
+                &mut source_aware_near_ambiguous,
+                source_aware,
+                runtime_module.as_ref(),
+                &module_path,
+                SelectorSite::BindingGroup,
+                None,
+                &selector,
+            )?;
             by_normalized
                 .entry(normalize_match(&group.source_match.match_source))
                 .or_default()
@@ -254,6 +350,17 @@ pub fn compute_selector_debt(
                 .selector()
                 .with_context(|| format!("module {module_path}: anonymous statement selector"))?;
             source_match_total += 1;
+            collect_source_aware_debt(
+                &mut source_aware_checked,
+                &mut source_aware_unique,
+                &mut source_aware_near_ambiguous,
+                source_aware,
+                runtime_module.as_ref(),
+                &module_path,
+                SelectorSite::AnonymousStatement,
+                None,
+                &selector,
+            )?;
             by_normalized
                 .entry(normalize_match(&selector.match_source))
                 .or_default()
@@ -332,26 +439,81 @@ pub fn compute_selector_debt(
         source_match_total,
         repeated_source_match_groups: repeated_source_match.len(),
         drifted_binding_total: drifted_bindings.len(),
+        source_aware_checked,
+        source_aware_unique,
+        source_aware_near_ambiguous: source_aware_near_ambiguous.len(),
     };
 
     Ok(SelectorDebtReport {
         name_only,
         repeated_source_match,
         drifted_bindings,
+        source_aware_near_ambiguous,
         summary,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_source_aware_debt(
+    checked: &mut usize,
+    unique: &mut usize,
+    rows: &mut Vec<SourceAwareStructuralSelector>,
+    config: Option<&SourceAwareSelectorDebtConfig<'_>>,
+    runtime_module: Option<&swc_ecma_ast::Module>,
+    module_path: &str,
+    site: SelectorSite,
+    export_name: Option<String>,
+    selector: &AnonymousStatementSelector,
+) -> Result<()> {
+    let (Some(config), Some(runtime_module)) = (config, runtime_module) else {
+        return Ok(());
+    };
+    *checked += 1;
+    let debt = source_match::source_match_body_debt(
+        runtime_module,
+        module_path,
+        selector,
+        config.near_match_min_score,
+        config.near_match_limit,
+    )?;
+    let [exact_group] = debt.exact_groups.as_slice() else {
+        return Ok(());
+    };
+    *unique += 1;
+    if debt.near_misses.is_empty() {
+        return Ok(());
+    }
+    rows.push(SourceAwareStructuralSelector {
+        module: module_path.to_owned(),
+        site,
+        export_name,
+        exact_body_indices: exact_group.iter().flatten().copied().collect(),
+        near_misses: debt
+            .near_misses
+            .into_iter()
+            .map(|near| SourceAwareNearMiss {
+                body_idx: near.body_idx,
+                declared_bindings: near.declared_bindings,
+                score: near.score,
+                reason: near.reason,
+            })
+            .collect(),
+    });
+    Ok(())
 }
 
 /// Compact two-section-plus-summary text rendering.
 pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}\n",
+        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked\n",
         s.name_only_total,
         s.name_only_fragile,
         s.source_match_total,
         s.repeated_source_match_groups,
         s.drifted_binding_total,
+        s.source_aware_near_ambiguous,
+        s.source_aware_unique,
     ));
 
     if !report.name_only.is_empty() {
@@ -389,6 +551,28 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
                 "  {} ({})  {} -> {}\n",
                 drift.export_name, drift.module, drift.previous_binding, drift.current_binding,
             ));
+        }
+    }
+
+    if !report.source_aware_near_ambiguous.is_empty() {
+        out.push_str("source-aware near-ambiguous structural selectors:\n");
+        for selector in &report.source_aware_near_ambiguous {
+            let readable = selector.export_name.as_deref().unwrap_or("-");
+            out.push_str(&format!(
+                "  {:?} {} [{}] exact={:?}\n",
+                selector.site, selector.module, readable, selector.exact_body_indices,
+            ));
+            for near in &selector.near_misses {
+                let declared = if near.declared_bindings.is_empty() {
+                    "-".to_owned()
+                } else {
+                    near.declared_bindings.join(",")
+                };
+                out.push_str(&format!(
+                    "      score={} body={} declared=[{}] {}\n",
+                    near.score, near.body_idx, declared, near.reason,
+                ));
+            }
         }
     }
 }
@@ -513,6 +697,71 @@ mod tests {
         let report = compute_selector_debt(root, None).unwrap();
         assert!(report.drifted_bindings.is_empty());
         assert_eq!(report.summary.drifted_binding_total, 0);
+    }
+
+    #[test]
+    fn source_aware_mode_reports_unique_selector_with_near_matching_sibling() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "classes.yaml",
+            "members:\n  - name: PickedClass\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          class PickedClass {\n            important() {\n              return 1;\n            }\n          }\n",
+        );
+        let source_file = root.join("chunk.js");
+        fs::write(
+            &source_file,
+            "class a { important() { return 1; } }\nclass b { important() { return 2; } }\n",
+        )
+        .unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_aware_checked, 1);
+        assert_eq!(report.summary.source_aware_unique, 1);
+        assert_eq!(report.summary.source_aware_near_ambiguous, 1);
+        let row = &report.source_aware_near_ambiguous[0];
+        assert_eq!(row.module, "classes");
+        assert_eq!(row.site, SelectorSite::Member);
+        assert_eq!(row.export_name.as_deref(), Some("PickedClass"));
+        assert_eq!(row.exact_body_indices, vec![0]);
+        assert_eq!(row.near_misses.len(), 1);
+        assert_eq!(row.near_misses[0].body_idx, 1);
+        assert_eq!(row.near_misses[0].declared_bindings, vec!["b".to_owned()]);
+    }
+
+    #[test]
+    fn source_aware_mode_does_not_report_ambiguous_exact_matches_as_unique_near_misses() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "classes.yaml",
+            "members:\n  - name: PickedClass\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          class PickedClass {\n            important() {\n              return 1;\n            }\n          }\n",
+        );
+        let source_file = root.join("chunk.js");
+        fs::write(
+            &source_file,
+            "class a { important() { return 1; } }\nclass b { important() { return 1; } }\n",
+        )
+        .unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_aware_checked, 1);
+        assert_eq!(report.summary.source_aware_unique, 0);
+        assert_eq!(report.summary.source_aware_near_ambiguous, 0);
+        assert!(report.source_aware_near_ambiguous.is_empty());
     }
 
     #[test]

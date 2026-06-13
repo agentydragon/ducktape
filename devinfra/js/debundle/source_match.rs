@@ -49,6 +49,20 @@ pub struct ResolvedMemberBinding {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SourceMatchNearMiss {
+    pub body_idx: usize,
+    pub declared_bindings: Vec<String>,
+    pub score: usize,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SourceMatchBodyDebt {
+    pub exact_groups: Vec<Vec<Option<usize>>>,
+    pub near_misses: Vec<SourceMatchNearMiss>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct MemberBindingMatch {
     body_idx: usize,
     binding: ResolvedMemberBinding,
@@ -319,6 +333,92 @@ pub fn find_anonymous_statement_body_index_groups(
         groups.push(group);
     }
     Ok(groups)
+}
+
+/// Source-aware fragility signal for selector-debt reporting.
+///
+/// This intentionally does not change selector semantics: it reuses the
+/// normal exact matcher, then lists high-scoring non-matching top-level
+/// items that look structurally close enough to become ambiguous after a
+/// small source drift. The first slice only scores selectors whose source
+/// parses to one pinned top-level item; multi-statement windows still use
+/// the exact match count but do not get near-miss rows yet.
+pub fn source_match_body_debt(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    min_score: usize,
+    limit: usize,
+) -> Result<SourceMatchBodyDebt> {
+    let parsed = js_ast::parse_js_module_ast(
+        &format!("<source_match debt in {request_id}>"),
+        &selector.match_source,
+    )
+    .with_context(|| {
+        format!(
+            "logical_module {request_id}: source_match did not parse as JS:\n{}",
+            selector.match_source
+        )
+    })?;
+    let exact_groups = find_matching_body_group_alignments(runtime_module, &parsed.body, selector);
+    let [needle] = parsed.body.as_slice() else {
+        return Ok(SourceMatchBodyDebt {
+            exact_groups,
+            near_misses: Vec::new(),
+        });
+    };
+    if module_item_list_hole_name(needle).is_some() {
+        return Ok(SourceMatchBodyDebt {
+            exact_groups,
+            near_misses: Vec::new(),
+        });
+    }
+    let exact_body_indices = exact_groups
+        .iter()
+        .flat_map(|group| group.iter().flatten().copied())
+        .collect::<BTreeSet<_>>();
+    let wildcard_idents = wildcard_ident_names(needle);
+    let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
+    let mut near_misses = SyntaxContext::within_ignored_ctxt(|| {
+        runtime_module
+            .body
+            .iter()
+            .enumerate()
+            .filter_map(|(body_idx, candidate)| {
+                if exact_body_indices.contains(&body_idx) {
+                    return None;
+                }
+                let reason =
+                    first_mismatch_reason(needle, candidate, selector, &wildcard_idents, alpha)?;
+                if reason.score < min_score {
+                    return None;
+                }
+                let declared_bindings = declared_bindings(candidate)
+                    .into_iter()
+                    .map(|binding| binding.binding_name)
+                    .collect::<Vec<_>>();
+                Some(SourceMatchNearMiss {
+                    body_idx,
+                    declared_bindings,
+                    score: reason.score,
+                    reason: reason.reason,
+                })
+            })
+            .collect::<Vec<_>>()
+    });
+    near_misses.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.body_idx.cmp(&right.body_idx))
+    });
+    if limit > 0 {
+        near_misses.truncate(limit);
+    }
+    Ok(SourceMatchBodyDebt {
+        exact_groups,
+        near_misses,
+    })
 }
 
 pub fn resolve_member_binding(
