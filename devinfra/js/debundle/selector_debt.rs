@@ -112,6 +112,15 @@ pub struct RepeatedSourceMatch {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SourceAwareRepeatedExactSourceMatch {
+    /// Whitespace-normalized body shared by every occurrence.
+    pub normalized: String,
+    /// Exact top-level body indices every occurrence resolves to today.
+    pub exact_body_indices: Vec<usize>,
+    pub occurrences: Vec<SourceMatchOccurrence>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SourceAwareNearMiss {
     /// Top-level body index of the near-matching candidate in the current chunk.
     pub body_idx: usize,
@@ -163,6 +172,9 @@ pub struct SelectorDebtSummary {
     pub source_aware_unique: usize,
     /// Unique structural selectors that also had near-matching siblings.
     pub source_aware_near_ambiguous: usize,
+    /// Repeated structural selector bodies that resolve to the same exact
+    /// top-level body index set in source-aware mode.
+    pub source_aware_repeated_exact: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -177,6 +189,8 @@ pub struct SelectorDebtReport {
     pub drifted_bindings: Vec<DriftedBinding>,
     /// Populated only when source-aware mode is supplied.
     pub source_aware_near_ambiguous: Vec<SourceAwareStructuralSelector>,
+    /// Populated only when source-aware mode is supplied.
+    pub source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch>,
     pub summary: SelectorDebtSummary,
 }
 
@@ -269,6 +283,8 @@ fn compute_selector_debt_impl(
     let mut source_aware_checked = 0usize;
     let mut source_aware_unique = 0usize;
     let mut source_aware_near_ambiguous = Vec::new();
+    let mut source_aware_exact_by_key =
+        BTreeMap::<(String, Vec<usize>), Vec<SourceMatchOccurrence>>::new();
 
     for file in &files {
         let module_path = module_path_from_file(file, modules_root);
@@ -296,7 +312,7 @@ fn compute_selector_debt_impl(
                 }
                 MemberSelectorSpec::SourceMatch(selector) => {
                     source_match_total += 1;
-                    collect_source_aware_debt(
+                    let exact_body_indices = collect_source_aware_debt(
                         &mut source_aware_checked,
                         &mut source_aware_unique,
                         &mut source_aware_near_ambiguous,
@@ -307,15 +323,23 @@ fn compute_selector_debt_impl(
                         member.name.clone(),
                         &selector,
                     )?;
+                    let normalized = normalize_match(&selector.match_source);
+                    let occurrence = SourceMatchOccurrence {
+                        module: module_path.clone(),
+                        site: SelectorSite::Member,
+                        export_name: member.name.clone(),
+                        match_source: selector.match_source,
+                    };
+                    if let Some(exact_body_indices) = exact_body_indices {
+                        source_aware_exact_by_key
+                            .entry((normalized.clone(), exact_body_indices))
+                            .or_default()
+                            .push(occurrence.clone());
+                    }
                     by_normalized
-                        .entry(normalize_match(&selector.match_source))
+                        .entry(normalized)
                         .or_default()
-                        .push(SourceMatchOccurrence {
-                            module: module_path.clone(),
-                            site: SelectorSite::Member,
-                            export_name: member.name.clone(),
-                            match_source: selector.match_source,
-                        });
+                        .push(occurrence);
                 }
             }
         }
@@ -323,7 +347,7 @@ fn compute_selector_debt_impl(
         for group in &module.binding_groups {
             source_match_total += 1;
             let selector = group.source_match.selector();
-            collect_source_aware_debt(
+            let exact_body_indices = collect_source_aware_debt(
                 &mut source_aware_checked,
                 &mut source_aware_unique,
                 &mut source_aware_near_ambiguous,
@@ -334,15 +358,23 @@ fn compute_selector_debt_impl(
                 None,
                 &selector,
             )?;
+            let normalized = normalize_match(&group.source_match.match_source);
+            let occurrence = SourceMatchOccurrence {
+                module: module_path.clone(),
+                site: SelectorSite::BindingGroup,
+                export_name: None,
+                match_source: group.source_match.match_source.clone(),
+            };
+            if let Some(exact_body_indices) = exact_body_indices {
+                source_aware_exact_by_key
+                    .entry((normalized.clone(), exact_body_indices))
+                    .or_default()
+                    .push(occurrence.clone());
+            }
             by_normalized
-                .entry(normalize_match(&group.source_match.match_source))
+                .entry(normalized)
                 .or_default()
-                .push(SourceMatchOccurrence {
-                    module: module_path.clone(),
-                    site: SelectorSite::BindingGroup,
-                    export_name: None,
-                    match_source: group.source_match.match_source.clone(),
-                });
+                .push(occurrence);
         }
 
         for statement in &module.anonymous_statements {
@@ -350,7 +382,7 @@ fn compute_selector_debt_impl(
                 .selector()
                 .with_context(|| format!("module {module_path}: anonymous statement selector"))?;
             source_match_total += 1;
-            collect_source_aware_debt(
+            let exact_body_indices = collect_source_aware_debt(
                 &mut source_aware_checked,
                 &mut source_aware_unique,
                 &mut source_aware_near_ambiguous,
@@ -361,15 +393,23 @@ fn compute_selector_debt_impl(
                 None,
                 &selector,
             )?;
+            let normalized = normalize_match(&selector.match_source);
+            let occurrence = SourceMatchOccurrence {
+                module: module_path.clone(),
+                site: SelectorSite::AnonymousStatement,
+                export_name: None,
+                match_source: selector.match_source,
+            };
+            if let Some(exact_body_indices) = exact_body_indices {
+                source_aware_exact_by_key
+                    .entry((normalized.clone(), exact_body_indices))
+                    .or_default()
+                    .push(occurrence.clone());
+            }
             by_normalized
-                .entry(normalize_match(&selector.match_source))
+                .entry(normalized)
                 .or_default()
-                .push(SourceMatchOccurrence {
-                    module: module_path.clone(),
-                    site: SelectorSite::AnonymousStatement,
-                    export_name: None,
-                    match_source: selector.match_source,
-                });
+                .push(occurrence);
         }
     }
 
@@ -403,6 +443,27 @@ fn compute_selector_debt_impl(
             .len()
             .cmp(&a.occurrences.len())
             .then_with(|| a.normalized.cmp(&b.normalized))
+    });
+
+    let mut source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch> =
+        source_aware_exact_by_key
+            .into_iter()
+            .filter(|(_, occurrences)| occurrences.len() >= 2)
+            .map(|((normalized, exact_body_indices), mut occurrences)| {
+                sort_occurrences(&mut occurrences);
+                SourceAwareRepeatedExactSourceMatch {
+                    normalized,
+                    exact_body_indices,
+                    occurrences,
+                }
+            })
+            .collect();
+    source_aware_repeated_exact.sort_by(|a, b| {
+        b.occurrences
+            .len()
+            .cmp(&a.occurrences.len())
+            .then_with(|| a.normalized.cmp(&b.normalized))
+            .then_with(|| a.exact_body_indices.cmp(&b.exact_body_indices))
     });
 
     let drifted_bindings = match against {
@@ -442,6 +503,7 @@ fn compute_selector_debt_impl(
         source_aware_checked,
         source_aware_unique,
         source_aware_near_ambiguous: source_aware_near_ambiguous.len(),
+        source_aware_repeated_exact: source_aware_repeated_exact.len(),
     };
 
     Ok(SelectorDebtReport {
@@ -449,8 +511,18 @@ fn compute_selector_debt_impl(
         repeated_source_match,
         drifted_bindings,
         source_aware_near_ambiguous,
+        source_aware_repeated_exact,
         summary,
     })
+}
+
+fn sort_occurrences(occurrences: &mut [SourceMatchOccurrence]) {
+    occurrences.sort_by(|a, b| {
+        a.module
+            .cmp(&b.module)
+            .then_with(|| a.site.cmp(&b.site))
+            .then_with(|| a.export_name.cmp(&b.export_name))
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -464,9 +536,9 @@ fn collect_source_aware_debt(
     site: SelectorSite,
     export_name: Option<String>,
     selector: &AnonymousStatementSelector,
-) -> Result<()> {
+) -> Result<Option<Vec<usize>>> {
     let (Some(config), Some(runtime_module)) = (config, runtime_module) else {
-        return Ok(());
+        return Ok(None);
     };
     *checked += 1;
     let debt = source_match::source_match_body_debt(
@@ -477,17 +549,21 @@ fn collect_source_aware_debt(
         config.near_match_limit,
     )?;
     let [exact_group] = debt.exact_groups.as_slice() else {
-        return Ok(());
+        return Ok(None);
     };
     *unique += 1;
+    let exact_body_indices = exact_group.iter().flatten().copied().collect::<Vec<_>>();
+    if exact_body_indices.is_empty() {
+        return Ok(None);
+    }
     if debt.near_misses.is_empty() {
-        return Ok(());
+        return Ok(Some(exact_body_indices));
     }
     rows.push(SourceAwareStructuralSelector {
         module: module_path.to_owned(),
         site,
         export_name,
-        exact_body_indices: exact_group.iter().flatten().copied().collect(),
+        exact_body_indices: exact_body_indices.clone(),
         near_misses: debt
             .near_misses
             .into_iter()
@@ -499,14 +575,14 @@ fn collect_source_aware_debt(
             })
             .collect(),
     });
-    Ok(())
+    Ok(Some(exact_body_indices))
 }
 
 /// Compact two-section-plus-summary text rendering.
 pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked\n",
+        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}\n",
         s.name_only_total,
         s.name_only_fragile,
         s.source_match_total,
@@ -514,6 +590,7 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
         s.drifted_binding_total,
         s.source_aware_near_ambiguous,
         s.source_aware_unique,
+        s.source_aware_repeated_exact,
     ));
 
     if !report.name_only.is_empty() {
@@ -571,6 +648,25 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
                 out.push_str(&format!(
                     "      score={} body={} declared=[{}] {}\n",
                     near.score, near.body_idx, declared, near.reason,
+                ));
+            }
+        }
+    }
+
+    if !report.source_aware_repeated_exact.is_empty() {
+        out.push_str("source-aware repeated exact structural selectors:\n");
+        for group in &report.source_aware_repeated_exact {
+            out.push_str(&format!(
+                "  {}x exact={:?}  {}\n",
+                group.occurrences.len(),
+                group.exact_body_indices,
+                group.normalized,
+            ));
+            for occurrence in &group.occurrences {
+                let readable = occurrence.export_name.as_deref().unwrap_or("-");
+                out.push_str(&format!(
+                    "      {:?} {} [{}]\n",
+                    occurrence.site, occurrence.module, readable,
                 ));
             }
         }
@@ -762,6 +858,46 @@ mod tests {
         assert_eq!(report.summary.source_aware_unique, 0);
         assert_eq!(report.summary.source_aware_near_ambiguous, 0);
         assert!(report.source_aware_near_ambiguous.is_empty());
+    }
+
+    #[test]
+    fn source_aware_mode_reports_repeated_exact_body_index_matches() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let selector = "members:\n  - name: SelectedFormatter\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          function selectedFormatter(value) {\n            return value.trim().toUpperCase();\n          }\n";
+        write(root, "format/primary.yaml", selector);
+        write(root, "format/duplicate.yaml", selector);
+        let source_file = root.join("chunk.js");
+        fs::write(
+            &source_file,
+            "function runtimeFormatter(value) { return value.trim().toUpperCase(); }\n\
+             function otherFormatter(value) { return value.trim().toLowerCase(); }\n",
+        )
+        .unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_match_total, 2);
+        assert_eq!(report.summary.repeated_source_match_groups, 1);
+        assert_eq!(report.summary.source_aware_checked, 2);
+        assert_eq!(report.summary.source_aware_unique, 2);
+        assert_eq!(report.summary.source_aware_repeated_exact, 1);
+        let group = &report.source_aware_repeated_exact[0];
+        assert_eq!(group.exact_body_indices, vec![0]);
+        assert_eq!(group.occurrences.len(), 2);
+        assert_eq!(group.occurrences[0].module, "format/duplicate");
+        assert_eq!(group.occurrences[1].module, "format/primary");
+
+        let mut text = String::new();
+        render_selector_debt_text(&report, &mut text);
+        assert!(text.contains("source-aware repeated exact: 1"));
+        assert!(text.contains("source-aware repeated exact structural selectors:"));
+        assert!(text.contains("2x exact=[0]"));
     }
 
     #[test]
