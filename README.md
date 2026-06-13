@@ -75,7 +75,7 @@ RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Doc
 
 Managed by Nix home-manager in `nix/home/`. **Do NOT edit dotfiles in `~/`**.
 
-Deploy: `home-manager switch --flake ~/code/ducktape#<hostname>`
+Deploy: see <nix/README.md> (NixOS hosts use `sudo nixos-rebuild switch`; standalone non-NixOS configs use `home-manager switch`).
 
 ## Development
 

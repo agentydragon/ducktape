@@ -31,7 +31,8 @@ Archived emails get `gmail-archiver/inbox-auto-cleaned` label and are removed fr
 ## Architecture
 
 - **Planners** (`gmail_archiver/planners/`): category-specific cleanup logic (parser + planning)
-- **Core** (`gmail_archiver/core.py`): `Plan`, `Planner` protocol, display helpers
+- **Plan** (`gmail_archiver/plan.py`): `Plan`, `PlannedAction`, `Planner` protocol, `LABEL_AUTO_CLEANED`
+- **Plan display** (`gmail_archiver/plan_display.py`): plan rendering / display helpers
 - **Inbox** (`gmail_archiver/inbox.py`): cached Gmail access interface
 - **Gmail Client** (`gmail_archiver/gmail_client.py`): Gmail API wrapper
 - **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML (compatible with [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters))

@@ -24,14 +24,14 @@ Skills that include example scripts (referenced from `SKILL.md`) should package 
 
 Pattern:
 
-- `SKILL.md` references example scripts (e.g., `parametric_sketch.py`)
+- `SKILL.md` references example scripts (e.g., `examples/bracket/parametric_sketch.py`)
 - `skill_package(srcs=[...])` includes `SKILL.md` + all example scripts
-- `py_test` / `sh_test` targets run the examples and compare outputs against committed golden files
-- Golden files live in `golden/` subdirectory
+- `py_test` targets run the examples and compare outputs against committed golden files
+- Golden output files live alongside each example (the committed `drawing.dxf`, `drawing.svg`, render PNGs in the example's own directory)
 - Test helpers (comparators, fixtures) are `testonly = True` and not part of the skill package
 
-Example (`skills/freecad/`):
+Example (`skills/freecad/`): each example is a directory under `examples/<name>/` holding
+its build script, committed outputs, and adjacent test:
 
-- Skill package: `SKILL.md`, `parametric_sketch.py`, `build_compound.py`, etc.
-- Test: `test_parametric_sketch.py` runs `parametric_sketch.py` in a FreeCAD Docker container, compares DXF output against `golden/bracket.dxf`
-- Test helper: `testing/compare.py` (`testonly`) normalizes non-deterministic content before diffing
+- `examples/bracket/`: `parametric_sketch.py` (build), `drawing.dxf` / `drawing.svg` / `drawing.pdf` (committed outputs), `test_parametric_sketch.py` (runs the build in a FreeCAD Docker container and diffs against the committed `drawing.dxf`)
+- `examples/bearing_block/`, `examples/compound/`, `examples/cube_with_hole/`: same pattern, each with its own `build*.py` and `test_*.py`

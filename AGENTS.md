@@ -140,6 +140,10 @@ truststore.
 
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by the session start hook or Nix devshell).
 
+### NixOS hosts
+
+Running Bazel with RBE on a NixOS host requires specific flags (`--shell_executable=/bin/bash`, `--incompatible_strict_action_env`, `--host_action_env`) to keep nix-store paths off RBE workers — see <devinfra/docs/nixos_bazel_rbe.md>.
+
 ## Terraform via Bazel
 
 Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`). Each module has a

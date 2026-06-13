@@ -27,7 +27,7 @@ run_loop_agent()
 
 - **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
 - **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
-- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
+- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, start_critic, wait_until_graded_tool, submit, report_failure tools.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
 ## Decisions
@@ -207,7 +207,7 @@ Critic-dev agents have `DirectToolProvider` tools that call the backend REST API
 Backend                                 Container (critic-dev)
 ───────                                 ──────────────────────
 /api/runs/critic (REST)             DirectToolProvider
-├─ Spawns critic container   ◄──────────  run_critic tool (HTTP POST)
+├─ Spawns critic container   ◄──────────  start_critic tool (HTTP POST)
 └─ Returns critic_run_id
 
 PostgreSQL                              DirectToolProvider
@@ -218,12 +218,12 @@ grading_pending view         ◄──────────  wait_until_grade
 
 **Tools provided by DirectToolProvider:**
 
-- `run_critic(definition_id, example, ...)` → critic_run_id (calls REST API)
+- `start_critic(args: RunCriticRequest)` → critic_run_id (calls REST API)
 - `wait_until_graded_tool(critic_run_id)` → grading results (polls database directly)
 
 **Typical critic-dev workflow:**
 
-1. `run_critic(...)` → critic_run_id (returns when critic completes)
+1. `start_critic(...)` → critic_run_id (returns when critic completes)
 2. `wait_until_graded_tool(critic_run_id)` (polls `grading_pending` until empty)
 3. Query metrics from DB
 

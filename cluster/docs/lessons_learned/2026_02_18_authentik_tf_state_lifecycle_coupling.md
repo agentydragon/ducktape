@@ -1,5 +1,15 @@
 # Authentik Terraform State Lifecycle Coupling
 
+> **HISTORICAL (infra changed since 2026-02-18).** Vault was decommissioned
+> 2026-04-19 (secrets are now SOPS-managed; see <../../vault-migration/TODO.md>),
+> and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
+> `tofu-state-db` CNPG cluster (one schema per `Terraform` CR) with the
+> kubernetes-backend migration. The `tfstate-default-*` secret deletions and the
+> Vault `auth disable` step below are **no longer applicable**. For the current
+> teardown/recovery procedure see <../troubleshooting.md> § "Resource ID Desync
+> After Wiping a Backing Datastore". The analysis below is preserved as the
+> original incident write-up.
+
 **Date**: 2026-02-18
 **Status**: Resolved (manual state wipe + documentation)
 
@@ -72,6 +82,14 @@ during a full cluster rebuild where Vault is also wiped.
 ## Resolution
 
 ### When Tearing Down Authentik (HelmRelease + PVC Delete)
+
+> **HISTORICAL — do not run.** This procedure targets the retired
+> `tfstate-default-*` k8s secret backend and a live Vault. For the current
+> equivalent, follow <../troubleshooting.md> § "Resource ID Desync After Wiping a
+> Backing Datastore" (state now lives in the `tofu-state-db` CNPG cluster; there
+> is no Vault `auth disable` step). The block is kept verbatim for narrative
+> continuity. Steps 3 (`tfstate-default-*` secret deletion) and 4 (Vault
+> `auth disable oidc/`) no longer apply.
 
 ```bash
 # 1. Suspend all Authentik-targeting Terraform resources

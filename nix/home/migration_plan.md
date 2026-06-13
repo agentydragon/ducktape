@@ -9,7 +9,7 @@ system-level setup on non-NixOS machines (apt packages, services, udev rules).
 
 ### Deployment
 
-For NixOS hosts (`iguana`, `rugged`, `wyrm2`):
+For NixOS hosts (`iguana`, `rugged`, `wyrm2`, `gecko`):
 
 ```bash
 sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
@@ -24,15 +24,19 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 
 ### Per-Host Status
 
-| Host         | Nix status          | Ansible roles                                                              | Notes                                     |
-| ------------ | ------------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
-| **iguana**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS (was Pop!\_OS "agentydragon") |
-| **rugged**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS tablet                        |
-| **wyrm2**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS VM                            |
-| **atlas**    | Standalone HM entry | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                       | Minimal Proxmox host                      |
-| **nixos-vm** | Standalone HM entry | (test-only config, no Ansible playbook)                                    | Simplified standalone home-manager config |
-| **gpd**      | No current output   | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `legacy_vpn_uninstall` | Still uses legacy roles — last holdout    |
-| **vps**      | No current output   | `common`, `system_inspection_nopasswd`                                     | Server, no GUI/dev tools                  |
+Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,vps,atlas}.yaml`)
+and `ansible/roles/`.
+
+| Host         | Nix status          | Ansible roles                                 | Notes                                           |
+| ------------ | ------------------- | --------------------------------------------- | ----------------------------------------------- |
+| **iguana**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS (was Pop!\_OS "agentydragon")       |
+| **rugged**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS tablet                              |
+| **wyrm2**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Fully NixOS VM                                  |
+| **gecko**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)          | Headless CLI-only VM (Proxmox) for agents       |
+| **atlas**    | Standalone HM entry | `system_inspection_nopasswd`, `nebula`, `nix` | Minimal Proxmox host                            |
+| **nixos-vm** | Standalone HM entry | (test-only config, no Ansible playbook)       | Simplified standalone home-manager config       |
+| **gpd**      | No current output   | `gui`, `legacy_gui`, `laptop`                 | Still uses the `legacy_gui` role — last holdout |
+| **vps**      | No current output   | `common`, `system_inspection_nopasswd`        | Server, no GUI/dev tools                        |
 
 ### What Nix Manages
 
@@ -58,15 +62,11 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 
 ### GPD Migration
 
-GPD is the last host using `legacy_cli` and `legacy_gui` roles. These legacy roles
-duplicate what Nix already provides (pipx tools, nodejs, rust, neovim, bazel, CLI
-utils, GNOME extensions, nerd fonts). Once GPD runs `home-manager switch`, remove
-the legacy roles from `gpd.yaml` and delete:
+GPD is the last host using the `legacy_gui` role. It duplicates what Nix already
+provides (GUI apps, GNOME extensions, nerd fonts). Once GPD runs `home-manager
+switch`, remove the legacy role from `gpd.yaml` and delete:
 
-- `ansible/roles/legacy_cli`
 - `ansible/roles/legacy_gui`
-- `ansible/roles/legacy_nerd_fonts`
-- `ansible/roles/legacy_claude_mcp`
 
 ### Not Yet Migrated to Home-Manager
 

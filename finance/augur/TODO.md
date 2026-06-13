@@ -77,6 +77,24 @@ Remaining:
 
 ## Exogenous Models & Evidence
 
+- [ ] **Drop the redundant "exogenous" adjective from remaining identifiers, docs,
+      and comments.** Every augur model is exogenous by invariant, so the adjective
+      carries no information. Model labels, config descriptions, and several
+      docstrings were already cleaned; what remains is the high-blast-radius type
+      renames plus the long tail of docstrings/comments/docs:
+  - Type renames across `model/`, `sim/`, `product/`, `calibration/`:
+    `SampledExogenousBundle` → `SampledBundle` (`augur/model/exogenous.py`),
+    `materialize_sampled_exogenous` → `materialize_sampled_bundle`
+    (`augur/sim/external_series.py`), `ExogenousPathId` / `ExogenousPathSet`,
+    plus all imports/usages and the `exogenous_path_id` API field
+    (`augur/api/accounting.py`).
+  - Module/file docstrings in `augur/model/*`, `augur/fit/*`,
+    `augur/calibration/*` that still say "exogenous model/provider/series".
+  - Internal comments and error messages (`augur/model/exogenous.py`,
+    `augur/sim/external_series.py`, `augur/product/{service,scenarios}.py`).
+  - Documentation files: `augur/SPEC.md`, `augur/README.md`,
+    `augur/model/MODEL_CARD.md`, `augur/sim/DESIGN.md`, `augur/docs/prior_art_audit.md`,
+    `augur/plans/{roadmap,typed_series_config}.md`, and the gaffer-private mirror.
 - [ ] **Split augur-evidence fetch cadence by source freshness.** The in-cluster
       scrape + git-sync checkout is live; what remains is reducing unnecessary
       upstream fetches. Keep daily jobs for price/market sources that can move

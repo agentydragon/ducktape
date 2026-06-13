@@ -14,10 +14,6 @@ works via a transparent network-layer MITM proxy or direct egress; as far
 as the Rust hook daemon is concerned, outbound HTTPS to known hosts reaches
 them, end of story.
 
-The retired Python daemon used to run a quick BuildBuddy reachability probe
-and surface failures in the session banner. The Rust hook does not currently
-implement that probe; restoring it is tracked in <TODO.md>.
-
 ## Specification
 
 See <claude_hook/SPEC.md> for the high-level, user-facing specification of

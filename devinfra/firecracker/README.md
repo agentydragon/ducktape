@@ -30,11 +30,19 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 
 # Create a VM (from a Claude Code session)
 kubectl port-forward -n claude-sandbox svc/firecracker-manager 8080:8080 &
-TOKEN="..."
+TOKEN=$(kubectl get secret -n claude-sandbox firecracker-manager-auth-token \
+  -o jsonpath='{.data.token}' | base64 -d)
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/vms -XPOST \
   -d '{"cpus": 2, "mem_mib": 4096}'
 # Boot it
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/vms/<id>/boot -XPOST
+
+# SSH into a VM
+kubectl port-forward -n claude-sandbox pod/firecracker-vm-<id> 2222:22 &
+ssh -p 2222 -o StrictHostKeyChecking=no root@localhost "<command>"
+
+# Destroy a VM
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/vms/<id> -XDELETE
 ```
 
 ## VM Guest Contents

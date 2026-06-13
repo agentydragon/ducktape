@@ -256,6 +256,14 @@ The three-layer split keeps bootstrap ordering explicit:
 Secret into the already-existing namespace; `app/` consumes that Secret via
 `secretKeyRef` in the server Deployment.
 
+## Historical — not deployed
+
+> Everything from here down is the operational runbook for the POC **as it ran
+> before archival (2026-05-24)**. It is no longer reconciled by Flux; the
+> manifests and Tofu module are parked under `./cluster/` and `./tf/`. Treat the
+> commands and cluster-state checks below as a record of how it worked, not as
+> live operations — see the archival banner at the top to revive it.
+
 ## Required moving parts
 
 Twelve things have to line up for this POC to work. Missing or wrong on any

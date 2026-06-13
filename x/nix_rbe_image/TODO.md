@@ -13,7 +13,7 @@
 - Removed permanently: QEMU, dosfstools, mtools, fuse3, fuse,
   gobject-introspection, cairo.dev, dbus.dev (unused)
 
-## `bb remote` Auto-Detection Issues
+## `bb remote` Auto-Detection / git sync Issues
 
 ### Unpushed commit breaks auto-detect
 
@@ -22,38 +22,24 @@ or `--run_from_branch`) tries to use the local HEAD SHA as the base commit. The
 runner then does `git fetch --depth=1 origin <sha>` which fails with
 `upload-pack: not our ref` because the commit doesn't exist on the remote.
 
-**Questions to investigate**:
+Patches are only generated when both `--run_from_branch` and `--run_from_commit`
+are empty, so the workarounds drop local diffs:
 
-- How exactly does `getBaseBranchAndCommit` in `remotebazel.go` auto-detect?
-  It should fall back to the default branch when the local commit isn't pushed.
-  Why isn't it falling back?
+- `--run_from_branch=devel` / `--run_from_commit=origin/devel` work but silently
+  drop all local diffs (same footgun).
+
+This makes local iteration painful — you either push every change or lose your
+diff. There should be a better workflow.
+
+**Questions to investigate** (the `getBaseBranchAndCommit` / patch-generation
+flow in `remotebazel.go`):
+
+- How exactly does `getBaseBranchAndCommit` auto-detect? It should fall back to
+  the default branch when the local commit isn't pushed. Why isn't it?
 - Does it check if the commit exists on the remote before using it?
 - Is the issue that the local branch tracks a remote branch, so bb assumes the
   commit is pushed?
-- `--run_from_branch=devel` works as a workaround but skips local patches
-  (same footgun as `--run_from_commit`)
 - What's the intended workflow for developing with unpushed commits?
-
-### Docker in linux-sandbox
-
-`--runner_exec_properties=init-dockerd=true` gives the runner VM a Docker daemon,
-but Bazel's `linux-sandbox` blocks access.
-
-**Socket mounting**: `--sandbox_add_mount_pair=/var/run/docker.sock` makes the
-socket reachable, but `docker load` still fails with ENOENT on blob paths.
-
-**Root cause found and fixed**: `tar.add()` on Bazel runfiles (which are
-symlinks) records them as symlink entries with absolute target paths pointing
-into the execroot. Docker extracts the tarball, creates symlinks, then tries to
-follow them — but the absolute paths don't exist from the daemon's perspective.
-Fix: `dereference=True` on `tarfile.open()` in `util/crane.py` to store file
-content instead of symlinks.
-
-No `--sandbox_add_mount_pair` or `no-sandbox` tag needed. Bazel's linux-sandbox
-(non-hermetic mode, the default) inherits the entire host filesystem read-only.
-Unix socket `connect()` works through read-only mounts (read-only only blocks
-file creation/modification, not socket operations). So `/var/run/docker.sock` is
-always accessible inside the sandbox.
 
 ## shiboken6 / PySide6
 
@@ -99,15 +85,3 @@ Need a GitHub Actions workflow to auto-build and push the image on
 Dockerfile/flake changes. Similar to existing `.github/workflows/rbe-image.yml`
 but needs to handle Nix installation during Docker build. Should pin the
 resulting digest in `devinfra/image_pins.json`.
-
-## `bb remote` git sync
-
-- Investigate how `bb remote` syncs local git state to the runner (the
-  `getBaseBranchAndCommit` / patch generation flow in `remotebazel.go`).
-- Currently: unpushed commits cause `git fetch --depth=1 origin <sha>` to fail
-  with `not our ref`. Why doesn't it fall back to the default branch?
-- `--run_from_commit=origin/devel` works but silently drops all local diffs
-  (patches are only generated when both `--run_from_branch` and
-  `--run_from_commit` are empty).
-- This makes local iteration painful — you either push every change or lose
-  your diff. There should be a better workflow.

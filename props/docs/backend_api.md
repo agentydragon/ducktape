@@ -19,39 +19,49 @@ HTTP server binds before slow startup finishes; until readiness is `200`, the
 run API may be reachable but orchestration state such as `app.state.registry`
 is not initialized yet.
 
-## Using CriticRunClient (Recommended)
+## Running a Critic
 
-For running critic evaluations, use the `CriticRunClient` class for the REST API calls and the `wait_until_graded()` function for polling grading status directly from the database:
+Critic-dev agents trigger a critic run by POSTing to `/api/runs/critic`. The
+agent loop exposes this as the `start_critic` function-tool (see
+`props/agents/critic_dev/loop.py`), which posts a `RunCriticRequest` and returns
+a `StartCriticResponse` with `critic_run_id`. The tool returns immediately; the
+critic runs asynchronously in its own container.
+
+The request and response models live in `props/core/eval_api_models.py`
+(`RunCriticRequest`, `StartCriticResponse`). The runs API takes an image digest
+as `definition_id`, not the display name "critic": fetch
+`/api/definitions?agent_type=critic` and select the desired digest, usually the
+newest row with `display_name == "critic"`.
+
+To call the endpoint directly:
 
 ```python
-from props.agents.critic_dev.eval_client import CriticRunClient
-from props.agents.critic_dev.grading import wait_until_graded
+import httpx
+
+from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
 from props.core.models.examples import WholeSnapshotExample
 
-async with CriticRunClient.from_env() as client:
-    # The runs API takes an image digest, not the display name "critic".
-    # Fetch /api/definitions?agent_type=critic and select the desired digest,
-    # usually the newest row with display_name == "critic".
-    definition_id = "sha256:..."
+request = RunCriticRequest(
+    definition_id="sha256:...",
+    example=WholeSnapshotExample(snapshot_slug="ducktape/2025-01-01"),
+    timeout_seconds=3600,
+    budget_usd=5.0,
+)
+async with httpx.AsyncClient(base_url=backend_url, auth=auth) as client:
+    resp = await client.post("/api/runs/critic", json=request.model_dump(mode="json"))
+    resp.raise_for_status()
+    started = StartCriticResponse.model_validate(resp.json())
 
-    # Run critic (calls REST API)
-    result = await client.run_critic(
-        definition_id=definition_id,
-        example=WholeSnapshotExample(snapshot_slug="ducktape/2025-01-01"),
-        timeout_seconds=3600,
-        budget_usd=5.0,
-        critic_model="gpt-5.1-codex-mini",
-    )
-
-# Wait for grading completion (polls database directly, not via API)
-status = await wait_until_graded(result.critic_run_id)
+# Wait for grading completion (polls the database directly, not via API).
+status = await wait_until_graded(started.critic_run_id, db)
 print(f"Recall: {status.total_credit}/{status.max_credit}")
 ```
 
-**Note:** `wait_until_graded()` validates that:
-
-- The critic run is finished (COMPLETED, FAILED, or TIMED_OUT)
-- The critic run was started by the current agent
+Grading status is **not** a REST endpoint. `wait_until_graded()`
+(`props/agents/critic_dev/grading.py`) polls the `grading_pending` view in the
+database until grading is complete. Inside the agent loop, the
+`wait_until_critic_completed` and `wait_until_graded` tools wrap the same
+database polling.
 
 ## OpenAPI Schema
 

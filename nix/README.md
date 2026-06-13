@@ -45,12 +45,13 @@ Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
 
 ### NixOS System Configs (`nixosConfigurations`)
 
-| Host        | Type     | Description                  |
-| ----------- | -------- | ---------------------------- |
-| `iguana`    | Physical | ThinkPad X1 Extreme          |
-| `rugged`    | Physical | Dell Rugged 12 tablet        |
-| `wyrm2`     | VM       | Dev workstation VM (Proxmox) |
-| `bootstrap` | VM/Image | Minimal bootstrap image      |
+| Host        | Type     | Description                                            |
+| ----------- | -------- | ------------------------------------------------------ |
+| `iguana`    | Physical | ThinkPad X1 Extreme                                    |
+| `rugged`    | Physical | Dell Rugged 12 tablet                                  |
+| `wyrm2`     | VM       | Dev workstation VM (Proxmox)                           |
+| `gecko`     | VM       | Headless CLI-only VM (Proxmox) for Claude Code / Codex |
+| `bootstrap` | VM/Image | Minimal bootstrap image                                |
 
 ### Home-Manager Configs (`homeConfigurations`)
 

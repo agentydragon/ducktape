@@ -3,13 +3,12 @@
 Reproducible reconstruction of the Claude Code web container, verified by
 full-filesystem manifest diffing.
 
-> **Platform note (2026-06-10)**: sessions now run on Firecracker microVMs
-> (real kernel, ext4 root) — see the platform note in `../AGENTS.md`. The
-> gVisor constraints referenced throughout this directory (9p root, no bridge
-> networking, buildah SIGPIPE, UID mapping) describe the environment the
-> captures and workarounds were built under; re-verify before relying on any
-> of them, and **notify the user if a session actually reports gVisor** —
-> that platform is not expected anymore.
+> **Platform note (2026-06-10)**: sessions run on Firecracker microVMs (real
+> kernel, ext4 root) — see the platform note in `../AGENTS.md`. The retired
+> gVisor podman/9p build procedure (9p root, no bridge networking, buildah
+> SIGPIPE, UID mapping) is archived at
+> <archive/2026_06_gvisor_podman_build.md>. **Notify the user if a session
+> actually reports gVisor** — that platform is not expected anymore.
 
 **Goal**: Zero diff exclusions that aren't session-start-hook artifacts or
 unavoidable runtime differences (`/proc`, `/sys`, caches). Any difference
@@ -17,66 +16,20 @@ fixable by updating the Dockerfile should be fixed there, not excluded.
 
 ## Quick Start
 
+The build works from **any machine** with Docker and network access; it does
+not require running inside the live Claude Code web container.
+
 ```bash
-cd devinfra/claude/web_env
+# Full build + diff (calls fetch_debs automatically)
+bazel run //devinfra/claude/web_env/tools:build_and_diff
 
-# Set up tmpfs storage (REQUIRED - 9p root is too slow)
-mount -t tmpfs -o size=200G,exec tmpfs /tmp/tmpfs-exec
-mkdir -p /tmp/tmpfs-exec/containers/{storage,run}
-
-# Create storage config (VFS for >54 layer Dockerfiles)
-cat > /tmp/storage-tmpfs-vfs.conf << 'EOF'
-[storage]
-driver = "vfs"
-runroot = "/tmp/tmpfs-exec/containers/run"
-graphroot = "/tmp/tmpfs-exec/containers/storage"
-EOF
-
-# Build (~20 min on tmpfs)
-CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
-  podman build --layers=false \
-    --network=host --isolation=oci --format=docker \
-    -t claude-code-web-recreated .
-
-# Capture live manifest (ground truth)
-bazel run //devinfra/claude/web_env/tools:capture_manifest -- > live_manifest.ndjson
-
-# Capture built manifest (via podman mount — can't podman run under gVisor)
-CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
-  podman create --name capture-tmp localhost/claude-code-web-recreated /bin/true
-MOUNT_PATH=$(CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman mount capture-tmp)
-bazel run //devinfra/claude/web_env/tools:capture_manifest -- "$MOUNT_PATH" > built_manifest.ndjson
-CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman unmount capture-tmp
-CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman rm capture-tmp
-
-# Diff
-bazel run //devinfra/claude/web_env/tools:diff_manifests -- \
-  live_manifest.ndjson built_manifest.ndjson -o diff_report.md
+# Diff only (image already built)
+bazel run //devinfra/claude/web_env/tools:build_and_diff -- --diff-only
 ```
 
-## Storage Driver Choice
-
-The gVisor sandbox root filesystem is **9p** (30 GB), which is slow and lacks xattr.
-Always use **tmpfs** for podman storage — it's ~10x faster and has 315 GB of space.
-
-| Driver           | Config                              | Layer caching | Layer limit | Speed                    |
-| ---------------- | ----------------------------------- | ------------- | ----------- | ------------------------ |
-| Overlay on tmpfs | `driver = "overlay"`                | Yes           | ~54 layers  | Fast (cached steps skip) |
-| VFS on tmpfs     | `driver = "vfs"` + `--layers=false` | No            | None        | ~20 min full rebuild     |
-| VFS on 9p        | Default podman config               | No            | None        | ~60 min (slow I/O)       |
-
-**Our 98-step Dockerfile exceeds the ~54 layer limit**, so use VFS on tmpfs.
-Multi-stage builds with <50 steps per stage could enable overlay caching.
-
-## Sandbox Constraints
-
-Key constraints when building under gVisor (see <docs/sandbox_investigation.md>):
-
-- **9p root**: No xattr, no overlay. Use tmpfs for container storage.
-- **No `podman run`**: Use `podman create` + `podman mount` for inspection.
-- **`--format=docker`**: Required. Buildah default causes SIGPIPE under gVisor.
-- **`--network=host`**: Required. No bridge networking in gVisor.
-- **Disk budget**: 30 GB on 9p, 315 GB on tmpfs. Always prefer tmpfs.
+Commit `diff_report.md` along with Dockerfile/rootfs changes. See <AGENTS.md>
+for the full build workflow and `tools/build_and_diff.py` for the
+implementation.
 
 ## Directory Layout
 

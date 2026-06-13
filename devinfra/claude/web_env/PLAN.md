@@ -1,5 +1,9 @@
 # Current Plan
 
+> **Superseded (2026-06-13)** — this is a stale gVisor-era snapshot. For
+> current state see <AGENTS.md> and <diff_report.md> (Firecracker era); the
+> "4 real differences" count below disagrees with the current `diff_report.md`.
+
 ## Binary Versions (2026-03-26)
 
 | Binary                | Build ID   | Version/Release                |

@@ -17,9 +17,11 @@ gmail_archiver/
     foo.py           #   - Pydantic data model
                      #   - Parsing function(s)
                      #   - Planner class
-  core.py            # Plan, PlannedAction, shared constants
-  inbox.py           # Gmail API wrapper
-  models.py          # GmailMessage
+  plan.py            # Plan, PlannedAction, Planner protocol, LABEL_AUTO_CLEANED
+  plan_display.py    # Plan rendering / display helpers
+  inbox.py           # Cached Gmail access (GmailInbox)
+  gmail_client.py    # Gmail API wrapper
+  models.py          # Email
   date_patterns.py   # Shared regex patterns
 ```
 
@@ -98,7 +100,7 @@ if match := AMOUNT_REGEX.search(body):
 #### Archive decision logic
 
 ```python
-from gmail_archiver.core import LABEL_AUTO_CLEANED
+from gmail_archiver.plan import LABEL_AUTO_CLEANED
 from gmail_archiver.gmail_api_models import SystemLabel
 
 if date >= cutoff_date:

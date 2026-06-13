@@ -1,11 +1,8 @@
 # TODO
 
-## Scoping
-
-- [ ] Pick base model (size vs capability tradeoff for vast.ai budget)
-- [ ] Pick RL framework (OpenRLHF vs TRL vs veRL vs custom)
-- [ ] Design task environment and reward function
-- [ ] Define tool-call format for the model
+Scope is decided and the hello-world is implemented: GRPO via TRL on Qwen3-1.7B
+playing the TextArena Wordle environment through multi-step tool calls (see
+<README.md>). Remaining work below is infrastructure, training, and UX.
 
 ## Infrastructure
 

@@ -1,5 +1,13 @@
 # Authentik API Token Vault Overwrite (State Loss → Silent Corruption)
 
+> **HISTORICAL (infra changed since 2026-02-13).** Vault was decommissioned
+> 2026-04-19 (secrets are now SOPS-managed; see <../../vault-migration/TODO.md>),
+> and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
+> `tofu-state-db` CNPG cluster with the kubernetes-backend migration. The
+> `vault kv rollback` and `terraform import vault_kv_secret_v2` commands below
+> reference retired infrastructure and are no longer runnable; this write-up is
+> preserved for its analysis.
+
 **Date**: 2026-02-13
 **Status**: Resolved (Vault rollback + CAS protection)
 
