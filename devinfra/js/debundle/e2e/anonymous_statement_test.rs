@@ -649,6 +649,122 @@ false || (selectedRecord = "record");"#,
 }
 
 #[test]
+fn binding_group_target_statements_claims_assignments_from_same_template() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeRecord, runtimeReplay;
+true && (runtimeReplay = "replay");
+false || (runtimeRecord = "record");
+console.log(`${runtimeReplay}:${runtimeRecord}`);
+export { runtimeRecord, runtimeReplay };
+"#,
+        vec![logical_module_with_binding_groups(
+            "bridge_slots",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let recordSlot, replaySlot;
+true && (replaySlot = "replay");
+false || (recordSlot = "record");"#,
+                &[
+                    ("recordSlot", "recordBridge"),
+                    ("replaySlot", "replayBridge"),
+                ],
+            )
+            .with_target_statements(&[1, 2])],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridge_slots.js",
+        &[
+            "let recordBridge",
+            "replayBridge = \"replay\"",
+            "recordBridge = \"record\"",
+        ],
+        &["recordSlot", "replaySlot"],
+    );
+    assert_entry_output(&fixture, "replay:record\n");
+}
+
+#[test]
+fn binding_group_target_statements_supports_stmt_list_context_gap() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeRecord, runtimeReplay;
+const ignoredContext = "setup";
+true && (runtimeReplay = "replay");
+false || (runtimeRecord = "record");
+console.log(`${runtimeReplay}:${runtimeRecord}`);
+export { runtimeRecord, runtimeReplay };
+"#,
+        vec![logical_module_with_binding_groups(
+            "bridge_slots",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let recordSlot, replaySlot;
+STMT_LIST;
+true && (replaySlot = "replay");
+false || (recordSlot = "record");"#,
+                &[
+                    ("recordSlot", "recordBridge"),
+                    ("replaySlot", "replayBridge"),
+                ],
+            )
+            .with_target_statements(&[2, 3])],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridge_slots.js",
+        &[
+            "let recordBridge",
+            "replayBridge = \"replay\"",
+            "recordBridge = \"record\"",
+        ],
+        &["ignoredContext", "STMT_LIST"],
+    );
+    assert_entry_output(&fixture, "replay:record\n");
+}
+
+#[test]
+fn binding_group_target_statements_still_rejects_ambiguous_ranges() {
+    let opts = FixtureOpts::new(
+        r#"let firstRecord, firstReplay;
+true && (firstReplay = "replay");
+false || (firstRecord = "record");
+let secondRecord, secondReplay;
+true && (secondReplay = "replay");
+false || (secondRecord = "record");
+export { firstRecord, firstReplay, secondRecord, secondReplay };
+"#,
+        vec![logical_module_with_binding_groups(
+            "bridge_slots",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let recordSlot, replaySlot;
+true && (replaySlot = "replay");
+false || (recordSlot = "record");"#,
+                &[
+                    ("recordSlot", "recordBridge"),
+                    ("replaySlot", "replayBridge"),
+                ],
+            )
+            .with_target_statements(&[1, 2])],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::bridge_slots",
+            "binding_groups[].source_match",
+            "ambiguous",
+            "target_binding `recordSlot`",
+        ],
+    );
+}
+
+#[test]
 fn alpha_anonymous_statement_target_statements_all_supports_top_level_stmt_list_hole() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"console.log("before selected");

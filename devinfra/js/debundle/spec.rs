@@ -843,13 +843,15 @@ pub struct SourceMatch {
     /// Zero-based top-level statement index to claim when this source match is
     /// used as an `anonymous_statements[].source_match`. This lets a selector
     /// include surrounding declarations as context while moving only the
-    /// intended anonymous statement. Invalid on `members[].selector.source_match`
-    /// and `binding_groups[].source_match`.
+    /// intended anonymous statement. Invalid on `members[].selector.source_match`.
+    /// On `binding_groups[].source_match`, the group can claim this statement
+    /// while also exporting bindings from the same matched source window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_statement: Option<usize>,
     /// Top-level statement indices to claim when this source match is used as
-    /// an `anonymous_statements[].source_match`, or `all` to claim every
-    /// non-hole statement in the selector. This is the multi-statement form of
+    /// an `anonymous_statements[].source_match` or
+    /// `binding_groups[].source_match`, or `all` to claim every non-hole
+    /// statement in the selector. This is the multi-statement form of
     /// `target_statement`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_statements: Option<TargetStatements>,

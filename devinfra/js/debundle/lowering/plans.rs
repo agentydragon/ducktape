@@ -189,7 +189,7 @@ pub(super) fn logical_requests_for_chunk(
             let members = build_members(&module.members, &module.binding_groups, &id)?;
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
-            let anonymous_statements = module
+            let mut anonymous_statements = module
                 .anonymous_statements
                 .iter()
                 .map(|stmt| {
@@ -199,6 +199,14 @@ pub(super) fn logical_requests_for_chunk(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
+            anonymous_statements.extend(module.binding_groups.iter().filter_map(|group| {
+                source_match::binding_group_anonymous_statement_selector(group).map(|selector| {
+                    AnonymousStatementRequest {
+                        selector,
+                        comment: None,
+                    }
+                })
+            }));
             if catchall_target.as_deref() == Some(target_path.as_str()) {
                 explicit_module_at_catchall = true;
             }
