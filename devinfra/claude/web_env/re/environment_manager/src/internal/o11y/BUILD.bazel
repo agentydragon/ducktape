@@ -12,7 +12,7 @@ go_library(
         "util.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "@io_opentelemetry_go_contrib_bridges_otelslog//:otelslog",
         "@io_opentelemetry_go_otel//attribute",

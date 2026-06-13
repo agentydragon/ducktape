@@ -98,7 +98,7 @@ jobs:
               image_name: mcp-oauth-facade,
               test_target: "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
             }
-          - { image: "//x/manifold_mcp_server:image", image_name: manifold-mcp-server, test_target: "" }
+          - { image: "@ducktape_manifold_mcp_server//:image", image_name: manifold-mcp-server, test_target: "" }
           - {
               image: "//x/postscanmail_mcp_server:image",
               image_name: postscanmail-mcp-server,

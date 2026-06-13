@@ -7,9 +7,8 @@ go_sdk.download(version = "1.26.2")
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
-# Primary source: //third_party:go.mod (first-party code: genkit, worthy)
-# Secondary: manual go_deps.module() entries for environment-manager deps
-# not covered by the root go.mod (go_deps only allows one from_file).
+# Primary source: //third_party:go.mod (first-party Go code).
+# Extra manual go_deps.module() entries below cover BUILD-file-only Go tools.
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
@@ -22,90 +21,6 @@ go_deps.module_override(
     patch_strip = 1,
     patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],
     path = "mvdan.cc/garble",
-)
-
-# ─ environment-manager dependencies (vendored Anthropic binary) ──────────
-# These deps are from devinfra/claude/web_env/re/environment_manager/.../go.mod
-# and are not in the root go.mod.
-go_deps.module(
-    path = "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go",
-    sum = "h1:4erM3WLgEG/HIBrpBDmRbs1puhd7p0z7kNXDuhHthwM=",
-    version = "v1.36.4-20250130201111-63bb56e20495.1",
-)
-go_deps.module(
-    path = "connectrpc.com/connect",
-    sum = "h1:R5M57z05+90EfEvCY1b7hBxDVOUl45PrtXtAV2fOC14=",
-    version = "v1.19.1",
-)
-go_deps.module(
-    path = "github.com/DataDog/datadog-go/v5",
-    sum = "h1:9IEfH1Mw9AjWwhAMqCAkhbxjuJeMxm2ARX2VdgL+ols=",
-    version = "v5.8.2",
-)
-go_deps.module(
-    path = "github.com/cenkalti/backoff/v4",
-    sum = "h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=",
-    version = "v4.3.0",
-)
-go_deps.module(
-    path = "github.com/cenkalti/backoff/v5",
-    sum = "h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=",
-    version = "v5.0.3",
-)
-go_deps.module(
-    path = "github.com/davecgh/go-spew",
-    sum = "h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=",
-    version = "v1.1.2-0.20180830191138-d8f796af33cc",
-)
-go_deps.module(
-    path = "github.com/google/renameio/v2",
-    sum = "h1:UifI23ZTGY8Tt29JbYFiuyIU3eX+RNFtUwefq9qAhxg=",
-    version = "v2.0.0",
-)
-go_deps.module(
-    path = "github.com/gorilla/websocket",
-    sum = "h1:JeSE6pjso5THxAzdVpqr6/geYxZytqFMBCOtn/ujyeo=",
-    version = "v1.5.4-0.20250319132907-e064f32e3674",
-)
-go_deps.module(
-    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
-    sum = "h1:8Tjv8EJ+pM1xP8mK6egEbD1OgnVTyacbefKhmbLhIhU=",
-    version = "v2.27.2",
-)
-go_deps.module(
-    path = "github.com/inconshreveable/mousetrap",
-    sum = "h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=",
-    version = "v1.1.0",
-)
-go_deps.module(
-    path = "github.com/mark3labs/mcp-go",
-    sum = "h1:BywvZLPRT6Zx6mMG/MJfxLSZQkTGIcJSEGKsvr4DsoQ=",
-    version = "v0.37.0",
-)
-go_deps.module(
-    path = "github.com/mitchellh/mapstructure",
-    sum = "h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=",
-    version = "v1.5.0",
-)
-go_deps.module(
-    path = "github.com/pmezard/go-difflib",
-    sum = "h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=",
-    version = "v1.0.1-0.20181226105442-5d4384ee4fb2",
-)
-go_deps.module(
-    path = "github.com/spf13/cast",
-    sum = "h1:cuNEagBQEHWN1FnbGEjCXL2szYEXqfJPbP2HNUaca9Y=",
-    version = "v1.7.1",
-)
-go_deps.module(
-    path = "github.com/spf13/cobra",
-    sum = "h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=",
-    version = "v1.10.2",
-)
-go_deps.module(
-    path = "github.com/spf13/pflag",
-    sum = "h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=",
-    version = "v1.0.10",
 )
 
 # ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
@@ -155,59 +70,9 @@ go_deps.module(
     version = "v0.26.0",
 )
 go_deps.module(
-    path = "github.com/stretchr/testify",
-    sum = "h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=",
-    version = "v1.11.1",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/contrib/bridges/otelslog",
-    sum = "h1:bwnLpizECbPr1RrQ27waeY2SPIPeccCx/xLuoYADZ9s=",
-    version = "v0.13.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp",
-    sum = "h1:QQqYw3lkrzwVsoEX0w//EhH/TCnpRdEenKBOOEIMjWc=",
-    version = "v0.14.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
-    sum = "h1:aLmmtjRke7LPDQ3lvpFz+kNEH43faFhzW7v8BFIEydg=",
-    version = "v1.28.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/exporters/stdout/stdoutmetric",
-    sum = "h1:5gn2urDL/FBnK8OkCfD1j3/ER79rUuTYmCvlXBKeYL8=",
-    version = "v1.39.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/log",
-    sum = "h1:2rzJ+pOAZ8qmZ3DDHg73NEKzSZkhkGIua9gXtxNGgrM=",
-    version = "v0.14.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/sdk/log",
-    sum = "h1:JU/U3O7N6fsAXj0+CXz21Czg532dW2V4gG1HE/e8Zrg=",
-    version = "v0.14.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/otel/sdk/metric",
-    sum = "h1:cXMVVFVgsIf2YL6QkRF4Urbr/aMInf+2WKg+sEJTtB8=",
-    version = "v1.39.0",
-)
-go_deps.module(
-    path = "go.opentelemetry.io/proto/otlp",
-    sum = "h1:l706jCMITVouPOqEnii2fIAuO3IVGBRPV5ICjceRb/A=",
-    version = "v1.9.0",
-)
-go_deps.module(
     path = "golang.org/x/net",
     sum = "h1:eeHFmOGUTtaaPSGNmjBKpbng9MulQsJURQUAfUwY++o=",
     version = "v0.49.0",
-)
-go_deps.module(
-    path = "golang.org/x/sync",
-    sum = "h1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=",
-    version = "v0.19.0",
 )
 go_deps.module(
     path = "golang.org/x/text",
@@ -265,51 +130,29 @@ go_deps.module(
 # entries (gazelle needs them visible for resolution).
 use_repo(
     go_deps,
-    "build_buf_gen_go_bufbuild_protovalidate_protocolbuffers_go",
     "cc_mvdan_garble",
-    "com_connectrpc_connect",
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
     "com_github_bluekeyes_go_gitdiff",
-    "com_github_cenkalti_backoff_v4",
-    "com_github_cenkalti_backoff_v5",
     "com_github_cheynewallace_tabby",
-    "com_github_datadog_datadog_go_v5",
-    "com_github_davecgh_go_spew",
     "com_github_docker_docker",
     "com_github_elliotchance_orderedmap",
     "com_github_firebase_genkit_go",
     "com_github_fsouza_go_dockerclient",
     "com_github_go_git_go_git_v5",
-    "com_github_google_renameio_v2",
     "com_github_google_uuid",
     "com_github_goretk_gore",
     "com_github_goretk_redress",
-    "com_github_gorilla_websocket",
-    "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_inconshreveable_mousetrap",
     "com_github_mandiant_goresym",
-    "com_github_mark3labs_mcp_go",
-    "com_github_mitchellh_mapstructure",
-    "com_github_pmezard_go_difflib",
     "com_github_rogpeppe_go_internal",
-    "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
-    "com_github_stretchr_testify",
     "com_github_tcm1911_r2g2",
-    "io_opentelemetry_go_contrib_bridges_otelslog",
     "io_opentelemetry_go_otel",
-    "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
-    "io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp",
-    "io_opentelemetry_go_otel_exporters_stdout_stdoutmetric",
-    "io_opentelemetry_go_otel_log",
     "io_opentelemetry_go_otel_metric",
     "io_opentelemetry_go_otel_sdk",
-    "io_opentelemetry_go_otel_sdk_log",
-    "io_opentelemetry_go_otel_sdk_metric",
     "io_opentelemetry_go_otel_trace",
-    "io_opentelemetry_go_proto_otlp",
     "org_golang_google_genproto_googleapis_api",
     "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_grpc",
@@ -317,7 +160,6 @@ use_repo(
     "org_golang_x_arch",
     "org_golang_x_mod",
     "org_golang_x_net",
-    "org_golang_x_sync",
     "org_golang_x_sys",
     "org_golang_x_text",
     "org_golang_x_tools",

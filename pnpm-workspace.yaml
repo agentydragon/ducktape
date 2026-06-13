@@ -3,7 +3,6 @@ packages:
   - "x/study_casino/frontend"
   - "airlock/frontend"
   - "airlock/openclaw"
-  - "third_party/mcporter"
   - "x/rspcache/admin_ui"
   - "props/frontend"
   - "util/testing/frontend_visual"

@@ -1,0 +1,51 @@
+module(
+    name = "ducktape_manifold_mcp_server",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "package_metadata", version = "0.0.6")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.11.0")
+
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
+npm_manifold_mcp_server = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+npm_manifold_mcp_server.npm_translate_lock(
+    name = "npm_manifold_mcp_server",
+    data = [
+        "//:package.json",
+        "//:pnpm-workspace.yaml",
+    ],
+    link_workspace = "ducktape_manifold_mcp_server",
+    npmrc = "//:.npmrc",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    update_pnpm_lock = True,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
+)
+use_repo(npm_manifold_mcp_server, "npm_manifold_mcp_server")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+# Node 20 base image for the manifold-mcp-server sidecar runtime.
+#
+# Digest is the multi-platform manifest list (image index); rules_oci resolves
+# the platform-specific digest from `platforms` at fetch time.
+oci.pull(
+    name = "node_20_bookworm_slim",
+    digest = "sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+    image = "docker.io/library/node",
+    platforms = ["linux/amd64"],
+    tag = "20-bookworm-slim",
+)
+use_repo(oci, "node_20_bookworm_slim", "node_20_bookworm_slim_linux_amd64")

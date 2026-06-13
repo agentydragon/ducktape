@@ -7,12 +7,12 @@ go_library(
         "sources.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/sources",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/auth",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/gitproxy",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y/diag",
+        "//internal/auth",
+        "//internal/config",
+        "//internal/gitproxy",
+        "//internal/o11y",
+        "//internal/o11y/diag",
     ],
 )

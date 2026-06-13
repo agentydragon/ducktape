@@ -6,8 +6,8 @@ go_library(
         "action.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions/snapshot",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions",
+        "//internal/tunnel/actions",
     ],
 )

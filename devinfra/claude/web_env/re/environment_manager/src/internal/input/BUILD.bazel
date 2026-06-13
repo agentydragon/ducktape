@@ -9,12 +9,12 @@ go_library(
         "v1_parser.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/input",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/api",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/auth",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/claude",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y",
+        "//internal/api",
+        "//internal/auth",
+        "//internal/claude",
+        "//internal/config",
+        "//internal/o11y",
     ],
 )

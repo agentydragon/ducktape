@@ -11,9 +11,9 @@ go_library(
         "session_urls.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/claude",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y/diag",
+        "//internal/config",
+        "//internal/o11y/diag",
     ],
 )

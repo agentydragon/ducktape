@@ -6,7 +6,7 @@
 #   kubectl_layer   — single kubectl binary from dl.k8s.io
 #   node_bin_layer  — Node.js 'node' binary for running mcporter
 #   mcporter_layer  — mcporter CLI bundled to a single CJS file by esbuild
-#                     (built in //third_party/mcporter)
+#                     (built in @ducktape_mcporter//)
 #
 # No private registry pull is needed at build time: the base image is
 # referenced as a Bazel target, not pulled from registry.allegedly.works.
@@ -44,7 +44,7 @@ oci_image(
     tars = [
         ":kubectl_layer",
         ":node_bin_layer",
-        "//third_party/mcporter:mcporter_layer",
+        "@ducktape_mcporter//:mcporter_layer",
     ],
     # DirectExecServer runs as uid 1000; added tool layers are root-owned but
     # world-executable (mode 0755 above).

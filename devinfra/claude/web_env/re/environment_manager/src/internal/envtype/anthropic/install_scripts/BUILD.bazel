@@ -4,5 +4,5 @@ go_library(
     name = "install_scripts",
     srcs = ["scripts.go"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
 )

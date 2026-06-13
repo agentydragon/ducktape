@@ -14,9 +14,9 @@ go_library(
         "work_client.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/api",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/util",
+        "//internal/util",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//propagation",

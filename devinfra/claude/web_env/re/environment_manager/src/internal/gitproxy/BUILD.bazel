@@ -8,5 +8,5 @@ go_library(
         "server.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/gitproxy",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
 )

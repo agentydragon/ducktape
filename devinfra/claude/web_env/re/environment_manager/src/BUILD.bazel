@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager",
     visibility = ["//visibility:private"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/cmd",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/util",
+        "//cmd",
+        "//internal/util",
         "@com_github_spf13_cobra//:cobra",
     ],
 )

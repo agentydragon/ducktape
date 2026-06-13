@@ -9,10 +9,10 @@ go_library(
         "types.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp/servers/codesign",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp",
+        "//internal/config",
+        "//internal/mcp",
         "@com_github_mark3labs_mcp_go//mcp",
         "@com_github_mark3labs_mcp_go//server",
     ],

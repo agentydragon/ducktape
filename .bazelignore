@@ -34,6 +34,9 @@ trilium
 
 # Nested Bazel modules - build through their module labels.
 third_party/activitywatch
+third_party/manifold_mcp_server
+third_party/mcporter
+devinfra/claude/web_env/re/environment_manager/src
 
 # Nix build results
 result

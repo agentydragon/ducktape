@@ -4,8 +4,8 @@ go_library(
     name = "envtype",
     srcs = ["envtype.go"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/src:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
+        "//internal/config",
     ],
 )
