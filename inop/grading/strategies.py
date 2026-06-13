@@ -25,42 +25,17 @@ from inop.prompting.truncation_utils import TruncationManager
 
 
 class GradingStrategy(ABC):
-    """Base class for grading strategies."""
-
     @abstractmethod
     def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
-        """Collect artifacts to be graded from the rollout and environment.
-
-        Args:
-            context: Grading context with rollout, task, and environment
-
-        Returns:
-            Dictionary of artifacts to grade
-        """
+        """Collect artifacts to be graded from the rollout and environment."""
 
     @abstractmethod
     def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
-        """Prepare artifacts for the grading model.
-
-        Args:
-            artifacts: Raw artifacts from collect_artifacts
-            config: Optimizer configuration for truncation settings
-
-        Returns:
-            Dictionary ready for grading model
-        """
+        """Prepare artifacts for the grading model."""
 
     @abstractmethod
     def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
-        """Generate the grading prompt for this strategy.
-
-        Args:
-            prepared_artifacts: Artifacts prepared by prepare_for_grader
-            task: Task being graded
-
-        Returns:
-            Prompt string for the grader
-        """
+        """Generate the grading prompt for this strategy."""
 
 
 class FileBasedGradingStrategy(GradingStrategy):
@@ -73,15 +48,12 @@ class FileBasedGradingStrategy(GradingStrategy):
         """Collect files from environment or rollout."""
         files = {}
 
-        # Try to get files from environment first (container/workspace)
         if context.environment:
             files = context.environment.collect_files()
 
-        # Fall back to files in rollout
         if not files and context.rollout.files:
             files = context.rollout.files
 
-        # Last resort: try to extract from trajectory
         if not files:
             files = self._extract_files_from_trajectory(context.rollout.trajectory)
 
@@ -92,7 +64,6 @@ class FileBasedGradingStrategy(GradingStrategy):
         files = {}
         for item in trajectory:
             if isinstance(item, ToolCall) and item.tool_name in ("Write", "Edit", "MultiEdit"):
-                # Extract file content from tool call
                 args = item.arguments
                 if "file_path" in args:
                     path = args["file_path"]
@@ -112,7 +83,6 @@ class FileBasedGradingStrategy(GradingStrategy):
 
         file_list = [FileInfo(path=path, content=content) for path, content in files.items()]
 
-        # Truncate individual files
         truncated_files = [
             FileInfo(
                 path=fi.path,
@@ -123,14 +93,12 @@ class FileBasedGradingStrategy(GradingStrategy):
             for fi in file_list
         ]
 
-        # Further truncate by total token count
         result = t_mgr.truncate_files_by_tokens(truncated_files, config.tokens.max_files_tokens)
         normalized_files: list[dict[str, Any]] = [fi.model_dump() for fi in result]
 
         return {"type": "file_based", "files": normalized_files, "criteria": self.criteria}
 
     def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
-        """Generate file-based grading prompt."""
         files = prepared_artifacts["files"]
         return f"Task: {task.prompt}\n\nFiles:\n{json.dumps(files, indent=2)}"
 
@@ -145,7 +113,6 @@ class MessageBasedGradingStrategy(GradingStrategy):
         """Get final message from trajectory."""
         final_message = ""
 
-        # Look for final output in trajectory
         for item in reversed(context.rollout.trajectory):
             if isinstance(item, FinalOutput):
                 final_message = item.text
@@ -154,7 +121,6 @@ class MessageBasedGradingStrategy(GradingStrategy):
                 # Use last assistant message if no explicit final
                 final_message = item.text
 
-        # Fallback to rollout's final_output property
         if not final_message:
             final_message = context.rollout.final_output
 
@@ -165,7 +131,6 @@ class MessageBasedGradingStrategy(GradingStrategy):
         message = artifacts.get("final_message", "")
         t_mgr = TruncationManager(config)
 
-        # Truncate message to reasonable length
         truncated = t_mgr.truncate_text(
             message,
             config.truncation.max_file_size_grading * 2,  # Allow longer for messages
@@ -175,7 +140,6 @@ class MessageBasedGradingStrategy(GradingStrategy):
         return {"type": "message_based", "message": truncated, "criteria": self.criteria}
 
     def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
-        """Generate message-based grading prompt."""
         message = prepared_artifacts["message"]
         return f"Task: {task.prompt}\n\nAgent's Response:\n{message}"
 
@@ -201,7 +165,6 @@ class ComparisonGradingStrategy(GradingStrategy):
                 final_message = item.text
                 break
 
-        # Use final output if present, otherwise concatenate all assistant messages
         if final_message:
             agent_output = final_message
         elif all_messages:
@@ -212,7 +175,6 @@ class ComparisonGradingStrategy(GradingStrategy):
         return {"agent_output": agent_output, "reference": self.reference}
 
     def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
-        """Prepare comparison artifacts."""
         t_mgr = TruncationManager(config)
 
         agent_output = t_mgr.truncate_text(
@@ -226,7 +188,6 @@ class ComparisonGradingStrategy(GradingStrategy):
         return {"type": "comparison", "agent_output": agent_output, "reference": reference, "criteria": self.criteria}
 
     def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
-        """Generate comparison grading prompt."""
         agent_output = prepared_artifacts["agent_output"]
         reference = prepared_artifacts["reference"]
         criteria_desc = "\n".join([f"- {c.name}: {c.description}" for c in prepared_artifacts["criteria"]])
@@ -241,26 +202,16 @@ class ComparisonGradingStrategy(GradingStrategy):
 
 
 def create_grading_strategy(grading_config: GradingConfig, config_path: Path | None = None) -> GradingStrategy:
-    """Factory to create grading strategy from configuration.
-
-    Args:
-        grading_config: Grading configuration from task type
-        config_path: Base path for loading criteria files
-
-    Returns:
-        Appropriate grading strategy instance
-    """
+    """Create a grading strategy from configuration; config_path is the base path for resolving criteria files."""
     if isinstance(grading_config, FileBasedGrading):
         criteria = grading_config.criteria
         if not criteria and grading_config.criteria_file:
-            # Load criteria from file
             if config_path:
                 criteria_file = config_path / grading_config.criteria_file
             else:
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                # Load graders YAML via YamlLoader and map to Criterion list
                 gl_file: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
                 criteria = [Criterion(name=g.id, description=g.description) for g in gl_file.graders_data]
         return FileBasedGradingStrategy(criteria)

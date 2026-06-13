@@ -81,19 +81,12 @@ class StepResult:
 
 @dataclass
 class CompactionResult:
-    """Result of transcript compaction operation."""
-
     compacted: bool
 
 
 @dataclass(slots=True)
 class ToolCallOutcome:
-    """Tool invocation result.
-
-    Fields:
-    - result: The tool result
-    - was_aborted: True if execution was aborted (policy denial), False otherwise
-    """
+    """Tool invocation result; was_aborted is True when execution was aborted (policy denial)."""
 
     result: ToolResult
     was_aborted: bool = False
@@ -112,10 +105,8 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
     """
 
     def check_subschema(subschema: dict[str, Any], path: str) -> None:
-        """Check a single subschema for strict mode compatibility."""
         schema_type = subschema.get("type")
 
-        # Check object types
         if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
             # OpenAI strict mode: all objects must have additionalProperties: false
             # No exemptions for patternProperties or map-like objects
@@ -138,7 +129,6 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
                     f"If this is a dict field, refactor to a list of objects with fixed schema."
                 )
 
-            # Check required properties
             properties = subschema.get("properties", {})
             required = set(subschema.get("required", []))
             if properties and set(properties.keys()) != required:
@@ -149,17 +139,14 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
                     f"Fix: Remove Field(default=...) or Field(default_factory=...) from Pydantic model."
                 )
 
-            # Recursively check nested properties
             for prop_name, prop_schema in properties.items():
                 check_subschema(prop_schema, f"{path}.properties.{prop_name}")
 
-        # Check array items
         if schema_type == "array" or (isinstance(schema_type, list) and "array" in schema_type):
             items = subschema.get("items")
             if items and isinstance(items, dict):
                 check_subschema(items, f"{path}.items")
 
-        # Check combinators
         for key in ["anyOf", "oneOf", "allOf"]:
             variants = subschema.get(key)
             if isinstance(variants, list):
@@ -167,10 +154,8 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
                     if isinstance(variant, dict):
                         check_subschema(variant, f"{path}.{key}[{i}]")
 
-    # Start validation from root
     check_subschema(schema, "$")
 
-    # Check $defs (definitions)
     defs = schema.get("$defs", {})
     for def_name, def_schema in defs.items():
         if isinstance(def_schema, dict):
@@ -178,19 +163,7 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
-    """Create a FunctionToolParam with strict mode after validating schema compatibility.
-
-    Args:
-        tool_name: Name of the tool
-        description: Tool description
-        input_schema: JSON schema for tool input (must be strict-compatible)
-
-    Returns:
-        FunctionToolParam configured with strict=True
-
-    Raises:
-        RuntimeError: If schema is not compatible with OpenAI's strict mode
-    """
+    """Create a strict-mode FunctionToolParam, raising RuntimeError if the schema is not strict-compatible."""
     _validate_schema_strict_compatible(input_schema, tool_name)
     return FunctionToolParam(name=tool_name, description=description, parameters=input_schema, strict=True)
 
@@ -206,11 +179,9 @@ DEFAULT_ABORT_ERROR = "tool execution aborted"
 
 
 def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> ToolResult:
-    """Return an error result for aborted tool calls."""
     return ToolResult(content=[TextContent(text=reason)], is_error=True)
 
 
-# Size limits (bytes)
 MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 
@@ -333,7 +304,6 @@ def _sanitize_tool_result(result: ToolResult) -> ToolResult:
             return [sanitize(item) for item in value]
         return value
 
-    # Sanitize content blocks
     new_content: list[ResultContent] = []
     for block in result.content:
         if isinstance(block, TextContent):
@@ -345,10 +315,8 @@ def _sanitize_tool_result(result: ToolResult) -> ToolResult:
     # Sanitize structured_content if present (use `is not None` — empty list [] is valid)
     new_sc = sanitize(result.structured_content) if result.structured_content is not None else None
 
-    # Prepend warning if null bytes were removed
     if null_count > 0:
         warning = f"NOTE: {null_count} null byte(s) removed from tool output"
-        # If first block is text, prepend warning to it; otherwise insert new block
         if new_content and isinstance(new_content[0], TextContent):
             new_content[0] = TextContent(text=f"{warning}\n{new_content[0].text}")
         else:
@@ -378,13 +346,11 @@ class Agent:
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
         self._dynamic_instructions = dynamic_instructions
-        # Agent state fields
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[FunctionCallItem] = []
         self.finished: bool = False
         # Track function calls for debugging
         self._function_call_map: dict[str, FunctionCallItem] = {}
-        # Handler list for event notification and loop control
         self._handlers = list(handlers)
         if not self._handlers:
             raise ValueError(
@@ -400,7 +366,6 @@ class Agent:
 
     @property
     def model(self) -> str:
-        """Get the model name used by this agent."""
         return self._client.model
 
     def _extract_text_from_message(self, msg: UserMessage | AssistantMessage) -> str:
@@ -416,13 +381,11 @@ class Agent:
         return "\n".join(part.text for part in content)
 
     def _notify_user_text(self, text: str) -> None:
-        """Notify all handlers of a user text event."""
         evt = UserText(text=text)
         for h in self._handlers:
             h.on_user_text_event(evt)
 
     def _notify_assistant_text(self, text: str) -> None:
-        """Notify all handlers of an assistant text event."""
         evt = AssistantText(text=text)
         for h in self._handlers:
             h.on_assistant_text_event(evt)
@@ -454,7 +417,6 @@ class Agent:
                 h.on_reasoning(item)
 
         elif isinstance(item, SystemMessage):
-            # Extract text from SystemMessage content parts
             text = "\n".join(part.text for part in item.content) if item.content else ""
             evt = SystemText(text=text)
             for h in self._handlers:
@@ -467,9 +429,6 @@ class Agent:
         """Add a message to the transcript and notify handlers.
 
         Use this to set up initial context (system prompts, user messages) before calling run().
-
-        Args:
-            message: A UserMessage, AssistantMessage, or SystemMessage to add to transcript
         """
         self._transcript.append(message)
         self._notify_handlers_for_transcript_item(message)
@@ -483,23 +442,11 @@ class Agent:
 
         Use this to reconstruct a full transcript including tool calls and their outputs,
         e.g., when resuming from a saved session or replaying a previous conversation.
-
-        Unlike process_message(), handlers are NOT notified.
-
-        Args:
-            item: A TranscriptItem (Message, FunctionCallItem, ReasoningItem, or ToolCallOutput)
         """
         self._transcript.append(item)
 
     def insert_transcript_items(self, items: Sequence[TranscriptItem]) -> None:
-        """Insert multiple transcript items without triggering handlers.
-
-        Convenience method for bulk insertion when reconstructing a transcript.
-        Equivalent to calling insert_transcript_item() for each item.
-
-        Args:
-            items: Sequence of TranscriptItem to add
-        """
+        """Insert multiple transcript items without triggering handlers."""
         self._transcript.extend(items)
 
     async def _build_effective_instructions(self) -> str | None:
@@ -527,37 +474,26 @@ class Agent:
         - Old ReasoningItem blocks
 
         Returns summary as a single UserMessage inserted before recent turns.
-
-        Args:
-            keep_recent_turns: Number of recent transcript items to preserve
-            summarization_prompt: Custom prompt for summarization (default: load from file)
-
-        Returns:
-            CompactionResult with statistics about what was compacted
+        When summarization_prompt is None, the default prompt is loaded from a file.
         """
 
-        # Find boundary: keep last N items, compact everything before
         boundary_index = max(0, len(self._transcript) - keep_recent_turns)
 
         if boundary_index < 1:
             return CompactionResult(compacted=False)
 
-        # Partition transcript in original order
         all_to_compact = self._transcript[:boundary_index]
         recent_region = self._transcript[boundary_index:]
 
-        # Check if we have enough items to make compaction worthwhile
         if len(all_to_compact) < 3:
             return CompactionResult(compacted=False)
 
-        # Generate summary via LLM
         summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
 
-        # Rebuild transcript
         summary_msg = UserMessage.text(summary_text)
 
         self._transcript = [
-            summary_msg,  # Summary of compacted conversation
+            summary_msg,
             *recent_region,  # Recent turns preserved verbatim (no ReasoningItems)
         ]
 
@@ -574,13 +510,11 @@ class Agent:
         - ToolCallOutput: result summary
         """
 
-        # Serialize transcript items to JSON using TypeAdapter
         # TODO: Consider stripping/formatting to remove fields without semantic content
         #  (e.g., tool call IDs, encrypted reasoning data, internal metadata)
         adapter = TypeAdapter(list[TranscriptItem])
         conversation = adapter.dump_json(items, exclude_none=True, indent=2).decode()
 
-        # Load default prompt from file if not provided
         if custom_prompt is None:
             prompt_file = Path(__file__).parent / "compaction_prompt.md"
             custom_prompt = prompt_file.read_text()
@@ -589,7 +523,6 @@ class Agent:
 
         resp = await self._client.sample(self._client.prepare(req))
 
-        # Extract text from response
         if resp.output and len(resp.output) > 0:
             first = resp.output[0]
             if isinstance(first, AssistantMessageOut):
@@ -639,7 +572,6 @@ class Agent:
                     break
             return AgentResult(text="\n".join(self.assistant_text_chunks))
         except Exception as exc:
-            # Forward error to all handlers
             for h in self._handlers:
                 h.on_error(exc)
             raise
@@ -650,7 +582,6 @@ class Agent:
             (function_call, _normalize_call_arguments(function_call.arguments)) for function_call in function_calls
         ]
 
-        # local_result_map stores ToolResult from ToolCallOutput events
         local_result_map: dict[str, ToolResult] = {
             evt.call_id: evt.result for evt in self._transcript if isinstance(evt, ToolCallOutput)
         }
@@ -664,7 +595,6 @@ class Agent:
                 # Already have a result (replay scenario)
                 return ToolCallOutcome(result=local_map[call_id])
 
-            # Call tool via provider
             try:
                 parsed = json.loads(args_json) if args_json else {}
             except json.JSONDecodeError as e:
@@ -820,19 +750,16 @@ class Agent:
             else:
                 logger.info("Compaction skipped (not enough items to compact)")
 
-            # Notify handlers of compaction result
             for h in self._handlers:
                 h.on_compaction_complete(compacted=result.compacted)
 
             return  # Continue to next iteration after compaction
 
-        # Handle InjectItems: append all items to transcript and notify handlers
         if isinstance(decision, InjectItems):
             for item in decision.items:
                 self._transcript.append(item)
                 self._notify_handlers_for_transcript_item(item)
 
-                # Handle item-specific side effects
                 if isinstance(item, FunctionCallItem):
                     self.pending_function_calls.append(item)
 
@@ -843,7 +770,6 @@ class Agent:
         # Unify resp_output element type across branches for mypy
         resp_output: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] | None = None
 
-        # Determine whether to sample LLM
         should_sample_llm = False
 
         if isinstance(decision, NoAction):
@@ -854,7 +780,6 @@ class Agent:
         if should_sample_llm:
             tool_choice = _tool_choice_from_policy(self._tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
-            # Build OpenAI Responses tools list from tool provider
             tool_schemas = await self._tool_provider.list_tools()
 
             req = AgentModelRequest(
@@ -924,7 +849,6 @@ class Agent:
                     existing_ids.add(eid)
         handled_call_ids = {evt.call_id for evt in self._transcript if isinstance(evt, ToolCallOutput)}
         for item in resp_output:
-            # If this item has an id and we've already recorded it, skip
             iid = item.id if isinstance(item, ReasoningItem | FunctionCallItem) else None
             if isinstance(iid, str) and iid in existing_ids:
                 continue
@@ -933,14 +857,12 @@ class Agent:
                 self._notify_handlers_for_transcript_item(item)
 
             elif isinstance(item, AssistantMessageOut):
-                # Convert API output type to transcript type
                 self.assistant_text_chunks.append(item.text)
                 assistant_msg = item.to_input_item()
                 self._transcript.append(assistant_msg)
                 self._notify_handlers_for_transcript_item(assistant_msg)
 
             elif isinstance(item, FunctionCallOutputItem):
-                # Convert API output type to transcript type
                 if item.output is None:
                     raise ValueError("FunctionCallOutputItem.output is None")
                 result = _openai_to_tool_result(item.output)
@@ -951,7 +873,6 @@ class Agent:
                 handled_call_ids.add(original_call_id)
                 self._transcript.append(tool_output)
                 self._notify_handlers_for_transcript_item(tool_output)
-                # Update pending function calls
                 if self.pending_function_calls:
                     self.pending_function_calls = [
                         fc for fc in self.pending_function_calls if fc.call_id != original_call_id
@@ -1009,7 +930,6 @@ class Agent:
         Sanitizes null bytes from tool results before emitting (PostgreSQL JSONB doesn't support them).
         """
         call_id = _require_call_id(function_call)
-        # Sanitize null bytes and add warning if present
         sanitized = _sanitize_tool_result(result)
         event = ToolCallOutput(call_id=call_id, result=sanitized)
         self._transcript.append(event)

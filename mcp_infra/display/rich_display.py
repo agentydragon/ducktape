@@ -33,10 +33,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Display configuration constants
 DEFAULT_MAX_LINES = 20  # Default maximum lines for rendered content (both Panel height and truncation)
 
-# Event types that can be rendered
 TurnEventType = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem
 
 
@@ -61,8 +59,6 @@ class MaxHeight:
         self.max_height = max_height
 
     def __rich_console__(self, console: Console, options: ConsoleOptions):
-        """Render content with height constraint."""
-        # Render inner content to segments
         segments = list(console.render(self.renderable, options))
 
         # Split segments into lines (segments ending with \n are line breaks)
@@ -71,12 +67,11 @@ class MaxHeight:
 
         for segment in segments:
             if "\n" in segment.text:
-                # Split segment on newlines
                 parts = segment.text.split("\n")
                 for i, part in enumerate(parts):
-                    if part:  # Non-empty part
+                    if part:
                         current_line.append(Segment(part, segment.style))
-                    if i < len(parts) - 1:  # Not the last part
+                    if i < len(parts) - 1:
                         current_line.append(Segment("\n", segment.style))
                         lines.append(current_line)
                         current_line = []
@@ -87,12 +82,9 @@ class MaxHeight:
         if current_line:
             lines.append(current_line)
 
-        # Yield lines up to max_height
         if len(lines) <= self.max_height:
-            # Short content: yield all segments as-is
             yield from segments
         else:
-            # Tall content: yield first max_height lines, then truncation marker
             for line in lines[: self.max_height]:
                 yield from line
             yield Segment(f"... ({len(lines) - self.max_height} more lines)\n")
@@ -115,19 +107,10 @@ class RichDisplayHandler(BaseHandler):
         prefix: str = "",
         servers: dict[MCPMountPrefix, FastMCP] | None = None,
     ) -> None:
-        """Initialize Rich display handler.
-
-        Args:
-            max_lines: Maximum lines per event (both Panel height and content truncation)
-            console: Rich console (or create default)
-            prefix: Prefix for all output (default: empty string)
-            servers: FastMCP server instances to extract tool schemas from (auto-extracts input/output types)
-        """
         self._max_lines = max_lines
         self._console = console or Console()
         self._prefix = prefix
 
-        # Auto-extract schemas from servers (both input and output)
         if servers:
             self._tool_input_schemas = extract_tool_input_schemas(servers)
             self._tool_schemas = extract_tool_schemas(servers)
@@ -146,17 +129,7 @@ class RichDisplayHandler(BaseHandler):
         console: Console | None = None,
         prefix: str = "",
     ) -> RichDisplayHandler:
-        """Create handler with schemas extracted from compositor.
-
-        Args:
-            compositor: Compositor instance to extract tool schemas from
-            max_lines: Maximum lines per event
-            console: Rich console (or create default)
-            prefix: Prefix for all output
-
-        Returns:
-            RichDisplayHandler with schemas extracted from compositor's servers
-        """
+        """Create handler with schemas extracted from compositor."""
         servers = await compositor.get_inproc_servers()
         return cls(max_lines=max_lines, console=console, prefix=prefix, servers=servers)
 
@@ -184,7 +157,6 @@ class RichDisplayHandler(BaseHandler):
     # Rendering --------------------------------------------------------------
 
     def _render_event(self, event: TurnEventType) -> None:
-        """Render a single event immediately."""
         renderable = self._create_renderable(event)
         self._console.print(renderable)
 
@@ -202,7 +174,6 @@ class RichDisplayHandler(BaseHandler):
         full_title = f"{self._prefix}{title}" if self._prefix else title
         formatted_title = Text(full_title, style=style)
 
-        # Wrap content with MaxHeight to enforce limit without padding
         constrained_content = MaxHeight(content, self._max_lines)
 
         kwargs: dict[str, object] = {"title": formatted_title, "box": box.HORIZONTALS}
@@ -211,14 +182,11 @@ class RichDisplayHandler(BaseHandler):
         return Panel(constrained_content, **kwargs)  # type: ignore[arg-type]
 
     def _format_exec_input(self, input_data: Any) -> Text:
-        """Format exec tool input as readable text."""
         lines = []
 
-        # Timeout in seconds
         timeout_sec = input_data.timeout_ms / 1000
         lines.append(f"Timeout: {timeout_sec:.1f}s")
 
-        # Command line - unwrap shell wrappers or quote the parts
         unwrapped = _unwrap_shell_command(input_data.cmd)
         if unwrapped:
             lines.append(unwrapped)
@@ -229,10 +197,8 @@ class RichDisplayHandler(BaseHandler):
         return Text("\n".join(lines))
 
     def _format_exec_result(self, result: BaseExecResult) -> Text:
-        """Format BaseExecResult as readable text."""
         lines = []
 
-        # Exit status and duration on same line
         exit_status = result.exit
         if exit_status.kind == "exited":
             lines.append(f"Exit: {exit_status.exit_code} | Duration: {result.duration_ms}ms")
@@ -241,7 +207,6 @@ class RichDisplayHandler(BaseHandler):
         elif exit_status.kind == "timed_out":
             lines.append(f"Exit: timed out | Duration: {result.duration_ms}ms")
 
-        # Stdout
         if isinstance(result.stdout, TruncatedStream):
             stdout_text = result.stdout.truncated_text + "\n[truncated]"
         else:
@@ -250,7 +215,6 @@ class RichDisplayHandler(BaseHandler):
         if stdout_text:
             lines.append(f"\nStdout:\n{stdout_text}")
 
-        # Stderr
         if isinstance(result.stderr, TruncatedStream):
             stderr_text = result.stderr.truncated_text + "\n[truncated]"
         else:
@@ -262,7 +226,6 @@ class RichDisplayHandler(BaseHandler):
         return Text("\n".join(lines))
 
     def _create_renderable(self, event: TurnEventType) -> RenderableType:
-        """Create a Rich renderable for an event by type."""
         if isinstance(event, UserText):
             return self._panel(Text(event.text), "User", "blue", bold=True, border=True)
 
@@ -270,11 +233,9 @@ class RichDisplayHandler(BaseHandler):
             return self._panel(Text(event.text), "Assistant", "green", bold=True, border=True)
 
         if isinstance(event, ToolCall):
-            # Parse args for display
             parsed = parse_json_or_none(event.args_json)
             args = parsed if parsed is not None else {"_raw": event.args_json or "{}"}
 
-            # Try type-based rendering if we have schema registered
             tool_key = parse_tool_name(event.name)
             if tool_key in self._tool_input_schemas and parsed is not None:
                 try:
@@ -295,10 +256,8 @@ class RichDisplayHandler(BaseHandler):
             call = self._calls.get(event.call_id)
             label = f"◀ {call.name}" if call else "◀ tool_output"
 
-            # Extract display data from ToolOutput
             display_data: Any = extract_display_data(event.result)
 
-            # Try to parse with registered schema if we have structured data
             if isinstance(display_data, dict) and call:
                 tool_key = parse_tool_name(call.name)
                 if tool_key in self._tool_schemas:
@@ -308,22 +267,18 @@ class RichDisplayHandler(BaseHandler):
                     except ValidationError:
                         pass  # Keep raw data
 
-            # Handle plain text
             if isinstance(display_data, str):
                 return self._panel(Text(display_data), label, "yellow")
 
-            # Special rendering for BaseExecResult (docker_exec, runtime_exec, etc.)
             if isinstance(display_data, BaseExecResult):
                 formatted = self._format_exec_result(display_data)
                 return self._panel(formatted, label, "yellow")
 
-            # Default: JSON rendering
             return self._panel(JSON.from_data(display_data), label, "yellow")
 
         if isinstance(event, ReasoningItem):
             return Text("💭 reasoning...", style="dim")
 
-        # Fallback
         return Text(str(event))
 
 
@@ -348,21 +303,11 @@ class CompactDisplayHandler(BaseHandler):
         servers: dict[MCPMountPrefix, FastMCP] | None = None,
         show_token_usage: bool = True,
     ) -> None:
-        """Initialize compact display handler.
-
-        Args:
-            max_lines: Maximum lines for truncated content
-            console: Rich console (or create default)
-            prefix: Prefix for tool calls/results (e.g., "critic", "optimizer")
-            servers: FastMCP server instances to extract tool schemas from
-            show_token_usage: Show token usage after each response (default: True)
-        """
         self._max_lines = max_lines
         self._console = console or Console()
         self._prefix = prefix
         self._show_token_usage = show_token_usage
 
-        # Auto-extract schemas from servers
         if servers:
             self._tool_input_schemas = extract_tool_input_schemas(servers)
             self._tool_schemas = extract_tool_schemas(servers)
@@ -382,18 +327,7 @@ class CompactDisplayHandler(BaseHandler):
         prefix: str = "",
         show_token_usage: bool = True,
     ) -> CompactDisplayHandler:
-        """Create handler with schemas extracted from compositor.
-
-        Args:
-            compositor: Compositor instance to extract tool schemas from
-            max_lines: Maximum lines for truncated content
-            console: Rich console (or create default)
-            prefix: Prefix for tool calls/results
-            show_token_usage: Show token usage after each response
-
-        Returns:
-            CompactDisplayHandler with schemas extracted from compositor's servers
-        """
+        """Create handler with schemas extracted from compositor."""
         servers = await compositor.get_inproc_servers()
         return cls(
             max_lines=max_lines, console=console, prefix=prefix, servers=servers, show_token_usage=show_token_usage
@@ -425,12 +359,10 @@ class CompactDisplayHandler(BaseHandler):
         input_tok = evt.usage.input_tokens or 0
         output_tok = evt.usage.output_tokens or 0
 
-        # Render compact usage line
         text = Text()
         text.append("  [tokens] ", style="dim")
         text.append(f"{self._format_tokens(input_tok)} in / {self._format_tokens(output_tok)} out", style="dim")
 
-        # Model name (optional)
         if evt.usage.model:
             text.append(f"  {evt.usage.model}", style="dim italic")
 
@@ -439,15 +371,12 @@ class CompactDisplayHandler(BaseHandler):
     # Rendering --------------------------------------------------------------
 
     def _render_event(self, event: TurnEventType) -> None:
-        """Render a single event immediately."""
         renderable = self._create_renderable(event)
         if renderable is not None:
-            # Wrap in MaxHeight to enforce max_lines constraint
             self._console.print(MaxHeight(renderable, self._max_lines))
 
     def _format_exec_command(self, input_data: Any) -> str:
         """Format exec tool input as a shell command."""
-        # Unwrap shell wrappers or quote the parts
         unwrapped = _unwrap_shell_command(input_data.cmd)
         if unwrapped:
             return unwrapped
@@ -457,7 +386,6 @@ class CompactDisplayHandler(BaseHandler):
         """Format exec result metadata (exit code, duration) for inline display."""
         parts = []
 
-        # Exit status
         exit_status = result.exit
         if exit_status.kind == "exited":
             parts.append(f"exit_code={exit_status.exit_code}")
@@ -466,7 +394,6 @@ class CompactDisplayHandler(BaseHandler):
         elif exit_status.kind == "timed_out":
             parts.append("exit_code=timeout")
 
-        # Duration in seconds
         duration_sec = result.duration_ms / 1000
         parts.append(f"duration={duration_sec:.1f}s")
 
@@ -478,28 +405,20 @@ class CompactDisplayHandler(BaseHandler):
         Handles both too many lines and individual lines that are too long.
         Long lines are hard-wrapped at console width to prevent Rich from
         word-wrapping them later (which would make MaxHeight less effective).
-
-        Args:
-            text: Text to truncate
-            max_lines: Maximum number of lines
-            indent: Number of spaces this text will be indented (affects line wrapping)
         """
         lines = text.splitlines()
 
-        # Break up very long lines (that would wrap and consume multiple visual lines)
         max_line_length = self._console.width - indent
         wrapped_lines = []
         for original_line in lines:
             if len(original_line) <= max_line_length:
                 wrapped_lines.append(original_line)
             else:
-                # Hard-wrap at max_line_length
                 remaining = original_line
                 while remaining:
                     wrapped_lines.append(remaining[:max_line_length])
                     remaining = remaining[max_line_length:]
 
-        # Now truncate to max_lines
         if len(wrapped_lines) <= max_lines:
             return "\n".join(wrapped_lines)
 
@@ -507,7 +426,6 @@ class CompactDisplayHandler(BaseHandler):
         return "\n".join(truncated) + f"\n... ({len(wrapped_lines) - max_lines} more lines)"
 
     def _indent(self, text: str, spaces: int = 2) -> str:
-        """Indent each line of text."""
         indent = " " * spaces
         return "\n".join(indent + line for line in text.splitlines())
 
@@ -518,7 +436,6 @@ class CompactDisplayHandler(BaseHandler):
         return str(count)
 
     def _extract_stream_text(self, stream: str | TruncatedStream) -> str:
-        """Extract text from a stream, handling TruncatedStream."""
         if isinstance(stream, TruncatedStream):
             return stream.truncated_text + "\n[truncated]"
         return stream
@@ -539,52 +456,42 @@ class CompactDisplayHandler(BaseHandler):
             return parsed_data
 
     def _format_prefix_label(self, default: str = "Assistant") -> str:
-        """Format prefix label with fallback."""
         return f"{self._prefix}: " if self._prefix else f"{default}: "
 
     def _create_renderable(self, event: TurnEventType) -> RenderableType | None:
-        """Create a Rich renderable for an event by type."""
-        # UserText - plain with "User:" prefix
         if isinstance(event, UserText):
             text = Text()
             text.append("User: ", style="bold blue")
             text.append(event.text)
             return text
 
-        # AssistantText - plain with prefix if set
         if isinstance(event, AssistantText):
             text = Text()
             text.append(self._format_prefix_label(), style="bold green")
             text.append(event.text)
             return text
 
-        # ReasoningItem - italic summary text
         if isinstance(event, ReasoningItem):
             if not event.summary:
                 return None
             text = Text()
             if self._prefix:
                 text.append(self._format_prefix_label(), style="bold green")
-            # Combine summary parts
             summary_text = " ".join(s.text for s in event.summary if s.text)
             text.append(summary_text, style="italic dim")
             return text
 
-        # ToolCall - compact format with inline metadata when possible
         if isinstance(event, ToolCall):
             parsed = parse_json_or_none(event.args_json)
             args = parsed if parsed is not None else {}
 
-            # Try type-based rendering if we have schema registered
             typed_input = self._try_parse_with_schema(parsed, event.name, self._tool_input_schemas)
 
             text = Text()
-            # Bullet with prefix and tool name
             prefix_part = self._format_prefix_label(default="")
             text.append(f"● {prefix_part}")
             text.append(event.name, style="bold")
 
-            # Special handling for exec
             # TODO: replace duck-type check with a proper marker (e.g. a
             # base class or Protocol) so the display layer doesn't guess.
             if hasattr(typed_input, "cmd") and hasattr(typed_input, "timeout_ms"):
@@ -595,41 +502,33 @@ class CompactDisplayHandler(BaseHandler):
                 if cwd:
                     text.append(f"  [cwd={cwd}]", style="dim")
             elif args:
-                # Args with smart line wrapping
                 formatter = Formatter(max_inline_length=self._console.width - self._TOOL_CALL_INDENT)
                 json_str = formatter.serialize(args)  # type: ignore[arg-type]
                 truncated_json = self._truncate_lines(json_str, self._max_lines, indent=self._TOOL_CALL_INDENT)
-                # If it fits on one line and is short enough, keep it inline
                 if "\n" not in truncated_json and len(truncated_json) < 80:
                     text.append(f": {truncated_json}", style="dim")
                 else:
-                    # Multi-line or long - indent on next line
                     text.append("\n")
                     indented = self._indent(truncated_json, self._TOOL_CALL_INDENT)
                     text.append(indented, style="dim")
 
             return text
 
-        # ToolCallOutput - metadata inline, content indented
         if isinstance(event, ToolCallOutput):
             call = self._calls.get(event.call_id)
 
-            # Extract display data from ToolOutput
             display_data: Any = extract_display_data(event.result)
 
-            # Try to parse with registered schema if we have structured data
             if isinstance(display_data, dict) and call:
                 display_data = self._try_parse_with_schema(display_data, call.name, self._tool_schemas)
 
             text = Text()
 
-            # Special handling for exec results
             if isinstance(display_data, BaseExecResult):
                 metadata = self._format_exec_metadata(display_data)
                 text.append(self._TOOL_RESULT_PREFIX)
                 text.append(metadata, style="dim")
 
-                # Determine if we need labels for stdout/stderr
                 has_stdout = bool(
                     display_data.stdout.truncated_text
                     if isinstance(display_data.stdout, TruncatedStream)
@@ -642,7 +541,6 @@ class CompactDisplayHandler(BaseHandler):
                 )
                 both_present = has_stdout and has_stderr
 
-                # Helper to render a stream (stdout or stderr)
                 def append_stream(stream: ExecStream, label: str, style: str = ""):
                     stream_text = self._extract_stream_text(stream)
                     truncated = self._truncate_lines(stream_text, self._max_lines, indent=self._TOOL_RESULT_INDENT)
@@ -674,7 +572,6 @@ class CompactDisplayHandler(BaseHandler):
                 text.append(truncated, style="red")
                 return text
 
-            # Handle plain text
             if isinstance(display_data, str):
                 truncated = self._truncate_lines(display_data, self._max_lines, indent=self._TOOL_RESULT_INDENT)
                 text.append(self._TOOL_RESULT_PREFIX)
@@ -685,8 +582,6 @@ class CompactDisplayHandler(BaseHandler):
                     text.append(self._indent(truncated, self._TOOL_RESULT_INDENT))
                 return text
 
-            # Default: compact JSON with smart line wrapping
-            # Calculate available width: console width minus prefix and indentation
             available_width = self._console.width - len(self._TOOL_RESULT_PREFIX) - self._TOOL_RESULT_INDENT
             formatter = Formatter(max_inline_length=available_width)
 
@@ -704,5 +599,4 @@ class CompactDisplayHandler(BaseHandler):
                     text.append(self._indent("\n".join(lines[1:]), self._TOOL_RESULT_INDENT), style="dim")
             return text
 
-        # Fallback
         return Text(str(event))

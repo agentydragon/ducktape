@@ -59,7 +59,6 @@ class ChildNotificationHandler(MessageHandler):
         await self._compositor._notify_resource_list_change(self._server_prefix)
 
     async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
-        # Forward to listeners with origin attribution
         await self._compositor._notify_resource_updated(self._server_prefix, str(message.params.uri))
 
 
@@ -120,16 +119,13 @@ class BaseCompositor(FastMCP):
         # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
         super().__init__(name=name, instructions=instructions, version=version)
 
-        # State machine (replaces _context_manager_entered/_context_manager_exited)
         self._state = CompositorState.CREATED
         self._state_lock = asyncio.Lock()
 
-        # Mounts and listeners
         self._mounts: dict[MCPMountPrefix, Mount] = {}
         self._mount_lock = asyncio.Lock()
         self._mount_listeners: list[Callable[[MCPMountPrefix, MountEvent], Awaitable[None] | None]] = []
 
-        # Resource change tracking
         self._pending_resource_list_changes: set[MCPMountPrefix] = set()
         self._resource_list_change_listeners: list[Callable[[MCPMountPrefix], Awaitable[None] | None]] = []
         self._resource_updated_listeners: list[Callable[[MCPMountPrefix, str], Awaitable[None] | None]] = []
@@ -186,10 +182,7 @@ class BaseCompositor(FastMCP):
         return names
 
     async def server_entries(self) -> dict[MCPMountPrefix, ServerEntry]:
-        """Return per-child status entries keyed by child name.
-
-        Entries are discriminated-union ServerEntry values keyed by mount name.
-        """
+        """Return per-child status entries keyed by mount name."""
         # Phase 1: capture init results and schedule tool enumeration concurrently
         async with self._mount_lock:
             items = list(self._mounts.items())
@@ -197,7 +190,6 @@ class BaseCompositor(FastMCP):
         tool_tasks: dict[MCPMountPrefix, asyncio.Task[list[mcp_types.Tool]]] = {}
 
         for name, mount in items:
-            # Check mount state
             if mount.is_failed:
                 exc = mount.exception
                 error_msg = str(exc) if exc else "Mount failed"
@@ -209,16 +201,13 @@ class BaseCompositor(FastMCP):
                 continue
 
             try:
-                # Get initialize result from child client
                 client = mount.child_client
                 init = client.initialize_result
 
-                # If we don't have init result, that's a failure
                 if init is None:
                     per_name[name] = FailedServerEntry(error="No initialize result available")
                     continue
 
-                # Schedule list_tools via proxy client for parallel enumeration
                 async def _list_tools_via_client(cf):
                     cli = cf()
                     async with cli:
@@ -261,12 +250,7 @@ class BaseCompositor(FastMCP):
             return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}
 
     async def get_inproc_servers(self) -> dict[MCPMountPrefix, FastMCP]:
-        """Get all mounted in-process servers.
-
-        Returns:
-            Dict mapping mount prefix to FastMCP server instance.
-            Only includes in-process servers (external mounts excluded).
-        """
+        """Get all mounted in-process servers (external mounts excluded)."""
         async with self._mount_lock:
             return {
                 prefix: mount.inproc_server for prefix, mount in self._mounts.items() if mount.inproc_server is not None
@@ -275,9 +259,7 @@ class BaseCompositor(FastMCP):
     async def extract_tool_input_schemas(self) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
         """Extract tool input schemas from all mounted in-process servers.
 
-        Returns:
-            Dict mapping (server_prefix, tool_name) to Pydantic input model type.
-            Only includes tools with Pydantic BaseModel input annotations.
+        Only includes tools with Pydantic BaseModel input annotations.
         """
         servers = await self.get_inproc_servers()
         return extract_tool_input_schemas(servers)
@@ -285,9 +267,7 @@ class BaseCompositor(FastMCP):
     async def extract_tool_schemas(self) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
         """Extract tool output schemas from all mounted in-process servers.
 
-        Returns:
-            Dict mapping (server_prefix, tool_name) to Pydantic output model type.
-            Only includes tools with Pydantic BaseModel return annotations.
+        Only includes tools with Pydantic BaseModel return annotations.
         """
         servers = await self.get_inproc_servers()
         return extract_tool_schemas(servers)
@@ -315,17 +295,10 @@ class BaseCompositor(FastMCP):
     # ---- Management API (Python-only) --------------------------------------
 
     async def _mount_common(self, prefix: MCPMountPrefix, mount: Mount) -> None:
-        """Common mounting logic after Mount object is created and setup.
-
-        Args:
-            prefix: Mount prefix (already validated)
-            mount: Mount object (already setup)
-        """
-        # Register the mount (under lock)
+        """Common mounting logic; prefix must already be validated and mount already set up."""
         async with self._mount_lock:
             self._mounts[prefix] = mount
 
-        # Mount proxy on FastMCP surface
         if mount.is_active:
             self.mount(mount.proxy, namespace=prefix)
             await self._notify_mount_listeners(prefix, MountEvent.STATE)
@@ -348,7 +321,6 @@ class BaseCompositor(FastMCP):
             RuntimeError: If state is CLOSED
             ValueError: If name is invalid or already mounted
         """
-        # Check state
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
                 raise RuntimeError(f"Cannot mount server - compositor '{self.name}' is closed")
@@ -360,7 +332,6 @@ class BaseCompositor(FastMCP):
             error_msg = e.errors()[0]["msg"] if e.errors() else str(e)
             raise ValueError(f"Invalid mount prefix {name!r}: {error_msg}") from e
 
-        # Check for duplicate under lock
         async with self._mount_lock:
             if validated_prefix in self._mounts:
                 raise ValueError(f"Server '{validated_prefix}' is already mounted")
@@ -369,7 +340,6 @@ class BaseCompositor(FastMCP):
         mount = Mount(prefix=validated_prefix, pinned=pinned, spec=spec)
         await mount.setup_external(spec, self._fm_transport_from_spec, lambda n: ChildNotificationHandler(self, n))
 
-        # Register and notify
         await self._mount_common(validated_prefix, mount)
 
     async def mount_inproc[T: FastMCP](self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
@@ -392,12 +362,10 @@ class BaseCompositor(FastMCP):
         Example:
             self.runtime = await self.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
         """
-        # Check state
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
                 raise RuntimeError(f"Cannot mount server - compositor '{self.name}' is closed")
 
-        # Check for duplicate under lock
         async with self._mount_lock:
             if prefix in self._mounts:
                 raise ValueError(f"Server '{prefix}' is already mounted")
@@ -406,10 +374,8 @@ class BaseCompositor(FastMCP):
         mount = Mount(prefix=prefix, pinned=pinned, spec=None)
         await mount.setup_inproc(server, lambda n: ChildNotificationHandler(self, n))
 
-        # Register and notify
         await self._mount_common(prefix, mount)
 
-        # Return Mounted wrapper
         return Mounted(prefix=prefix, server=server)
 
     async def unmount_server(self, prefix: MCPMountPrefix, *, _allow_pinned: bool = False) -> None:
@@ -459,7 +425,6 @@ class BaseCompositor(FastMCP):
             if self._state == CompositorState.CLOSED:
                 raise RuntimeError(f"Cannot unmount server - compositor '{self.name}' is closed")
 
-        # Get mount under lock
         async with self._mount_lock:
             mount = self._mounts.get(prefix)
 
@@ -484,11 +449,9 @@ class BaseCompositor(FastMCP):
         except Exception as e:
             logger.exception(f"Error cleaning up mount '{prefix}' (server will still be unmounted)", exc_info=e)
 
-        # Remove from dict (always, even if cleanup failed)
         async with self._mount_lock:
             self._mounts.pop(prefix, None)
 
-        # Notify listeners
         await self._notify_mount_listeners(prefix, MountEvent.UNMOUNTED)
 
     async def mount_servers_from_config(
@@ -509,7 +472,6 @@ class BaseCompositor(FastMCP):
         if not servers:
             return {}
 
-        # Mount all servers in parallel
         async def _mount_one(name: str, spec: MCPServerTypes) -> tuple[str, Exception | None]:
             try:
                 await self.mount_server(name, spec)
@@ -555,7 +517,6 @@ class BaseCompositor(FastMCP):
         exceptions: list[Exception] = []
 
         try:
-            # First unmount non-pinned servers
             try:
                 await self.close()
             except Exception as e:
@@ -566,7 +527,6 @@ class BaseCompositor(FastMCP):
             async with self._mount_lock:
                 pinned_names = [name for name, mount in self._mounts.items() if mount.pinned]
 
-            # Unmount each pinned server (collect exceptions)
             for name in pinned_names:
                 try:
                     await self.unmount_server(name, _allow_pinned=True)
@@ -577,7 +537,6 @@ class BaseCompositor(FastMCP):
             async with self._state_lock:
                 self._state = CompositorState.CLOSED
 
-        # Raise collected exceptions as a group
         if exceptions:
             raise ExceptionGroup("Failed to unmount one or more servers during compositor exit", exceptions)
 
@@ -595,11 +554,9 @@ class BaseCompositor(FastMCP):
         if self._state == CompositorState.CLOSED:
             raise RuntimeError(f"BaseCompositor '{self.name}' is already closed")
 
-        # Snapshot non-pinned servers under lock
         async with self._mount_lock:
             names = [name for name, mount in self._mounts.items() if not mount.pinned]
 
-        # Unmount each server (collect exceptions)
         exceptions: list[Exception] = []
         for name in names:
             try:
@@ -608,7 +565,6 @@ class BaseCompositor(FastMCP):
                 exceptions.append(e)
                 logger.exception(f"Failed to unmount server '{name}' during cleanup", exc_info=e)
 
-        # Raise collected exceptions as a group
         if exceptions:
             raise ExceptionGroup("Failed to unmount one or more non-pinned servers", exceptions)
 
@@ -618,7 +574,6 @@ class BaseCompositor(FastMCP):
         This detects container leaks at development time by catching compositors
         that were created without using 'async with Compositor() as comp:'.
         """
-        # Check if we have unclosed non-pinned mounts
         if not self._mounts:
             return
 
@@ -626,7 +581,6 @@ class BaseCompositor(FastMCP):
         if not non_pinned:
             return
 
-        # Determine the specific problem
         if self._state == CompositorState.CREATED:
             problem = "was never used as context manager"
             hint = "ALWAYS use: async with Compositor() as comp:"
@@ -658,7 +612,6 @@ class BaseCompositor(FastMCP):
     # ---- Slot factory (transport-agnostic) ---------------------------------
 
     def _fm_transport_from_spec(self, spec: MCPServerTypes) -> ClientTransport:
-        # Use FastMCP's typed server config classes
         if isinstance(spec, RemoteMCPServer | TransformingRemoteMCPServer):
             headers = dict(spec.headers or {})
             if spec.auth:
@@ -687,14 +640,7 @@ class BaseCompositor(FastMCP):
         return mount.child_client
 
     def get_inproc_server(self, prefix: MCPMountPrefix) -> FastMCP | None:
-        """Get the in-process FastMCP server instance for a given mount prefix.
-
-        Args:
-            prefix: The mount prefix (already validated)
-
-        Returns:
-            The FastMCP server instance if the mount exists and is in-process, None otherwise.
-        """
+        """Get the in-process FastMCP server for a mount prefix, or None if the mount doesn't exist or isn't in-process."""
         mount = self._mounts.get(prefix)
         if mount is None:
             return None

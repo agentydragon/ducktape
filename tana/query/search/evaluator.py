@@ -32,35 +32,16 @@ class SearchEvaluator:
         skip_deleted: bool = True,
         parent_node: BaseNode | None = None,
     ):
-        """
-        Initialize the search evaluator.
-
-        Args:
-            store: The graph to search
-            skip_trash: Skip nodes in trash (default True)
-            skip_deleted: Skip nodes under "Deleted Nodes" (default True)
-            parent_node: Parent node for resolving PARENT references
-        """
+        """skip_deleted skips nodes under "Deleted Nodes"; parent_node is used to resolve PARENT references."""
         self.store = store
         self.skip_trash = skip_trash
         self.skip_deleted = skip_deleted
         self.parent_node = parent_node
 
     def evaluate(self, expression: SearchExpression, context: BaseNode | None = None) -> Iterator[BaseNode]:
-        """
-        Evaluate a search expression.
-
-        Args:
-            expression: The search expression to evaluate
-            context: Optional context node to limit search scope
-
-        Yields:
-            Nodes matching the search expression
-        """
-        # Get base results
+        """Evaluate a search expression, optionally limited to descendants of context."""
         results = _evaluate_dispatch(expression, self)
 
-        # Apply context filter if provided
         if context:
             context_descendants = set(self._get_descendants(context))
             results = (node for node in results if node.id in context_descendants)
@@ -68,34 +49,13 @@ class SearchEvaluator:
         yield from results
 
     def _evaluate_tag(self, tag_node_id: NodeId) -> Iterator[BaseNode]:
-        """
-        Find all nodes with a specific tag.
-
-        Args:
-            tag_node_id: The ID of the tag node
-
-        Yields:
-            Nodes with the specified tag
-        """
-        # First check if the tag node exists and get its name
         tag_node = self.store.get(tag_node_id)
         if not tag_node or not tag_node.name:
             return
 
-        # Use the existing filter_by_tag function
         yield from filter_by_tag(self.store, tag_node.name, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_type(self, type_node_id: NodeId) -> Iterator[BaseNode]:
-        """
-        Find all nodes of a specific system type.
-
-        Args:
-            type_node_id: The ID of the system type
-
-        Yields:
-            Nodes of the specified type
-        """
-        # Map system type IDs to doc_type values
         type_map = {EVENT_TYPE_ID: "event", MEETING_TYPE_ID: "meeting"}
 
         doc_type = type_map.get(type_node_id)
@@ -108,21 +68,11 @@ class SearchEvaluator:
         yield from filter_nodes(self.store, matches_type, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_text(self, text: str) -> Iterator[BaseNode]:
-        """
-        Find nodes matching text criteria.
-
-        Args:
-            text: The text to search for
-
-        Yields:
-            Nodes matching the text
-        """
         # Special cases for unsupported operators
         if text in ("FROM CALENDAR", "<DATE OVERLAPS>", "<Event status>"):
             # For now, return empty results for unsupported operators
             return
 
-        # General text search - match nodes by name
         text_lower = text.lower()
 
         def matches_text(node: BaseNode) -> bool:
@@ -131,17 +81,6 @@ class SearchEvaluator:
         yield from filter_nodes(self.store, matches_text, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_field(self, field_name: str, values: list[str]) -> Iterator[BaseNode]:
-        """
-        Find nodes with specific field values.
-
-        Args:
-            field_name: The field to search
-            values: The values to match
-
-        Yields:
-            Nodes matching the field criteria
-        """
-        # Resolve PARENT references
         resolved_values = []
         for value in values:
             if value == "PARENT" and self.parent_node and self.parent_node.name:
@@ -158,42 +97,26 @@ class SearchEvaluator:
         )
 
     def _evaluate_boolean(self, operator: BooleanOperator, operands: list[SearchExpression]) -> Iterator[BaseNode]:
-        """
-        Evaluate a boolean expression.
-
-        Args:
-            operator: The boolean operator
-            operands: List of operand expressions
-
-        Yields:
-            Nodes matching the boolean expression
-        """
         if not operands:
             return
 
         if operator == BooleanOperator.OR:
-            # Union of all operand results
             all_nodes = (node for operand in operands for node in _evaluate_dispatch(operand, self))
             yield from unique_everseen(all_nodes, key=lambda node: node.id)
 
         elif operator == BooleanOperator.AND:
-            # Intersection of all operand results
-            # Evaluate first operand
             result_sets = [{node.id for node in _evaluate_dispatch(operands[0], self)}]
 
-            # Evaluate remaining operands and intersect
             for operand in operands[1:]:
                 operand_ids = {node.id for node in _evaluate_dispatch(operand, self)}
                 result_sets[0] &= operand_ids
 
-            # Yield nodes in the intersection
             for node_id in result_sets[0]:
                 result_node: BaseNode | None = self.store.get(node_id)
                 if result_node is not None:
                     yield result_node
 
         elif operator == BooleanOperator.NOT:
-            # All nodes except those matching the operand
             excluded_ids = {node.id for node in _evaluate_dispatch(one(operands), self)}
 
             def not_excluded(node: BaseNode) -> bool:
@@ -204,15 +127,7 @@ class SearchEvaluator:
             )
 
     def _get_descendants(self, node: BaseNode) -> set[NodeId]:
-        """
-        Get all descendants of a node (including the node itself).
-
-        Args:
-            node: The root node
-
-        Returns:
-            Set of descendant node IDs
-        """
+        """Get all descendants of a node (including the node itself)."""
         descendants = {node.id}
         to_process = [node]
 
@@ -228,7 +143,6 @@ class SearchEvaluator:
 
 @singledispatch
 def _evaluate_dispatch(expression: SearchExpression, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    """Dispatch search expression evaluation based on type."""
     raise ValueError(f"Unknown expression type: {type(expression)}")
 
 

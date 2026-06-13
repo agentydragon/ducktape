@@ -27,8 +27,6 @@ STREAM_TYPE_STDERR = 2
 
 @dataclass
 class ContainerSessionState:
-    """Runtime state for a container MCP session: Docker client + container ID + config."""
-
     docker_client: aiodocker.Docker
     container_id: str | None
     opts: ContainerExecServerConfig
@@ -55,7 +53,6 @@ async def _create_and_start_container(client: aiodocker.Docker, config: Containe
         await container.start()
         return container_id
     except Exception:
-        # Container created but start failed - clean it up before re-raising
         try:
             await container.delete(force=True)
             logger.debug(f"Cleaned up failed container {container_id}")
@@ -75,11 +72,9 @@ async def scoped_container(client: aiodocker.Docker, config: ContainerExecServer
     try:
         yield container_id
     finally:
-        # Always clean up when exiting scope
         with anyio.CancelScope(shield=True):
             try:
                 container = await client.containers.get(container_id)
-                # Check if container is running before trying to kill
                 info = await container.show()
                 status = info["State"]["Status"]
                 if status == "running":
@@ -116,20 +111,11 @@ def make_container_lifespan(config: ContainerExecServerConfig, docker_client: ai
 
 
 async def _race_with_timeout(work_task: asyncio.Task, timeout_ms: float) -> bool:
-    """Race a work task against a timeout.
-
-    Args:
-        work_task: The async work to race
-        timeout_ms: Timeout in milliseconds
-
-    Returns:
-        True if timeout occurred, False if work completed first
-    """
+    """Race a work task against a timeout; returns True if the timeout occurred first."""
     timeout_task = asyncio.create_task(asyncio.sleep(timeout_ms / 1000.0))
 
     done, pending = await asyncio.wait({timeout_task, work_task}, return_when=asyncio.FIRST_COMPLETED)
 
-    # Cancel pending tasks
     for task in pending:
         task.cancel()
         with suppress(asyncio.CancelledError):
@@ -139,13 +125,10 @@ async def _race_with_timeout(work_task: asyncio.Task, timeout_ms: float) -> bool
 
 
 async def _kill_container_with_retry(container) -> None:
-    """Kill container with retry for stubborn processes.
+    """Kill an aiodocker container with retry for stubborn processes.
 
     Attempts to kill twice with a delay between attempts.
     Suppresses all exceptions since this is best-effort cleanup.
-
-    Args:
-        container: aiodocker container instance
     """
     try:
         await container.kill()
@@ -157,16 +140,7 @@ async def _kill_container_with_retry(container) -> None:
 
 
 def _normalize_docker_logs_to_bytes(logs) -> bytes:
-    """Normalize Docker log output to bytes.
-
-    Docker logs API can return various formats. This normalizes to bytes.
-
-    Args:
-        logs: Log data from Docker (list, bytes, str, or None)
-
-    Returns:
-        Normalized bytes
-    """
+    """Normalize Docker log output (list, bytes, str, or None) to bytes."""
     if logs is None:
         return b""
 
@@ -177,7 +151,6 @@ def _normalize_docker_logs_to_bytes(logs) -> bytes:
         return logs.encode("utf-8")
 
     if isinstance(logs, list):
-        # Concatenate all chunks
         result = bytearray()
         for chunk in logs:
             if isinstance(chunk, bytes):
@@ -216,7 +189,6 @@ async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: b
 def render_container_result(
     stdout_buf: bytearray, stderr_buf: bytearray, exit_code: int | None, timed_out: bool, duration_ms: int
 ) -> BaseExecResult:
-    """Render container execution output to BaseExecResult."""
     return render_raw_to_result(
         stdout=stdout_buf,
         stderr=stderr_buf,
@@ -239,7 +211,6 @@ async def run_session_container(
 
     container_instance = await session.docker_client.containers.get(container_id)
 
-    # Execute with timeout handling
     loop = asyncio.get_running_loop()
     overall_start = loop.time()
     stdout_buf = bytearray()
@@ -261,11 +232,9 @@ async def run_session_container(
     )
     t_exec_created = loop.time()
 
-    # Start exec and collect output with timeout
     stream_start = loop.time()
     stream: Any = exec_obj.start()
 
-    # Implement external timeout mechanism
     collect_task = asyncio.create_task(_collect_from_exec_stream(stream, stdout_buf, stderr_buf))
     t_collect_begin = loop.time()
     timed_out = await _race_with_timeout(collect_task, input.timeout_ms)
@@ -276,11 +245,9 @@ async def run_session_container(
         logger.debug(f"Command timed out after {input.timeout_ms}ms in container {container_id[:12]}")
         exit_code = None
 
-        # Get the PID of the exec process and kill it
         inspect_result = await exec_obj.inspect()
         pid = inspect_result.get("Pid")
         if pid and pid > 0:
-            # Kill the specific process inside the container
             kill_exec = await container_instance.exec(["kill", "-9", str(pid)], stdout=False, stderr=False, stdin=False)
             kill_stream = kill_exec.start()
             # Drain the stream to ensure the kill command completes
@@ -290,7 +257,6 @@ async def run_session_container(
         else:
             raise RuntimeError(f"Could not get PID for timed-out exec in container {container_id[:12]}")
     else:
-        # Command completed normally - inspect exec for exit code
         t_inspect_begin = loop.time()
         inspect_result = await exec_obj.inspect()
         exit_code = inspect_result.get("ExitCode", 0)

@@ -11,16 +11,12 @@ from openai_utils.types import ReasoningEffort
 
 
 class RolloutConfig(BaseModel):
-    """Configuration for coding agent rollouts."""
-
     max_parallel: int = Field(description="Maximum concurrent rollouts")
     max_turns: int = Field(description="Maximum conversation turns per rollout")
     bash_timeout_ms: int = Field(description="Timeout for bash commands")
 
 
 class PromptEngineerConfig(BaseModel):
-    """Configuration for prompt engineering."""
-
     model: str = Field(description="Model to use for prompt engineering")
     reasoning_effort: ReasoningEffort | None = Field(description="Reasoning effort level")
     feedback_mode: str = Field(
@@ -29,22 +25,16 @@ class PromptEngineerConfig(BaseModel):
 
 
 class GraderConfig(BaseModel):
-    """Configuration for code grading."""
-
     model: str = Field(description="Model to use for grading")
     reasoning_effort: ReasoningEffort | None = Field(description="Reasoning effort level")
 
 
 class SummarizerConfig(BaseModel):
-    """Configuration for summarization tasks."""
-
     model: str = Field(description="Model to use for summarization")
     max_tokens: int = Field(description="Max tokens for responses")
 
 
 class TokenConfig(BaseModel):
-    """Token management configuration."""
-
     max_response_tokens: int = Field(description="Tokens reserved for response generation")
     reasoning_buffer_tokens: int = Field(description="Tokens reserved for reasoning")
     max_context_tokens: int = Field(description="Maximum input tokens")
@@ -52,8 +42,6 @@ class TokenConfig(BaseModel):
 
 
 class TruncationConfig(BaseModel):
-    """File content truncation configuration."""
-
     max_file_size_grading: int = Field(
         description="Max file size in bytes before truncation for grading (affects what grader sees)"
     )
@@ -64,22 +52,16 @@ class TruncationConfig(BaseModel):
 
 
 class DebugConfig(BaseModel):
-    """Debugging and development configuration."""
-
     enable_strace: bool = Field(default=False, description="Enable strace debugging of Claude CLI execution")
 
 
 class DockerLayerConfig(BaseModel):
-    """Configuration for a single Docker layer."""
-
     image_tag: str = Field(description="Docker image tag")
     depends_on: list[str] = Field(default_factory=list, description="Layer dependencies")
     capabilities: list[str] = Field(default_factory=list, description="New capabilities this layer adds")
 
 
 class ExternalImageConfig(BaseModel):
-    """Configuration for external/proprietary Docker images."""
-
     base_image: str = Field(description="Base image name/tag from external registry")
     source: str = Field(description="Source identifier (e.g., 'azure_cr', 'external_registry')")
     description: str = Field(description="Human-readable description of this image")
@@ -88,9 +70,6 @@ class ExternalImageConfig(BaseModel):
 
 
 class OptimizerConfig(BaseModel):
-    """Central configuration for the optimizer."""
-
-    # Pre-task setup script configuration
     pre_task_setup_script: str | None = Field(
         default=None, description="Path to global pre-task setup script (runs outside container with docker access)"
     )
@@ -102,7 +81,6 @@ class OptimizerConfig(BaseModel):
         default="graders_consolidated.yaml", description="Path to graders YAML file containing task graders"
     )
 
-    # Component configurations
     rollouts: RolloutConfig = Field(description="Rollout execution configuration")
     prompt_engineer: PromptEngineerConfig = Field(description="Prompt engineering configuration")
     grader: GraderConfig = Field(description="Code grading configuration")
@@ -111,12 +89,10 @@ class OptimizerConfig(BaseModel):
     truncation: TruncationConfig = Field(description="File and message truncation configuration")
     debug: DebugConfig = Field(default_factory=DebugConfig, description="Debugging configuration")
 
-    # File filtering
     exclude_patterns: list[str] = Field(
         description="Glob patterns for files/directories to exclude from file gathering"
     )
 
-    # Wrapper environment variables for containerized Claude wrapper
     wrapper_env: dict[str, str] = Field(
         default_factory=dict, description="Additional environment variables for the docker wrapper"
     )
@@ -125,17 +101,7 @@ class OptimizerConfig(BaseModel):
 
     @classmethod
     def from_file(cls, config_path: str | Path | None = None) -> OptimizerConfig:
-        """Load configuration from YAML file.
-
-        Args:
-            config_path: Path to config file. If None, looks for config.yaml in current directory.
-
-        Returns:
-            OptimizerConfig instance loaded from file
-
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-        """
+        """Load configuration from YAML file; defaults to config.yaml in the current directory."""
         config_path = Path.cwd() / "config.yaml" if config_path is None else Path(config_path)
 
         if not config_path.exists():
