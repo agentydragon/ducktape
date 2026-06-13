@@ -32,5 +32,8 @@ x/k8s_old
 # Trilium Notes extensions - deps not in main requirements
 trilium
 
+# Nested Bazel modules - build through their module labels.
+third_party/activitywatch
+
 # Nix build results
 result
