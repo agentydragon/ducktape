@@ -94,6 +94,20 @@ let
     history = {
       persistence = "save-all";
     };
+    apps = {
+      github = {
+        tools = {
+          # Raw codex_apps GitHub connector tool names exposed as
+          # mcp__codex_apps__github.<tool>.
+          _create_pull_request = {
+            approval_mode = "approve";
+          };
+          _update_pull_request = {
+            approval_mode = "approve";
+          };
+        };
+      };
+    };
     # Pair the built-in trusted-command heuristic with our generated execpolicy
     # allow rules under $CODEX_HOME/rules/default.rules so safe commands auto-run,
     # while the agent can explicitly request approval to run other commands

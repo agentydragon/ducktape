@@ -97,5 +97,41 @@ def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, mon
     assert result["projects"]["/repo"]["trust_level"] == "trusted"
 
 
+def test_main_adds_github_pr_app_tool_approvals(tmp_path, monkeypatch) -> None:
+    base = tmp_path / "config.nix-base.toml"
+    live = tmp_path / "config.toml"
+    base.write_text(
+        textwrap.dedent(
+            """
+            [apps.github.tools._create_pull_request]
+            approval_mode = "approve"
+
+            [apps.github.tools._update_pull_request]
+            approval_mode = "approve"
+            """
+        )
+    )
+    live.write_text(
+        textwrap.dedent(
+            """
+            model = "local"
+
+            [apps.github]
+            enabled = true
+            """
+        )
+    )
+    monkeypatch.setenv("BASE", str(base))
+    monkeypatch.setenv("LIVE", str(live))
+
+    merge.main()
+
+    result = tomllib.loads(live.read_text())
+    assert result["model"] == "local"
+    assert result["apps"]["github"]["enabled"] is True
+    assert result["apps"]["github"]["tools"]["_create_pull_request"]["approval_mode"] == "approve"
+    assert result["apps"]["github"]["tools"]["_update_pull_request"]["approval_mode"] == "approve"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
