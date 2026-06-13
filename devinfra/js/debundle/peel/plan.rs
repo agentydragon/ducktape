@@ -14,7 +14,10 @@ use super::factorize::{
     DEFAULT_SIZE_CAP_LINES, FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions,
     PeelFactorizeReport, analyze_peel_factorize, analyze_peel_factorize_on_graph,
 };
-use anonymous_resolution::{AnonymousStatementClaimSet, resolve_anonymous_statement_claims};
+use anonymous_resolution::{
+    AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,
+    resolve_member_selector_claims,
+};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -1066,12 +1069,34 @@ fn patch_plan_rows(
             &claim_sets,
         )?
     };
+    let member_bindings_by_set = {
+        let claim_sets: Vec<MemberSelectorClaimSet> = patch_sets
+            .iter()
+            .map(|patch_set| MemberSelectorClaimSet {
+                module_path: &patch_set.file,
+                selectors: &patch_set.member_selectors,
+            })
+            .collect();
+        resolve_member_selector_claims(
+            graph,
+            owner_graph_path,
+            modules_root,
+            source_root,
+            &claim_sets,
+        )?
+    };
     patch_sets
         .into_iter()
         .zip(anonymous_owners_by_set)
-        .map(|(patch_set, anonymous_owners)| {
-            let mut requested_binding_ids: Vec<String> =
-                patch_set.bindings.iter().cloned().collect();
+        .zip(member_bindings_by_set)
+        .map(|((patch_set, anonymous_owners), member_bindings)| {
+            let claimed_bindings: BTreeSet<String> = patch_set
+                .bindings
+                .iter()
+                .chain(&member_bindings)
+                .cloned()
+                .collect();
+            let mut requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
             requested_binding_ids.sort();
 
             let mut requested_owner_ids = BTreeSet::<String>::new();
@@ -1110,7 +1135,7 @@ fn patch_plan_rows(
                 let unit_owners: BTreeSet<String> = unit.owner_ids.iter().cloned().collect();
                 let bindings_complete = unit_bindings
                     .iter()
-                    .all(|binding| patch_set.bindings.contains(binding));
+                    .all(|binding| claimed_bindings.contains(binding));
                 let owners_complete = unit_owners
                     .iter()
                     .all(|owner_id| requested_owner_ids.contains(owner_id));
@@ -1121,7 +1146,7 @@ fn patch_plan_rows(
                     missing_binding_ids.extend(
                         unit_bindings
                             .into_iter()
-                            .filter(|binding| !patch_set.bindings.contains(binding)),
+                            .filter(|binding| !claimed_bindings.contains(binding)),
                     );
                     missing_owner_ids.extend(
                         unit_owners
@@ -1169,6 +1194,7 @@ struct PatchSet {
     file: PathBuf,
     bindings: BTreeSet<String>,
     anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
+    member_selectors: BTreeSet<spec::AnonymousStatementSelector>,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1184,6 +1210,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             file: binding_patches_path,
             bindings: patch_bindings,
             anonymous_selectors: BTreeSet::new(),
+            member_selectors: BTreeSet::new(),
         });
     }
     for file in collect_module_files(modules_root)? {
@@ -1191,14 +1218,32 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
         if !claims.has_claims() {
             continue;
         }
+        let member_selectors = expanded_member_selectors(&file, &claims)?;
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
             bindings: claims.bindings,
             anonymous_selectors: claims.anonymous_selectors,
+            member_selectors,
         });
     }
     Ok(sets)
+}
+
+fn expanded_member_selectors(
+    module_path: &Path,
+    claims: &spec_modules::ModuleClaims,
+) -> Result<BTreeSet<spec::AnonymousStatementSelector>> {
+    js_ast::with_swc_globals(|| {
+        let mut selectors = claims.member_selectors.clone();
+        let request_id = module_path.to_string_lossy();
+        for group in &claims.binding_groups {
+            for expanded in source_match::binding_group_member_selectors(&request_id, group)? {
+                selectors.insert(expanded.selector);
+            }
+        }
+        Ok(selectors)
+    })
 }
 
 /// Map each declared (minified) binding name to its owner id.
@@ -1486,6 +1531,25 @@ fn resolve_module_path_owner_ids(
     let mut owner_ids = BTreeSet::<String>::new();
     let mut unknown_binding_ids = Vec::<String>::new();
     for binding in &claims.bindings {
+        if let Some(owner_id) = binding_to_owner.get(binding) {
+            owner_ids.insert(owner_id.clone());
+        } else {
+            unknown_binding_ids.push(binding.clone());
+        }
+    }
+    let member_selectors = expanded_member_selectors(&yaml_path, &claims)?;
+    let member_claim_sets = [MemberSelectorClaimSet {
+        module_path: &yaml_path,
+        selectors: &member_selectors,
+    }];
+    let member_bindings = resolve_member_selector_claims(
+        graph,
+        &common.owner_graph_path,
+        &common.modules_root,
+        source_root,
+        &member_claim_sets,
+    )?;
+    for binding in &member_bindings[0] {
         if let Some(owner_id) = binding_to_owner.get(binding) {
             owner_ids.insert(owner_id.clone());
         } else {

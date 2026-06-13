@@ -453,6 +453,8 @@ rust_library(
         ":analysis",
         ":anonymous_resolution",
         ":gate",
+        ":js_ast",
+        ":source_match",
         ":spec",
         ":spec_modules",
         "@crates//:anyhow",

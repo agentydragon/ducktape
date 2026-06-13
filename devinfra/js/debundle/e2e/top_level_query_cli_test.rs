@@ -207,6 +207,54 @@ anonymous_statements:
     )
 }
 
+fn fixture_with_structural_member_claim(module_yaml: &str) -> (TempDir, CommonArgs) {
+    let dir = TempDir::new().unwrap();
+    let graph_path = dir.path().join("owner_graph.json");
+    let modules_root = dir.path().join("spec/modules");
+    let alpha = owner("owner:0", 0, "alpha", "alpha");
+    let beta = owner("owner:1", 1, "beta", "beta");
+    let report = OwnerGraphReport {
+        chunk_id: "static/index".to_string(),
+        nodes: vec![alpha.clone(), beta.clone()],
+        edges: Vec::new(),
+        quotient: OwnerGraphQuotientReport {
+            nodes: residual_table(),
+            edges: Vec::new(),
+            sccs: Vec::<QuotientSccReport>::new(),
+        },
+        atomic_graph: AtomicGraphReport {
+            nodes: vec![AtomicUnitReport {
+                id: "atomic:0".to_string(),
+                owner_ids: vec![alpha.id.clone(), beta.id.clone()],
+                members: vec![member("alpha", "alpha"), member("beta", "beta")],
+                anonymous_statement_owner_ids: Vec::new(),
+                destinations: vec![module_ref("residual")],
+                causes: Vec::new(),
+                size_lines_estimate: 2,
+                source_line_range: Some([1, 2]),
+                ordinal_span: 1,
+            }],
+            edges: Vec::new(),
+        },
+    };
+    write(&graph_path, &serde_json::to_string(&report).unwrap());
+    write(
+        &modules_root.join("features/structural_member.yaml"),
+        module_yaml,
+    );
+    write(
+        &dir.path().join("static/index.js"),
+        "const alpha = 1;\nconst beta = alpha + 1;\n",
+    );
+    (
+        dir,
+        CommonArgs {
+            owner_graph_path: graph_path,
+            modules_root,
+        },
+    )
+}
+
 fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
     let dir = TempDir::new().unwrap();
     let graph_path = dir.path().join("owner_graph.json");
@@ -254,6 +302,59 @@ fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
             modules_root,
         },
     )
+}
+
+fn assert_structural_member_claim_visible_to_queries(module_yaml: &str) {
+    let (_dir, common) = fixture_with_structural_member_claim(module_yaml);
+    let coverage = run_patch_plan_report(&PatchPlanArgs {
+        common: common.clone(),
+        limit: 0,
+        include_proposals: false,
+        source_root: None,
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(coverage.summary.total_patch_sets, 1);
+    assert_eq!(coverage.summary.complete_patch_sets, 1);
+    assert_eq!(coverage.summary.split_patch_sets, 0);
+    let row = &coverage.rows[0];
+    assert_eq!(row.path, "features/structural_member");
+    assert_eq!(row.status, PatchPlanStatus::CompleteUnits);
+    assert_eq!(row.requested_binding_ids, vec!["alpha", "beta"]);
+    assert_eq!(row.complete_unit_ids, vec!["atomic:0"]);
+    assert!(row.missing_binding_ids.is_empty());
+    assert!(row.missing_owner_ids.is_empty());
+
+    let describe = run_explain_report(&ExplainArgs {
+        common,
+        selection: SelectionArgs {
+            owner_id: None,
+            module_path: Some("features/structural_member".to_string()),
+            module_id: None,
+            binding_id: None,
+            proposal_id: None,
+            unit_id: None,
+            diagnostic_id: None,
+        },
+        size_cap_lines: 10_000,
+        source_root: None,
+        limit: 0,
+        include_proposals: false,
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(describe.owner_ids, vec!["owner:0", "owner:1"]);
+    assert_eq!(
+        describe
+            .bindings
+            .iter()
+            .map(|binding| binding.binding.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"]
+    );
+    assert_eq!(describe.atomic_units[0].id, "atomic:0");
 }
 
 fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
@@ -372,6 +473,32 @@ fn coverage_counts_anonymous_statement_selectors_as_claims() {
     assert_eq!(row.status, PatchPlanStatus::CompleteUnits);
     assert_eq!(row.complete_unit_ids, vec!["atomic:0"]);
     assert!(row.missing_anonymous_owner_ids.is_empty());
+}
+
+#[test]
+fn coverage_and_describe_count_source_match_member_selectors_as_claims() {
+    assert_structural_member_claim_visible_to_queries(
+        r#"members:
+  - name: Alpha
+    selector:
+      source_match:
+        match: 'const alpha = 1;'
+  - selector: { binding: { name: beta } }
+"#,
+    );
+}
+
+#[test]
+fn coverage_and_describe_count_binding_groups_as_member_claims() {
+    assert_structural_member_claim_visible_to_queries(
+        r#"binding_groups:
+  - source_match:
+      match: 'const alpha = 1;'
+    exports: { alpha: Alpha }
+members:
+  - selector: { binding: { name: beta } }
+"#,
+    );
 }
 
 #[test]
