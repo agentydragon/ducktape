@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest_bazel
 
+from grocy_mcp.mcp_types import ServerSettings
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
-from x.grocy_mcp.mcp_types import ServerSettings
 
 
 def test_auth_none_when_unset() -> None:

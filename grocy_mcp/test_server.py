@@ -5,8 +5,8 @@ from __future__ import annotations
 import httpx
 import pytest_bazel
 
-from x.grocy_mcp.mcp_types import ServerSettings
-from x.grocy_mcp.server import build_mcp
+from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.server import build_mcp
 
 
 def test_build_mcp_accepts_grocy_spec() -> None:

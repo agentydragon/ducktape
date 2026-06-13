@@ -14,9 +14,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
-from x.grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
 
 MAX_BATCH_SIZE = 100
 

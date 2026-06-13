@@ -37,7 +37,7 @@ from typing import Any
 
 import httpx
 
-from x.grocy_mcp.grocy_types import EntityType
+from grocy_mcp.grocy_types import EntityType
 
 logger = logging.getLogger(__name__)
 

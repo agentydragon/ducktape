@@ -15,8 +15,8 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from pydantic import BaseModel
 
-from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
-from x.grocy_mcp.mcp_types import (
+from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
+from grocy_mcp.mcp_types import (
     AddItem,
     BriefListItem,
     BriefQuantityUnit,
@@ -53,7 +53,7 @@ from x.grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from x.grocy_mcp.server import build_mcp
+from grocy_mcp.server import build_mcp
 
 # Tool-ish identifiers that appear in docstrings but aren't live tools — MCP
 # resources, type-alias names in cross-references, or FastMCP-generated

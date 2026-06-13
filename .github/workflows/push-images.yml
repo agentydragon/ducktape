@@ -114,7 +114,7 @@ jobs:
               image_name: authentik-mcp-poc-backend,
               test_target: "//x/authentik_mcp_poc/...",
             }
-          - { image: "//x/grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//x/grocy_mcp/..." }
+          - { image: "//grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//grocy_mcp/..." }
           - {
               image: "//finance/plaid/link:server_image",
               image_name: plaid-mcp-server,

@@ -14,10 +14,10 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from x.grocy_mcp.eval.cases import CASES, EvalCase
-from x.grocy_mcp.eval.result_types import EvalResult
-from x.grocy_mcp.eval.run import DEFAULT_MODELS, run_grocy_eval
-from x.grocy_mcp.grocy_container import grocy_url, run_grocy_container
+from grocy_mcp.eval.cases import CASES, EvalCase
+from grocy_mcp.eval.result_types import EvalResult
+from grocy_mcp.eval.run import DEFAULT_MODELS, run_grocy_eval
+from grocy_mcp.grocy_container import grocy_url, run_grocy_container
 
 logger = logging.getLogger(__name__)
 

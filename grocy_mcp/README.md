@@ -140,7 +140,7 @@ curl -sSfL "https://raw.githubusercontent.com/grocy/grocy/${NEW_TAG}/grocy.opena
 # 3. Bump `urls` and `sha256` on the `grocy_openapi_spec` http_file in MODULE.bazel
 # 4. Run the smoke test — catches new spec quirks (e.g. additional empty
 #    enums) FastMCP rejects.
-bbr test //x/grocy_mcp:test_server
+bbr test //grocy_mcp:test_server
 ```
 
 ## End-to-end verification

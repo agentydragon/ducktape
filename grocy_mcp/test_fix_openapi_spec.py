@@ -6,15 +6,15 @@ import json
 
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
-from x.grocy_mcp.fix_openapi_spec import (
+from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
     fix_entity_refs,
     patch_product_schema,
     strip_empty_enums,
     strip_replaced_routes,
 )
-from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
+from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
+from util.bazel.runfiles import get_required_path
 
 
 def test_strip_empty_enums_removes_empty_enum() -> None:
@@ -85,7 +85,7 @@ def test_fixed_spec_has_every_writable_product_column() -> None:
     ``entity_update`` feedback asked for: every field named in the tool's
     docstring examples must actually be accepted by the tool's input schema.
     """
-    spec_path = get_required_path("_main/x/grocy_mcp/grocy.openapi.fixed.json")
+    spec_path = get_required_path("_main/grocy_mcp/grocy.openapi.fixed.json")
     spec = json.loads(spec_path.read_text())
     properties = spec["components"]["schemas"]["Product"]["properties"]
 

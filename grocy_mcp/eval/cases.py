@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from x.grocy_mcp.eval.seed import seed_lived_in_pantry
+from grocy_mcp.eval.seed import seed_lived_in_pantry
 
 Seed = Callable[[httpx.AsyncClient], Awaitable[None]]
 

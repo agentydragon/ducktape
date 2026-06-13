@@ -7,8 +7,8 @@ from collections.abc import Generator
 import pytest
 from opentelemetry import trace
 
+from grocy_mcp.grocy_fixtures import grocy_base_url, grocy_container
 from util.testing.otel_tracing import configure_tracing
-from x.grocy_mcp.grocy_fixtures import grocy_base_url, grocy_container
 
 
 def pytest_configure(config: pytest.Config) -> None:

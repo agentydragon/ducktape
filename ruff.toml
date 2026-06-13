@@ -146,6 +146,7 @@ known-first-party = [
     "git_commit_ai",
     "gmail_archiver",
     "gnome",
+    "grocy_mcp",
     "habitify",
     "homeassistant",
     "inop",

@@ -87,7 +87,7 @@ py_test(
     ],
 )
 
-# ── OCI image (pattern: x/grocy_mcp/BUILD.bazel) ─────────────────────────────
+# ── OCI image (pattern: grocy_mcp/BUILD.bazel) ─────────────────────────────
 
 aspect_py_binary(
     name = "proxy_bin",

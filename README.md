@@ -11,6 +11,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `cluster/`         | k8s cluster                                  |
 | `tf/`              | GitOps Terraform modules (tofu-ctrl)         |
 | `mcp_infra/`       | MCP compositor and utilities                 |
+| `grocy_mcp/`       | Auth-aware remote MCP server for Grocy       |
 | `agent_pkg/`       | Agent package infrastructure                 |
 | `airlock/`         | Human-in-the-loop MCP approval proxy         |
 | `props/`           | LLM critic eval system                       |

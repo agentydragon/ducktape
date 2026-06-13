@@ -1,7 +1,7 @@
 """Dev tool: dump all MCP tool definitions to stdout as JSON.
 
 Usage:
-    bb run //x/grocy_mcp:dump_tools
+    bb run //grocy_mcp:dump_tools
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import json
 
 import httpx
 
-from x.grocy_mcp.mcp_types import ServerSettings
-from x.grocy_mcp.server import build_mcp
+from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.server import build_mcp
 
 
 async def _main() -> None:

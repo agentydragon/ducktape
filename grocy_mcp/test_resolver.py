@@ -9,8 +9,8 @@ import pytest
 import pytest_bazel
 import respx
 
-from x.grocy_mcp.grocy_types import EntityType
-from x.grocy_mcp.resolver import EntityResolver, Resolved, ResolvedQU
+from grocy_mcp.grocy_types import EntityType
+from grocy_mcp.resolver import EntityResolver, Resolved, ResolvedQU
 
 BASE_URL = "http://grocy.test/api"
 

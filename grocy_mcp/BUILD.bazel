@@ -12,7 +12,7 @@ py_library(
 
 py_binary(
     name = "fix_openapi_spec",
-    main_module = "x.grocy_mcp.fix_openapi_spec",
+    main_module = "grocy_mcp.fix_openapi_spec",
     deps = [":fix_openapi_spec_lib"],
 )
 
@@ -94,7 +94,7 @@ py_library(
 
 py_binary(
     name = "server_cli",
-    main_module = "x.grocy_mcp.server",
+    main_module = "grocy_mcp.server",
     deps = [":server"],
 )
 
@@ -104,7 +104,7 @@ py_library(
     name = "grocy_container",
     srcs = ["grocy_container.py"],
     data = ["//third_party/containers:grocy"],
-    visibility = ["//x/grocy_mcp:__subpackages__"],
+    visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":mcp_types",
         "//third_party/containers:rlocations",
@@ -121,7 +121,7 @@ py_library(
     testonly = True,
     srcs = ["grocy_fixtures.py"],
     data = ["//third_party/containers:grocy"],
-    visibility = ["//x/grocy_mcp:__subpackages__"],
+    visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",
         "//third_party/containers:rlocations",
@@ -201,7 +201,7 @@ py_test(
 py_binary(
     name = "dump_tools",
     srcs = ["dump_tools.py"],
-    main_module = "x.grocy_mcp.dump_tools",
+    main_module = "grocy_mcp.dump_tools",
     deps = [
         ":mcp_types",
         ":server",
@@ -244,7 +244,7 @@ py_library(
     name = "test_helpers",
     testonly = True,
     srcs = ["test_helpers.py"],
-    visibility = ["//x/grocy_mcp:__subpackages__"],
+    visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         "@pypi//fastmcp",
     ],

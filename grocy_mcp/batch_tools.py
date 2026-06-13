@@ -30,8 +30,8 @@ from fastmcp import FastMCP
 from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
-from x.grocy_mcp.mcp_types import (
+from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
+from grocy_mcp.mcp_types import (
     DETAIL_DESC,
     MAX_BATCH_SIZE,
     PRODUCT_DESC,
@@ -74,7 +74,7 @@ from x.grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from x.grocy_mcp.resolver import EntityResolver, ResolvedQU
+from grocy_mcp.resolver import EntityResolver, ResolvedQU
 
 logger = logging.getLogger(__name__)
 

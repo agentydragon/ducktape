@@ -16,13 +16,13 @@ from agent_framework import Agent, AgentSession, InMemoryHistoryProvider, MCPStr
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
 
+from grocy_mcp.eval.cases import EvalCase
+from grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
+from grocy_mcp.eval.result_types import EvalResult
+from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.server import build_mcp
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
-from x.grocy_mcp.eval.cases import EvalCase
-from x.grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
-from x.grocy_mcp.eval.result_types import EvalResult
-from x.grocy_mcp.mcp_types import ServerSettings
-from x.grocy_mcp.server import build_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -177,11 +177,11 @@ async def run_grocy_eval(
     # comes out empty.
     history_provider = InMemoryHistoryProvider()
 
-    # The MCP server publishes `x/grocy_mcp/server_instructions.md` via
+    # The MCP server publishes `grocy_mcp/server_instructions.md` via
     # `initialize.instructions`, but `agent_framework` currently discards the
     # InitializeResult (see _mcp.py session.initialize()). Prepend the
     # markdown to the system prompt ourselves so the model sees it.
-    server_instructions = get_required_path("_main/x/grocy_mcp/server_instructions.md").read_text()
+    server_instructions = get_required_path("_main/grocy_mcp/server_instructions.md").read_text()
     combined_instructions = f"{SYSTEM_PROMPT}\n\n{server_instructions}"
 
     async with _serve_mcp(grocy_base_url) as mcp_url:

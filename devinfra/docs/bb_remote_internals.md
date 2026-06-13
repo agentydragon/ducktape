@@ -356,8 +356,8 @@ bb-out/bazel-out/<config>/bin/<pkg>/<name>
 
 The `<config>` for our standard Linux x86_64 RBE builds (via
 `--config=rbe --config=ci` from `.github/actions/bb-remote/`) is
-`k8-fastbuild`. So `bb remote build //x/grocy_mcp:server_image.digest`
-lands at `bb-out/bazel-out/k8-fastbuild/bin/x/grocy_mcp/server_image.json.sha256`.
+`k8-fastbuild`. So `bb remote build //grocy_mcp:server_image.digest`
+lands at `bb-out/bazel-out/k8-fastbuild/bin/grocy_mcp/server_image.json.sha256`.
 
 **There is NO `bb-out/bazel-bin/<pkg>/<name>` convenience symlink.** That
 symlink only exists in local Bazel workspaces — it's created by Bazel's

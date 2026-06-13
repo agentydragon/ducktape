@@ -18,8 +18,8 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from x.grocy_mcp.batch_tools import register_batch_tools
-from x.grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.batch_tools import register_batch_tools
+from grocy_mcp.mcp_types import ServerSettings
 
 BASE_URL = "https://grocy.example.com/api"
 

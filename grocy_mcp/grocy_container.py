@@ -14,9 +14,9 @@ from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
+from grocy_mcp.mcp_types import ServerSettings
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
-from x.grocy_mcp.mcp_types import ServerSettings
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

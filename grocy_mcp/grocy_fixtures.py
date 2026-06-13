@@ -13,15 +13,10 @@ from contextlib import contextmanager
 import pytest
 from opentelemetry import trace
 
+from grocy_mcp.grocy_container import configure_grocy_container, grocy_custom_init_dir, grocy_url, wait_for_grocy_ready
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
-from x.grocy_mcp.grocy_container import (
-    configure_grocy_container,
-    grocy_custom_init_dir,
-    grocy_url,
-    wait_for_grocy_ready,
-)
 
 tracer = trace.get_tracer(__name__)
 
