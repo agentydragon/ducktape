@@ -311,6 +311,72 @@ export { first, second };
 }
 
 #[test]
+fn binding_group_comments_emit_for_adopted_names() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const primary = 10, secondary = 20;
+console.log(primary + secondary);
+export { primary, secondary };
+"#,
+        vec![logical_module_with_binding_groups(
+            "settings",
+            &[],
+            &[BindingGroup::source_alpha_adopt_all(
+                r#"const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"#,
+            )
+            .with_comments(&[
+                ("primary", "Primary selected value."),
+                ("secondary", "Secondary selected value."),
+            ])],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "30\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/settings.js",
+        &[
+            "// Primary selected value.",
+            "const primary = 10",
+            "// Secondary selected value.",
+            "secondary = 20",
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn binding_group_comments_reject_unknown_selector_local_key() {
+    let opts = FixtureOpts::new(
+        r#"const primary = 10, secondary = 20;
+console.log(primary + secondary);
+export { primary, secondary };
+"#,
+        vec![logical_module_with_binding_groups(
+            "settings",
+            &[],
+            &[BindingGroup::source_alpha_adopt_names(
+                r#"const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"#,
+                &["primary"],
+            )
+            .with_comments(&[
+                ("primary", "Primary selected value."),
+                ("secondary", "This binding is not exported by the group."),
+            ])],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::settings",
+            "binding_groups[].comments",
+            "not exported by the group",
+            "secondary",
+        ],
+    );
+}
+
+#[test]
 fn member_source_match_declarator_holes_select_binding_from_wider_const_list() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimePrefix = "prefix",
@@ -402,6 +468,42 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
             "const readDisplayLabel",
         ],
         &["runtimePrefix", "runtimeSuffix", "DECLARATORS"],
+    );
+}
+
+#[test]
+fn binding_group_trailing_declarator_hole_absorbs_later_declarators() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const selectedA = () => "a",
+  selectedB = () => "b",
+  laterC = () => "c";
+console.log(selectedA() + selectedB() + laterC());
+export { selectedA, selectedB, laterC };
+"#,
+        vec![logical_module_with_binding_groups(
+            "bridges",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const selectedA = EXPR_A,
+  selectedB = EXPR_B,
+  DECLARATORS_AFTER = null;"#,
+                &[("selectedA", "recordBridge"), ("selectedB", "replayBridge")],
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "abc\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/bridges.js",
+        &["recordBridge", "replayBridge"],
+        &["selectedA", "selectedB"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridges.js",
+        &["const recordBridge", "const replayBridge"],
+        &["laterC", "DECLARATORS_AFTER"],
     );
 }
 

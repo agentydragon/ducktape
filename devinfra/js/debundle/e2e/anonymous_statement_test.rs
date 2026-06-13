@@ -989,6 +989,51 @@ for (const context of traceContexts)
 }
 
 #[test]
+fn member_source_match_target_binding_uses_adjacent_function_consumers_as_context() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeRecordSessions = new Map([["main", "record"]]);
+function closeRecordSessions() {
+  return runtimeRecordSessions.clear();
+}
+function getRecordSession(name) {
+  return runtimeRecordSessions.get(name);
+}
+const runtimeReplaySessions = new Map([["main", "replay"]]);
+function closeReplaySessions() {
+  return runtimeRecordSessions.clear();
+}
+function getReplaySession(name) {
+  return runtimeReplaySessions.get(name);
+}
+console.log(getRecordSession("main"), getReplaySession("main"));
+export { runtimeRecordSessions, runtimeReplaySessions };
+"#,
+        vec![logical_module(
+            "sessions",
+            &[Member::source_alpha_target(
+                "recordSessions",
+                "sessions",
+                r#"const sessions = new Map(EXPR);
+function closeSessions() {
+  return sessions.clear();
+}
+function getSession(name) {
+  return sessions.get(name);
+}"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/sessions.js",
+        &["const recordSessions = new Map", "\"record\""],
+        &["runtimeReplaySessions"],
+    );
+    assert_entry_output(&fixture, "record replay\n");
+}
+
+#[test]
 fn member_source_match_variable_declarator_still_rejects_ambiguous_matches() {
     let opts = FixtureOpts::new(
         r#"const firstRuntime = { kind: "selected", enabled: true },

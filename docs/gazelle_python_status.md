@@ -152,7 +152,7 @@ Removed aggregator. Created `props/backend/routes/BUILD.bazel` with per-file tar
 
 Main backend targets: `:app`, `:auth`, `:cli`, `:export_schema`
 
-### inop/engine ✅
+### x/inop/engine ✅
 
 Renamed `py_library` from `:optimizer` to `:optimizer_lib` to avoid conflict with Gazelle-generated `py_binary`.
 

@@ -14,13 +14,13 @@ python_sources()
 Pants parses imports and infers deps automatically. But execution is still hermetic:
 
 - Each target runs with only its inferred deps
-- If `agent_pkg.runtime` imports `adgn`, Pants catches it (inferred dep)
+- If `x.editor_agent.agent_pkg.runtime` imports `adgn`, Pants catches it (inferred dep)
 - You can **forbid** deps explicitly for layering:
 
 ```python
-# agent_pkg/BUILD
+# x/editor_agent/agent_pkg/BUILD
 python_sources(
-    dependencies=["!//agent_server/**"],  # Forbid imports from agent_server
+    dependencies=["!//x/agent_server/**"],  # Forbid imports from x/agent_server
 )
 ```
 
@@ -72,14 +72,14 @@ Pants is a **build system**, not a dev environment manager. It assumes tools exi
 ```toml
 # pants.toml
 [python.dependency_rules]
-# agent_pkg must not import from agent_server
+# x/editor_agent/agent_pkg must not import from x/agent_server
 [[python.dependency_rules]]
-path = "agent_pkg/**"
-deny = ["agent_server/**"]
+path = "x/editor_agent/agent_pkg/**"
+deny = ["x/agent_server/**"]
 
-# agent_server can import from agent_pkg but not props internals
+# x/agent_server can import from x/editor_agent/agent_pkg but not props internals
 [[python.dependency_rules]]
-path = "agent_server/**"
+path = "x/agent_server/**"
 deny = ["props/**"]
 ```
 
@@ -271,13 +271,13 @@ mypy_test(
 Via visibility:
 
 ```python
-# agent_pkg/BUILD
+# x/editor_agent/agent_pkg/BUILD
 py_library(
     name = "runtime",
     srcs = glob(["**/*.py"]),
     visibility = [
-        "//editor_agent:__subpackages__",
-        "//agent_server:__subpackages__",
+        "//x/editor_agent:__subpackages__",
+        "//x/agent_server:__subpackages__",
     ],
 )
 ```

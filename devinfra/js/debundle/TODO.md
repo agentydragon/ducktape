@@ -187,6 +187,25 @@ private corpus details in Ducktape.
   helper declaration may be syntactically identical across many classes,
   but it becomes unambiguous when selected near the class or decorator
   calls whose property strings identify the target.
+- **Combined binding-and-statement groups.** Add or design one selector form
+  that matches a short top-level source window once, exports one or more
+  bindings from it, and claims selected anonymous statements from the same
+  matched window. The motivating generic shape is a declaration plus adjacent
+  side-effect assignments:
+
+  ```js
+  let recordBridge, replayBridge;
+  condition && (replayBridge = api.replay);
+  condition || (recordBridge = api.record);
+  ```
+
+  Today authors must duplicate the same `source_match` body once under
+  `binding_groups:` for the declarators and again under
+  `anonymous_statements:` with `target_statements: [1, 2]` for the side-effect
+  statements. A combined form should support explicit statement indices, an
+  `all` mode consistent with anonymous `target_statements`, and diagnostics
+  that identify whether binding capture or statement-target resolution failed.
+
 - **Constrained hole matching.** Multi-hole selectors need cheap local
   constraints so authors can say that a hole appears only as a specific
   argument, callback body, object property value, or statement-list slot. This
