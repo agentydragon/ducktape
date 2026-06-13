@@ -266,8 +266,8 @@ Secret into the already-existing namespace; `app/` consumes that Secret via
 
 ## Required moving parts
 
-Twelve things have to line up for this POC to work. Missing or wrong on any
-of them produces a specific, localized failure that's easy to mistake for
+Every component below has to line up for this POC to work. Missing or wrong on
+any of them produces a specific, localized failure that's easy to mistake for
 something else — each row lists what you get if it's broken.
 
 | #   | Component                                             | Where                                                                      | What it does                                                                                                                                                                                                                                                                                                                                                                   | Failure mode if missing                                                               |
