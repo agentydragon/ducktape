@@ -291,6 +291,27 @@ members:
             address = `${localPart}@${domain}`;
 ```
 
+When the selected declaration is too generic by itself, include adjacent
+top-level statements as context in the same `match`. The whole statement range
+must match uniquely, but only `target_binding` is claimed:
+
+```yaml
+members:
+  - name: selectedSessions
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: sessions
+        match: |
+          const sessions = new Map(EXPR);
+          function closeSessions() {
+            return sessions.clear();
+          }
+          function getSession(name) {
+            return sessions.get(name);
+          }
+```
+
 Use `binding_groups` when several exports come from the same
 multi-declarator or short declaration context. This is sugar for several
 `members[].selector.source_match` entries with the same `match` and
