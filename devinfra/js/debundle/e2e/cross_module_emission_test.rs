@@ -404,6 +404,104 @@ export { RuntimeCatalog };
 }
 
 #[test]
+fn duplicate_source_match_members_in_one_module_report_member_origins() {
+    let class_selector = r#"class K {
+  CLASS_REST;
+  label() {
+    return "catalog";
+  }
+  CLASS_REST;
+}"#;
+    let opts = FixtureOpts::new(
+        r#"class RuntimeCatalog {
+  label() {
+    return "catalog";
+  }
+}
+console.log(new RuntimeCatalog().label());
+export { RuntimeCatalog };
+"#,
+        vec![logical_module(
+            "catalog/combined",
+            &[
+                Member::source_alpha("PrimaryCatalog", class_selector),
+                Member::source_alpha_target("DuplicateCatalog", "K", class_selector),
+            ],
+        )],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let stderr = rejected.stderr;
+    for required in [
+        "duplicate source binding claims",
+        "source binding `RuntimeCatalog` claimed 2 times",
+        "export `PrimaryCatalog`",
+        "members[].selector.source_match as `PrimaryCatalog`",
+        "export `DuplicateCatalog`",
+        "members[].selector.source_match target_binding `K` as `DuplicateCatalog`",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+    assert!(
+        !stderr.contains("duplicate source bindings:"),
+        "old blank duplicate list must not be emitted:\n{stderr}",
+    );
+}
+
+#[test]
+fn keep_going_drops_failed_source_match_members_in_same_module() {
+    let opts = FixtureOpts::new(
+        r#"function existingHelper(value) {
+  return value.trim();
+}
+console.log(existingHelper(" ok "));
+export { existingHelper };
+"#,
+        vec![logical_module(
+            "diagnostics/source_match",
+            &[
+                Member::source_alpha(
+                    "MissingFormatter",
+                    r#"function missingFormatter(value) {
+  return value.toLowerCase();
+}"#,
+                ),
+                Member::source_alpha(
+                    "MissingParser",
+                    r#"function missingParser(value) {
+  return Number(value);
+}"#,
+                ),
+            ],
+        )],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let stderr = rejected.stderr;
+    for required in [
+        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "diagnostics/source_match",
+        "as `MissingFormatter`",
+        "as `MissingParser`",
+        "did not match any top-level declaration",
+        "missingFormatter",
+        "missingParser",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+    assert!(
+        !stderr.contains("duplicate source binding"),
+        "failed source_match members must not become empty binding claims:\n{stderr}",
+    );
+}
+
+#[test]
 fn keep_going_reports_source_match_failures_and_duplicate_claims_together() {
     let missing_selector = r#"function selectedFormatter(value) {
   return value.toLowerCase();

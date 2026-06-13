@@ -190,7 +190,42 @@ pub(super) fn reject_duplicate_member_bindings(
     id: &str,
     members: &[MemberRequest],
 ) -> Result<()> {
-    reject_duplicate_field(operation, id, "source bindings", members, |m| &m.binding)
+    let mut by_binding = BTreeMap::<String, Vec<&MemberRequest>>::new();
+    for member in members {
+        if member.source_match.is_some() {
+            continue;
+        }
+        by_binding
+            .entry(member.binding.clone())
+            .or_default()
+            .push(member);
+    }
+    let duplicates = by_binding
+        .into_iter()
+        .filter(|(_, members)| members.len() > 1)
+        .collect::<Vec<_>>();
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+    let mut report = format!("{operation} {id} has duplicate source binding claims:");
+    for (binding, members) in duplicates {
+        let binding = if binding.is_empty() {
+            "<unresolved>".to_string()
+        } else {
+            format!("`{binding}`")
+        };
+        report.push_str(&format!(
+            "\n- source binding {binding} claimed {} times:",
+            members.len()
+        ));
+        for member in members {
+            report.push_str(&format!(
+                "\n  - export `{}` ({})",
+                member.export_name, member.claim_origin
+            ));
+        }
+    }
+    bail!("{report}");
 }
 
 fn reject_duplicate_field(
