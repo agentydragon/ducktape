@@ -213,12 +213,6 @@ Still to do:
 
 - Full lowering matrix: binding placement reports, attached side-effects,
   staged-shell edge cases beyond the focused fixture.
-- Extend `debundle run --keep-going` beyond materialization duplicate binding
-  claims. Member-form `source_match` selector misses and ambiguities now
-  aggregate at request resolution time by skipping unresolved members from the
-  canonical lowering plan and reporting them at finalize. Remaining follow-up:
-  do the same for anonymous statement selector misses / ambiguities, which still
-  fail in `resolve_anonymous_statement_ordinals`.
 - Owner-fragment modeling parity for nested declarations and re-exports.
 - Keep new analysis tooling on the existing owner graph and embedded atomic
   DAG side outputs; do not add parallel selected-owner cache formats.

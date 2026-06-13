@@ -124,6 +124,22 @@ fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> Str
     report
 }
 
+fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagnostic]) -> String {
+    let mut diagnostics = diagnostics.iter().collect::<Vec<_>>();
+    diagnostics.sort_by(|a, b| a.module_id.cmp(&b.module_id));
+    let mut report = format!(
+        "Anonymous statement selector diagnostic report: {} unresolved selector(s) found. \
+         Under --keep-going, anonymous statements with unresolved selectors are skipped from \
+         canonical ownership so the rest of the chunk can still be checked.",
+        diagnostics.len()
+    );
+    for diagnostic in &diagnostics {
+        report.push_str("\n- ");
+        report.push_str(&diagnostic.render());
+    }
+    report
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -327,6 +343,12 @@ pub(super) struct ChunkPlanBuilder {
     /// canonical plan so later modules in the chunk can still be
     /// checked for independent selector and duplicate-claim failures.
     source_match_diagnostics: Vec<SourceMatchDiagnostic>,
+    /// Anonymous statement selectors that did not resolve. In
+    /// keep-going mode, unresolved anonymous statements are omitted
+    /// from canonical ownership so later modules in the chunk can
+    /// still be checked for independent selector and duplicate-claim
+    /// failures.
+    anonymous_statement_diagnostics: Vec<AnonymousStatementDiagnostic>,
     /// Opt-in diagnostics mode. When false, duplicate binding claims
     /// keep the historical fail-fast behavior. When true, duplicate
     /// members are skipped from canonical ownership state so later
@@ -346,6 +368,7 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
+            anonymous_statement_diagnostics: Vec::new(),
             keep_going,
         }
     }
@@ -371,8 +394,12 @@ impl ChunkPlanBuilder {
         )?;
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
-        let anonymous_statement_claims =
-            resolve_anonymous_statement_ordinals(request, ctx.runtime_module)?;
+        let anonymous_statement_claims = resolve_anonymous_statement_ordinals(
+            request,
+            ctx.runtime_module,
+            self.keep_going,
+            &mut self.anonymous_statement_diagnostics,
+        )?;
         for claim in &anonymous_statement_claims {
             if let Some(existing) = self
                 .anonymous_ordinal_assignment
@@ -936,6 +963,11 @@ impl ChunkPlanBuilder {
         if !self.source_match_diagnostics.is_empty() {
             reports.push(render_source_match_diagnostics(
                 &self.source_match_diagnostics,
+            ));
+        }
+        if !self.anonymous_statement_diagnostics.is_empty() {
+            reports.push(render_anonymous_statement_diagnostics(
+                &self.anonymous_statement_diagnostics,
             ));
         }
         if !self.duplicate_binding_claims.is_empty() {

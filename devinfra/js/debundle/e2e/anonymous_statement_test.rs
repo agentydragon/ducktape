@@ -235,6 +235,48 @@ export { X, Existing };
     );
 }
 
+#[test]
+fn keep_going_reports_anonymous_statement_failures_and_duplicate_claims_together() {
+    let opts = FixtureOpts::new(
+        r#"console.log("dup");
+const marker = 1;
+console.log("dup");
+export { marker };
+"#,
+        vec![
+            logical_module_with_anon("diagnostics/missing", &[], &[r#"console.log("missing");"#]),
+            logical_module_with_anon("diagnostics/ambiguous", &[], &[r#"console.log("dup");"#]),
+            logical_module("owners/marker", &[Member::new("marker")]),
+            logical_module(
+                "duplicates/marker",
+                &[Member::renamed("markerAgain", "marker")],
+            ),
+        ],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let stderr = rejected.stderr;
+    for required in [
+        "Anonymous statement selector diagnostic report: 2 unresolved selector(s) found",
+        "diagnostics/missing",
+        "did not match any top-level statement group",
+        r#"console.log("missing")"#,
+        "diagnostics/ambiguous",
+        "ambiguous",
+        r#"console.log("dup")"#,
+        "Duplicate binding claim report: 1 duplicate claim(s) found",
+        "\"marker\"",
+        "owners/marker",
+        "duplicates/marker",
+        "as `markerAgain`",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+}
+
 // Pin source-order interleaving of anonymous-statement members
 // and named members within the same logical module.
 //
