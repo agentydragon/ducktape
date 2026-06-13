@@ -2056,6 +2056,32 @@ fn lit_shape_label(lit: &Lit) -> String {
     }
 }
 
+fn key_value_prop_ident_value(prop: &KeyValueProp) -> Option<&Ident> {
+    match prop.value.as_ref() {
+        Expr::Ident(ident) => Some(ident),
+        _ => None,
+    }
+}
+
+fn key_value_pat_binding_ident_value(prop: &KeyValuePatProp) -> Option<&BindingIdent> {
+    match prop.value.as_ref() {
+        Pat::Ident(ident) => Some(ident),
+        _ => None,
+    }
+}
+
+fn prop_name_matches_ident_key(prop_name: &PropName, ident: &Ident) -> bool {
+    match prop_name {
+        PropName::Ident(key) => key.sym == ident.sym,
+        PropName::Str(key) => key.value.to_string_lossy() == ident.sym.as_ref(),
+        _ => false,
+    }
+}
+
+fn prop_name_matches_binding_key(prop_name: &PropName, ident: &BindingIdent) -> bool {
+    prop_name_matches_ident_key(prop_name, &ident.id)
+}
+
 fn count_pinned_class_member_labels_in_order(needle: &Class, candidate: &Class) -> usize {
     let mut candidate_start = 0;
     let mut matched = 0;
@@ -2747,6 +2773,16 @@ impl<'a> PreparedNeedle<'a> {
                 // so scoped alpha-canonicalization can stay on the cheap
                 // clone-and-compare path.
                 if let Some(canonical_needle) = &self.canonical_needle {
+                    if alpha_shorthand_sensitive(self.needle)
+                        || alpha_shorthand_sensitive(candidate)
+                    {
+                        return AstWildcardMatcher::new(
+                            self.selector,
+                            &self.wildcard_idents,
+                            self.alpha,
+                        )
+                        .match_module_item(self.needle, candidate);
+                    }
                     let mut candidate = candidate.clone();
                     candidate
                         .visit_mut_with(&mut AlphaIdentCanonicalizer::new(&self.wildcard_idents));
@@ -2812,6 +2848,49 @@ fn no_wildcard_shape_prefilter(needle: &ModuleItem, candidate: &ModuleItem) -> b
                 }
         }
         _ => false,
+    }
+}
+
+fn alpha_shorthand_sensitive(item: &ModuleItem) -> bool {
+    let mut visitor = AlphaShorthandSensitiveVisitor::default();
+    item.visit_with(&mut visitor);
+    visitor.found
+}
+
+#[derive(Default)]
+struct AlphaShorthandSensitiveVisitor {
+    found: bool,
+}
+
+impl Visit for AlphaShorthandSensitiveVisitor {
+    fn visit_prop(&mut self, prop: &Prop) {
+        if self.found {
+            return;
+        }
+        match prop {
+            Prop::Shorthand(_) => {
+                self.found = true;
+            }
+            Prop::KeyValue(prop) if key_value_prop_ident_value(prop).is_some() => {
+                self.found = true;
+            }
+            _ => prop.visit_children_with(self),
+        }
+    }
+
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        if self.found {
+            return;
+        }
+        match prop {
+            ObjectPatProp::Assign(prop) if prop.value.is_none() => {
+                self.found = true;
+            }
+            ObjectPatProp::KeyValue(prop) if key_value_pat_binding_ident_value(prop).is_some() => {
+                self.found = true;
+            }
+            _ => prop.visit_children_with(self),
+        }
     }
 }
 
@@ -3589,8 +3668,14 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_object_pat_prop(&mut self, needle: &ObjectPatProp, candidate: &ObjectPatProp) -> bool {
         match (needle, candidate) {
             (ObjectPatProp::KeyValue(needle), ObjectPatProp::KeyValue(candidate)) => {
-                needle.key.eq_ignore_span(&candidate.key)
+                self.match_prop_name_exact(&needle.key, &candidate.key)
                     && self.match_pat(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::KeyValue(needle), ObjectPatProp::Assign(candidate)) => {
+                self.match_key_value_pat_against_assign_pat(needle, candidate)
+            }
+            (ObjectPatProp::Assign(needle), ObjectPatProp::KeyValue(candidate)) => {
+                self.match_assign_pat_against_key_value_pat(needle, candidate)
             }
             (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
                 self.match_binding_binding_ident(&needle.key, &candidate.key)
@@ -3655,8 +3740,14 @@ impl<'a> AstWildcardMatcher<'a> {
     ) -> bool {
         match (needle, candidate) {
             (ObjectPatProp::KeyValue(needle), ObjectPatProp::KeyValue(candidate)) => {
-                needle.key.eq_ignore_span(&candidate.key)
+                self.match_prop_name_exact(&needle.key, &candidate.key)
                     && self.match_ref_pat(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::KeyValue(needle), ObjectPatProp::Assign(candidate)) => {
+                self.match_key_value_ref_pat_against_assign_pat(needle, candidate)
+            }
+            (ObjectPatProp::Assign(needle), ObjectPatProp::KeyValue(candidate)) => {
+                self.match_assign_pat_against_key_value_ref_pat(needle, candidate)
             }
             (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
                 self.match_binding_ident_as_ref(&needle.key, &candidate.key)
@@ -3777,6 +3868,12 @@ impl<'a> AstWildcardMatcher<'a> {
             (Prop::Shorthand(needle), Prop::Shorthand(candidate)) => {
                 needle.eq_ignore_span(candidate)
             }
+            (Prop::Shorthand(needle), Prop::KeyValue(candidate)) => {
+                self.match_shorthand_against_key_value_prop(needle, candidate)
+            }
+            (Prop::KeyValue(needle), Prop::Shorthand(candidate)) => {
+                self.match_key_value_against_shorthand_prop(needle, candidate)
+            }
             (Prop::KeyValue(needle), Prop::KeyValue(candidate)) => {
                 self.match_prop_name(&needle.key, &candidate.key)
                     && self.match_expr(&needle.value, &candidate.value)
@@ -3814,6 +3911,102 @@ impl<'a> AstWildcardMatcher<'a> {
             }
             _ => needle.eq_ignore_span(candidate),
         }
+    }
+
+    fn match_prop_name_exact(&mut self, needle: &PropName, candidate: &PropName) -> bool {
+        match (needle, candidate) {
+            (PropName::Computed(needle), PropName::Computed(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_shorthand_against_key_value_prop(
+        &mut self,
+        needle: &Ident,
+        candidate: &KeyValueProp,
+    ) -> bool {
+        self.key_value_prop_is_shorthand_equivalent(candidate, needle)
+            && self.match_ident(
+                needle,
+                key_value_prop_ident_value(candidate)
+                    .expect("checked by key_value_prop_is_shorthand_equivalent"),
+            )
+    }
+
+    fn match_key_value_against_shorthand_prop(
+        &mut self,
+        needle: &KeyValueProp,
+        candidate: &Ident,
+    ) -> bool {
+        self.key_value_prop_is_shorthand_equivalent(needle, candidate)
+            && self.match_ident(
+                key_value_prop_ident_value(needle)
+                    .expect("checked by key_value_prop_is_shorthand_equivalent"),
+                candidate,
+            )
+    }
+
+    fn key_value_prop_is_shorthand_equivalent(
+        &mut self,
+        prop: &KeyValueProp,
+        shorthand: &Ident,
+    ) -> bool {
+        prop_name_matches_ident_key(&prop.key, shorthand)
+            && key_value_prop_ident_value(prop).is_some_and(|value| {
+                value.sym == shorthand.sym && value.optional == shorthand.optional
+            })
+    }
+
+    fn match_key_value_pat_against_assign_pat(
+        &mut self,
+        needle: &KeyValuePatProp,
+        candidate: &AssignPatProp,
+    ) -> bool {
+        self.key_value_pat_is_assign_equivalent(needle, candidate)
+            && self.match_pat(&needle.value, &Pat::Ident(candidate.key.clone()))
+    }
+
+    fn match_assign_pat_against_key_value_pat(
+        &mut self,
+        needle: &AssignPatProp,
+        candidate: &KeyValuePatProp,
+    ) -> bool {
+        self.key_value_pat_is_assign_equivalent(candidate, needle)
+            && self.match_pat(&Pat::Ident(needle.key.clone()), &candidate.value)
+    }
+
+    fn match_key_value_ref_pat_against_assign_pat(
+        &mut self,
+        needle: &KeyValuePatProp,
+        candidate: &AssignPatProp,
+    ) -> bool {
+        self.key_value_pat_is_assign_equivalent(needle, candidate)
+            && self.match_ref_pat(&needle.value, &Pat::Ident(candidate.key.clone()))
+    }
+
+    fn match_assign_pat_against_key_value_ref_pat(
+        &mut self,
+        needle: &AssignPatProp,
+        candidate: &KeyValuePatProp,
+    ) -> bool {
+        self.key_value_pat_is_assign_equivalent(candidate, needle)
+            && self.match_ref_pat(&Pat::Ident(needle.key.clone()), &candidate.value)
+    }
+
+    fn key_value_pat_is_assign_equivalent(
+        &mut self,
+        prop: &KeyValuePatProp,
+        shorthand: &AssignPatProp,
+    ) -> bool {
+        shorthand.value.is_none()
+            && prop_name_matches_binding_key(&prop.key, &shorthand.key)
+            && key_value_pat_binding_ident_value(prop).is_some_and(|value| {
+                value.id.sym == shorthand.key.sym
+                    && value.id.optional == shorthand.key.optional
+                    && value.type_ann.is_none()
+            })
     }
 
     fn match_lit(&mut self, needle: &Lit, candidate: &Lit) -> bool {

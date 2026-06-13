@@ -115,6 +115,64 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_treats_object_shorthand_as_explicit_same_name_property() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual(apiMode, enabled) {
+  return { apiMode, enabled };
+}
+console.log(JSON.stringify(actual("preview", true)));
+export { actual };
+"#,
+        vec![logical_module(
+            "config",
+            &[Member::source_alpha(
+                "makeConfig",
+                r#"function readable(apiMode, enabled) {
+  return { apiMode: apiMode, enabled: enabled };
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "{\"apiMode\":\"preview\",\"enabled\":true}\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["function makeConfig", "return {", "apiMode,", "enabled"],
+        &["function actual", "function readable"],
+    );
+}
+
+#[test]
+fn member_source_match_treats_destructure_shorthand_as_explicit_same_name_property() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual({ apiMode, enabled }) {
+  return `${apiMode}:${enabled ? "on" : "off"}`;
+}
+console.log(actual({ apiMode: "preview", enabled: true }));
+export { actual };
+"#,
+        vec![logical_module(
+            "config",
+            &[Member::source_alpha(
+                "describeConfig",
+                r#"function readable({ apiMode: apiMode, enabled: enabled }) {
+  return `${apiMode}:${enabled ? "on" : "off"}`;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "preview:on\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["function describeConfig", "{ apiMode, enabled }"],
+        &["function actual", "function readable"],
+    );
+}
+
+#[test]
 fn member_source_match_expr_prefix_holes_match_arbitrary_expression_subtrees() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
