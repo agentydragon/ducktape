@@ -126,7 +126,7 @@ impl ArchiveService {
         let Some(key) = parse_replay_path(path) else {
             return ArchiveResponse::text(
                 StatusCode::NOT_FOUND,
-                "unsupported wayback archive path\n",
+                "unsupported wayback cache path\n",
             );
         };
         self.handle_replay(key).await
@@ -136,49 +136,49 @@ impl ArchiveService {
         let registry = Registry::new();
         let limit = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_limit",
+                "wayback_cache_limiter_limit",
                 "Current adaptive concurrency limit.",
             ),
             &["endpoint"],
         )?;
         let in_flight = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_in_flight",
+                "wayback_cache_limiter_in_flight",
                 "Current in-flight IA acquisitions.",
             ),
             &["endpoint"],
         )?;
         let limiter_queue_length = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_queue_length",
+                "wayback_cache_limiter_queue_length",
                 "Current requests waiting for endpoint limiter capacity or backoff.",
             ),
-            &["archive_endpoint"],
+            &["cache_endpoint"],
         )?;
         let single_flight_queue_length = GaugeVec::new(
             Opts::new(
-                "wayback_archive_single_flight_queue_length",
-                "Current requests waiting for an identical archive fill already in flight.",
+                "wayback_cache_single_flight_queue_length",
+                "Current requests waiting for an identical cache fill already in flight.",
             ),
-            &["archive_endpoint"],
+            &["cache_endpoint"],
         )?;
         let backoff_seconds = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_backoff_seconds",
+                "wayback_cache_limiter_backoff_seconds",
                 "Remaining endpoint backoff seconds.",
             ),
             &["endpoint"],
         )?;
         let recent_events = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_recent_events",
+                "wayback_cache_limiter_recent_events",
                 "Recent limiter health samples.",
             ),
             &["endpoint"],
         )?;
         let recent_failures = GaugeVec::new(
             Opts::new(
-                "wayback_archive_limiter_recent_failures",
+                "wayback_cache_limiter_recent_failures",
                 "Recent limiter failure samples.",
             ),
             &["endpoint"],

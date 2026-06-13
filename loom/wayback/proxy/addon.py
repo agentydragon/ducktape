@@ -20,7 +20,7 @@ import math
 from mitmproxy import http
 from yarl import URL
 
-from loom.wayback_proxy.proxy import (
+from loom.wayback.proxy.proxy import (
     ClampViolationError,
     NoCaptureError,
     UpstreamError,

@@ -22,9 +22,9 @@ from mitmproxy.http import Headers
 from mitmproxy.test import tflow
 from yarl import URL
 
-from loom.wayback_proxy import fake_ia
-from loom.wayback_proxy.addon import HEALTH_HOST, WaybackAddon
-from loom.wayback_proxy.proxy import (
+from loom.wayback.proxy import fake_ia
+from loom.wayback.proxy.addon import HEALTH_HOST, WaybackAddon
+from loom.wayback.proxy.proxy import (
     Config,
     UpstreamError,
     WaybackResolver,

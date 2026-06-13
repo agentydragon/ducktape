@@ -1,5 +1,5 @@
 # Bearer token for the cache's gateway-facing :8090 listener. Consumed by the
-# wayback-cache deployment (WAYBACK_ARCHIVE_AUTH_TOKEN) and by the per-agent
+# wayback-cache deployment (WAYBACK_CACHE_AUTH_TOKEN) and by the per-agent
 # wayback proxy (WAYBACK_UPSTREAM_AUTH) when its upstream is the public route.
 # The emberstack reflector annotations mirror it into claude-sandbox so agent
 # sessions can read it without cross-namespace RBAC. (Authored fresh + rotated

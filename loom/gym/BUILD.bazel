@@ -350,7 +350,7 @@ py_test(
     size = "large",
     srcs = ["test_inspect_harness.py"],
     data = [
-        "//loom/wayback_proxy:image_info",
+        "//loom/wayback/proxy:image_info",
         "//third_party/containers:python_3_13_slim",
     ],
     requires_docker = True,
@@ -361,7 +361,7 @@ py_test(
         ":series_tasks",
         ":task",
         "//:conftest",
-        "//loom/wayback_proxy:fake_ia",
+        "//loom/wayback/proxy:fake_ia",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:undeclared_outputs",

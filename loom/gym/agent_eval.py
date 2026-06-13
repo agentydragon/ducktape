@@ -7,7 +7,7 @@ in-cluster pull-through cache when the Docker daemon runs in-cluster
 (docker-ci), e.g. `http://wayback-cache.wayback-cache.svc.cluster.local:8080`.
 
 Requires two images in the local Docker daemon: the wayback proxy
-(`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
+(`bazelisk run //loom/wayback/proxy:load`) and the agent sandbox
 (`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`).
 
     LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \\

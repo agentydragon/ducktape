@@ -1,23 +1,23 @@
-# Wayback Archive Service Plan
+# Wayback Cache Service Plan
 
 Last trimmed: 2026-06-12.
 
 Status: v0 is live. The old nginx/PVC `wayback-cache` backend was replaced in
-place by the Rust archive service: CNPG metadata, SeaweedFS S3 replay bodies,
+place by the Rust cache service: CNPG metadata, SeaweedFS S3 replay bodies,
 Prometheus metrics, and a public bearer-auth `:8090` listener. The service is
 split into input pods and filler pods connected by a Postgres fill queue with
 `LISTEN/NOTIFY` wakeups.
 
 Companions:
 
-- <../wayback_proxy/README.md>: per-agent policy proxy and local demo.
+- <../proxy/README.md>: per-agent policy proxy and local demo.
 - <../docs/archive_org_apis.md>: Internet Archive API behavior notes.
 - <../gym/TODO.md>: active eval reliability TODOs.
 - <../gym/k8s/README.md>: in-cluster eval run procedure.
 
 ## Service Contract
 
-The archive service is an Internet-Archive-shaped, write-through archive cache.
+The cache service is an Internet-Archive-shaped, write-through archive cache.
 It serves the Wayback paths the eval already uses:
 
 - `GET /wayback/available?url=...&timestamp=...`
@@ -28,7 +28,7 @@ On a local hit, it serves stored metadata and replay bodies. On a miss, it
 acquires the needed IA object, validates it against Loom's as-of semantics,
 stores the result, and serves from that stored record.
 
-The per-agent `wayback_proxy` remains the policy layer. It intercepts natural
+The per-agent proxy remains the policy layer. It intercepts natural
 web URLs, enforces `WAYBACK_AS_OF`, rejects future captures, emits evidence
 manifests, and points at this service as `WAYBACK_UPSTREAM` /
 `WAYBACK_AVAILABILITY_UPSTREAM`.
@@ -68,7 +68,7 @@ fillers and input waiters use `LISTEN/NOTIFY` so a newly enqueued fill or a
 completed fill wakes peers immediately instead of relying on polling.
 
 Runtime settings are loaded from typed YAML mounted at
-`/etc/wayback-archive/config.yaml`. Secrets remain env-backed by name: DB URL,
+`/etc/wayback-cache/config.yaml`. Secrets remain env-backed by name: DB URL,
 S3 access key, S3 secret key, and optional bearer token.
 
 IA acquisition is endpoint-aware:
@@ -107,7 +107,7 @@ First cold eval against the replacement service:
 - wall time: 2:22:15.
 
 This proved the write-through plumbing but did not improve the eval. The visible
-failure mode shifted from direct IA replay refusals to archive-service `503`
+failure mode shifted from direct IA replay refusals to cache-service `503`
 backpressure and slow cold acquisition.
 
 Important diagnosis: the high-error URLs generally were archived. In the worst
@@ -175,30 +175,35 @@ Interpretation:
    service.
    - Reprobe the known bad CDX path.
    - Burst cold CDX and replay misses.
-   - Confirm `wayback_archive_limiter_in_flight{endpoint="cdx"}` returns to 0.
+   - Confirm `wayback_cache_limiter_in_flight{endpoint="cdx"}` returns to 0.
    - Confirm
-     `wayback_archive_acquisition_failures_total{endpoint,reason,status}`
+     `wayback_cache_acquisition_failures_total{endpoint,reason,status}`
      separates limiter queue timeout from upstream retry/backoff.
    - Confirm input-side fill waits are visible in
-     `wayback_archive_input_fill_wait_duration_seconds`.
+     `wayback_cache_input_fill_wait_duration_seconds`.
 2. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at
    low concurrency protects IA but serializes cold misses enough to hurt the
    agent loop.
-3. Keep `wayback_proxy` retry/wait behavior covered: `503 + Retry-After` should
+3. Keep proxy retry/wait behavior covered: `503 + Retry-After` should
    be an enforced wait while the proxy has budget, and an agent-visible failure
    only after waiting would exceed that budget.
 
 ## Hardening Backlog
 
-- Add validated Availability fallback to CDX inside the archive service if we
-  want timestamp selection to live in the service rather than in
-  `wayback_proxy`.
+- Add validated Availability fallback to CDX inside the cache service if we
+  want timestamp selection to live in the service rather than in the proxy.
 - Add alias rows for IA canonicalization redirects and equivalent replay URL
   spellings.
 - Decide whether filler pods should stay as an OVH-spread Deployment, become a
   DaemonSet, or run on roaming nodes once node/IP policy is clearer.
 - Decide `wayback-archive-db` backup/failover policy before moving from a
   single CNPG instance to the OVH-HA profile.
+- Rename the remaining stateful `archive` names in a migration-safe follow-up:
+  GHCR image / Flux image policy, CNPG database and generated secret, and
+  SeaweedFS bucket plus S3 identity.
+- Rename internal Rust `Archive*` type/function names to `Cache*` once it is
+  worth the churn; the externally visible source layout, env vars, and metrics
+  already use cache naming.
 - Add orphan-blob garbage collection.
 - Decide refresh/TTL policy for Availability/CDX metadata and stable negatives.
 - Add HEAD or Range support only if a direct client needs it; the eval does not.
@@ -218,6 +223,6 @@ Interpretation:
 - Availability results after `WAYBACK_AS_OF` are rejected or fall back to CDX.
 - Direct CDX requests cannot reveal captures after `WAYBACK_AS_OF`.
 - Backoff state is visible in metrics and propagated as `503 + Retry-After`.
-- Metadata survives archive-service pod restarts and CNPG failover.
+- Metadata survives cache-service pod restarts and CNPG failover.
 - Durable replay bodies live in SeaweedFS S3, not an RWO-mounted cache PVC.
 - Queue wait is configurable and defaults to 60 seconds.

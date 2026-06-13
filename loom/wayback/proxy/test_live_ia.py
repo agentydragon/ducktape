@@ -3,7 +3,7 @@
 Tagged manual: IA availability/rate limits make this unsuitable for CI. Run
 on demand (RBE workers have open egress):
 
-    bbr test //loom/wayback_proxy:test_live_ia --test_output=streamed
+    bbr test //loom/wayback/proxy:test_live_ia --test_output=streamed
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import pytest
 import pytest_bazel
 from yarl import URL
 
-from loom.wayback_proxy.proxy import ClampViolationError, Config, WaybackResolver
+from loom.wayback.proxy.proxy import ClampViolationError, Config, WaybackResolver
 
 logger = logging.getLogger(__name__)
 

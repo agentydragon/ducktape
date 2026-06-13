@@ -4,7 +4,7 @@
 # libssl at runtime. Trixie also satisfies the binary's GLIBC_2.39 requirement.
 #
 # Regenerate the lock file after any change:
-#   bazel run @trixie_wayback_archive//:lock
+#   bazel run @trixie_wayback_cache//:lock
 version: 1
 
 sources:

@@ -4,12 +4,12 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
 exports_files([
-    "trixie_wayback_archive.yaml",
-    "trixie_wayback_archive.lock.json",
+    "trixie_wayback_cache.yaml",
+    "trixie_wayback_cache.lock.json",
 ])
 
 rust_library(
-    name = "wayback_archive_lib",
+    name = "wayback_cache_lib",
     srcs = [
         "backend/mod.rs",
         "backend/worker.rs",
@@ -31,7 +31,7 @@ rust_library(
         "types.rs",
         "util.rs",
     ],
-    crate_name = "wayback_archive",
+    crate_name = "wayback_cache",
     edition = "2024",
     proc_macro_deps = [
         "@crates//:async-trait",
@@ -55,12 +55,12 @@ rust_library(
 )
 
 rust_binary(
-    name = "wayback_archive",
+    name = "wayback_cache",
     srcs = ["main.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        ":wayback_archive_lib",
+        ":wayback_cache_lib",
         "@crates//:anyhow",
         "@crates//:axum",
         "@crates//:env_logger",
@@ -70,12 +70,12 @@ rust_binary(
 )
 
 rust_binary(
-    name = "wayback_archive_filler",
+    name = "wayback_cache_filler",
     srcs = ["filler_main.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        ":wayback_archive_lib",
+        ":wayback_cache_lib",
         "@crates//:anyhow",
         "@crates//:axum",
         "@crates//:env_logger",
@@ -85,15 +85,15 @@ rust_binary(
 )
 
 rust_test(
-    name = "wayback_archive_test",
-    crate = ":wayback_archive_lib",
+    name = "wayback_cache_test",
+    crate = ":wayback_cache_lib",
 )
 
 pkg_tar(
     name = "binary_layer",
     srcs = [
-        ":wayback_archive",
-        ":wayback_archive_filler",
+        ":wayback_cache",
+        ":wayback_cache_filler",
     ],
     package_dir = "/usr/local/bin",
 )
@@ -101,10 +101,10 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = ["/usr/local/bin/wayback_archive"],
+    entrypoint = ["/usr/local/bin/wayback_cache"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
-        "@trixie_wayback_archive//:flat",
+        "@trixie_wayback_cache//:flat",
         ":binary_layer",
     ],
     user = "1000:1000",
@@ -114,5 +114,5 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["wayback-archive:latest"],
+    repo_tags = ["wayback-cache:latest"],
 )

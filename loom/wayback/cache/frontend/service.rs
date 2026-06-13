@@ -29,11 +29,11 @@ impl ArchiveInputService {
             queue_wait: DEFAULT_MAX_QUEUE_WAIT,
             fill_wait_duration: HistogramVec::new(
                 HistogramOpts::new(
-                    "wayback_archive_input_fill_wait_duration_seconds",
+                    "wayback_cache_input_fill_wait_duration_seconds",
                     "Duration spent waiting for a queued fill to become available in the cache.",
                 )
                 .buckets(WAIT_BUCKETS.to_vec()),
-                &["archive_endpoint", "outcome"],
+                &["cache_endpoint", "outcome"],
             )
             .expect("input fill wait metric definition is valid"),
         }
@@ -55,7 +55,7 @@ impl ArchiveInputService {
         let Some(key) = parse_replay_path(path) else {
             return ArchiveResponse::text(
                 StatusCode::NOT_FOUND,
-                "unsupported wayback archive path\n",
+                "unsupported wayback cache path\n",
             );
         };
         self.handle_replay(key).await
@@ -90,7 +90,7 @@ impl ArchiveInputService {
                 "metadata fill enqueue failed key={} error={error:#}",
                 request.key
             );
-            return ArchiveResponse::text(StatusCode::BAD_GATEWAY, "archive fill enqueue failed\n");
+            return ArchiveResponse::text(StatusCode::BAD_GATEWAY, "cache fill enqueue failed\n");
         }
         self.wait_for_metadata(fill, &request.key).await
     }
@@ -110,7 +110,7 @@ impl ArchiveInputService {
         let fill = FillRequest::Replay(key.clone());
         if let Err(error) = self.store.enqueue_fill(fill.clone()).await {
             warn!("replay fill enqueue failed key={key} error={error:#}");
-            return ArchiveResponse::text(StatusCode::BAD_GATEWAY, "archive fill enqueue failed\n");
+            return ArchiveResponse::text(StatusCode::BAD_GATEWAY, "cache fill enqueue failed\n");
         }
         self.wait_for_replay(fill, &key).await
     }
@@ -148,7 +148,7 @@ impl ArchiveInputService {
                     self.record_fill_wait(key.endpoint, "error", started.elapsed());
                     return ArchiveResponse::text(
                         StatusCode::BAD_GATEWAY,
-                        "archive fill wait failed\n",
+                        "cache fill wait failed\n",
                     );
                 }
             }
@@ -188,7 +188,7 @@ impl ArchiveInputService {
                     self.record_fill_wait(Endpoint::Replay, "error", started.elapsed());
                     return ArchiveResponse::text(
                         StatusCode::BAD_GATEWAY,
-                        "archive fill wait failed\n",
+                        "cache fill wait failed\n",
                     );
                 }
             }

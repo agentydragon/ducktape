@@ -50,28 +50,28 @@ spec:
           image: ghcr.io/agentydragon/wayback-archive:devel-20260612125324-df01b54 # {"$imagepolicy": "flux-system:wayback-archive"}
           imagePullPolicy: Always
           command:
-            - /usr/local/bin/wayback_archive_filler
+            - /usr/local/bin/wayback_cache_filler
           env:
             - name: RUST_LOG
               value: info
-            - name: WAYBACK_ARCHIVE_DATABASE_URL
+            - name: WAYBACK_CACHE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: wayback-archive-db-app
                   key: uri
-            - name: WAYBACK_ARCHIVE_S3_ACCESS_KEY_ID
+            - name: WAYBACK_CACHE_S3_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
                   name: s3-identity-wayback-archive
                   key: accessKey
-            - name: WAYBACK_ARCHIVE_S3_SECRET_ACCESS_KEY
+            - name: WAYBACK_CACHE_S3_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: s3-identity-wayback-archive
                   key: secretKey
           volumeMounts:
             - name: config
-              mountPath: /etc/wayback-archive
+              mountPath: /etc/wayback-cache
               readOnly: true
           ports:
             - name: http

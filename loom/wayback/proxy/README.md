@@ -36,8 +36,8 @@ speaks to the (archived) web.
 ## Demo
 
 ```bash
-bazelisk run //loom/wayback_proxy:load   # build + docker-load wayback-proxy:latest
-cd loom/wayback_proxy
+bazelisk run //loom/wayback/proxy:load   # build + docker-load wayback-proxy:latest
+cd loom/wayback/proxy
 docker compose up -d --wait
 
 # Browse the web as of 2020-06-01 (the default WAYBACK_AS_OF), over https:
@@ -72,9 +72,9 @@ upstream; defaults to `https://archive.org` in direct-IA mode and to
 (default `~/.mitmproxy`) is where the CA is generated; the demo points it at a
 volume shared read-only with the agent.
 
-## Using the shared cluster archive service
+## Using the shared cluster cache service
 
-`cluster/k8s/wayback-cache/` runs the shared write-through archive service
+`cluster/k8s/wayback-cache/` runs the shared write-through cache service
 (ClusterIP only) so repeated lookups reuse stored metadata and replay bodies
 without re-hitting IA. Point the proxy at it through a port-forward:
 
@@ -93,8 +93,8 @@ its own ephemeral CA.
 ## Tests
 
 ```bash
-bbr test //loom/wayback_proxy:test_proxy        # addon semantics vs canned fake IA
-bbr test //loom/wayback_proxy:test_compose_e2e  # the compose demo, end to end (Docker)
+bbr test //loom/wayback/proxy:test_proxy        # addon semantics vs canned fake IA
+bbr test //loom/wayback/proxy:test_compose_e2e  # the compose demo, end to end (Docker)
 ```
 
 `fake_ia.py` pins the IA contract the proxy relies on (Availability JSON, CDX

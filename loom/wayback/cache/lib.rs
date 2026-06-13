@@ -283,10 +283,10 @@ mod tests {
                 .metrics()
                 .await
                 .unwrap()
-                .contains("wayback_archive_limiter_backoff_seconds{endpoint=\"availability\"}")
+                .contains("wayback_cache_limiter_backoff_seconds{endpoint=\"availability\"}")
         );
         assert!(service.metrics().await.unwrap().contains(
-            "wayback_archive_acquisition_failures_total{endpoint=\"availability\",reason=\"upstream_retry_after\",status=\"503\"} 1"
+            "wayback_cache_acquisition_failures_total{endpoint=\"availability\",reason=\"upstream_retry_after\",status=\"503\"} 1"
         ));
     }
 
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(client.calls.load(Ordering::SeqCst), 0);
         assert!(service.metrics().await.unwrap().contains(
-            "wayback_archive_acquisition_failures_total{endpoint=\"replay\",reason=\"limiter_queue_timeout\",status=\"none\"} 1"
+            "wayback_cache_acquisition_failures_total{endpoint=\"replay\",reason=\"limiter_queue_timeout\",status=\"none\"} 1"
         ));
         drop(held);
     }

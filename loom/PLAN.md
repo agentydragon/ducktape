@@ -12,9 +12,9 @@ the Augur side.
 - `loom/gym/` is the implemented forecasting-eval substrate: task schema,
   proper scoring, asserted model cutoffs, series/path/bundle task generation,
   panel selection, run comparison, and the Inspect-based agent harness.
-- `loom/wayback_proxy/` and `loom/wayback_archive/` provide dated web access
+- `loom/wayback/proxy/` and `loom/wayback/cache/` provide dated web access
   for agent evals. Operational follow-ups live in `gym/TODO.md` and
-  `wayback_archive/PLAN.md`.
+  `wayback/cache/PLAN.md`.
 - `loom/plans/market_harvest.md` is the source survey and pipeline design for
   the market-resolved task family.
 - The WorldSet-producing pipeline is still plan-stage. No durable `WorldSet`,
@@ -82,7 +82,7 @@ the Augur side.
    paired proper-loss deltas over the same admissible task panel.
 9. **Archive-backed eval reliability.** Finish the limiter telemetry rollout
    and panel rerun tracked in `gym/TODO.md`; keep the service design/status in
-   `wayback_archive/PLAN.md`.
+   `wayback/cache/PLAN.md`.
 
 ## Validation Norms
 
@@ -100,7 +100,7 @@ the Augur side.
 - `README.md`: concise overview and gym invocation.
 - `gym/TODO.md`: active eval reliability and harness follow-ups.
 - `gym/k8s/README.md`: in-cluster eval run procedure and operational gotchas.
-- `wayback_archive/PLAN.md`: archive service design/status.
+- `wayback/cache/PLAN.md`: cache service design/status.
 - `docs/archive_org_apis.md`: Internet Archive API behavior notes.
 - `plans/market_harvest.md`: market source survey and harvest design.
 - `../finance/augur/plans/interpolating_prediction_markets.md`: Augur-side

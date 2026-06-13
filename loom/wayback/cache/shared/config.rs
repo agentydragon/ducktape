@@ -13,11 +13,11 @@ use crate::{
     DEFAULT_MAX_METADATA_BYTES, DEFAULT_MAX_QUEUE_WAIT, DEFAULT_REPLAY_TIMEOUT,
 };
 
-const DEFAULT_CONFIG_PATH: &str = "/etc/wayback-archive/config.yaml";
-const DEFAULT_AUTH_TOKEN_ENV: &str = "WAYBACK_ARCHIVE_AUTH_TOKEN";
-const DEFAULT_DATABASE_URL_ENV: &str = "WAYBACK_ARCHIVE_DATABASE_URL";
-const DEFAULT_S3_ACCESS_KEY_ID_ENV: &str = "WAYBACK_ARCHIVE_S3_ACCESS_KEY_ID";
-const DEFAULT_S3_SECRET_ACCESS_KEY_ENV: &str = "WAYBACK_ARCHIVE_S3_SECRET_ACCESS_KEY";
+const DEFAULT_CONFIG_PATH: &str = "/etc/wayback-cache/config.yaml";
+const DEFAULT_AUTH_TOKEN_ENV: &str = "WAYBACK_CACHE_AUTH_TOKEN";
+const DEFAULT_DATABASE_URL_ENV: &str = "WAYBACK_CACHE_DATABASE_URL";
+const DEFAULT_S3_ACCESS_KEY_ID_ENV: &str = "WAYBACK_CACHE_S3_ACCESS_KEY_ID";
+const DEFAULT_S3_SECRET_ACCESS_KEY_ENV: &str = "WAYBACK_CACHE_S3_SECRET_ACCESS_KEY";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -171,7 +171,7 @@ pub struct ArchiveSettings {
 }
 
 pub fn archive_config_from_env() -> Result<ArchiveConfig> {
-    if let Some(path) = optional_env(Some("WAYBACK_ARCHIVE_CONFIG")).map(PathBuf::from) {
+    if let Some(path) = optional_env(Some("WAYBACK_CACHE_CONFIG")).map(PathBuf::from) {
         return load_archive_config(&path);
     }
 

@@ -140,45 +140,45 @@ impl Default for ArchiveMetrics {
         Self {
             acquisition_attempts: IntCounterVec::new(
                 Opts::new(
-                    "wayback_archive_acquisition_attempts_total",
-                    "Archive miss acquisitions attempted against IA.",
+                    "wayback_cache_acquisition_attempts_total",
+                    "Cache miss acquisitions attempted against IA.",
                 ),
                 &["endpoint"],
             )
             .expect("acquisition_attempts metric definition is valid"),
             acquisition_failures: IntCounterVec::new(
                 Opts::new(
-                    "wayback_archive_acquisition_failures_total",
-                    "Archive miss acquisitions that returned a retryable/backpressure response before storing a result.",
+                    "wayback_cache_acquisition_failures_total",
+                    "Cache miss acquisitions that returned a retryable/backpressure response before storing a result.",
                 ),
                 &["endpoint", "reason", "status"],
             )
             .expect("acquisition_failures metric definition is valid"),
             upstream_fetch_duration: HistogramVec::new(
                 HistogramOpts::new(
-                    "wayback_archive_upstream_fetch_duration_seconds",
+                    "wayback_cache_upstream_fetch_duration_seconds",
                     "Duration of upstream IA fetches after acquiring an endpoint limiter slot.",
                 )
                 .buckets(DURATION_BUCKETS.to_vec()),
-                &["archive_endpoint", "outcome", "reason", "status"],
+                &["cache_endpoint", "outcome", "reason", "status"],
             )
             .expect("upstream_fetch_duration metric definition is valid"),
             limiter_wait_duration: HistogramVec::new(
                 HistogramOpts::new(
-                    "wayback_archive_limiter_wait_duration_seconds",
+                    "wayback_cache_limiter_wait_duration_seconds",
                     "Duration spent waiting for endpoint limiter capacity or backoff.",
                 )
                 .buckets(DURATION_BUCKETS.to_vec()),
-                &["archive_endpoint", "outcome"],
+                &["cache_endpoint", "outcome"],
             )
             .expect("limiter_wait_duration metric definition is valid"),
             single_flight_wait_duration: HistogramVec::new(
                 HistogramOpts::new(
-                    "wayback_archive_single_flight_wait_duration_seconds",
-                    "Duration spent waiting for an identical archive fill already in flight.",
+                    "wayback_cache_single_flight_wait_duration_seconds",
+                    "Duration spent waiting for an identical cache fill already in flight.",
                 )
                 .buckets(DURATION_BUCKETS.to_vec()),
-                &["archive_endpoint", "outcome"],
+                &["cache_endpoint", "outcome"],
             )
             .expect("single_flight_wait_duration metric definition is valid"),
             single_flight_waiters: StdMutex::new(HashMap::new()),

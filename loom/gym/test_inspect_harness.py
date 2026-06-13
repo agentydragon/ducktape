@@ -32,12 +32,12 @@ from loom.gym.inspect_harness import (
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, EvidenceItem
-from loom.wayback_proxy import fake_ia
+from loom.wayback.proxy import fake_ia
 from third_party.containers.rlocations import PYTHON_3_13_SLIM
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback_proxy/image_info.rloc", WAYBACK_PROXY_IMAGE_TAG)
+WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", WAYBACK_PROXY_IMAGE_TAG)
 
 # Linear ramp over 2020-01..2020-12: from anchor 2020-01 (level 100) the ramp
 # reaches 112 by +6m, crossing the 1.05x threshold (105) → outcome YES. Its

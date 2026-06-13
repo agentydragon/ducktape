@@ -7,7 +7,7 @@ use axum::extract::{OriginalUri, State};
 use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::{Router, routing::get};
 use log::info;
-use wayback_archive::{
+use wayback_cache::{
     ArchiveInputService, ArchiveResponse, archive_config_from_env, archive_store_from_config,
 };
 

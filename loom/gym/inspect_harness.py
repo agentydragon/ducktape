@@ -3,7 +3,7 @@
 Each gym task becomes an inspect `Sample` whose `files` land the
 as-of-truncated dossier under `/data`. The sandbox compose is generated per
 `as_of`: the agent container's only network route is the wayback proxy
-sidecar (`loom/wayback_proxy`), which answers every URL with the newest
+sidecar (`loom/wayback/proxy`), which answers every URL with the newest
 Internet Archive capture at-or-before the task's `as_of` — the as-of
 discipline stays physical (no direct egress) while the agent can research the
 pre-cutoff web. The react agent explores with a single bash tool (python3 +
@@ -12,7 +12,7 @@ a data toolkit are in the sandbox image, run via the shell) and must call
 losses (full metric set in `Score.metadata`, headline metric as the value).
 
 Runs need two images on the local Docker daemon: the proxy
-(`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
+(`bazelisk run //loom/wayback/proxy:load`) and the agent sandbox
 (`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`). For real evals
 point `wayback_upstream` at the shared cluster pull-through cache so IA is
 never hammered directly — from out of cluster use its authed gateway route

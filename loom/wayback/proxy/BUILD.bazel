@@ -38,7 +38,7 @@ py_library(
 
 py_binary(
     name = "wayback_proxy",
-    main_module = "loom.wayback_proxy.server",
+    main_module = "loom.wayback.proxy.server",
     deps = [":server"],
 )
 

@@ -20,14 +20,14 @@ from textwrap import dedent
 import pytest
 import pytest_bazel
 
-from loom.wayback_proxy import fake_ia
+from loom.wayback.proxy import fake_ia
 from third_party.containers.rlocations import PYTHON_3_13_SLIM
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback_proxy/image_info.rloc", "wayback-proxy:latest")
-COMPOSE_RLOCATION = "_main/loom/wayback_proxy/compose.yaml"
+WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", "wayback-proxy:latest")
+COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
 
 
 @dataclass(frozen=True)

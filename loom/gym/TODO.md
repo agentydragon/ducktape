@@ -4,12 +4,12 @@
   rerun.** The 33-task `glm-4.5` archive-backed rerun with
   `--message-limit 1000` and `--compaction-threshold-tokens 115000` completed
   with 33/33 scored answers; the run notes and filler fetch counters are in
-  <../wayback_archive/PLAN.md>. Remaining work: manually reprobe the known bad
+  <../wayback/cache/PLAN.md>. Remaining work: manually reprobe the known bad
   CDX query, burst-test cold CDX/replay misses, and confirm `in_flight` returns
   to zero while
-  `wayback_archive_acquisition_failures_total{endpoint,reason,status}` separates
+  `wayback_cache_acquisition_failures_total{endpoint,reason,status}` separates
   queue timeout from upstream retry/backoff. Archive-service design/status is in
-  <../wayback_archive/PLAN.md>, the eval-run procedure is in <k8s/README.md>,
+  <../wayback/cache/PLAN.md>, the eval-run procedure is in <k8s/README.md>,
   and IA API notes are in <../docs/archive_org_apis.md>.
 
 - **Rename `baseline_llm.py`.** Once the bare one-shot LLM scaffold is gone, the

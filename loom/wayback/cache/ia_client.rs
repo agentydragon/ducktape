@@ -84,7 +84,7 @@ impl ReqwestIaClient {
             client: reqwest::Client::builder()
                 .use_rustls_tls()
                 .redirect(reqwest::redirect::Policy::none())
-                .user_agent("ducktape-wayback-archive/1 (+agentydragon@gmail.com)")
+                .user_agent("ducktape-wayback-cache/1 (+agentydragon@gmail.com)")
                 .build()?,
             timeouts,
         })
