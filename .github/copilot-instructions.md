@@ -6,7 +6,7 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 
 "Ducktape" is a personal infrastructure repository. Key areas:
 
-- **Agent Framework** (`agent_cli/`, `x/agent_server/`, `agent_pkg/`) - Agent REPL, FastAPI backend, runtime
+- **Agent Framework** (`x/agent_cli/`, `x/agent_server/`, `agent_pkg/`) - Agent REPL, FastAPI backend, runtime
 - **Props** (`props/`) - Code evaluation system with Docker-based E2E tests
 - **MCP Infrastructure** (`mcp_infra/`) - MCP compositor and utilities
 - **Infrastructure Automation** (`ansible/`) - System configuration and deployment

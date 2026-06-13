@@ -1128,20 +1128,30 @@ fn find_matching_body_ranges(
     if needles.is_empty() || needles.len() > runtime_module.body.len() {
         return Vec::new();
     }
-    let prepared: Vec<PreparedNeedle> = needles
-        .iter()
-        .map(|needle| PreparedNeedle::new(needle, selector))
-        .collect();
+    if let [needle] = needles {
+        let prepared = PreparedNeedle::new(needle, selector);
+        return runtime_module
+            .body
+            .iter()
+            .enumerate()
+            .filter_map(|(body_idx, candidate)| prepared.matches(candidate).then_some(body_idx))
+            .collect();
+    }
+    let wildcard_idents = wildcard_ident_names_for_module_items(needles);
+    let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
     runtime_module
         .body
         .windows(needles.len())
         .enumerate()
         .filter_map(|(body_idx, candidates)| {
-            prepared
-                .iter()
-                .zip(candidates)
-                .all(|(needle, candidate)| needle.matches(candidate))
-                .then_some(body_idx)
+            SyntaxContext::within_ignored_ctxt(|| {
+                let mut matcher = AstWildcardMatcher::new(selector, &wildcard_idents, alpha);
+                needles
+                    .iter()
+                    .zip(candidates)
+                    .all(|(needle, candidate)| matcher.match_module_item(needle, candidate))
+            })
+            .then_some(body_idx)
         })
         .collect()
 }

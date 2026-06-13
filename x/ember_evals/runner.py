@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from ember.integrations.gitea import GiteaRepository
+from x.ember.integrations.gitea import GiteaRepository
 from x.ember_evals.common import CommandError, dump_yaml, merge_dict, run_command
 from x.ember_evals.definitions import ScenarioSuite
 from x.ember_evals.executor import ScenarioExecutor

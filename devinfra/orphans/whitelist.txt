@@ -100,7 +100,7 @@ finance/worthy/worthy/graph.js
 **/package.json
 
 # JSON config/example files
-agent_cli/example.mcp.json
+x/agent_cli/example.mcp.json
 devinfra/claude/web_env/diff-report.json
 devinfra/lockfile.json
 

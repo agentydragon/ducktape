@@ -373,6 +373,42 @@ members:
     }
 
     #[test]
+    fn read_module_file_accepts_binding_group_comments() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("x.yaml");
+        fs::write(
+            &path,
+            r#"binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      match: "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"
+    adopt_names: true
+    comments:
+      primary: |
+        Primary selected value.
+      secondary: Secondary selected value.
+"#,
+        )
+        .unwrap();
+
+        let module = read_module_file(&path).unwrap();
+        assert_eq!(module.binding_groups.len(), 1);
+        assert_eq!(
+            module.binding_groups[0].comments,
+            BTreeMap::from([
+                (
+                    "primary".to_string(),
+                    "Primary selected value.\n".to_string()
+                ),
+                (
+                    "secondary".to_string(),
+                    "Secondary selected value.".to_string()
+                ),
+            ]),
+        );
+    }
+
+    #[test]
     fn read_module_file_accepts_comment_field_on_anonymous_statement() {
         // `AnonymousStatement` accepts `comment:` alongside `note:`
         // (both `Option<String>`). `comment:` is the JS-visible prose
