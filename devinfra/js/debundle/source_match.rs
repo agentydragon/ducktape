@@ -99,18 +99,6 @@ pub fn binding_group_member_selectors(
              `target_binding`; use the `exports` keys to choose selector-local bindings"
         );
     }
-    if group.source_match.target_statement.is_some() {
-        bail!(
-            "logical_module {request_id}: binding_groups[].source_match must not include \
-             `target_statement`; use it only on anonymous_statements[].source_match"
-        );
-    }
-    if group.source_match.target_statements.is_some() {
-        bail!(
-            "logical_module {request_id}: binding_groups[].source_match must not include \
-             `target_statements`; use it only on anonymous_statements[].source_match"
-        );
-    }
     let exports = effective_binding_group_exports(group, request_id)?;
     let unknown_comments = group
         .comments
@@ -130,6 +118,8 @@ pub fn binding_group_member_selectors(
         .map(|(target_binding, export_name)| {
             let mut selector = group.source_match.selector();
             selector.target_binding = Some(target_binding.clone());
+            selector.target_statement = None;
+            selector.target_statements = None;
             let comment = group.comments.get(&target_binding).cloned();
             BindingGroupMemberSelector {
                 export_name,
@@ -138,6 +128,19 @@ pub fn binding_group_member_selectors(
             }
         })
         .collect())
+}
+
+pub fn binding_group_anonymous_statement_selector(
+    group: &BindingGroup,
+) -> Option<AnonymousStatementSelector> {
+    if group.source_match.target_statement.is_none()
+        && group.source_match.target_statements.is_none()
+    {
+        return None;
+    }
+    let mut selector = group.source_match.selector();
+    selector.target_binding = None;
+    Some(selector)
 }
 
 fn effective_binding_group_exports(
@@ -427,9 +430,9 @@ pub fn resolve_member_binding_group(
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let ranges = find_matching_body_ranges(runtime_module, &parsed.body, selector);
-    let body_idx = match ranges.as_slice() {
-        [single] => *single,
+    let alignments = find_matching_body_group_alignments(runtime_module, &parsed.body, selector);
+    let alignment = match alignments.as_slice() {
+        [single] => single,
         [] => {
             let hint = source_match_no_match_hint(runtime_module, selector);
             bail!(
@@ -445,14 +448,25 @@ pub fn resolve_member_binding_group(
              `{target_hint}` is ambiguous — matched {} top-level declaration ranges at body \
              indices {:?}. Refine the selector. Source:\n{match_source}",
             multiple.len(),
-            multiple,
+            multiple
+                .iter()
+                .map(|alignment| alignment.iter().flatten().copied().collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
             match_source = selector.match_source,
         ),
     };
 
     let mut resolved = BTreeMap::new();
     for (target_binding, (target_item_idx, target_binding_idx)) in target_locations {
-        let matched_body_idx = body_idx + target_item_idx;
+        let Some(Some(matched_body_idx)) = alignment.get(target_item_idx) else {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match target_binding \
+                 `{target_binding}` was matched by a STMT_LIST hole instead of a pinned \
+                 selector statement. Refine the selector:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        };
+        let matched_body_idx = *matched_body_idx;
         let item = runtime_module.body.get(matched_body_idx).with_context(|| {
             format!("body index {matched_body_idx} disappeared while resolving source_match")
         })?;

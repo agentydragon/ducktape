@@ -352,6 +352,26 @@ bindings. An explicit `exports` entry on the same group overrides the adopted
 public name for that selector-local binding. `comments` is keyed by
 selector-local binding name and emits like `members[].comment` after expansion.
 
+When the same source window should export bindings and move adjacent
+side-effect statements, put `target_statement` or `target_statements` on the
+binding group's `source_match`. Binding exports are still controlled by
+`exports` / `adopt_names`, while the selected statement indices are claimed as
+anonymous statements from the same structural match:
+
+```yaml
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      target_statements: [1, 2]
+      match: |
+        let recordSlot, replaySlot;
+        true && (replaySlot = "replay");
+        false || (recordSlot = "record");
+    exports:
+      recordSlot: recordBridge
+      replaySlot: replayBridge
+```
+
 When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
 list, use declarator-list holes instead of spelling unrelated siblings:
 

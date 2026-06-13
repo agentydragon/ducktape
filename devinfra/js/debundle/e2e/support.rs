@@ -128,6 +128,17 @@ impl BindingGroup {
         self.comments = comments.iter().copied().collect();
         self
     }
+
+    pub fn with_target_statements(mut self, target_statements: &[usize]) -> Self {
+        self.source_match.target_statements =
+            Some(FixtureTargetStatements::Indices(target_statements.to_vec()));
+        self
+    }
+
+    pub fn with_target_statements_all(mut self) -> Self {
+        self.source_match.target_statements = Some(FixtureTargetStatements::All("all"));
+        self
+    }
 }
 
 impl Member {
