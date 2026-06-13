@@ -1404,21 +1404,39 @@ struct VarDeclaratorPrefilter {
     /// disables the name key (wildcards, alpha mode, or a
     /// destructuring pattern).
     needle_ident: Option<Atom>,
+    /// Exact string-literal initializer of the needle declarator. This
+    /// remains sound in alpha mode because alpha only renames
+    /// identifiers; string literals must still match exactly unless
+    /// selector-level string wildcards are enabled.
+    needle_string_init: Option<String>,
 }
 
 impl VarDeclaratorPrefilter {
     fn new(needle: &ModuleItem, prepared: &PreparedNeedle) -> Self {
         let needle_var = selector_single_var_declarator(needle)
             .expect("caller checked the needle is a single-declarator var decl");
+        let needle_declarator = &needle_var.decls[0];
         let needle_ident = (prepared.no_wildcards && !prepared.alpha)
-            .then(|| match &needle_var.decls[0].name {
+            .then(|| match &needle_declarator.name {
                 Pat::Ident(ident) => Some(ident.id.sym.clone()),
                 _ => None,
+            })
+            .flatten();
+        let needle_string_init = prepared
+            .selector
+            .wildcard_string_literals
+            .is_empty()
+            .then(|| {
+                needle_declarator
+                    .init
+                    .as_deref()
+                    .and_then(string_literal_expr_value)
             })
             .flatten();
         Self {
             needle_kind: needle_var.kind,
             needle_ident,
+            needle_string_init,
         }
     }
 
@@ -1427,10 +1445,27 @@ impl VarDeclaratorPrefilter {
     }
 
     fn declarator_can_match(&self, declarator: &VarDeclarator) -> bool {
-        let Some(needle_sym) = &self.needle_ident else {
+        if let Some(needle_sym) = &self.needle_ident
+            && !matches!(&declarator.name, Pat::Ident(ident) if ident.id.sym == *needle_sym)
+        {
+            return false;
+        }
+        let Some(needle_string_init) = &self.needle_string_init else {
             return true;
         };
-        matches!(&declarator.name, Pat::Ident(ident) if ident.id.sym == *needle_sym)
+        declarator
+            .init
+            .as_deref()
+            .and_then(string_literal_expr_value)
+            .as_ref()
+            == Some(needle_string_init)
+    }
+}
+
+fn string_literal_expr_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Lit(Lit::Str(str_)) => Some(str_.value.to_string_lossy().to_string()),
+        _ => None,
     }
 }
 
@@ -2891,6 +2926,69 @@ impl Visit for AlphaShorthandSensitiveVisitor {
             }
             _ => prop.visit_children_with(self),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn selector(match_source: &str) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            match_source: match_source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: None,
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        }
+    }
+
+    fn parse_one(source: &str) -> ModuleItem {
+        js_ast::with_swc_globals(|| {
+            let mut module = js_ast::parse_js_module_ast("<test>", source).unwrap();
+            assert_eq!(module.body.len(), 1);
+            module.body.remove(0)
+        })
+    }
+
+    fn prefilter_for(
+        needle: &ModuleItem,
+        selector: &AnonymousStatementSelector,
+    ) -> VarDeclaratorPrefilter {
+        let prepared = PreparedNeedle::new(needle, selector);
+        VarDeclaratorPrefilter::new(needle, &prepared)
+    }
+
+    fn single_declarator(item: &ModuleItem) -> &VarDeclarator {
+        let var = item_var_decl(item).unwrap();
+        assert_eq!(var.decls.len(), 1);
+        &var.decls[0]
+    }
+
+    #[test]
+    fn var_declarator_prefilter_uses_string_literal_in_alpha_mode() {
+        let selector = selector(r#"const readableName = "stable-css-class";"#);
+        let needle = parse_one(&selector.match_source);
+        let prefilter = prefilter_for(&needle, &selector);
+        let matching = parse_one(r#"const minifiedName = "stable-css-class";"#);
+        let non_matching = parse_one(r#"const otherName = "other-css-class";"#);
+
+        assert!(prefilter.declarator_can_match(single_declarator(&matching)));
+        assert!(!prefilter.declarator_can_match(single_declarator(&non_matching)));
+    }
+
+    #[test]
+    fn var_declarator_prefilter_respects_string_literal_wildcards() {
+        let mut selector = selector(r#"const readableName = "STRING_HOLE";"#);
+        selector
+            .wildcard_string_literals
+            .insert("STRING_HOLE".to_string());
+        let needle = parse_one(&selector.match_source);
+        let prefilter = prefilter_for(&needle, &selector);
+        let candidate = parse_one(r#"const minifiedName = "runtime-css-class";"#);
+
+        assert!(prefilter.declarator_can_match(single_declarator(&candidate)));
     }
 }
 
