@@ -1395,8 +1395,8 @@ impl<'a> PreparedNeedle<'a> {
                     return false;
                 }
                 // Without wildcards the two trees have identical shape,
-                // so global alpha-canonicalization cannot desync — keep
-                // that cheap path.
+                // so scoped alpha-canonicalization can stay on the cheap
+                // clone-and-compare path.
                 if let Some(canonical_needle) = &self.canonical_needle {
                     let mut candidate = candidate.clone();
                     candidate
@@ -1473,6 +1473,12 @@ struct WildcardReplacements {
     statements: BTreeMap<String, Stmt>,
 }
 
+#[derive(Clone, Default)]
+struct AlphaMatchScope {
+    forward: BTreeMap<Atom, Atom>,
+    backward: BTreeMap<Atom, Atom>,
+}
+
 struct AstWildcardMatcher<'a> {
     selector: &'a AnonymousStatementSelector,
     wildcard_idents: &'a WildcardIdents,
@@ -1485,8 +1491,7 @@ struct AstWildcardMatcher<'a> {
     /// bijection — so a hole no longer desyncs the numbering of the nodes
     /// after it, and there is no per-comparison clone + canonicalize.
     alpha: bool,
-    ident_forward: BTreeMap<Atom, Atom>,
-    ident_backward: BTreeMap<Atom, Atom>,
+    alpha_scopes: Vec<AlphaMatchScope>,
 }
 
 /// A clone of the matcher's mutable binding state, captured before a
@@ -1497,8 +1502,7 @@ struct AstWildcardMatcher<'a> {
 #[derive(Clone)]
 struct MatcherState {
     replacements: WildcardReplacements,
-    ident_forward: BTreeMap<Atom, Atom>,
-    ident_backward: BTreeMap<Atom, Atom>,
+    alpha_scopes: Vec<AlphaMatchScope>,
 }
 
 /// Loop-invariant inputs for the recursive ordered-subsequence search in
@@ -1529,29 +1533,60 @@ impl<'a> AstWildcardMatcher<'a> {
             wildcard_idents,
             replacements: WildcardReplacements::default(),
             alpha,
-            ident_forward: BTreeMap::new(),
-            ident_backward: BTreeMap::new(),
+            alpha_scopes: vec![AlphaMatchScope::default()],
         }
     }
 
-    /// Match two value/binding identifier symbols. In exact mode they
-    /// must be equal; in alpha mode they must be consistent with the
-    /// identifier bijection (each needle symbol maps to exactly one
-    /// candidate symbol and vice versa).
+    fn with_alpha_scope(&mut self, f: impl FnOnce(&mut Self) -> bool) -> bool {
+        if !self.alpha {
+            return f(self);
+        }
+        self.alpha_scopes.push(AlphaMatchScope::default());
+        let ok = f(self);
+        self.alpha_scopes.pop();
+        ok
+    }
+
+    /// Match two identifier references. In alpha mode, references first
+    /// consult the visible lexical scope stack, then create a mapping in
+    /// the current scope if neither side is known yet.
     fn match_sym(&mut self, needle: &Atom, candidate: &Atom) -> bool {
         if !self.alpha {
             return needle == candidate;
         }
-        match (
-            self.ident_forward.get(needle),
-            self.ident_backward.get(candidate),
-        ) {
+
+        for scope in self.alpha_scopes.iter().rev() {
+            if let Some(mapped) = scope.forward.get(needle) {
+                return mapped == candidate;
+            }
+            if scope.backward.contains_key(candidate) {
+                return false;
+            }
+        }
+        self.bind_alpha_sym_in_current_scope(needle, candidate)
+    }
+
+    /// Match two binding identifiers. Unlike references, a binding is
+    /// allowed to shadow an outer binding with the same spelling, so only
+    /// the current lexical frame is consulted before creating the pair.
+    fn match_binding_sym(&mut self, needle: &Atom, candidate: &Atom) -> bool {
+        if !self.alpha {
+            return needle == candidate;
+        }
+        self.bind_alpha_sym_in_current_scope(needle, candidate)
+    }
+
+    fn bind_alpha_sym_in_current_scope(&mut self, needle: &Atom, candidate: &Atom) -> bool {
+        let scope = self
+            .alpha_scopes
+            .last_mut()
+            .expect("alpha matcher always has a root scope");
+        match (scope.forward.get(needle), scope.backward.get(candidate)) {
             (Some(mapped), _) => mapped == candidate,
             (None, Some(_)) => false,
             (None, None) => {
-                self.ident_forward.insert(needle.clone(), candidate.clone());
-                self.ident_backward
-                    .insert(candidate.clone(), needle.clone());
+                scope.forward.insert(needle.clone(), candidate.clone());
+                scope.backward.insert(candidate.clone(), needle.clone());
                 true
             }
         }
@@ -1561,9 +1596,43 @@ impl<'a> AstWildcardMatcher<'a> {
         needle.optional == candidate.optional && self.match_sym(&needle.sym, &candidate.sym)
     }
 
+    fn match_binding_ident(&mut self, needle: &Ident, candidate: &Ident) -> bool {
+        needle.optional == candidate.optional && self.match_binding_sym(&needle.sym, &candidate.sym)
+    }
+
+    fn match_binding_binding_ident(
+        &mut self,
+        needle: &BindingIdent,
+        candidate: &BindingIdent,
+    ) -> bool {
+        needle.type_ann.eq_ignore_span(&candidate.type_ann)
+            && self.match_binding_ident(&needle.id, &candidate.id)
+    }
+
+    fn match_binding_ident_as_ref(
+        &mut self,
+        needle: &BindingIdent,
+        candidate: &BindingIdent,
+    ) -> bool {
+        needle.type_ann.eq_ignore_span(&candidate.type_ann)
+            && self.match_ident(&needle.id, &candidate.id)
+    }
+
     fn match_opt_ident(&mut self, needle: &Option<Ident>, candidate: &Option<Ident>) -> bool {
         match (needle, candidate) {
             (Some(needle), Some(candidate)) => self.match_ident(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_opt_binding_ident(
+        &mut self,
+        needle: &Option<Ident>,
+        candidate: &Option<Ident>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_binding_ident(needle, candidate),
             (None, None) => true,
             _ => false,
         }
@@ -1668,12 +1737,12 @@ impl<'a> AstWildcardMatcher<'a> {
         match (needle, candidate) {
             (Decl::Var(needle), Decl::Var(candidate)) => self.match_var_decl(needle, candidate),
             (Decl::Fn(needle), Decl::Fn(candidate)) => {
-                self.match_ident(&needle.ident, &candidate.ident)
+                self.match_binding_ident(&needle.ident, &candidate.ident)
                     && needle.declare == candidate.declare
                     && self.match_function(&needle.function, &candidate.function)
             }
             (Decl::Class(needle), Decl::Class(candidate)) => {
-                self.match_ident(&needle.ident, &candidate.ident)
+                self.match_binding_ident(&needle.ident, &candidate.ident)
                     && needle.declare == candidate.declare
                     && self.match_class(&needle.class, &candidate.class)
             }
@@ -1687,11 +1756,11 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_default_decl(&mut self, needle: &DefaultDecl, candidate: &DefaultDecl) -> bool {
         match (needle, candidate) {
             (DefaultDecl::Class(needle), DefaultDecl::Class(candidate)) => {
-                self.match_opt_ident(&needle.ident, &candidate.ident)
+                self.match_opt_binding_ident(&needle.ident, &candidate.ident)
                     && self.match_class(&needle.class, &candidate.class)
             }
             (DefaultDecl::Fn(needle), DefaultDecl::Fn(candidate)) => {
-                self.match_opt_ident(&needle.ident, &candidate.ident)
+                self.match_opt_binding_ident(&needle.ident, &candidate.ident)
                     && self.match_function(&needle.function, &candidate.function)
             }
             _ => needle.eq_ignore_span(candidate),
@@ -1699,17 +1768,18 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_function(&mut self, needle: &Function, candidate: &Function) -> bool {
-        self.match_slice(&needle.params, &candidate.params, Self::match_param)
-            && self.match_slice(
-                &needle.decorators,
-                &candidate.decorators,
-                Self::match_decorator,
-            )
-            && needle.is_generator == candidate.is_generator
+        self.match_slice(
+            &needle.decorators,
+            &candidate.decorators,
+            Self::match_decorator,
+        ) && needle.is_generator == candidate.is_generator
             && needle.is_async == candidate.is_async
             && needle.type_params.eq_ignore_span(&candidate.type_params)
             && needle.return_type.eq_ignore_span(&candidate.return_type)
-            && self.match_option_block_stmt(&needle.body, &candidate.body)
+            && self.with_alpha_scope(|matcher| {
+                matcher.match_slice(&needle.params, &candidate.params, Self::match_param)
+                    && matcher.match_option_block_stmt(&needle.body, &candidate.body)
+            })
     }
 
     fn match_param(&mut self, needle: &Param, candidate: &Param) -> bool {
@@ -1889,12 +1959,14 @@ impl<'a> AstWildcardMatcher<'a> {
                     && self.match_tpl(&needle.tpl, &candidate.tpl)
             }
             (Expr::Arrow(needle), Expr::Arrow(candidate)) => {
-                self.match_slice(&needle.params, &candidate.params, Self::match_pat)
-                    && needle.is_async == candidate.is_async
+                needle.is_async == candidate.is_async
                     && needle.is_generator == candidate.is_generator
                     && needle.type_params.eq_ignore_span(&candidate.type_params)
                     && needle.return_type.eq_ignore_span(&candidate.return_type)
-                    && self.match_block_stmt_or_expr(&needle.body, &candidate.body)
+                    && self.with_alpha_scope(|matcher| {
+                        matcher.match_slice(&needle.params, &candidate.params, Self::match_pat)
+                            && matcher.match_block_stmt_or_expr(&needle.body, &candidate.body)
+                    })
             }
             (Expr::Yield(needle), Expr::Yield(candidate)) => {
                 needle.delegate == candidate.delegate
@@ -2095,8 +2167,10 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_catch_clause(&mut self, needle: &CatchClause, candidate: &CatchClause) -> bool {
-        self.match_option_pat(&needle.param, &candidate.param)
-            && self.match_block_stmt(&needle.body, &candidate.body)
+        self.with_alpha_scope(|matcher| {
+            matcher.match_option_pat(&needle.param, &candidate.param)
+                && matcher.match_block_stmt(&needle.body, &candidate.body)
+        })
     }
 
     fn match_var_decl_or_expr(
@@ -2120,7 +2194,9 @@ impl<'a> AstWildcardMatcher<'a> {
             (ForHead::VarDecl(needle), ForHead::VarDecl(candidate)) => {
                 self.match_var_decl(needle, candidate)
             }
-            (ForHead::Pat(needle), ForHead::Pat(candidate)) => self.match_pat(needle, candidate),
+            (ForHead::Pat(needle), ForHead::Pat(candidate)) => {
+                self.match_ref_pat(needle, candidate)
+            }
             _ => needle.eq_ignore_span(candidate),
         }
     }
@@ -2150,8 +2226,7 @@ impl<'a> AstWildcardMatcher<'a> {
             }
             (Pat::Expr(needle), Pat::Expr(candidate)) => self.match_expr(needle, candidate),
             (Pat::Ident(needle), Pat::Ident(candidate)) => {
-                needle.type_ann.eq_ignore_span(&candidate.type_ann)
-                    && self.match_ident(&needle.id, &candidate.id)
+                self.match_binding_binding_ident(needle, candidate)
             }
             _ => needle.eq_ignore_span(candidate),
         }
@@ -2169,12 +2244,78 @@ impl<'a> AstWildcardMatcher<'a> {
                     && self.match_pat(&needle.value, &candidate.value)
             }
             (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
-                needle.key.eq_ignore_span(&candidate.key)
+                self.match_binding_binding_ident(&needle.key, &candidate.key)
                     && self.match_option_box_expr(&needle.value, &candidate.value)
             }
             (ObjectPatProp::Rest(needle), ObjectPatProp::Rest(candidate)) => {
                 needle.type_ann.eq_ignore_span(&candidate.type_ann)
                     && self.match_pat(&needle.arg, &candidate.arg)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_ref_pat(&mut self, needle: &Pat, candidate: &Pat) -> bool {
+        match (needle, candidate) {
+            (Pat::Array(needle), Pat::Array(candidate)) => {
+                needle.optional == candidate.optional
+                    && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_slice(&needle.elems, &candidate.elems, Self::match_option_ref_pat)
+            }
+            (Pat::Object(needle), Pat::Object(candidate)) => {
+                needle.optional == candidate.optional
+                    && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_slice(
+                        &needle.props,
+                        &candidate.props,
+                        Self::match_ref_object_pat_prop,
+                    )
+            }
+            (Pat::Assign(needle), Pat::Assign(candidate)) => {
+                self.match_ref_assign_pat(needle, candidate)
+            }
+            (Pat::Rest(needle), Pat::Rest(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_ref_pat(&needle.arg, &candidate.arg)
+            }
+            (Pat::Expr(needle), Pat::Expr(candidate)) => self.match_expr(needle, candidate),
+            (Pat::Ident(needle), Pat::Ident(candidate)) => {
+                self.match_binding_ident_as_ref(needle, candidate)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_option_ref_pat(&mut self, needle: &Option<Pat>, candidate: &Option<Pat>) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_ref_pat(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_ref_assign_pat(&mut self, needle: &AssignPat, candidate: &AssignPat) -> bool {
+        self.match_ref_pat(&needle.left, &candidate.left)
+            && self.match_expr(&needle.right, &candidate.right)
+    }
+
+    fn match_ref_object_pat_prop(
+        &mut self,
+        needle: &ObjectPatProp,
+        candidate: &ObjectPatProp,
+    ) -> bool {
+        match (needle, candidate) {
+            (ObjectPatProp::KeyValue(needle), ObjectPatProp::KeyValue(candidate)) => {
+                needle.key.eq_ignore_span(&candidate.key)
+                    && self.match_ref_pat(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
+                self.match_binding_ident_as_ref(&needle.key, &candidate.key)
+                    && self.match_option_box_expr(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::Rest(needle), ObjectPatProp::Rest(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_ref_pat(&needle.arg, &candidate.arg)
             }
             _ => false,
         }
@@ -2303,8 +2444,10 @@ impl<'a> AstWildcardMatcher<'a> {
             (Prop::Setter(needle), Prop::Setter(candidate)) => {
                 self.match_prop_name(&needle.key, &candidate.key)
                     && needle.this_param.eq_ignore_span(&candidate.this_param)
-                    && self.match_pat(&needle.param, &candidate.param)
-                    && self.match_option_block_stmt(&needle.body, &candidate.body)
+                    && self.with_alpha_scope(|matcher| {
+                        matcher.match_pat(&needle.param, &candidate.param)
+                            && matcher.match_option_block_stmt(&needle.body, &candidate.body)
+                    })
             }
             (Prop::Method(needle), Prop::Method(candidate)) => {
                 self.match_prop_name(&needle.key, &candidate.key)
@@ -2387,11 +2530,14 @@ impl<'a> AstWildcardMatcher<'a> {
     ) -> bool {
         match (needle, candidate) {
             (AssignTargetPat::Array(needle), AssignTargetPat::Array(candidate)) => {
-                self.match_slice(&needle.elems, &candidate.elems, Self::match_option_pat)
+                self.match_slice(&needle.elems, &candidate.elems, Self::match_option_ref_pat)
             }
-            (AssignTargetPat::Object(needle), AssignTargetPat::Object(candidate)) => {
-                self.match_slice(&needle.props, &candidate.props, Self::match_object_pat_prop)
-            }
+            (AssignTargetPat::Object(needle), AssignTargetPat::Object(candidate)) => self
+                .match_slice(
+                    &needle.props,
+                    &candidate.props,
+                    Self::match_ref_object_pat_prop,
+                ),
             _ => needle.eq_ignore_span(candidate),
         }
     }
@@ -2510,16 +2656,17 @@ impl<'a> AstWildcardMatcher<'a> {
 
     fn match_constructor(&mut self, needle: &Constructor, candidate: &Constructor) -> bool {
         needle.key.eq_ignore_span(&candidate.key)
-            && self.match_slice(
-                &needle.params,
-                &candidate.params,
-                Self::match_param_or_ts_param_prop,
-            )
             && needle
                 .accessibility
                 .eq_ignore_span(&candidate.accessibility)
             && needle.is_optional == candidate.is_optional
-            && self.match_option_block_stmt(&needle.body, &candidate.body)
+            && self.with_alpha_scope(|matcher| {
+                matcher.match_slice(
+                    &needle.params,
+                    &candidate.params,
+                    Self::match_param_or_ts_param_prop,
+                ) && matcher.match_option_block_stmt(&needle.body, &candidate.body)
+            })
     }
 
     fn match_param_or_ts_param_prop(
@@ -2560,7 +2707,7 @@ impl<'a> AstWildcardMatcher<'a> {
     ) -> bool {
         match (needle, candidate) {
             (TsParamPropParam::Ident(needle), TsParamPropParam::Ident(candidate)) => {
-                needle.eq_ignore_span(candidate)
+                self.match_binding_binding_ident(needle, candidate)
             }
             (TsParamPropParam::Assign(needle), TsParamPropParam::Assign(candidate)) => {
                 self.match_assign_pat(needle, candidate)
@@ -3017,15 +3164,13 @@ impl<'a> AstWildcardMatcher<'a> {
     fn snapshot(&self) -> MatcherState {
         MatcherState {
             replacements: self.replacements.clone(),
-            ident_forward: self.ident_forward.clone(),
-            ident_backward: self.ident_backward.clone(),
+            alpha_scopes: self.alpha_scopes.clone(),
         }
     }
 
     fn restore(&mut self, state: MatcherState) {
         self.replacements = state.replacements;
-        self.ident_forward = state.ident_forward;
-        self.ident_backward = state.ident_backward;
+        self.alpha_scopes = state.alpha_scopes;
     }
 
     fn match_slice<T>(
@@ -3043,15 +3188,21 @@ impl<'a> AstWildcardMatcher<'a> {
 }
 
 #[derive(Default)]
+struct AlphaCanonicalScope {
+    names: BTreeMap<Atom, Atom>,
+}
+
+#[derive(Default)]
 struct AlphaIdentCanonicalizer {
     next: usize,
-    names: BTreeMap<Atom, Atom>,
+    scopes: Vec<AlphaCanonicalScope>,
     reserved_idents: BTreeSet<String>,
 }
 
 impl AlphaIdentCanonicalizer {
     fn new(wildcard_idents: &WildcardIdents) -> Self {
         Self {
+            scopes: vec![AlphaCanonicalScope::default()],
             reserved_idents: wildcard_idents
                 .expressions
                 .iter()
@@ -3067,13 +3218,37 @@ impl AlphaIdentCanonicalizer {
 }
 
 impl AlphaIdentCanonicalizer {
-    fn canonical(&mut self, sym: &Atom) -> Atom {
-        if let Some(existing) = self.names.get(sym) {
+    fn with_scope(&mut self, f: impl FnOnce(&mut Self)) {
+        self.scopes.push(AlphaCanonicalScope::default());
+        f(self);
+        self.scopes.pop();
+    }
+
+    fn visible_canonical(&self, sym: &Atom) -> Option<Atom> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.names.get(sym).cloned())
+    }
+
+    fn canonical_ref(&mut self, sym: &Atom) -> Atom {
+        if let Some(existing) = self.visible_canonical(sym) {
+            return existing;
+        }
+        self.canonical_binding(sym)
+    }
+
+    fn canonical_binding(&mut self, sym: &Atom) -> Atom {
+        let scope = self
+            .scopes
+            .last_mut()
+            .expect("alpha canonicalizer always has a root scope");
+        if let Some(existing) = scope.names.get(sym) {
             return existing.clone();
         }
         let canonical = Atom::from(format!("__debundle_alpha_{}", self.next));
         self.next += 1;
-        self.names.insert(sym.clone(), canonical.clone());
+        scope.names.insert(sym.clone(), canonical.clone());
         canonical
     }
 }
@@ -3083,7 +3258,26 @@ impl VisitMut for AlphaIdentCanonicalizer {
         if self.reserved_idents.contains(ident.sym.as_ref()) {
             return;
         }
-        ident.sym = self.canonical(&ident.sym);
+        ident.sym = self.canonical_ref(&ident.sym);
+    }
+
+    fn visit_mut_binding_ident(&mut self, ident: &mut BindingIdent) {
+        if !self.reserved_idents.contains(ident.id.sym.as_ref()) {
+            ident.id.sym = self.canonical_binding(&ident.id.sym);
+        }
+        ident.type_ann.visit_mut_with(self);
+    }
+
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        self.with_scope(|visitor| function.visit_mut_children_with(visitor));
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
+        self.with_scope(|visitor| arrow.visit_mut_children_with(visitor));
+    }
+
+    fn visit_mut_catch_clause(&mut self, catch_clause: &mut CatchClause) {
+        self.with_scope(|visitor| catch_clause.visit_mut_children_with(visitor));
     }
 
     fn visit_mut_member_expr(&mut self, member: &mut MemberExpr) {

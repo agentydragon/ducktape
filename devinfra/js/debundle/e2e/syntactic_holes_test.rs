@@ -33,6 +33,88 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn member_source_match_alpha_all_allows_name_reuse_in_sibling_function_scopes() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual(items) {
+  return items
+    .map((x) => {
+      const y = [];
+      y.push(x.label);
+      return y.join(":");
+    })
+    .filter((x) => x !== "")
+    .map((x) => x.toUpperCase())
+    .join(",");
+}
+console.log(actual([{ label: "left" }, { label: "right" }]));
+export { actual };
+"#,
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha(
+                "format_items",
+                r#"function readable(items) {
+  return items
+    .map((item) => {
+      const lines = [];
+      lines.push(item.label);
+      return lines.join(":");
+    })
+    .filter((line) => line !== "")
+    .map((line) => line.toUpperCase())
+    .join(",");
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "LEFT,RIGHT\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["function format_items", ".filter", ".map"],
+        &["function actual", "function readable"],
+    );
+}
+
+#[test]
+fn member_source_match_alpha_all_with_holes_allows_name_reuse_in_sibling_function_scopes() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual(items) {
+  return items
+    .map((x) => x.label.trim())
+    .filter((x) => x !== "")
+    .map((x) => x.toUpperCase())
+    .join(",");
+}
+console.log(actual([{ label: " left " }, { label: " right " }]));
+export { actual };
+"#,
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha(
+                "format_items",
+                r#"function readable(items) {
+  return items
+    .map((item) => EXPR)
+    .filter((line) => line !== "")
+    .map((line) => line.toUpperCase())
+    .join(",");
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "LEFT,RIGHT\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["function format_items", ".filter", ".map"],
+        &["EXPR", "function actual", "function readable"],
+    );
+}
+
+#[test]
 fn member_source_match_expr_prefix_holes_match_arbitrary_expression_subtrees() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
