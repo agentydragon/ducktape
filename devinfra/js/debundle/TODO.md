@@ -5,60 +5,112 @@ once closed; this file is not a changelog.
 
 ## Current AI-worker priority queue (2026-06-14)
 
-This queue captures the highest-leverage debundle work from the
-large-spec stabilization pass. Prefer dispatching work in this order until the
-old-spec selector-debt migration no longer needs special coordination.
+This queue captures the active debundle tooling program. Treat this file as
+the current priority source of truth; detailed design for the automation-first
+direction lives in <plans/automated_spec_workflows.md>. Other tracking files
+hold category-specific evidence:
 
-### P0 — directly unlock large structural-selector peels
+- <CLI_DOGFOOD.md> — command UX and scripting-safety gaps found while running
+  real workflows.
+- <SELECTOR_BUGS.md> — selector matcher bugs and diagnostics gaps, with
+  generic/anonymized examples.
+- <ARCHITECTURE_BACKLOG.md> — deeper internal refactors, only urgent when they
+  block the active workflows here.
+- <perf/> — measured performance notes. Update these from actual profiles
+  before major matcher/index rewrites.
 
-1. **Bulk selector codemods beyond current apply mode.** Extend
-   `debundle spec selector-codemod` with more proven mechanical rewrites across
-   a spec. Remaining high-value targets:
+Prefer dispatching work in this order. Large downstream spec migrations should
+lean on tooling generated from this queue instead of hand-authored YAML.
+Interactive agent-facing commands should target under 10 seconds on warmed
+inputs for the largest known downstream specs. Anything over 60 seconds is a
+workflow blocker unless the command is explicitly an offline/profile mode with
+progress output and a resumable or cacheable plan.
+
+### P0 — automation-first selector workflows
+
+1. **Minimal selector synthesis.** Implement the core operation "given this
+   binding, group, anonymous statement, or statement range, emit the simplest
+   selector that uniquely selects it." Start from exact source slices, relax
+   with holes, use source indexes to count candidates cheaply, and verify the
+   final selector through the real resolver. This is the primitive for new-spec
+   bootstrap, old-spec stabilization, and version-port repair.
+2. **Shared source inventory/index.** Extract a reusable per-chunk index for
+   top-level statement identity, binding identity, stable literals/keys,
+   canonical fingerprints, source slices, and candidate-count queries. Use it
+   from `selector-debt`, `selector-codemod`, repair diagnostics, and future
+   port tooling rather than adding more per-command AST walks.
+3. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
+   or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
+   preserve YAML comments where possible, apply with filters, and explain every
+   skipped candidate. High-value rewrite classes:
+   - minimize generated `name-only-source-match` selectors by replacing
+     unnecessary expression arguments, object properties, class members, and
+     statement ranges with `ANYTHING` / `OBJECT_PROPS` / `STMT_LIST` while
+     preserving uniqueness;
    - convert repeated member-form selectors over the same declaration context
      into one `binding_groups` entry;
-   - convert unique literal-initializer bindings into structural selectors
-     when the source value is stable enough;
+   - merge multiple eligible generated selectors from the same declaration into
+     one `binding_groups` entry;
    - source-aware reports or apply-safe rewrites for overpinned object literals
      that can now use `ANYTHING` / `OBJECT_PROPS` around stable keys.
-
-   Keep dry-run, path filters, JSON output, and an explanation for every
-   skipped candidate.
-
-2. **Selector diagnostics as machine-readable reports.** Emit a keep-going
+4. **Selector diagnostics as machine-readable reports.** Emit a keep-going
    JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
    and blocker comments. Include module path, export name, selector kind,
    target binding, first mismatch, nearest candidates, and recommended next
    action. This lets coordinators batch failures instead of scraping logs.
+5. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
+   report, proposes mechanically proven patch plans for no-match, ambiguous,
+   duplicate-claim, and unsupported-selector cases, and leaves residual semantic
+   decisions as explicit tasks.
+6. **Orthogonal CLI surface.** Converge new automation on the
+   inventory/plan/apply/validate/explain model in
+   <plans/automated_spec_workflows.md>. Avoid one-off command shapes that cannot
+   pipe a dry-run plan into review, apply, validation, and repair.
+7. **Workflow latency budget.** Keep P0 reports and dry-run patch planners
+   fast enough for iterative agent use: parse/index each chunk once, stream
+   NDJSON as work is found, emit per-phase timings, and treat >60s runs as
+   urgent perf bugs unless they are deliberately offline.
 
-### P1 — improves agent throughput and reviewability
+### P1 — broad workflow integration
 
-1. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
+1. **Version-port workflow.** Given v1 chunks + spec and v2 chunks, resolve v1
+   selectors to source identities/fingerprints, search v2 for matching
+   entities, apply confident selector repairs, and emit a residual report for
+   semantic drift.
+2. **New-app spec bootstrap.** Connect module proposals, naming output, and
+   selector synthesis so new debundle specs start with structural selectors and
+   an explicit debt/confidence report.
+3. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows, repeated selector
    bodies that can become binding groups, and "stable literal by value"
    candidates. Prefer output that can feed the P0 codemod dry-run.
-2. **Cross-module binding-group design.** Design a form for one matched source
+4. **Cross-module binding-group design.** Design a form for one matched source
    context to export bindings into different logical modules without duplicating
    the selector body.
-3. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
+5. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
    readable names that are free references rather than local binders, explain
    that they do not refer to previously exported symbols. Suggest grouping or
    holes.
-4. **Duplicate-claim identity.** Track claims by declaration identity instead
+6. **Duplicate-claim identity.** Track claims by declaration identity instead
    of only emitted/minified spelling; include declaration kind and source
    location in duplicate-claim diagnostics.
-5. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
+7. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
    private-corpus debundler issues can be reproduced and protected in public CI.
 
 ### P2 — pipeline performance and architecture cleanup
 
-1. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
+1. Use actual profiles to prioritize selector matching/index work. The expected
+   direction is one parse/index per chunk, prepared selector reuse, inverted
+   indexes for stable anchors, and memoized selector-body resolution; validate
+   each major change in <perf/>.
+2. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
    expensive reports they do not need.
-2. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
+3. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
    and Ducktape version.
-3. Add an AST-hash SWC codegen cache for unchanged post-lowering modules.
-4. Replace `JsChunk::{get_file,get_file_mut,remove_file}` linear scans with a
+4. Add an AST-hash SWC codegen cache for unchanged post-lowering modules.
+5. Replace `JsChunk::{get_file,get_file_mut,remove_file}` linear scans with a
    path-keyed index if fresh profiles show chunk file lookup hot.
-5. Move `split_entry_body` to a draining/move-based implementation if fresh
+6. Move `split_entry_body` to a draining/move-based implementation if fresh
    profiles show retained-statement cloning hot.
 
 ## Excalidraw live-browser smoke
@@ -176,54 +228,12 @@ observed. (The `owner:<id>`-in-spec-notes framing that used to live here was
 stale — no such mechanism exists; `owner:N` ids are machine-generated graph
 keys and a `describe`/`show-source` input, not a spec authoring hint.)
 
-## Completed-plan follow-ups
-
-- **Peel proposer contraction cleanup.** The quotient-contraction
-  proposer and lazy-priority-queue greedy driver are implemented and
-  documented in <docs/peel_proposer.md>. Remaining cleanup is narrow:
-  retire the hidden full-scan greedy reference only after the lazy-PQ
-  path has had release-cycle confidence, and add a diagnostic-only seed
-  rejection mode only if spec authors need a focused debugging surface.
-- **Chunk IR / schedule split remains deferred.** The completed IR cleanup plan
-  left one deliberately deferred refactor: split the "everything about chunk K
-  under partition P" state into a pure `ChunkIR` plus a `Schedule` only if a
-  downstream consumer actually needs one half without the other. If this happens,
-  move the `owner_report_ids_by_binding` cache to its report-only consumer and
-  have peelability build directly from `(ir, partition)`.
-- **Inter-cell cycle policing at assignment/render time.** The exact gate does
-  not reject mutually-cyclic residual cells itself; `peel/factorize.rs` reports
-  them as `BlockedResidualDependency`. If that is insufficient for
-  `bindings assign`, add a render-time cell-DAG / proposal-shape check rather
-  than reintroducing a realizability-gate rule.
-- **Proptest coverage for the gate differential harness.** Migrate
-  `peel/gate_differential_test.rs` from its deterministic xorshift sweep to
-  proptest strategies, matching the condensation-order and `RenameLedger`
-  proptest suites.
-- **Materialize-into-emit.** Let lowered outputs feed `write_js_tree` /
-  harness emission directly, dropping the `materialize_logical_modules`
-  bundle round-trip and post-materialize index rebuild. Details live in
-  <ARCHITECTURE_BACKLOG.md>.
-- **Post-strip consumer scan retirement.** Retire
-  `vendor/mod.rs::validate_partial_swap_consumers` only after construction
-  paths consult `VendorResolutionPlan` and e2e fixtures pin synthesized
-  consumer-directive shapes that fail without the scan. Details live in
-  <ARCHITECTURE_BACKLOG.md>.
-- **Program facts unification.** Fold
-  `program_analysis.rs::analyze_program_shallow` into the full program-facts
-  path, or derive it from that path, so the two top-level fact walks cannot
-  drift. Also tracked in <CODE_REVIEW.md>.
-- **Sanitization-era test cleanup.** Clean up the remaining small fixture debt:
-  consolidate the `logical_module_with_*` helpers in `e2e/support.rs`, remove
-  the hardcoded entry path from
-  `assert_generated_module_after_entry_script`, and replace brittle
-  whitespace OR-chain assertions. Also tracked in <CODE_REVIEW.md>.
-
 ## Structural selector language
 
-`source_match` and same-module `binding_groups` exist, but the selector
-language still needs more shape when porting real minified bundles. Keep
-new features generic and backed by synthetic e2e fixtures; do not encode
-private corpus details in Ducktape.
+Detailed workflow priorities live above and in
+<plans/automated_spec_workflows.md>. Remaining selector-language gaps should be
+implemented only when they unlock synthesis, stabilization, repair, or porting
+workflows, and must use generic synthetic fixtures.
 
 - **Contextual selectors.** Add readable `before` / `after` / `near`
   anchors for cases where the selected statement or declaration is
@@ -238,45 +248,10 @@ private corpus details in Ducktape.
   argument, callback body, object property value, or statement-list slot. This
   should avoid scanning unrelated subtrees while preserving the current rule
   that ambiguous matches are hard errors.
-- **Object-literal property holes.** Add a structural `source_match` list hole
-  for object literal properties, likely anonymous `OBJECT_PROPS` /
-  labeled `OBJECT_PROPS_name` shorthand entries inside an object literal. The
-  goal is to pin stable anchors such as
-  `{ requiredKey: EXPR, OBJECT_PROPS, anotherKey: EXPR }` without spelling every
-  unrelated key/value property or replacing the whole object with `EXPR`.
 - **Cross-module binding groups.** Current `binding_groups` export
   multiple bindings into one logical module. Add or design a form for
   one matched declaration context whose bindings should land in
   different modules, without repeating the whole source selector.
-- **Selector debt reporting.** Shipped as `debundle spec selector-debt`:
-  ranks name-only selectors by how minified the bound name looks, groups
-  `source_match` bodies copied verbatim across members / anonymous
-  statements / binding groups, and (via `--against`) diffs minified
-  bindings across two spec versions. A first **source-aware** slice exists
-  behind `--source-file` or `--source-root --chunk`: it parses the current
-  chunk and flags structural selectors that match exactly one top-level
-  statement today but have high-scoring non-matching sibling statements; it
-  also reports repeated selector bodies that resolve to the same exact body
-  indices and suggests `binding_groups` replacements for repeated member-form
-  `source_match` selectors over one multi-declarator variable declaration.
-  No-match diagnostics for `DECLARATORS_*` selectors now call out missing
-  before / between / after pseudo-declarator holes and explain the
-  `target_binding` versus `binding_groups` choice.
-- **Selector codemod apply mode.** Shipped as
-  `debundle spec selector-codemod`: dry-run-by-default, JSON-capable,
-  filterable application of the safe single-binding `target_binding` rewrite.
-  Remaining work: add an apply-mode rewrite for the existing source-aware
-  `binding_groups` suggestions, preserving member comments/export names while
-  deleting the repeated member-form selectors atomically.
-- **Selector debt remaining work.** Rank multi-statement windows, consider
-  owner-graph context where useful, and produce richer edit-distance
-  diagnostics for non-declarator selector shapes than the current
-  first-mismatch score/reason.
-- **Selector linting.** The report now exists (`spec selector-debt`); the
-  next step is an opt-in warning or gate that fails when a name-only
-  selector over an autogenerated/minified source scores above a threshold,
-  with an explicit escape hatch for cases where the name is genuinely
-  stable or no better structural handle exists.
 - **Matcher core cleanup.** Factor anonymous-statement and member-binding
   `source_match` resolution through a shared parse/canonicalize/window
   matcher before adding more selector variants.

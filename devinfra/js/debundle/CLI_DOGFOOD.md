@@ -22,6 +22,12 @@ The actual path now has a `+_repo_rules+` prefix:
 Generic usability follow-ups for the top-level planner commands.
 Corpus-specific paths and owner ids belong in the consuming repo.
 
+- **Orthogonal patch-plan workflow.** New spec automation should converge on
+  the inventory/plan/apply/validate/explain model in
+  <plans/automated_spec_workflows.md>. A dry-run that proposes edits should be
+  able to emit a stable plan artifact; apply should consume that artifact; repair
+  should consume validate diagnostics. Avoid adding isolated flags whose output
+  cannot feed the next command.
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds
   proposals and diagnostics and the `limits` summary reports totals
   when details are truncated, but there is still no explicit
@@ -41,5 +47,6 @@ Corpus-specific paths and owner ids belong in the consuming repo.
   module YAML with atomic-unit coverage, but it is not the only way to
   discover readable work: `atoms --readable-only` and `modules propose`
   may show graph-valid work even when no whole patch section is ready.
-  Docs and skill text should avoid implying that empty coverage output
-  means there is no landable work.
+  Docs and skill text should reserve "plan" for proposed edits that can be
+  reviewed/applied, and avoid implying that empty coverage output means there
+  is no landable work.

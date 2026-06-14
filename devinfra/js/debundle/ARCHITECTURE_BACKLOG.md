@@ -168,11 +168,18 @@ These files document the same project from multiple perspectives. Skimming them,
 
 ## Concerns to discuss before deciding
 
-### Gate simulator ↔ materializer import-order sharing (RESOLVED)
+### Entry-file universal-edge approximation
 
-The historical drift surface — the emitter placed phantom side-effect imports first in each emitted module while the simulator sorted ALL of a module's I-successors in one `linker_position` list, residual's missing universal entry imports, and the `usize::MAX` tie-break mismatch — is resolved: both sides now consume one shared ordering implementation, `esm_import_order::EsmImportOrder` (`sort_entry_imports` / `sort_module_imports`), built from the canonical `ChunkConstrainingEdgeSet`. The emitter renders the entry's per-plan import list (named imports for binding-owning plans, side-effect-only imports for binding-less plans) and each module's merged intra-chunk import list (binding + phantom + residual-entry, one sort) from it; the simulator (`realizability::EsmIGraph`) uses the same two sorts as DFS neighbor order, with residual fanning out to every I-graph module exactly as the emitted entry does. Do not reintroduce per-side ordering rules — encode any ordering requirement in `EsmImportOrder` so both sides inherit it.
-
-Remaining known approximation: the simulator roots at `partition.residual()` (the `anon_residual_sentinel` ≈ the entry file) and models its body as evaluating last. That is exact for the entry file in both `unassigned_mode`s; the `catchall_file` plan itself is an ordinary module and is modeled as one. Pass-2 candidate SCC enumeration still runs over the _real_ I-graph (no universal residual edges), so a module that eager-reads an entry-file binding when residual's own statements never reference that module forms no candidate SCC and is not checked — a narrow, pre-existing under-restriction (inline-mode-only: catchall chunks keep no TDZ-prone bindings in the entry file). Extending candidate enumeration with the universal entry edges would close it at the cost of much larger SCCs in the incremental planner path.
+The simulator and emitter now share import-ordering through
+`esm_import_order::EsmImportOrder`; keep it that way. The remaining
+approximation is narrower: pass-2 candidate SCC enumeration still runs over
+the real I-graph, without adding the entry-file residual module's universal
+edges. A module that eager-reads an entry-file binding when residual's own
+statements never reference that module can therefore avoid candidate SCC
+checking. This is a pre-existing inline-mode-only under-restriction; catchall
+chunks keep no TDZ-prone bindings in the entry file. Extending candidate
+enumeration with the universal entry edges would close it at the cost of much
+larger SCCs in the incremental planner path.
 
 ### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
 

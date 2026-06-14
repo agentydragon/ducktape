@@ -4,6 +4,15 @@ This note tracks stack-sample evidence for generic `source_match`
 selectors shaped like large direct literal sweeps. It intentionally uses
 only synthetic names and source.
 
+## Budget
+
+Selector-heavy agent workflows should be interactive: under 10 seconds on
+warmed inputs is the target, and sustained runs over 60 seconds on the largest
+known downstream specs are priority performance bugs unless the command is
+explicitly marked as an offline/profile mode. New matcher/index work should
+show either lower wall time or a material drop in timed selector resolutions on
+a broad workload, not only a microbenchmark win.
+
 ## Workload
 
 Target:
