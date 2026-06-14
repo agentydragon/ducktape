@@ -28,7 +28,7 @@
     return { kind: "list" };
   }
 
-  const route = parseRoute();
+  let route = $state<Route>(parseRoute());
 
   let pending = $state<Action[]>([]);
   let recent = $state<Action[]>([]);
@@ -42,45 +42,76 @@
     [pending, recent] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
   }
 
-  onMount(async () => {
-    // Best-effort deployment info — never blocks the page.
-    try {
-      const api = await getApiClient();
-      deploymentInfo = await api.getDeploymentInfo();
-    } catch {
-      // ignore — footer is hidden if we can't get it
-    }
-    if (route.kind === "action") {
+  onMount(() => {
+    // Re-parse the route on every hash navigation so menu clicks update the page,
+    // not just the URL.
+    const onHashChange = () => {
+      route = parseRoute();
+    };
+    window.addEventListener("hashchange", onHashChange);
+
+    // Best-effort deployment info — route-independent, loaded once for the footer.
+    (async () => {
       try {
         const api = await getApiClient();
-        await api.subscribeAction<Action>(route.sessionKey, route.actionSeq, (a) => {
-          action = a;
-          loading = false;
-          error = null;
-        });
-        if (loading) {
-          error = "Failed to read action resource";
-          loading = false;
-        }
-      } catch (err) {
-        error = String(err);
-        loading = false;
+        deploymentInfo = await api.getDeploymentInfo();
+      } catch {
+        // ignore — footer is hidden if we can't get it
       }
-    } else if (route.kind === "list") {
-      try {
-        await loadList();
-      } catch (e) {
-        error = String(e);
-      } finally {
-        loading = false;
-      }
+    })();
+
+    return () => window.removeEventListener("hashchange", onHashChange);
+  });
+
+  // Load route-specific data whenever the route changes. The cleanup tears down
+  // the previous route's subscription so stale callbacks don't mutate state.
+  $effect(() => {
+    const current = route;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    loading = true;
+    error = null;
+    action = null;
+
+    (async () => {
       const api = await getApiClient();
-      api.onListChanged(() => {
-        loadList();
-      });
-    } else {
-      loading = false;
-    }
+      if (cancelled) return;
+      if (current.kind === "action") {
+        try {
+          unsubscribe = await api.subscribeAction<Action>(current.sessionKey, current.actionSeq, (a) => {
+            action = a;
+            loading = false;
+            error = null;
+          });
+          if (loading && !cancelled) {
+            error = "Failed to read action resource";
+            loading = false;
+          }
+        } catch (err) {
+          if (!cancelled) {
+            error = String(err);
+            loading = false;
+          }
+        }
+      } else if (current.kind === "list") {
+        try {
+          await loadList();
+        } catch (e) {
+          if (!cancelled) error = String(e);
+        } finally {
+          if (!cancelled) loading = false;
+        }
+        unsubscribe = api.onListChanged(() => loadList());
+      } else {
+        loading = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   });
 </script>
 
