@@ -233,6 +233,25 @@ predicate logic: `match_var_declarator_slice_with_alignment`,
 `match_expr`, `StringLiteralPredicate::matches`, and body-group
 alignment.
 
+Follow-up replay on the same corpus with source-match timing threshold
+set to 0 showed 761 total source-match resolutions, with member
+selectors accounting for nearly all residual selector wall:
+
+- post-clone-fix baseline: 2.508s summed `source_match` timing, 2.384s
+  of that in 345 member selectors; sampled
+  `StringLiteralPredicate::matches` at 2.18% children;
+- exact string literal predicates changed from lossy string allocation
+  to direct `Wtf8Atom` comparison: 2.149s summed `source_match` timing,
+  2.107s in the same 345 member selectors; sampled
+  `StringLiteralPredicate::matches` at 1.90% children.
+
+A shared per-chunk candidate index keyed by declaration kind and
+export/non-export wrapper was also tried after the clone fix and
+rejected: it increased summed threshold-0 `source_match` timing from
+2.508s to 2.648s on this replay. Do not revive that exact index shape
+without new counters showing top-level scan overhead, rather than
+matcher recursion, is the bottleneck.
+
 Two bounded per-declarator prefilter experiments were tried and rejected:
 
 - nested string-literal multiset prefilter for single-declarator

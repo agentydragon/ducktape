@@ -1535,7 +1535,7 @@ impl VarDeclWithDeclaratorHolesPrefilter {
 
 #[derive(Clone)]
 enum StringLiteralPredicate {
-    Exact(String),
+    Exact(Wtf8Atom),
     Regex(Option<Regex>),
 }
 
@@ -1546,7 +1546,7 @@ impl StringLiteralPredicate {
 
     fn matches(&self, candidate_value: &Wtf8Atom) -> bool {
         match self {
-            Self::Exact(expected) => candidate_value.to_string_lossy().as_ref() == expected,
+            Self::Exact(expected) => candidate_value == expected,
             Self::Regex(compiled) => compiled
                 .as_ref()
                 .is_some_and(|regex| regex.is_match(candidate_value.to_string_lossy().as_ref())),
@@ -1614,11 +1614,14 @@ fn string_literal_predicate_for_expr(
     let Expr::Lit(Lit::Str(str_)) = expr else {
         return None;
     };
-    let value = str_.value.to_string_lossy();
-    if selector.wildcard_string_literals.contains(value.as_ref()) {
+    let value = &str_.value;
+    if selector
+        .wildcard_string_literals
+        .contains(value.to_string_lossy().as_ref())
+    {
         return None;
     }
-    Some(StringLiteralPredicate::Exact(value.to_string()))
+    Some(StringLiteralPredicate::Exact(value.clone()))
 }
 
 fn string_literal_expr_value(expr: &Expr) -> Option<String> {
