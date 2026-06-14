@@ -165,3 +165,31 @@ Keep-going miss diagnostics can also do repeated nearest-candidate scans
 for selectors that truly miss. This PR targets the observed slow
 ambiguity path; miss-diagnostic caching/indexing should be handled as a
 follow-up if a profile shows `source_match_no_match_hint` dominating.
+
+### Selector Synthesis Dogfood: Filter Latency
+
+A downstream large-spec run of `debundle spec synthesize-selectors --rewrite
+name-binding-to-source-match` on a single 6.9 MiB / 204k-line chunk showed the
+next performance blocker is command-level filtering and plan application, not
+only the inner declaration-hole matcher. No private source text is reproduced
+here.
+
+Observed timings from an optimized merged binary:
+
+| Scope                    | Elapsed | Candidate changes | Notes                                       |
+| ------------------------ | ------: | ----------------: | ------------------------------------------- |
+| one explicit `--item`    |   3.43s |                 0 | still scanned 1745 files / 6692 members     |
+| `--module-prefix` subset |    >30s |                 - | timed out CPU-bound before producing output |
+| top-100 explicit items   |  16.37s |                75 | still scanned 1745 files / 6692 members     |
+| top-200 explicit items   |  31.38s |               157 | still scanned 1745 files / 6692 members     |
+
+The source-aware selector synthesis path is productive, but broad dogfood is
+blocked until item/file/module filters prune YAML traversal and candidate
+generation earlier. The acceptance target for this workload is:
+
+- one explicit `--item` should be close to source parse + one module file scan,
+  not a full spec scan;
+- top-100 explicit items should stay within the interactive budget on warmed
+  inputs, ideally under 10s;
+- broad runs should stream progress or declare themselves offline/profile mode
+  if they cannot meet the budget.

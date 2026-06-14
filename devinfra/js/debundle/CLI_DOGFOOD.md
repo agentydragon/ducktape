@@ -22,6 +22,24 @@ The actual path now has a `+_repo_rules+` prefix:
 Generic usability follow-ups for the top-level planner commands.
 Corpus-specific paths and owner ids belong in the consuming repo.
 
+- **Selector synthesis filters apply too late.** A downstream large-spec
+  dogfood run of `debundle spec synthesize-selectors --rewrite
+name-binding-to-source-match` showed that even one explicit
+  `--item module:export` scanned every module file and member in the spec:
+  `files_scanned=1745`, `modules_scanned=1745`, `members_scanned=6692`,
+  `name_binding_members=1`, `elapsed=3.43s`. Scoped `--module-prefix` dry runs
+  timed out at 30s CPU-bound. Explicit item batches were useful but still paid
+  full-scan cost: top-100 items took 16.37s for 75 candidate changes; top-200
+  took 31.38s for 157 candidate changes. Apply item/file/module filters before
+  full YAML traversal and before source candidate generation where possible.
+- **Selector synthesis apply emits non-reviewable YAML churn.** The same
+  downstream dogfood run applied a top-100 item batch with 75 changed
+  candidates. Selector correctness looked promising, but the YAML application
+  path rewrote unrelated text: 13 files changed with 7331 insertions and 4273
+  deletions, one large module accounted for most churn, and an unrelated
+  top-level comment was dropped. Source-aware selector synthesis needs a
+  text-preserving patch path for member selector replacement and
+  binding-group/member collapse before broad generated patches are reviewable.
 - **Orthogonal patch-plan workflow.** New spec automation should converge on
   the inventory/plan/apply/validate/explain model in
   <plans/automated_spec_workflows.md>. A dry-run that proposes edits should be
