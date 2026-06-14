@@ -46,8 +46,7 @@ Lives at <https://casino.allegedly.works>.
 | `frontend/public/sw.js`                | Kill-switch service worker (unregisters + clears caches)                                           |
 | `frontend/public/icon.svg`             | App icon                                                                                           |
 | `frontend/public/fonts/`               | Hermetic latin-subset fonts (Outfit, Playfair Display)                                             |
-| `frontend/vite.config.js`              | Production bundler config (Vite + @vitejs/plugin-react)                                            |
-| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                                                                       |
+| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring; frontend bundled by esbuild via `//devinfra/js:spa_bundle`                           |
 
 ## Auth
 
@@ -147,12 +146,9 @@ bbr build //x/study_casino:image
 Local dev:
 
 ```bash
-# Iterate on the frontend with Vite's HMR dev server:
-cd x/study_casino/frontend && pnpm exec vite
+# Build the production bundle (esbuild via //devinfra/js:spa_bundle):
+bbr build //x/study_casino/frontend:bundle
 
-# Or build the production bundle once (matches what Bazel produces):
-cd x/study_casino/frontend && pnpm exec vite build
-
-# Run the backend against the local dist:
+# Run the backend against the bundled frontend:
 bb run //x/study_casino:server
 ```

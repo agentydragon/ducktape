@@ -251,11 +251,14 @@ async def list_upstream_keys() -> UpstreamKeyListModel:
 # Static admin UI
 # ---------------------------------------------------------------------------
 
-_UI_DIR = Path(__file__).resolve().parent / "admin_ui_dist"
+# The SPA bundle is built by //x/rspcache/admin_ui:bundle and carried into
+# runfiles as data on the serving binary, landing beside this file under
+# admin_ui/dist.
+_UI_DIR = Path(__file__).resolve().parent / "admin_ui" / "dist"
 if _UI_DIR.exists():
     admin_app.mount("/", StaticFiles(directory=_UI_DIR, html=True), name="admin-ui")
 else:
 
     @admin_app.get("/")
     def ui_placeholder() -> dict[str, str]:
-        return {"message": "Admin UI build not found. Run npm run build in admin UI project."}
+        return {"message": "Admin UI build not found. Build //x/rspcache/admin_ui:bundle."}

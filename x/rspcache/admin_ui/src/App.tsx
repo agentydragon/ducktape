@@ -21,7 +21,11 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
-import { IconMoon, IconSun } from "@tabler/icons-react";
+// Deep per-icon imports, not the barrel: `@tabler/icons-react`'s main entry
+// re-exports ~5000 icons, and esbuild parses the whole barrel to tree-shake it,
+// which OOMs the bundler. The package ships no `exports` map, so subpaths resolve.
+import IconMoon from "@tabler/icons-react/dist/esm/icons/IconMoon.mjs";
+import IconSun from "@tabler/icons-react/dist/esm/icons/IconSun.mjs";
 import JsonView from "@uiw/react-json-view";
 
 import type { components } from "./generated/admin-api-types";

@@ -1,8 +1,38 @@
-load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
-# Link npm packages for this workspace member
-npm_link_all_packages(name = "node_modules")
+# React + Mantine deps live in the root package.json (this workspace member has
+# none of its own), so libraries reference `//:node_modules/*`.
 
-# TODO: js_run_binary for Vite build not working - artifact prefix conflict with node_modules
-# Build with: cd rspcache/admin_ui && npx vite build
-# TypeScript check with: cd rspcache/admin_ui && npx tsc --noEmit
+js_library(
+    name = "app",
+    srcs = ["src/App.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@uiw/react-json-view",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "main",
+    srcs = [
+        "src/index.css",
+        "src/main.tsx",
+    ],
+    deps = [
+        ":app",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "src/main.tsx",
+    jsx = "automatic",
+    visibility = ["//x/rspcache:__pkg__"],
+    deps = [":main"],
+)

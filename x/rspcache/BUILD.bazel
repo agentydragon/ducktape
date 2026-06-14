@@ -81,6 +81,7 @@ py_library(
 py_library(
     name = "admin_app",
     srcs = ["admin_app.py"],
+    data = ["//x/rspcache/admin_ui:bundle"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
