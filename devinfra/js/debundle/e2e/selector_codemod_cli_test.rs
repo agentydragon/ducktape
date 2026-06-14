@@ -221,6 +221,47 @@ export { runtimePrimary, runtimeSecondary, runtimeFormatter };
     (modules, source)
 }
 
+fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        r#"function runtimeFormatter(value) {
+  return value.trim().toUpperCase();
+}
+function untouchedBinding() {
+  return "still name-only";
+}
+export { runtimeFormatter, untouchedBinding };
+"#,
+    );
+    let modules = root.join("modules");
+    let module = modules.join("app/bootstrap.yaml");
+    write(
+        &module,
+        r#"# merged from: legacy/bootstrap.yaml
+comment: |
+  Keep this module grouped with startup.
+members:
+  # keep the neighboring member untouched
+  - name: UntouchedBinding
+    selector:
+      binding:
+        name: untouchedBinding
+  # keep the selected member's surrounding YAML comment
+  - name: FormatValue
+    comment: Keep readable comment field.
+    # keep the pre-selector YAML comment
+    selector:
+      binding:
+        name: runtimeFormatter
+anonymous_statements:
+  - match: |
+      initializeRuntime();
+"#,
+    );
+    (modules, source)
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -267,6 +308,63 @@ fn dry_run_reports_single_binding_rewrite_without_writing() {
     );
     assert_eq!(fs::read_to_string(&target).unwrap(), before_target);
     assert_eq!(fs::read_to_string(&other).unwrap(), before_other);
+}
+
+#[test]
+fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_single_member_text_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/bootstrap:FormatValue",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["action"], "applied", "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(
+        parsed["summary"]["files_written"].as_array().unwrap().len(),
+        1,
+        "{parsed}"
+    );
+
+    let rewritten = fs::read_to_string(modules.join("app/bootstrap.yaml")).unwrap();
+    assert_eq!(
+        rewritten,
+        r#"# merged from: legacy/bootstrap.yaml
+comment: |
+  Keep this module grouped with startup.
+members:
+  # keep the neighboring member untouched
+  - name: UntouchedBinding
+    selector:
+      binding:
+        name: untouchedBinding
+  # keep the selected member's surrounding YAML comment
+  - name: FormatValue
+    comment: Keep readable comment field.
+    # keep the pre-selector YAML comment
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: FormatValue
+        match: |-
+          function FormatValue(value) {
+            return value.trim().toUpperCase();
+          }
+anonymous_statements:
+  - match: |
+      initializeRuntime();
+"#
+    );
 }
 
 #[test]

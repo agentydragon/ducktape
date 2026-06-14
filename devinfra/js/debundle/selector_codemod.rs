@@ -161,7 +161,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
         let mut doc = yaml_edit::read_yaml(&file)?;
         let mut file_changed = false;
-        let mut text_insertions = Vec::new();
+        let mut text_edits = Vec::new();
         let Value::Mapping(root) = &mut doc else {
             candidates.push(skipped_candidate(
                 &module,
@@ -181,8 +181,10 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     .as_ref()
                     .expect("source-aware rewrite loaded synthesis index"),
                 &selected_items,
+                &original_text,
                 config.apply,
             )?;
+            text_edits.extend(outcomes.text_edits);
             summary.members_scanned += root
                 .get(yk("members"))
                 .and_then(Value::as_sequence)
@@ -225,8 +227,8 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                 let Some(outcome) = candidate? else {
                     continue;
                 };
-                if let Some(insertion) = outcome.text_insertion {
-                    text_insertions.push(insertion);
+                if let Some(edit) = outcome.text_edit {
+                    text_edits.push(edit);
                 }
                 let candidate = outcome.candidate;
                 if matches!(
@@ -246,7 +248,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
         if config.apply && file_changed {
             let written = match config.rewrite {
                 SelectorCodemodRewrite::SingleTargetBinding => {
-                    let body = apply_text_insertions(&original_text, &text_insertions)
+                    let body = apply_text_edits(&original_text, &text_edits)
                         .with_context(|| format!("patching {}", file.display()))?;
                     let patched_doc: Value = serde_yaml::from_str(&body)
                         .with_context(|| format!("parsing patched {}", file.display()))?;
@@ -256,7 +258,17 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     yaml_edit::write_yaml_if_semantic_changed(&file, &doc)?
                 }
                 SelectorCodemodRewrite::NameBindingToSourceMatch => {
-                    yaml_edit::write_yaml_if_semantic_changed(&file, &doc)?
+                    let body = apply_text_edits(&original_text, &text_edits)
+                        .with_context(|| format!("patching {}", file.display()))?;
+                    let patched_doc: Value = serde_yaml::from_str(&body)
+                        .with_context(|| format!("parsing patched {}", file.display()))?;
+                    if patched_doc != doc {
+                        bail!(
+                            "text-preserving YAML patch for {} did not match semantic rewrite",
+                            file.display()
+                        );
+                    }
+                    yaml_edit::write_yaml_body_if_semantic_changed(&file, &patched_doc, body)?
                 }
             };
             if written {
@@ -279,14 +291,14 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
 
 struct SelectorCodemodOutcome {
     candidate: SelectorCodemodCandidate,
-    text_insertion: Option<TextInsertion>,
+    text_edit: Option<TextEdit>,
 }
 
 impl SelectorCodemodOutcome {
     fn candidate_only(candidate: SelectorCodemodCandidate) -> Self {
         Self {
             candidate,
-            text_insertion: None,
+            text_edit: None,
         }
     }
 }
@@ -428,7 +440,7 @@ fn rewrite_single_target_binding(
             replacement_count: 0,
             reason: None,
         },
-        text_insertion: apply.then_some(insertion),
+        text_edit: apply.then_some(insertion),
     }))
 }
 
@@ -544,6 +556,7 @@ struct NameBindingRewriteOutcomes {
     candidates: Vec<SelectorCodemodCandidate>,
     members_seen: usize,
     groups_changed: usize,
+    text_edits: Vec<TextEdit>,
 }
 
 #[derive(Debug, Clone)]
@@ -612,6 +625,7 @@ fn rewrite_name_bindings_to_source_match(
     root: &mut serde_yaml::Mapping,
     index: &ChunkSelectorIndex,
     selected_items: &BTreeSet<SynthesisItem>,
+    source_text: &str,
     apply: bool,
 ) -> Result<NameBindingRewriteOutcomes> {
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
@@ -619,6 +633,7 @@ fn rewrite_name_bindings_to_source_match(
             candidates: Vec::new(),
             members_seen: 0,
             groups_changed: 0,
+            text_edits: Vec::new(),
         });
     };
     let mut candidates = Vec::new();
@@ -676,6 +691,8 @@ fn rewrite_name_bindings_to_source_match(
 
     let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
     let mut binding_groups = Vec::new();
+    let mut removed_group_member_indices = BTreeSet::new();
+    let mut text_edits = Vec::new();
     let mut groups_changed = 0;
     for (group_id, (decl_idx, group_members)) in grouped.into_iter().enumerate() {
         let synthesized =
@@ -709,6 +726,18 @@ fn rewrite_name_bindings_to_source_match(
                 target_binding: Some(target.export_name.clone()),
             }));
             if apply {
+                let edit = source_match_selector_text_edit(
+                    source_text,
+                    member.member_index,
+                    &synthesized.match_source,
+                    &target.export_name,
+                )
+                .with_context(|| {
+                    format!(
+                        "cannot preserve YAML text edit for {module}:{}",
+                        member.export_name
+                    )
+                })?;
                 let replacement = member_with_source_match(
                     &member.export_name,
                     member.comment.clone(),
@@ -716,6 +745,7 @@ fn rewrite_name_bindings_to_source_match(
                     &target.export_name,
                 );
                 replacements.insert(member.member_index, Some(replacement));
+                text_edits.push(edit);
             }
         } else {
             for member in &group_members {
@@ -731,6 +761,7 @@ fn rewrite_name_bindings_to_source_match(
                 }));
                 if apply {
                     replacements.insert(member.member_index, None);
+                    removed_group_member_indices.insert(member.member_index);
                 }
             }
             if apply {
@@ -740,6 +771,14 @@ fn rewrite_name_bindings_to_source_match(
     }
 
     if apply {
+        if !binding_groups.is_empty() {
+            text_edits.extend(binding_group_text_edits(
+                source_text,
+                members.len(),
+                &removed_group_member_indices,
+                &binding_groups,
+            )?);
+        }
         apply_member_replacements(members, replacements);
         if !binding_groups.is_empty() {
             let entry = root
@@ -756,6 +795,7 @@ fn rewrite_name_bindings_to_source_match(
         candidates,
         members_seen,
         groups_changed,
+        text_edits,
     })
 }
 
@@ -1432,8 +1472,9 @@ fn var_kind_label(kind: VarDeclKind) -> &'static str {
 }
 
 #[derive(Debug, Clone)]
-struct TextInsertion {
-    offset: usize,
+struct TextEdit {
+    start: usize,
+    end: usize,
     text: String,
 }
 
@@ -1441,7 +1482,7 @@ fn target_binding_text_insertion(
     source: &str,
     member_index: usize,
     target_binding: &str,
-) -> Result<TextInsertion> {
+) -> Result<TextEdit> {
     if !is_safe_plain_yaml_scalar(target_binding) {
         bail!("target_binding `{target_binding}` needs YAML quoting");
     }
@@ -1489,34 +1530,220 @@ fn target_binding_text_insertion(
     )
     .context("could not locate source_match.match line in source text")?;
     let indent = lines[match_line].indent_text();
-    Ok(TextInsertion {
-        offset: lines[match_line].start,
+    Ok(TextEdit {
+        start: lines[match_line].start,
+        end: lines[match_line].start,
         text: format!("{indent}target_binding: {target_binding}\n"),
     })
 }
 
-fn apply_text_insertions(source: &str, insertions: &[TextInsertion]) -> Result<String> {
-    let mut ordered = insertions.to_vec();
-    ordered.sort_by_key(|insertion| insertion.offset);
-    ordered.dedup_by_key(|insertion| insertion.offset);
+fn source_match_selector_text_edit(
+    source: &str,
+    member_index: usize,
+    match_source: &str,
+    target_binding: &str,
+) -> Result<TextEdit> {
+    if !is_safe_plain_yaml_scalar(target_binding) {
+        bail!("target_binding `{target_binding}` needs YAML quoting");
+    }
+    let lines = source_lines(source);
+    let members_block = members_text_block(&lines)?;
+    let (member_start, member_end) = member_line_range(&members_block, member_index)?;
+    let selector_line =
+        find_mapping_key_line(&lines, member_start, member_end, usize::MAX, "selector")
+            .context("could not locate selector block in source text")?;
+    let selector_indent = lines[selector_line].indent;
+    let selector_end =
+        next_mapping_peer_or_parent_line(&lines, selector_line + 1, member_end, selector_indent)
+            .unwrap_or(member_end);
+    Ok(TextEdit {
+        start: lines[selector_line].start,
+        end: line_start_or_eof(source, &lines, selector_end),
+        text: render_source_match_selector_block(
+            lines[selector_line].indent_text(),
+            match_source,
+            target_binding,
+        ),
+    })
+}
+
+fn binding_group_text_edits(
+    source: &str,
+    member_count: usize,
+    removed_member_indices: &BTreeSet<usize>,
+    binding_groups: &[Value],
+) -> Result<Vec<TextEdit>> {
+    if binding_groups.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lines = source_lines(source);
+    let members_block = members_text_block(&lines)?;
+    if removed_member_indices.len() == member_count {
+        let mut edits = Vec::new();
+        edits.push(TextEdit {
+            start: lines[members_block.members_line].start,
+            end: line_start_or_eof(source, &lines, members_block.end_line),
+            text: "members: []\n".to_string(),
+        });
+        edits.extend(binding_group_insertion_edits(
+            source,
+            &lines,
+            Some(members_block.end_line),
+            binding_groups,
+        )?);
+        return Ok(edits);
+    }
+
+    let mut edits = Vec::new();
+    for member_index in removed_member_indices {
+        let (start_line, end_line) = member_line_range(&members_block, *member_index)?;
+        edits.push(TextEdit {
+            start: lines[start_line].start,
+            end: line_start_or_eof(source, &lines, end_line),
+            text: String::new(),
+        });
+    }
+    edits.extend(binding_group_insertion_edits(
+        source,
+        &lines,
+        Some(members_block.end_line),
+        binding_groups,
+    )?);
+    Ok(edits)
+}
+
+fn binding_group_insertion_edits(
+    source: &str,
+    lines: &[SourceLine<'_>],
+    fallback_insert_line: Option<usize>,
+    binding_groups: &[Value],
+) -> Result<Vec<TextEdit>> {
+    if let Some(binding_groups_line) =
+        find_mapping_key_line_at_indent(lines, 0, lines.len(), 0, "binding_groups")
+    {
+        let existing_indent = lines
+            .iter()
+            .enumerate()
+            .skip(binding_groups_line + 1)
+            .find(|(_, line)| !line.trimmed.is_empty() && !line.trimmed.starts_with('#'))
+            .map(|(_, line)| line.indent_text().to_string())
+            .context("cannot append to empty or inline binding_groups block")?;
+        let binding_groups_end =
+            next_root_key_line(lines, binding_groups_line + 1).unwrap_or(lines.len());
+        return Ok(vec![TextEdit {
+            start: line_start_or_eof(source, lines, binding_groups_end),
+            end: line_start_or_eof(source, lines, binding_groups_end),
+            text: render_yaml_sequence_items(binding_groups, &existing_indent)?,
+        }]);
+    }
+
+    let insert_line = fallback_insert_line.context("missing insertion point for binding_groups")?;
+    let mut text = String::from("binding_groups:\n");
+    text.push_str(&render_yaml_sequence_items(binding_groups, "  ")?);
+    Ok(vec![TextEdit {
+        start: line_start_or_eof(source, lines, insert_line),
+        end: line_start_or_eof(source, lines, insert_line),
+        text,
+    }])
+}
+
+fn render_source_match_selector_block(
+    indent: &str,
+    match_source: &str,
+    target_binding: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("{indent}selector:\n"));
+    out.push_str(&format!("{indent}  source_match:\n"));
+    out.push_str(&format!("{indent}    identifiers: alpha_all\n"));
+    out.push_str(&format!("{indent}    target_binding: {target_binding}\n"));
+    out.push_str(&format!("{indent}    match: |-\n"));
+    push_literal_block(&mut out, match_source, &format!("{indent}      "));
+    out
+}
+
+fn render_yaml_sequence_items(items: &[Value], indent: &str) -> Result<String> {
+    let yaml = serde_yaml::to_string(&Value::Sequence(items.to_vec()))
+        .context("serializing YAML sequence items")?;
+    let mut out = String::new();
+    for line in yaml.lines() {
+        if line == "---" || line == "..." {
+            continue;
+        }
+        out.push_str(indent);
+        out.push_str(line);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn push_literal_block(out: &mut String, text: &str, indent: &str) {
+    for line in text.split('\n') {
+        out.push_str(indent);
+        out.push_str(line);
+        out.push('\n');
+    }
+}
+
+fn apply_text_edits(source: &str, edits: &[TextEdit]) -> Result<String> {
+    let mut ordered = edits.to_vec();
+    ordered.sort_by_key(|edit| (edit.start, edit.end));
     let mut output = String::with_capacity(
-        source.len()
-            + ordered
-                .iter()
-                .map(|insertion| insertion.text.len())
-                .sum::<usize>(),
+        source.len() + ordered.iter().map(|edit| edit.text.len()).sum::<usize>(),
     );
     let mut cursor = 0;
-    for insertion in ordered {
-        if insertion.offset < cursor || !source.is_char_boundary(insertion.offset) {
-            bail!("invalid text insertion offset {}", insertion.offset);
+    for edit in ordered {
+        if edit.start < cursor
+            || edit.end < edit.start
+            || !source.is_char_boundary(edit.start)
+            || !source.is_char_boundary(edit.end)
+        {
+            bail!(
+                "invalid or overlapping text edit {}..{}",
+                edit.start,
+                edit.end
+            );
         }
-        output.push_str(&source[cursor..insertion.offset]);
-        output.push_str(&insertion.text);
-        cursor = insertion.offset;
+        output.push_str(&source[cursor..edit.start]);
+        output.push_str(&edit.text);
+        cursor = edit.end;
     }
     output.push_str(&source[cursor..]);
     Ok(output)
+}
+
+struct MembersTextBlock {
+    members_line: usize,
+    member_starts: Vec<usize>,
+    end_line: usize,
+}
+
+fn members_text_block(lines: &[SourceLine<'_>]) -> Result<MembersTextBlock> {
+    let members_line = find_mapping_key_line_at_indent(lines, 0, lines.len(), 0, "members")
+        .context("missing members:")?;
+    let member_starts = member_start_lines(lines, members_line + 1)?;
+    let end_line = next_root_key_line(lines, members_line + 1).unwrap_or(lines.len());
+    Ok(MembersTextBlock {
+        members_line,
+        member_starts,
+        end_line,
+    })
+}
+
+fn member_line_range(block: &MembersTextBlock, member_index: usize) -> Result<(usize, usize)> {
+    let Some(&member_start) = block.member_starts.get(member_index) else {
+        bail!("could not locate members[{member_index}] in source text");
+    };
+    let member_end = block
+        .member_starts
+        .get(member_index + 1)
+        .copied()
+        .unwrap_or(block.end_line);
+    Ok((member_start, member_end))
+}
+
+fn line_start_or_eof(source: &str, lines: &[SourceLine<'_>], line: usize) -> usize {
+    lines.get(line).map_or(source.len(), |line| line.start)
 }
 
 #[derive(Debug)]
@@ -1633,6 +1860,23 @@ fn find_mapping_key_line(
         .find_map(|(idx, line)| {
             let indent_matches = min_indent == usize::MAX || line.indent >= min_indent;
             (indent_matches && mapping_key(line.trimmed) == Some(key)).then_some(idx)
+        })
+}
+
+fn find_mapping_key_line_at_indent(
+    lines: &[SourceLine<'_>],
+    start: usize,
+    end: usize,
+    indent: usize,
+    key: &str,
+) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .take(end)
+        .skip(start)
+        .find_map(|(idx, line)| {
+            (line.indent == indent && mapping_key(line.trimmed) == Some(key)).then_some(idx)
         })
 }
 
