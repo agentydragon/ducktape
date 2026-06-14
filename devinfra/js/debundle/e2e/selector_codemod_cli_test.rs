@@ -226,7 +226,9 @@ fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     write(
         &source,
         r#"function runtimeFormatter(value) {
-  return value.trim().toUpperCase();
+  const trimmed = value.trim();
+
+  return trimmed.toUpperCase();
 }
 function untouchedBinding() {
   return "still name-only";
@@ -358,12 +360,18 @@ members:
         target_binding: FormatValue
         match: |-
           function FormatValue(value) {
-            return value.trim().toUpperCase();
+            const trimmed = value.trim();
+
+            return trimmed.toUpperCase();
           }
 anonymous_statements:
   - match: |
       initializeRuntime();
 "#
+    );
+    assert!(
+        rewritten.lines().all(|line| !line.ends_with(' ')),
+        "rewritten YAML contains trailing whitespace:\n{rewritten}"
     );
 }
 

@@ -1679,8 +1679,10 @@ fn render_yaml_sequence_items(items: &[Value], indent: &str) -> Result<String> {
 
 fn push_literal_block(out: &mut String, text: &str, indent: &str) {
     for line in text.split('\n') {
-        out.push_str(indent);
-        out.push_str(line);
+        if !line.is_empty() {
+            out.push_str(indent);
+            out.push_str(line);
+        }
         out.push('\n');
     }
 }
