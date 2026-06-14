@@ -125,7 +125,7 @@ fn first_error_line(error: &anyhow::Error) -> String {
     truncate_for_log(&line, 160)
 }
 
-fn source_match_preview(source: &str) -> String {
+pub fn source_match_preview(source: &str) -> String {
     let collapsed = source.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate_for_log(&collapsed, 180)
 }
@@ -135,8 +135,8 @@ fn source_match_timing_selector_details(
     config: &SourceMatchTimingConfig,
 ) -> String {
     let mut fields = vec![
-        format!("selector_key={}", selector_timing_key(selector)),
-        format!("body_key={}", selector_body_timing_key(selector)),
+        format!("selector_key={}", selector_key(selector)),
+        format!("body_key={}", selector_body_key(selector)),
     ];
     if let Some(target_binding) = selector.target_binding.as_deref() {
         fields.push(format!("target_binding=`{target_binding}`"));
@@ -156,7 +156,7 @@ fn source_match_timing_selector_details(
     fields.join(" ")
 }
 
-fn selector_body_timing_key(selector: &AnonymousStatementSelector) -> String {
+pub fn selector_body_key(selector: &AnonymousStatementSelector) -> String {
     let mut state = Fnv1a64::new();
     state.update(b"body");
     state.update(format!("{:?}", selector.identifiers).as_bytes());
@@ -165,7 +165,7 @@ fn selector_body_timing_key(selector: &AnonymousStatementSelector) -> String {
     format!("{:016x}", state.finish())
 }
 
-fn selector_timing_key(selector: &AnonymousStatementSelector) -> String {
+pub fn selector_key(selector: &AnonymousStatementSelector) -> String {
     let mut state = Fnv1a64::new();
     state.update(b"selector");
     state.update(format!("{:?}", selector.identifiers).as_bytes());

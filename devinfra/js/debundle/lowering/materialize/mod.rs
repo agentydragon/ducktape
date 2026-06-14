@@ -14,7 +14,9 @@ use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
 use super::*;
 use crate::time_phase;
 use js_ast::statement_ordinal_for_body_index;
-use output_layout::{ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT};
+use output_layout::{
+    ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
+};
 
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
@@ -271,6 +273,18 @@ pub(super) fn materialize_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         time_phase!(timings, "synthesize_mini_factor_plans", {
             builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)
+        })?;
+    }
+    if let Some(report) = builder.selector_diagnostics_report(chunk_id)
+        && let Some(report_out_dir) = report_emission.rejection_dir()
+    {
+        time_phase!(timings, "write_selector_diagnostics_report", {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                SELECTOR_DIAGNOSTICS_REPORT,
+                &report,
+            )
         })?;
     }
     // Plan construction is finished — consume the builder and use

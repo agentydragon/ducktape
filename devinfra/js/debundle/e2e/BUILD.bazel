@@ -104,6 +104,7 @@ _STANDARD_E2E_DEPS = [
         "namespace_aggregator_split_tdz_test",
         "pass_two_tdz_cut_diagnosis_test",
         "spec_comments_test",
+        "selector_diagnostics_report_test",
         "syntactic_holes_test",
     ]
 ]

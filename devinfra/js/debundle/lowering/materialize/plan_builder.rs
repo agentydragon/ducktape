@@ -39,6 +39,67 @@ impl DuplicateBindingClaim {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct SelectorDiagnosticsReport {
+    pub chunk_id: String,
+    pub counts: BTreeMap<String, usize>,
+    pub diagnostics: Vec<SelectorDiagnosticEntry>,
+    pub coverage_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct SelectorDiagnosticEntry {
+    pub category: String,
+    pub module_id: String,
+    pub module_path: Option<String>,
+    pub export_name: Option<String>,
+    pub selector_kind: String,
+    pub target_binding: Option<String>,
+    pub claim_origin: Option<String>,
+    pub body_indices: Vec<usize>,
+    pub first_mismatch: Option<String>,
+    pub nearest_candidates: Vec<SelectorNearestCandidate>,
+    pub source_match_preview: Option<String>,
+    pub source_match_hash: Option<String>,
+    pub source_match_body_hash: Option<String>,
+    pub duplicate_claim: Option<DuplicateClaimReport>,
+    pub message: String,
+    pub recommended_next_action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct SelectorNearestCandidate {
+    pub body_index: usize,
+    pub declared_bindings: Vec<String>,
+    pub score: usize,
+    pub first_mismatch: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct DuplicateClaimReport {
+    pub chunk_id: String,
+    pub binding: String,
+    pub existing: DuplicateClaimSiteReport,
+    pub duplicate: DuplicateClaimSiteReport,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct DuplicateClaimSiteReport {
+    pub module_id: String,
+    pub export_name: Option<String>,
+    pub claim_origin: Option<String>,
+}
+
+impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
+    fn from(site: &DuplicateClaimSite) -> Self {
+        Self {
+            module_id: site.module_id.clone(),
+            export_name: site.export_name.clone(),
+            claim_origin: site.claim_origin.clone(),
+        }
+    }
+}
+
 fn render_duplicate_claim_site(site: &DuplicateClaimSite) -> String {
     let export = site
         .export_name
@@ -83,12 +144,48 @@ fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> Stri
 #[derive(Debug, Clone)]
 struct SourceMatchDiagnostic {
     module_id: String,
+    module_path: String,
     export_name: String,
     claim_origin: String,
+    selector: spec::AnonymousStatementSelector,
     message: String,
+    category: String,
+    body_indices: Vec<usize>,
+    first_mismatch: Option<String>,
+    nearest_candidates: Vec<SelectorNearestCandidate>,
 }
 
 impl SourceMatchDiagnostic {
+    fn new(
+        runtime_module: &Module,
+        module_id: &str,
+        module_path: &str,
+        member: &MemberRequest,
+        message: String,
+    ) -> Self {
+        let selector = member
+            .source_match
+            .clone()
+            .expect("source_match diagnostic requires unresolved selector");
+        let SourceMatchReportDetails {
+            body_indices,
+            first_mismatch,
+            nearest_candidates,
+        } = source_match_report_details(runtime_module, module_id, &selector, &message);
+        Self {
+            module_id: module_id.to_string(),
+            module_path: module_path.to_string(),
+            export_name: member.export_name.clone(),
+            claim_origin: member.claim_origin.clone(),
+            selector,
+            category: classify_source_match_failure(&message).to_string(),
+            body_indices,
+            first_mismatch,
+            nearest_candidates,
+            message,
+        }
+    }
+
     fn render(&self) -> String {
         format!(
             "module {} as `{}` ({}): {}",
@@ -122,6 +219,96 @@ fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> Str
         report.push_str(&diagnostic.render());
     }
     report
+}
+
+struct SourceMatchReportDetails {
+    body_indices: Vec<usize>,
+    first_mismatch: Option<String>,
+    nearest_candidates: Vec<SelectorNearestCandidate>,
+}
+
+fn source_match_report_details(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &spec::AnonymousStatementSelector,
+    message: &str,
+) -> SourceMatchReportDetails {
+    match source_match::source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
+        Ok(debt) => {
+            let body_indices = debt
+                .exact_groups
+                .iter()
+                .flat_map(|group| group.iter().flatten().copied())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let nearest_candidates = debt
+                .near_misses
+                .into_iter()
+                .map(|candidate| SelectorNearestCandidate {
+                    body_index: candidate.body_idx,
+                    declared_bindings: candidate.declared_bindings,
+                    score: candidate.score,
+                    first_mismatch: candidate.reason,
+                })
+                .collect::<Vec<_>>();
+            let first_mismatch = nearest_candidates
+                .first()
+                .map(|candidate| candidate.first_mismatch.clone())
+                .or_else(|| first_relevant_error_line(message));
+            SourceMatchReportDetails {
+                body_indices,
+                first_mismatch,
+                nearest_candidates,
+            }
+        }
+        Err(error) => SourceMatchReportDetails {
+            body_indices: Vec::new(),
+            first_mismatch: Some(format!("failed to analyze nearest candidates: {error:#}")),
+            nearest_candidates: Vec::new(),
+        },
+    }
+}
+
+fn first_relevant_error_line(message: &str) -> Option<String> {
+    message
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+}
+
+fn classify_source_match_failure(message: &str) -> &'static str {
+    if message.contains("ambiguous") {
+        "ambiguous_selector"
+    } else if message.contains("did not match any") {
+        "unresolved_selector"
+    } else {
+        "selector_resolution_error"
+    }
+}
+
+fn recommended_source_match_action(category: &str) -> &'static str {
+    match category {
+        "ambiguous_selector" => {
+            "Refine the selector, add target_binding when selecting one binding from a matched declaration, or narrow the matched source context."
+        }
+        "unresolved_selector" => {
+            "Update the selector source to match the current chunk or inspect nearest_candidates before applying a mechanical rewrite."
+        }
+        _ => "Inspect the selector error and update the spec syntax or selector source.",
+    }
+}
+
+fn source_match_selector_kind(claim_origin: &str) -> &'static str {
+    if claim_origin.starts_with("binding_groups[]") {
+        "binding_groups.source_match"
+    } else {
+        "members.source_match"
+    }
+}
+
+fn module_path_from_id(module_id: &str) -> Option<String> {
+    module_id.split_once("::").map(|(_, path)| path.to_string())
 }
 
 fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagnostic]) -> String {
@@ -249,14 +436,17 @@ fn resolve_request_source_matches(
                     Ok(resolved) => resolved,
                     Err(error) if keep_going => {
                         let message = format!("{error:#}");
+                        let module_id = request.id.clone();
+                        let module_path = request.target_path.clone();
                         for idx in member_indices {
                             let member = &request.members[idx];
-                            diagnostics.push(SourceMatchDiagnostic {
-                                module_id: request.id.clone(),
-                                export_name: member.export_name.clone(),
-                                claim_origin: member.claim_origin.clone(),
-                                message: message.clone(),
-                            });
+                            diagnostics.push(SourceMatchDiagnostic::new(
+                                runtime_module,
+                                &module_id,
+                                &module_path,
+                                member,
+                                message.clone(),
+                            ));
                         }
                         continue;
                     }
@@ -281,6 +471,8 @@ fn resolve_request_source_matches(
         }
     }
 
+    let module_id = request.id.clone();
+    let module_path = request.target_path.clone();
     for (idx, member) in request.members.iter_mut().enumerate() {
         if resolved_member_indices.contains(&idx) {
             continue;
@@ -291,12 +483,13 @@ fn resolve_request_source_matches(
             if !keep_going {
                 return Err(error);
             }
-            diagnostics.push(SourceMatchDiagnostic {
-                module_id: request.id.clone(),
-                export_name: member.export_name.clone(),
-                claim_origin: member.claim_origin.clone(),
-                message: format!("{error:#}"),
-            });
+            diagnostics.push(SourceMatchDiagnostic::new(
+                runtime_module,
+                &module_id,
+                &module_path,
+                member,
+                format!("{error:#}"),
+            ));
         }
     }
     if keep_going {
@@ -1010,6 +1203,92 @@ impl ChunkPlanBuilder {
     /// existing claims count as "swept" (and hence still foldable).
     pub(super) fn residual_plan_index(&self) -> Option<usize> {
         self.residual_plan_index
+    }
+
+    pub(super) fn selector_diagnostics_report(
+        &self,
+        chunk_id: &str,
+    ) -> Option<SelectorDiagnosticsReport> {
+        let mut diagnostics = Vec::new();
+        for diagnostic in &self.source_match_diagnostics {
+            diagnostics.push(SelectorDiagnosticEntry {
+                category: diagnostic.category.clone(),
+                module_id: diagnostic.module_id.clone(),
+                module_path: Some(diagnostic.module_path.clone()),
+                export_name: Some(diagnostic.export_name.clone()),
+                selector_kind: source_match_selector_kind(&diagnostic.claim_origin).to_string(),
+                target_binding: diagnostic.selector.target_binding.clone(),
+                claim_origin: Some(diagnostic.claim_origin.clone()),
+                body_indices: diagnostic.body_indices.clone(),
+                first_mismatch: diagnostic.first_mismatch.clone(),
+                nearest_candidates: diagnostic.nearest_candidates.clone(),
+                source_match_preview: Some(source_match::source_match_preview(
+                    &diagnostic.selector.match_source,
+                )),
+                source_match_hash: Some(source_match::selector_key(&diagnostic.selector)),
+                source_match_body_hash: Some(source_match::selector_body_key(&diagnostic.selector)),
+                duplicate_claim: None,
+                message: diagnostic.message.clone(),
+                recommended_next_action: recommended_source_match_action(&diagnostic.category)
+                    .to_string(),
+            });
+        }
+        for duplicate in &self.duplicate_binding_claims {
+            diagnostics.push(SelectorDiagnosticEntry {
+                category: "duplicate_claim".to_string(),
+                module_id: duplicate.duplicate.module_id.clone(),
+                module_path: module_path_from_id(&duplicate.duplicate.module_id),
+                export_name: duplicate.duplicate.export_name.clone(),
+                selector_kind: "duplicate_claim".to_string(),
+                target_binding: None,
+                claim_origin: duplicate.duplicate.claim_origin.clone(),
+                body_indices: Vec::new(),
+                first_mismatch: None,
+                nearest_candidates: Vec::new(),
+                source_match_preview: None,
+                source_match_hash: None,
+                source_match_body_hash: None,
+                duplicate_claim: Some(DuplicateClaimReport {
+                    chunk_id: duplicate.chunk_id.clone(),
+                    binding: duplicate.binding.clone(),
+                    existing: DuplicateClaimSiteReport::from(&duplicate.existing),
+                    duplicate: DuplicateClaimSiteReport::from(&duplicate.duplicate),
+                }),
+                message: duplicate.render(),
+                recommended_next_action: "Move duplicate claims into one logical module, remove the duplicate member, or expose aliases from the same module."
+                    .to_string(),
+            });
+        }
+        if diagnostics.is_empty() {
+            return None;
+        }
+        diagnostics.sort_by(|a, b| {
+            (
+                a.category.as_str(),
+                a.module_id.as_str(),
+                a.export_name.as_deref().unwrap_or_default(),
+                a.selector_kind.as_str(),
+            )
+                .cmp(&(
+                    b.category.as_str(),
+                    b.module_id.as_str(),
+                    b.export_name.as_deref().unwrap_or_default(),
+                    b.selector_kind.as_str(),
+                ))
+        });
+        let mut counts = BTreeMap::new();
+        for diagnostic in &diagnostics {
+            *counts.entry(diagnostic.category.clone()).or_insert(0) += 1;
+        }
+        Some(SelectorDiagnosticsReport {
+            chunk_id: chunk_id.to_string(),
+            counts,
+            diagnostics,
+            coverage_notes: vec![
+                "TODO: anonymous_statement source_match failures and blocker-comment diagnostics still need normalized JSON entries."
+                    .to_string(),
+            ],
+        })
     }
 
     pub(super) fn finalize(self) -> Result<ChunkPlan> {
