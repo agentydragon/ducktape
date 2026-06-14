@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_yaml::Value;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
-use spec_modules::{collect_module_files, module_path_from_file};
+use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::{BytePos, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -120,22 +120,28 @@ pub fn run_selector_codemod(config: &SelectorCodemodConfig) -> Result<SelectorCo
 }
 
 fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorCodemodReport> {
-    let synthesis_index = (config.rewrite == SelectorCodemodRewrite::NameBindingToSourceMatch)
-        .then(|| load_synthesis_index(config))
-        .transpose()?;
     let selected_items = config
         .items
         .iter()
         .map(|item| parse_synthesis_item(item))
         .collect::<Result<BTreeSet<_>>>()?;
-    let files = collect_module_files(&config.modules_root)
-        .with_context(|| format!("walking {}", config.modules_root.display()))?;
+    let selected_item_exports = selected_item_exports_by_module(&selected_items);
     let selected_files = config
         .files
         .iter()
         .map(|path| resolve_file_filter(&config.modules_root, path))
         .collect::<BTreeSet<_>>();
     let selected_modules = config.modules.iter().cloned().collect::<BTreeSet<_>>();
+    let files = collect_candidate_module_files(
+        config,
+        &selected_files,
+        &selected_modules,
+        &selected_item_exports,
+    )
+    .with_context(|| format!("selecting files under {}", config.modules_root.display()))?;
+    let synthesis_index = (config.rewrite == SelectorCodemodRewrite::NameBindingToSourceMatch)
+        .then(|| load_synthesis_index(config))
+        .transpose()?;
 
     let mut candidates = Vec::new();
     let mut summary = SelectorCodemodSummary {
@@ -173,6 +179,10 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             continue;
         };
         if config.rewrite == SelectorCodemodRewrite::NameBindingToSourceMatch {
+            let selected_exports = selected_item_exports.get(&module);
+            if !selected_item_exports.is_empty() && selected_exports.is_none() {
+                continue;
+            }
             let outcomes = rewrite_name_bindings_to_source_match(
                 &module,
                 &file,
@@ -180,15 +190,12 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                 synthesis_index
                     .as_ref()
                     .expect("source-aware rewrite loaded synthesis index"),
-                &selected_items,
+                selected_exports,
                 &original_text,
                 config.apply,
             )?;
             text_edits.extend(outcomes.text_edits);
-            summary.members_scanned += root
-                .get(yk("members"))
-                .and_then(Value::as_sequence)
-                .map_or(0, Vec::len);
+            summary.members_scanned += outcomes.members_scanned;
             summary.name_binding_members += outcomes.members_seen;
             summary.synthesized_groups += outcomes.groups_changed;
             for candidate in outcomes.candidates {
@@ -554,6 +561,7 @@ struct SynthesisItem {
 #[derive(Debug)]
 struct NameBindingRewriteOutcomes {
     candidates: Vec<SelectorCodemodCandidate>,
+    members_scanned: usize,
     members_seen: usize,
     groups_changed: usize,
     text_edits: Vec<TextEdit>,
@@ -624,13 +632,14 @@ fn rewrite_name_bindings_to_source_match(
     file: &Path,
     root: &mut serde_yaml::Mapping,
     index: &ChunkSelectorIndex,
-    selected_items: &BTreeSet<SynthesisItem>,
+    selected_exports: Option<&BTreeSet<String>>,
     source_text: &str,
     apply: bool,
 ) -> Result<NameBindingRewriteOutcomes> {
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
         return Ok(NameBindingRewriteOutcomes {
             candidates: Vec::new(),
+            members_scanned: 0,
             members_seen: 0,
             groups_changed: 0,
             text_edits: Vec::new(),
@@ -638,20 +647,26 @@ fn rewrite_name_bindings_to_source_match(
     };
     let mut candidates = Vec::new();
     let mut grouped: BTreeMap<usize, Vec<NameBindingMember>> = BTreeMap::new();
+    let mut remaining_exports = selected_exports.cloned();
+    let mut members_scanned = 0;
     let mut members_seen = 0;
 
     for (member_index, member) in members.iter().enumerate() {
+        if remaining_exports.as_ref().is_some_and(BTreeSet::is_empty) {
+            break;
+        }
+        members_scanned += 1;
         let export_name = mapping_get(member, "name").and_then(value_as_string);
         let Some(export_name) = export_name else {
             continue;
         };
-        if !selected_items.is_empty()
-            && !selected_items.contains(&SynthesisItem {
-                module: module.to_string(),
-                export_name: export_name.clone(),
-            })
-        {
-            continue;
+        if let Some(selected_exports) = selected_exports {
+            if !selected_exports.contains(&export_name) {
+                continue;
+            }
+            if let Some(remaining_exports) = &mut remaining_exports {
+                remaining_exports.remove(&export_name);
+            }
         }
         let Some(binding_name) =
             mapping_get_path(member, &["selector", "binding", "name"]).and_then(value_as_string)
@@ -793,6 +808,7 @@ fn rewrite_name_bindings_to_source_match(
 
     Ok(NameBindingRewriteOutcomes {
         candidates,
+        members_scanned,
         members_seen,
         groups_changed,
         text_edits,
@@ -828,6 +844,95 @@ fn parse_synthesis_item(raw: &str) -> Result<SynthesisItem> {
         module: module.to_string(),
         export_name: export_name.to_string(),
     })
+}
+
+fn selected_item_exports_by_module(
+    selected_items: &BTreeSet<SynthesisItem>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut by_module: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for item in selected_items {
+        by_module
+            .entry(item.module.clone())
+            .or_default()
+            .insert(item.export_name.clone());
+    }
+    by_module
+}
+
+fn collect_candidate_module_files(
+    config: &SelectorCodemodConfig,
+    selected_files: &BTreeSet<PathBuf>,
+    selected_modules: &BTreeSet<String>,
+    selected_item_exports: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<Vec<PathBuf>> {
+    let has_explicit_module_filters = !selected_files.is_empty()
+        || !selected_modules.is_empty()
+        || !config.module_prefixes.is_empty();
+    if !has_explicit_module_filters && selected_item_exports.is_empty() {
+        return collect_module_files(&config.modules_root);
+    }
+
+    let mut candidates = BTreeSet::new();
+    for file in selected_files {
+        add_existing_module_file(&mut candidates, file);
+    }
+    for module in selected_modules {
+        add_existing_module_file(
+            &mut candidates,
+            &module_file_path(&config.modules_root, module),
+        );
+    }
+    for module in selected_item_exports.keys() {
+        add_existing_module_file(
+            &mut candidates,
+            &module_file_path(&config.modules_root, module),
+        );
+    }
+    if selected_item_exports.is_empty() {
+        for prefix in &config.module_prefixes {
+            add_module_prefix_files(&mut candidates, &config.modules_root, prefix)?;
+        }
+    }
+
+    Ok(candidates
+        .into_iter()
+        .filter(|file| {
+            let module = module_path_from_file(file, &config.modules_root);
+            module_selected(
+                file,
+                &module,
+                selected_files,
+                selected_modules,
+                &config.module_prefixes,
+            ) && (selected_item_exports.is_empty() || selected_item_exports.contains_key(&module))
+        })
+        .collect())
+}
+
+fn module_file_path(modules_root: &Path, module: &str) -> PathBuf {
+    modules_root.join(format!("{module}.yaml"))
+}
+
+fn add_existing_module_file(candidates: &mut BTreeSet<PathBuf>, path: &Path) {
+    if path.is_file() && is_module_yaml(path) {
+        candidates.insert(path.to_path_buf());
+    }
+}
+
+fn add_module_prefix_files(
+    candidates: &mut BTreeSet<PathBuf>,
+    modules_root: &Path,
+    prefix: &str,
+) -> Result<()> {
+    if prefix.is_empty() {
+        return Ok(());
+    }
+    add_existing_module_file(candidates, &module_file_path(modules_root, prefix));
+    let dir = modules_root.join(prefix);
+    if dir.is_dir() {
+        candidates.extend(collect_module_files(&dir)?);
+    }
+    Ok(())
 }
 
 impl ChunkSelectorIndex {
@@ -947,7 +1052,53 @@ fn synthesize_simplest_selector_for_group(
     };
 
     let mut candidate_count = None;
-    for target in &targets {
+    if targets.len() > 1 {
+        let selector = SourceMatch {
+            match_source: match_source.clone(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: None,
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        }
+        .selector();
+        let exports_by_target = targets
+            .iter()
+            .map(|target| (target.export_name.clone(), target.export_name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let matched = source_match::resolve_member_binding_group_match(
+            &index.parsed.module,
+            "<selector synthesis>",
+            &selector,
+            &exports_by_target,
+        )?;
+        if matched.body_idx != decl.body_idx {
+            bail!(
+                "synthesized selector matched body index {} instead of intended {}",
+                matched.body_idx,
+                decl.body_idx
+            );
+        }
+        for target in &targets {
+            let binding = matched.bindings.get(&target.export_name).with_context(|| {
+                format!(
+                    "synthesized selector target `{}` did not resolve a binding",
+                    target.export_name
+                )
+            })?;
+            if binding.binding_name != target.runtime_binding {
+                bail!(
+                    "synthesized selector target `{}` resolved `{}` instead of intended `{}`",
+                    target.export_name,
+                    binding.binding_name,
+                    target.runtime_binding
+                );
+            }
+        }
+        candidate_count = Some(1);
+    }
+
+    if let [target] = targets.as_slice() {
         let source_match = SourceMatch {
             match_source: match_source.clone(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
@@ -957,47 +1108,38 @@ fn synthesize_simplest_selector_for_group(
             wildcard_string_literals: BTreeSet::new(),
         };
         let selector = source_match.selector();
-        let body_debt = source_match::source_match_body_debt(
+        let matches = source_match::member_binding_candidate_matches(
             &index.parsed.module,
             "<selector synthesis>",
             &selector,
-            0,
-            0,
         )?;
-        let groups = body_debt.exact_groups;
-        let current_count = groups.len();
+        let current_count = matches.len();
         if candidate_count
             .replace(current_count)
             .is_some_and(|prior| prior != current_count)
         {
             bail!("selector candidate count changed across target bindings");
         }
-        let [single_group] = groups.as_slice() else {
+        let [candidate] = matches.as_slice() else {
             bail!("synthesized selector matched {current_count} candidate declaration groups");
         };
-        if !single_group.contains(&Some(decl.body_idx)) {
-            bail!("synthesized selector matched a different declaration group: {single_group:?}");
-        }
-        let candidates = source_match::member_binding_candidates(
-            &index.parsed.module,
-            "<selector synthesis>",
-            &selector,
-        )?;
-        let [candidate] = candidates.as_slice() else {
+        if candidate.body_idx != decl.body_idx {
             bail!(
-                "synthesized selector target `{}` resolved to {} candidate binding(s)",
-                target.export_name,
-                candidates.len()
+                "synthesized selector matched body index {} instead of intended {}",
+                candidate.body_idx,
+                decl.body_idx
             );
         };
-        if candidate.binding_name != target.runtime_binding {
+        if candidate.binding.binding_name != target.runtime_binding {
             bail!(
                 "synthesized selector target `{}` resolved `{}` instead of intended `{}`",
                 target.export_name,
-                candidate.binding_name,
+                candidate.binding.binding_name,
                 target.runtime_binding
             );
         }
+    } else if targets.is_empty() {
+        bail!("selector synthesis group has no targets");
     }
 
     Ok(SynthesizedSelectorGroup {

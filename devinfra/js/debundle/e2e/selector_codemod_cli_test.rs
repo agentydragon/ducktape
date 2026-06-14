@@ -218,6 +218,19 @@ export { runtimePrimary, runtimeSecondary, runtimeFormatter };
         name: runtimeFormatter
 "#,
     );
+    write(
+        &modules.join("ignored/noisy.yaml"),
+        r#"members:
+  - name: NoisyOne
+    selector:
+      binding:
+        name: noisyOne
+  - name: NoisyTwo
+    selector:
+      binding:
+        name: noisyTwo
+"#,
+    );
     (modules, source)
 }
 
@@ -275,7 +288,9 @@ fn dry_run_reports_single_binding_rewrite_without_writing() {
     assert_eq!(parsed["action"], "dry_run", "{parsed}");
     assert_eq!(parsed["rewrite"], "single_target_binding", "{parsed}");
     assert_eq!(parsed["summary"]["dry_run"], true, "{parsed}");
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["members_scanned"], 3, "{parsed}");
     assert_eq!(parsed["summary"]["source_match_members"], 3, "{parsed}");
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["skipped_candidates"], 2, "{parsed}");
@@ -393,6 +408,9 @@ fn synthesize_selectors_dry_run_reports_grouped_unique_evidence() {
         "{parsed}"
     );
     assert_eq!(parsed["action"], "dry_run", "{parsed}");
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["members_scanned"], 2, "{parsed}");
     assert_eq!(parsed["summary"]["name_binding_members"], 2, "{parsed}");
     assert_eq!(parsed["summary"]["synthesized_groups"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["changed_candidates"], 2, "{parsed}");
@@ -437,6 +455,41 @@ fn synthesize_selectors_command_alias_uses_name_binding_rewrite() {
     );
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
     assert_eq!(parsed["candidates"][0]["target_binding"], "FormatValue");
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["members_scanned"], 3, "{parsed}");
+}
+
+#[test]
+fn synthesize_selectors_module_prefix_limits_file_scan() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--module-prefix",
+            "app",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["members_scanned"], 3, "{parsed}");
+    assert_eq!(parsed["summary"]["name_binding_members"], 3, "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
+    assert!(
+        parsed["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["module"] == "app/config"),
+        "{parsed}"
+    );
 }
 
 #[test]
@@ -522,6 +575,8 @@ fn apply_adds_target_binding_and_honors_module_prefix_filter() {
     let parsed = parse_stdout_json(&out);
     assert_eq!(parsed["action"], "applied", "{parsed}");
     assert_eq!(parsed["summary"]["dry_run"], false, "{parsed}");
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
     assert_eq!(
         parsed["summary"]["files_written"].as_array().unwrap().len(),
@@ -569,6 +624,8 @@ fn apply_single_target_binding_preserves_comments_and_local_text() {
         ],
     );
     let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["files_scanned"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["modules_scanned"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["skipped_candidates"], 1, "{parsed}");
 

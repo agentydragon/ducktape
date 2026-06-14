@@ -515,9 +515,15 @@ pub struct SourceMatchBodyDebt {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct MemberBindingMatch {
-    body_idx: usize,
-    binding: ResolvedMemberBinding,
+pub struct MemberBindingMatch {
+    pub body_idx: usize,
+    pub binding: ResolvedMemberBinding,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ResolvedMemberBindingGroup {
+    pub body_idx: usize,
+    pub bindings: BTreeMap<String, ResolvedMemberBinding>,
 }
 
 pub fn source_match_declared_binding_names(
@@ -690,7 +696,20 @@ pub fn member_binding_candidates(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<ResolvedMemberBinding>> {
-    let matches = trace_source_match(
+    Ok(
+        member_binding_candidate_matches(runtime_module, request_id, selector)?
+            .into_iter()
+            .map(|matched| matched.binding)
+            .collect(),
+    )
+}
+
+pub fn member_binding_candidate_matches(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<MemberBindingMatch>> {
+    trace_source_match(
         "members[].selector.source_match candidates",
         request_id,
         selector,
@@ -707,8 +726,7 @@ pub fn member_binding_candidates(
                 )
             )
         },
-    )?;
-    Ok(matches.into_iter().map(|matched| matched.binding).collect())
+    )
 }
 
 pub fn resolve_anonymous_statement_body_index(
@@ -972,6 +990,23 @@ pub fn resolve_member_binding_group(
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+    Ok(
+        resolve_member_binding_group_match(
+            runtime_module,
+            request_id,
+            selector,
+            exports_by_target,
+        )?
+        .bindings,
+    )
+}
+
+pub fn resolve_member_binding_group_match(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<ResolvedMemberBindingGroup> {
     trace_source_match(
         "binding_groups[].source_match",
         request_id,
@@ -987,9 +1022,10 @@ pub fn resolve_member_binding_group(
         |resolved| {
             format!(
                 "targets={} bindings={}",
-                resolved.len(),
+                resolved.bindings.len(),
                 render_timing_names(
                     resolved
+                        .bindings
                         .values()
                         .map(|matched| matched.binding_name.as_str())
                 )
@@ -1003,7 +1039,7 @@ fn resolve_member_binding_group_impl(
     request_id: &str,
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
-) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+) -> Result<ResolvedMemberBindingGroup> {
     if selector.target_binding.is_some() {
         bail!(
             "logical_module {request_id}: binding group resolver received a selector with \
@@ -1031,15 +1067,36 @@ fn resolve_member_binding_group_impl(
     }
     if parsed.body.len() == 1 && selector_single_var_declarator(&parsed.body[0]).is_some() {
         let mut resolved = BTreeMap::new();
+        let mut matched_body_idx = None;
         for (target_binding, export_name) in exports_by_target {
             let mut selector = selector.clone();
             selector.target_binding = Some(target_binding.clone());
-            resolved.insert(
-                target_binding.clone(),
-                resolve_member_binding(runtime_module, request_id, export_name, &selector)?,
-            );
+            let matches = member_binding_candidate_matches(runtime_module, request_id, &selector)?;
+            let [matched] = matches.as_slice() else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match target_binding \
+                     `{target_binding}` for export `{export_name}` resolved to {} candidate \
+                     binding(s). Refine the selector. Source:\n{match_source}",
+                    matches.len(),
+                    match_source = selector.match_source,
+                );
+            };
+            if matched_body_idx
+                .replace(matched.body_idx)
+                .is_some_and(|prior| prior != matched.body_idx)
+            {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match targets \
+                     resolved to different body indices. Refine the selector. Source:\n{match_source}",
+                    match_source = selector.match_source,
+                );
+            }
+            resolved.insert(target_binding.clone(), matched.binding.clone());
         }
-        return Ok(resolved);
+        return Ok(ResolvedMemberBindingGroup {
+            body_idx: matched_body_idx.unwrap_or(0),
+            bindings: resolved,
+        });
     }
     if parsed.body.len() == 1 && selector_var_decl_has_declarator_holes(&parsed.body[0]) {
         return resolve_member_binding_group_with_declarator_holes(
@@ -1118,7 +1175,10 @@ fn resolve_member_binding_group_impl(
         };
         resolved.insert(target_binding, binding.clone());
     }
-    Ok(resolved)
+    Ok(ResolvedMemberBindingGroup {
+        body_idx: alignment.iter().flatten().copied().next().unwrap_or(0),
+        bindings: resolved,
+    })
 }
 
 fn selector_binding_location(
@@ -1528,7 +1588,7 @@ fn resolve_member_binding_group_with_declarator_holes(
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
-) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+) -> Result<ResolvedMemberBindingGroup> {
     let needle_var =
         item_var_decl(needle).expect("caller checked selector_var_decl_has_declarator_holes");
     let target_locations = exports_by_target
@@ -1595,7 +1655,10 @@ fn resolve_member_binding_group_with_declarator_holes(
         matches.push((body_idx, resolved));
     }
     match matches.as_slice() {
-        [(_, resolved)] => Ok(resolved.clone()),
+        [(body_idx, resolved)] => Ok(ResolvedMemberBindingGroup {
+            body_idx: *body_idx,
+            bindings: resolved.clone(),
+        }),
         [] => {
             let target_hint = exports_by_target
                 .iter()
