@@ -31,6 +31,10 @@ use peel::{
     run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use selector_codemod::{
+    SelectorCodemodConfig, SelectorCodemodRewrite, render_selector_codemod_text,
+    run_selector_codemod,
+};
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     render_selector_debt_text,
@@ -103,6 +107,9 @@ enum SpecNsCommand {
     /// whose minified binding drifted between two spec versions.
     #[command(name = "selector-debt")]
     SelectorDebt(SelectorDebtArgs),
+    /// Dry-run or apply mechanical selector rewrites across module YAML.
+    #[command(name = "selector-codemod")]
+    SelectorCodemod(SelectorCodemodArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -164,6 +171,54 @@ pub struct SelectorDebtArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe. `ndjson`
     /// emits one tagged object per row plus a final `summary` line.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum SelectorCodemodRewriteArg {
+    /// Add target_binding to member source_match selectors that declare exactly one binding.
+    SingleTargetBinding,
+}
+
+impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
+    fn from(value: SelectorCodemodRewriteArg) -> Self {
+        match value {
+            SelectorCodemodRewriteArg::SingleTargetBinding => Self::SingleTargetBinding,
+        }
+    }
+}
+
+/// Args for `debundle spec selector-codemod`.
+#[derive(Debug, ClapArgs)]
+pub struct SelectorCodemodArgs {
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Rewrite to run. Defaults to the highest-value safe codemod.
+    #[arg(long = "rewrite", value_enum, default_value_t = SelectorCodemodRewriteArg::SingleTargetBinding)]
+    pub rewrite: SelectorCodemodRewriteArg,
+
+    /// Apply edits. Without this flag the command is a dry run.
+    #[arg(long = "apply")]
+    pub apply: bool,
+
+    /// Restrict to one or more module YAML files. Relative paths are resolved
+    /// under `--modules` when possible.
+    #[arg(long = "file")]
+    pub files: Vec<PathBuf>,
+
+    /// Restrict to exact module paths, without the `.yaml` suffix.
+    #[arg(long = "module")]
+    pub modules: Vec<String>,
+
+    /// Restrict to module paths at or below this prefix.
+    #[arg(long = "module-prefix")]
+    pub module_prefixes: Vec<String>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 }
@@ -494,6 +549,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
+            SpecNsCommand::SelectorCodemod(s) => run_selector_codemod_cmd(s),
         },
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
@@ -556,6 +612,20 @@ fn deprecation_notice(old: &str, new: &str) {
         "warning: `debundle {old}` is deprecated; use `debundle {new}` instead. The `peel` \
          namespace will be removed in a future release."
     );
+}
+
+fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
+    let format = OutputFormat::resolve(args.format);
+    let report = run_selector_codemod(&SelectorCodemodConfig {
+        modules_root: args.modules_root,
+        apply: args.apply,
+        rewrite: args.rewrite.into(),
+        files: args.files,
+        modules: args.modules,
+        module_prefixes: args.module_prefixes,
+    })?;
+    print_report(&report, format, render_selector_codemod_text)
+        .context("writing selector-codemod output")
 }
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with

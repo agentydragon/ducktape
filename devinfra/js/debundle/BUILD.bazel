@@ -444,6 +444,43 @@ rust_test(
 )
 
 rust_library(
+    name = "yaml_edit",
+    srcs = ["cli/yaml_edit.rs"],
+    crate_root = "cli/yaml_edit.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "yaml_edit_test",
+    crate = ":yaml_edit",
+    edition = "2024",
+    deps = [
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
+    name = "selector_codemod",
+    srcs = ["selector_codemod.rs"],
+    crate_root = "selector_codemod.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":source_match",
+        ":spec",
+        ":spec_modules",
+        ":yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
@@ -726,6 +763,7 @@ rust_library(
         ":output_layout",
         ":peel",
         ":pipeline",
+        ":selector_codemod",
         ":selector_debt",
         ":source_match",
         ":spec",

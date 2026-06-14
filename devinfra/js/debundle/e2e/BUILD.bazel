@@ -372,6 +372,21 @@ rust_test(
     ],
 )
 
+# `debundle spec selector-codemod`: dry-run-by-default reporting and
+# explicit `--apply` mutation of member-form source_match selectors.
+rust_test(
+    name = "selector_codemod_cli_test",
+    srcs = ["selector_codemod_cli_test.rs"],
+    crate_root = "selector_codemod_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
 # `debundle gate {list,describe,cut}` against REAL pipeline
 # artifacts: a cyclic spec is rejected by `debundle run`, then the
 # gate CLI is exercised against the owner_graph.json + cycles.json it
