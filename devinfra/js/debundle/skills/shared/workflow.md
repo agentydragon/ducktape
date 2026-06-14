@@ -61,8 +61,25 @@ groups `source_match` bodies that were copied verbatim across members /
 anonymous statements / binding groups (the copies a contextual selector should
 replace), and — with `--against <prior-spec-modules>` — flags members whose
 readable `name:` is stable but whose `selector.binding.name` drifted between two
-spec versions (proven-fragile name-only selection). It reads only the modules
-tree, so it is a cheap pre-pass before a structural-selector cleanup.
+spec versions (proven-fragile name-only selection). Add
+`--group-module-depth N --min-score 70 --format json` to choose broad,
+high-yield buckets before dispatching workers. It reads only the modules tree,
+so it is a cheap pre-pass before a structural-selector cleanup.
+
+For old-spec stabilization rounds, prefer generated selector patches over
+manual YAML:
+
+1. Use grouped `selector-debt` output to choose one coherent module family or
+   an explicit export list.
+2. Run `debundle spec synthesize-selectors --source-file <chunk.js>` or
+   `--source-root <dir> --chunk <path>` in dry-run JSON mode, scoped with
+   `--item`, `--module`, `--module-prefix`, or `--file`.
+3. Apply only when the report shows useful candidate changes and bounded skip
+   reasons. After `--apply`, check `git diff --check`, rerun the adapter's gate
+   or regen command, and rerun `selector-debt` to record the debt delta.
+4. If generated selectors are too verbose, ambiguous, or repeatedly skipped,
+   route that as Ducktape tooling work instead of hand-authoring many fragile
+   one-off selectors.
 
 ## Round Loop
 

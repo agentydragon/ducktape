@@ -266,9 +266,35 @@ Default to this ladder when writing or repairing selectors:
 4. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
-For broad old-spec conversion passes, use
-`debundle spec selector-debt --group-module-depth N --min-score 60` to bucket
-name-only debt by module prefix before choosing a focused peel.
+For broad old-spec conversion passes, use an automation-first loop:
+
+1. Inventory the debt:
+
+   ```bash
+   debundle spec selector-debt \
+     --modules path/to/spec/modules \
+     --group-module-depth 3 \
+     --min-score 70 \
+     --limit 40 \
+     --format json
+   ```
+
+   Module groups are computed after `--min-score` filtering and before
+   `--limit`, so they are suitable for choosing high-yield, reviewable peels.
+
+2. Pick a large but coherent bucket: usually one module, a module-prefix family,
+   or an explicit item list produced from the debt JSON. Prefer hundreds of
+   related selectors over hand-written one-offs, but keep each patch scoped to
+   files a reviewer can reason about.
+3. Run `debundle spec synthesize-selectors` in dry-run JSON mode for that
+   bucket. Use `--item` for explicit export lists when available; current
+   implementations prune item/module filters before scanning unrelated YAML.
+4. Apply only after the JSON summary shows a useful hit rate and bounded skip
+   reasons. After `--apply`, run `git diff --check`, the target regen/gate, and
+   another `selector-debt` summary to measure the debt delta.
+5. Treat repeated skip reasons or oververbose generated selectors as Ducktape
+   feature backlog. Add tooling or a narrower supported selector form before
+   manually spelling large unstable source bodies.
 
 When several `members[].selector.source_match` entries repeat the same
 multi-declarator selector with different `target_binding` values, run
@@ -294,8 +320,9 @@ The command builds a per-chunk declaration/binding index, groups requested
 exports that come from the same top-level declaration, renders the simplest
 currently-supported selector form for that group, and then proves uniqueness
 with normal `source_match` resolution. The report includes the matched
-top-level statement index, candidate count, group id, rewritten holes, and a
-structured skip reason for any item it cannot prove.
+top-level statement index, candidate count, group id, rewritten holes, files
+scanned, members scanned, and a structured skip reason for any item it cannot
+prove.
 
 The first automated forms are intentionally narrow:
 
@@ -309,9 +336,10 @@ The first automated forms are intentionally narrow:
 This is the first indexed subset of the broader minimization problem. Future
 passes should add stable initializer atoms, object-property keys, callee/member
 paths, literals, and statement/object/argument holes so the command can
-minimize more of the selector body. Apply mode preserves normal `comment:`
-fields by moving grouped member comments into `binding_groups.comments`; raw
-YAML comments around removed member entries may still need manual review.
+minimize more of the selector body. Apply mode uses targeted text edits so
+unrelated YAML ordering, comments, and neighboring members remain stable; still
+review the diff because generated selectors may expose a missing minimization
+feature or require a more concise hole form before they are worth landing.
 
 Use `selector.source_match` for stable declaration shapes:
 

@@ -34,6 +34,12 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 - Start with `graph-summary` for orientation, then `modules propose`
   for dispatchable candidate work.
+- For selector-stabilization planning, run
+  `debundle spec selector-debt --group-module-depth N --min-score 70 --format json`
+  before proposing worker lanes. Use the grouped rows to choose large,
+  coherent module-family peels, then give workers explicit `--item` lists or
+  scoped `--module` / `--module-prefix` selectors for
+  `debundle spec synthesize-selectors`.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
@@ -51,3 +57,8 @@ queue is a heuristic projection from that DAG, not a serialized fact from
 
 `peel <...>` invocations are deprecated aliases. Prefer the top-level
 commands in all new docs, scripts, and reports.
+
+Selector planning should also record tooling gaps. If `synthesize-selectors`
+skips a large repeated shape, produces selectors that are too verbose to review,
+or cannot express a concise stable anchor, recommend a Ducktape feature/fix
+before assigning many manual YAML edits.

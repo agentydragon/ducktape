@@ -84,13 +84,17 @@ Prefer project-local conventions over generic instincts. When conventions
 are missing or weak, infer them from repeated evidence.
 
 Selector health is part of structural review. Run
-`debundle spec selector-debt --modules <modules-dir>` to surface `source_match`
-bodies copied verbatim across modules (a duplication smell — route a worker to
-collapse them to one contextual selector), fragile name-only minified
-selectors, and — with `--against <prior-spec-modules>` — selectors whose
-minified binding drifted across a re-pin (candidates to re-express
-as structural AST-shaped selectors with holes/placeholders for volatile
-subtrees). The architect surfaces these as findings; workers apply the edits.
+`debundle spec selector-debt --modules <modules-dir> --group-module-depth N` to
+surface grouped fragile name-only minified selectors, `source_match` bodies
+copied verbatim across modules (a duplication smell — route a worker to
+collapse them to one contextual selector), and — with
+`--against <prior-spec-modules>` — selectors whose minified binding drifted
+across a re-pin (candidates to re-express as structural AST-shaped selectors
+with holes/placeholders for volatile subtrees). The architect surfaces these as
+findings and recommends broad coherent buckets; workers use
+`debundle spec synthesize-selectors` or focused YAML edits to apply them. If the
+same selector shape repeatedly needs verbose or unsupported syntax, route it as
+a Ducktape tooling gap instead of normal module-architecture work.
 
 ## Tree Shape Audit
 

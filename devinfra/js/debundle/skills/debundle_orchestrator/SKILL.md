@@ -35,6 +35,10 @@ Before dispatching work, collect:
 
 - Use `debundle_plan_work` to refresh planner evidence.
 - Send `modules propose` output to `debundle_intake` for seeds.
+- For selector-stabilization rounds, start with
+  `debundle spec selector-debt --group-module-depth N --format json` and
+  dispatch broad, coherent buckets to lane workers. Prefer buckets that can be
+  handled by `debundle spec synthesize-selectors` over hand-authored YAML.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
 - Use `debundle_integrator` for merge trains of worker commits.
@@ -51,14 +55,18 @@ dispatch the integrator.
 2. Run `debundle modules propose` and `debundle graph-summary` to update
    progress metrics. Use `graph-summary --include-proposals` only when
    proposal and diagnostic counts are needed.
-3. Ask intake for dispatchable seeds. Only `landable_today: true`
+3. For structural-selector cleanup, run `selector-debt` with module grouping,
+   choose high-yield buckets, and decide whether missing support should become
+   Ducktape tooling work before asking humans or workers to hand-edit many
+   selectors.
+4. Ask intake for dispatchable seeds. Only `landable_today: true`
    proposals are directly dispatchable; `blocked_residual_dependency`
    rows need their closure grown (or manual co-location) before they
    become lane-worker work.
-4. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
-5. Integrate green worker branches in batches.
-6. Rerun gate, regen, and adapter smoke tests as required.
-7. Update queues, architecture notes, and durable project conventions.
+5. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
+6. Integrate green worker branches in batches.
+7. Rerun gate, regen, and adapter smoke tests as required.
+8. Update queues, architecture notes, and durable project conventions.
 
 Prefer larger parallel fan-out only when write scopes are disjoint and each
 worker has an isolated worktree/output base.
@@ -73,7 +81,8 @@ IDs. Maintain:
 - failed/blocker diagnostics
 - graph/build command that produced the current evidence
 - progress metrics such as residual owners, patch-stream members, named module
-  fraction, and largest remaining generated files
+  fraction, selector-debt totals, grouped selector-debt buckets, and largest
+  remaining generated files
 
 ## Failure Policy
 
