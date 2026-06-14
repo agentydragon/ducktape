@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load(":defs.bzl", "visual_test_matrix")
 
 npm_link_all_packages(name = "node_modules")
@@ -85,41 +86,30 @@ js_library(
     deps = [
         ":App",
         ":auth",
+        ":node_modules/svelte",
     ],
 )
 
 # ── Production bundle ──────────────────────────────────────────────────────────
 
-_BUNDLE_CONFIG = [
-    "esbuild.config.mjs",
-    "index.html",
-    "svelte.config.js",
-    "tsconfig.json",
-]
-
-js_binary(
-    name = "build_bundle",
-    data = _BUNDLE_CONFIG + [
-        ":app",
-        ":node_modules",
+# Svelte + Tailwind plugins for the native esbuild() rule (see spa_bundle).
+js_library(
+    name = "esbuild_config",
+    srcs = ["esbuild_config.mjs"],
+    deps = [
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/esbuild-svelte",
+        ":node_modules/svelte",
+        ":node_modules/tailwindcss",
     ],
-    entry_point = "esbuild.config.mjs",
 )
 
-js_run_binary(
+spa_bundle(
     name = "bundle",
-    srcs = _BUNDLE_CONFIG + [":app"],
-    outs = [
-        "dist/index.html",
-        "dist/main.css",
-        "dist/main.css.map",
-        "dist/main.js",
-        "dist/main.js.map",
-    ],
-    args = ["dist"],
-    chdir = package_name(),
-    tool = ":build_bundle",
+    config = ":esbuild_config",
+    entry_point = "main.ts",
     visibility = ["//airlock:__pkg__"],
+    deps = [":app"],
 )
 
 # ── Visual test harness ────────────────────────────────────────────────────────
