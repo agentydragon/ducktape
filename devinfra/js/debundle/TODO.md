@@ -3,6 +3,76 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
+## Current AI-worker priority queue (2026-06-14)
+
+This queue captures the highest-leverage debundle work from the
+large-spec stabilization pass. Prefer dispatching work in this order until the
+old-spec selector-debt migration no longer needs special coordination.
+
+### P0 — directly unlock large structural-selector peels
+
+1. **Bulk selector codemods / apply mode.** Add scripting-safe CLI support that
+   can apply proven mechanical rewrites across a spec instead of only reporting
+   them. First targets:
+   - add `target_binding` to member-form `source_match` selectors whose source
+     declares one readable top-level binding;
+   - convert repeated member-form selectors over the same declaration context
+     into one `binding_groups` entry;
+   - convert unique literal-initializer bindings into structural selectors
+     when the source value is stable enough.
+     The tool should support dry-run, path filters, JSON output, and an
+     explanation for every skipped candidate.
+2. **Universal `ANYTHING` hole.** Provide one ergonomic wildcard spelling that
+   lowers to the correct typed matcher for the parse position when possible.
+   Preserve typed holes for diagnostics and for positions where raw JS cannot
+   parse a universal placeholder. Keep tests generic; do not use downstream
+   private bundle snippets.
+3. **Object-literal property holes.** Add a structural list hole for object
+   literal properties so selectors can pin stable keys while ignoring unrelated
+   key/value pairs, e.g. `{ stableKey: EXPR, OBJECT_PROPS, otherKey: EXPR }`.
+   This is needed to avoid replacing whole object initializers with broad
+   `EXPR` holes or overpinning volatile generated properties.
+4. **Selector diagnostics as machine-readable reports.** Emit a keep-going
+   JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
+   and blocker comments. Include module path, export name, selector kind,
+   target binding, first mismatch, nearest candidates, and recommended next
+   action. This lets coordinators batch failures instead of scraping logs.
+5. **Capability/version diagnostics for selector syntax.** Specs should fail
+   early when the pinned debundler lacks a selector feature they use. Unknown
+   hole names and unsupported selector fields should produce explicit
+   "unsupported selector capability" diagnostics, not generic no-match reports.
+
+### P1 — improves agent throughput and reviewability
+
+1. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
+   with source-aware ranking for multi-statement windows, repeated selector
+   bodies that can become binding groups, and "stable literal by value"
+   candidates. Prefer output that can feed the P0 codemod dry-run.
+2. **Cross-module binding-group design.** Design a form for one matched source
+   context to export bindings into different logical modules without duplicating
+   the selector body.
+3. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
+   readable names that are free references rather than local binders, explain
+   that they do not refer to previously exported symbols. Suggest grouping or
+   holes.
+4. **Duplicate-claim identity.** Track claims by declaration identity instead
+   of only emitted/minified spelling; include declaration kind and source
+   location in duplicate-claim diagnostics.
+5. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
+   private-corpus debundler issues can be reproduced and protected in public CI.
+
+### P2 — pipeline performance and architecture cleanup
+
+1. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
+   expensive reports they do not need.
+2. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
+   and Ducktape version.
+3. Add an AST-hash SWC codegen cache for unchanged post-lowering modules.
+4. Replace `JsChunk::{get_file,get_file_mut,remove_file}` linear scans with a
+   path-keyed index if fresh profiles show chunk file lookup hot.
+5. Move `split_entry_body` to a draining/move-based implementation if fresh
+   profiles show retained-statement cloning hot.
+
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against
