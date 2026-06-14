@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - httproute.yaml
+  - ciliumenvoyconfig.yaml
 # OAuth OIDC credentials provisioned by tf/gitops/sso-providers/ as a k8s Secret.

@@ -6,6 +6,13 @@ hostname on the existing HTTPS listener. The Forgejo Helm values therefore
 advertise SSH on port 2222, and host Home Manager config sets that port in
 `~/.ssh/config` for `git.allegedly.works`.
 
+The public SSH listener is `cluster/k8s/forgejo/app/ciliumenvoyconfig.yaml`.
+Cilium Gateway API does not implement `TCPRoute` in the deployed Cilium 1.19
+series, and SSH cannot use `TLSRoute` because there is no TLS ClientHello/SNI.
+The manual `CiliumEnvoyConfig` binds the existing hostNetwork Cilium Envoy on
+HIL gateway nodes at `0.0.0.0:2222` and forwards raw TCP to the in-cluster
+`forgejo-ssh` Service on port 2222.
+
 ## Current Choice: User SSH Keys
 
 The `agentydragon` Forgejo account uses one dedicated Ed25519 keypair per host:
@@ -62,9 +69,10 @@ one repo" or "this one deployer can push this one mirror." They are not a good
 fit for a workstation identity because each repository needs its own grant and
 the key does not inherit normal user permissions across the Forgejo account.
 
-### Dedicated SSH Exposure
+### Dedicated Port-22 Exposure
 
 A cleaner UX than `ssh://git@git.allegedly.works:2222/...` would be a dedicated
 port-22 TCP route or dedicated IP for Forgejo SSH. That is orthogonal to account
 credential type: user SSH keys, deploy keys, and SSH-backed service users all
-need the same TCP exposure.
+need the same TCP exposure. Port 22 is already used for the public `gecko` VM
+SSH listener, so Forgejo currently stays on 2222.

@@ -1,0 +1,45 @@
+# Public Forgejo SSH via a manual CiliumEnvoyConfig.
+#
+# Cilium 1.19's Gateway API controller supports HTTPRoute/GRPCRoute/TLSRoute
+# but not TCPRoute, and SSH has no SNI/Host header to route on. The Cilium Envoy
+# DaemonSet already runs with hostNetwork on HIL gateway nodes, so this binds
+# git.allegedly.works:2222 directly on those nodes and forwards raw TCP to
+# Forgejo's in-cluster SSH service.
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  name: forgejo-ssh
+  namespace: forgejo
+  annotations:
+    cec.cilium.io/use-original-source-address: "false"
+spec:
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: hil
+  backendServices:
+    - name: forgejo-ssh
+      namespace: forgejo
+      number:
+        - "2222"
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      name: forgejo-ssh
+      address:
+        socketAddress:
+          address: 0.0.0.0
+          portValue: 2222
+      filterChains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typedConfig:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                statPrefix: forgejo-ssh
+                cluster: forgejo:forgejo-ssh:2222
+                idleTimeout: 3600s
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      name: forgejo:forgejo-ssh:2222
+      type: EDS
+      edsClusterConfig:
+        serviceName: forgejo/forgejo-ssh:2222
+      outlierDetection:
+        splitExternalLocalOriginErrors: true

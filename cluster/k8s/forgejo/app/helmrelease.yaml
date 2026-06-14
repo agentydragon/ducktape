@@ -182,9 +182,8 @@ spec:
         type: ClusterIP
         port: 3000
       ssh:
-        type: NodePort
+        type: ClusterIP
         port: 2222
-        nodePort: 30501
 
     # Resources
     resources:
