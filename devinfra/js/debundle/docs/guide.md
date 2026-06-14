@@ -256,10 +256,11 @@ Default to this ladder when writing or repairing selectors:
 1. Use `selector.source_match` / `binding_groups` for the declaration,
    statement, class, or small surrounding AST shape that is semantically
    stable.
-2. Add `EXPR`, `STMT`, `ARGS`, `STMT_LIST`, `CLASS_REST`, or `DECLARATORS`
-   holes for volatile minified subtrees, noisy arguments, helper bodies,
-   statement runs, class members, or sibling declarators that are not part of
-   the durable identity of the target.
+2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
+   signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
+   `OBJECT_PROPS`, `CLASS_REST`, or `DECLARATORS`) when the syntactic role, a
+   typed list hole, or a named/equality hole makes the selector easier to read
+   or diagnose.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
 4. Use `selector.binding.name` only for already-stable semantic names or as
@@ -606,6 +607,44 @@ matches a call whose two arguments are identical. These are still structural
 selectors: surrounding syntax is exact after the identifier policy is applied,
 and ambiguous matches are rejected rather than resolved by source order.
 
+`ANYTHING` is universal anonymous sugar for positions where raw JavaScript can
+parse a plain identifier and the matcher already has a typed hole for that AST
+position:
+
+- In expression position, `ANYTHING` behaves like anonymous `EXPR`.
+- As a bare statement (`ANYTHING;`), it behaves like anonymous `STMT`.
+- As a non-declarator binding pattern, it matches any candidate pattern. This
+  is useful for parameters or destructuring when the stable signal is in the
+  body, not the binding shape.
+- As an object-literal shorthand property, it absorbs a run of key/value
+  properties or spreads:
+  `{ required: EXPR, ANYTHING, other: EXPR }`.
+- As a variable declarator (`const ANYTHING = null, selected = ...;`), it
+  behaves like anonymous `DECLARATORS` and absorbs a run of sibling
+  declarators. The initializer is ignored, as with `DECLARATORS`.
+- As a class field with no initializer (`class K { ANYTHING; method() {} }`),
+  it behaves like `CLASS_REST`.
+
+Prefer `ANYTHING` for throwaway holes whose name would only be noise. For
+object literals and destructuring-heavy selectors, match only enough stable
+anchors to identify the target uniquely, and no more: put `ANYTHING` where
+arbitrary unrelated structure may appear instead of spelling it.
+
+```js
+const config = {
+  requiredKey: ANYTHING,
+  ANYTHING,
+  anotherKey: ANYTHING,
+};
+```
+
+Keep the typed spelling when the role is not obvious from nearby syntax, when
+you need a named equality hole such as `EXPR_value`, or when you need typed
+list-hole forms such as `ARGS`, `STMT_LIST`, or `OBJECT_PROPS_GENERATED`.
+`{ key: ANYTHING }` wildcards the value expression; `{ ANYTHING: value }` is
+rejected because object property keys are exact anchors, not wildcard
+positions.
+
 For string literals with stable shape but unstable suffixes, use
 `STR_LITERAL_MATCHING_RE("...")` in expression position:
 
@@ -641,6 +680,20 @@ absorbed sequence for cross-occurrence equality.
   statements, including none. At top level it is supported in
   `anonymous_statements[].source_match` selectors that use `target_statement`
   or `target_statements`.
+- `OBJECT_PROPS` (or `OBJECT_PROPS_name`) in an object literal matches any run
+  of key/value properties or spreads. Anonymous `ANYTHING` in the same
+  shorthand-property position is equivalent. Use either form to pin only the
+  stable keys needed to make the selector unique, without overpinning generated
+  sibling properties:
+
+  ```js
+  {
+    requiredKey: EXPR,
+    OBJECT_PROPS_GENERATED,
+    anotherKey: EXPR,
+  }
+  ```
+
 - `CLASS_REST;` as a class field (no initializer) matches a run of class
   members — "this class by these members, ignore the rest". `CLASS_REST` is an
   exact token (not a prefix).
@@ -906,17 +959,16 @@ does not emit.
 When a binding cannot yet be stabilized because the selector language lacks a
 concise matcher, leave a member `comment:` naming the concrete matcher/tooling
 blocker and the desired future feature instead of silently keeping minified
-binding debt. For example:
+binding debt:
 
 ```yaml
 comment: |
-  blocked on Ducktape support for matching one declarator inside a
-  multi-declarator declaration / arbitrary sibling declarator hole
-
-comment: |
-  blocked on Ducktape support for an object-literal arbitrary key/value
-  property wildcard in source_match selectors
+  blocked on Ducktape support for <specific matcher/tooling capability needed here>
 ```
+
+Do not leave blocker comments for selector patterns Ducktape now supports, such
+as matching one declarator inside a multi-declarator declaration or bracketing
+object literal properties with `ANYTHING` / `OBJECT_PROPS`.
 
 ## Renaming or disabling a module
 

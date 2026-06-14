@@ -27,28 +27,177 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// name must match the same subtree/statement everywhere it appears.
 ///
 /// `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-/// statement. `ARGS`, `STMT_LIST`, `CLASS_REST`, and `DECLARATORS` are
-/// variable-length list holes (see
+/// statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, and
+/// `DECLARATORS` are variable-length list holes (see
 /// [`AstWildcardMatcher::match_list_with_holes`]): `ARGS` absorbs a run
 /// of call/new arguments, `STMT_LIST` absorbs a run of block statements
-/// (or top-level anonymous selector statements), `CLASS_REST` absorbs a
-/// run of class members, and `DECLARATORS` absorbs a run of variable
-/// declarators inside one `var`/`let`/`const` declaration. List-hole
-/// suffixes are labels for readability; they do not bind the absorbed
-/// sequence for cross-occurrence equality.
+/// (or top-level anonymous selector statements), `OBJECT_PROPS` absorbs
+/// a run of object literal properties/spreads, `CLASS_REST` absorbs a run
+/// of class members, and `DECLARATORS` absorbs a run of variable
+/// declarators inside one `var`/`let`/`const` declaration. List-hole suffixes
+/// are labels for readability; they do not bind the absorbed sequence for
+/// cross-occurrence equality.
+///
+/// `ANYTHING` is parse-position polymorphic sugar for the anonymous
+/// typed hole at positions where plain JavaScript can parse it. In an
+/// expression position it behaves like `EXPR`; as a bare expression
+/// statement it behaves like `STMT`; as a variable declarator name it
+/// behaves like `DECLARATORS`; as a non-declarator binding pattern it
+/// matches any pattern; as an object-literal shorthand property it
+/// absorbs object properties/spreads; as a class field with no initializer
+/// it behaves like `CLASS_REST`. Use the typed spellings when a named
+/// hole is helpful or when the position would otherwise be ambiguous.
 /// `STMT_LIST` must be checked before `STMT`, since `STMT` is a
 /// keyword-prefix of it.
+const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
 const EXPR_HOLE_KEYWORD: &str = "EXPR";
 const STMT_HOLE_KEYWORD: &str = "STMT";
 const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
+const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
 const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
 
 const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
 const SOURCE_MATCH_TIMING_THRESHOLD_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS";
 const SOURCE_MATCH_TIMING_PREVIEW_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW";
+
+fn parse_source_match_module_ast(source_name: &str, source: &str) -> Result<Module> {
+    let parsed = js_ast::parse_js_module_ast(source_name, source)?;
+    validate_anything_holes(&parsed.body)?;
+    Ok(parsed)
+}
+
+fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
+    let mut collector = UnsupportedAnythingCollector::default();
+    for item in items {
+        item.visit_with(&mut collector);
+    }
+    if collector.positions.is_empty() {
+        return Ok(());
+    }
+    collector.positions.sort();
+    collector.positions.dedup();
+    bail!(
+        "source_match `ANYTHING` is unsupported in {}. `ANYTHING` is anonymous \
+         sugar only for expression (`EXPR`), statement (`STMT`), pattern, \
+         variable-declarator-list (`DECLARATORS`), object-property-list \
+         (`ANYTHING` shorthand or `OBJECT_PROPS`), and class-rest (`CLASS_REST`) holes. \
+         Use typed/named holes when the position needs stronger diagnostics or equality. \
+         Object property keys still need exact keys; use `key: ANYTHING` to wildcard a \
+         property value or `{{ ANYTHING }}` to skip arbitrary properties.",
+        collector.positions.join(", ")
+    )
+}
+
+#[derive(Default)]
+struct UnsupportedAnythingCollector {
+    positions: Vec<&'static str>,
+}
+
+impl UnsupportedAnythingCollector {
+    fn push(&mut self, position: &'static str) {
+        self.positions.push(position);
+    }
+}
+
+impl Visit for UnsupportedAnythingCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if is_anything_expr_hole(expr) {
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if is_anything_stmt_hole(stmt) {
+            return;
+        }
+        stmt.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if is_anything_declarator_list_hole(declarator) {
+            declarator.init.visit_with(self);
+            return;
+        }
+        declarator.visit_children_with(self);
+    }
+
+    fn visit_pat(&mut self, pat: &Pat) {
+        if is_anything_pat_hole(pat) {
+            return;
+        }
+        pat.visit_children_with(self);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if is_anything_class_rest_hole(member) {
+            return;
+        }
+        if let ClassMember::ClassProp(prop) = member
+            && prop_name_is_anything(&prop.key)
+        {
+            self.push("a class member with an initializer");
+            prop.value.visit_with(self);
+            return;
+        }
+        member.visit_children_with(self);
+    }
+
+    fn visit_prop(&mut self, prop: &Prop) {
+        match prop {
+            Prop::Shorthand(_) => {}
+            Prop::KeyValue(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object property key");
+                }
+                prop.value.visit_with(self);
+            }
+            Prop::Assign(prop) => {
+                if ident_is_anything(&prop.key) {
+                    self.push("an object assignment property key");
+                }
+                prop.value.visit_with(self);
+            }
+            Prop::Getter(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object getter key");
+                }
+                prop.body.visit_with(self);
+            }
+            Prop::Setter(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object setter key");
+                }
+                prop.param.visit_with(self);
+                prop.body.visit_with(self);
+            }
+            Prop::Method(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object method key");
+                }
+                prop.function.visit_with(self);
+            }
+        }
+    }
+
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        if binding_ident_is_anything(ident) {
+            self.push("a binding identifier");
+            ident.type_ann.visit_with(self);
+            return;
+        }
+        ident.visit_children_with(self);
+    }
+
+    fn visit_ident(&mut self, ident: &Ident) {
+        if ident_is_anything(ident) {
+            self.push("an identifier");
+        }
+    }
+}
 
 #[derive(Debug)]
 struct SourceMatchTimingConfig {
@@ -306,7 +455,7 @@ pub fn source_match_declared_binding_names(
     request_id: &str,
     source_match: &SourceMatch,
 ) -> Result<Vec<String>> {
-    let parsed = js_ast::parse_js_module_ast(
+    let parsed = parse_source_match_module_ast(
         &format!("<binding group source_match in {request_id}>"),
         &source_match.match_source,
     )
@@ -556,7 +705,7 @@ pub fn find_anonymous_statement_body_index_groups(
         request_id,
         selector,
         || {
-            let parsed = js_ast::parse_js_module_ast(
+            let parsed = parse_source_match_module_ast(
                 &format!("<anonymous_statement match in {request_id}>"),
                 &selector.match_source,
             )
@@ -613,7 +762,7 @@ pub fn source_match_body_debt(
     min_score: usize,
     limit: usize,
 ) -> Result<SourceMatchBodyDebt> {
-    let parsed = js_ast::parse_js_module_ast(
+    let parsed = parse_source_match_module_ast(
         &format!("<source_match debt in {request_id}>"),
         &selector.match_source,
     )
@@ -786,7 +935,7 @@ fn resolve_member_binding_group_impl(
              target_binding already set"
         );
     }
-    let parsed = js_ast::parse_js_module_ast(
+    let parsed = parse_source_match_module_ast(
         &format!("<binding group source_match in {request_id}>"),
         &selector.match_source,
     )
@@ -934,7 +1083,7 @@ fn find_member_binding_matches(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let parsed = js_ast::parse_js_module_ast(
+    let parsed = parse_source_match_module_ast(
         &format!("<member source_match in {request_id}>"),
         &selector.match_source,
     )
@@ -1954,7 +2103,7 @@ fn source_match_no_match_hint(
     selector: &AnonymousStatementSelector,
 ) -> Option<String> {
     let parsed =
-        js_ast::parse_js_module_ast("<source_match diagnostic>", &selector.match_source).ok()?;
+        parse_source_match_module_ast("<source_match diagnostic>", &selector.match_source).ok()?;
     let [needle] = parsed.body.as_slice() else {
         return None;
     };
@@ -3757,11 +3906,11 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_expr(&mut self, wildcard: &str, candidate: &Expr) -> bool {
-        // The bare keyword `EXPR` is an anonymous wildcard: every
-        // occurrence matches independently, so authors don't have to mint
-        // a unique name per placeholder. Named holes (`EXPR_FOO`) keep
-        // their cross-occurrence equality.
-        if hole_is_anonymous(wildcard, EXPR_HOLE_KEYWORD) {
+        // The bare keyword `EXPR` (and universal `ANYTHING`) is an
+        // anonymous wildcard: every occurrence matches independently, so
+        // authors don't have to mint a unique name per placeholder.
+        // Named holes (`EXPR_FOO`) keep their cross-occurrence equality.
+        if hole_is_anonymous(wildcard, EXPR_HOLE_KEYWORD) || wildcard == ANYTHING_HOLE_KEYWORD {
             return true;
         }
         match self.replacements.expressions.get(wildcard) {
@@ -3776,8 +3925,9 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_stmt(&mut self, wildcard: &str, candidate: &Stmt) -> bool {
-        // Bare `STMT` is anonymous; see [`Self::bind_expr`].
-        if hole_is_anonymous(wildcard, STMT_HOLE_KEYWORD) {
+        // Bare `STMT` and universal `ANYTHING` are anonymous; see
+        // [`Self::bind_expr`].
+        if hole_is_anonymous(wildcard, STMT_HOLE_KEYWORD) || wildcard == ANYTHING_HOLE_KEYWORD {
             return true;
         }
         match self.replacements.statements.get(wildcard) {
@@ -4056,7 +4206,7 @@ impl<'a> AstWildcardMatcher<'a> {
                 Self::match_option_expr_or_spread,
             ),
             (Expr::Object(needle), Expr::Object(candidate)) => {
-                self.match_slice(&needle.props, &candidate.props, Self::match_prop_or_spread)
+                self.match_prop_or_spread_slice(&needle.props, &candidate.props)
             }
             (Expr::Ident(needle), Expr::Ident(candidate)) => self.match_ident(needle, candidate),
             (Expr::Fn(needle), Expr::Fn(candidate)) => {
@@ -4365,6 +4515,14 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_pat(&mut self, needle: &Pat, candidate: &Pat) -> bool {
+        if is_anything_pat_hole(needle)
+            && self
+                .wildcard_idents
+                .patterns
+                .contains(ANYTHING_HOLE_KEYWORD)
+        {
+            return true;
+        }
         match (needle, candidate) {
             (Pat::Array(needle), Pat::Array(candidate)) => {
                 needle.optional == candidate.optional
@@ -4425,6 +4583,14 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_ref_pat(&mut self, needle: &Pat, candidate: &Pat) -> bool {
+        if is_anything_pat_hole(needle)
+            && self
+                .wildcard_idents
+                .patterns
+                .contains(ANYTHING_HOLE_KEYWORD)
+        {
+            return true;
+        }
         match (needle, candidate) {
             (Pat::Array(needle), Pat::Array(candidate)) => {
                 needle.optional == candidate.optional
@@ -4595,6 +4761,31 @@ impl<'a> AstWildcardMatcher<'a> {
                 self.match_prop(needle, candidate)
             }
             _ => false,
+        }
+    }
+
+    /// Match object literal properties. `OBJECT_PROPS` /
+    /// `OBJECT_PROPS_*` or anonymous `ANYTHING` shorthand properties
+    /// split the needle into fixed property segments matched as an
+    /// ordered subsequence with gaps; with no hole this is an exact
+    /// element-wise match.
+    fn match_prop_or_spread_slice(
+        &mut self,
+        needle: &[PropOrSpread],
+        candidate: &[PropOrSpread],
+    ) -> bool {
+        if needle
+            .iter()
+            .any(|prop| object_property_list_hole_name(prop).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |prop| object_property_list_hole_name(prop).is_some(),
+                Self::match_prop_or_spread,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_prop_or_spread)
         }
     }
 
@@ -5487,6 +5678,8 @@ impl AlphaIdentCanonicalizer {
                 .chain(&wildcard_idents.statement_lists)
                 .chain(&wildcard_idents.declarator_lists)
                 .chain(&wildcard_idents.argument_lists)
+                .chain(&wildcard_idents.object_property_lists)
+                .chain(&wildcard_idents.patterns)
                 .cloned()
                 .collect(),
             ..Self::default()
@@ -5614,6 +5807,13 @@ struct WildcardIdents {
     /// `ARGS` argument-list hole names. These are pseudo-arguments and
     /// must route to ordered-subsequence argument matching.
     argument_lists: BTreeSet<String>,
+    /// `OBJECT_PROPS` object-literal property-list hole names. These are
+    /// pseudo-properties and must route to ordered-subsequence property
+    /// matching.
+    object_property_lists: BTreeSet<String>,
+    /// Anonymous pattern hole names. These are binding positions and must
+    /// not be alpha-canonicalized as real bindings.
+    patterns: BTreeSet<String>,
     /// Whether the selector contains any `STR_LITERAL_MATCHING_RE(...)`
     /// expression predicate. This is not an identifier hole, but it
     /// changes expression shape (`CallExpr` in the selector,
@@ -5630,14 +5830,16 @@ struct WildcardIdents {
 impl WildcardIdents {
     /// True when the selector carries no holes of any kind, so the
     /// caller can take the plain `eq_ignore_span` fast path. List holes
-    /// count: a selector with only `STMT_LIST` / `CLASS_REST` holes still
-    /// needs the structural matcher.
+    /// count: a selector with only list holes still needs the structural
+    /// matcher.
     fn is_empty(&self) -> bool {
         self.expressions.is_empty()
             && self.statements.is_empty()
             && self.statement_lists.is_empty()
             && self.declarator_lists.is_empty()
             && self.argument_lists.is_empty()
+            && self.object_property_lists.is_empty()
+            && self.patterns.is_empty()
             && !self.string_literal_regex_present
             && !self.class_rest_present
     }
@@ -5683,6 +5885,10 @@ impl Visit for WildcardIdentCollector {
                 self.idents.statement_lists.insert(hole_name.to_string());
                 return;
             }
+            if hole_name == ANYTHING_HOLE_KEYWORD {
+                self.idents.statements.insert(hole_name.to_string());
+                return;
+            }
             if hole_name_for(hole_name, STMT_HOLE_KEYWORD).is_some() {
                 self.idents.statements.insert(hole_name.to_string());
                 return;
@@ -5707,12 +5913,32 @@ impl Visit for WildcardIdentCollector {
         declarator.visit_children_with(self);
     }
 
+    fn visit_pat(&mut self, pat: &Pat) {
+        if is_anything_pat_hole(pat) {
+            self.idents
+                .patterns
+                .insert(ANYTHING_HOLE_KEYWORD.to_string());
+            return;
+        }
+        pat.visit_children_with(self);
+    }
+
     fn visit_expr_or_spread(&mut self, expr_or_spread: &ExprOrSpread) {
         if let Some(hole_name) = argument_list_hole_name(expr_or_spread) {
             self.idents.argument_lists.insert(hole_name.to_string());
             return;
         }
         expr_or_spread.visit_children_with(self);
+    }
+
+    fn visit_prop_or_spread(&mut self, prop_or_spread: &PropOrSpread) {
+        if let Some(hole_name) = object_property_list_hole_name(prop_or_spread) {
+            self.idents
+                .object_property_lists
+                .insert(hole_name.to_string());
+            return;
+        }
+        prop_or_spread.visit_children_with(self);
     }
 }
 
@@ -5721,6 +5947,11 @@ fn expression_hole_name(expr: &Expr) -> Option<&str> {
         return None;
     };
     hole_name_for(ident.sym.as_ref(), EXPR_HOLE_KEYWORD)
+        .or_else(|| anything_hole_name(ident.sym.as_ref()))
+}
+
+fn is_anything_expr_hole(expr: &Expr) -> bool {
+    matches!(expr, Expr::Ident(ident) if ident_is_anything(ident))
 }
 
 fn string_literal_regex_pattern(expr: &Expr) -> Option<String> {
@@ -5760,6 +5991,13 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
     Some(ident.sym.as_ref())
 }
 
+fn is_anything_stmt_hole(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Expr(ExprStmt { expr, .. }) if is_anything_expr_hole(expr)
+    )
+}
+
 /// The name of a statement-list hole (`STMT_LIST` / `STMT_LIST_*;`) if
 /// `stmt` is one.
 fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
@@ -5785,6 +6023,18 @@ fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
         return None;
     };
     hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
+        .or_else(|| anything_hole_name(ident.id.sym.as_ref()))
+}
+
+fn is_anything_declarator_list_hole(declarator: &VarDeclarator) -> bool {
+    matches!(
+        &declarator.name,
+        Pat::Ident(ident) if binding_ident_is_anything(ident)
+    )
+}
+
+fn is_anything_pat_hole(pat: &Pat) -> bool {
+    matches!(pat, Pat::Ident(ident) if binding_ident_is_anything(ident))
 }
 
 /// The name of an argument-list hole (`ARGS` / `ARGS_*`) if
@@ -5801,6 +6051,21 @@ fn argument_list_hole_name(expr_or_spread: &ExprOrSpread) -> Option<&str> {
     hole_name_for(ident.sym.as_ref(), ARGS_HOLE_KEYWORD)
 }
 
+/// The name of an object-literal property-list hole (`OBJECT_PROPS` /
+/// `OBJECT_PROPS_*`) if `prop_or_spread` is one. Anonymous `ANYTHING`
+/// is the sugar form. The hole token itself is a shorthand property;
+/// the run it absorbs may contain ordinary properties or spreads.
+fn object_property_list_hole_name(prop_or_spread: &PropOrSpread) -> Option<&str> {
+    let PropOrSpread::Prop(prop) = prop_or_spread else {
+        return None;
+    };
+    let Prop::Shorthand(ident) = prop.as_ref() else {
+        return None;
+    };
+    hole_name_for(ident.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD)
+        .or_else(|| anything_hole_name(ident.sym.as_ref()))
+}
+
 /// If `name` is a hole identifier for `keyword` — the bare keyword
 /// (anonymous) or a `<keyword>_<suffix>` (named) form — return it. The
 /// keyword must be followed by end-of-string or `_`, so `EXPR` and
@@ -5808,6 +6073,10 @@ fn argument_list_hole_name(expr_or_spread: &ExprOrSpread) -> Option<&str> {
 fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
     let rest = name.strip_prefix(keyword)?;
     (rest.is_empty() || rest.starts_with('_')).then_some(name)
+}
+
+fn anything_hole_name(name: &str) -> Option<&str> {
+    (name == ANYTHING_HOLE_KEYWORD).then_some(name)
 }
 
 /// Whether a hole name is the anonymous form: the bare keyword, or the
@@ -5830,6 +6099,27 @@ fn is_class_rest_hole(member: &ClassMember) -> bool {
     prop.value.is_none()
         && matches!(
             &prop.key,
-            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
+            PropName::Ident(ident)
+                if ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
+                    || ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD
         )
+}
+
+fn is_anything_class_rest_hole(member: &ClassMember) -> bool {
+    let ClassMember::ClassProp(prop) = member else {
+        return false;
+    };
+    prop.value.is_none() && prop_name_is_anything(&prop.key)
+}
+
+fn prop_name_is_anything(prop_name: &PropName) -> bool {
+    matches!(prop_name, PropName::Ident(ident) if ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD)
+}
+
+fn binding_ident_is_anything(ident: &BindingIdent) -> bool {
+    ident.id.sym.as_ref() == ANYTHING_HOLE_KEYWORD
+}
+
+fn ident_is_anything(ident: &Ident) -> bool {
+    ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD
 }

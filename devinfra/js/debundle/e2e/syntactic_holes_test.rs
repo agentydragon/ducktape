@@ -5,6 +5,12 @@
 //!   identifier expressions; they match one arbitrary expression subtree.
 //! - Statement holes (`STMT` / `STMT_name`) are selector-local bare
 //!   expression statements; they match exactly one statement.
+//! - `ANYTHING` is anonymous parse-position sugar: in an expression
+//!   position it behaves like `EXPR`, as a bare statement like `STMT`,
+//!   as a non-declarator binding pattern like an anonymous pattern hole,
+//!   as a variable declarator like `DECLARATORS`, as an object-literal
+//!   shorthand property like an anonymous property-list hole, and as a
+//!   no-init class field like `CLASS_REST`.
 //!
 //! The bare single-node keyword matches independently at every occurrence;
 //! the named form binds for cross-occurrence equality.
@@ -144,6 +150,131 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_object_property_hole_skips_arbitrary_key_values() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function makeValue(label) {
+  return label.toUpperCase();
+}
+const actual = {
+  requiredKey: makeValue("required"),
+  generatedAlpha: makeValue("alpha"),
+  nested: { inner: makeValue("nested") },
+  ...{ spreadValue: makeValue("spread") },
+  anotherKey: makeValue("another"),
+};
+console.log(actual.requiredKey, actual.anotherKey, actual.spreadValue);
+export { actual };
+"#,
+        vec![logical_module(
+            "config",
+            &[Member::source_alpha_target(
+                "config_object",
+                "readable",
+                r#"const readable = {
+  requiredKey: EXPR,
+  OBJECT_PROPS_GENERATED,
+  anotherKey: EXPR,
+};"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "REQUIRED ANOTHER SPREAD\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["config_object"],
+        &["actual"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &[
+            "const config_object",
+            "generatedAlpha",
+            "spreadValue",
+            "anotherKey",
+        ],
+        &["OBJECT_PROPS_GENERATED", "readable"],
+    );
+}
+
+#[test]
+fn member_source_match_anything_object_property_hole_skips_arbitrary_key_values() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function makeValue(label) {
+  return label.toUpperCase();
+}
+const actual = {
+  requiredKey: makeValue("required"),
+  generatedAlpha: makeValue("alpha"),
+  nested: { inner: makeValue("nested") },
+  ...{ spreadValue: makeValue("spread") },
+  anotherKey: makeValue("another"),
+};
+console.log(actual.requiredKey, actual.anotherKey, actual.spreadValue);
+export { actual };
+"#,
+        vec![logical_module(
+            "config",
+            &[Member::source_alpha_target(
+                "config_object",
+                "readable",
+                r#"const readable = {
+  requiredKey: ANYTHING,
+  ANYTHING,
+  anotherKey: ANYTHING,
+};"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "REQUIRED ANOTHER SPREAD\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["config_object"],
+        &["actual"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &[
+            "const config_object",
+            "generatedAlpha",
+            "spreadValue",
+            "anotherKey",
+        ],
+        &["ANYTHING", "readable"],
+    );
+}
+
+#[test]
+fn source_match_anything_object_key_reports_unsupported_position() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const actual = { mode: "runtime" };
+console.log(actual.mode);
+export { actual };
+"#,
+            vec![logical_module(
+                "config",
+                &[Member::source_alpha(
+                    "makeConfig",
+                    r#"const readable = { ANYTHING: "runtime" };"#,
+                )],
+            )],
+        ),
+        &[
+            "ANYTHING",
+            "unsupported",
+            "object property key",
+            "key: ANYTHING",
+        ],
+    );
+}
+
+#[test]
 fn member_source_match_treats_destructure_shorthand_as_explicit_same_name_property() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function actual({ apiMode, enabled }) {
@@ -169,6 +300,41 @@ export { actual };
         "static/app/modules/config.js",
         &["function describeConfig", "{ apiMode, enabled }"],
         &["function actual", "function readable"],
+    );
+}
+
+#[test]
+fn member_source_match_anything_pattern_skips_destructuring_shape() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual({ value, ignored }) {
+  return `stable:${value}`;
+}
+console.log(actual({ value: "ok", ignored: "noise" }));
+export { actual };
+"#,
+        vec![logical_module(
+            "config",
+            &[Member::source_alpha(
+                "readConfig",
+                r#"function readable(ANYTHING) {
+  return `stable:${ANYTHING}`;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "stable:ok\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["readConfig"],
+        &["actual"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/config.js",
+        &["function readConfig", "{ value, ignored }"],
+        &["ANYTHING", "readable"],
     );
 }
 
@@ -205,6 +371,37 @@ export { actual };
             "const calc_value",
         ],
         &[],
+    );
+}
+
+#[test]
+fn member_source_match_anything_matches_expression_subtrees() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const actual = Number.parseInt("8", 10) + [1, 2, 3].length;
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha(
+                "calc_value",
+                r#"const readable = ANYTHING + ANYTHING;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "11\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/calc.js",
+        &["calc_value"],
+        &["actual"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/calc.js",
+        &["Number.parseInt", "].length", "const calc_value"],
+        &["ANYTHING", "readable"],
     );
 }
 
@@ -806,6 +1003,44 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
 }
 
 #[test]
+fn member_source_match_anything_declarator_selects_binding_from_wider_const_list() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrefix = "prefix",
+  runtimeBuild = (value) => `build:${value}`,
+  runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
+  runtimeSuffix = "suffix";
+console.log(runtimePrefix, runtimeRead("one"), runtimeSuffix);
+export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
+"#,
+        vec![logical_module(
+            "display",
+            &[Member::source_alpha_target(
+                "readDisplayValue",
+                "readDisplayValue",
+                r#"const ANYTHING = null,
+  buildDisplayValue = (value) => `build:${value}`,
+  readDisplayValue = (value) => buildDisplayValue(value).toUpperCase(),
+  ANYTHING = null;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "prefix BUILD:ONE suffix\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &["readDisplayValue"],
+        &["runtimeRead"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &["const readDisplayValue", ".toUpperCase()"],
+        &["runtimePrefix", "runtimeSuffix", "ANYTHING"],
+    );
+}
+
+#[test]
 fn binding_group_declarator_holes_extract_multiple_bindings_and_skip_holes_for_adopt_names() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimePrefix = "prefix",
@@ -1287,6 +1522,58 @@ export { Counter };
         // The full class moved, members and all.
         &["class", "increment", "reset"],
         &["CLASS_REST", "STMT_LIST_CTOR"],
+    );
+}
+
+#[test]
+fn member_source_match_anything_class_member_selects_class_ignoring_other_members() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class RuntimeCounter {
+  constructor(start) {
+    this.value = start;
+  }
+  increment() {
+    this.value += 1;
+  }
+  label() {
+    return `count:${this.value}`;
+  }
+  reset() {
+    this.value = 0;
+  }
+}
+const counter = new RuntimeCounter(4);
+counter.increment();
+console.log(counter.label());
+export { RuntimeCounter };
+"#,
+        vec![logical_module(
+            "counter",
+            &[Member::source_alpha(
+                "Counter",
+                r#"class Counter {
+  ANYTHING;
+  label() {
+    ANYTHING;
+  }
+  ANYTHING;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "count:5\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/counter.js",
+        &["Counter"],
+        &["RuntimeCounter"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/counter.js",
+        &["class Counter", "increment()", "reset()"],
+        &["ANYTHING"],
     );
 }
 
