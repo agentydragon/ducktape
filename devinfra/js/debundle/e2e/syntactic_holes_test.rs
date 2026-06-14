@@ -1041,6 +1041,45 @@ export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
 }
 
 #[test]
+fn member_source_match_anything_declarator_can_bracket_capitalized_target_binding() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const beforeTarget = "before",
+  runtimeTarget = makeTarget("value"),
+  afterTarget = "after";
+function makeTarget(value) {
+  return `target:${value}`;
+}
+console.log(beforeTarget, runtimeTarget, afterTarget);
+export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
+"#,
+        vec![logical_module(
+            "target",
+            &[Member::source_exact_target(
+                "SelectedTarget",
+                "Target",
+                r#"const ANYTHING = null,
+  Target = makeTarget("value"),
+  ANYTHING = null;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "before target:value after\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/target.js",
+        &["SelectedTarget"],
+        &["runtimeTarget"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/target.js",
+        &["const SelectedTarget", "makeTarget"],
+        &["beforeTarget", "afterTarget", "ANYTHING"],
+    );
+}
+
+#[test]
 fn binding_group_declarator_holes_extract_multiple_bindings_and_skip_holes_for_adopt_names() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimePrefix = "prefix",

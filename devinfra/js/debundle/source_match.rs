@@ -1471,10 +1471,21 @@ fn find_matching_target_var_decl_with_declarator_holes(
         if !prefilter.var_decl_can_match(candidate_var) {
             continue;
         }
-        if !prepared.matches(item) {
-            continue;
-        }
-        let Some(alignment) = prepared.var_declarator_alignment(needle_var, candidate_var) else {
+        let Some(alignment) = target_binding_candidate_names(candidate_var, target_binding_idx)
+            .into_iter()
+            .find_map(|candidate_binding| {
+                if !prepared.matches_with_prebound_binding(item, target_binding, &candidate_binding)
+                {
+                    return None;
+                }
+                prepared.var_declarator_alignment_with_prebound_binding(
+                    needle_var,
+                    candidate_var,
+                    target_binding,
+                    &candidate_binding,
+                )
+            })
+        else {
             continue;
         };
         let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
@@ -2025,6 +2036,21 @@ fn declared_bindings_for_var_declarator(declarator: &VarDeclarator) -> Vec<Resol
         .map(|binding_name| ResolvedMemberBinding {
             binding_name,
             kind: Some(BindingSourceKind::VariableDeclarator),
+        })
+        .collect()
+}
+
+fn target_binding_candidate_names(
+    candidate_var: &VarDecl,
+    target_binding_idx: usize,
+) -> Vec<String> {
+    candidate_var
+        .decls
+        .iter()
+        .filter_map(|declarator| {
+            declared_bindings_for_var_declarator(declarator)
+                .get(target_binding_idx)
+                .map(|binding| binding.binding_name.clone())
         })
         .collect()
 }
@@ -3487,6 +3513,24 @@ impl<'a> PreparedNeedle<'a> {
         })
     }
 
+    fn matches_with_prebound_binding(
+        &self,
+        candidate: &ModuleItem,
+        selector_binding: &str,
+        candidate_binding: &str,
+    ) -> bool {
+        SyntaxContext::within_ignored_ctxt(|| {
+            let mut matcher = AstWildcardMatcher::new_with_string_literal_regexes(
+                self.selector,
+                &self.wildcard_idents,
+                &self.string_literal_regexes,
+                self.alpha,
+            );
+            matcher.prebind_alpha_sym(selector_binding, candidate_binding)
+                && matcher.match_module_item(self.needle, candidate)
+        })
+    }
+
     fn var_declarator_alignment(
         &self,
         needle: &VarDecl,
@@ -3499,6 +3543,27 @@ impl<'a> PreparedNeedle<'a> {
                 &self.string_literal_regexes,
                 self.alpha,
             );
+            matcher.match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
+        })
+    }
+
+    fn var_declarator_alignment_with_prebound_binding(
+        &self,
+        needle: &VarDecl,
+        candidate: &VarDecl,
+        selector_binding: &str,
+        candidate_binding: &str,
+    ) -> Option<Vec<Option<usize>>> {
+        SyntaxContext::within_ignored_ctxt(|| {
+            let mut matcher = AstWildcardMatcher::new_with_string_literal_regexes(
+                self.selector,
+                &self.wildcard_idents,
+                &self.string_literal_regexes,
+                self.alpha,
+            );
+            if !matcher.prebind_alpha_sym(selector_binding, candidate_binding) {
+                return None;
+            }
             matcher.match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
         })
     }
@@ -3885,10 +3950,6 @@ impl<'a> AstWildcardMatcher<'a> {
     /// consult the visible lexical scope stack, then create a mapping in
     /// the current scope if neither side is known yet.
     fn match_sym(&mut self, needle: &Atom, candidate: &Atom) -> bool {
-        if !self.alpha {
-            return needle == candidate;
-        }
-
         for scope in self.alpha_scopes.iter().rev() {
             if let Some(mapped) = scope.forward.get(needle) {
                 return mapped == candidate;
@@ -3897,6 +3958,9 @@ impl<'a> AstWildcardMatcher<'a> {
                 return false;
             }
         }
+        if !self.alpha {
+            return needle == candidate;
+        }
         self.bind_alpha_sym_in_current_scope(needle, candidate)
     }
 
@@ -3904,10 +3968,24 @@ impl<'a> AstWildcardMatcher<'a> {
     /// allowed to shadow an outer binding with the same spelling, so only
     /// the current lexical frame is consulted before creating the pair.
     fn match_binding_sym(&mut self, needle: &Atom, candidate: &Atom) -> bool {
+        let scope = self
+            .alpha_scopes
+            .last()
+            .expect("alpha matcher always has a root scope");
+        if let Some(mapped) = scope.forward.get(needle) {
+            return mapped == candidate;
+        }
+        if scope.backward.contains_key(candidate) {
+            return false;
+        }
         if !self.alpha {
             return needle == candidate;
         }
         self.bind_alpha_sym_in_current_scope(needle, candidate)
+    }
+
+    fn prebind_alpha_sym(&mut self, needle: &str, candidate: &str) -> bool {
+        self.bind_alpha_sym_in_current_scope(&Atom::from(needle), &Atom::from(candidate))
     }
 
     fn bind_alpha_sym_in_current_scope(&mut self, needle: &Atom, candidate: &Atom) -> bool {

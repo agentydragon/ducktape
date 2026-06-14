@@ -202,6 +202,28 @@ impl Member {
         }
     }
 
+    /// Extract one binding from a matched declaration in exact identifier mode
+    /// by naming that binding as it appears in the selector source.
+    pub fn source_exact_target(
+        name: &'static str,
+        target_binding: impl Into<String>,
+        match_source: impl Into<String>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "exact",
+                target_binding: Some(target_binding.into()),
+                target_statement: None,
+                target_statements: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            }),
+            comment: None,
+        }
+    }
+
     /// Attach an author comment to be emitted above the binding's owner
     /// statement in the lowered module body. See `spec::Member::comment`.
     pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
