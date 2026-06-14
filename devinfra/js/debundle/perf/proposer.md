@@ -197,22 +197,41 @@ ducktape_version)` per chunk and skip lowering, codegen, and reports
 
 ### Member-form `source_match` selector resolution
 
-The Gaffer 660 migration loop still spends most of its broad
-`debundle run --dry-run --keep-going` wall time in member-form
-`source_match` selectors after the literal-initializer fast path
-(#2201) and selector aggregation (#2200/#2203).
+A 2026-06-14 downstream old-spec dry-run replay of a large private web
+corpus still showed material member-form `source_match` cost after the
+literal-initializer fast path (#2201) and selector aggregation
+(#2200/#2203). The replay used an optimized debundler, direct
+`debundle run --dry-run --keep-going`, `DUCKTAPE_SOURCE_MATCH_TIMINGS=1`,
+`DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS=50`, preview disabled, and:
 
-Current downstream profile snapshot, 2026-06-14, using the broad Gaffer
-660 command shape with `DUCKTAPE_SOURCE_MATCH_TIMINGS=1`,
-`DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS=100`, and preview disabled:
+```bash
+perf record -F 199 -e cpu-clock:u --call-graph dwarf,8192 \
+    -o /tmp/profile.data -- /tmp/run_debundle_direct.py
+```
 
-- wall: ~129s to the current aggregate duplicate-claim report;
-- timing lines: 129 `members[].selector.source_match` entries above
-  100ms;
-- representative early hot selectors: `hotkeyModifierSortOrder`
-  ~202ms, `compareHotkeyModifierOrder` ~258ms,
-  `composeNormalizedHotkey` ~423ms, plus many 120–250ms selectors
-  across bootstrap, panel, AI, search, and style modules.
+Baseline profile:
+
+- wall: 19.05s to the current aggregate duplicate-claim report;
+- timing lines: 80 `members[].selector.source_match` entries above
+  50ms, 5.765s summed, max 150ms;
+- sampled stacks: `source_match::find_member_binding_matches` 34.21%
+  children, with `source_match::module_item_for_single_var_declarator`
+  alone at 12.87% children.
+
+The clone-heavy single-declarator path has since been replaced with
+borrowed matching against the candidate declarator slice. Same replay:
+
+- wall: 12.64s;
+- timing lines: zero `members[].selector.source_match` entries above
+  50ms;
+- sampled stacks: `source_match::find_member_binding_matches` down to
+  17.11% children, and the synthetic `ModuleItem` clone helper is gone
+  from the profile.
+
+The remaining sampled `source_match` work is matcher/list-hole/string
+predicate logic: `match_var_declarator_slice_with_alignment`,
+`match_expr`, `StringLiteralPredicate::matches`, and body-group
+alignment.
 
 Two bounded per-declarator prefilter experiments were tried and rejected:
 
@@ -223,11 +242,11 @@ Two bounded per-declarator prefilter experiments were tried and rejected:
   cheap and tested, but broad run remained 128.955s with 129 timing
   lines, so it did not materially improve the real workload.
 
-Next credible implementation: add a shared per-chunk source-match
-candidate index/cache rather than more ad hoc per-selector filters. The
-index should be built once per chunk during materialization and reused
-across member/binding-group selectors. Candidate keys to try, with
-counters before changing semantics:
+Next credible implementation, if this path becomes material again: add a
+shared per-chunk source-match candidate index/cache rather than more ad
+hoc per-selector filters. The index should be built once per chunk
+during materialization and reused across member/binding-group selectors.
+Candidate keys to try, with counters before changing semantics:
 
 - top-level body kind + declaration kind + var kind/declarator count;
 - declared-binding count and, in exact identifier mode, declared-binding
@@ -238,7 +257,7 @@ counters before changing semantics:
   so repeated selector families do not reparse or rebuild matcher state.
 
 Treat a candidate-index PR as successful only if it shows a wall-time
-drop or a large reduction in timed selector count on the broad Gaffer
+drop or a large reduction in timed selector count on a broad downstream
 gate; isolated unit wins are not enough for this path.
 
 ### Materialize-stage hot-loop optimizations

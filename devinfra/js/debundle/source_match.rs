@@ -1103,8 +1103,7 @@ fn find_matching_target_var_declarators(
             if !prefilter.declarator_can_match(declarator) {
                 continue;
             }
-            let candidate_item = module_item_for_single_var_declarator(item, declarator);
-            if !prepared.matches(&candidate_item) {
+            if !prepared.matches_single_var_declarator(item, declarator) {
                 continue;
             }
             let declared = declared_bindings_for_var_declarator(declarator);
@@ -1369,8 +1368,7 @@ fn find_matching_var_declarators(
             if !prefilter.declarator_can_match(declarator) {
                 continue;
             }
-            let candidate_item = module_item_for_single_var_declarator(item, declarator);
-            if !prepared.matches(&candidate_item) {
+            if !prepared.matches_single_var_declarator(item, declarator) {
                 continue;
             }
             let declared = declared_bindings_for_var_declarator(declarator);
@@ -1645,34 +1643,6 @@ fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
             _ => None,
         },
         _ => None,
-    }
-}
-
-fn module_item_for_single_var_declarator(
-    source_item: &ModuleItem,
-    declarator: &VarDeclarator,
-) -> ModuleItem {
-    let (source_var, export_span) = match source_item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => (var.as_ref(), None),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            Decl::Var(var) => (var.as_ref(), Some(export.span)),
-            _ => unreachable!("item_var_decl already filtered source_item"),
-        },
-        _ => unreachable!("item_var_decl already filtered source_item"),
-    };
-    let var_decl = Decl::Var(Box::new(VarDecl {
-        span: source_var.span,
-        ctxt: source_var.ctxt,
-        kind: source_var.kind,
-        declare: source_var.declare,
-        decls: vec![declarator.clone()],
-    }));
-    match export_span {
-        Some(span) => ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-            span,
-            decl: var_decl,
-        })),
-        None => ModuleItem::Stmt(Stmt::Decl(var_decl)),
     }
 }
 
@@ -3044,6 +3014,26 @@ impl<'a> PreparedNeedle<'a> {
         })
     }
 
+    fn matches_single_var_declarator(
+        &self,
+        candidate_item: &ModuleItem,
+        candidate_declarator: &VarDeclarator,
+    ) -> bool {
+        SyntaxContext::within_ignored_ctxt(|| {
+            let mut matcher = AstWildcardMatcher::new_with_string_literal_regexes(
+                self.selector,
+                &self.wildcard_idents,
+                &self.string_literal_regexes,
+                self.alpha,
+            );
+            matcher.match_single_var_declarator_item(
+                self.needle,
+                candidate_item,
+                candidate_declarator,
+            )
+        })
+    }
+
     fn var_declarator_alignment(
         &self,
         needle: &VarDecl,
@@ -3181,6 +3171,46 @@ mod tests {
 
     fn single_declarator_init(item: &ModuleItem) -> &Expr {
         single_declarator(item).init.as_deref().unwrap()
+    }
+
+    #[test]
+    fn prepared_needle_matches_borrowed_single_var_declarator() {
+        let plain_selector = selector(r#"const readable = makeValue("target-token");"#);
+        let needle = parse_one(&plain_selector.match_source);
+        let prepared = PreparedNeedle::new(&needle, &plain_selector);
+        let candidate = parse_one(
+            r#"const before = otherValue("other-token"),
+  minified = makeValue("target-token"),
+  after = otherValue("other-token");"#,
+        );
+        let candidate_var = item_var_decl(&candidate).unwrap();
+
+        assert!(!prepared.matches_single_var_declarator(&candidate, &candidate_var.decls[0]));
+        assert!(prepared.matches_single_var_declarator(&candidate, &candidate_var.decls[1]));
+        assert!(!prepared.matches_single_var_declarator(&candidate, &candidate_var.decls[2]));
+
+        let export_selector = selector(r#"export const readable = makeValue("target-token");"#);
+        let export_needle = parse_one(&export_selector.match_source);
+        let export_prepared = PreparedNeedle::new(&export_needle, &export_selector);
+        let export_candidate = parse_one(
+            r#"export const before = otherValue("other-token"),
+  minified = makeValue("target-token"),
+  after = otherValue("other-token");"#,
+        );
+        let export_candidate_var = item_var_decl(&export_candidate).unwrap();
+
+        assert!(
+            !export_prepared
+                .matches_single_var_declarator(&export_candidate, &export_candidate_var.decls[0])
+        );
+        assert!(
+            export_prepared
+                .matches_single_var_declarator(&export_candidate, &export_candidate_var.decls[1])
+        );
+        assert!(
+            !export_prepared
+                .matches_single_var_declarator(&export_candidate, &export_candidate_var.decls[2])
+        );
     }
 
     #[test]
@@ -3548,6 +3578,37 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
+    fn match_single_var_declarator_item(
+        &mut self,
+        needle: &ModuleItem,
+        candidate_item: &ModuleItem,
+        candidate_declarator: &VarDeclarator,
+    ) -> bool {
+        match (needle, candidate_item) {
+            (
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(needle_var))),
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(candidate_var))),
+            ) => self.match_single_var_declarator_decl(
+                needle_var,
+                candidate_var,
+                candidate_declarator,
+            ),
+            (
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(needle_export)),
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(candidate_export)),
+            ) => match (&needle_export.decl, &candidate_export.decl) {
+                (Decl::Var(needle_var), Decl::Var(candidate_var)) => self
+                    .match_single_var_declarator_decl(
+                        needle_var,
+                        candidate_var,
+                        candidate_declarator,
+                    ),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn match_module_decl(&mut self, needle: &ModuleDecl, candidate: &ModuleDecl) -> bool {
         match (needle, candidate) {
             (ModuleDecl::Import(needle), ModuleDecl::Import(candidate)) => {
@@ -3646,6 +3707,23 @@ impl<'a> AstWildcardMatcher<'a> {
             && needle.declare == candidate.declare
             && self
                 .match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
+                .is_some()
+    }
+
+    fn match_single_var_declarator_decl(
+        &mut self,
+        needle: &VarDecl,
+        candidate: &VarDecl,
+        candidate_declarator: &VarDeclarator,
+    ) -> bool {
+        needle.kind == candidate.kind
+            && needle.declare == candidate.declare
+            && needle.decls.len() == 1
+            && self
+                .match_var_declarator_slice_with_alignment(
+                    &needle.decls,
+                    std::slice::from_ref(candidate_declarator),
+                )
                 .is_some()
     }
 
