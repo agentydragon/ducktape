@@ -264,6 +264,13 @@ Default to this ladder when writing or repairing selectors:
 4. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
+When several `members[].selector.source_match` entries repeat the same
+multi-declarator selector with different `target_binding` values, run
+`debundle spec selector-debt --source-file <chunk.js> --modules <modules-dir>`.
+The source-aware report emits `binding_groups` suggestions that collapse those
+member selectors into one `source_match` with `DECLARATORS_*` holes and an
+`exports:` map.
+
 Use `selector.source_match` for stable declaration shapes:
 
 ```yaml

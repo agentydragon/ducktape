@@ -923,6 +923,9 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
         report.drifted_bindings.truncate(args.limit);
         report.source_aware_near_ambiguous.truncate(args.limit);
         report.source_aware_repeated_exact.truncate(args.limit);
+        report
+            .source_aware_binding_group_suggestions
+            .truncate(args.limit);
     }
     let format = OutputFormat::resolve(args.format);
     if format == OutputFormat::Ndjson {
@@ -998,6 +1001,15 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
             "{}",
             serde_json::to_string(&Line {
                 section: "source_aware_repeated_exact",
+                row: group,
+            })?
+        );
+    }
+    for group in &report.source_aware_binding_group_suggestions {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "source_aware_binding_group_suggestion",
                 row: group,
             })?
         );

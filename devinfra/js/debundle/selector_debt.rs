@@ -33,6 +33,10 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
+use swc_ecma_ast::{
+    Expr, Lit, Module as SwcModule, ModuleDecl, ModuleItem, Pat, Stmt, VarDecl, VarDeclKind,
+    VarDeclarator,
+};
 
 /// Minified-score at or above which a name-only selector is counted as
 /// rebuild-fragile in [`SelectorDebtSummary::name_only_fragile`]. The
@@ -143,6 +147,25 @@ pub struct SourceAwareStructuralSelector {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SourceMatchBindingGroupSelector {
+    pub module: String,
+    pub export_name: Option<String>,
+    pub target_binding: String,
+    pub declarator_idx: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceAwareBindingGroupSuggestion {
+    pub module: String,
+    pub body_idx: usize,
+    pub declaration_kind: String,
+    pub selectors: Vec<SourceMatchBindingGroupSelector>,
+    /// Pasteable YAML sketch for replacing repeated member-form
+    /// `source_match` selectors with one `binding_groups` entry.
+    pub candidate_yaml: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DriftedBinding {
     pub module: String,
     pub export_name: String,
@@ -175,6 +198,11 @@ pub struct SelectorDebtSummary {
     /// Repeated structural selector bodies that resolve to the same exact
     /// top-level body index set in source-aware mode.
     pub source_aware_repeated_exact: usize,
+    /// Source-aware member-form `source_match` groups that can be consolidated
+    /// into one `binding_groups` entry.
+    pub source_aware_binding_group_suggestions: usize,
+    /// Member-form `source_match` rows covered by those suggestions.
+    pub source_aware_binding_group_suggested_selectors: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -191,6 +219,8 @@ pub struct SelectorDebtReport {
     pub source_aware_near_ambiguous: Vec<SourceAwareStructuralSelector>,
     /// Populated only when source-aware mode is supplied.
     pub source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch>,
+    /// Populated only when source-aware mode is supplied.
+    pub source_aware_binding_group_suggestions: Vec<SourceAwareBindingGroupSuggestion>,
     pub summary: SelectorDebtSummary,
 }
 
@@ -285,6 +315,7 @@ fn compute_selector_debt_impl(
     let mut source_aware_near_ambiguous = Vec::new();
     let mut source_aware_exact_by_key =
         BTreeMap::<(String, Vec<usize>), Vec<SourceMatchOccurrence>>::new();
+    let mut binding_group_suggestion_candidates = Vec::new();
 
     for file in &files {
         let module_path = module_path_from_file(file, modules_root);
@@ -323,6 +354,15 @@ fn compute_selector_debt_impl(
                         member.name.clone(),
                         &selector,
                     )?;
+                    if let Some(candidate) = collect_binding_group_suggestion_candidate(
+                        runtime_module.as_ref(),
+                        &module_path,
+                        member.name.clone(),
+                        &selector,
+                        exact_body_indices.as_deref(),
+                    )? {
+                        binding_group_suggestion_candidates.push(candidate);
+                    }
                     let normalized = normalize_match(&selector.match_source);
                     let occurrence = SourceMatchOccurrence {
                         module: module_path.clone(),
@@ -490,6 +530,12 @@ fn compute_selector_debt_impl(
             drifted
         }
     };
+    let source_aware_binding_group_suggestions =
+        collect_binding_group_suggestions(binding_group_suggestion_candidates);
+    let source_aware_binding_group_suggested_selectors = source_aware_binding_group_suggestions
+        .iter()
+        .map(|group| group.selectors.len())
+        .sum();
 
     let summary = SelectorDebtSummary {
         name_only_total: name_only.len(),
@@ -504,6 +550,8 @@ fn compute_selector_debt_impl(
         source_aware_unique,
         source_aware_near_ambiguous: source_aware_near_ambiguous.len(),
         source_aware_repeated_exact: source_aware_repeated_exact.len(),
+        source_aware_binding_group_suggestions: source_aware_binding_group_suggestions.len(),
+        source_aware_binding_group_suggested_selectors,
     };
 
     Ok(SelectorDebtReport {
@@ -512,6 +560,7 @@ fn compute_selector_debt_impl(
         drifted_bindings,
         source_aware_near_ambiguous,
         source_aware_repeated_exact,
+        source_aware_binding_group_suggestions,
         summary,
     })
 }
@@ -523,6 +572,323 @@ fn sort_occurrences(occurrences: &mut [SourceMatchOccurrence]) {
             .then_with(|| a.site.cmp(&b.site))
             .then_with(|| a.export_name.cmp(&b.export_name))
     });
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct BindingGroupSuggestionKey {
+    module: String,
+    body_idx: usize,
+    selector_key: String,
+}
+
+#[derive(Debug, Clone)]
+struct BindingGroupSuggestionCandidate {
+    key: BindingGroupSuggestionKey,
+    module: String,
+    export_name: Option<String>,
+    target_binding: String,
+    declarator_idx: usize,
+    declarator: VarDeclarator,
+    declaration_kind: VarDeclKind,
+    identifiers: spec::SourceMatchIdentifierMode,
+    wildcard_string_literals: Vec<String>,
+}
+
+fn collect_binding_group_suggestion_candidate(
+    runtime_module: Option<&SwcModule>,
+    module_path: &str,
+    export_name: Option<String>,
+    selector: &AnonymousStatementSelector,
+    exact_body_indices: Option<&[usize]>,
+) -> Result<Option<BindingGroupSuggestionCandidate>> {
+    let (Some(runtime_module), Some([body_idx])) = (runtime_module, exact_body_indices) else {
+        return Ok(None);
+    };
+    let Some(runtime_var) = runtime_module
+        .body
+        .get(*body_idx)
+        .and_then(module_item_var_decl)
+    else {
+        return Ok(None);
+    };
+    if runtime_var.decls.len() < 2 {
+        return Ok(None);
+    }
+    let Some(target_binding) = selector.target_binding.as_deref() else {
+        return Ok(None);
+    };
+    let parsed = js_ast::parse_js_module_ast(
+        "<member source_match consolidation>",
+        &selector.match_source,
+    )
+    .with_context(
+        || "parsing member source_match while building selector-debt binding group suggestion",
+    )?;
+    let [needle] = parsed.body.as_slice() else {
+        return Ok(None);
+    };
+    let Some(needle_var) = module_item_var_decl(needle) else {
+        return Ok(None);
+    };
+    if needle_var.decls.len() < 2 {
+        return Ok(None);
+    }
+    let Some((declarator_idx, declarator)) = selector_target_declarator(needle_var, target_binding)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(BindingGroupSuggestionCandidate {
+        key: BindingGroupSuggestionKey {
+            module: module_path.to_owned(),
+            body_idx: *body_idx,
+            selector_key: selector_group_key(selector),
+        },
+        module: module_path.to_owned(),
+        export_name,
+        target_binding: target_binding.to_owned(),
+        declarator_idx,
+        declarator: declarator.clone(),
+        declaration_kind: needle_var.kind,
+        identifiers: selector.identifiers,
+        wildcard_string_literals: selector.wildcard_string_literals.iter().cloned().collect(),
+    }))
+}
+
+fn collect_binding_group_suggestions(
+    candidates: Vec<BindingGroupSuggestionCandidate>,
+) -> Vec<SourceAwareBindingGroupSuggestion> {
+    let mut by_key =
+        BTreeMap::<BindingGroupSuggestionKey, Vec<BindingGroupSuggestionCandidate>>::new();
+    for candidate in candidates {
+        by_key
+            .entry(candidate.key.clone())
+            .or_default()
+            .push(candidate);
+    }
+    let mut groups = by_key
+        .into_values()
+        .filter(|candidates| candidates.len() >= 2)
+        .map(build_binding_group_suggestion)
+        .collect::<Vec<_>>();
+    groups.sort_by(|a, b| {
+        b.selectors
+            .len()
+            .cmp(&a.selectors.len())
+            .then_with(|| a.body_idx.cmp(&b.body_idx))
+            .then_with(|| a.declaration_kind.cmp(&b.declaration_kind))
+            .then_with(|| a.module.cmp(&b.module))
+    });
+    groups
+}
+
+fn build_binding_group_suggestion(
+    mut candidates: Vec<BindingGroupSuggestionCandidate>,
+) -> SourceAwareBindingGroupSuggestion {
+    candidates.sort_by(|a, b| {
+        a.declarator_idx
+            .cmp(&b.declarator_idx)
+            .then_with(|| a.module.cmp(&b.module))
+            .then_with(|| a.export_name.cmp(&b.export_name))
+    });
+    let first = &candidates[0];
+    let match_source = render_var_source_match_template(first.declaration_kind, &candidates);
+    let selectors = candidates
+        .iter()
+        .map(|candidate| SourceMatchBindingGroupSelector {
+            module: candidate.module.clone(),
+            export_name: candidate.export_name.clone(),
+            target_binding: candidate.target_binding.clone(),
+            declarator_idx: candidate.declarator_idx,
+        })
+        .collect::<Vec<_>>();
+    let candidate_yaml = render_binding_group_candidate_yaml(
+        &selectors,
+        &match_source,
+        first.identifiers,
+        &first.wildcard_string_literals,
+    );
+    SourceAwareBindingGroupSuggestion {
+        module: first.key.module.clone(),
+        body_idx: first.key.body_idx,
+        declaration_kind: var_decl_kind_label(first.declaration_kind).to_string(),
+        selectors,
+        candidate_yaml,
+    }
+}
+
+fn selector_group_key(selector: &AnonymousStatementSelector) -> String {
+    format!(
+        "{:?}\0{:?}\0{}",
+        selector.identifiers,
+        selector.wildcard_string_literals,
+        normalize_match(&selector.match_source),
+    )
+}
+
+fn selector_target_declarator<'a>(
+    var: &'a VarDecl,
+    target_binding: &str,
+) -> Option<(usize, &'a VarDeclarator)> {
+    var.decls.iter().enumerate().find(|(_, declarator)| {
+        simple_declarator_binding_name(declarator).as_deref() == Some(target_binding)
+    })
+}
+
+fn render_var_source_match_template(
+    kind: VarDeclKind,
+    targets: &[BindingGroupSuggestionCandidate],
+) -> String {
+    let mut lines = vec![format!(
+        "{} DECLARATORS_BEFORE = null,",
+        var_decl_kind_label(kind)
+    )];
+    let mut previous_declarator_idx = None;
+    for (target_idx, target) in targets.iter().enumerate() {
+        if let Some(previous) = previous_declarator_idx
+            && target.declarator_idx > previous + 1
+        {
+            lines.push(format!("  DECLARATORS_BETWEEN_{target_idx} = null,"));
+        }
+        let initializer = selector_initializer_template(
+            &target.target_binding,
+            target.declarator.init.as_deref(),
+        );
+        lines.push(format!("  {} = {initializer},", target.target_binding));
+        previous_declarator_idx = Some(target.declarator_idx);
+    }
+    lines.push("  DECLARATORS_AFTER = null;".to_string());
+    lines.join("\n")
+}
+
+fn render_binding_group_candidate_yaml(
+    selectors: &[SourceMatchBindingGroupSelector],
+    match_source: &str,
+    identifiers: spec::SourceMatchIdentifierMode,
+    wildcard_string_literals: &[String],
+) -> String {
+    let mut lines = vec![
+        "binding_groups:".to_string(),
+        "  - source_match:".to_string(),
+    ];
+    if identifiers != spec::SourceMatchIdentifierMode::Exact {
+        lines.push(format!(
+            "      identifiers: {}",
+            source_match_identifier_mode_label(identifiers),
+        ));
+    }
+    if !wildcard_string_literals.is_empty() {
+        lines.push(format!(
+            "      wildcard_string_literals: [{}]",
+            wildcard_string_literals
+                .iter()
+                .map(|value| yaml_single_quoted(value))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
+    lines.push("      match: |".to_string());
+    lines.extend(indent_lines(match_source, 8));
+    lines.push("    exports:".to_string());
+    for selector in selectors {
+        let export_name = selector
+            .export_name
+            .as_deref()
+            .unwrap_or(selector.target_binding.as_str());
+        lines.push(format!(
+            "      {}: {}",
+            selector.target_binding, export_name
+        ));
+    }
+    lines.join("\n")
+}
+
+fn indent_lines(source: &str, spaces: usize) -> Vec<String> {
+    let prefix = " ".repeat(spaces);
+    source
+        .lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect()
+}
+
+fn selector_initializer_template(selector_local_name: &str, init: Option<&Expr>) -> String {
+    match init {
+        Some(Expr::Lit(Lit::Str(value))) => format!(
+            "STR_LITERAL_MATCHING_RE(\"^{}$\")",
+            js_string_escape(&regex_escape(&value.value.to_string_lossy()))
+        ),
+        Some(Expr::Lit(Lit::Bool(value))) => value.value.to_string(),
+        Some(Expr::Lit(Lit::Null(_))) => "null".to_string(),
+        Some(Expr::Lit(Lit::Num(value))) => value.value.to_string(),
+        Some(_) => format!("EXPR_{selector_local_name}"),
+        None => format!("EXPR_{selector_local_name}"),
+    }
+}
+
+fn regex_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        if matches!(
+            ch,
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
+fn js_string_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            c if c.is_control() => escaped.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => escaped.push(c),
+        }
+    }
+    escaped
+}
+
+fn yaml_single_quoted(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn source_match_identifier_mode_label(mode: spec::SourceMatchIdentifierMode) -> &'static str {
+    match mode {
+        spec::SourceMatchIdentifierMode::Exact => "exact",
+        spec::SourceMatchIdentifierMode::AlphaAll => "alpha_all",
+    }
+}
+
+fn module_item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(swc_ecma_ast::Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            swc_ecma_ast::Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn simple_declarator_binding_name(declarator: &VarDeclarator) -> Option<String> {
+    match &declarator.name {
+        Pat::Ident(ident) => Some(ident.id.sym.to_string()),
+        _ => None,
+    }
+}
+
+fn var_decl_kind_label(kind: VarDeclKind) -> &'static str {
+    match kind {
+        VarDeclKind::Var => "var",
+        VarDeclKind::Let => "let",
+        VarDeclKind::Const => "const",
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -582,7 +948,7 @@ fn collect_source_aware_debt(
 pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}\n",
+        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}  source-aware binding_groups suggestions: {} selector(s) in {} group(s)\n",
         s.name_only_total,
         s.name_only_fragile,
         s.source_match_total,
@@ -591,6 +957,8 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
         s.source_aware_near_ambiguous,
         s.source_aware_unique,
         s.source_aware_repeated_exact,
+        s.source_aware_binding_group_suggested_selectors,
+        s.source_aware_binding_group_suggestions,
     ));
 
     if !report.name_only.is_empty() {
@@ -668,6 +1036,30 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
                     "      {:?} {} [{}]\n",
                     occurrence.site, occurrence.module, readable,
                 ));
+            }
+        }
+    }
+
+    if !report.source_aware_binding_group_suggestions.is_empty() {
+        out.push_str("source-aware binding_groups suggestions:\n");
+        for group in &report.source_aware_binding_group_suggestions {
+            out.push_str(&format!(
+                "  {} body={} kind={} selectors={}\n",
+                group.module,
+                group.body_idx,
+                group.declaration_kind,
+                group.selectors.len(),
+            ));
+            for selector in &group.selectors {
+                let readable = selector.export_name.as_deref().unwrap_or("-");
+                out.push_str(&format!(
+                    "      target_binding={} [{}] {} decl#{}\n",
+                    selector.target_binding, readable, selector.module, selector.declarator_idx,
+                ));
+            }
+            out.push_str("      candidate:\n");
+            for line in group.candidate_yaml.lines() {
+                out.push_str(&format!("        {line}\n"));
             }
         }
     }
@@ -898,6 +1290,194 @@ mod tests {
         assert!(text.contains("source-aware repeated exact: 1"));
         assert!(text.contains("source-aware repeated exact structural selectors:"));
         assert!(text.contains("2x exact=[0]"));
+    }
+
+    #[test]
+    fn source_aware_mode_suggests_binding_group_for_repeated_multideclarator_member_selectors() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "styles.yaml",
+            r#"members:
+  - name: PrimaryStyle
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: primaryStyle
+        match: |
+          const primaryStyle = "WidgetShell-42",
+            ignoredValue = EXPR_IGNORED,
+            secondaryReader = computeReader(EXPR_INPUT);
+  - name: SecondaryReader
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: secondaryReader
+        match: |
+          const primaryStyle = "WidgetShell-42",
+            ignoredValue = EXPR_IGNORED,
+            secondaryReader = computeReader(EXPR_INPUT);
+"#,
+        );
+        let source_file = root.join("chunk.js");
+        fs::write(
+            &source_file,
+            r#"const a = "WidgetShell-42", b = makeIgnored(), c = computeReader(1);
+const stableName = 1;
+"#,
+        )
+        .unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_match_total, 2);
+        assert_eq!(report.summary.source_aware_checked, 2);
+        assert_eq!(report.summary.source_aware_unique, 2);
+        assert_eq!(report.summary.source_aware_binding_group_suggestions, 1);
+        assert_eq!(
+            report
+                .summary
+                .source_aware_binding_group_suggested_selectors,
+            2,
+        );
+        let group = &report.source_aware_binding_group_suggestions[0];
+        assert_eq!(group.module, "styles");
+        assert_eq!(group.body_idx, 0);
+        assert_eq!(group.declaration_kind, "const");
+        assert_eq!(group.selectors.len(), 2);
+        assert_eq!(group.selectors[0].target_binding, "primaryStyle");
+        assert_eq!(
+            group.selectors[0].export_name.as_deref(),
+            Some("PrimaryStyle")
+        );
+        assert_eq!(group.selectors[0].declarator_idx, 0);
+        assert_eq!(group.selectors[1].target_binding, "secondaryReader");
+        assert_eq!(
+            group.selectors[1].export_name.as_deref(),
+            Some("SecondaryReader")
+        );
+        assert_eq!(group.selectors[1].declarator_idx, 2);
+        assert!(group.candidate_yaml.contains("binding_groups:"));
+        assert!(group.candidate_yaml.contains("identifiers: alpha_all"));
+        assert!(
+            group
+                .candidate_yaml
+                .contains("const DECLARATORS_BEFORE = null,")
+        );
+        assert!(
+            group
+                .candidate_yaml
+                .contains("DECLARATORS_BETWEEN_1 = null,")
+        );
+        assert!(group.candidate_yaml.contains("DECLARATORS_AFTER = null;"));
+        assert!(group.candidate_yaml.contains("primaryStyle: PrimaryStyle"));
+        assert!(
+            group
+                .candidate_yaml
+                .contains("secondaryReader: SecondaryReader")
+        );
+        assert!(
+            group
+                .candidate_yaml
+                .contains("STR_LITERAL_MATCHING_RE(\"^WidgetShell-42$\")")
+        );
+        assert!(
+            group
+                .candidate_yaml
+                .contains("secondaryReader = EXPR_secondaryReader")
+        );
+
+        let mut text = String::new();
+        render_selector_debt_text(&report, &mut text);
+        assert!(
+            text.contains("source-aware binding_groups suggestions: 2 selector(s) in 1 group(s)")
+        );
+        assert!(text.contains("source-aware binding_groups suggestions:"));
+        assert!(text.contains("styles body=0 kind=const selectors=2"));
+        assert!(text.contains("target_binding=primaryStyle [PrimaryStyle] styles decl#0"));
+    }
+
+    #[test]
+    fn source_aware_mode_keeps_binding_group_suggestions_same_module() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let first_selector = r#"members:
+  - name: PrimaryStyle
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: primaryStyle
+        match: |
+          const primaryStyle = "WidgetShell-42",
+            secondaryReader = computeReader(EXPR_INPUT);
+"#;
+        let second_selector = r#"members:
+  - name: SecondaryReader
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: secondaryReader
+        match: |
+          const primaryStyle = "WidgetShell-42",
+            secondaryReader = computeReader(EXPR_INPUT);
+"#;
+        write(root, "styles/primary.yaml", first_selector);
+        write(root, "readers/secondary.yaml", second_selector);
+        let source_file = root.join("chunk.js");
+        fs::write(
+            &source_file,
+            r#"const a = "WidgetShell-42", c = computeReader(1);
+"#,
+        )
+        .unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_aware_binding_group_suggestions, 0);
+        assert!(report.source_aware_binding_group_suggestions.is_empty());
+    }
+
+    #[test]
+    fn source_aware_mode_skips_single_member_multideclarator_source_match_suggestions() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "values.yaml",
+            r#"members:
+  - name: SelectedValue
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: selectedValue
+        match: |
+          let skippedValue = EXPR_SKIPPED,
+            selectedValue = computeValue();
+"#,
+        );
+        let source_file = root.join("chunk.js");
+        fs::write(&source_file, "let p = ignored(), q = computeValue();\n").unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+
+        let report = compute_selector_debt_with_source(root, None, Some(&config)).unwrap();
+
+        assert_eq!(report.summary.source_aware_binding_group_suggestions, 0,);
+        assert!(report.source_aware_binding_group_suggestions.is_empty());
     }
 
     #[test]
