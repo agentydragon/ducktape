@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//x/study_casino/frontend:vite/package_json.bzl", vite_bin = "bin")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -175,31 +175,24 @@ js_library(
     ],
 )
 
-# ── Production bundle (Vite) ───────────────────────────────────────────────────
+# ── Production bundle (esbuild) ────────────────────────────────────────────────
 #
-# Vite reads index.html as the entry point, content-hashes the JS bundle
-# (dist/assets/index-<hash>.js), rewrites the script tag in dist/index.html,
-# and copies everything under public/ verbatim to dist/. Filenames are not
-# predictable ahead of time → out_dirs (TreeArtifact), not outs.
+# esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
+# the public/ tree (manifest, icon, fonts) are copied in alongside. The .js files
+# carry JSX, so the loader treats them as such. Served verbatim by the FastAPI
+# app's StaticFiles mount.
 
-vite_bin.vite_binary(name = "vite")
-
-js_run_binary(
+spa_bundle(
     name = "bundle",
-    srcs = [
-        "index.html",
-        "vite.config.js",
-        ":main",
-        ":node_modules",
-    ] + glob(["public/**/*"]),
-    args = ["build"],
-    chdir = package_name(),
-    out_dirs = ["dist"],
-    tool = ":vite",
+    entry_point = "main.jsx",
+    jsx = "automatic",
+    loader = {".js": "jsx"},
+    public = glob(["public/**/*"]),
     visibility = [
         "//x/study_casino:__pkg__",
         "//x/study_casino/tests:__pkg__",
     ],
+    deps = [":main"],
 )
 
 # ── Visual regression test ────────────────────────────────────────────────────
