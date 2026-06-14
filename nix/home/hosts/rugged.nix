@@ -17,12 +17,14 @@ in
   imports = [
     ../home.nix
     ../modules/15leroy-ssh.nix
+    ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
   ];
 
+  ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/rugged-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 
   ducktape.attic = {

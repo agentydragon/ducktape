@@ -1,0 +1,25 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "forgejo": "svalabs/forgejo:~>1.5",
+        "kubernetes": "hashicorp/kubernetes:~>2.38",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "forgejo-agentydragon",
+    data = [
+        "//ssh_keys:atlas-forgejo.pub",
+        "//ssh_keys:iguana-forgejo.pub",
+        "//ssh_keys:rugged-forgejo.pub",
+        "//ssh_keys:wyrm2-forgejo.pub",
+    ],
+    providers = [
+        "forgejo",
+        "kubernetes",
+    ],
+    providers_versions = ":providers",
+)

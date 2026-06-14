@@ -184,6 +184,7 @@ resources:
   - forgejo/augur-evidence/flux-kustomization.yaml
   - forgejo/cpap-data/flux-kustomization.yaml
   - forgejo/claude/flux-kustomization.yaml
+  - forgejo/agentydragon/flux-kustomization.yaml
 
   # --- budget (Beancount ledger + exporter + Fava) ---
   - budget/namespace/flux-kustomization.yaml

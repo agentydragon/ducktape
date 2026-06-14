@@ -235,6 +235,12 @@ creation_rules:
           - *iguana-host
 
   # --- SSH keys (SOPS binary, admin + owning host's user key) ---
+  - path_regex: ssh_keys/wyrm2-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
   - path_regex: ssh_keys/iguana-.*\.sops\.key$
     store_type: binary
     key_groups:

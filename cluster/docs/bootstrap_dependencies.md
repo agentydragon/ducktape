@@ -67,6 +67,7 @@ secrets that Flux and tofu consume.
 | `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                                   |
 | `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                  | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                                 |
 | `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)                                             | Admin age key + user age keys                                  | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                                  |
+| `ssh_keys/*-forgejo.sops.key`                             | Per-host Forgejo SSH private keys for `agentydragon`                       | Admin age key + owning host's user age key                     | Home Manager Forgejo SSH config; L6: `forgejo-agentydragon` attaches matching public keys                          |
 | `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                           | L7: kubelet TLS on NixOS workers                                                                                   |
 | `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                  | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
 | `cluster/k8s/**/*.sops.yaml` (27 files)                   | App credentials (API keys, tokens)                                         | Admin age key + cluster age key                                | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
@@ -219,6 +220,13 @@ The `flux-webhook-token` tofu-controller module creates the `github-webhook-toke
 secret (consumed by the Flux `github` Receiver) and the GitHub repository webhook on
 `ducktape`. It reads `github-secrets-sync-pat` (provided by `github-secrets-sync-secrets`).
 The `flux-webhook` Kustomization depends on `flux-webhook-token`.
+
+### forgejo-agentydragon
+
+The `forgejo-agentydragon` tofu-controller module attaches the public halves of
+the SOPS-backed per-host Forgejo SSH keys to the existing OIDC-created
+`agentydragon` Forgejo account. It depends on Forgejo and the tofu PG backend,
+and writes state to the `forgejo_agentydragon` schema.
 
 **If `flux-webhook` receiver stops working after bootstrap**: Check `flux-webhook-token`
 reconciliation. The token and webhook URL use `ignore_changes` and are stable across

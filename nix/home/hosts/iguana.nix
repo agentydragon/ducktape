@@ -12,11 +12,13 @@
 {
   imports = [
     ../home.nix
+    ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
   ];
 
+  ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 
   # AppIndicator support — needed for timekpr-client tray icon in GNOME.

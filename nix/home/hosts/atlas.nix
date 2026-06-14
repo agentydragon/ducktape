@@ -15,11 +15,13 @@ in
 {
   imports = [
     ../home.nix
+    ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
   ];
 
+  ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/atlas-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/atlas-github.sops.key;
 
   # Atlas runs on Proxmox VE (Debian-based), not NixOS — no users.users.*.openssh module.
