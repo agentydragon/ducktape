@@ -22,23 +22,18 @@ data "forgejo_user" "agentydragon" {
 }
 
 locals {
-  # Forgejo stores only the key type + key data. Keep comments in the .pub
-  # files for humans, but strip them here to avoid provider normalization churn.
+  # Public keys are duplicated from ssh_keys/*-forgejo.pub because tofu-controller
+  # executes only this Terraform module path, so file() cannot read repo-root files.
   public_keys = {
-    atlas  = "${path.module}/../../../ssh_keys/atlas-forgejo.pub"
-    iguana = "${path.module}/../../../ssh_keys/iguana-forgejo.pub"
-    rugged = "${path.module}/../../../ssh_keys/rugged-forgejo.pub"
-    wyrm2  = "${path.module}/../../../ssh_keys/wyrm2-forgejo.pub"
-  }
-
-  pubkey = {
-    for host, path in local.public_keys :
-    host => join(" ", slice(split(" ", trimspace(file(path))), 0, 2))
+    atlas  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6/fkFmt/yOWY0s+PHulmGoTh8kll0WHoL8NXWluTn/"
+    iguana = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMZZ91cQfULMM/rcBcYGaJ4HSiGeD8/G140ElIToYvIV"
+    rugged = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILlk0/g/0s5plFxzC8V/G8IHlTmlX+0ZYqIPr5+Tglcp"
+    wyrm2  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKp26ICwuhnkiPNqhFjly2k/iW5vs7n5Rq27imnrpK/e"
   }
 }
 
 resource "forgejo_ssh_key" "host" {
-  for_each = local.pubkey
+  for_each = local.public_keys
 
   user  = data.forgejo_user.agentydragon.login
   key   = each.value
