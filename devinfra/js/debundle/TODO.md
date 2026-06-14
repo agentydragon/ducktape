@@ -32,8 +32,11 @@ progress output and a resumable or cacheable plan.
    binding, group, anonymous statement, or statement range, emit the simplest
    selector that uniquely selects it." Start from exact source slices, relax
    with holes, use source indexes to count candidates cheaply, and verify the
-   final selector through the real resolver. This is the primitive for new-spec
-   bootstrap, old-spec stabilization, and version-port repair.
+   final selector through the real resolver. The first indexed slice covers
+   exact function/class declaration recovery and multi-declarator `var`/`let`/
+   `const` groups selected from name-only members, with `DECLARATORS_*` gap
+   holes and uniqueness proof. Grow that into the general primitive for
+   new-spec bootstrap, old-spec stabilization, and version-port repair.
 2. **Shared source inventory/index.** Extract a reusable per-chunk index for
    top-level statement identity, binding identity, stable literals/keys,
    canonical fingerprints, source slices, and candidate-count queries. Use it
@@ -48,11 +51,18 @@ progress output and a resumable or cacheable plan.
      statement ranges with `ANYTHING` / `OBJECT_PROPS` / `STMT_LIST` while
      preserving uniqueness;
    - convert repeated member-form selectors over the same declaration context
-     into one `binding_groups` entry;
+     into one `binding_groups` entry, including cases that do not start from
+     name-only inputs;
    - merge multiple eligible generated selectors from the same declaration into
      one `binding_groups` entry;
+   - convert unique literal-initializer bindings into structural selectors when
+     the source value is stable enough;
    - source-aware reports or apply-safe rewrites for overpinned object literals
-     that can now use `ANYTHING` / `OBJECT_PROPS` around stable keys.
+     that can now use `ANYTHING` / `OBJECT_PROPS` around stable keys;
+   - grow selector synthesis from the declaration/binding index into a
+     trie/lattice of stable AST atoms: declaration kind, wrapper shape,
+     initializer kind, callee/member paths, object keys, literals, JSX tags,
+     class/function names, arity, and statement/declarator slots.
 4. **Selector diagnostics as machine-readable reports.** Emit a keep-going
    JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
    and blocker comments. Include module path, export name, selector kind,

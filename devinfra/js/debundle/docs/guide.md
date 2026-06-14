@@ -273,6 +273,42 @@ The source-aware report emits `binding_groups` suggestions that collapse those
 member selectors into one `source_match` with `DECLARATORS_*` holes and an
 `exports:` map.
 
+To convert selected name-only members directly, run the source-aware
+synthesis codemod:
+
+```bash
+debundle spec synthesize-selectors \
+  --modules path/to/spec/modules \
+  --source-file path/to/chunk.js \
+  --item app/config:PrimaryConfig \
+  --item app/config:SecondaryConfig \
+  --format json
+```
+
+Dry-run is the default. Add `--apply` only after inspecting the JSON summary.
+The command builds a per-chunk declaration/binding index, groups requested
+exports that come from the same top-level declaration, renders the simplest
+currently-supported selector form for that group, and then proves uniqueness
+with normal `source_match` resolution. The report includes the matched
+top-level statement index, candidate count, group id, rewritten holes, and a
+structured skip reason for any item it cannot prove.
+
+The first automated forms are intentionally narrow:
+
+- single requested function or class declarations become member
+  `selector.source_match` entries with `target_binding`;
+- one or more requested `var`/`let`/`const` declarators from the same
+  declaration become either a member `source_match` or one `binding_groups`
+  entry, with unrelated declarator runs collapsed to `DECLARATORS_BEFORE`,
+  `DECLARATORS_BETWEEN`, and `DECLARATORS_AFTER`.
+
+This is the first indexed subset of the broader minimization problem. Future
+passes should add stable initializer atoms, object-property keys, callee/member
+paths, literals, and statement/object/argument holes so the command can
+minimize more of the selector body. Apply mode preserves normal `comment:`
+fields by moving grouped member comments into `binding_groups.comments`; raw
+YAML comments around removed member entries may still need manual review.
+
 Use `selector.source_match` for stable declaration shapes:
 
 ```yaml

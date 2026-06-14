@@ -47,6 +47,27 @@ fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
     out
 }
 
+fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
+    let mut args = vec![
+        "spec",
+        "synthesize-selectors",
+        "--modules",
+        modules.to_str().unwrap(),
+    ];
+    args.extend_from_slice(extra);
+    let out = Command::new(debundle_binary())
+        .args(&args)
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out
+}
+
 fn parse_stdout_json(out: &std::process::Output) -> Value {
     serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
         panic!(
@@ -154,6 +175,52 @@ anonymous_statements:
     target
 }
 
+fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        r#"const beforeConfig = helper("before"),
+  runtimePrimary = buildConfig({ stable: "primary", generated: "ignore-a" }),
+  middleConfig = helper("middle"),
+  runtimeSecondary = buildConfig({ stable: "secondary", generated: "ignore-b" }),
+  afterConfig = helper("after");
+function runtimeFormatter(value) {
+  return value.trim().toUpperCase();
+}
+function helper(value) {
+  return value;
+}
+function buildConfig(value) {
+  return value;
+}
+console.log(runtimePrimary, runtimeSecondary, runtimeFormatter(" ok "));
+export { runtimePrimary, runtimeSecondary, runtimeFormatter };
+"#,
+    );
+    let modules = root.join("modules");
+    let module = modules.join("app/config.yaml");
+    write(
+        &module,
+        r#"members:
+  - name: PrimaryConfig
+    comment: Primary config comment
+    selector:
+      binding:
+        name: runtimePrimary
+  - name: SecondaryConfig
+    comment: Secondary config comment
+    selector:
+      binding:
+        name: runtimeSecondary
+  - name: FormatValue
+    selector:
+      binding:
+        name: runtimeFormatter
+"#,
+    );
+    (modules, source)
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -200,6 +267,147 @@ fn dry_run_reports_single_binding_rewrite_without_writing() {
     );
     assert_eq!(fs::read_to_string(&target).unwrap(), before_target);
     assert_eq!(fs::read_to_string(&other).unwrap(), before_other);
+}
+
+#[test]
+fn synthesize_selectors_dry_run_reports_grouped_unique_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_fixture(dir.path());
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "name-binding-to-source-match",
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/config:PrimaryConfig",
+            "--item",
+            "app/config:SecondaryConfig",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(
+        parsed["rewrite"], "name_binding_to_source_match",
+        "{parsed}"
+    );
+    assert_eq!(parsed["action"], "dry_run", "{parsed}");
+    assert_eq!(parsed["summary"]["name_binding_members"], 2, "{parsed}");
+    assert_eq!(parsed["summary"]["synthesized_groups"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 2, "{parsed}");
+    let candidates = parsed["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2, "{parsed}");
+    for candidate in candidates {
+        assert_eq!(candidate["action"], "would_change", "{candidate}");
+        assert_eq!(candidate["group_id"], 0, "{candidate}");
+        assert_eq!(candidate["matched_body_index"], 0, "{candidate}");
+        assert_eq!(candidate["candidate_count"], 1, "{candidate}");
+        assert!(
+            candidate["rewritten_holes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hole| hole == "DECLARATORS_BEFORE"),
+            "{candidate}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_selectors_command_alias_uses_name_binding_rewrite() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/config:FormatValue",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(
+        parsed["rewrite"], "name_binding_to_source_match",
+        "{parsed}"
+    );
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["candidates"][0]["target_binding"], "FormatValue");
+}
+
+#[test]
+fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_fixture(dir.path());
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "name-binding-to-source-match",
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/config:PrimaryConfig",
+            "--item",
+            "app/config:SecondaryConfig",
+            "--item",
+            "app/config:FormatValue",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["action"], "applied", "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
+
+    let module = modules.join("app/config.yaml");
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(module).unwrap()).unwrap();
+    let members = doc["members"].as_sequence().unwrap();
+    assert_eq!(members.len(), 1, "{doc:?}");
+    assert_eq!(members[0]["name"], "FormatValue");
+    assert_eq!(
+        members[0]["selector"]["source_match"]["target_binding"],
+        "FormatValue"
+    );
+    assert!(
+        members[0]["selector"]["source_match"]["match"]
+            .as_str()
+            .unwrap()
+            .contains("function FormatValue")
+    );
+
+    let groups = doc["binding_groups"].as_sequence().unwrap();
+    assert_eq!(groups.len(), 1, "{doc:?}");
+    let group = &groups[0];
+    let match_source = group["source_match"]["match"].as_str().unwrap();
+    assert!(
+        match_source.contains("DECLARATORS_BEFORE"),
+        "{match_source}"
+    );
+    assert!(
+        match_source.contains("PrimaryConfig = buildConfig"),
+        "{match_source}"
+    );
+    assert!(
+        match_source.contains("SecondaryConfig = buildConfig"),
+        "{match_source}"
+    );
+    assert_eq!(group["exports"]["PrimaryConfig"], "PrimaryConfig");
+    assert_eq!(group["exports"]["SecondaryConfig"], "SecondaryConfig");
+    assert_eq!(group["comments"]["PrimaryConfig"], "Primary config comment");
+    assert_eq!(
+        group["comments"]["SecondaryConfig"],
+        "Secondary config comment"
+    );
 }
 
 #[test]

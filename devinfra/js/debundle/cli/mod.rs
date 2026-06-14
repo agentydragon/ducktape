@@ -110,6 +110,9 @@ enum SpecNsCommand {
     /// Dry-run or apply mechanical selector rewrites across module YAML.
     #[command(name = "selector-codemod")]
     SelectorCodemod(SelectorCodemodArgs),
+    /// Synthesize structural selectors for selected name-only members.
+    #[command(name = "synthesize-selectors")]
+    SynthesizeSelectors(SelectorCodemodArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -182,6 +185,8 @@ pub enum SelectorCodemodRewriteArg {
     SingleTargetBinding,
     /// Replace anonymous typed source_match holes with universal ANYTHING holes.
     AnythingHoles,
+    /// Convert name-only binding members to source_match / binding_groups selectors.
+    NameBindingToSourceMatch,
 }
 
 impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
@@ -189,6 +194,7 @@ impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
         match value {
             SelectorCodemodRewriteArg::SingleTargetBinding => Self::SingleTargetBinding,
             SelectorCodemodRewriteArg::AnythingHoles => Self::AnythingHoles,
+            SelectorCodemodRewriteArg::NameBindingToSourceMatch => Self::NameBindingToSourceMatch,
         }
     }
 }
@@ -220,6 +226,22 @@ pub struct SelectorCodemodArgs {
     /// Restrict to module paths at or below this prefix.
     #[arg(long = "module-prefix")]
     pub module_prefixes: Vec<String>,
+
+    /// Source root used by source-aware rewrites.
+    #[arg(long = "source-root")]
+    pub source_root: Option<PathBuf>,
+
+    /// Chunk JS path under --source-root for source-aware rewrites.
+    #[arg(long = "chunk")]
+    pub chunk: Option<PathBuf>,
+
+    /// Direct source JS file for source-aware rewrites.
+    #[arg(long = "source-file")]
+    pub source_file: Option<PathBuf>,
+
+    /// Restrict source-aware rewrites to module:export items.
+    #[arg(long = "item")]
+    pub items: Vec<String>,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -553,6 +575,10 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
             SpecNsCommand::SelectorCodemod(s) => run_selector_codemod_cmd(s),
+            SpecNsCommand::SynthesizeSelectors(mut s) => {
+                s.rewrite = SelectorCodemodRewriteArg::NameBindingToSourceMatch;
+                run_selector_codemod_cmd(s)
+            }
         },
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
@@ -626,6 +652,10 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         files: args.files,
         modules: args.modules,
         module_prefixes: args.module_prefixes,
+        source_root: args.source_root,
+        chunk: args.chunk,
+        source_file: args.source_file,
+        items: args.items,
     })?;
     print_report(&report, format, render_selector_codemod_text)
         .context("writing selector-codemod output")
