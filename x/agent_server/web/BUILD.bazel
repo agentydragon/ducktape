@@ -1,8 +1,9 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_run_devserver")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary", "js_run_devserver")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:json-schema-to-typescript/package_json.bzl", jst_bin = "bin")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
@@ -104,26 +105,45 @@ vitest_bin.vitest_test(
     ]) + _GENERATED_SRCS,
 )
 
-# esbuild binary for production bundle
-js_binary(
-    name = "build_bundle",
-    data = _SRCS + [
-        "esbuild.config.mjs",
-        ":node_modules",
-    ],
-    entry_point = "esbuild.config.mjs",
+# App module graph for the production bundle (flat glob — this app has no
+# per-file js_library targets). The whole node_modules is in scope so npm
+# imports resolve, as the old driver's nodePaths did.
+js_library(
+    name = "app",
+    srcs = glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+        "src/**/*.css",
+    ]) + _GENERATED_SRCS,
+    deps = [":node_modules"],
 )
 
-# Production bundle using esbuild
-# Run: bazel build //x/agent_server/src/agent_server/web:bundle
-# Output: bazel-bin/agent_server/src/agent_server/web/dist/
-js_run_binary(
+# Svelte + Tailwind plugins for the native esbuild() rule (see spa_bundle).
+js_library(
+    name = "esbuild_config",
+    srcs = ["esbuild_config.mjs"],
+    deps = [
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/esbuild-svelte",
+        ":node_modules/svelte",
+        ":node_modules/tailwindcss",
+    ],
+)
+
+# Production bundle (esbuild via spa_bundle). index.html is not bundled (this
+# app's bundle is a standalone build target, not wired into a served image).
+spa_bundle(
     name = "bundle",
-    srcs = _SRCS + ["esbuild.config.mjs"],
-    outs = ["dist/main.js"],
-    args = ["dist"],
-    chdir = package_name(),
-    tool = ":build_bundle",
+    config = ":esbuild_config",
+    entry_point = "src/main.ts",
+    index_html = None,
+    # esbuild-svelte with `css: injected` rejects "linked" source maps.
+    sourcemap = "external",
+    splitting = True,
+    deps = [
+        ":app",
+        ":node_modules",
+    ],
 )
 
 # Vite dev server
