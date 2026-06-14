@@ -369,6 +369,19 @@ Under `alpha_all`, the selector-local `firstClassName` and `secondClassName`
 names carry across the range, so the object initializer can refer to the
 matched runtime bindings without spelling their minified names.
 
+Declaration ranges are still structural AST matches. Comments between
+declarations are ignored, but export syntax is not: match `export const ...`
+with `export const ...` in the selector. A range may mix declaration kinds,
+such as `const` declarations followed by a helper `function` and another
+`const`. The `exports` map and `adopt_names` only choose which matched
+bindings are public exports; unexported declarations in the range may still be
+carried into the selected module or imported from residual output as ordinary
+dependencies of the exported bindings.
+If a range misses, the diagnostic names `binding_groups[].source_match` and
+reports that no top-level declaration range matched; common causes are
+non-contiguous source statements, `export` syntax present on only one side, or
+an exact literal/object/function body mismatch outside a deliberate hole.
+
 When the selector source already uses the desired public names, use
 `adopt_names` instead of repeating identity entries under `exports`:
 

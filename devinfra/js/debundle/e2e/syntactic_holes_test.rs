@@ -500,6 +500,165 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 }
 
 #[test]
+fn binding_group_source_match_range_ignores_comments_and_exports_subset() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeFirstClassName = "Widget-module_first__c0m";
+// Deliberately between declarations; comments should not become selector anchors.
+const runtimeSecondClassName = "Widget-module_second__m3nt";
+/* Another ignored comment before the aggregate object. */
+const runtimeStyles = {
+  first: runtimeFirstClassName,
+  second: runtimeSecondClassName,
+};
+console.log(runtimeStyles.first, runtimeStyles.second);
+export { runtimeFirstClassName, runtimeSecondClassName, runtimeStyles };
+"#,
+        vec![logical_module_with_binding_groups(
+            "styles/commented-widget",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+const styles = { first: firstClassName, second: secondClassName };"#,
+                &[("styles", "styles")],
+            )],
+        )],
+    ));
+
+    assert_entry_output(
+        &fixture,
+        "Widget-module_first__c0m Widget-module_second__m3nt\n",
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/styles/commented-widget.js",
+        &["styles"],
+        &["firstClassName", "secondClassName", "runtimeStyles"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/commented-widget.js",
+        &["const styles = {", "first:", "second:"],
+        &[
+            "STR_LITERAL_MATCHING_RE",
+            "Deliberately between declarations",
+        ],
+    );
+}
+
+#[test]
+fn binding_group_source_match_range_matches_exported_const_declarations() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"export const runtimeFirstClassName = "Widget-module_first__exp1";
+export const runtimeSecondClassName = "Widget-module_second__exp2";
+export const runtimeStyles = {
+  first: runtimeFirstClassName,
+  second: runtimeSecondClassName,
+};
+console.log(runtimeStyles.first, runtimeStyles.second);
+"#,
+        vec![logical_module_with_binding_groups(
+            "styles/exported-widget",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"export const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+export const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+export const styles = { first: firstClassName, second: secondClassName };"#,
+                &[
+                    ("firstClassName", "firstClassName"),
+                    ("secondClassName", "secondClassName"),
+                    ("styles", "styles"),
+                ],
+            )],
+        )],
+    ));
+
+    assert_entry_output(
+        &fixture,
+        "Widget-module_first__exp1 Widget-module_second__exp2\n",
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/styles/exported-widget.js",
+        &["firstClassName", "secondClassName", "styles"],
+        &[
+            "runtimeFirstClassName",
+            "runtimeSecondClassName",
+            "runtimeStyles",
+        ],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/exported-widget.js",
+        &[
+            r#"const firstClassName = "Widget-module_first__exp1""#,
+            r#"const secondClassName = "Widget-module_second__exp2""#,
+            "const styles = {",
+        ],
+        &["STR_LITERAL_MATCHING_RE"],
+    );
+}
+
+#[test]
+fn binding_group_source_match_range_matches_mixed_declaration_kinds() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeFirstClassName = "Widget-module_first__mix1";
+const runtimeSecondClassName = "Widget-module_second__mix2";
+function runtimeMakeStyles(first, second) {
+  return { first, second };
+}
+const runtimeStyles = runtimeMakeStyles(runtimeFirstClassName, runtimeSecondClassName);
+console.log(runtimeStyles.first, runtimeStyles.second);
+export {
+  runtimeFirstClassName,
+  runtimeSecondClassName,
+  runtimeMakeStyles,
+  runtimeStyles,
+};
+"#,
+        vec![logical_module_with_binding_groups(
+            "styles/mixed-widget",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+function makeStyles(first, second) {
+  return { first, second };
+}
+const styles = makeStyles(firstClassName, secondClassName);"#,
+                &[("makeStyles", "makeStyles"), ("styles", "styles")],
+            )],
+        )],
+    ));
+
+    assert_entry_output(
+        &fixture,
+        "Widget-module_first__mix1 Widget-module_second__mix2\n",
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/styles/mixed-widget.js",
+        &["makeStyles", "styles"],
+        &[
+            "firstClassName",
+            "secondClassName",
+            "runtimeMakeStyles",
+            "runtimeStyles",
+        ],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/mixed-widget.js",
+        &[
+            "import { runtimeFirstClassName, runtimeSecondClassName }",
+            "function makeStyles",
+            "const styles = makeStyles",
+        ],
+        &["STR_LITERAL_MATCHING_RE"],
+    );
+}
+
+#[test]
 fn binding_group_comments_emit_for_each_target_binding() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var first = 1 + 2, second = Number.parseInt("4", 10);
