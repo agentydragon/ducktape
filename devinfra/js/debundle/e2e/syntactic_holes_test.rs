@@ -2137,3 +2137,70 @@ export { total };
         &["EXPR"],
     );
 }
+
+#[test]
+fn unsupported_reserved_hole_names_fail_before_generic_no_match() {
+    let universal = run_dry_run_rejection_fixture(FixtureOpts::new(
+        r#"const actual = computeTotal(1, 2);
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha(
+                "total",
+                r#"const readable = ANYTHING_FUTURE;"#,
+            )],
+        )],
+    ));
+    assert!(
+        universal.stderr.contains("unsupported selector capability"),
+        "stderr:\n{}",
+        universal.stderr
+    );
+    assert!(
+        universal.stderr.contains("ANYTHING_FUTURE"),
+        "stderr:\n{}",
+        universal.stderr
+    );
+    assert!(
+        !universal
+            .stderr
+            .contains("did not match any top-level declaration"),
+        "stderr:\n{}",
+        universal.stderr
+    );
+
+    let object_gap = run_dry_run_rejection_fixture(FixtureOpts::new(
+        r#"const actual = { stable: 1, generated: 2, other: 3 };
+console.log(actual.stable + actual.other);
+export { actual };
+"#,
+        vec![logical_module(
+            "objects",
+            &[Member::source_alpha(
+                "selected",
+                r#"const readable = { stable: EXPR, ANYTHING_FUTURE, other: EXPR };"#,
+            )],
+        )],
+    ));
+    assert!(
+        object_gap
+            .stderr
+            .contains("unsupported selector capability"),
+        "stderr:\n{}",
+        object_gap.stderr
+    );
+    assert!(
+        object_gap.stderr.contains("ANYTHING_FUTURE"),
+        "stderr:\n{}",
+        object_gap.stderr
+    );
+    assert!(
+        !object_gap
+            .stderr
+            .contains("did not match any top-level declaration"),
+        "stderr:\n{}",
+        object_gap.stderr
+    );
+}

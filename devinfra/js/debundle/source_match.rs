@@ -274,6 +274,75 @@ fn first_error_line(error: &anyhow::Error) -> String {
     truncate_for_log(&line, 160)
 }
 
+fn parse_selector_module_with_capability_check(
+    request_id: &str,
+    selector_kind: &str,
+    file_label: String,
+    match_source: &str,
+    parse_error_context: impl FnOnce() -> String,
+) -> Result<Module> {
+    let parsed =
+        js_ast::parse_js_module_ast(&file_label, match_source).with_context(parse_error_context)?;
+    validate_anything_holes(&parsed.body)?;
+    validate_selector_capabilities(request_id, selector_kind, match_source, &parsed)?;
+    Ok(parsed)
+}
+
+fn validate_selector_capabilities(
+    request_id: &str,
+    selector_kind: &str,
+    match_source: &str,
+    parsed: &Module,
+) -> Result<()> {
+    let mut collector = UnsupportedSelectorCapabilityCollector::default();
+    parsed.visit_with(&mut collector);
+    if collector.unsupported_holes.is_empty() {
+        return Ok(());
+    }
+
+    let holes = collector
+        .unsupported_holes
+        .iter()
+        .map(|hole| format!("`{hole}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    bail!(
+        "logical_module {request_id}: unsupported selector capability in {selector_kind}: \
+         hole name(s) {holes} are not supported by this debundler; upgrade the debundler or \
+         rewrite the selector with supported holes. Selector:\n{match_source}"
+    );
+}
+
+#[derive(Default)]
+struct UnsupportedSelectorCapabilityCollector {
+    unsupported_holes: BTreeSet<String>,
+}
+
+impl UnsupportedSelectorCapabilityCollector {
+    fn record_identifier(&mut self, name: &str) {
+        if unsupported_selector_hole_name(name).is_some() {
+            self.unsupported_holes.insert(name.to_string());
+        }
+    }
+}
+
+impl Visit for UnsupportedSelectorCapabilityCollector {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.record_identifier(ident.sym.as_ref());
+    }
+
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.record_identifier(ident.id.sym.as_ref());
+    }
+
+    fn visit_prop_name(&mut self, name: &PropName) {
+        if let PropName::Ident(ident) = name {
+            self.record_identifier(ident.sym.as_ref());
+        }
+        name.visit_children_with(self);
+    }
+}
+
 pub fn source_match_preview(source: &str) -> String {
     let collapsed = source.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate_for_log(&collapsed, 180)
@@ -455,16 +524,18 @@ pub fn source_match_declared_binding_names(
     request_id: &str,
     source_match: &SourceMatch,
 ) -> Result<Vec<String>> {
-    let parsed = parse_source_match_module_ast(
-        &format!("<binding group source_match in {request_id}>"),
+    let parsed = parse_selector_module_with_capability_check(
+        request_id,
+        "binding_groups[].source_match",
+        format!("<binding group source_match in {request_id}>"),
         &source_match.match_source,
-    )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
-            source_match.match_source
-        )
-    })?;
+        || {
+            format!(
+                "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
+                source_match.match_source
+            )
+        },
+    )?;
     Ok(parsed
         .body
         .iter()
@@ -705,16 +776,18 @@ pub fn find_anonymous_statement_body_index_groups(
         request_id,
         selector,
         || {
-            let parsed = parse_source_match_module_ast(
-                &format!("<anonymous_statement match in {request_id}>"),
+            let parsed = parse_selector_module_with_capability_check(
+                request_id,
+                "anonymous_statements[].source_match",
+                format!("<anonymous_statement match in {request_id}>"),
                 &selector.match_source,
-            )
-            .with_context(|| {
-                format!(
-                    "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{}",
-                    selector.match_source
-                )
-            })?;
+                || {
+                    format!(
+                        "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{}",
+                        selector.match_source
+                    )
+                },
+            )?;
             let target_indices =
                 anonymous_selector_target_statement_indices(request_id, selector, &parsed.body)?;
             let mut groups = Vec::new();
@@ -762,16 +835,18 @@ pub fn source_match_body_debt(
     min_score: usize,
     limit: usize,
 ) -> Result<SourceMatchBodyDebt> {
-    let parsed = parse_source_match_module_ast(
-        &format!("<source_match debt in {request_id}>"),
+    let parsed = parse_selector_module_with_capability_check(
+        request_id,
+        "source_match",
+        format!("<source_match debt in {request_id}>"),
         &selector.match_source,
-    )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: source_match did not parse as JS:\n{}",
-            selector.match_source
-        )
-    })?;
+        || {
+            format!(
+                "logical_module {request_id}: source_match did not parse as JS:\n{}",
+                selector.match_source
+            )
+        },
+    )?;
     let exact_groups = find_matching_body_group_alignments(runtime_module, &parsed.body, selector);
     let [needle] = parsed.body.as_slice() else {
         return Ok(SourceMatchBodyDebt {
@@ -935,16 +1010,18 @@ fn resolve_member_binding_group_impl(
              target_binding already set"
         );
     }
-    let parsed = parse_source_match_module_ast(
-        &format!("<binding group source_match in {request_id}>"),
+    let parsed = parse_selector_module_with_capability_check(
+        request_id,
+        "binding_groups[].source_match",
+        format!("<binding group source_match in {request_id}>"),
         &selector.match_source,
-    )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
-            selector.match_source
-        )
-    })?;
+        || {
+            format!(
+                "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
+                selector.match_source
+            )
+        },
+    )?;
     if parsed.body.is_empty() {
         bail!(
             "logical_module {request_id}: binding_groups[].source_match parsed to zero \
@@ -1083,16 +1160,18 @@ fn find_member_binding_matches(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let parsed = parse_source_match_module_ast(
-        &format!("<member source_match in {request_id}>"),
+    let parsed = parse_selector_module_with_capability_check(
+        request_id,
+        "members[].selector.source_match",
+        format!("<member source_match in {request_id}>"),
         &selector.match_source,
-    )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: members[].selector.source_match did not parse as JS:\n{}",
-            selector.match_source
-        )
-    })?;
+        || {
+            format!(
+                "logical_module {request_id}: members[].selector.source_match did not parse as JS:\n{}",
+                selector.match_source
+            )
+        },
+    )?;
     if let Some(target_binding) = &selector.target_binding {
         if parsed.body.is_empty() {
             bail!(
@@ -6077,6 +6156,11 @@ fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
 
 fn anything_hole_name(name: &str) -> Option<&str> {
     (name == ANYTHING_HOLE_KEYWORD).then_some(name)
+}
+
+fn unsupported_selector_hole_name(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix(ANYTHING_HOLE_KEYWORD)?;
+    rest.starts_with('_').then_some(name)
 }
 
 /// Whether a hole name is the anonymous form: the bare keyword, or the

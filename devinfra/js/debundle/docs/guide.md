@@ -606,6 +606,10 @@ matches both `foo(123)` and `foo(456)`, and `bar(EXPR, EXPR)` matches
 matches a call whose two arguments are identical. These are still structural
 selectors: surrounding syntax is exact after the identifier policy is applied,
 and ambiguous matches are rejected rather than resolved by source order.
+Reserved future selector spellings fail before matching with an explicit
+`unsupported selector capability` diagnostic. For example, `ANYTHING_FUTURE`
+is rejected early instead of falling through to a generic no-match report.
+Unknown `source_match` fields use the same diagnostic class.
 
 `ANYTHING` is universal anonymous sugar for positions where raw JavaScript can
 parse a plain identifier and the matcher already has a typed hole for that AST

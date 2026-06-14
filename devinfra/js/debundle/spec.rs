@@ -826,8 +826,7 @@ impl fmt::Display for AnonymousStatementSelectorError {
 
 impl std::error::Error for AnonymousStatementSelectorError {}
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
     #[serde(
         default,
@@ -862,6 +861,53 @@ pub struct SourceMatch {
     pub wildcard_string_literals: BTreeSet<String>,
     #[serde(rename = "match")]
     pub match_source: String,
+}
+
+#[derive(Deserialize)]
+struct SourceMatchWire {
+    #[serde(default)]
+    identifiers: SourceMatchIdentifierMode,
+    #[serde(default)]
+    target_binding: Option<String>,
+    #[serde(default)]
+    target_statement: Option<usize>,
+    #[serde(default)]
+    target_statements: Option<TargetStatements>,
+    #[serde(default)]
+    wildcard_string_literals: BTreeSet<String>,
+    #[serde(rename = "match")]
+    match_source: String,
+    #[serde(flatten)]
+    unsupported_fields: BTreeMap<String, serde::de::IgnoredAny>,
+}
+
+impl<'de> Deserialize<'de> for SourceMatch {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SourceMatchWire::deserialize(deserializer)?;
+        if !wire.unsupported_fields.is_empty() {
+            let fields = wire
+                .unsupported_fields
+                .keys()
+                .map(|field| format!("`{field}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(serde::de::Error::custom(format!(
+                "unsupported selector capability: source_match field(s) {fields} are not \
+                 supported by this debundler; upgrade the debundler or remove the field(s)"
+            )));
+        }
+        Ok(Self {
+            identifiers: wire.identifiers,
+            target_binding: wire.target_binding,
+            target_statement: wire.target_statement,
+            target_statements: wire.target_statements,
+            wildcard_string_literals: wire.wildcard_string_literals,
+            match_source: wire.match_source,
+        })
+    }
 }
 
 impl SourceMatch {
@@ -1259,6 +1305,27 @@ mod tests {
         assert!(
             !serialized.contains("admission_overrides"),
             "default overrides must not serialize: {serialized}"
+        );
+    }
+
+    #[test]
+    fn source_match_unknown_field_reports_unsupported_selector_capability() {
+        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
+            r#"{
+              "identifiers": "alpha_all",
+              "match": "const readable = 1;",
+              "object_props": true
+            }"#,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("unsupported selector capability"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("object_props"),
+            "unexpected error: {message}"
         );
     }
 }

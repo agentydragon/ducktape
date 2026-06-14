@@ -37,10 +37,6 @@ old-spec selector-debt migration no longer needs special coordination.
    and blocker comments. Include module path, export name, selector kind,
    target binding, first mismatch, nearest candidates, and recommended next
    action. This lets coordinators batch failures instead of scraping logs.
-5. **Capability/version diagnostics for selector syntax.** Specs should fail
-   early when the pinned debundler lacks a selector feature they use. Unknown
-   hole names and unsupported selector fields should produce explicit
-   "unsupported selector capability" diagnostics, not generic no-match reports.
 
 ### P1 — improves agent throughput and reviewability
 
