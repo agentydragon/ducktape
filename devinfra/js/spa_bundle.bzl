@@ -56,7 +56,9 @@ def spa_bundle(
         deps: `js_library` targets forming the app's module graph (incl. the
             entry's library and its `//:node_modules/*` deps).
         index_html: HTML shell copied to `<out_dir>/index.html`. Must reference
-            the bundle as `/main.js` (and `/main.css` if CSS is imported).
+            the bundle as `/main.js` (and `/main.css` if CSS is imported). Pass
+            `None` when the app's index.html is served separately (e.g. a backend
+            packages it next to, not inside, the bundle dir).
         config: Optional label of a `js_library` exporting esbuild options for
             plugin-based bundling (Svelte/Tailwind). Mutually exclusive with
             `jsx`/`loader`, which the mjs sets instead.
@@ -111,9 +113,10 @@ def spa_bundle(
         root_paths.append("{}/{}".format(pkg, public_dir) if pkg else public_dir)
     root_paths.append(pkg if pkg else ".")
 
+    srcs = [":" + esbuild_name] + ([index_html] if index_html else []) + (public or [])
     copy_to_directory(
         name = name,
-        srcs = [":" + esbuild_name, index_html] + (public or []),
+        srcs = srcs,
         out = out_dir,
         root_paths = root_paths,
         visibility = visibility,

@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
@@ -28,6 +29,7 @@ js_library(
         "src/main.ts",
     ],
     deps = [
+        ":node_modules/svelte",
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:token",
@@ -68,39 +70,36 @@ js_binary(
 # Production bundle
 # ============================================================
 
-js_binary(
-    name = "build_bundle",
-    data = [
-        "esbuild.config.mjs",
-        "index.html",
-        "svelte.config.js",
-        "tsconfig.json",
-        ":app",
-        ":node_modules",
-        "//props/frontend/src/lib:schema",
+# Svelte + Tailwind plugins for the native esbuild() rule (see spa_bundle).
+js_library(
+    name = "esbuild_config",
+    srcs = ["esbuild_config.mjs"],
+    deps = [
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/esbuild-svelte",
+        ":node_modules/svelte",
+        ":node_modules/tailwindcss",
     ],
-    entry_point = "esbuild.config.mjs",
 )
 
-# Run: bazel build //props/frontend:bundle
-js_run_binary(
+# index.html is served separately by the backend (packaged at /frontend, with
+# the bundle under /frontend/dist), so it is not copied into the bundle dir.
+spa_bundle(
     name = "bundle",
-    srcs = [
-        "esbuild.config.mjs",
-        "index.html",
-        "svelte.config.js",
-        "tsconfig.json",
-        ":app",
-        "//props/frontend/src/lib:schema",
-    ],
-    outs = [
-        "dist/main.css",
-        "dist/main.js",
-    ],
-    args = ["dist"],
-    chdir = package_name(),
-    tool = ":build_bundle",
+    config = ":esbuild_config",
+    entry_point = "src/main.ts",
+    index_html = None,
+    # esbuild-svelte with `css: injected` rejects "linked" source maps.
+    sourcemap = "external",
+    splitting = True,
     visibility = ["//props/backend:__pkg__"],
+    # The app's components import many npm packages (lucide-svelte, svelte-sonner,
+    # highlight.js, chart.js, …) without per-file js_library npm deps; the whole
+    # linked node_modules makes them resolvable, as the old driver's nodePaths did.
+    deps = [
+        ":app",
+        ":node_modules",
+    ],
 )
 
 # ============================================================
