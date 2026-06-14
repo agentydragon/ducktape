@@ -1037,6 +1037,15 @@ fn find_matching_target_bindings(
     }
     let (target_item_idx, target_binding_idx) =
         selector_binding_location(needles, request_id, selector, target_binding)?;
+    if selector_single_var_declarator(&needles[target_item_idx]).is_some() {
+        return find_matching_target_binding_ranges_with_single_declarator(
+            runtime_module,
+            needles,
+            selector,
+            target_item_idx,
+            target_binding_idx,
+        );
+    }
     let mut matches = Vec::new();
     for body_idx in find_matching_body_ranges(runtime_module, needles, selector) {
         let matched_body_idx = body_idx + target_item_idx;
@@ -1059,6 +1068,94 @@ fn find_matching_target_bindings(
         });
     }
     Ok(matches)
+}
+
+fn find_matching_target_binding_ranges_with_single_declarator(
+    runtime_module: &Module,
+    needles: &[ModuleItem],
+    selector: &AnonymousStatementSelector,
+    target_item_idx: usize,
+    target_binding_idx: usize,
+) -> Result<Vec<MemberBindingMatch>> {
+    if needles.is_empty() || needles.len() > runtime_module.body.len() {
+        return Ok(Vec::new());
+    }
+    let wildcard_idents = wildcard_ident_names_for_module_items(needles);
+    let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
+    let mut matches = Vec::new();
+    SyntaxContext::within_ignored_ctxt(|| {
+        for (body_idx, candidates) in runtime_module.body.windows(needles.len()).enumerate() {
+            let mut matcher = AstWildcardMatcher::new(selector, &wildcard_idents, alpha);
+            let window = SingleDeclaratorTargetWindow {
+                needles,
+                candidates,
+                target_item_idx,
+                target_binding_idx,
+            };
+            let target_matches = window.collect_matches(&mut matcher);
+            for binding in target_matches {
+                matches.push(MemberBindingMatch {
+                    body_idx: body_idx + target_item_idx,
+                    binding,
+                });
+            }
+        }
+    });
+    Ok(matches)
+}
+
+struct SingleDeclaratorTargetWindow<'a> {
+    needles: &'a [ModuleItem],
+    candidates: &'a [ModuleItem],
+    target_item_idx: usize,
+    target_binding_idx: usize,
+}
+
+impl SingleDeclaratorTargetWindow<'_> {
+    fn collect_matches(&self, matcher: &mut AstWildcardMatcher<'_>) -> Vec<ResolvedMemberBinding> {
+        let mut matches = Vec::new();
+        self.match_items(matcher, 0, None, &mut matches);
+        matches
+    }
+
+    fn match_items(
+        &self,
+        matcher: &mut AstWildcardMatcher<'_>,
+        item_idx: usize,
+        target_binding: Option<ResolvedMemberBinding>,
+        matches: &mut Vec<ResolvedMemberBinding>,
+    ) {
+        if item_idx == self.needles.len() {
+            if let Some(target_binding) = target_binding {
+                matches.push(target_binding);
+            }
+            return;
+        }
+        let snapshot = matcher.snapshot();
+        if item_idx == self.target_item_idx {
+            let Some(candidate_var) = item_var_decl(&self.candidates[item_idx]) else {
+                return;
+            };
+            for declarator in &candidate_var.decls {
+                matcher.restore(snapshot.clone());
+                if !matcher.match_single_var_declarator_item(
+                    &self.needles[item_idx],
+                    &self.candidates[item_idx],
+                    declarator,
+                ) {
+                    continue;
+                }
+                let declared = declared_bindings_for_var_declarator(declarator);
+                let Some(binding) = declared.get(self.target_binding_idx).cloned() else {
+                    continue;
+                };
+                self.match_items(matcher, item_idx + 1, Some(binding), matches);
+            }
+        } else if matcher.match_module_item(&self.needles[item_idx], &self.candidates[item_idx]) {
+            self.match_items(matcher, item_idx + 1, target_binding, matches);
+        }
+        matcher.restore(snapshot);
+    }
 }
 
 fn find_matching_target_var_declarators(

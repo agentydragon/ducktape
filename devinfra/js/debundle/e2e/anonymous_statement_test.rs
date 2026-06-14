@@ -1220,6 +1220,46 @@ export { siblingBinding, runtimeBinding, Existing };
 }
 
 #[test]
+fn member_source_match_target_binding_context_selects_single_declarator_from_comma_list() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const helperBinding = { kind: "helper" },
+  runtimeBinding = { kind: "selected", enabled: true },
+  trailingBinding = { kind: "trailing" };
+function runtimeReader() {
+  return runtimeBinding.kind;
+}
+console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
+export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha_target(
+                "selectedConfig",
+                "config",
+                r#"const config = { kind: "selected", enabled: true };
+function readConfig() {
+  return config.kind;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_config.js",
+        &["const selectedConfig", r#""selected""#],
+        &["helperBinding", "trailingBinding", "runtimeReader"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["helperBinding", "trailingBinding", "runtimeReader"],
+        &["runtimeBinding"],
+    );
+    assert_entry_output(&fixture, "selected helper trailing\n");
+}
+
+#[test]
 fn binding_group_source_match_still_rejects_ambiguous_multideclarator_matches() {
     let opts = FixtureOpts::new(
         r#"let firstA = 100,

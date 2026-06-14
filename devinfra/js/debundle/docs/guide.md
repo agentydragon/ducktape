@@ -336,6 +336,30 @@ members:
           }
 ```
 
+If the selected binding is one declarator inside a wider comma-list declaration,
+write only the selected declarator in the selector and keep `target_binding` on
+that selector-local name. Debundle can align that single declarator to the
+matching declarator inside the runtime `var`/`let`/`const` list while still
+using any adjacent selector statements as context:
+
+```yaml
+members:
+  - name: selectedConfig
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: config
+        match: |
+          const config = { kind: "selected" };
+          function readConfig() {
+            return config.kind;
+          }
+```
+
+Use `DECLARATORS_BEFORE` / `DECLARATORS_AFTER` or `binding_groups` when several
+declarators in the same comma-list need to be exported together. Do not spell
+unrelated sibling declarators just to make a single binding selectable.
+
 Use `binding_groups` when several exports come from the same
 multi-declarator or short declaration context. This is sugar for several
 `members[].selector.source_match` entries with the same `match` and
@@ -877,6 +901,21 @@ CLI editing is live for module and member comments; anonymous
 statement comments are authored directly in YAML. Module, member, and
 anonymous-statement `comment:` fields emit into generated JS. `note:`
 does not emit.
+
+When a binding cannot yet be stabilized because the selector language lacks a
+concise matcher, leave a member `comment:` naming the concrete matcher/tooling
+blocker and the desired future feature instead of silently keeping minified
+binding debt. For example:
+
+```yaml
+comment: |
+  blocked on Ducktape support for matching one declarator inside a
+  multi-declarator declaration / arbitrary sibling declarator hole
+
+comment: |
+  blocked on Ducktape support for an object-literal arbitrary key/value
+  property wildcard in source_match selectors
+```
 
 ## Renaming or disabling a module
 
