@@ -477,6 +477,9 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_yaml",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
     ],
 )
 

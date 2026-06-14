@@ -94,6 +94,34 @@ fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
     (target, other)
 }
 
+fn anything_holes_fixture(modules: &Path) -> PathBuf {
+    let target = modules.join("ui/selector_holes.yaml");
+    write(
+        &target,
+        r#"members:
+  - name: WidgetConfig
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: widgetConfig
+        match: |
+          const widgetConfig = makeWidget(EXPR, {
+            stable: EXPR,
+            OBJECT_PROPS,
+            other: EXPR,
+          }, ARGS);
+  - name: NamedHolesStayReadable
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: namedConfig
+        match: |
+          const namedConfig = makeWidget(EXPR_VALUE, { OBJECT_PROPS_GENERATED });
+"#,
+    );
+    target
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -182,4 +210,104 @@ fn apply_adds_target_binding_and_honors_module_prefix_filter() {
         "const widgetFactory = makeWidgetFactory();"
     );
     assert_eq!(fs::read_to_string(&other).unwrap(), before_other);
+}
+
+#[test]
+fn dry_run_reports_anonymous_holes_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = anything_holes_fixture(&modules);
+    let before_target = fs::read_to_string(&target).unwrap();
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "anything-holes",
+            "--file",
+            "ui/selector_holes.yaml",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["action"], "dry_run", "{parsed}");
+    assert_eq!(parsed["rewrite"], "anything_holes", "{parsed}");
+    assert_eq!(parsed["summary"]["source_match_members"], 2, "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["skipped_candidates"], 1, "{parsed}");
+    assert!(
+        parsed["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| {
+                candidate["action"] == "would_change"
+                    && candidate["replacement_count"] == 5
+                    && candidate["rewritten_holes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|hole| hole == "OBJECT_PROPS")
+            }),
+        "{parsed}"
+    );
+    assert!(
+        parsed["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| {
+                candidate["action"] == "skipped"
+                    && candidate["reason"]
+                        == "no anonymous typed holes can be normalized to ANYTHING"
+            }),
+        "{parsed}"
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), before_target);
+}
+
+#[test]
+fn apply_rewrites_anonymous_typed_holes_to_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = anything_holes_fixture(&modules);
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "anything-holes",
+            "--module",
+            "ui/selector_holes",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["action"], "applied", "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(
+        parsed["summary"]["files_written"].as_array().unwrap().len(),
+        1,
+        "{parsed}"
+    );
+
+    let rewritten = fs::read_to_string(&target).unwrap();
+    assert!(
+        rewritten.contains("const widgetConfig = makeWidget(ANYTHING, {"),
+        "{rewritten}"
+    );
+    assert!(rewritten.contains("stable: ANYTHING"), "{rewritten}");
+    assert!(rewritten.contains("ANYTHING,"), "{rewritten}");
+    assert!(rewritten.contains("}, ANYTHING);"), "{rewritten}");
+    assert!(
+        rewritten.contains("EXPR_VALUE"),
+        "named expression holes should stay readable:\n{rewritten}"
+    );
+    assert!(
+        rewritten.contains("OBJECT_PROPS_GENERATED"),
+        "named object-property holes should stay readable:\n{rewritten}"
+    );
 }

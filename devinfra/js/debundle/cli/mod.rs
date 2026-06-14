@@ -180,12 +180,15 @@ pub struct SelectorDebtArgs {
 pub enum SelectorCodemodRewriteArg {
     /// Add target_binding to member source_match selectors that declare exactly one binding.
     SingleTargetBinding,
+    /// Replace anonymous typed source_match holes with universal ANYTHING holes.
+    AnythingHoles,
 }
 
 impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
     fn from(value: SelectorCodemodRewriteArg) -> Self {
         match value {
             SelectorCodemodRewriteArg::SingleTargetBinding => Self::SingleTargetBinding,
+            SelectorCodemodRewriteArg::AnythingHoles => Self::AnythingHoles,
         }
     }
 }

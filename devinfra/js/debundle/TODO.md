@@ -11,28 +11,20 @@ old-spec selector-debt migration no longer needs special coordination.
 
 ### P0 — directly unlock large structural-selector peels
 
-1. **Bulk selector codemods / apply mode.** Add scripting-safe CLI support that
-   can apply proven mechanical rewrites across a spec instead of only reporting
-   them. First targets:
-   - add `target_binding` to member-form `source_match` selectors whose source
-     declares one readable top-level binding;
+1. **Bulk selector codemods beyond current apply mode.** Extend
+   `debundle spec selector-codemod` with more proven mechanical rewrites across
+   a spec. Remaining high-value targets:
    - convert repeated member-form selectors over the same declaration context
      into one `binding_groups` entry;
    - convert unique literal-initializer bindings into structural selectors
-     when the source value is stable enough.
-     The tool should support dry-run, path filters, JSON output, and an
-     explanation for every skipped candidate.
-2. **Universal `ANYTHING` hole.** Provide one ergonomic wildcard spelling that
-   lowers to the correct typed matcher for the parse position when possible.
-   Preserve typed holes for diagnostics and for positions where raw JS cannot
-   parse a universal placeholder. Keep tests generic; do not use downstream
-   private bundle snippets.
-3. **Object-literal property holes.** Add a structural list hole for object
-   literal properties so selectors can pin stable keys while ignoring unrelated
-   key/value pairs, e.g. `{ stableKey: EXPR, OBJECT_PROPS, otherKey: EXPR }`.
-   This is needed to avoid replacing whole object initializers with broad
-   `EXPR` holes or overpinning volatile generated properties.
-4. **Selector diagnostics as machine-readable reports.** Emit a keep-going
+     when the source value is stable enough;
+   - source-aware reports or apply-safe rewrites for overpinned object literals
+     that can now use `ANYTHING` / `OBJECT_PROPS` around stable keys.
+
+   Keep dry-run, path filters, JSON output, and an explanation for every
+   skipped candidate.
+
+2. **Selector diagnostics as machine-readable reports.** Emit a keep-going
    JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
    and blocker comments. Include module path, export name, selector kind,
    target binding, first mismatch, nearest candidates, and recommended next

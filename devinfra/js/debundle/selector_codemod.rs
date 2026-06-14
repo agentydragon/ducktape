@@ -2,29 +2,43 @@
 //!
 //! This powers `debundle spec selector-codemod`: a scripting-safe CLI for
 //! applying proven YAML-only selector rewrites across a modules tree. The
-//! first rewrite is deliberately narrow: member-form `selector.source_match`
-//! entries that declare exactly one selector-local top-level binding and have
-//! no `target_binding` get that `target_binding` filled in automatically.
+//! first rewrites are deliberately narrow: member-form `selector.source_match`
+//! entries that declare exactly one selector-local top-level binding can have
+//! `target_binding` filled in automatically, and anonymous typed holes can be
+//! normalized to `ANYTHING` now that the matcher supports it.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 use spec::SourceMatch;
 use spec_modules::{collect_module_files, module_path_from_file};
+use swc_common::{BytePos, Span};
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
+
+const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
+const EXPR_HOLE_KEYWORD: &str = "EXPR";
+const STMT_HOLE_KEYWORD: &str = "STMT";
+const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
+const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
+const ARGS_HOLE_KEYWORD: &str = "ARGS";
+const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectorCodemodRewrite {
     SingleTargetBinding,
+    AnythingHoles,
 }
 
 impl SelectorCodemodRewrite {
     pub fn name(self) -> &'static str {
         match self {
             Self::SingleTargetBinding => "single_target_binding",
+            Self::AnythingHoles => "anything_holes",
         }
     }
 }
@@ -56,6 +70,10 @@ pub struct SelectorCodemodCandidate {
     pub action: SelectorCodemodAction,
     pub target_binding: Option<String>,
     pub declared_bindings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rewritten_holes: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub replacement_count: usize,
     pub reason: Option<String>,
 }
 
@@ -139,6 +157,9 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     member,
                     config.apply,
                 ),
+                SelectorCodemodRewrite::AnythingHoles => {
+                    rewrite_anything_holes(&module, &file, member_index, member, config.apply)
+                }
             };
             let Some(candidate) = candidate? else {
                 continue;
@@ -206,6 +227,8 @@ fn rewrite_single_target_binding(
             action: SelectorCodemodAction::Skipped,
             target_binding: source_match.target_binding,
             declared_bindings: Vec::new(),
+            rewritten_holes: Vec::new(),
+            replacement_count: 0,
             reason: Some("target_binding already present".to_string()),
         }));
     }
@@ -221,6 +244,8 @@ fn rewrite_single_target_binding(
                 action: SelectorCodemodAction::Skipped,
                 target_binding: None,
                 declared_bindings: Vec::new(),
+                rewritten_holes: Vec::new(),
+                replacement_count: 0,
                 reason: Some(format!("source_match did not parse: {err:#}")),
             }));
         }
@@ -239,6 +264,8 @@ fn rewrite_single_target_binding(
             action: SelectorCodemodAction::Skipped,
             target_binding: None,
             declared_bindings: declared,
+            rewritten_holes: Vec::new(),
+            replacement_count: 0,
             reason: Some(reason),
         }));
     };
@@ -260,6 +287,103 @@ fn rewrite_single_target_binding(
         },
         target_binding: Some(target.clone()),
         declared_bindings: declared,
+        rewritten_holes: Vec::new(),
+        replacement_count: 0,
+        reason: None,
+    }))
+}
+
+fn rewrite_anything_holes(
+    module: &str,
+    file: &Path,
+    member_index: usize,
+    member: &mut Value,
+    apply: bool,
+) -> Result<Option<SelectorCodemodCandidate>> {
+    let export_name = mapping_get(member, "name").and_then(value_as_string);
+    let Some(source_match_value) = mapping_get_mut_path(member, &["selector", "source_match"])
+    else {
+        return Ok(None);
+    };
+    let Value::Mapping(source_match_mapping) = source_match_value else {
+        return Ok(Some(skipped_candidate(
+            module,
+            file,
+            member_index,
+            export_name,
+            "selector.source_match is not a mapping",
+        )));
+    };
+    let Some(match_source_value) = source_match_mapping.get_mut(yk("match")) else {
+        return Ok(Some(skipped_candidate(
+            module,
+            file,
+            member_index,
+            export_name,
+            "selector.source_match.match is missing",
+        )));
+    };
+    let Some(match_source) = match_source_value.as_str() else {
+        return Ok(Some(skipped_candidate(
+            module,
+            file,
+            member_index,
+            export_name,
+            "selector.source_match.match is not a string",
+        )));
+    };
+    let replacements = match anonymous_typed_hole_replacements(module, member_index, match_source) {
+        Ok(replacements) => replacements,
+        Err(err) => {
+            return Ok(Some(SelectorCodemodCandidate {
+                module: module.to_string(),
+                file: file.display().to_string(),
+                member_index,
+                export_name,
+                action: SelectorCodemodAction::Skipped,
+                target_binding: None,
+                declared_bindings: Vec::new(),
+                rewritten_holes: Vec::new(),
+                replacement_count: 0,
+                reason: Some(format!("source_match did not parse: {err:#}")),
+            }));
+        }
+    };
+    if replacements.is_empty() {
+        return Ok(Some(skipped_candidate(
+            module,
+            file,
+            member_index,
+            export_name,
+            "no anonymous typed holes can be normalized to ANYTHING",
+        )));
+    }
+
+    let rewritten_holes = replacements
+        .iter()
+        .map(|replacement| replacement.from.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let replacement_count = replacements.len();
+    let rewritten = apply_source_replacements(match_source, &replacements);
+    if apply {
+        *match_source_value = Value::String(rewritten);
+    }
+    Ok(Some(SelectorCodemodCandidate {
+        module: module.to_string(),
+        file: file.display().to_string(),
+        member_index,
+        export_name,
+        action: if apply {
+            SelectorCodemodAction::Changed
+        } else {
+            SelectorCodemodAction::WouldChange
+        },
+        target_binding: None,
+        declared_bindings: Vec::new(),
+        rewritten_holes,
+        replacement_count,
         reason: None,
     }))
 }
@@ -279,6 +403,8 @@ fn skipped_candidate(
         action: SelectorCodemodAction::Skipped,
         target_binding: None,
         declared_bindings: Vec::new(),
+        rewritten_holes: Vec::new(),
+        replacement_count: 0,
         reason: Some(reason.into()),
     }
 }
@@ -343,6 +469,184 @@ fn value_as_string(value: &Value) -> Option<String> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SourceReplacement {
+    start: usize,
+    end: usize,
+    from: String,
+}
+
+#[derive(Debug, Clone)]
+struct SpanReplacement {
+    span: Span,
+    from: &'static str,
+}
+
+fn anonymous_typed_hole_replacements(
+    module: &str,
+    member_index: usize,
+    match_source: &str,
+) -> Result<Vec<SourceReplacement>> {
+    let parsed = js_ast::parse_js_module(
+        &format!("<selector-codemod anything holes in {module} member {member_index}>"),
+        match_source,
+    )?;
+    let mut collector = AnonymousTypedHoleCollector::default();
+    parsed.module.visit_with(&mut collector);
+    let files = parsed.cm.files();
+    let Some(file) = files.first() else {
+        return Ok(Vec::new());
+    };
+    let mut replacements = collector
+        .replacements
+        .into_iter()
+        .map(|replacement| span_replacement_to_source(match_source, file.start_pos, replacement))
+        .collect::<Result<Vec<_>>>()?;
+    replacements.sort_by_key(|replacement| (replacement.start, replacement.end));
+    replacements.dedup_by_key(|replacement| (replacement.start, replacement.end));
+    ensure_non_overlapping_replacements(module, member_index, &replacements)?;
+    Ok(replacements)
+}
+
+fn span_replacement_to_source(
+    source: &str,
+    file_start: BytePos,
+    replacement: SpanReplacement,
+) -> Result<SourceReplacement> {
+    let start = replacement
+        .span
+        .lo()
+        .0
+        .checked_sub(file_start.0)
+        .context("selector source span starts before source file")? as usize;
+    let end = replacement
+        .span
+        .hi()
+        .0
+        .checked_sub(file_start.0)
+        .context("selector source span ends before source file")? as usize;
+    let Some(actual) = source.get(start..end) else {
+        bail!("selector source span is not a valid UTF-8 boundary");
+    };
+    if actual != replacement.from {
+        bail!(
+            "selector source span expected `{}` but found `{actual}`",
+            replacement.from
+        );
+    }
+    Ok(SourceReplacement {
+        start,
+        end,
+        from: replacement.from.to_string(),
+    })
+}
+
+fn ensure_non_overlapping_replacements(
+    module: &str,
+    member_index: usize,
+    replacements: &[SourceReplacement],
+) -> Result<()> {
+    for pair in replacements.windows(2) {
+        if pair[0].end > pair[1].start {
+            bail!(
+                "{module}: members[{member_index}].selector.source_match produced overlapping \
+                 anonymous-hole replacements"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn apply_source_replacements(source: &str, replacements: &[SourceReplacement]) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut cursor = 0;
+    for replacement in replacements {
+        output.push_str(&source[cursor..replacement.start]);
+        output.push_str(ANYTHING_HOLE_KEYWORD);
+        cursor = replacement.end;
+    }
+    output.push_str(&source[cursor..]);
+    output
+}
+
+#[derive(Default)]
+struct AnonymousTypedHoleCollector {
+    replacements: Vec<SpanReplacement>,
+}
+
+impl AnonymousTypedHoleCollector {
+    fn record(&mut self, span: Span, from: &'static str) {
+        self.replacements.push(SpanReplacement { span, from });
+    }
+}
+
+impl Visit for AnonymousTypedHoleCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Ident(ident) = expr
+            && ident.sym.as_ref() == EXPR_HOLE_KEYWORD
+        {
+            self.record(ident.span, EXPR_HOLE_KEYWORD);
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Stmt::Expr(expr_stmt) = stmt
+            && let Expr::Ident(ident) = expr_stmt.expr.as_ref()
+            && ident.sym.as_ref() == STMT_HOLE_KEYWORD
+        {
+            self.record(ident.span, STMT_HOLE_KEYWORD);
+            return;
+        }
+        stmt.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Pat::Ident(ident) = &declarator.name
+            && ident.id.sym.as_ref() == DECLARATORS_HOLE_KEYWORD
+        {
+            self.record(ident.id.span, DECLARATORS_HOLE_KEYWORD);
+            return;
+        }
+        declarator.visit_children_with(self);
+    }
+
+    fn visit_expr_or_spread(&mut self, expr_or_spread: &ExprOrSpread) {
+        if expr_or_spread.spread.is_none()
+            && let Expr::Ident(ident) = expr_or_spread.expr.as_ref()
+            && ident.sym.as_ref() == ARGS_HOLE_KEYWORD
+        {
+            self.record(ident.span, ARGS_HOLE_KEYWORD);
+            return;
+        }
+        expr_or_spread.visit_children_with(self);
+    }
+
+    fn visit_prop_or_spread(&mut self, prop_or_spread: &PropOrSpread) {
+        if let PropOrSpread::Prop(prop) = prop_or_spread
+            && let Prop::Shorthand(ident) = prop.as_ref()
+            && ident.sym.as_ref() == OBJECT_PROPS_HOLE_KEYWORD
+        {
+            self.record(ident.span, OBJECT_PROPS_HOLE_KEYWORD);
+            return;
+        }
+        prop_or_spread.visit_children_with(self);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if let ClassMember::ClassProp(prop) = member
+            && prop.value.is_none()
+            && let PropName::Ident(ident) = &prop.key
+            && ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
+        {
+            self.record(ident.span, CLASS_REST_HOLE_KEYWORD);
+            return;
+        }
+        member.visit_children_with(self);
+    }
+}
+
 fn insert_mapping_key_before_match(mapping: &mut Mapping, key: &str, value: Value) {
     let key_value = yk(key);
     if mapping.contains_key(&key_value) {
@@ -380,11 +684,27 @@ pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut St
         let readable = candidate.export_name.as_deref().unwrap_or("-");
         match candidate.action {
             SelectorCodemodAction::WouldChange | SelectorCodemodAction::Changed => {
-                let target = candidate.target_binding.as_deref().unwrap_or("-");
-                out.push_str(&format!(
-                    "  {:?} {} member#{} [{}] target_binding={}\n",
-                    candidate.action, candidate.module, candidate.member_index, readable, target
-                ));
+                if candidate.replacement_count > 0 {
+                    out.push_str(&format!(
+                        "  {:?} {} member#{} [{}] replacements={} holes={}\n",
+                        candidate.action,
+                        candidate.module,
+                        candidate.member_index,
+                        readable,
+                        candidate.replacement_count,
+                        candidate.rewritten_holes.join(",")
+                    ));
+                } else {
+                    let target = candidate.target_binding.as_deref().unwrap_or("-");
+                    out.push_str(&format!(
+                        "  {:?} {} member#{} [{}] target_binding={}\n",
+                        candidate.action,
+                        candidate.module,
+                        candidate.member_index,
+                        readable,
+                        target
+                    ));
+                }
             }
             SelectorCodemodAction::Skipped => {
                 out.push_str(&format!(
@@ -397,4 +717,8 @@ pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut St
             }
         }
     }
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
