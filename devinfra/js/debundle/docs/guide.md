@@ -389,6 +389,33 @@ binding_groups:
       replaySlot: replayBridge
 ```
 
+Decorator/property setup calls fit the same pattern. Use the class declaration
+as the binding context, keep durable property strings exact, and claim the
+decorator calls by index:
+
+```yaml
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      target_statements: [1, 2]
+      match: |
+        class DecoratedModel {
+          CLASS_REST;
+          report() {
+            STMT_LIST;
+          }
+          CLASS_REST;
+        }
+        decorate(["observable"], DecoratedModel.prototype, "state");
+        decorate(["observable"], DecoratedModel.prototype, "title");
+    adopt_names: [DecoratedModel]
+```
+
+Under `alpha_all`, `decorate` and `DecoratedModel` are selector-local names:
+they only require a consistent structural correspondence inside this selector,
+so the runtime helper and class binding may be minified differently. The
+strings `"state"` and `"title"` remain exact anchors.
+
 When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
 list, use declarator-list holes instead of spelling unrelated siblings:
 

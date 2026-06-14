@@ -729,6 +729,62 @@ false || (recordSlot = "record");"#,
 }
 
 #[test]
+fn binding_group_claims_decorated_class_and_decorator_statements_from_one_selector() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function applyPropertyDecorator(markers, target, property) {
+  target[`_${property}`] = markers.length;
+}
+class RuntimeModel {
+  report() {
+    return `${this._state}:${this._title}`;
+  }
+}
+applyPropertyDecorator(["observable"], RuntimeModel.prototype, "state");
+applyPropertyDecorator(["observable"], RuntimeModel.prototype, "title");
+console.log(new RuntimeModel().report());
+export { RuntimeModel };
+"#,
+        vec![logical_module_with_binding_groups(
+            "decorated_model",
+            &[],
+            &[BindingGroup::source_alpha_adopt_names(
+                r#"class DecoratedModel {
+  CLASS_REST;
+  report() {
+    STMT_LIST;
+  }
+  CLASS_REST;
+}
+decorate(["observable"], DecoratedModel.prototype, "state");
+decorate(["observable"], DecoratedModel.prototype, "title");"#,
+                &["DecoratedModel"],
+            )
+            .with_target_statements(&[1, 2])],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/decorated_model.js",
+        &[
+            "class DecoratedModel",
+            "applyPropertyDecorator([",
+            "DecoratedModel.prototype",
+            r#""state""#,
+            r#""title""#,
+        ],
+        &["class RuntimeModel", "function applyPropertyDecorator"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["function applyPropertyDecorator"],
+        &["RuntimeModel.prototype", "DecoratedModel.prototype"],
+    );
+    assert_entry_output(&fixture, "1:1\n");
+}
+
+#[test]
 fn binding_group_target_statements_supports_stmt_list_context_gap() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"let runtimeRecord, runtimeReplay;
