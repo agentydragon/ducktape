@@ -8,11 +8,12 @@
 //! normalized to `ANYTHING` now that the matcher supports it.
 
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use serde_yaml::{Mapping, Value};
+use serde_yaml::Value;
 use spec::SourceMatch;
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_common::{BytePos, Span};
@@ -131,8 +132,11 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
         }
         summary.modules_scanned += 1;
 
+        let original_text =
+            fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
         let mut doc = yaml_edit::read_yaml(&file)?;
         let mut file_changed = false;
+        let mut text_insertions = Vec::new();
         let Value::Mapping(root) = &mut doc else {
             candidates.push(skipped_candidate(
                 &module,
@@ -155,15 +159,21 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     &file,
                     member_index,
                     member,
+                    &original_text,
                     config.apply,
                 ),
                 SelectorCodemodRewrite::AnythingHoles => {
                     rewrite_anything_holes(&module, &file, member_index, member, config.apply)
+                        .map(|outcome| outcome.map(SelectorCodemodOutcome::candidate_only))
                 }
             };
-            let Some(candidate) = candidate? else {
+            let Some(outcome) = candidate? else {
                 continue;
             };
+            if let Some(insertion) = outcome.text_insertion {
+                text_insertions.push(insertion);
+            }
+            let candidate = outcome.candidate;
             if matches!(
                 candidate.action,
                 SelectorCodemodAction::WouldChange | SelectorCodemodAction::Changed
@@ -177,8 +187,22 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             candidates.push(candidate);
         }
 
-        if config.apply && file_changed && yaml_edit::write_yaml_if_semantic_changed(&file, &doc)? {
-            summary.files_written.push(file.display().to_string());
+        if config.apply && file_changed {
+            let written = match config.rewrite {
+                SelectorCodemodRewrite::SingleTargetBinding => {
+                    let body = apply_text_insertions(&original_text, &text_insertions)
+                        .with_context(|| format!("patching {}", file.display()))?;
+                    let patched_doc: Value = serde_yaml::from_str(&body)
+                        .with_context(|| format!("parsing patched {}", file.display()))?;
+                    yaml_edit::write_yaml_body_if_semantic_changed(&file, &patched_doc, body)?
+                }
+                SelectorCodemodRewrite::AnythingHoles => {
+                    yaml_edit::write_yaml_if_semantic_changed(&file, &doc)?
+                }
+            };
+            if written {
+                summary.files_written.push(file.display().to_string());
+            }
         }
     }
 
@@ -194,60 +218,81 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
     })
 }
 
+struct SelectorCodemodOutcome {
+    candidate: SelectorCodemodCandidate,
+    text_insertion: Option<TextInsertion>,
+}
+
+impl SelectorCodemodOutcome {
+    fn candidate_only(candidate: SelectorCodemodCandidate) -> Self {
+        Self {
+            candidate,
+            text_insertion: None,
+        }
+    }
+}
+
 fn rewrite_single_target_binding(
     module: &str,
     file: &Path,
     member_index: usize,
     member: &mut Value,
+    source_text: &str,
     apply: bool,
-) -> Result<Option<SelectorCodemodCandidate>> {
+) -> Result<Option<SelectorCodemodOutcome>> {
     let export_name = mapping_get(member, "name").and_then(value_as_string);
     let Some(source_match_value) = mapping_get_mut_path(member, &["selector", "source_match"])
     else {
         return Ok(None);
     };
     let Value::Mapping(source_match_mapping) = source_match_value else {
-        return Ok(Some(skipped_candidate(
-            module,
-            file,
-            member_index,
-            export_name,
-            "selector.source_match is not a mapping",
+        return Ok(Some(SelectorCodemodOutcome::candidate_only(
+            skipped_candidate(
+                module,
+                file,
+                member_index,
+                export_name,
+                "selector.source_match is not a mapping",
+            ),
         )));
     };
     let source_match: SourceMatch =
         serde_yaml::from_value(Value::Mapping(source_match_mapping.clone()))
             .with_context(|| format!("{module}: members[{member_index}].selector.source_match"))?;
     if source_match.target_binding.is_some() {
-        return Ok(Some(SelectorCodemodCandidate {
-            module: module.to_string(),
-            file: file.display().to_string(),
-            member_index,
-            export_name,
-            action: SelectorCodemodAction::Skipped,
-            target_binding: source_match.target_binding,
-            declared_bindings: Vec::new(),
-            rewritten_holes: Vec::new(),
-            replacement_count: 0,
-            reason: Some("target_binding already present".to_string()),
-        }));
-    }
-
-    let declared = match source_match::source_match_declared_binding_names(module, &source_match) {
-        Ok(declared) => declared,
-        Err(err) => {
-            return Ok(Some(SelectorCodemodCandidate {
+        return Ok(Some(SelectorCodemodOutcome::candidate_only(
+            SelectorCodemodCandidate {
                 module: module.to_string(),
                 file: file.display().to_string(),
                 member_index,
                 export_name,
                 action: SelectorCodemodAction::Skipped,
-                target_binding: None,
+                target_binding: source_match.target_binding,
                 declared_bindings: Vec::new(),
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
-                reason: Some(format!("source_match did not parse: {err:#}")),
-            }));
+                reason: Some("target_binding already present".to_string()),
+            },
+        )));
+    }
+
+    let declared = match source_match::source_match_declared_binding_names(module, &source_match) {
+        Ok(declared) => declared,
+        Err(err) => {
+            return Ok(Some(SelectorCodemodOutcome::candidate_only(
+                SelectorCodemodCandidate {
+                    module: module.to_string(),
+                    file: file.display().to_string(),
+                    member_index,
+                    export_name,
+                    action: SelectorCodemodAction::Skipped,
+                    target_binding: None,
+                    declared_bindings: Vec::new(),
+                    rewritten_holes: Vec::new(),
+                    replacement_count: 0,
+                    reason: Some(format!("source_match did not parse: {err:#}")),
+                },
+            )));
         }
     };
 
@@ -256,40 +301,60 @@ fn rewrite_single_target_binding(
             0 => "source_match declares no top-level bindings".to_string(),
             n => format!("source_match declares {n} top-level bindings"),
         };
-        return Ok(Some(SelectorCodemodCandidate {
+        return Ok(Some(SelectorCodemodOutcome::candidate_only(
+            SelectorCodemodCandidate {
+                module: module.to_string(),
+                file: file.display().to_string(),
+                member_index,
+                export_name,
+                action: SelectorCodemodAction::Skipped,
+                target_binding: None,
+                declared_bindings: declared,
+                rewritten_holes: Vec::new(),
+                replacement_count: 0,
+                reason: Some(reason),
+            },
+        )));
+    };
+
+    let insertion = match target_binding_text_insertion(source_text, member_index, target) {
+        Ok(insertion) => insertion,
+        Err(err) => {
+            return Ok(Some(SelectorCodemodOutcome::candidate_only(
+                SelectorCodemodCandidate {
+                    module: module.to_string(),
+                    file: file.display().to_string(),
+                    member_index,
+                    export_name,
+                    action: SelectorCodemodAction::Skipped,
+                    target_binding: Some(target.clone()),
+                    declared_bindings: declared,
+                    rewritten_holes: Vec::new(),
+                    replacement_count: 0,
+                    reason: Some(format!("cannot preserve YAML text edit: {err:#}")),
+                },
+            )));
+        }
+    };
+
+    Ok(Some(SelectorCodemodOutcome {
+        candidate: SelectorCodemodCandidate {
             module: module.to_string(),
             file: file.display().to_string(),
             member_index,
             export_name,
-            action: SelectorCodemodAction::Skipped,
-            target_binding: None,
+            action: if apply {
+                SelectorCodemodAction::Changed
+            } else {
+                SelectorCodemodAction::WouldChange
+            },
+            target_binding: Some(target.clone()),
             declared_bindings: declared,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
-            reason: Some(reason),
-        }));
-    };
-
-    insert_mapping_key_before_match(
-        source_match_mapping,
-        "target_binding",
-        Value::String(target.clone()),
-    );
-    Ok(Some(SelectorCodemodCandidate {
-        module: module.to_string(),
-        file: file.display().to_string(),
-        member_index,
-        export_name,
-        action: if apply {
-            SelectorCodemodAction::Changed
-        } else {
-            SelectorCodemodAction::WouldChange
+            reason: None,
         },
-        target_binding: Some(target.clone()),
-        declared_bindings: declared,
-        rewritten_holes: Vec::new(),
-        replacement_count: 0,
-        reason: None,
+        text_insertion: apply.then_some(insertion),
     }))
 }
 
@@ -470,6 +535,229 @@ fn value_as_string(value: &Value) -> Option<String> {
 }
 
 #[derive(Debug, Clone)]
+struct TextInsertion {
+    offset: usize,
+    text: String,
+}
+
+fn target_binding_text_insertion(
+    source: &str,
+    member_index: usize,
+    target_binding: &str,
+) -> Result<TextInsertion> {
+    if !is_safe_plain_yaml_scalar(target_binding) {
+        bail!("target_binding `{target_binding}` needs YAML quoting");
+    }
+    let lines = source_lines(source);
+    let members_line_idx =
+        find_mapping_key_line(&lines, 0, lines.len(), 0, "members").context("missing members:")?;
+    let member_starts = member_start_lines(&lines, members_line_idx + 1)?;
+    let Some(&member_start) = member_starts.get(member_index) else {
+        bail!("could not locate members[{member_index}] in source text");
+    };
+    let member_end = member_starts
+        .get(member_index + 1)
+        .copied()
+        .or_else(|| next_root_key_line(&lines, member_start + 1))
+        .unwrap_or(lines.len());
+
+    let source_match_line =
+        find_mapping_key_line(&lines, member_start, member_end, usize::MAX, "source_match")
+            .context("could not locate selector.source_match block in source text")?;
+    let source_match_indent = lines[source_match_line].indent;
+    let source_match_end = next_mapping_peer_or_parent_line(
+        &lines,
+        source_match_line + 1,
+        member_end,
+        source_match_indent,
+    )
+    .unwrap_or(member_end);
+    if find_mapping_key_line(
+        &lines,
+        source_match_line + 1,
+        source_match_end,
+        source_match_indent + 1,
+        "target_binding",
+    )
+    .is_some()
+    {
+        bail!("target_binding already present in source text");
+    }
+    let match_line = find_mapping_key_line(
+        &lines,
+        source_match_line + 1,
+        source_match_end,
+        source_match_indent + 1,
+        "match",
+    )
+    .context("could not locate source_match.match line in source text")?;
+    let indent = lines[match_line].indent_text();
+    Ok(TextInsertion {
+        offset: lines[match_line].start,
+        text: format!("{indent}target_binding: {target_binding}\n"),
+    })
+}
+
+fn apply_text_insertions(source: &str, insertions: &[TextInsertion]) -> Result<String> {
+    let mut ordered = insertions.to_vec();
+    ordered.sort_by_key(|insertion| insertion.offset);
+    ordered.dedup_by_key(|insertion| insertion.offset);
+    let mut output = String::with_capacity(
+        source.len()
+            + ordered
+                .iter()
+                .map(|insertion| insertion.text.len())
+                .sum::<usize>(),
+    );
+    let mut cursor = 0;
+    for insertion in ordered {
+        if insertion.offset < cursor || !source.is_char_boundary(insertion.offset) {
+            bail!("invalid text insertion offset {}", insertion.offset);
+        }
+        output.push_str(&source[cursor..insertion.offset]);
+        output.push_str(&insertion.text);
+        cursor = insertion.offset;
+    }
+    output.push_str(&source[cursor..]);
+    Ok(output)
+}
+
+#[derive(Debug)]
+struct SourceLine<'a> {
+    start: usize,
+    text: &'a str,
+    indent: usize,
+    trimmed: &'a str,
+}
+
+impl SourceLine<'_> {
+    fn indent_text(&self) -> &str {
+        &self.text[..self.indent]
+    }
+}
+
+fn source_lines(source: &str) -> Vec<SourceLine<'_>> {
+    let mut offset = 0;
+    source
+        .split_inclusive('\n')
+        .map(|line| {
+            let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
+            let line_without_newline = line_without_newline
+                .strip_suffix('\r')
+                .unwrap_or(line_without_newline);
+            let indent = line_without_newline
+                .chars()
+                .take_while(|ch| *ch == ' ')
+                .count();
+            let start = offset;
+            offset += line.len();
+            SourceLine {
+                start,
+                text: line_without_newline,
+                indent,
+                trimmed: line_without_newline.trim_start(),
+            }
+        })
+        .collect()
+}
+
+fn member_start_lines(lines: &[SourceLine<'_>], start: usize) -> Result<Vec<usize>> {
+    let Some(first_member) = lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find(|(_, line)| !line.trimmed.is_empty() && !line.trimmed.starts_with('#'))
+    else {
+        return Ok(Vec::new());
+    };
+    if !first_member.1.trimmed.starts_with("- ") {
+        bail!("members: is not followed by a block sequence");
+    }
+    let member_indent = first_member.1.indent;
+    Ok(lines
+        .iter()
+        .enumerate()
+        .skip(first_member.0)
+        .take_while(|(_, line)| {
+            line.trimmed.is_empty() || line.trimmed.starts_with('#') || line.indent >= member_indent
+        })
+        .filter_map(|(idx, line)| {
+            (line.indent == member_indent && line.trimmed.starts_with("- ")).then_some(idx)
+        })
+        .collect())
+}
+
+fn next_root_key_line(lines: &[SourceLine<'_>], start: usize) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(idx, line)| {
+            (!line.trimmed.is_empty()
+                && !line.trimmed.starts_with('#')
+                && line.indent == 0
+                && mapping_key(line.trimmed).is_some())
+            .then_some(idx)
+        })
+}
+
+fn next_mapping_peer_or_parent_line(
+    lines: &[SourceLine<'_>],
+    start: usize,
+    end: usize,
+    parent_indent: usize,
+) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .take(end)
+        .skip(start)
+        .find_map(|(idx, line)| {
+            (!line.trimmed.is_empty()
+                && !line.trimmed.starts_with('#')
+                && line.indent <= parent_indent
+                && (line.trimmed.starts_with("- ") || mapping_key(line.trimmed).is_some()))
+            .then_some(idx)
+        })
+}
+
+fn find_mapping_key_line(
+    lines: &[SourceLine<'_>],
+    start: usize,
+    end: usize,
+    min_indent: usize,
+    key: &str,
+) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .take(end)
+        .skip(start)
+        .find_map(|(idx, line)| {
+            let indent_matches = min_indent == usize::MAX || line.indent >= min_indent;
+            (indent_matches && mapping_key(line.trimmed) == Some(key)).then_some(idx)
+        })
+}
+
+fn mapping_key(trimmed: &str) -> Option<&str> {
+    if trimmed.starts_with('#') || trimmed.starts_with("- ") {
+        return None;
+    }
+    let (key, rest) = trimmed.split_once(':')?;
+    (!key.is_empty()
+        && !key.chars().any(char::is_whitespace)
+        && (rest.is_empty() || rest.starts_with(' ') || rest.starts_with('#')))
+    .then_some(key)
+}
+
+fn is_safe_plain_yaml_scalar(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$'))
+}
+
+#[derive(Debug, Clone)]
 struct SourceReplacement {
     start: usize,
     end: usize,
@@ -644,25 +932,6 @@ impl Visit for AnonymousTypedHoleCollector {
             return;
         }
         member.visit_children_with(self);
-    }
-}
-
-fn insert_mapping_key_before_match(mapping: &mut Mapping, key: &str, value: Value) {
-    let key_value = yk(key);
-    if mapping.contains_key(&key_value) {
-        mapping.insert(key_value, value);
-        return;
-    }
-
-    let old = std::mem::take(mapping);
-    for (existing_key, existing_value) in old {
-        if existing_key.as_str() == Some("match") {
-            mapping.insert(key_value.clone(), value.clone());
-        }
-        mapping.insert(existing_key, existing_value);
-    }
-    if !mapping.contains_key(&key_value) {
-        mapping.insert(key_value, value);
     }
 }
 

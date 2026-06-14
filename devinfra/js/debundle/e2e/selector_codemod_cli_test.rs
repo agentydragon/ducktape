@@ -122,6 +122,38 @@ fn anything_holes_fixture(modules: &Path) -> PathBuf {
     target
 }
 
+fn commented_single_target_fixture(modules: &Path) -> PathBuf {
+    let target = modules.join("app/bootstrap.yaml");
+    write(
+        &target,
+        r#"# module-level note must survive
+# another note that used to be lost by serde rewrites
+comment: |
+  Keep this module grouped with startup.
+members:
+  # keep the member comment
+  - name: StartupFactory
+    selector:
+      source_match:
+        identifiers: alpha_all
+        # keep the selector comment
+        match: |
+          const startupFactory = createStartupFactory();
+  - name: AlreadyAnchored
+    selector:
+      source_match:
+        target_binding: alreadyAnchored
+        match: |
+          const alreadyAnchored = createAlreadyAnchored();
+
+anonymous_statements:
+  - match: |
+      initializeRuntime();
+"#,
+    );
+    target
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -210,6 +242,59 @@ fn apply_adds_target_binding_and_honors_module_prefix_filter() {
         "const widgetFactory = makeWidgetFactory();"
     );
     assert_eq!(fs::read_to_string(&other).unwrap(), before_other);
+}
+
+#[test]
+fn apply_single_target_binding_preserves_comments_and_local_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = commented_single_target_fixture(&modules);
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "single-target-binding",
+            "--module",
+            "app/bootstrap",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["skipped_candidates"], 1, "{parsed}");
+
+    let rewritten = fs::read_to_string(&target).unwrap();
+    assert_eq!(
+        rewritten,
+        r#"# module-level note must survive
+# another note that used to be lost by serde rewrites
+comment: |
+  Keep this module grouped with startup.
+members:
+  # keep the member comment
+  - name: StartupFactory
+    selector:
+      source_match:
+        identifiers: alpha_all
+        # keep the selector comment
+        target_binding: startupFactory
+        match: |
+          const startupFactory = createStartupFactory();
+  - name: AlreadyAnchored
+    selector:
+      source_match:
+        target_binding: alreadyAnchored
+        match: |
+          const alreadyAnchored = createAlreadyAnchored();
+
+anonymous_statements:
+  - match: |
+      initializeRuntime();
+"#
+    );
 }
 
 #[test]
