@@ -269,6 +269,96 @@ The natural location for those creds would be `/bsc/fhir-sandbox/subscribeapi`,
 right next to the existing line "Member will login via BSC login screen and
 Provide the member username and password" — but that section just stops there.
 
+### 2026-06-13 — escalation: no reply after 2 weeks
+
+The `interoperabilitysupp@blueshieldca.com` email (sent 2026-05-30) got **no
+response** in two weeks. The only BSC mail since was unrelated (a member EOB for
+a Shine A Light counseling claim, routed through their secure-message system).
+
+Escalation per the two-path plan above:
+
+1. **Follow-up email — sent.** Replied on the original thread, CC'ing
+   `it-apiconnect-dev@blueshieldca.com` (the team that provisioned the dev-portal
+   account on 2026-05-29) to add a second routing channel. Restated the single
+   blocker (synthetic sandbox member creds) and asked for either provisioning or
+   the correct intake channel.
+2. **Contact form (path #2) — errored, but it's a portal-wide outage, not a
+   page bug.** `https://devportal-dev.blueshieldca.com/bsc/fhir-sandbox/contact`
+   returned an Akamai edge error ("An error occurred while processing your
+   request. Reference #30.5594d817.1781399726.292e1b8", `errors.edgesuite.net`).
+   Same time, `/interoperability` errored in-browser and **every** portal URL
+   (root, `/subscribeapi`, `/interoperability`, `/productionaccess`) returned
+   **HTTP 503**, including pages that demonstrably worked before (`/subscribeapi`
+   is quoted verbatim above). So this is a **transient portal outage**, not a
+   permanent contact-form bug — re-check before concluding the form is dead. The
+   follow-up email is the working channel meanwhile.
+
+### 2026-06-13 — research: production intake process
+
+Portal's authoritative `/productionaccess` page was 503 during this outage, so
+the intake details were triangulated from CMS's framework, BSC's member-facing
+language, and peer Blues plans on the same IBM API Connect stack.
+
+- **Process shape (well-established across payers):** CMS permits voluntary
+  "app vetting" — the payer asks the third-party app to **attest** to its
+  privacy/security practices and shows members that attestation before they
+  consent, but **cannot deny access** except for narrow, documented security
+  reasons. So production approval is near-automatic once submitted.
+- **BSC specifically** "requests that third-party apps attest to having certain
+  privacy and security provisions included in their privacy policy prior to
+  providing the app access to the API" (BSC member-education language). Confirms
+  a **privacy policy is in scope** for the attestation.
+- **Onboarding artifacts:** a **production checklist + attestation form** (the
+  portal nav confirms both exist), after which BSC issues a **production
+  client_id** (`X-IBM-Client-id` in their IBM API Connect stack).
+- **Common industry vehicle:** the **CARIN Alliance Code of Conduct**
+  self-attestation via <https://www.myhealthapplication.com/> (free; principles
+  drawn from FIPs/GDPR/CCPA — data use, sharing, secondary use, retention,
+  deletion, security). Many payers point to it; unconfirmed whether BSC requires
+  it specifically.
+- **Not publicly retrievable:** BSC's exact checklist fields and whether the
+  privacy policy must be a _publicly hosted URL_ vs. merely attested provisions —
+  the only page that says is `/productionaccess`, which is behind the down
+  portal. Peer plans publish no copy of the form either ("contact us to
+  onboard"). The follow-up email (which asks BSC for the intake channel) remains
+  the way to get the authoritative current requirements.
+
+## Escalation ladder (if support stays unresponsive)
+
+**Crucial reframing:** the current blocker is a _developer-sandbox_ issue (no
+synthetic test-member creds). No regulator cares about developer tooling. Every
+regulatory lever below is about _a patient being denied access to their own
+health data_ — so a complaint only has teeth if reframed around **production
+access to my own records** (see "Direct BSC path" below), not the sandbox.
+
+Strongest → weakest for our situation:
+
+1. **HIPAA Right of Access → HHS Office for Civil Rights (OCR).** BSC is a
+   covered entity; 45 CFR §164.524 grants a right to an electronic copy of one's
+   PHI, and OCR's Right-of-Access Initiative has real settlements behind it.
+   Caveat: the right is to the _data in electronic form_, not to a _specific
+   API_ — BSC can satisfy it with a PDF/electronic export, so this gets the data
+   but won't necessarily force a working FHIR endpoint.
+2. **California DMHC** — BSC's primary state regulator (CA health care service
+   plan). Complaint portal `dmhc.ca.gov`, 1-888-466-2219 (the number printed on
+   BSC EOBs). Frame as "my health plan won't give me access to my records."
+3. **CMS** — agency behind the Patient Access API mandate, **but** CMS-9115-F
+   binds only Medicare Advantage, Medicaid, CHIP, and FFE QHPs. Our plan is
+   **OPENAI – COBRA**, a commercial employer-group plan — almost certainly
+   **outside CMS Patient Access scope**. BSC exposes commercial lines
+   _voluntarily_ (cf. the Flexpa report: "ahead of and despite" the requirement),
+   so CMS likely has **no jurisdiction over this plan's API**. Probable dead end.
+
+**Honest assessment:** a regulatory complaint is the nuclear option — months of
+turnaround, and the likely outcome (OCR/DMHC) is BSC handing over the data in
+_some_ electronic format, not a working FHIR sandbox. For the actual goal
+(reconcile EOBs/claims into augur), the Gmail/PDF fallback below is faster and
+already proven to work on real EOBs. Recommended sequence: (1) the 2026-06-13
+follow-up email, ~1 week; (2) if silent, pivot to the production attestation
+path and pull own data — which serves the goal _and_ arms a real OCR/DMHC
+complaint if BSC stonewalls; (3) regulators as genuine last resort; PDF parsing
+running in parallel throughout.
+
 ## Production access path
 
 Sandbox client_id is self-service (modulo the broken portal above). Production access
