@@ -438,7 +438,12 @@ binding_groups:
 `DECLARATORS` and `DECLARATORS_*` absorb any run of declarators, including an
 empty run. The initializer is ignored; selectors commonly write `= null`
 because `const` declarations require an initializer. These pseudo-declarators
-are not exposed through `adopt_names`.
+are not exposed through `adopt_names`. This is the preferred pattern when a
+few adjacent constants or arrow-function helpers sit at the beginning, middle,
+or end of a larger declaration list: pin the declarators you want to export,
+put `DECLARATORS_BEFORE` and/or `DECLARATORS_AFTER` around the unrelated
+siblings, and use `adopt_names` or explicit `exports` only for the pinned
+selector-local names.
 
 For anonymous side-effect statements, prefer `source_match` when
 minified helper or class names drift, but keep selectors unique. If two

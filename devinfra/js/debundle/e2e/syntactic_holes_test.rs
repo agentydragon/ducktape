@@ -676,6 +676,119 @@ export { selectedA, selectedB, laterC };
 }
 
 #[test]
+fn binding_group_declarator_holes_extract_adjacent_arrows_at_start_middle_and_end() {
+    let leading_fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeBuild = (value) => `build:${value}`,
+  runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
+  runtimeTrailingHelper = () => "tail";
+console.log(runtimeRead("one"), runtimeTrailingHelper());
+export { runtimeBuild, runtimeRead, runtimeTrailingHelper };
+"#,
+        vec![logical_module_with_binding_groups(
+            "leading",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const buildSelected = (value) => `build:${value}`,
+  readSelected = (value) => buildSelected(value).toUpperCase(),
+  DECLARATORS_AFTER = null;"#,
+                &[
+                    ("buildSelected", "buildValue"),
+                    ("readSelected", "readValue"),
+                ],
+            )],
+        )],
+    ));
+    assert_entry_output(&leading_fixture, "BUILD:ONE tail\n");
+    assert_module_exports(
+        &leading_fixture.out_root,
+        "static/app/modules/leading.js",
+        &["buildValue", "readValue"],
+        &["runtimeBuild", "runtimeRead", "runtimeTrailingHelper"],
+    );
+    assert_module_source(
+        &leading_fixture.out_root,
+        "static/app/modules/leading.js",
+        &["const buildValue", "const readValue"],
+        &["runtimeTrailingHelper", "DECLARATORS_AFTER"],
+    );
+
+    let middle_fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeLeadingHelper = () => "head",
+  runtimeBuild = (value) => `build:${value}`,
+  runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
+  runtimeTrailingHelper = () => "tail";
+console.log(runtimeLeadingHelper(), runtimeRead("two"), runtimeTrailingHelper());
+export { runtimeLeadingHelper, runtimeBuild, runtimeRead, runtimeTrailingHelper };
+"#,
+        vec![logical_module_with_binding_groups(
+            "middle",
+            &[],
+            &[BindingGroup::source_alpha_adopt_all(
+                r#"const DECLARATORS_BEFORE = null,
+  buildSelected = (value) => `build:${value}`,
+  readSelected = (value) => buildSelected(value).toUpperCase(),
+  DECLARATORS_AFTER = null;"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&middle_fixture, "head BUILD:TWO tail\n");
+    assert_module_exports(
+        &middle_fixture.out_root,
+        "static/app/modules/middle.js",
+        &["buildSelected", "readSelected"],
+        &[
+            "runtimeLeadingHelper",
+            "runtimeBuild",
+            "runtimeRead",
+            "runtimeTrailingHelper",
+        ],
+    );
+    assert_module_source(
+        &middle_fixture.out_root,
+        "static/app/modules/middle.js",
+        &["const buildSelected", "const readSelected"],
+        &[
+            "runtimeLeadingHelper",
+            "runtimeTrailingHelper",
+            "DECLARATORS_BEFORE",
+            "DECLARATORS_AFTER",
+        ],
+    );
+
+    let trailing_fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeLeadingHelper = () => "head",
+  runtimeBuild = (value) => `build:${value}`,
+  runtimeRead = (value) => runtimeBuild(value).toUpperCase();
+console.log(runtimeLeadingHelper(), runtimeRead("three"));
+export { runtimeLeadingHelper, runtimeBuild, runtimeRead };
+"#,
+        vec![logical_module_with_binding_groups(
+            "trailing",
+            &[],
+            &[BindingGroup::source_alpha_adopt_names(
+                r#"const DECLARATORS_BEFORE = null,
+  buildSelected = (value) => `build:${value}`,
+  readSelected = (value) => buildSelected(value).toUpperCase();"#,
+                &["buildSelected", "readSelected"],
+            )],
+        )],
+    ));
+    assert_entry_output(&trailing_fixture, "head BUILD:THREE\n");
+    assert_module_exports(
+        &trailing_fixture.out_root,
+        "static/app/modules/trailing.js",
+        &["buildSelected", "readSelected"],
+        &["runtimeLeadingHelper", "runtimeBuild", "runtimeRead"],
+    );
+    assert_module_source(
+        &trailing_fixture.out_root,
+        "static/app/modules/trailing.js",
+        &["const buildSelected", "const readSelected"],
+        &["runtimeLeadingHelper", "DECLARATORS_BEFORE"],
+    );
+}
+
+#[test]
 fn declarator_hole_miss_reports_best_anchored_var_decl_candidate() {
     let opts = FixtureOpts::new(
         r#"function operation(kind, value) {
