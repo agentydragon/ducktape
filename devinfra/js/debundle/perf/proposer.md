@@ -195,6 +195,52 @@ ducktape_version)` per chunk and skip lowering, codegen, and reports
   atoms / owner_graph / atomic_units / realizability / factorize /
   peel_candidates reports they do not need.
 
+### Member-form `source_match` selector resolution
+
+The Gaffer 660 migration loop still spends most of its broad
+`debundle run --dry-run --keep-going` wall time in member-form
+`source_match` selectors after the literal-initializer fast path
+(#2201) and selector aggregation (#2200/#2203).
+
+Current downstream profile snapshot, 2026-06-14, using the broad Gaffer
+660 command shape with `DUCKTAPE_SOURCE_MATCH_TIMINGS=1`,
+`DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS=100`, and preview disabled:
+
+- wall: ~129s to the current aggregate duplicate-claim report;
+- timing lines: 129 `members[].selector.source_match` entries above
+  100ms;
+- representative early hot selectors: `hotkeyModifierSortOrder`
+  ~202ms, `compareHotkeyModifierOrder` ~258ms,
+  `composeNormalizedHotkey` ~423ms, plus many 120–250ms selectors
+  across bootstrap, panel, AI, search, and style modules.
+
+Two bounded per-declarator prefilter experiments were tried and rejected:
+
+- nested string-literal multiset prefilter for single-declarator
+  selectors: sound, but it scanned candidate initializer subtrees and
+  worsened the broad run to 128.951s;
+- exact primitive-literal initializer key (`string`/`bool`/`number`/`null`):
+  cheap and tested, but broad run remained 128.955s with 129 timing
+  lines, so it did not materially improve the real workload.
+
+Next credible implementation: add a shared per-chunk source-match
+candidate index/cache rather than more ad hoc per-selector filters. The
+index should be built once per chunk during materialization and reused
+across member/binding-group selectors. Candidate keys to try, with
+counters before changing semantics:
+
+- top-level body kind + declaration kind + var kind/declarator count;
+- declared-binding count and, in exact identifier mode, declared-binding
+  names;
+- cheap literal fingerprints for top-level statements/declarators,
+  computed once per body item;
+- parsed selector/prepared-needle reuse keyed by normalized selector body
+  so repeated selector families do not reparse or rebuild matcher state.
+
+Treat a candidate-index PR as successful only if it shows a wall-time
+drop or a large reduction in timed selector count on the broad Gaffer
+gate; isolated unit wins are not enough for this path.
+
 ### Materialize-stage hot-loop optimizations
 
 Ordered by leverage. Re-profile before implementation if the consumer
