@@ -37,7 +37,7 @@ use selector_codemod::{
 };
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
-    render_selector_debt_text,
+    populate_name_only_module_groups, render_selector_debt_text,
 };
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
@@ -147,6 +147,11 @@ pub struct SelectorDebtArgs {
     /// this (0..=100). The summary still counts the whole spec.
     #[arg(long = "min-score", default_value_t = 0)]
     pub min_score: u8,
+
+    /// Group listed name-only selectors by the first N module path components.
+    /// Groups are computed after `--min-score` and before `--limit`.
+    #[arg(long = "group-module-depth")]
+    pub group_module_depth: Option<usize>,
 
     /// Maximum rows to emit per section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
@@ -1000,6 +1005,9 @@ fn render_spec_stats_text_wrapper(stats: &SpecStats, out: &mut String) {
 }
 
 fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
+    if args.group_module_depth == Some(0) {
+        bail!("--group-module-depth must be at least 1");
+    }
     let source_file = selector_debt_source_file(&args)?;
     let source_aware = source_file
         .as_deref()
@@ -1020,8 +1028,12 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
             .name_only
             .retain(|entry| entry.minified_score >= args.min_score);
     }
+    if let Some(group_module_depth) = args.group_module_depth {
+        populate_name_only_module_groups(&mut report, group_module_depth);
+    }
     if args.limit > 0 {
         report.name_only.truncate(args.limit);
+        report.name_only_module_groups.truncate(args.limit);
         report.repeated_source_match.truncate(args.limit);
         report.drifted_bindings.truncate(args.limit);
         report.source_aware_near_ambiguous.truncate(args.limit);
@@ -1077,6 +1089,15 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
             "{}",
             serde_json::to_string(&Line {
                 section: "repeated_source_match",
+                row: group,
+            })?
+        );
+    }
+    for group in &report.name_only_module_groups {
+        println!(
+            "{}",
+            serde_json::to_string(&Line {
+                section: "name_only_module_group",
                 row: group,
             })?
         );

@@ -266,6 +266,10 @@ Default to this ladder when writing or repairing selectors:
 4. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
+For broad old-spec conversion passes, use
+`debundle spec selector-debt --group-module-depth N --min-score 60` to bucket
+name-only debt by module prefix before choosing a focused peel.
+
 When several `members[].selector.source_match` entries repeat the same
 multi-declarator selector with different `target_binding` values, run
 `debundle spec selector-debt --source-file <chunk.js> --modules <modules-dir>`.

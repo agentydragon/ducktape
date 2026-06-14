@@ -26,7 +26,7 @@
 //! selectors that resolve uniquely today but have close non-matching
 //! siblings in that chunk.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -95,6 +95,21 @@ pub struct NameOnlySelector {
     pub export_name: Option<String>,
     /// Heuristic minified-ness of `binding_name` (see [`minified_score`]).
     pub minified_score: u8,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NameOnlyModuleGroup {
+    /// First `module_prefix_depth` slash-separated path components.
+    pub module_prefix: String,
+    pub module_prefix_depth: usize,
+    /// Name-only selectors in this group after any caller-side filtering.
+    pub name_only_count: usize,
+    /// Rows in this group with `minified_score >= FRAGILE_THRESHOLD`.
+    pub fragile_count: usize,
+    /// Distinct modules contributing rows to the group.
+    pub module_count: usize,
+    /// Highest minified score seen in the group.
+    pub max_minified_score: u8,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -221,6 +236,10 @@ pub struct SelectorDebtReport {
     pub source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch>,
     /// Populated only when source-aware mode is supplied.
     pub source_aware_binding_group_suggestions: Vec<SourceAwareBindingGroupSuggestion>,
+    /// Populated by the CLI when `--group-module-depth` is requested.
+    /// Derived from the already-computed and caller-filtered `name_only` rows.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub name_only_module_groups: Vec<NameOnlyModuleGroup>,
     pub summary: SelectorDebtSummary,
 }
 
@@ -240,6 +259,66 @@ pub struct SourceAwareSelectorDebtConfig<'a> {
 /// identity is exactly the right grain — no need to parse the JS.
 fn normalize_match(source: &str) -> String {
     source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn module_prefix_at_depth(module: &str, depth: usize) -> String {
+    module.split('/').take(depth).collect::<Vec<_>>().join("/")
+}
+
+#[derive(Debug, Default)]
+struct NameOnlyModuleGroupBuilder {
+    name_only_count: usize,
+    fragile_count: usize,
+    modules: BTreeSet<String>,
+    max_minified_score: u8,
+}
+
+/// Group already-computed name-only selector rows by module path prefix.
+///
+/// Callers should apply any row filters first. This keeps grouping cheap and
+/// source-independent: it is a single pass over the in-memory report rows.
+pub fn group_name_only_by_module_depth(
+    name_only: &[NameOnlySelector],
+    module_prefix_depth: usize,
+) -> Vec<NameOnlyModuleGroup> {
+    let mut groups = BTreeMap::<String, NameOnlyModuleGroupBuilder>::new();
+    for entry in name_only {
+        let prefix = module_prefix_at_depth(&entry.module, module_prefix_depth);
+        let group = groups.entry(prefix).or_default();
+        group.name_only_count += 1;
+        group.modules.insert(entry.module.clone());
+        group.max_minified_score = group.max_minified_score.max(entry.minified_score);
+        if entry.minified_score >= FRAGILE_THRESHOLD {
+            group.fragile_count += 1;
+        }
+    }
+    let mut rows: Vec<NameOnlyModuleGroup> = groups
+        .into_iter()
+        .map(|(module_prefix, group)| NameOnlyModuleGroup {
+            module_prefix,
+            module_prefix_depth,
+            name_only_count: group.name_only_count,
+            fragile_count: group.fragile_count,
+            module_count: group.modules.len(),
+            max_minified_score: group.max_minified_score,
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b.name_only_count
+            .cmp(&a.name_only_count)
+            .then_with(|| b.fragile_count.cmp(&a.fragile_count))
+            .then_with(|| b.max_minified_score.cmp(&a.max_minified_score))
+            .then_with(|| a.module_prefix.cmp(&b.module_prefix))
+    });
+    rows
+}
+
+pub fn populate_name_only_module_groups(
+    report: &mut SelectorDebtReport,
+    module_prefix_depth: usize,
+) {
+    report.name_only_module_groups =
+        group_name_only_by_module_depth(&report.name_only, module_prefix_depth);
 }
 
 /// (module path, readable export name) -> minified `selector.binding.name`.
@@ -561,6 +640,7 @@ fn compute_selector_debt_impl(
         source_aware_near_ambiguous,
         source_aware_repeated_exact,
         source_aware_binding_group_suggestions,
+        name_only_module_groups: Vec::new(),
         summary,
     })
 }
@@ -961,6 +1041,21 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
         s.source_aware_binding_group_suggestions,
     ));
 
+    if !report.name_only_module_groups.is_empty() {
+        out.push_str("name-only groups by module prefix:\n");
+        for group in &report.name_only_module_groups {
+            out.push_str(&format!(
+                "  {:>4} selector(s)  {:>4} fragile  {:>4} module(s)  max={}  depth={}  {}\n",
+                group.name_only_count,
+                group.fragile_count,
+                group.module_count,
+                group.max_minified_score,
+                group.module_prefix_depth,
+                group.module_prefix,
+            ));
+        }
+    }
+
     if !report.name_only.is_empty() {
         out.push_str("name-only (most fragile first):\n");
         for entry in &report.name_only {
@@ -1115,6 +1210,81 @@ mod tests {
             report.name_only[1].export_name.as_deref(),
             Some("WidgetRegistry")
         );
+    }
+
+    #[test]
+    fn name_only_module_groups_use_filtered_rows_and_prefix_depth() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "app/panel/core.yaml",
+            "members:\n  - name: PanelEntry\n    selector: { binding: { name: a } }\n  - name: ReadablePanelEntry\n    selector: { binding: { name: readableName } }\n",
+        );
+        write(
+            root,
+            "app/panel/menu.yaml",
+            "members:\n  - name: PanelMenu\n    selector: { binding: { name: bQ } }\n",
+        );
+        write(
+            root,
+            "app/search/index.yaml",
+            "members:\n  - name: SearchEntry\n    selector: { binding: { name: sRx } }\n",
+        );
+        write(
+            root,
+            "runtime/init.yaml",
+            "members:\n  - name: Startup\n    selector: { binding: { name: c } }\n",
+        );
+
+        let mut report = compute_selector_debt(root, None).unwrap();
+        report
+            .name_only
+            .retain(|entry| entry.minified_score >= FRAGILE_THRESHOLD);
+        populate_name_only_module_groups(&mut report, 2);
+        // Detail limits should not change the already-derived group counts.
+        report.name_only.truncate(1);
+
+        assert_eq!(report.name_only_module_groups.len(), 3);
+        assert_eq!(report.name_only_module_groups[0].module_prefix, "app/panel");
+        assert_eq!(report.name_only_module_groups[0].module_prefix_depth, 2);
+        assert_eq!(report.name_only_module_groups[0].name_only_count, 2);
+        assert_eq!(report.name_only_module_groups[0].fragile_count, 2);
+        assert_eq!(report.name_only_module_groups[0].module_count, 2);
+        assert_eq!(report.name_only_module_groups[0].max_minified_score, 100);
+        assert_eq!(
+            report.name_only_module_groups[1].module_prefix,
+            "runtime/init"
+        );
+        assert_eq!(
+            report.name_only_module_groups[2].module_prefix,
+            "app/search"
+        );
+
+        let mut text = String::new();
+        render_selector_debt_text(&report, &mut text);
+        assert!(text.contains("name-only groups by module prefix:"));
+        assert!(
+            text.contains(
+                "2 selector(s)     2 fragile     2 module(s)  max=100  depth=2  app/panel"
+            )
+        );
+        assert!(!text.contains("readableName"));
+    }
+
+    #[test]
+    fn default_json_omits_name_only_module_groups() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "app/panel/core.yaml",
+            "members:\n  - name: PanelEntry\n    selector: { binding: { name: a } }\n",
+        );
+
+        let json = serde_json::to_string(&compute_selector_debt(root, None).unwrap()).unwrap();
+
+        assert!(!json.contains("name_only_module_groups"));
     }
 
     #[test]
