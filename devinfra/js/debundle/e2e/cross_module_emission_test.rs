@@ -404,6 +404,76 @@ export { RuntimeCatalog };
 }
 
 #[test]
+fn repeated_source_match_selectors_reuse_chunk_cache_across_modules() {
+    let class_selector = r#"class K {
+  CLASS_REST;
+  label() {
+    return "catalog";
+  }
+  CLASS_REST;
+}"#;
+    let opts = FixtureOpts::new(
+        r#"class RuntimeCatalog {
+  label() {
+    return "catalog";
+  }
+}
+console.log(new RuntimeCatalog().label());
+export { RuntimeCatalog };
+"#,
+        vec![
+            logical_module(
+                "catalog/primary",
+                &[Member::source_alpha_target(
+                    "PrimaryCatalog",
+                    "K",
+                    class_selector,
+                )],
+            ),
+            logical_module(
+                "catalog/duplicate",
+                &[Member::source_alpha_target(
+                    "DuplicateCatalog",
+                    "K",
+                    class_selector,
+                )],
+            ),
+        ],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture_with_env(
+        opts,
+        &[
+            ("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1"),
+            ("DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW", "0"),
+        ],
+    );
+    let stderr = rejected.stderr;
+    for required in [
+        "Duplicate binding claim",
+        "\"RuntimeCatalog\"",
+        "catalog/primary",
+        "catalog/duplicate",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+    let timing_lines = stderr
+        .lines()
+        .filter(|line| {
+            line.contains("[debundle source_match]")
+                && line.contains("kind=members[].selector.source_match")
+        })
+        .count();
+    assert_eq!(
+        timing_lines, 1,
+        "repeated cross-module selector should resolve once per chunk\nstderr:\n{stderr}",
+    );
+}
+
+#[test]
 fn duplicate_source_match_members_in_one_module_report_member_origins() {
     let class_selector = r#"class K {
   CLASS_REST;

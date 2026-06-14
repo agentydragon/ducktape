@@ -948,13 +948,28 @@ pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Reject
     run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
 }
 
+pub fn run_keep_going_dry_run_rejection_fixture_with_env(
+    opts: FixtureOpts<'_>,
+    env: &[(&str, &str)],
+) -> RejectedFixture {
+    run_rejection_fixture_with_args_and_env(opts, &["--dry-run", "--keep-going"], env)
+}
+
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
+    run_rejection_fixture_with_args_and_env(opts, extra_args, &[])
+}
+
+fn run_rejection_fixture_with_args_and_env(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    env: &[(&str, &str)],
+) -> RejectedFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform_with_args(&spec_path, extra_args, &[]);
+    let result = spawn_transform_with_args(&spec_path, extra_args, env);
     assert!(
         !result.status.success(),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",

@@ -140,6 +140,25 @@ fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagn
     report
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SourceMatchGroupCacheKey {
+    selector: spec::AnonymousStatementSelector,
+    target_bindings: Vec<String>,
+}
+
+impl SourceMatchGroupCacheKey {
+    fn new(
+        selector: spec::AnonymousStatementSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Self {
+        let target_bindings = exports_by_target.keys().cloned().collect();
+        Self {
+            selector,
+            target_bindings,
+        }
+    }
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -167,6 +186,14 @@ fn resolve_request_source_matches(
     runtime_module: &Module,
     keep_going: bool,
     diagnostics: &mut Vec<SourceMatchDiagnostic>,
+    source_match_cache: &mut BTreeMap<
+        spec::AnonymousStatementSelector,
+        source_match::ResolvedMemberBinding,
+    >,
+    source_match_group_cache: &mut BTreeMap<
+        SourceMatchGroupCacheKey,
+        BTreeMap<String, source_match::ResolvedMemberBinding>,
+    >,
 ) -> Result<()> {
     let mut grouped_by_selector: BTreeMap<spec::AnonymousStatementSelector, Vec<usize>> =
         BTreeMap::new();
@@ -209,27 +236,35 @@ fn resolve_request_source_matches(
         if has_duplicate_target {
             continue;
         }
-        let resolved = match source_match::resolve_member_binding_group(
-            runtime_module,
-            &request.id,
-            &selector,
-            &exports_by_target,
-        ) {
-            Ok(resolved) => resolved,
-            Err(error) if keep_going => {
-                let message = format!("{error:#}");
-                for idx in member_indices {
-                    let member = &request.members[idx];
-                    diagnostics.push(SourceMatchDiagnostic {
-                        module_id: request.id.clone(),
-                        export_name: member.export_name.clone(),
-                        claim_origin: member.claim_origin.clone(),
-                        message: message.clone(),
-                    });
-                }
-                continue;
+        let cache_key = SourceMatchGroupCacheKey::new(selector.clone(), &exports_by_target);
+        let resolved = match source_match_group_cache.get(&cache_key) {
+            Some(resolved) => resolved.clone(),
+            None => {
+                let resolved = match source_match::resolve_member_binding_group(
+                    runtime_module,
+                    &request.id,
+                    &selector,
+                    &exports_by_target,
+                ) {
+                    Ok(resolved) => resolved,
+                    Err(error) if keep_going => {
+                        let message = format!("{error:#}");
+                        for idx in member_indices {
+                            let member = &request.members[idx];
+                            diagnostics.push(SourceMatchDiagnostic {
+                                module_id: request.id.clone(),
+                                export_name: member.export_name.clone(),
+                                claim_origin: member.claim_origin.clone(),
+                                message: message.clone(),
+                            });
+                        }
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                source_match_group_cache.insert(cache_key, resolved.clone());
+                resolved
             }
-            Err(error) => return Err(error),
         };
         for idx in member_indices {
             let member = &mut request.members[idx];
@@ -246,13 +281,12 @@ fn resolve_request_source_matches(
         }
     }
 
-    let mut source_match_cache = BTreeMap::new();
     for (idx, member) in request.members.iter_mut().enumerate() {
         if resolved_member_indices.contains(&idx) {
             continue;
         }
         if let Err(error) =
-            member.resolve_source_match(runtime_module, &request.id, &mut source_match_cache)
+            member.resolve_source_match(runtime_module, &request.id, source_match_cache)
         {
             if !keep_going {
                 return Err(error);
@@ -343,6 +377,22 @@ pub(super) struct ChunkPlanBuilder {
     /// canonical plan so later modules in the chunk can still be
     /// checked for independent selector and duplicate-claim failures.
     source_match_diagnostics: Vec<SourceMatchDiagnostic>,
+    /// Successful member-form `source_match` resolutions within this
+    /// chunk. Selector matching scans the same runtime chunk AST, and
+    /// many large migrations repeat exact selectors across logical
+    /// modules while converging duplicate ownership. Keeping successes
+    /// at chunk scope avoids re-running the structural matcher for
+    /// repeated selectors; failures still resolve live so diagnostics
+    /// stay anchored to the current module/export.
+    source_match_cache:
+        BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
+    /// Successful grouped member-form source matches keyed by the
+    /// selector body and requested selector-local target bindings.
+    /// Export names are intentionally excluded: they only label
+    /// diagnostics/timings, while the resolved source bindings are a
+    /// function of the selector and target bindings.
+    source_match_group_cache:
+        BTreeMap<SourceMatchGroupCacheKey, BTreeMap<String, source_match::ResolvedMemberBinding>>,
     /// Anonymous statement selectors that did not resolve. In
     /// keep-going mode, unresolved anonymous statements are omitted
     /// from canonical ownership so later modules in the chunk can
@@ -368,6 +418,8 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
+            source_match_cache: BTreeMap::new(),
+            source_match_group_cache: BTreeMap::new(),
             anonymous_statement_diagnostics: Vec::new(),
             keep_going,
         }
@@ -391,6 +443,8 @@ impl ChunkPlanBuilder {
             ctx.runtime_module,
             self.keep_going,
             &mut self.source_match_diagnostics,
+            &mut self.source_match_cache,
+            &mut self.source_match_group_cache,
         )?;
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
