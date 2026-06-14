@@ -491,7 +491,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
     match args.command {
         DebundleCommand::Run(args) => {
             let dry_run = args.dry_run;
-            let keep_going = args.keep_going;
+            let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
             run_transform_cli_with_options(
                 &cli,
@@ -1284,14 +1284,13 @@ mod tests {
                 "--spec",
                 "spec.yaml",
                 "--dry-run",
-                "--keep-going",
                 "--package-root",
                 "pkg=/tmp/pkg",
                 "--packages-root",
                 "/tmp/packages",
             ]);
             assert!(args.dry_run);
-            assert!(args.keep_going);
+            assert!(!args.fail_fast);
             let cli = args.resolve().expect("resolve cli");
             assert_eq!(
                 cli.spec_source,
@@ -1304,6 +1303,15 @@ mod tests {
                 Some(&PathBuf::from("/tmp/pkg"))
             );
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
+        });
+    }
+
+    #[test]
+    fn parse_run_args_accepts_fail_fast_opt_out() {
+        js_ast::with_swc_globals(|| {
+            let args = parsed_run_args(&["debundle", "run", "--spec", "spec.yaml", "--fail-fast"]);
+            assert!(args.fail_fast);
+            assert!(!args.keep_going);
         });
     }
 

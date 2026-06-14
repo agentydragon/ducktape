@@ -942,8 +942,14 @@ pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run"])
 }
 
-/// Like [`run_dry_run_rejection_fixture`] but asks the pipeline to continue
-/// through supported diagnostics and report all findings from the pass.
+/// Like [`run_dry_run_rejection_fixture`] but opts out of the default
+/// keep-going diagnostics and stops at the first supported failure.
+pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
+}
+
+/// Compatibility spelling for tests that need to document the old explicit
+/// flag; keep-going is now the default for broad pipeline runs.
 pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
 }

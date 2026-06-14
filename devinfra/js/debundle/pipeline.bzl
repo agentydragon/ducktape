@@ -53,6 +53,8 @@ def _debundle_pipeline_plan(ctx, out_root):
 
     # Each entry is a fully-rendered shell token (already quoted/escaped).
     argv = ["run"]
+    if ctx.attr.fail_fast:
+        argv.append("--fail-fast")
     if has_flat:
         argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
     else:
@@ -140,6 +142,10 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
+    ),
+    "fail_fast": attr.bool(
+        default = False,
+        doc = "Pass --fail-fast to debundle run for debugging; by default broad pipeline runs aggregate supported diagnostics.",
     ),
 }
 

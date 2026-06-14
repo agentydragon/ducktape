@@ -39,10 +39,12 @@ checks and skips emitted-JS and accept-path report writes. A gate
 rejection still writes `owner_graph.json` plus the rejection evidence
 (`cycles.json` / `atomic_unit_conflicts.json`) under
 `reports/tree/<chunk>/`, so `gate list` / `gate describe` work on the
-rejection that was just reported. Add `--keep-going` to collect all
-supported diagnostics from a pass instead of stopping at the first one;
-currently this aggregates duplicate binding claims with module/export/origin
-evidence. There is no `debundle run --no-verify`.
+rejection that was just reported. Broad runs collect all supported diagnostics
+from a pass instead of stopping at the first one; currently this aggregates
+unresolved source-match selectors and duplicate binding claims with
+module/export/origin evidence. Use `--fail-fast` only when debugging the first
+failing selector or claim is more useful than the full diagnostic set. There is
+no `debundle run --no-verify`.
 
 Read-only commands (queries, listings, source slicing) take
 neither flag — they have no side effects.
@@ -69,9 +71,9 @@ with a list. Use the minified form to disambiguate.
 
 ### Pipeline
 
-| Command        | Mutates?                 | Function                                                                                                                                                                                                                                                                   |
-| -------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. `--dry-run` runs pipeline checks without writing emitted JS or reports. `--keep-going` aggregates supported diagnostics such as duplicate binding claims. |
+| Command        | Mutates?                 | Function                                                                                                                                                                                                                                                                                                      |
+| -------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. `--dry-run` runs pipeline checks without writing emitted JS or reports. Broad runs aggregate supported diagnostics by default; pass `--fail-fast` to stop at the first supported diagnostic. |
 
 ### Bindings
 

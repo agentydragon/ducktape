@@ -75,11 +75,12 @@ spec first.
 Use `debundle run --dry-run` to run pipeline parse/facts/gate checks
 without writing emitted JS or reports.
 
-Add `--keep-going` during broad spec migrations to continue through supported
-diagnostic failures and report all findings from that pass. Today this
-aggregates duplicate binding claims during materialization plan building,
-including the chunk, binding, existing owner/export/origin, and competing
-owner/export/origin.
+Broad spec migrations continue through supported diagnostic failures by
+default and report all findings from that pass. Today this aggregates
+unresolved source-match selectors and duplicate binding claims during
+materialization plan building, including the chunk, binding, existing
+owner/export/origin, and competing owner/export/origin. Use `--fail-fast` only
+when the first failing selector or claim is the useful debugging target.
 
 ## Workflow: investigating a binding end-to-end
 

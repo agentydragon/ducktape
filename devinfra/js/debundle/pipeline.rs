@@ -33,10 +33,19 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransformRunOptions {
     pub dry_run: bool,
     pub keep_going: bool,
+}
+
+impl Default for TransformRunOptions {
+    fn default() -> Self {
+        Self {
+            dry_run: false,
+            keep_going: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,11 +86,14 @@ pub struct TransformArgs {
     /// Run pipeline checks without writing emitted JS or reports.
     #[arg(long)]
     pub dry_run: bool,
-    /// Continue through supported spec-diagnostic failures and report all
-    /// findings from the pass. Currently aggregates materialization duplicate
-    /// binding claims plus member-form source_match misses and ambiguities.
+    /// Deprecated compatibility no-op: keep-going is now the default.
+    /// Use `--fail-fast` to stop at the first supported diagnostic instead.
     #[arg(long)]
     pub keep_going: bool,
+    /// Stop at the first supported diagnostic instead of collecting all
+    /// findings from the pass.
+    #[arg(long, conflicts_with = "keep_going")]
+    pub fail_fast: bool,
 }
 
 impl TransformArgs {

@@ -571,15 +571,14 @@ export { existingHelper };
     );
 }
 
-#[test]
-fn keep_going_reports_source_match_failures_and_duplicate_claims_together() {
+fn source_match_and_duplicate_claims_fixture() -> FixtureOpts<'static> {
     let missing_selector = r#"function selectedFormatter(value) {
   return value.toLowerCase();
 }"#;
     let ambiguous_selector = r#"function repeatedHelper() {
   return "shared";
 }"#;
-    let opts = FixtureOpts::new(
+    FixtureOpts::new(
         r#"function renderCard(value) {
   return value.trim();
 }
@@ -607,9 +606,12 @@ export { renderCard, decoratePrimary, decorateSecondary };
                 &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
             ),
         ],
-    );
+    )
+}
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+#[test]
+fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_together() {
+    let rejected = run_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
@@ -630,6 +632,35 @@ export { renderCard, decoratePrimary, decorateSecondary };
         assert!(
             stderr.contains(required),
             "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+}
+
+#[test]
+fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
+    let rejected =
+        run_fail_fast_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
+    let stderr = rejected.stderr;
+    for required in [
+        "members[].selector.source_match",
+        "diagnostics/ambiguous",
+        "export `AmbiguousHelper`",
+        "is ambiguous",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{stderr}",
+        );
+    }
+    for absent in [
+        "Source-match selector diagnostic report:",
+        "Duplicate binding claim report:",
+        "duplicates/card",
+        "as `renderCardAgain`",
+    ] {
+        assert!(
+            !stderr.contains(absent),
+            "fail-fast stderr unexpectedly contained {absent:?}\nstderr:\n{stderr}",
         );
     }
 }
