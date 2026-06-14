@@ -1138,11 +1138,15 @@ fn find_matching_target_var_decl_with_declarator_holes(
     let (target_decl_idx, target_binding_idx) =
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
     let prepared = PreparedNeedle::new(needle, selector);
+    let prefilter = VarDeclWithDeclaratorHolesPrefilter::new(needle_var, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
+        if !prefilter.var_decl_can_match(candidate_var) {
+            continue;
+        }
         if !prepared.matches(item) {
             continue;
         }
@@ -1207,11 +1211,15 @@ fn resolve_member_binding_group_with_declarator_holes(
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
     let prepared = PreparedNeedle::new(needle, selector);
+    let prefilter = VarDeclWithDeclaratorHolesPrefilter::new(needle_var, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
+        if !prefilter.var_decl_can_match(candidate_var) {
+            continue;
+        }
         if !prepared.matches(item) {
             continue;
         }
@@ -1464,9 +1472,167 @@ impl VarDeclaratorPrefilter {
     }
 }
 
+/// Cheap candidate prefilter for variable declarations that use
+/// `DECLARATORS_*` list holes. The full matcher must still validate
+/// declaration structure and alpha bindings, but pinned direct string
+/// predicates are enough to reject most declarations before recursive
+/// list-hole alignment.
+struct VarDeclWithDeclaratorHolesPrefilter {
+    needle_kind: VarDeclKind,
+    pinned_literal_predicates: Vec<StringLiteralPredicate>,
+}
+
+impl VarDeclWithDeclaratorHolesPrefilter {
+    fn new(needle: &VarDecl, prepared: &PreparedNeedle<'_>) -> Self {
+        let pinned_literal_predicates = needle
+            .decls
+            .iter()
+            .filter(|declarator| declarator_list_hole_name(declarator).is_none())
+            .filter_map(|declarator| {
+                declarator.init.as_deref().and_then(|init| {
+                    string_literal_predicate_for_expr(
+                        init,
+                        prepared.selector,
+                        &prepared.string_literal_regexes,
+                    )
+                })
+            })
+            .collect();
+        Self {
+            needle_kind: needle.kind,
+            pinned_literal_predicates,
+        }
+    }
+
+    fn var_decl_can_match(&self, candidate: &VarDecl) -> bool {
+        if candidate.kind != self.needle_kind {
+            return false;
+        }
+        if self.pinned_literal_predicates.is_empty() {
+            return true;
+        }
+        let mut candidate_start = 0;
+        for predicate in &self.pinned_literal_predicates {
+            let Some(candidate_idx) = candidate
+                .decls
+                .iter()
+                .enumerate()
+                .skip(candidate_start)
+                .find_map(|(candidate_idx, declarator)| {
+                    declarator
+                        .init
+                        .as_deref()
+                        .and_then(string_literal_expr_value_ref)
+                        .is_some_and(|value| predicate.matches(value))
+                        .then_some(candidate_idx)
+                })
+            else {
+                return false;
+            };
+            candidate_start = candidate_idx + 1;
+        }
+        true
+    }
+}
+
+#[derive(Clone)]
+enum StringLiteralPredicate {
+    Exact(String),
+    Regex(Option<Regex>),
+}
+
+impl StringLiteralPredicate {
+    fn regex(pattern: String) -> Self {
+        Self::Regex(Regex::new(&pattern).ok())
+    }
+
+    fn matches(&self, candidate_value: &Wtf8Atom) -> bool {
+        match self {
+            Self::Exact(expected) => candidate_value.to_string_lossy().as_ref() == expected,
+            Self::Regex(compiled) => compiled
+                .as_ref()
+                .is_some_and(|regex| regex.is_match(candidate_value.to_string_lossy().as_ref())),
+        }
+    }
+}
+
+#[derive(Default)]
+struct CompiledStringLiteralRegexes {
+    patterns: BTreeMap<String, StringLiteralPredicate>,
+}
+
+impl CompiledStringLiteralRegexes {
+    fn for_module_item(needle: &ModuleItem) -> Self {
+        let mut collector = StringLiteralRegexPatternCollector::default();
+        needle.visit_with(&mut collector);
+        Self {
+            patterns: collector
+                .patterns
+                .into_iter()
+                .map(|pattern| (pattern.clone(), StringLiteralPredicate::regex(pattern)))
+                .collect(),
+        }
+    }
+
+    fn matches(&self, pattern: &str, candidate_value: &Wtf8Atom) -> bool {
+        self.patterns
+            .get(pattern)
+            .cloned()
+            .unwrap_or_else(|| StringLiteralPredicate::regex(pattern.to_string()))
+            .matches(candidate_value)
+    }
+
+    fn predicate(&self, pattern: &str) -> StringLiteralPredicate {
+        self.patterns
+            .get(pattern)
+            .cloned()
+            .unwrap_or_else(|| StringLiteralPredicate::regex(pattern.to_string()))
+    }
+}
+
+#[derive(Default)]
+struct StringLiteralRegexPatternCollector {
+    patterns: BTreeSet<String>,
+}
+
+impl Visit for StringLiteralRegexPatternCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Some(pattern) = string_literal_regex_pattern(expr) {
+            self.patterns.insert(pattern);
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+}
+
+fn string_literal_predicate_for_expr(
+    expr: &Expr,
+    selector: &AnonymousStatementSelector,
+    string_literal_regexes: &CompiledStringLiteralRegexes,
+) -> Option<StringLiteralPredicate> {
+    if let Some(pattern) = string_literal_regex_pattern(expr) {
+        return Some(string_literal_regexes.predicate(&pattern));
+    }
+    let Expr::Lit(Lit::Str(str_)) = expr else {
+        return None;
+    };
+    let value = str_.value.to_string_lossy();
+    if selector.wildcard_string_literals.contains(value.as_ref()) {
+        return None;
+    }
+    Some(StringLiteralPredicate::Exact(value.to_string()))
+}
+
 fn string_literal_expr_value(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Lit(Lit::Str(str_)) => Some(str_.value.to_string_lossy().to_string()),
+        _ => None,
+    }
+}
+
+fn string_literal_expr_value_ref(expr: &Expr) -> Option<&Wtf8Atom> {
+    match expr {
+        Expr::Lit(Lit::Str(str_)) => Some(&str_.value),
         _ => None,
     }
 }
@@ -1571,11 +1737,26 @@ fn find_matching_body_indices(
     selector: &AnonymousStatementSelector,
 ) -> Vec<usize> {
     let prepared = PreparedNeedle::new(needle, selector);
+    let declarator_hole_prefilter = item_var_decl(needle)
+        .filter(|var| {
+            var.decls
+                .iter()
+                .any(|declarator| declarator_list_hole_name(declarator).is_some())
+        })
+        .map(|var| VarDeclWithDeclaratorHolesPrefilter::new(var, &prepared));
     runtime_module
         .body
         .iter()
         .enumerate()
-        .filter_map(|(body_idx, item)| prepared.matches(item).then_some(body_idx))
+        .filter_map(|(body_idx, item)| {
+            if let Some(prefilter) = &declarator_hole_prefilter {
+                let candidate_var = item_var_decl(item)?;
+                if !prefilter.var_decl_can_match(candidate_var) {
+                    return None;
+                }
+            }
+            prepared.matches(item).then_some(body_idx)
+        })
         .collect()
 }
 
@@ -1589,11 +1770,26 @@ fn find_matching_body_ranges(
     }
     if let [needle] = needles {
         let prepared = PreparedNeedle::new(needle, selector);
+        let declarator_hole_prefilter = item_var_decl(needle)
+            .filter(|var| {
+                var.decls
+                    .iter()
+                    .any(|declarator| declarator_list_hole_name(declarator).is_some())
+            })
+            .map(|var| VarDeclWithDeclaratorHolesPrefilter::new(var, &prepared));
         return runtime_module
             .body
             .iter()
             .enumerate()
-            .filter_map(|(body_idx, candidate)| prepared.matches(candidate).then_some(body_idx))
+            .filter_map(|(body_idx, candidate)| {
+                if let Some(prefilter) = &declarator_hole_prefilter {
+                    let candidate_var = item_var_decl(candidate)?;
+                    if !prefilter.var_decl_can_match(candidate_var) {
+                        return None;
+                    }
+                }
+                prepared.matches(candidate).then_some(body_idx)
+            })
             .collect();
     }
     let wildcard_idents = wildcard_ident_names_for_module_items(needles);
@@ -2768,6 +2964,7 @@ struct PreparedNeedle<'a> {
     needle: &'a ModuleItem,
     selector: &'a AnonymousStatementSelector,
     wildcard_idents: WildcardIdents,
+    string_literal_regexes: CompiledStringLiteralRegexes,
     alpha: bool,
     /// Neither string-literal nor syntactic-hole wildcards/predicates
     /// present — the plain structural-equality fast path applies.
@@ -2781,6 +2978,7 @@ impl<'a> PreparedNeedle<'a> {
     fn new(needle: &'a ModuleItem, selector: &'a AnonymousStatementSelector) -> Self {
         SyntaxContext::within_ignored_ctxt(|| {
             let wildcard_idents = wildcard_ident_names(needle);
+            let string_literal_regexes = CompiledStringLiteralRegexes::for_module_item(needle);
             let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
             let no_wildcards =
                 selector.wildcard_string_literals.is_empty() && wildcard_idents.is_empty();
@@ -2793,6 +2991,7 @@ impl<'a> PreparedNeedle<'a> {
                 needle,
                 selector,
                 wildcard_idents,
+                string_literal_regexes,
                 alpha,
                 no_wildcards,
                 canonical_needle,
@@ -2835,8 +3034,13 @@ impl<'a> PreparedNeedle<'a> {
             // holes that absorb identifier-bearing subtrees don't desync the
             // identifiers after them — and it walks borrowed trees with no
             // per-comparison clone + canonicalize.
-            AstWildcardMatcher::new(self.selector, &self.wildcard_idents, self.alpha)
-                .match_module_item(self.needle, candidate)
+            AstWildcardMatcher::new_with_string_literal_regexes(
+                self.selector,
+                &self.wildcard_idents,
+                &self.string_literal_regexes,
+                self.alpha,
+            )
+            .match_module_item(self.needle, candidate)
         })
     }
 
@@ -2846,8 +3050,12 @@ impl<'a> PreparedNeedle<'a> {
         candidate: &VarDecl,
     ) -> Option<Vec<Option<usize>>> {
         SyntaxContext::within_ignored_ctxt(|| {
-            let mut matcher =
-                AstWildcardMatcher::new(self.selector, &self.wildcard_idents, self.alpha);
+            let mut matcher = AstWildcardMatcher::new_with_string_literal_regexes(
+                self.selector,
+                &self.wildcard_idents,
+                &self.string_literal_regexes,
+                self.alpha,
+            );
             matcher.match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
         })
     }
@@ -3029,6 +3237,59 @@ mod tests {
         assert!(!prepared.matches(&non_matching));
         assert!(!prepared.matches(&non_string));
     }
+
+    #[test]
+    fn declarator_hole_prefilter_uses_regex_string_literal_predicates() {
+        let selector = selector(
+            r#"const DECLARATORS_BEFORE = null,
+  readable = STR_LITERAL_MATCHING_RE("^generic-token-[0-9]+$"),
+  DECLARATORS_AFTER = null;"#,
+        );
+        let needle = parse_one(&selector.match_source);
+        let prepared = PreparedNeedle::new(&needle, &selector);
+        let prefilter =
+            VarDeclWithDeclaratorHolesPrefilter::new(item_var_decl(&needle).unwrap(), &prepared);
+
+        let matching = parse_one(
+            r#"const before = "other",
+  minified = "generic-token-42",
+  after = "other";"#,
+        );
+        let non_matching = parse_one(
+            r#"const before = "other",
+  minified = "different-token-42",
+  after = "other";"#,
+        );
+
+        assert!(prefilter.var_decl_can_match(item_var_decl(&matching).unwrap()));
+        assert!(!prefilter.var_decl_can_match(item_var_decl(&non_matching).unwrap()));
+    }
+
+    #[test]
+    fn declarator_hole_body_index_matching_prefilters_by_literal_predicate() {
+        js_ast::with_swc_globals(|| {
+            let runtime = js_ast::parse_js_module_ast(
+                "<test>",
+                r#"const unrelatedA = "generic-token-1";
+const before = "other",
+  minified = "generic-token-42",
+  after = "other";
+const unrelatedB = "different-token-42";"#,
+            )
+            .unwrap();
+            let selector = selector(
+                r#"const DECLARATORS_BEFORE = null,
+  readable = STR_LITERAL_MATCHING_RE("^generic-token-42$"),
+  DECLARATORS_AFTER = null;"#,
+            );
+            let needle = parse_one(&selector.match_source);
+
+            assert_eq!(
+                find_matching_body_indices(&runtime, &needle, &selector),
+                vec![1]
+            );
+        });
+    }
 }
 
 #[derive(Clone, Default)]
@@ -3047,6 +3308,7 @@ struct AlphaMatchScope {
 struct AstWildcardMatcher<'a> {
     selector: &'a AnonymousStatementSelector,
     wildcard_idents: &'a WildcardIdents,
+    string_literal_regexes: Option<&'a CompiledStringLiteralRegexes>,
     replacements: WildcardReplacements,
     /// Whether value/binding identifiers are alpha-renamable. When true,
     /// identifier equality is tracked as a bijection built incrementally
@@ -3093,9 +3355,33 @@ impl<'a> AstWildcardMatcher<'a> {
         wildcard_idents: &'a WildcardIdents,
         alpha: bool,
     ) -> Self {
+        Self::new_impl(selector, wildcard_idents, None, alpha)
+    }
+
+    fn new_with_string_literal_regexes(
+        selector: &'a AnonymousStatementSelector,
+        wildcard_idents: &'a WildcardIdents,
+        string_literal_regexes: &'a CompiledStringLiteralRegexes,
+        alpha: bool,
+    ) -> Self {
+        Self::new_impl(
+            selector,
+            wildcard_idents,
+            Some(string_literal_regexes),
+            alpha,
+        )
+    }
+
+    fn new_impl(
+        selector: &'a AnonymousStatementSelector,
+        wildcard_idents: &'a WildcardIdents,
+        string_literal_regexes: Option<&'a CompiledStringLiteralRegexes>,
+        alpha: bool,
+    ) -> Self {
         Self {
             selector,
             wildcard_idents,
+            string_literal_regexes,
             replacements: WildcardReplacements::default(),
             alpha,
             alpha_scopes: vec![AlphaMatchScope::default()],
@@ -3448,9 +3734,10 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_expr(&mut self, needle: &Expr, candidate: &Expr) -> bool {
         if let Some(pattern) = string_literal_regex_pattern(needle) {
             return match candidate {
-                Expr::Lit(Lit::Str(candidate)) => {
-                    string_literal_matches_regex(&pattern, &candidate.value)
-                }
+                Expr::Lit(Lit::Str(candidate)) => self.string_literal_regexes.map_or_else(
+                    || string_literal_matches_regex(&pattern, &candidate.value),
+                    |regexes| regexes.matches(&pattern, &candidate.value),
+                ),
                 _ => false,
             };
         }

@@ -1,3 +1,4 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
@@ -10,4 +11,17 @@ py_binary(
     name = "gen_synth_corpus_bin",
     main_module = "devinfra.js.debundle.perf.gen_synth_corpus",
     deps = [":gen_synth_corpus"],
+)
+
+rust_binary(
+    name = "source_match_decl_holes_profile",
+    srcs = ["source_match_decl_holes_profile.rs"],
+    crate_root = "source_match_decl_holes_profile.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_match",
+        "//devinfra/js/debundle:spec",
+        "@crates//:anyhow",
+    ],
 )
