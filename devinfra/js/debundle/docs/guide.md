@@ -537,6 +537,25 @@ matches a call whose two arguments are identical. These are still structural
 selectors: surrounding syntax is exact after the identifier policy is applied,
 and ambiguous matches are rejected rather than resolved by source order.
 
+For string literals with stable shape but unstable suffixes, use
+`STR_LITERAL_MATCHING_RE("...")` in expression position:
+
+```yaml
+members:
+  - selector:
+      source_match:
+        identifiers: alpha_all
+        match: |
+          const selectedStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");
+    name: widgetShellStyle
+```
+
+This matches a string literal AST node, not arbitrary source text. The pattern
+uses Rust `regex` syntax against the decoded string literal value, so it is
+unanchored unless you write `^` / `$`. Escape the regex as a JavaScript string
+inside the selector source; for example, write `"\\d+"` when the regex should
+see `\d+`.
+
 Variable-length **list holes** absorb a contiguous run rather than a single
 node. Their optional suffixes are labels for readability; they do not bind the
 absorbed sequence for cross-occurrence equality.

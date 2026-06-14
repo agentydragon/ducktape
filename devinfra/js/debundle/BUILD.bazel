@@ -40,6 +40,7 @@ rust_library(
         ":js_ast",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:regex",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",

@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use regex::Regex;
 use spec::{
     AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
     SourceMatch, SourceMatchIdentifierMode, TargetStatements, TargetStatementsAll,
@@ -43,6 +44,7 @@ const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
+const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
 
 const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
 const SOURCE_MATCH_TIMING_THRESHOLD_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS";
@@ -2045,6 +2047,9 @@ fn render_var_declarator_label(declarator: &VarDeclarator) -> String {
 }
 
 fn expr_shape_label(expr: &Expr) -> String {
+    if string_literal_regex_pattern(expr).is_some() {
+        return format!("{STRING_LITERAL_REGEX_PREDICATE}(...)");
+    }
     match expr {
         Expr::Ident(ident) => ident.sym.to_string(),
         Expr::Lit(lit) => lit_shape_label(lit),
@@ -2764,8 +2769,8 @@ struct PreparedNeedle<'a> {
     selector: &'a AnonymousStatementSelector,
     wildcard_idents: WildcardIdents,
     alpha: bool,
-    /// Neither string-literal nor syntactic-hole wildcards present —
-    /// the plain structural-equality fast path applies.
+    /// Neither string-literal nor syntactic-hole wildcards/predicates
+    /// present — the plain structural-equality fast path applies.
     no_wildcards: bool,
     /// The needle pre-canonicalized once for the no-wildcard alpha
     /// path (`None` otherwise).
@@ -2966,6 +2971,10 @@ mod tests {
         &var.decls[0]
     }
 
+    fn single_declarator_init(item: &ModuleItem) -> &Expr {
+        single_declarator(item).init.as_deref().unwrap()
+    }
+
     #[test]
     fn var_declarator_prefilter_uses_string_literal_in_alpha_mode() {
         let selector = selector(r#"const readableName = "stable-css-class";"#);
@@ -2989,6 +2998,36 @@ mod tests {
         let candidate = parse_one(r#"const minifiedName = "runtime-css-class";"#);
 
         assert!(prefilter.declarator_can_match(single_declarator(&candidate)));
+    }
+
+    #[test]
+    fn string_literal_regex_predicate_recognizes_only_direct_string_pattern_calls() {
+        let selector = parse_one(r#"const readable = STR_LITERAL_MATCHING_RE("^Card-[0-9]+$");"#);
+        assert_eq!(
+            string_literal_regex_pattern(single_declarator_init(&selector)).as_deref(),
+            Some("^Card-[0-9]+$"),
+        );
+
+        let non_string_arg = parse_one(r#"const readable = STR_LITERAL_MATCHING_RE(pattern);"#);
+        assert!(string_literal_regex_pattern(single_declarator_init(&non_string_arg)).is_none());
+
+        let two_args = parse_one(r#"const readable = STR_LITERAL_MATCHING_RE("Card", "Panel");"#);
+        assert!(string_literal_regex_pattern(single_declarator_init(&two_args)).is_none());
+    }
+
+    #[test]
+    fn string_literal_regex_predicate_matches_string_literal_ast_nodes() {
+        let selector = selector(r#"const readable = STR_LITERAL_MATCHING_RE("^Card-[0-9]+$");"#);
+        let needle = parse_one(&selector.match_source);
+        let prepared = PreparedNeedle::new(&needle, &selector);
+        let matching = parse_one(r#"const minified = "Card-42";"#);
+        let non_matching = parse_one(r#"const minified = "Panel-42";"#);
+        let non_string = parse_one(r#"const minified = makeCardName();"#);
+
+        assert!(!prepared.no_wildcards);
+        assert!(prepared.matches(&matching));
+        assert!(!prepared.matches(&non_matching));
+        assert!(!prepared.matches(&non_string));
     }
 }
 
@@ -3407,6 +3446,14 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_expr(&mut self, needle: &Expr, candidate: &Expr) -> bool {
+        if let Some(pattern) = string_literal_regex_pattern(needle) {
+            return match candidate {
+                Expr::Lit(Lit::Str(candidate)) => {
+                    string_literal_matches_regex(&pattern, &candidate.value)
+                }
+                _ => false,
+            };
+        }
         if let Some(hole_name) = expression_hole_name(needle)
             && self.wildcard_idents.expressions.contains(hole_name)
         {
@@ -4977,6 +5024,12 @@ struct WildcardIdents {
     /// `ARGS` argument-list hole names. These are pseudo-arguments and
     /// must route to ordered-subsequence argument matching.
     argument_lists: BTreeSet<String>,
+    /// Whether the selector contains any `STR_LITERAL_MATCHING_RE(...)`
+    /// expression predicate. This is not an identifier hole, but it
+    /// changes expression shape (`CallExpr` in the selector,
+    /// `Lit::Str` in the candidate), so the selector still needs the
+    /// wildcard matcher.
+    string_literal_regex_present: bool,
     /// Whether the selector contains any `CLASS_REST` class-member
     /// hole. The marker is a class field key (an `IdentName`, not an
     /// `Ident`), so it survives alpha-canonicalization without being
@@ -4995,6 +5048,7 @@ impl WildcardIdents {
             && self.statement_lists.is_empty()
             && self.declarator_lists.is_empty()
             && self.argument_lists.is_empty()
+            && !self.string_literal_regex_present
             && !self.class_rest_present
     }
 }
@@ -5020,6 +5074,10 @@ struct WildcardIdentCollector {
 
 impl Visit for WildcardIdentCollector {
     fn visit_expr(&mut self, expr: &Expr) {
+        if string_literal_regex_pattern(expr).is_some() {
+            self.idents.string_literal_regex_present = true;
+            return;
+        }
         if let Some(hole_name) = expression_hole_name(expr) {
             self.idents.expressions.insert(hole_name.to_string());
             return;
@@ -5073,6 +5131,33 @@ fn expression_hole_name(expr: &Expr) -> Option<&str> {
         return None;
     };
     hole_name_for(ident.sym.as_ref(), EXPR_HOLE_KEYWORD)
+}
+
+fn string_literal_regex_pattern(expr: &Expr) -> Option<String> {
+    let Expr::Call(call) = expr else {
+        return None;
+    };
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return None;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Ident(callee) = callee.as_ref() else {
+        return None;
+    };
+    if callee.sym.as_ref() != STRING_LITERAL_REGEX_PREDICATE {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(pattern)) = call.args[0].expr.as_ref() else {
+        return None;
+    };
+    Some(pattern.value.to_string_lossy().to_string())
+}
+
+fn string_literal_matches_regex(pattern: &str, candidate_value: &Wtf8Atom) -> bool {
+    Regex::new(pattern)
+        .is_ok_and(|regex| regex.is_match(candidate_value.to_string_lossy().as_ref()))
 }
 
 fn statement_hole_name(stmt: &Stmt) -> Option<&str> {

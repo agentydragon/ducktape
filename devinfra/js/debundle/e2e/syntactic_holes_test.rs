@@ -209,6 +209,82 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_string_literal_regex_predicate_matches_string_literal_value() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeStyle = "WidgetShell-42";
+console.log(runtimeStyle);
+export { runtimeStyle };
+"#,
+        vec![logical_module(
+            "styles/shell",
+            &[Member::source_alpha(
+                "shellStyle",
+                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "WidgetShell-42\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/shell.js",
+        &["const shellStyle = \"WidgetShell-42\""],
+        &["STR_LITERAL_MATCHING_RE"],
+    );
+}
+
+#[test]
+fn member_source_match_string_literal_regex_predicate_rejects_non_matching_literal() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const runtimeStyle = "PanelShell-42";
+console.log(runtimeStyle);
+export { runtimeStyle };
+"#,
+            vec![logical_module(
+                "styles/shell",
+                &[Member::source_alpha(
+                    "shellStyle",
+                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+                )],
+            )],
+        ),
+        &[
+            "styles/shell",
+            "did not match any top-level declaration",
+            "STR_LITERAL_MATCHING_RE",
+            "WidgetShell",
+        ],
+    );
+}
+
+#[test]
+fn member_source_match_string_literal_regex_predicate_rejects_ambiguous_literals() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const runtimePrimaryStyle = "WidgetShell-1";
+const runtimeSecondaryStyle = "WidgetShell-2";
+console.log(runtimePrimaryStyle, runtimeSecondaryStyle);
+export { runtimePrimaryStyle, runtimeSecondaryStyle };
+"#,
+            vec![logical_module(
+                "styles/shell",
+                &[Member::source_alpha(
+                    "shellStyle",
+                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+                )],
+            )],
+        ),
+        &[
+            "styles/shell",
+            "ambiguous",
+            "STR_LITERAL_MATCHING_RE",
+            "WidgetShell",
+        ],
+    );
+}
+
+#[test]
 fn member_source_match_many_expr_holes_match_positionally() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const actual = [
@@ -330,6 +406,40 @@ export { first, second };
             r#"var second_value = Number.parseInt("4", 10)"#,
         ],
         &[],
+    );
+}
+
+#[test]
+fn binding_group_source_match_string_literal_regex_predicates_match_each_target_binding() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrimary = "Token-primary-101",
+  runtimeSecondary = "Token-secondary-202";
+console.log(`${runtimePrimary}:${runtimeSecondary}`);
+export { runtimePrimary, runtimeSecondary };
+"#,
+        vec![logical_module_with_binding_groups(
+            "styles/tokens",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const primaryToken = STR_LITERAL_MATCHING_RE("^Token-primary-[0-9]+$"),
+  secondaryToken = STR_LITERAL_MATCHING_RE("^Token-secondary-[0-9]+$");"#,
+                &[
+                    ("primaryToken", "primaryStyleToken"),
+                    ("secondaryToken", "secondaryStyleToken"),
+                ],
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "Token-primary-101:Token-secondary-202\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/tokens.js",
+        &[
+            "const primaryStyleToken = \"Token-primary-101\"",
+            "secondaryStyleToken = \"Token-secondary-202\"",
+        ],
+        &["STR_LITERAL_MATCHING_RE"],
     );
 }
 
