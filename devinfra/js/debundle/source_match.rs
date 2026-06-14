@@ -2119,9 +2119,10 @@ fn var_declarator_source_match_no_match_hint(
         .map(render_var_decl_candidate_hint)
         .collect::<Vec<_>>()
         .join("\n");
+    let guidance = render_var_declarator_selector_guidance(selector);
 
     Some(format!(
-        "\nNearest variable declaration candidates:\n{rendered}"
+        "\nNearest variable declaration candidates:\n{rendered}\n{guidance}"
     ))
 }
 
@@ -2212,6 +2213,24 @@ fn render_var_decl_candidate_hint(candidate: &VarDeclCandidateHint) -> String {
         total = candidate.pinned_declarator_count,
         reason = candidate.reason.reason,
     )
+}
+
+fn render_var_declarator_selector_guidance(selector: &AnonymousStatementSelector) -> String {
+    let mut guidance = "Selector guidance: add `DECLARATORS_* = null` pseudo-declarators \
+before, after, or between pinned declarators for unrelated siblings in the same \
+var/let/const declaration."
+        .to_string();
+    if selector.target_binding.is_some() {
+        guidance.push_str(
+            " `target_binding` resolves one selector-local binding for the current export; \
+use one `binding_groups` entry when several exports should come from this matched declaration.",
+        );
+    } else {
+        guidance.push_str(
+            " Use `binding_groups` when several exports should come from one matched declaration.",
+        );
+    }
+    guidance
 }
 
 fn render_var_declarator_labels(labels: &[String]) -> String {
@@ -2353,10 +2372,21 @@ fn count_pinned_var_declarators_in_order(
     wildcard_idents: &WildcardIdents,
     alpha: bool,
 ) -> usize {
+    pinned_var_declarator_matches_in_order(needle, candidate, selector, wildcard_idents, alpha)
+        .len()
+}
+
+fn pinned_var_declarator_matches_in_order(
+    needle: &VarDecl,
+    candidate: &VarDecl,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
+    alpha: bool,
+) -> Vec<(usize, usize)> {
     let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
     let mut candidate_start = 0;
-    let mut matched = 0;
-    for needle_declarator in &needle.decls {
+    let mut matches = Vec::new();
+    for (needle_idx, needle_declarator) in needle.decls.iter().enumerate() {
         if declarator_list_hole_name(needle_declarator).is_some() {
             continue;
         }
@@ -2377,10 +2407,10 @@ fn count_pinned_var_declarators_in_order(
         else {
             break;
         };
-        matched += 1;
+        matches.push((needle_idx, candidate_idx));
         candidate_start = candidate_idx + 1;
     }
-    matched
+    matches
 }
 
 fn first_pinned_var_declarator_mismatch_reason(
@@ -2390,50 +2420,145 @@ fn first_pinned_var_declarator_mismatch_reason(
     wildcard_idents: &WildcardIdents,
     alpha: bool,
 ) -> String {
-    let mut matcher = AstWildcardMatcher::new(selector, wildcard_idents, alpha);
-    let mut candidate_start = 0;
-    for (needle_idx, needle_declarator) in needle.decls.iter().enumerate() {
-        if declarator_list_hole_name(needle_declarator).is_some() {
-            continue;
-        }
-        let Some(candidate_idx) = candidate
+    let matches =
+        pinned_var_declarator_matches_in_order(needle, candidate, selector, wildcard_idents, alpha);
+    let pinned_indices = needle
+        .decls
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, declarator)| {
+            declarator_list_hole_name(declarator)
+                .is_none()
+                .then_some(idx)
+        })
+        .collect::<Vec<_>>();
+    if let Some(&needle_idx) = pinned_indices.get(matches.len()) {
+        let candidate_start = matches
+            .last()
+            .map(|(_, candidate_idx)| candidate_idx + 1)
+            .unwrap_or(0);
+        let remaining = candidate
             .decls
             .iter()
-            .enumerate()
             .skip(candidate_start)
-            .find_map(|(candidate_idx, candidate_declarator)| {
-                let snapshot = matcher.snapshot();
-                if matcher.match_var_declarator(needle_declarator, candidate_declarator) {
-                    Some(candidate_idx)
-                } else {
-                    matcher.restore(snapshot);
-                    None
-                }
-            })
-        else {
-            let remaining = candidate
-                .decls
-                .iter()
-                .skip(candidate_start)
-                .map(render_var_declarator_label)
-                .collect::<Vec<_>>();
-            let remaining_hint = if remaining.is_empty() {
-                "no candidate declarators remain".to_string()
-            } else {
-                format!(
-                    "remaining candidate declarators: {}",
-                    render_var_declarator_labels(&remaining)
-                )
-            };
-            return format!(
-                "selector pinned declarator #{needle_idx} {} was not found in order ({remaining_hint})",
-                render_var_declarator_label(needle_declarator),
-            );
+            .map(render_var_declarator_label)
+            .collect::<Vec<_>>();
+        let remaining_hint = if remaining.is_empty() {
+            "no candidate declarators remain".to_string()
+        } else {
+            format!(
+                "remaining candidate declarators: {}",
+                render_var_declarator_labels(&remaining)
+            )
         };
-        candidate_start = candidate_idx + 1;
+        return format!(
+            "selector pinned declarator #{needle_idx} {} was not found in order ({remaining_hint})",
+            render_var_declarator_label(&needle.decls[needle_idx]),
+        );
     }
-    "pinned declarators matched in order, but declaration flags or hole placement differed"
+    first_var_declarator_hole_placement_mismatch_reason(needle, candidate, &matches)
+}
+
+fn first_var_declarator_hole_placement_mismatch_reason(
+    needle: &VarDecl,
+    candidate: &VarDecl,
+    matches: &[(usize, usize)],
+) -> String {
+    let Some(&(first_needle_idx, first_candidate_idx)) = matches.first() else {
+        return "pinned declarators matched in order, but DECLARATORS_* hole placement differed"
+            .to_string();
+    };
+    if first_candidate_idx > 0 && !has_declarator_hole_before(needle, first_needle_idx) {
+        let skipped = candidate
+            .decls
+            .iter()
+            .take(first_candidate_idx)
+            .map(render_var_declarator_label)
+            .collect::<Vec<_>>();
+        return format!(
+            "candidate has unmatched leading declarator(s) before selector declarator \
+             #{first_needle_idx} {}: {}. Add a `DECLARATORS_* = null` pseudo-declarator \
+             before the first pinned declarator.",
+            render_var_declarator_label(&needle.decls[first_needle_idx]),
+            render_var_declarator_labels(&skipped),
+        );
+    }
+
+    for pair in matches.windows(2) {
+        let [left, right] = pair else {
+            continue;
+        };
+        let (left_needle_idx, left_candidate_idx) = *left;
+        let (right_needle_idx, right_candidate_idx) = *right;
+        let gap_start = left_candidate_idx + 1;
+        if gap_start >= right_candidate_idx {
+            continue;
+        }
+        if has_declarator_hole_between(needle, left_needle_idx, right_needle_idx) {
+            continue;
+        }
+        let skipped = candidate.decls[gap_start..right_candidate_idx]
+            .iter()
+            .map(render_var_declarator_label)
+            .collect::<Vec<_>>();
+        return format!(
+            "candidate has unmatched declarator(s) between selector declarator \
+             #{left_needle_idx} {} and #{right_needle_idx} {}: {}. Add a \
+             `DECLARATORS_* = null` pseudo-declarator between those pinned declarators.",
+            render_var_declarator_label(&needle.decls[left_needle_idx]),
+            render_var_declarator_label(&needle.decls[right_needle_idx]),
+            render_var_declarator_labels(&skipped),
+        );
+    }
+
+    let Some(&(last_needle_idx, last_candidate_idx)) = matches.last() else {
+        return "pinned declarators matched in order, but DECLARATORS_* hole placement differed"
+            .to_string();
+    };
+    if last_candidate_idx + 1 < candidate.decls.len()
+        && !has_declarator_hole_after(needle, last_needle_idx)
+    {
+        let skipped = candidate
+            .decls
+            .iter()
+            .skip(last_candidate_idx + 1)
+            .map(render_var_declarator_label)
+            .collect::<Vec<_>>();
+        return format!(
+            "candidate has unmatched trailing declarator(s) after selector declarator \
+             #{last_needle_idx} {}: {}. Add a `DECLARATORS_* = null` pseudo-declarator \
+             after the last pinned declarator.",
+            render_var_declarator_label(&needle.decls[last_needle_idx]),
+            render_var_declarator_labels(&skipped),
+        );
+    }
+
+    "pinned declarators matched in order, but DECLARATORS_* hole placement differed. \
+Check that each unrelated sibling declarator is covered by a hole before, after, or \
+between pinned declarators."
         .to_string()
+}
+
+fn has_declarator_hole_before(needle: &VarDecl, needle_idx: usize) -> bool {
+    needle.decls[..needle_idx]
+        .iter()
+        .any(|declarator| declarator_list_hole_name(declarator).is_some())
+}
+
+fn has_declarator_hole_between(
+    needle: &VarDecl,
+    left_needle_idx: usize,
+    right_needle_idx: usize,
+) -> bool {
+    needle.decls[left_needle_idx + 1..right_needle_idx]
+        .iter()
+        .any(|declarator| declarator_list_hole_name(declarator).is_some())
+}
+
+fn has_declarator_hole_after(needle: &VarDecl, needle_idx: usize) -> bool {
+    needle.decls[needle_idx + 1..]
+        .iter()
+        .any(|declarator| declarator_list_hole_name(declarator).is_some())
 }
 
 fn module_item_class_decl(item: &ModuleItem) -> Option<&ClassDecl> {

@@ -1056,6 +1056,53 @@ export { firstSelected, secondSelected };
 }
 
 #[test]
+fn declarator_hole_miss_reports_missing_between_hole_and_target_binding_guidance() {
+    let opts = FixtureOpts::new(
+        r#"function buildItem(label) {
+  return { label };
+}
+function helperItem(label) {
+  return { label };
+}
+const leadingHelper = helperItem("lead"),
+  selectedA = buildItem("a"),
+  skippedHelper = helperItem("middle"),
+  selectedB = buildItem("b"),
+  selectedC = buildItem("c"),
+  trailingHelper = helperItem("tail");
+console.log(selectedA.label, selectedB.label, selectedC.label);
+export { selectedA, selectedB, selectedC };
+"#,
+        vec![logical_module(
+            "selected_values",
+            &[Member::source_alpha_target(
+                "selectedB",
+                "selectedB",
+                r#"const DECLARATORS_BEFORE = null,
+  selectedA = buildItem("a"),
+  selectedB = buildItem("b"),
+  selectedC = buildItem("c"),
+  DECLARATORS_AFTER = null;"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::selected_values",
+            "target_binding `selectedB`",
+            "did not match any top-level declaration",
+            "matched 3/3 pinned declarators in order",
+            "candidate has unmatched declarator(s) between selector declarator #1 `selectedA = buildItem(...)` and #2 `selectedB = buildItem(...)`: `skippedHelper = helperItem(...)`",
+            "Add a `DECLARATORS_* = null` pseudo-declarator between those pinned declarators",
+            "`target_binding` resolves one selector-local binding for the current export",
+            "use one `binding_groups` entry",
+        ],
+    );
+}
+
+#[test]
 fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"if (true) {
