@@ -350,6 +350,25 @@ binding_groups:
       address: Primary address shown to operators.
 ```
 
+The `match` may also be a contiguous range of top-level declarations. This is
+useful when related constants are declared separately and a later object ties
+them together:
+
+```yaml
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      match: |
+        const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+        const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+        const styles = { first: firstClassName, second: secondClassName };
+    adopt_names: true
+```
+
+Under `alpha_all`, the selector-local `firstClassName` and `secondClassName`
+names carry across the range, so the object initializer can refer to the
+matched runtime bindings without spelling their minified names.
+
 When the selector source already uses the desired public names, use
 `adopt_names` instead of repeating identity entries under `exports`:
 

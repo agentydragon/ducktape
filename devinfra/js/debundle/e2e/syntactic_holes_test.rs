@@ -444,6 +444,62 @@ export { runtimePrimary, runtimeSecondary };
 }
 
 #[test]
+fn binding_group_source_match_string_literal_regex_range_exports_style_object() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeFirstClassName = "Widget-module_first__a1B-2";
+const runtimeSecondClassName = "Widget-module_second__Z9_x";
+const runtimeStyles = {
+  first: runtimeFirstClassName,
+  second: runtimeSecondClassName,
+};
+console.log(runtimeStyles.first, runtimeStyles.second);
+export { runtimeFirstClassName, runtimeSecondClassName, runtimeStyles };
+"#,
+        vec![logical_module_with_binding_groups(
+            "styles/widget",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+const styles = { first: firstClassName, second: secondClassName };"#,
+                &[
+                    ("firstClassName", "firstClassName"),
+                    ("secondClassName", "secondClassName"),
+                    ("styles", "styles"),
+                ],
+            )],
+        )],
+    ));
+
+    assert_entry_output(
+        &fixture,
+        "Widget-module_first__a1B-2 Widget-module_second__Z9_x\n",
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/styles/widget.js",
+        &["firstClassName", "secondClassName", "styles"],
+        &[
+            "runtimeFirstClassName",
+            "runtimeSecondClassName",
+            "runtimeStyles",
+        ],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/widget.js",
+        &[
+            r#"const firstClassName = "Widget-module_first__a1B-2""#,
+            r#"const secondClassName = "Widget-module_second__Z9_x""#,
+            "const styles = {",
+            "first: firstClassName",
+            "second: secondClassName",
+        ],
+        &["STR_LITERAL_MATCHING_RE"],
+    );
+}
+
+#[test]
 fn binding_group_comments_emit_for_each_target_binding() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var first = 1 + 2, second = Number.parseInt("4", 10);
