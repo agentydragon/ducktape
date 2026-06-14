@@ -73,7 +73,7 @@
       }
       // Clear current agent; center pane shows AgentsList
       setAgentId(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
     }
   }

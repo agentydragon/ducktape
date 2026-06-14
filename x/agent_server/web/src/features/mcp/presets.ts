@@ -4,14 +4,14 @@ export type McpPreset = {
   transport: "stdio" | "sse" | "inproc" | "http";
   defaultName?: string;
   defaults: {
-    stdio?: { command: string; args: any[]; env: Record<string, string> };
+    stdio?: { command: string; args: string[]; env: Record<string, string> };
     sse?: {
       url: string;
       headers: Record<string, string>;
       timeout_secs: number;
       sse_read_timeout_secs: number;
     };
-    inproc?: { factory: string; args: any[]; kwargs: Record<string, any> };
+    inproc?: { factory: string; args: unknown[]; kwargs: Record<string, unknown> };
     http?: { url: string; headers?: Record<string, string>; auth?: string };
   };
 };

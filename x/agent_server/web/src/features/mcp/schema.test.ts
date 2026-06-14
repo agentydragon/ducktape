@@ -25,7 +25,7 @@ describe("MCP schema (Zod)", () => {
   });
 
   it("rejects legacy sse fields", () => {
-    const bad: any = {
+    const bad = {
       transport: "sse",
       url: "http://x",
       headers: {},

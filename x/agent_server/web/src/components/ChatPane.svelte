@@ -1,9 +1,9 @@
 <script lang="ts">
   import "../styles/shared.css";
   import DOMPurify from "dompurify";
-  // @ts-ignore – asset URL import handled by Vite
+  // @ts-expect-error highlight.js ships no types for `?url` CSS imports (Vite resolves them at build)
   import darkThemeUrl from "highlight.js/styles/github-dark.css?url";
-  // @ts-ignore – asset URL import handled by Vite
+  // @ts-expect-error highlight.js ships no types for `?url` CSS imports (Vite resolves them at build)
   import lightThemeUrl from "highlight.js/styles/github.css?url";
   import { onMount } from "svelte";
 

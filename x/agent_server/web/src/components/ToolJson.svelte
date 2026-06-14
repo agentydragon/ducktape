@@ -8,6 +8,14 @@
 
   export let item: ToolItem;
 
+  // ToolJson renders Json-kind content; narrow once for field access.
+  $: json = item.content.content_kind === "Json" ? item.content : null;
+
+  // Sandbox-exec tools carry an SBPL policy string in their untyped `args`.
+  function sbplPolicy(args: unknown): unknown {
+    return args && typeof args === "object" ? (args as Record<string, unknown>).policy : undefined;
+  }
+
   function copyText(text: string) {
     if (!text) return;
     if (navigator.clipboard?.writeText) {
@@ -45,8 +53,7 @@
 
   let displayResult: unknown = null;
   $: {
-    const c = item?.content;
-    const res: unknown = c && (c as any).content_kind === "Json" ? (c as any).result : undefined;
+    const res: unknown = json ? json.result : undefined;
     if (res && typeof res === "object") {
       const parsed = CallToolResultZ.safeParse(res);
       if (parsed.success && parsed.data.structured_content !== undefined) {
@@ -77,23 +84,23 @@
       <button class="copy" title="Copy JSON output" on:click={copyJson}>Copy</button>
     {/if}
   </div>
-  {#if (item.content as any)?.args}
-    <JsonDisclosure label="Arguments" value={(item.content as any).args} persistKey={`args:${item.id}`} />
+  {#if json?.args}
+    <JsonDisclosure label="Arguments" value={json.args} persistKey={`args:${item.id}`} />
   {/if}
-  {#if typeof item.tool === "string" && item.tool.endsWith("__sandbox_exec") && (item.content as any)?.args?.policy}
-    <JsonDisclosure label="SBPL Policy" value={(item.content as any).args.policy} persistKey={`sbpl:${item.id}`} />
+  {#if typeof item.tool === "string" && item.tool.endsWith("__sandbox_exec") && sbplPolicy(json?.args)}
+    <JsonDisclosure label="SBPL Policy" value={sbplPolicy(json?.args)} persistKey={`sbpl:${item.id}`} />
   {/if}
   {#if displayResult}
     {#if errorMessage}
       <div class="term-error">{errorMessage}</div>
     {/if}
     <JsonDisclosure
-      label={`Output${(item.content as any)?.is_error ? " [error]" : ""}`}
+      label={`Output${json?.is_error ? " [error]" : ""}`}
       value={displayResult}
       open
       persistKey={`out:${item.id}`}
     />
-    <JsonDisclosure label="Raw tool result" value={(item.content as any)?.result} persistKey={`rawres:${item.id}`} />
+    <JsonDisclosure label="Raw tool result" value={json?.result} persistKey={`rawres:${item.id}`} />
   {/if}
 </div>
 

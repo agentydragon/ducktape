@@ -1,6 +1,6 @@
 <script lang="ts">
   import "../styles/shared.css";
-  // @ts-ignore - library ships no types
+  // @ts-expect-error - json-formatter-js ships no type declarations
   import JSONFormatter from "json-formatter-js";
   import { SvelteMap } from "svelte/reactivity";
 
@@ -8,19 +8,31 @@
   import { attachMcpServer, detachMcpServer, refreshSnapshot } from "../features/chat/stores";
   import { MCP_PRESETS } from "../features/mcp/presets";
   import { buildSpecFromForm } from "../features/mcp/schema";
+  import type { TransportSpec } from "../features/mcp/schema";
   import { currentAgentId } from "../shared/router";
 
   import type { ServerEntry } from "../shared/types";
+
+  // Minimal structural type for the untyped json-formatter-js default export.
+  type JsonFormatterCtor = new (
+    json: unknown,
+    open?: number,
+    config?: { theme?: string; hoverPreviewEnabled?: boolean }
+  ) => { render(): HTMLElement };
 
   export let servers: ServerEntry[] = [];
 
   // Info modal state
   let showInfoModal = false;
-  let infoServer: any | null = null;
-  function openInfo(health: any) {
+  let infoServer: ServerEntry | null = null;
+  function openInfo(health: ServerEntry) {
     infoServer = health;
     showInfoModal = true;
   }
+  // Narrow the discriminated union for the info modal: `tools`/`initialize` live
+  // on the running variant, `error` on the failed one.
+  $: runningInfo = infoServer?.state === "running" ? infoServer : null;
+  $: failedInfo = infoServer?.state === "failed" ? infoServer : null;
   let modalToolExpanded = new SvelteMap<string, boolean>();
   function toggleModalTool(key: string) {
     modalToolExpanded.set(key, !modalToolExpanded.get(key));
@@ -28,12 +40,12 @@
   }
 
   // Collapsible JSON view action
-  function jsonView(node: HTMLElement, value: any) {
+  function jsonView(node: HTMLElement, value: unknown) {
     const prefersDark =
       typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const render = (val: any) => {
+    const render = (val: unknown) => {
       node.innerHTML = "";
-      let parsed: any = null;
+      let parsed: unknown = null;
       if (val && typeof val === "object") parsed = val;
       else if (typeof val === "string") {
         try {
@@ -43,7 +55,8 @@
         }
       }
       if (parsed && typeof parsed === "object") {
-        const fmt = new (JSONFormatter as any)(parsed, 1, {
+        const Formatter = JSONFormatter as JsonFormatterCtor;
+        const fmt = new Formatter(parsed, 1, {
           theme: prefersDark ? "dark" : undefined,
           hoverPreviewEnabled: true,
         });
@@ -56,7 +69,7 @@
       }
     };
     render(value);
-    return { update: (v: any) => render(v) };
+    return { update: (v: unknown) => render(v) };
   }
 
   // Manage servers state/logic (moved into the top script)
@@ -97,7 +110,7 @@
   $: attachEnabled = !attaching && !!newName.trim() && !!previewSpec && Object.keys(fieldErrors).length === 0;
 
   // reactive preview values
-  let previewSpec: any = null;
+  let previewSpec: TransportSpec | null = null;
   let previewJsonStr: string = "{}";
 
   // Build preview + collect errors using zod-based schema
@@ -199,8 +212,8 @@
       await new Promise((r) => setTimeout(r, 150));
       refreshSnapshot();
       attachMsg = "Attached.";
-    } catch (e: any) {
-      attachErr = e?.message || String(e);
+    } catch (e: unknown) {
+      attachErr = e instanceof Error ? e.message : String(e);
     } finally {
       attaching = false;
       setTimeout(() => {
@@ -224,8 +237,8 @@
       await new Promise((r) => setTimeout(r, 150));
       refreshSnapshot();
       attachMsg = "Detached.";
-    } catch (e: any) {
-      attachErr = e?.message || String(e);
+    } catch (e: unknown) {
+      attachErr = e instanceof Error ? e.message : String(e);
     } finally {
       attaching = false;
       setTimeout(() => {
@@ -515,18 +528,18 @@
         </div>
       </header>
       <div class="body">
-        {#if infoServer?.error}
-          <div class="err">Error: {infoServer.error}</div>
+        {#if failedInfo?.error}
+          <div class="err">Error: {failedInfo.error}</div>
         {/if}
         <div class="row">
           <div style="margin-left:auto;">
             <strong>Tools:</strong>
-            {Array.isArray(infoServer?.tools) ? infoServer.tools.length : 0}
+            {Array.isArray(runningInfo?.tools) ? runningInfo.tools.length : 0}
           </div>
         </div>
 
-        {#if infoServer?.initialize}
-          {@const init = infoServer.initialize}
+        {#if runningInfo?.initialize}
+          {@const init = runningInfo.initialize}
           <!-- Protocol details (version) not provided by InitializeResult; omit for now. -->
 
           {#if init?.instructions}
@@ -554,10 +567,10 @@
 
         <section>
           <h5>Available Tools</h5>
-          {#if Array.isArray(infoServer?.tools) && infoServer.tools.length}
+          {#if Array.isArray(runningInfo?.tools) && runningInfo.tools.length}
             <div class="tools-list modal-tools">
-              {#each infoServer.tools as tool (tool.name)}
-                {@const tkey = `${infoServer.name}:${tool?.name ?? ""}`}
+              {#each runningInfo.tools as tool (tool.name)}
+                {@const tkey = `${runningInfo.name}:${tool?.name ?? ""}`}
                 <div class="tool-item">
                   <button type="button" class="tool-header" on:click={() => toggleModalTool(tkey)}>
                     <span class="disclosure">{modalToolExpanded.get(tkey) ? "▼" : "▶"}</span>

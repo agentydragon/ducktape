@@ -6,6 +6,14 @@
 
   export let item: ToolItem;
 
+  // ToolExec renders Exec-kind content; narrow once for field access.
+  $: exec = item.content.content_kind === "Exec" ? item.content : null;
+
+  // Sandbox-exec tools carry an SBPL policy string in their untyped `args`.
+  function sbplPolicy(args: unknown): unknown {
+    return args && typeof args === "object" ? (args as Record<string, unknown>).policy : undefined;
+  }
+
   function copyText(text: string) {
     if (!text) return;
     if (navigator.clipboard?.writeText) {
@@ -24,11 +32,12 @@
   }
 
   function copyExec() {
+    const c = item.content;
+    if (c.content_kind !== "Exec") return;
     const parts: string[] = [];
-    const c: any = item?.content || {};
-    if (c?.cmd) parts.push(`$ ${c.cmd}`);
-    if (c?.stdout) parts.push(String(c.stdout));
-    if (c?.stderr) parts.push(String(c.stderr));
+    if (c.cmd) parts.push(`$ ${c.cmd}`);
+    if (c.stdout) parts.push(c.stdout);
+    if (c.stderr) parts.push(c.stderr);
     copyText(parts.join("\n"));
   }
 </script>
@@ -40,23 +49,23 @@
     <button class="copy" title="Copy output" on:click={copyExec}>Copy</button>
   </div>
   {#if typeof item.tool === "string" && item.tool.endsWith("__sandbox_exec")}
-    <JsonDisclosure label="SBPL Policy" value={(item.content as any)?.args?.policy} persistKey={`sbpl:${item.id}`} />
+    <JsonDisclosure label="SBPL Policy" value={sbplPolicy(exec?.args)} persistKey={`sbpl:${item.id}`} />
     <JsonDisclosure label="Raw output (JSON)" value={item.content} persistKey={`execraw:${item.id}`} />
   {/if}
   <div class="terminal-body">
-    {#if item.content && (item.content as any).cmd}
-      <pre class="term-line mono">$ {(item.content as any).cmd}</pre>
+    {#if exec?.cmd}
+      <pre class="term-line mono">$ {exec.cmd}</pre>
     {/if}
-    {#if item.content && (item.content as any).stdout}
-      <pre class="term-stdout mono">{(item.content as any).stdout}</pre>
+    {#if exec?.stdout}
+      <pre class="term-stdout mono">{exec.stdout}</pre>
     {/if}
-    {#if item.content && (item.content as any).stderr}
-      <pre class="term-stderr mono">{(item.content as any).stderr}</pre>
+    {#if exec?.stderr}
+      <pre class="term-stderr mono">{exec.stderr}</pre>
     {/if}
-    {#if item.content && (item.content as any).exit_code !== null && (item.content as any).exit_code !== undefined}
-      <div class="term-exit">[exit {(item.content as any).exit_code}]</div>
+    {#if exec && exec.exit_code !== null && exec.exit_code !== undefined}
+      <div class="term-exit">[exit {exec.exit_code}]</div>
     {/if}
-    {#if item.content && (item.content as any).is_error}
+    {#if exec?.is_error}
       <div class="term-error">[error]</div>
     {/if}
   </div>

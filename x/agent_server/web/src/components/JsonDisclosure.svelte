@@ -1,10 +1,17 @@
 <script lang="ts">
-  // @ts-ignore - library ships no types
+  // @ts-expect-error - json-formatter-js ships no type declarations
   import JSONFormatter from "json-formatter-js";
   import { onMount } from "svelte";
 
+  // Minimal structural type for the untyped json-formatter-js default export.
+  type JsonFormatterCtor = new (
+    json: unknown,
+    open?: number,
+    config?: { theme?: string; hoverPreviewEnabled?: boolean }
+  ) => { render(): HTMLElement };
+
   export let label: string;
-  export let value: any = null;
+  export let value: unknown = null;
   export let open: boolean = false;
   export let persistKey: string | null = null;
 
@@ -32,12 +39,12 @@
     }
   }
 
-  function jsonView(node: HTMLElement, val: any) {
+  function jsonView(node: HTMLElement, val: unknown) {
     const prefersDark =
       typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const render = (v: any) => {
+    const render = (v: unknown) => {
       node.innerHTML = "";
-      let parsed: any = null;
+      let parsed: unknown = null;
       if (v && typeof v === "object") parsed = v;
       else if (typeof v === "string") {
         try {
@@ -47,7 +54,8 @@
         }
       }
       if (parsed && typeof parsed === "object") {
-        const fmt = new (JSONFormatter as any)(parsed, 1, {
+        const Formatter = JSONFormatter as JsonFormatterCtor;
+        const fmt = new Formatter(parsed, 1, {
           theme: prefersDark ? "dark" : undefined,
           hoverPreviewEnabled: true,
         });
@@ -60,7 +68,7 @@
       }
     };
     render(val);
-    return { update: (nv: any) => render(nv) };
+    return { update: (nv: unknown) => render(nv) };
   }
 </script>
 

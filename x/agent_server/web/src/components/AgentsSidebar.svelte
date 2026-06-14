@@ -23,7 +23,7 @@
   $: selected = $currentAgentId;
   let listEl: HTMLDivElement | null = null;
   let presets: Array<{ name: string; description?: string | null }> = [];
-  let selectedPreset: string | null = null;
+  const selectedPreset: string | null = null;
   // Modal state for preset selection
   let showPresetModal = false;
   let modalPreset: string | null = null;

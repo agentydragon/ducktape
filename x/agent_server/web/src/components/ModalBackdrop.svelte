@@ -3,12 +3,12 @@
   export let onClose: (() => void) | undefined;
 
   function handleClick(e: MouseEvent) {
-    if (e.currentTarget === e.target) onClose && onClose();
+    if (e.currentTarget === e.target) onClose?.();
   }
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      onClose && onClose();
+      onClose?.();
     }
   }
 </script>

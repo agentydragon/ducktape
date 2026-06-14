@@ -6,6 +6,7 @@ import { mcpManager } from "../mcp/manager";
 
 import type { SnapshotPayload, SamplingSnapshot, UiState, ServerEntry, ApprovalPolicyInfo } from "../../shared/types";
 import type { AgentMcpClient } from "../mcp/client";
+import type { TransportSpec } from "../mcp/schema";
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null };
 
@@ -197,7 +198,7 @@ export async function abortAgent() {
   await refreshSnapshot();
 }
 
-export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
+export async function reconfigureMcp(attach?: Record<string, TransportSpec>, detach?: string[]) {
   if (!currentClient) return;
   try {
     // Use MCP tools for attach/detach via compositor_admin
@@ -220,7 +221,7 @@ export async function reconfigureMcp(attach?: Record<string, any>, detach?: stri
 /**
  * Attach a new MCP server to the current agent.
  */
-export async function attachMcpServer(name: string, spec: any): Promise<void> {
+export async function attachMcpServer(name: string, spec: TransportSpec): Promise<void> {
   if (!currentClient) {
     throw new Error("Not connected to agent");
   }
@@ -238,7 +239,7 @@ export async function detachMcpServer(name: string): Promise<void> {
 }
 
 function handleSnapshot(p: SnapshotPayload) {
-  const sampling: SamplingSnapshot | undefined = p.sampling as any;
+  const sampling: SamplingSnapshot | undefined = p.sampling;
   if (sampling) {
     mcpServerEntries.set(sampling.servers || []);
   }

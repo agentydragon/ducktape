@@ -21,5 +21,5 @@ export function setAgentId(id?: string | null) {
 if (typeof window !== "undefined") {
   const update = () => currentAgentId.set(getAgentIdFromUrl());
   window.addEventListener("popstate", update);
-  window.addEventListener("agent_id_changed", update as any);
+  window.addEventListener("agent_id_changed", update as EventListener);
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { prefs } from "./prefs";
+import { prefs, type Prefs } from "./prefs";
 
 describe("prefs store", () => {
   beforeEach(() => {
@@ -8,7 +8,7 @@ describe("prefs store", () => {
   });
 
   it("initializes with defaults when no storage", async () => {
-    let val: any;
+    let val: Prefs | undefined;
     const unsub = prefs.subscribe((v) => {
       val = v;
     });

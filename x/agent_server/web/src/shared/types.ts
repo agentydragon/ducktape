@@ -1,5 +1,7 @@
 // Shared typed models mirroring backend API and WS payloads
 
+import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
+
 export type AgentRow = {
   id: string;
   created_at?: string;
@@ -23,8 +25,8 @@ export type DeleteResponse = { ok: boolean; error?: string };
 export type McpTool = {
   name: string;
   description?: string;
-  // Matches backend payload shape
-  inputSchema?: Record<string, any>;
+  // Matches backend payload shape (JSON Schema object)
+  inputSchema?: Record<string, unknown>;
 };
 
 // Align with InitializeResult (camelCase) from MCP types; the backend passes it as-is now.
@@ -34,7 +36,7 @@ export type ServerResourcesCaps = {
 
 export type InitializeView = {
   instructions?: string | null;
-  serverInfo?: any;
+  serverInfo?: Implementation | null;
   capabilities?: ServerResourcesCaps | null;
 };
 
