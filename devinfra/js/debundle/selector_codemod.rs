@@ -642,10 +642,6 @@ enum SelectorAnchorFeature {
     ClassMember(String),
     ObjectKey(String),
     CallCallee(String),
-    StringLiteral(String),
-    NumberLiteral(String),
-    BoolLiteral(bool),
-    NullLiteral,
 }
 
 #[derive(Debug)]
@@ -1407,14 +1403,16 @@ fn synthesize_specialized_var_selector(
     let mut slot_constraints = vec![BTreeSet::new(); targets.len()];
     let mut frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
     if !target_tuple_is_unique(&frontier, decl, &target_slots) {
-        slot_constraints = select_min_cost_var_slot_constraints(
+        let Some(selected_constraints) = select_min_cost_var_slot_constraints(
             index,
             var.kind,
             targets.len(),
             decl,
             &target_slots,
-        )
-        .unwrap_or_default();
+        ) else {
+            return Ok(None);
+        };
+        slot_constraints = selected_constraints;
         frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
         if !target_tuple_is_unique(&frontier, decl, &target_slots) {
             return Ok(None);
@@ -1806,8 +1804,6 @@ fn feature_cost(feature: &SelectorAnchorFeature) -> usize {
         | SelectorAnchorFeature::FunctionArity(_) => 0,
         SelectorAnchorFeature::ObjectKey(_) | SelectorAnchorFeature::ClassMember(_) => 1,
         SelectorAnchorFeature::CallCallee(_) => 2,
-        SelectorAnchorFeature::BoolLiteral(_) | SelectorAnchorFeature::NullLiteral => 3,
-        SelectorAnchorFeature::StringLiteral(_) | SelectorAnchorFeature::NumberLiteral(_) => 4,
     }
 }
 
@@ -1839,102 +1835,16 @@ fn selector_anchor_features_for_item(
                 var_kind_label(var.kind).to_string(),
             ));
         }
-        _ => {}
-    }
-    let mut collector = SelectorAnchorFeatureCollector::default();
-    item.visit_with(&mut collector);
-    features.extend(collector.features);
-    features
-}
-
-#[derive(Default)]
-struct SelectorAnchorFeatureCollector {
-    features: BTreeSet<SelectorAnchorFeature>,
-}
-
-impl Visit for SelectorAnchorFeatureCollector {
-    fn visit_expr(&mut self, expr: &Expr) {
-        if is_hole_expr(expr) {
-            return;
-        }
-        collect_expr_anchor_features(expr, &mut self.features);
-        expr.visit_children_with(self);
-    }
-
-    fn visit_prop_or_spread(&mut self, prop_or_spread: &PropOrSpread) {
-        if is_object_property_hole(prop_or_spread) {
-            return;
-        }
-        if let PropOrSpread::Prop(prop) = prop_or_spread
-            && let Some(name) = prop_key_name(prop.as_ref())
-        {
-            self.features.insert(SelectorAnchorFeature::ObjectKey(name));
-        }
-        prop_or_spread.visit_children_with(self);
-    }
-
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        if is_class_rest_hole_member(member) {
-            return;
-        }
-        if let Some(name) = class_member_feature_name(member) {
-            self.features
-                .insert(SelectorAnchorFeature::ClassMember(name));
-        }
-        member.visit_children_with(self);
-    }
-}
-
-fn collect_expr_anchor_features(expr: &Expr, features: &mut BTreeSet<SelectorAnchorFeature>) {
-    if is_hole_expr(expr) {
-        return;
-    }
-    match expr {
-        Expr::Call(call) => {
-            if let Some(callee) = call_callee_feature_name(&call.callee) {
-                features.insert(SelectorAnchorFeature::CallCallee(callee));
-            }
-            for arg in &call.args {
-                collect_expr_anchor_features(&arg.expr, features);
-            }
-        }
-        Expr::Object(object) => {
-            for prop in &object.props {
-                if let PropOrSpread::Prop(prop) = prop
-                    && let Some(name) = prop_key_name(prop.as_ref())
-                {
-                    features.insert(SelectorAnchorFeature::ObjectKey(name));
+        Some(Decl::Class(class)) => {
+            for member in &class.class.body {
+                if let Some(name) = class_member_feature_name(member) {
+                    features.insert(SelectorAnchorFeature::ClassMember(name));
                 }
             }
-            let mut collector = SelectorAnchorFeatureCollector::default();
-            object.visit_children_with(&mut collector);
-            features.extend(collector.features);
         }
-        Expr::Lit(lit) => match lit {
-            Lit::Str(value) => {
-                features.insert(SelectorAnchorFeature::StringLiteral(
-                    value.value.to_string_lossy().to_string(),
-                ));
-            }
-            Lit::Num(value) => {
-                features.insert(SelectorAnchorFeature::NumberLiteral(
-                    value.value.to_string(),
-                ));
-            }
-            Lit::Bool(value) => {
-                features.insert(SelectorAnchorFeature::BoolLiteral(value.value));
-            }
-            Lit::Null(_) => {
-                features.insert(SelectorAnchorFeature::NullLiteral);
-            }
-            _ => {}
-        },
-        _ => {
-            let mut collector = SelectorAnchorFeatureCollector::default();
-            expr.visit_children_with(&mut collector);
-            features.extend(collector.features);
-        }
+        _ => {}
     }
+    features
 }
 
 fn collect_renderable_var_anchor_features(
@@ -2377,23 +2287,6 @@ fn expr_feature_name(expr: &Expr) -> Option<String> {
 
 fn is_hole_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Ident(ident) if is_hole_name(ident.sym.as_ref()))
-}
-
-fn is_object_property_hole(prop_or_spread: &PropOrSpread) -> bool {
-    matches!(
-        prop_or_spread,
-        PropOrSpread::Prop(prop)
-            if matches!(prop.as_ref(), Prop::Shorthand(ident) if is_hole_name(ident.sym.as_ref()))
-    )
-}
-
-fn is_class_rest_hole_member(member: &ClassMember) -> bool {
-    matches!(
-        member,
-        ClassMember::ClassProp(prop)
-            if prop.value.is_none()
-                && matches!(&prop.key, PropName::Ident(ident) if is_hole_name(ident.sym.as_ref()))
-    )
 }
 
 fn is_hole_name(name: &str) -> bool {
