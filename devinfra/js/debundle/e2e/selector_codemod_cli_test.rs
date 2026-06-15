@@ -393,6 +393,62 @@ fn synthesis_group_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     (modules, source)
 }
 
+fn synthesis_branch_and_bound_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        concat!(
+            "const selectedConfig = makeConfig({\n",
+            "  alphaKey: computeValue(\"selected-alpha\"),\n",
+            "  betaKey: computeValue(\"selected-beta\"),\n",
+            "  gammaKey: computeValue(\"selected-gamma\"),\n",
+            "  deltaKey: computeValue(\"selected-delta\"),\n",
+            "  epsilonKey: computeValue(\"selected-epsilon\"),\n",
+            "});\n",
+            "const competitorOne = makeConfig({\n",
+            "  alphaKey: computeValue(\"one-alpha\"),\n",
+            "  betaKey: computeValue(\"one-beta\"),\n",
+            "  deltaKey: computeValue(\"one-delta\"),\n",
+            "});\n",
+            "const competitorTwo = makeConfig({\n",
+            "  alphaKey: computeValue(\"two-alpha\"),\n",
+            "  gammaKey: computeValue(\"two-gamma\"),\n",
+            "  epsilonKey: computeValue(\"two-epsilon\"),\n",
+            "});\n",
+            "const competitorThree = makeConfig({\n",
+            "  betaKey: computeValue(\"three-beta\"),\n",
+            "});\n",
+            "const competitorFour = makeConfig({\n",
+            "  gammaKey: computeValue(\"four-gamma\"),\n",
+            "});\n",
+            "const competitorAlphaBeta = makeConfig({ alphaKey: 1, betaKey: 1 });\n",
+            "const competitorAlphaGamma = makeConfig({ alphaKey: 1, gammaKey: 1 });\n",
+            "const competitorAlphaDelta = makeConfig({ alphaKey: 1, deltaKey: 1 });\n",
+            "const competitorAlphaEpsilon = makeConfig({ alphaKey: 1, epsilonKey: 1 });\n",
+            "const competitorBetaDelta = makeConfig({ betaKey: 1, deltaKey: 1 });\n",
+            "const competitorBetaEpsilon = makeConfig({ betaKey: 1, epsilonKey: 1 });\n",
+            "const competitorGammaDelta = makeConfig({ gammaKey: 1, deltaKey: 1 });\n",
+            "const competitorGammaEpsilon = makeConfig({ gammaKey: 1, epsilonKey: 1 });\n",
+            "const competitorDeltaEpsilon = makeConfig({ deltaKey: 1, epsilonKey: 1 });\n",
+            "function makeConfig(value) { return value; }\n",
+            "function computeValue(value) { return value; }\n",
+            "console.log(selectedConfig, competitorOne, competitorTwo, competitorThree, competitorFour);\n",
+            "export { selectedConfig };\n",
+        ),
+    );
+    let modules = root.join("modules");
+    write(
+        &modules.join("app/search.yaml"),
+        r#"members:
+  - name: SelectedConfig
+    selector:
+      binding:
+        name: selectedConfig
+"#,
+    );
+    (modules, source)
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -664,6 +720,49 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     assert!(
         !match_source.contains("volatileA") && !match_source.contains("volatileB"),
         "irrelevant object properties should not be copied:\n{match_source}"
+    );
+}
+
+#[test]
+fn synthesize_selectors_uses_global_minimum_anchor_set_not_greedy_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_branch_and_bound_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/search:SelectedConfig",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+
+    let rewritten = fs::read_to_string(modules.join("app/search.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
+        .as_str()
+        .unwrap();
+    assert!(
+        match_source.contains("betaKey: ANYTHING"),
+        "betaKey is part of the minimum two-anchor solution:\n{match_source}"
+    );
+    assert!(
+        match_source.contains("gammaKey: ANYTHING"),
+        "gammaKey is part of the minimum two-anchor solution:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("alphaKey"),
+        "locally attractive alphaKey would force a three-anchor greedy solution:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("deltaKey") && !match_source.contains("epsilonKey"),
+        "non-minimum tie-breaker keys should not be copied:\n{match_source}"
     );
 }
 

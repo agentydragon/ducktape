@@ -31,6 +31,7 @@ const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
 const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
 const MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL: usize = 4096;
+const MAX_VAR_FEATURE_SEARCH_NODES: usize = 200_000;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1404,42 +1405,20 @@ fn synthesize_specialized_var_selector(
     }
     let target_decl_indices = target_slots.iter().copied().collect::<BTreeSet<_>>();
     let mut slot_constraints = vec![BTreeSet::new(); targets.len()];
-    let mut selected_feature_order = Vec::new();
     let mut frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
     if !target_tuple_is_unique(&frontier, decl, &target_slots) {
-        let mut feature_options = target_initializer_features(var, &target_slots);
-        feature_options.sort_by(|(a_pos, a), (b_pos, b)| {
-            feature_cost(a)
-                .cmp(&feature_cost(b))
-                .then_with(|| {
-                    tuple_feature_discrimination(index, var.kind, targets.len(), *a_pos, a).cmp(
-                        &tuple_feature_discrimination(index, var.kind, targets.len(), *b_pos, b),
-                    )
-                })
-                .then_with(|| a_pos.cmp(b_pos))
-                .then_with(|| a.cmp(b))
-        });
-        for (target_pos, feature) in feature_options {
-            if slot_constraints[target_pos].insert(feature.clone()) {
-                selected_feature_order.push((target_pos, feature));
-            }
-            frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
-            if target_tuple_is_unique(&frontier, decl, &target_slots) {
-                break;
-            }
-        }
-        if !target_tuple_is_unique(&frontier, decl, &target_slots) {
-            return Ok(None);
-        }
-        prune_redundant_slot_constraints(
+        slot_constraints = select_min_cost_var_slot_constraints(
             index,
             var.kind,
             targets.len(),
             decl,
             &target_slots,
-            &selected_feature_order,
-            &mut slot_constraints,
-        );
+        )
+        .unwrap_or_default();
+        frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
+        if !target_tuple_is_unique(&frontier, decl, &target_slots) {
+            return Ok(None);
+        }
     }
 
     let export_by_runtime = targets
@@ -1499,59 +1478,353 @@ fn frontier_is_small_and_contains_target(
     frontier.contains(&decl.body_idx) && frontier.len() == 1
 }
 
-fn target_initializer_features(
-    var: &VarDecl,
-    target_slots: &[usize],
-) -> Vec<(usize, SelectorAnchorFeature)> {
-    let mut features = BTreeSet::new();
-    for (target_pos, slot) in target_slots.iter().enumerate() {
-        if let Some(init) = var
-            .decls
-            .get(*slot)
-            .and_then(|declarator| declarator.init.as_deref())
-        {
-            let mut slot_features = BTreeSet::new();
-            collect_renderable_var_anchor_features(init, &mut slot_features);
-            features.extend(
-                slot_features
-                    .into_iter()
-                    .map(|feature| (target_pos, feature)),
-            );
-        }
-    }
-    features.into_iter().collect()
-}
-
-fn tuple_feature_discrimination(
-    index: &ChunkSelectorIndex,
-    var_kind: VarDeclKind,
-    target_count: usize,
-    target_pos: usize,
-    feature: &SelectorAnchorFeature,
-) -> usize {
-    let mut slot_constraints = vec![BTreeSet::new(); target_count];
-    slot_constraints[target_pos].insert(feature.clone());
-    var_group_frontier(index, var_kind, target_count, &slot_constraints).len()
-}
-
-fn prune_redundant_slot_constraints(
+fn select_min_cost_var_slot_constraints(
     index: &ChunkSelectorIndex,
     var_kind: VarDeclKind,
     target_count: usize,
     decl: &IndexedDeclaration,
     target_slots: &[usize],
-    selected_feature_order: &[(usize, SelectorAnchorFeature)],
-    slot_constraints: &mut [BTreeSet<SelectorAnchorFeature>],
-) {
-    for (target_pos, feature) in selected_feature_order.iter().rev() {
-        if !slot_constraints[*target_pos].remove(feature) {
-            continue;
+) -> Option<Vec<BTreeSet<SelectorAnchorFeature>>> {
+    let empty_constraints = vec![BTreeSet::new(); target_count];
+    let tuples = var_group_frontier(index, var_kind, target_count, &empty_constraints)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let target_tuple = VarGroupTuple {
+        body_idx: decl.body_idx,
+        slots: target_slots.to_vec(),
+    };
+    let target_tuple_idx = tuples.iter().position(|tuple| tuple == &target_tuple)?;
+    let competitors = tuples
+        .iter()
+        .enumerate()
+        .filter_map(|(tuple_idx, _)| (tuple_idx != target_tuple_idx).then_some(tuple_idx))
+        .collect::<BTreeSet<_>>();
+    if competitors.is_empty() {
+        return Some(empty_constraints);
+    }
+
+    let options = var_slot_feature_options(index, &tuples[target_tuple_idx], target_count);
+    if options.is_empty() {
+        return None;
+    }
+    let option_covers = options
+        .iter()
+        .map(|option| {
+            competitors
+                .iter()
+                .filter_map(|tuple_idx| {
+                    (!var_group_tuple_has_slot_feature(index, &tuples[*tuple_idx], option))
+                        .then_some(*tuple_idx)
+                })
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let usable_options = options
+        .into_iter()
+        .zip(option_covers)
+        .filter(|(_, covered)| !covered.is_empty())
+        .map(|(option, covered)| VarSlotSearchOption { option, covered })
+        .collect::<Vec<_>>();
+    if usable_options.is_empty() {
+        return None;
+    }
+
+    let mut search = VarSlotConstraintSearch::new(usable_options, competitors);
+    search.solve().map(|selected| {
+        let mut slot_constraints = vec![BTreeSet::new(); target_count];
+        for option_idx in selected {
+            let option = &search.options[option_idx].option;
+            slot_constraints[option.target_pos].insert(option.feature.clone());
         }
-        let frontier = var_group_frontier(index, var_kind, target_count, slot_constraints);
-        if !target_tuple_is_unique(&frontier, decl, target_slots) {
-            slot_constraints[*target_pos].insert(feature.clone());
+        slot_constraints
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct VarSlotFeatureOption {
+    target_pos: usize,
+    feature: SelectorAnchorFeature,
+}
+
+#[derive(Debug)]
+struct VarSlotSearchOption {
+    option: VarSlotFeatureOption,
+    covered: BTreeSet<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct SelectorSearchCost {
+    weighted_features: usize,
+    feature_count: usize,
+}
+
+impl SelectorSearchCost {
+    const ZERO: Self = Self {
+        weighted_features: 0,
+        feature_count: 0,
+    };
+
+    fn add(self, feature: &SelectorAnchorFeature) -> Self {
+        Self {
+            weighted_features: self.weighted_features + feature_cost(feature),
+            feature_count: self.feature_count + 1,
         }
     }
+}
+
+fn var_slot_feature_options(
+    index: &ChunkSelectorIndex,
+    target_tuple: &VarGroupTuple,
+    target_count: usize,
+) -> Vec<VarSlotFeatureOption> {
+    (0..target_count)
+        .flat_map(|target_pos| {
+            var_group_tuple_slot_features(index, target_tuple, target_pos)
+                .into_iter()
+                .map(move |feature| VarSlotFeatureOption {
+                    target_pos,
+                    feature,
+                })
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn var_group_tuple_has_slot_feature(
+    index: &ChunkSelectorIndex,
+    tuple: &VarGroupTuple,
+    option: &VarSlotFeatureOption,
+) -> bool {
+    var_group_tuple_slot_features(index, tuple, option.target_pos).contains(&option.feature)
+}
+
+fn var_group_tuple_slot_features(
+    index: &ChunkSelectorIndex,
+    tuple: &VarGroupTuple,
+    target_pos: usize,
+) -> BTreeSet<SelectorAnchorFeature> {
+    let Some(slot) = tuple.slots.get(target_pos) else {
+        return BTreeSet::new();
+    };
+    let Some(var) = var_decl_at_body_index(index, tuple.body_idx) else {
+        return BTreeSet::new();
+    };
+    let Some(init) = var
+        .decls
+        .get(*slot)
+        .and_then(|declarator| declarator.init.as_deref())
+    else {
+        return BTreeSet::new();
+    };
+    let mut features = BTreeSet::new();
+    collect_renderable_var_anchor_features(init, &mut features);
+    features
+}
+
+fn var_decl_at_body_index(index: &ChunkSelectorIndex, body_idx: usize) -> Option<&VarDecl> {
+    match index.parsed.module.body.get(body_idx)? {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })) => Some(var),
+        _ => None,
+    }
+}
+
+struct VarSlotConstraintSearch {
+    options: Vec<VarSlotSearchOption>,
+    uncovered_initial: BTreeSet<usize>,
+    options_covering_competitor: BTreeMap<usize, Vec<usize>>,
+    best: Option<(SelectorSearchCost, Vec<usize>)>,
+    memo: BTreeMap<BTreeSet<usize>, SelectorSearchCost>,
+    nodes: usize,
+}
+
+impl VarSlotConstraintSearch {
+    fn new(options: Vec<VarSlotSearchOption>, uncovered_initial: BTreeSet<usize>) -> Self {
+        let mut options_covering_competitor: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (option_idx, option) in options.iter().enumerate() {
+            for tuple_idx in &option.covered {
+                options_covering_competitor
+                    .entry(*tuple_idx)
+                    .or_default()
+                    .push(option_idx);
+            }
+        }
+        for option_indices in options_covering_competitor.values_mut() {
+            option_indices
+                .sort_by(|a, b| option_sort_key(&options[*a]).cmp(&option_sort_key(&options[*b])));
+        }
+        Self {
+            options,
+            uncovered_initial,
+            options_covering_competitor,
+            best: None,
+            memo: BTreeMap::new(),
+            nodes: 0,
+        }
+    }
+
+    fn solve(&mut self) -> Option<Vec<usize>> {
+        let greedy = self.greedy_upper_bound()?;
+        self.best = Some(greedy);
+        self.branch(
+            self.uncovered_initial.clone(),
+            Vec::new(),
+            BTreeSet::new(),
+            SelectorSearchCost::ZERO,
+        );
+        self.best.as_ref().map(|(_, selected)| selected.clone())
+    }
+
+    fn greedy_upper_bound(&self) -> Option<(SelectorSearchCost, Vec<usize>)> {
+        let mut uncovered = self.uncovered_initial.clone();
+        let mut selected = Vec::new();
+        let mut selected_set = BTreeSet::new();
+        let mut cost = SelectorSearchCost::ZERO;
+        while !uncovered.is_empty() {
+            let (option_idx, _) = self
+                .options
+                .iter()
+                .enumerate()
+                .filter(|(option_idx, _)| !selected_set.contains(option_idx))
+                .map(|(option_idx, option)| {
+                    let covered_count = option.covered.intersection(&uncovered).count();
+                    (option_idx, covered_count)
+                })
+                .filter(|(_, covered_count)| *covered_count > 0)
+                .max_by(|(a_idx, a_covered), (b_idx, b_covered)| {
+                    a_covered.cmp(b_covered).then_with(|| {
+                        option_sort_key(&self.options[*b_idx])
+                            .cmp(&option_sort_key(&self.options[*a_idx]))
+                    })
+                })?;
+            selected_set.insert(option_idx);
+            selected.push(option_idx);
+            cost = cost.add(&self.options[option_idx].option.feature);
+            uncovered = uncovered
+                .difference(&self.options[option_idx].covered)
+                .copied()
+                .collect();
+        }
+        selected.sort_by(|a, b| {
+            option_sort_key(&self.options[*a]).cmp(&option_sort_key(&self.options[*b]))
+        });
+        Some((cost, selected))
+    }
+
+    fn branch(
+        &mut self,
+        uncovered: BTreeSet<usize>,
+        selected: Vec<usize>,
+        selected_set: BTreeSet<usize>,
+        cost: SelectorSearchCost,
+    ) {
+        self.nodes += 1;
+        if self.nodes > MAX_VAR_FEATURE_SEARCH_NODES {
+            return;
+        }
+        if let Some((best_cost, _)) = &self.best
+            && cost >= *best_cost
+        {
+            return;
+        }
+        if uncovered.is_empty() {
+            let mut normalized = selected;
+            normalized.sort_by(|a, b| {
+                option_sort_key(&self.options[*a]).cmp(&option_sort_key(&self.options[*b]))
+            });
+            let replace = self.best.as_ref().is_none_or(|(best_cost, best_selected)| {
+                cost < *best_cost
+                    || (cost == *best_cost
+                        && selected_sort_key(&self.options, &normalized)
+                            < selected_sort_key(&self.options, best_selected))
+            });
+            if replace {
+                self.best = Some((cost, normalized));
+            }
+            return;
+        }
+        if self
+            .memo
+            .get(&uncovered)
+            .is_some_and(|seen_cost| *seen_cost <= cost)
+        {
+            return;
+        }
+        self.memo.insert(uncovered.clone(), cost);
+
+        let Some(pivot) = self.best_pivot_competitor(&uncovered, &selected_set) else {
+            return;
+        };
+        let Some(option_indices) = self.options_covering_competitor.get(&pivot).cloned() else {
+            return;
+        };
+        for option_idx in option_indices {
+            if selected_set.contains(&option_idx) {
+                continue;
+            }
+            let option = &self.options[option_idx];
+            let new_uncovered = uncovered
+                .difference(&option.covered)
+                .copied()
+                .collect::<BTreeSet<_>>();
+            if new_uncovered.len() == uncovered.len() {
+                continue;
+            }
+            let new_cost = cost.add(&option.option.feature);
+            if let Some((best_cost, _)) = &self.best
+                && new_cost >= *best_cost
+            {
+                continue;
+            }
+            let mut new_selected = selected.clone();
+            new_selected.push(option_idx);
+            let mut new_selected_set = selected_set.clone();
+            new_selected_set.insert(option_idx);
+            self.branch(new_uncovered, new_selected, new_selected_set, new_cost);
+        }
+    }
+
+    fn best_pivot_competitor(
+        &self,
+        uncovered: &BTreeSet<usize>,
+        selected_set: &BTreeSet<usize>,
+    ) -> Option<usize> {
+        uncovered
+            .iter()
+            .filter_map(|tuple_idx| {
+                let covering_options = self.options_covering_competitor.get(tuple_idx)?;
+                let available_count = covering_options
+                    .iter()
+                    .filter(|option_idx| !selected_set.contains(option_idx))
+                    .count();
+                (available_count > 0).then_some((*tuple_idx, available_count))
+            })
+            .min_by_key(|(tuple_idx, available_count)| (*available_count, *tuple_idx))
+            .map(|(tuple_idx, _)| tuple_idx)
+    }
+}
+
+fn option_sort_key(option: &VarSlotSearchOption) -> (usize, usize, usize, &SelectorAnchorFeature) {
+    (
+        feature_cost(&option.option.feature),
+        option.option.target_pos,
+        usize::MAX - option.covered.len(),
+        &option.option.feature,
+    )
+}
+
+fn selected_sort_key<'a>(
+    options: &'a [VarSlotSearchOption],
+    selected: &'a [usize],
+) -> Vec<(usize, usize, usize, &'a SelectorAnchorFeature)> {
+    selected
+        .iter()
+        .map(|option_idx| option_sort_key(&options[*option_idx]))
+        .collect()
 }
 
 fn feature_cost(feature: &SelectorAnchorFeature) -> usize {
