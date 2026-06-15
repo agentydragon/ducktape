@@ -36,7 +36,16 @@ progress output and a resumable or cacheable plan.
    holes, prefer `ANYTHING` / `EXPR` / `OBJECT_PROPS` / `DECLARATORS` /
    `CLASS_REST` / `ARGS` / `STMT_LIST` over long incidental code bodies, use
    source indexes to count candidates cheaply, and verify the final selector
-   through the real resolver. The first indexed slice covers exact
+   through the real resolver. Model this as a best-first or branch-and-bound
+   search over an AST-feature constraint lattice, not as string rewriting in a
+   fixed direction: exact source is a known-working upper bound, the loose hole
+   selector is a lower bound, and candidate selectors are subsets or
+   generalizations of target AST constraints. Maintain candidate match sets
+   with indexed bitsets, add or remove constraints by set operations, and avoid
+   full-matcher trial loops over every removable subtree. Binding groups should
+   use the same approach over `(declaration/range, target-slot mapping)` match
+   sets and should choose group vs repeated selectors by total selector cost.
+   The first indexed slice covers exact
    function/class declaration recovery and multi-declarator `var`/`let`/
    `const` groups selected from name-only members, with `DECLARATORS_*` gap
    holes and uniqueness proof. Grow that into the general primitive for

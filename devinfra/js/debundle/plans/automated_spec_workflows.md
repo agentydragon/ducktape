@@ -130,16 +130,50 @@ be a first-class operation. "Simplest" does not mean merely shortest, and it
 does not mean exact current-source reproduction; it means the lowest-cost
 selector that is expected to survive unrelated source drift while still
 matching only the target today. For a target binding, group, or anonymous
-statement:
+statement, model minimization as a search over an AST-feature constraint
+lattice:
 
-1. Start from an exact source slice known to select the desired entity.
-2. Generate relaxations by replacing low-signal subtrees with holes and by
-   shrinking context windows.
-3. Use source-inventory indexes to cheaply count possible matches before
-   invoking the full matcher.
-4. Verify final candidates through the real selector resolver.
-5. Emit the lowest-cost unique selector and structured rejected alternatives
-   when useful for diagnostics.
+1. Use exact source as the target AST and a known-working upper bound. Use the
+   loosest syntactically valid hole selector for the target kind as the lower
+   bound. The implementation may traverse from either side, but it should
+   reason about candidate selectors as constraint sets between those bounds.
+2. Index stable target features once per chunk. Features should include
+   declaration kind, arity, declarator slot, literal/key/operator/callee/member
+   shape, class member names, object-property keys, statement-kind sequence,
+   and small context-window anchors.
+3. Represent each feature or partial selector by its denotation: an efficient
+   bitset of candidate statements, declarations, declarators, ranges, or slot
+   mappings from the source inventory.
+4. Search for the lowest-cost selector whose denotation is unique. Adding a
+   constraint is set intersection; removing a constraint or replacing a subtree
+   with a hole is generalization. A best-first or branch-and-bound search can
+   use denotation size and remaining differentiating features as pruning
+   evidence.
+5. Use a cost model that prefers low-cost stable anchors that cut the candidate
+   set sharply, and assigns high cost to long exact function bodies, object
+   values, class bodies, anonymous statement runs, and nested expressions.
+6. Verify final candidates through the real selector resolver and emit the
+   lowest-cost unique selector plus structured rejected alternatives when useful
+   for diagnostics.
+
+Avoid an algorithm shaped like "try every subtree deletion and run the full
+matcher each time"; on large chunks that is roughly
+`O(selector_nodes * candidate_statements * matcher_cost)` per selector. The
+target shape is closer to `O(chunk_ast_size + feature_count + search_frontier *
+bitset_cost + proof_matcher_cost)` after the inventory is built, with the full
+matcher used as a verifier rather than the inner loop.
+
+Binding groups need the same treatment, but their candidate universe is
+declaration/range plus slot mapping rather than one statement. The inventory
+should index each top-level declaration or statement range with ordered
+bindings/declarators and stable range features. A group minimizer should
+maintain a bitset of possible `(declaration_or_range_id, target_slot_mapping)`
+tuples. Shared declaration constraints and per-target slot constraints are
+ordinary features in the same lattice. The cost model should compare one
+`binding_groups` selector against repeated member selectors: prefer the group
+when shared stable context makes it cheaper and more forward-compatible, but
+split the group if one huge selector would need long exact bodies or volatile
+initializers to be unique.
 
 Over-narrow selectors should be reported as debt even if they currently match.
 Examples include long function bodies where the signature plus a stable literal
