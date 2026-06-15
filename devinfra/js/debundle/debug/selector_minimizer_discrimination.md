@@ -213,3 +213,70 @@ Each step is validated against the expectation suite (compared through swc). If
 the minimizer finds an equivalently-minimal-or-better shape than a fixture, the
 fixture is updated to the produced `f(input)=output` (per the suite's own
 preamble) rather than forcing the old bytes.
+
+## Regex-over-string-literal anchors (`STR_LITERAL_MATCHING_RE`)
+
+Status: landed for the var-binding minimizer path (2026-06-15).
+
+A var-binding selector that pins an exact string literal
+(`const x = load("chunk-a1b2c3")`) breaks the moment a rebuild perturbs a
+volatile fragment of that literal (content hashes, build counters). When the
+_stable_ part of the literal already discriminates the target from its
+siblings, the minimizer now offers a regex anchor that pins the stable
+structure and wildcards the volatile tail, so the selector survives the rebuild.
+
+### Where it plugs in
+
+`minimize_var_group_selector` (single-target and group var declarations; the
+single is the N=1 group). It runs as an **upgrade pass after the normal
+keep-shallow cover already resolves uniquely**: regex never participates in
+finding the initial discriminating cover, so it cannot make the minimizer pick a
+worse cover. It only rewrites literals the cover already kept.
+
+### Derivation rule (`regex_anchor_pattern`)
+
+Conservative, trailing-volatility-only:
+
+- The literal must end in a _volatile tail_ — a trailing run of hex/digit
+  characters at least `MIN_VOLATILE_TAIL_LEN` (= 4) chars long. Shorter numeric
+  suffixes (`v2`, `s3`) are left alone: they are more often meaningful than
+  generated.
+- The pattern is `^<escaped stable prefix><tail class>$`. The prefix is run
+  through `regex::escape`, so every metacharacter in the literal is matched
+  literally; the only wildcard introduced is the tail character class
+  (`[0-9]+` when the tail is pure decimal, else `[0-9A-Fa-f]+`). Anchors `^`/`$`
+  are required because `string_literal_matches_regex` uses `Regex::is_match`,
+  which is otherwise a substring test.
+- A separator immediately before the tail (`chunk-`, `main.`) stays _inside_ the
+  pinned prefix, which is the conservative choice (one fewer wildcarded char).
+- If the whole literal would be the volatile tail (empty or separator-only
+  prefix), we return `None`: `^[0-9]+$` pins nothing meaningful and rarely
+  discriminates. A pattern that fails to compile as `regex::Regex` is likewise
+  never produced.
+
+### How the cover chooses it (gate 1 preserved)
+
+For each kept string literal with a derivable pattern, the minimizer tentatively
+substitutes the `STR_LITERAL_MATCHING_RE` predicate (via a span-keyed
+`VisitMut` post-pass on the holed init) and **re-runs `prove_synthesized_selector`**.
+The upgrade is accepted only if the selector still resolves uniquely to the
+intended binding; otherwise the exact literal is restored. Upgrades are applied
+one literal at a time, so an over-broad pattern on one literal cannot block a
+sound upgrade on another. Because the proof re-parses the rendered string and
+runs the production matcher (which already interprets the predicate), an
+over-broad regex that would match a sibling is rejected, never emitted.
+
+### Deliberate limits / judgment calls to revisit
+
+- **Trailing hex/digit only.** Embedded volatility (`main.4f3a.chunk.js`),
+  GUID/UUID shapes, and base64 content hashes are not modeled. They are the
+  obvious next extensions if dogfooding shows them common.
+- **`MIN_VOLATILE_TAIL_LEN = 4`** is a guess at the meaningful-vs-generated
+  boundary; a real bundler corpus may want it tuned (e.g. 6–8 for hashes).
+- **Hex-vs-decimal class choice** treats an all-decimal tail as `[0-9]+`. A tail
+  like `1234` is ambiguous (could be a short hex hash) but the tighter decimal
+  class is the more honest wildcard for the value we actually saw.
+- **Function/class body literals are not yet upgraded** — only the var-binding
+  path, per the immediate need ("variables binding style literals"). The same
+  `RegexAnchorSubstitution` post-pass could be wired into
+  `minimize_via_retention` if wanted.
