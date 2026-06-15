@@ -1415,6 +1415,8 @@ fn synthesize_specialized_var_selector(
         if let Some(minimized) = minimize_var_selector(index, var, decl, target)? {
             return Ok(Some(minimized));
         }
+    } else if let Some(minimized) = minimize_var_group_selector(index, var, decl, targets)? {
+        return Ok(Some(minimized));
     }
     let target_slots = targets
         .iter()
@@ -2472,8 +2474,8 @@ fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
 /// than a literal buried inside `mk("primary")`.
 #[derive(Default)]
 struct AnchorCandidates {
-    /// `(span, call-nesting depth)` for each literal anchor.
-    literals: Vec<(AnchorSpan, u32)>,
+    /// `(span, call-nesting depth, is-object-property-value)` for each literal.
+    literals: Vec<(AnchorSpan, u32, bool)>,
     structural: Vec<AnchorSpan>,
 }
 
@@ -2496,12 +2498,12 @@ impl AnchorCandidates {
         let literal_tier = |depth: u32| -> Vec<AnchorSpan> {
             self.literals
                 .iter()
-                .filter(|(_, anchor_depth)| *anchor_depth == depth)
-                .map(|(span, _)| *span)
+                .filter(|(_, anchor_depth, _)| *anchor_depth == depth)
+                .map(|(span, _, _)| *span)
                 .collect()
         };
         let mut tiers = Vec::new();
-        let Some(max_depth) = self.literals.iter().map(|(_, depth)| *depth).max() else {
+        let Some(max_depth) = self.literals.iter().map(|(_, depth, _)| *depth).max() else {
             if !self.structural.is_empty() {
                 tiers.push(self.structural.clone());
             }
@@ -2520,6 +2522,39 @@ impl AnchorCandidates {
             let tier = literal_tier(depth);
             if !tier.is_empty() {
                 tiers.push(tier);
+            }
+        }
+        tiers
+    }
+
+    /// Shallow literal anchors — direct values/args worth keeping as meaningful
+    /// per-slot pins even when structure alone would already discriminate.
+    fn shallow_literals(&self) -> Vec<AnchorSpan> {
+        self.literals
+            .iter()
+            .filter(|(_, depth, in_object)| *depth <= SHALLOW_LITERAL_DEPTH && !in_object)
+            .map(|(span, _, _)| *span)
+            .collect()
+    }
+
+    /// Tiers consulted only when shallow literals are not enough on their own:
+    /// structural key/member presence, then deeper literals by ascending depth.
+    fn deep_cover_tiers(&self) -> Vec<Vec<AnchorSpan>> {
+        let mut tiers = Vec::new();
+        if !self.structural.is_empty() {
+            tiers.push(self.structural.clone());
+        }
+        if let Some(max_depth) = self.literals.iter().map(|(_, depth, _)| *depth).max() {
+            for depth in (SHALLOW_LITERAL_DEPTH + 1)..=max_depth {
+                let tier: Vec<AnchorSpan> = self
+                    .literals
+                    .iter()
+                    .filter(|(_, anchor_depth, _)| *anchor_depth == depth)
+                    .map(|(span, _, _)| *span)
+                    .collect();
+                if !tier.is_empty() {
+                    tiers.push(tier);
+                }
             }
         }
         tiers
@@ -2582,32 +2617,49 @@ fn collect_block_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
 /// `depth` counts enclosing call/new levels, so the tiered cover can prefer
 /// shallower literal anchors.
 fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidates) {
+    collect_expr_anchors_in(expr, depth, false, candidates);
+}
+
+/// `in_object` marks literals that are object-property values (e.g. the `true`
+/// in `mk({ enabled: true })`) rather than direct declarator/call-argument
+/// values. Group keep-shallow skips object-value literals as likely-incidental
+/// config; single-target tiers ignore the flag.
+fn collect_expr_anchors_in(
+    expr: &Expr,
+    depth: u32,
+    in_object: bool,
+    candidates: &mut AnchorCandidates,
+) {
     match expr {
-        Expr::Lit(_) | Expr::Tpl(_) => candidates.literals.push((span_key(expr.span()), depth)),
-        Expr::Paren(paren) => collect_expr_anchors(&paren.expr, depth, candidates),
+        Expr::Lit(_) | Expr::Tpl(_) => {
+            candidates
+                .literals
+                .push((span_key(expr.span()), depth, in_object));
+        }
+        Expr::Paren(paren) => collect_expr_anchors_in(&paren.expr, depth, in_object, candidates),
         Expr::Member(member) => {
-            collect_expr_anchors(&member.obj, depth, candidates);
+            collect_expr_anchors_in(&member.obj, depth, in_object, candidates);
             if let MemberProp::Ident(ident) = &member.prop {
                 candidates.structural.push(span_key(ident.span));
             } else if let MemberProp::Computed(computed) = &member.prop {
-                collect_expr_anchors(&computed.expr, depth, candidates);
+                collect_expr_anchors_in(&computed.expr, depth, in_object, candidates);
             }
         }
         Expr::Call(call) => {
             if let Callee::Expr(callee) = &call.callee {
-                collect_expr_anchors(callee, depth, candidates);
+                collect_expr_anchors_in(callee, depth, in_object, candidates);
             }
             for arg in &call.args {
                 if arg.spread.is_none() {
-                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
+                    collect_expr_anchors_in(&arg.expr, depth + 1, in_object, candidates);
                 }
             }
         }
         Expr::New(new_expr) => {
-            collect_expr_anchors(&new_expr.callee, depth, candidates);
+            collect_expr_anchors_in(&new_expr.callee, depth, in_object, candidates);
             for arg in new_expr.args.as_deref().unwrap_or_default() {
                 if arg.spread.is_none() {
-                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
+                    collect_expr_anchors_in(&arg.expr, depth + 1, in_object, candidates);
                 }
             }
         }
@@ -2616,16 +2668,18 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
                 if let PropOrSpread::Prop(prop) = prop {
                     if let Prop::KeyValue(key_value) = prop.as_ref() {
                         candidates.structural.push(span_key(key_value.key.span()));
-                        collect_expr_anchors(&key_value.value, depth, candidates);
+                        collect_expr_anchors_in(&key_value.value, depth, true, candidates);
                     }
                 }
             }
         }
-        Expr::Await(await_expr) => collect_expr_anchors(&await_expr.arg, depth, candidates),
-        Expr::Unary(unary) => collect_expr_anchors(&unary.arg, depth, candidates),
+        Expr::Await(await_expr) => {
+            collect_expr_anchors_in(&await_expr.arg, depth, in_object, candidates)
+        }
+        Expr::Unary(unary) => collect_expr_anchors_in(&unary.arg, depth, in_object, candidates),
         Expr::Bin(bin) => {
-            collect_expr_anchors(&bin.left, depth, candidates);
-            collect_expr_anchors(&bin.right, depth, candidates);
+            collect_expr_anchors_in(&bin.left, depth, in_object, candidates);
+            collect_expr_anchors_in(&bin.right, depth, in_object, candidates);
         }
         _ => {}
     }
@@ -2756,6 +2810,126 @@ fn minimize_var_selector(
     let mut candidates = AnchorCandidates::default();
     collect_expr_anchors(init, 0, &mut candidates);
     minimize_via_retention(index, decl, target, &candidates, &render_with)
+}
+
+/// A `DECLARATORS_<pos> = null` declarator hole absorbing a run of non-target
+/// declarators in a binding-group selector.
+fn declarator_hole(name: &str) -> VarDeclarator {
+    VarDeclarator {
+        span: DUMMY_SP,
+        name: named_pat(name),
+        init: Some(Box::new(Expr::Lit(Lit::Null(Null { span: DUMMY_SP })))),
+        definite: false,
+    }
+}
+
+/// Minimal anchor cover for a multi-target binding group: render the shared
+/// declaration keeping the target declarators (each `export = <holed init>`)
+/// with `DECLARATORS_*` holes for non-target runs, and pin just enough anchors
+/// for the group to resolve uniquely to the right declaration and bindings.
+///
+/// Unlike the single-target path, a binding group resolves through
+/// `resolve_member_binding_group_match`, which yields one match or an error
+/// rather than a candidate set — so the cover uses that proof as a boolean
+/// oracle, adding anchors tier by tier (shallow literals first) until the group
+/// resolves correctly.
+fn minimize_var_group_selector(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    let export_for = |runtime: &str| {
+        targets
+            .iter()
+            .find(|target| target.runtime_binding == runtime)
+            .map(|target| target.export_name.as_str())
+    };
+    let target_slots: BTreeSet<usize> = var
+        .decls
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, declarator)| {
+            let name = single_ident_pat_name(&declarator.name)?;
+            export_for(name).map(|_| idx)
+        })
+        .collect();
+    if target_slots.len() != targets.len() {
+        return Ok(None);
+    }
+
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut decls: Vec<VarDeclarator> = Vec::new();
+        let mut skipped_run = false;
+        let mut target_seen = 0usize;
+        for (idx, declarator) in var.decls.iter().enumerate() {
+            if !target_slots.contains(&idx) {
+                skipped_run = true;
+                continue;
+            }
+            if skipped_run {
+                decls.push(declarator_hole(declarator_hole_name(
+                    target_seen,
+                    targets.len(),
+                )));
+                skipped_run = false;
+            }
+            let name = single_ident_pat_name(&declarator.name)
+                .expect("target declarator is a plain identifier");
+            let mut holed = declarator.clone();
+            holed.name = named_pat(export_for(name).expect("target declarator has an export"));
+            holed.init = declarator
+                .init
+                .as_ref()
+                .map(|init| Box::new(hole_expr(init, kept)));
+            decls.push(holed);
+            target_seen += 1;
+        }
+        if skipped_run {
+            decls.push(declarator_hole(declarator_hole_name(
+                target_seen,
+                targets.len(),
+            )));
+        }
+        let mut holed_var = var.clone();
+        holed_var.declare = false;
+        holed_var.decls = decls;
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+    };
+
+    let mut candidates = AnchorCandidates::default();
+    for (idx, declarator) in var.decls.iter().enumerate() {
+        if target_slots.contains(&idx) {
+            if let Some(init) = &declarator.init {
+                collect_expr_anchors(init, 0, &mut candidates);
+            }
+        }
+    }
+
+    let resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
+        Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok())
+    };
+    // Always keep each slot's shallow literals (a group's declarators are its
+    // meaningful targets), then escalate to structural/deeper anchors only if
+    // the group does not yet resolve uniquely to the right bindings.
+    let mut kept: BTreeSet<AnchorSpan> = candidates.shallow_literals().into_iter().collect();
+    if !resolves(&kept)? {
+        for tier in candidates.deep_cover_tiers() {
+            kept.extend(tier);
+            if resolves(&kept)? {
+                break;
+            }
+        }
+        if !resolves(&kept)? {
+            return Ok(None);
+        }
+    }
+    let source = render_with(&kept)?;
+    let rewritten_holes = holes_present(&source);
+    Ok(Some(SpecializedSelector {
+        match_source: source,
+        rewritten_holes,
+    }))
 }
 
 /// Minimal anchor cover for a single-target class: render the class keeping

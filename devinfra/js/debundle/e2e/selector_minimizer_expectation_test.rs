@@ -335,7 +335,6 @@ minimizer_expectation_case!(
 );
 
 #[test]
-#[ignore = "target behavior for future selector partition planning"]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {
         name: "nearby targets become a binding group while distant targets stay individual",
