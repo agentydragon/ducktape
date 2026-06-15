@@ -26,12 +26,16 @@ use swc_ecma_visit::{Visit, VisitWith};
 const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
 const EXPR_HOLE_KEYWORD: &str = "EXPR";
 const STMT_HOLE_KEYWORD: &str = "STMT";
+const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
 const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
 const MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL: usize = 4096;
 const MAX_VAR_FEATURE_SEARCH_NODES: usize = 200_000;
+const MAX_FUNCTION_SELECTOR_CANDIDATES: usize = 512;
+const MAX_EXPR_SELECTOR_VARIANTS: usize = 16;
+const MAX_STMT_SELECTOR_VARIANTS: usize = 24;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1292,33 +1296,50 @@ fn synthesize_specialized_function_selector(
     let Some(Decl::Fn(function)) = item_decl(item) else {
         return Ok(None);
     };
+    let header = render_function_selector_header(&function.function, &target.export_name);
     let mut features = BTreeSet::from([
         SelectorAnchorFeature::DeclarationKind(IndexedDeclarationKind::Function),
         SelectorAnchorFeature::FunctionArity(function.function.params.len()),
     ]);
     if !frontier_is_small_and_contains_target(index, decl, &features) {
+        let mut candidates = render_function_body_selector_candidates(index, &function.function)?;
+        candidates.sort_by_key(|candidate| (candidate.cost, candidate.source.len()));
+        for body in candidates
+            .into_iter()
+            .take(MAX_FUNCTION_SELECTOR_CANDIDATES)
+        {
+            let match_source = format!("{header} {{\n{}\n}}", indent_lines(&body.source, "  "));
+            if prove_synthesized_selector(index, decl, targets, &match_source).is_ok() {
+                return Ok(Some(SpecializedSelector {
+                    match_source,
+                    rewritten_holes: body.holes,
+                }));
+            }
+        }
         return Ok(None);
     }
-    let params = function
-        .function
-        .params
-        .iter()
-        .map(|_| ANYTHING_HOLE_KEYWORD)
-        .collect::<Vec<_>>()
-        .join(", ");
     features.insert(SelectorAnchorFeature::DeclarationKind(
         IndexedDeclarationKind::Function,
     ));
     Ok(Some(SpecializedSelector {
-        match_source: format!(
-            "function {}({params}) {{\n  STMT_LIST;\n}}",
-            target.export_name
-        ),
+        match_source: format!("{header} {{\n  STMT_LIST;\n}}"),
         rewritten_holes: BTreeSet::from([
             ANYTHING_HOLE_KEYWORD.to_string(),
             "STMT_LIST".to_string(),
         ]),
     }))
+}
+
+fn render_function_selector_header(function: &Function, name: &str) -> String {
+    let params = function
+        .params
+        .iter()
+        .map(|_| ANYTHING_HOLE_KEYWORD)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let async_prefix = if function.is_async { "async " } else { "" };
+    let generator_suffix = if function.is_generator { "*" } else { "" };
+    format!("{async_prefix}function{generator_suffix} {name}({params})")
 }
 
 fn synthesize_specialized_class_selector(
@@ -2038,6 +2059,21 @@ fn target_tuple_is_unique(
 struct RenderedExprSelector {
     source: String,
     holes: BTreeSet<String>,
+    cost: usize,
+}
+
+#[derive(Debug, Clone)]
+struct RenderedStmtSelector {
+    source: String,
+    holes: BTreeSet<String>,
+    cost: usize,
+}
+
+#[derive(Debug, Clone)]
+struct RenderedStmtListSelector {
+    source: String,
+    holes: BTreeSet<String>,
+    cost: usize,
 }
 
 fn render_specialized_expr_selector(
@@ -2055,6 +2091,7 @@ fn render_specialized_expr_selector(
         _ => Ok(RenderedExprSelector {
             source: ANYTHING_HOLE_KEYWORD.to_string(),
             holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+            cost: 0,
         }),
     }
 }
@@ -2094,6 +2131,7 @@ fn render_specialized_call_selector(
     Ok(RenderedExprSelector {
         source: format!("{callee}({})", args.join(", ")),
         holes,
+        cost: 2,
     })
 }
 
@@ -2126,6 +2164,7 @@ fn render_specialized_object_selector(
     RenderedExprSelector {
         source: format!("{{ {} }}", parts.join(", ")),
         holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+        cost: 1,
     }
 }
 
@@ -2133,7 +2172,738 @@ fn anything_expr_selector() -> RenderedExprSelector {
     RenderedExprSelector {
         source: ANYTHING_HOLE_KEYWORD.to_string(),
         holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+        cost: 0,
     }
+}
+
+fn render_function_body_selector_candidates(
+    index: &ChunkSelectorIndex,
+    function: &Function,
+) -> Result<Vec<RenderedStmtListSelector>> {
+    let Some(body) = &function.body else {
+        return Ok(Vec::new());
+    };
+    render_stmt_list_selector_candidates(index, &body.stmts)
+}
+
+fn render_stmt_list_selector_candidates(
+    index: &ChunkSelectorIndex,
+    stmts: &[Stmt],
+) -> Result<Vec<RenderedStmtListSelector>> {
+    if stmts.is_empty() {
+        return Ok(vec![RenderedStmtListSelector {
+            source: format!("{STMT_LIST_HOLE_KEYWORD};"),
+            holes: BTreeSet::from([STMT_LIST_HOLE_KEYWORD.to_string()]),
+            cost: 0,
+        }]);
+    }
+
+    let mut per_stmt = Vec::new();
+    for stmt in stmts {
+        per_stmt.push(render_stmt_selector_variants(index, stmt)?);
+    }
+
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (stmt_idx, variants) in per_stmt.iter().enumerate() {
+        for stmt in variants.iter().take(MAX_STMT_SELECTOR_VARIANTS) {
+            push_stmt_list_candidate(
+                &mut out,
+                &mut seen,
+                stmts.len(),
+                &[(stmt_idx, stmt.clone())],
+            );
+        }
+    }
+
+    for first_idx in 0..per_stmt.len() {
+        for second_idx in (first_idx + 1)..per_stmt.len() {
+            for first in per_stmt[first_idx].iter().take(4) {
+                for second in per_stmt[second_idx].iter().take(4) {
+                    push_stmt_list_candidate(
+                        &mut out,
+                        &mut seen,
+                        stmts.len(),
+                        &[(first_idx, first.clone()), (second_idx, second.clone())],
+                    );
+                    if out.len() >= MAX_FUNCTION_SELECTOR_CANDIDATES {
+                        break;
+                    }
+                }
+                if out.len() >= MAX_FUNCTION_SELECTOR_CANDIDATES {
+                    break;
+                }
+            }
+            if out.len() >= MAX_FUNCTION_SELECTOR_CANDIDATES {
+                break;
+            }
+        }
+        if out.len() >= MAX_FUNCTION_SELECTOR_CANDIDATES {
+            break;
+        }
+    }
+
+    out.sort_by_key(|candidate| (candidate.cost, candidate.source.len()));
+    out.truncate(MAX_FUNCTION_SELECTOR_CANDIDATES);
+    Ok(out)
+}
+
+fn push_stmt_list_candidate(
+    out: &mut Vec<RenderedStmtListSelector>,
+    seen: &mut BTreeSet<String>,
+    len: usize,
+    anchors: &[(usize, RenderedStmtSelector)],
+) {
+    if anchors.is_empty() {
+        return;
+    }
+    let mut lines = Vec::new();
+    let mut holes = BTreeSet::new();
+    let mut cost = 0usize;
+    let mut previous_end = 0usize;
+    for (idx, stmt) in anchors {
+        if *idx > previous_end {
+            lines.push(format!("{STMT_LIST_HOLE_KEYWORD};"));
+            holes.insert(STMT_LIST_HOLE_KEYWORD.to_string());
+            cost += 1;
+        }
+        lines.push(stmt.source.clone());
+        holes.extend(stmt.holes.clone());
+        cost += stmt.cost;
+        previous_end = idx + 1;
+    }
+    if previous_end < len {
+        lines.push(format!("{STMT_LIST_HOLE_KEYWORD};"));
+        holes.insert(STMT_LIST_HOLE_KEYWORD.to_string());
+        cost += 1;
+    }
+    let source = lines.join("\n");
+    if seen.insert(source.clone()) {
+        out.push(RenderedStmtListSelector {
+            source,
+            holes,
+            cost,
+        });
+    }
+}
+
+fn render_stmt_selector_variants(
+    index: &ChunkSelectorIndex,
+    stmt: &Stmt,
+) -> Result<Vec<RenderedStmtSelector>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    match stmt {
+        Stmt::Expr(expr_stmt) => {
+            for expr in render_expr_selector_variants(index, &expr_stmt.expr)? {
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    format!("{};", expr.source),
+                    expr.holes,
+                    expr.cost + 1,
+                );
+            }
+        }
+        Stmt::Return(return_stmt) => {
+            if let Some(arg) = &return_stmt.arg {
+                for expr in render_expr_selector_variants(index, arg)? {
+                    push_stmt_variant(
+                        &mut out,
+                        &mut seen,
+                        format!("return {};", expr.source),
+                        expr.holes,
+                        expr.cost + 1,
+                    );
+                }
+            } else {
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    "return;".to_string(),
+                    BTreeSet::new(),
+                    1,
+                );
+            }
+        }
+        Stmt::Throw(throw_stmt) => {
+            for expr in render_expr_selector_variants(index, &throw_stmt.arg)? {
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    format!("throw {};", expr.source),
+                    expr.holes,
+                    expr.cost + 1,
+                );
+            }
+        }
+        Stmt::Decl(Decl::Var(var)) => {
+            for (idx, declarator) in var.decls.iter().enumerate() {
+                let pat = source_for_span(index, declarator.name.span())?.text;
+                let expr_variants = if let Some(init) = declarator.init.as_deref() {
+                    render_expr_selector_variants(index, init)?
+                } else {
+                    vec![RenderedExprSelector {
+                        source: String::new(),
+                        holes: BTreeSet::new(),
+                        cost: 0,
+                    }]
+                };
+                for expr in expr_variants.into_iter().take(MAX_EXPR_SELECTOR_VARIANTS) {
+                    let mut parts = Vec::new();
+                    let mut holes = expr.holes.clone();
+                    let mut cost = expr.cost + 1;
+                    if idx > 0 {
+                        parts.push(format!("{DECLARATORS_HOLE_KEYWORD}_BEFORE = null"));
+                        holes.insert(format!("{DECLARATORS_HOLE_KEYWORD}_BEFORE"));
+                        cost += 1;
+                    }
+                    let declarator_source = if declarator.init.is_some() {
+                        format!("{pat} = {}", expr.source)
+                    } else {
+                        pat.clone()
+                    };
+                    parts.push(declarator_source);
+                    if idx + 1 < var.decls.len() {
+                        parts.push(format!("{DECLARATORS_HOLE_KEYWORD}_AFTER = null"));
+                        holes.insert(format!("{DECLARATORS_HOLE_KEYWORD}_AFTER"));
+                        cost += 1;
+                    }
+                    push_stmt_variant(
+                        &mut out,
+                        &mut seen,
+                        format!("{} {};", var_kind_label(var.kind), parts.join(",\n  ")),
+                        holes,
+                        cost,
+                    );
+                }
+            }
+        }
+        Stmt::If(if_stmt) => {
+            for test in render_expr_selector_variants(index, &if_stmt.test)? {
+                let (cons_source, mut cons_holes, cons_cost) =
+                    render_stmt_as_block_selector(index, &if_stmt.cons)?;
+                let mut holes = test.holes.clone();
+                holes.append(&mut cons_holes);
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    format!(
+                        "if ({}) {{\n{}\n}}",
+                        test.source,
+                        indent_lines(&cons_source, "  ")
+                    ),
+                    holes,
+                    test.cost + cons_cost + 1,
+                );
+            }
+            if let Stmt::Block(block) = if_stmt.cons.as_ref() {
+                for body in render_stmt_list_selector_candidates(index, &block.stmts)?
+                    .into_iter()
+                    .take(MAX_STMT_SELECTOR_VARIANTS)
+                {
+                    let mut holes = body.holes;
+                    holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                    push_stmt_variant(
+                        &mut out,
+                        &mut seen,
+                        format!(
+                            "if ({ANYTHING_HOLE_KEYWORD}) {{\n{}\n}}",
+                            indent_lines(&body.source, "  ")
+                        ),
+                        holes,
+                        body.cost + 2,
+                    );
+                }
+            }
+        }
+        Stmt::Try(try_stmt) => {
+            for body in render_stmt_list_selector_candidates(index, &try_stmt.block.stmts)?
+                .into_iter()
+                .take(MAX_STMT_SELECTOR_VARIANTS)
+            {
+                let mut holes = body.holes;
+                let catch_source = render_catch_clause_skeleton(&try_stmt.handler);
+                holes.insert(STMT_LIST_HOLE_KEYWORD.to_string());
+                if catch_source.contains(ANYTHING_HOLE_KEYWORD) {
+                    holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                }
+                let finalizer_source = try_stmt
+                    .finalizer
+                    .as_ref()
+                    .map(|_| format!(" finally {{\n  {STMT_LIST_HOLE_KEYWORD};\n}}"))
+                    .unwrap_or_default();
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    format!(
+                        "try {{\n{}\n}}{catch_source}{finalizer_source}",
+                        indent_lines(&body.source, "  ")
+                    ),
+                    holes,
+                    body.cost + 2,
+                );
+            }
+        }
+        Stmt::Block(block) => {
+            for body in render_stmt_list_selector_candidates(index, &block.stmts)?
+                .into_iter()
+                .take(MAX_STMT_SELECTOR_VARIANTS)
+            {
+                push_stmt_variant(
+                    &mut out,
+                    &mut seen,
+                    format!("{{\n{}\n}}", indent_lines(&body.source, "  ")),
+                    body.holes,
+                    body.cost + 1,
+                );
+            }
+        }
+        _ => {}
+    }
+
+    let exact = source_for_span(index, stmt.span())?.text;
+    push_stmt_variant(
+        &mut out,
+        &mut seen,
+        ensure_statement_semicolon(stmt, exact),
+        BTreeSet::new(),
+        1000,
+    );
+    out.sort_by_key(|variant| (variant.cost, variant.source.len()));
+    out.truncate(MAX_STMT_SELECTOR_VARIANTS);
+    Ok(out)
+}
+
+fn render_stmt_as_block_selector(
+    index: &ChunkSelectorIndex,
+    stmt: &Stmt,
+) -> Result<(String, BTreeSet<String>, usize)> {
+    if let Stmt::Block(block) = stmt {
+        let body = render_stmt_list_selector_candidates(index, &block.stmts)?
+            .into_iter()
+            .next()
+            .unwrap_or(RenderedStmtListSelector {
+                source: format!("{STMT_LIST_HOLE_KEYWORD};"),
+                holes: BTreeSet::from([STMT_LIST_HOLE_KEYWORD.to_string()]),
+                cost: 0,
+            });
+        return Ok((body.source, body.holes, body.cost));
+    }
+    let stmt = render_stmt_selector_variants(index, stmt)?
+        .into_iter()
+        .next()
+        .context("statement had no renderable selector variants")?;
+    Ok((stmt.source, stmt.holes, stmt.cost))
+}
+
+fn render_catch_clause_skeleton(handler: &Option<CatchClause>) -> String {
+    let Some(handler) = handler else {
+        return String::new();
+    };
+    let param = if handler.param.is_some() {
+        format!(" ({ANYTHING_HOLE_KEYWORD})")
+    } else {
+        String::new()
+    };
+    format!(" catch{param} {{\n  {STMT_LIST_HOLE_KEYWORD};\n}}")
+}
+
+fn push_stmt_variant(
+    out: &mut Vec<RenderedStmtSelector>,
+    seen: &mut BTreeSet<String>,
+    source: String,
+    holes: BTreeSet<String>,
+    cost: usize,
+) {
+    if seen.insert(source.clone()) {
+        out.push(RenderedStmtSelector {
+            source,
+            holes,
+            cost,
+        });
+    }
+}
+
+fn render_expr_selector_variants(
+    index: &ChunkSelectorIndex,
+    expr: &Expr,
+) -> Result<Vec<RenderedExprSelector>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    push_expr_variant(&mut out, &mut seen, anything_expr_selector());
+    match expr {
+        Expr::Lit(_) => {
+            push_expr_variant(
+                &mut out,
+                &mut seen,
+                RenderedExprSelector {
+                    source: source_for_span(index, expr.span())?.text,
+                    holes: BTreeSet::new(),
+                    cost: 1,
+                },
+            );
+        }
+        Expr::Member(member) => {
+            for variant in render_member_expr_selector_variants(index, member)? {
+                push_expr_variant(&mut out, &mut seen, variant);
+            }
+        }
+        Expr::Call(call) => {
+            for variant in render_call_expr_selector_variants(index, call)? {
+                push_expr_variant(&mut out, &mut seen, variant);
+            }
+        }
+        Expr::New(new_expr) => {
+            let callee = source_for_span(index, new_expr.callee.span())?.text;
+            let args = new_expr.args.as_deref().unwrap_or_default();
+            push_expr_variant(
+                &mut out,
+                &mut seen,
+                RenderedExprSelector {
+                    source: format!(
+                        "new {callee}({})",
+                        vec![ANYTHING_HOLE_KEYWORD; args.len()].join(", ")
+                    ),
+                    holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+                    cost: 2,
+                },
+            );
+        }
+        Expr::Object(object) => {
+            for variant in render_object_expr_selector_variants(index, object)? {
+                push_expr_variant(&mut out, &mut seen, variant);
+            }
+        }
+        Expr::Await(await_expr) => {
+            for arg in render_expr_selector_variants(index, &await_expr.arg)?
+                .into_iter()
+                .take(MAX_EXPR_SELECTOR_VARIANTS)
+            {
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!("await {}", arg.source),
+                        holes: arg.holes,
+                        cost: arg.cost + 1,
+                    },
+                );
+            }
+        }
+        Expr::Unary(unary) => {
+            for arg in render_expr_selector_variants(index, &unary.arg)?
+                .into_iter()
+                .take(MAX_EXPR_SELECTOR_VARIANTS)
+            {
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!("{}{}", unary.op.as_str(), arg.source),
+                        holes: arg.holes,
+                        cost: arg.cost + 1,
+                    },
+                );
+            }
+        }
+        Expr::Bin(bin) => {
+            for left in render_expr_selector_variants(index, &bin.left)?
+                .into_iter()
+                .filter(|variant| variant.source != ANYTHING_HOLE_KEYWORD)
+                .take(4)
+            {
+                let mut holes = left.holes;
+                holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!(
+                            "{} {} {ANYTHING_HOLE_KEYWORD}",
+                            left.source,
+                            bin.op.as_str()
+                        ),
+                        holes,
+                        cost: left.cost + 2,
+                    },
+                );
+            }
+            for right in render_expr_selector_variants(index, &bin.right)?
+                .into_iter()
+                .filter(|variant| variant.source != ANYTHING_HOLE_KEYWORD)
+                .take(4)
+            {
+                let mut holes = right.holes;
+                holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!(
+                            "{ANYTHING_HOLE_KEYWORD} {} {}",
+                            bin.op.as_str(),
+                            right.source
+                        ),
+                        holes,
+                        cost: right.cost + 2,
+                    },
+                );
+            }
+        }
+        _ => {}
+    }
+    push_expr_variant(
+        &mut out,
+        &mut seen,
+        RenderedExprSelector {
+            source: source_for_span(index, expr.span())?.text,
+            holes: BTreeSet::new(),
+            cost: 1000,
+        },
+    );
+    out.sort_by_key(|variant| (variant.cost, variant.source.len()));
+    out.truncate(MAX_EXPR_SELECTOR_VARIANTS);
+    Ok(out)
+}
+
+fn render_member_expr_selector_variants(
+    index: &ChunkSelectorIndex,
+    member: &MemberExpr,
+) -> Result<Vec<RenderedExprSelector>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    match &member.prop {
+        MemberProp::Ident(prop) => {
+            push_expr_variant(
+                &mut out,
+                &mut seen,
+                RenderedExprSelector {
+                    source: format!("{ANYTHING_HOLE_KEYWORD}.{}", prop.sym),
+                    holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+                    cost: 1,
+                },
+            );
+        }
+        MemberProp::PrivateName(prop) => {
+            push_expr_variant(
+                &mut out,
+                &mut seen,
+                RenderedExprSelector {
+                    source: format!("{ANYTHING_HOLE_KEYWORD}.#{}", prop.name),
+                    holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+                    cost: 2,
+                },
+            );
+        }
+        MemberProp::Computed(computed) => {
+            for expr in render_expr_selector_variants(index, &computed.expr)?
+                .into_iter()
+                .take(4)
+            {
+                let mut holes = expr.holes;
+                holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!("{ANYTHING_HOLE_KEYWORD}[{}]", expr.source),
+                        holes,
+                        cost: expr.cost + 2,
+                    },
+                );
+            }
+        }
+    }
+    push_expr_variant(
+        &mut out,
+        &mut seen,
+        RenderedExprSelector {
+            source: source_for_span(index, member.span())?.text,
+            holes: BTreeSet::new(),
+            cost: 100,
+        },
+    );
+    Ok(out)
+}
+
+fn render_call_expr_selector_variants(
+    index: &ChunkSelectorIndex,
+    call: &CallExpr,
+) -> Result<Vec<RenderedExprSelector>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    let callee_variants = match &call.callee {
+        Callee::Expr(callee) => render_expr_selector_variants(index, callee)?,
+        _ => vec![RenderedExprSelector {
+            source: source_for_span(index, call.callee.span())?.text,
+            holes: BTreeSet::new(),
+            cost: 4,
+        }],
+    };
+    let arg_variants = call
+        .args
+        .iter()
+        .map(|arg| {
+            if arg.spread.is_some() {
+                Ok(vec![RenderedExprSelector {
+                    source: source_for_span(index, arg.span())?.text,
+                    holes: BTreeSet::new(),
+                    cost: 100,
+                }])
+            } else {
+                render_expr_selector_variants(index, &arg.expr)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    for callee in callee_variants
+        .iter()
+        .filter(|variant| variant.source != ANYTHING_HOLE_KEYWORD)
+        .take(6)
+    {
+        let args = vec![ANYTHING_HOLE_KEYWORD; call.args.len()].join(", ");
+        let mut holes = callee.holes.clone();
+        if !call.args.is_empty() {
+            holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+        }
+        push_expr_variant(
+            &mut out,
+            &mut seen,
+            RenderedExprSelector {
+                source: format!("{}({args})", callee.source),
+                holes,
+                cost: callee.cost + 1,
+            },
+        );
+
+        for (arg_idx, variants) in arg_variants.iter().enumerate() {
+            for arg in variants
+                .iter()
+                .filter(|variant| variant.source != ANYTHING_HOLE_KEYWORD)
+                .take(4)
+            {
+                let mut args = vec![ANYTHING_HOLE_KEYWORD.to_string(); call.args.len()];
+                args[arg_idx] = arg.source.clone();
+                let mut holes = callee.holes.clone();
+                holes.extend(arg.holes.clone());
+                if call.args.len() > 1 {
+                    holes.insert(ANYTHING_HOLE_KEYWORD.to_string());
+                }
+                push_expr_variant(
+                    &mut out,
+                    &mut seen,
+                    RenderedExprSelector {
+                        source: format!("{}({})", callee.source, args.join(", ")),
+                        holes,
+                        cost: callee.cost + arg.cost + 2,
+                    },
+                );
+            }
+        }
+    }
+    push_expr_variant(
+        &mut out,
+        &mut seen,
+        RenderedExprSelector {
+            source: source_for_span(index, call.span())?.text,
+            holes: BTreeSet::new(),
+            cost: 1000,
+        },
+    );
+    out.sort_by_key(|variant| (variant.cost, variant.source.len()));
+    out.truncate(MAX_EXPR_SELECTOR_VARIANTS);
+    Ok(out)
+}
+
+fn render_object_expr_selector_variants(
+    index: &ChunkSelectorIndex,
+    object: &ObjectLit,
+) -> Result<Vec<RenderedExprSelector>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (prop_idx, prop) in object.props.iter().enumerate() {
+        let PropOrSpread::Prop(prop) = prop else {
+            continue;
+        };
+        let Some(key) = prop_key_name(prop.as_ref()) else {
+            continue;
+        };
+        let value_variants = match prop.as_ref() {
+            Prop::KeyValue(key_value) => render_expr_selector_variants(index, &key_value.value)?,
+            Prop::Shorthand(_) | Prop::Assign(_) => vec![anything_expr_selector()],
+            _ => Vec::new(),
+        };
+        for value in value_variants.into_iter().take(4) {
+            let mut parts = Vec::new();
+            let mut holes = value.holes.clone();
+            if prop_idx > 0 {
+                parts.push(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+                holes.insert(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+            }
+            parts.push(format!("{key}: {}", value.source));
+            if prop_idx + 1 < object.props.len() {
+                parts.push(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+                holes.insert(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+            }
+            push_expr_variant(
+                &mut out,
+                &mut seen,
+                RenderedExprSelector {
+                    source: format!("{{ {} }}", parts.join(", ")),
+                    holes,
+                    cost: value.cost + 1,
+                },
+            );
+        }
+    }
+    push_expr_variant(
+        &mut out,
+        &mut seen,
+        RenderedExprSelector {
+            source: source_for_span(index, object.span())?.text,
+            holes: BTreeSet::new(),
+            cost: 1000,
+        },
+    );
+    out.sort_by_key(|variant| (variant.cost, variant.source.len()));
+    out.truncate(MAX_EXPR_SELECTOR_VARIANTS);
+    Ok(out)
+}
+
+fn push_expr_variant(
+    out: &mut Vec<RenderedExprSelector>,
+    seen: &mut BTreeSet<String>,
+    variant: RenderedExprSelector,
+) {
+    if seen.insert(variant.source.clone()) {
+        out.push(variant);
+    }
+}
+
+fn ensure_statement_semicolon(stmt: &Stmt, mut source: String) -> String {
+    if matches!(
+        stmt,
+        Stmt::Expr(_) | Stmt::Return(_) | Stmt::Throw(_) | Stmt::Decl(Decl::Var(_))
+    ) && !source.ends_with(';')
+    {
+        source.push(';');
+    }
+    source
+}
+
+fn indent_lines(source: &str, indent: &str) -> String {
+    source
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{indent}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn call_has_selected_feature(
