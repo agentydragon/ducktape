@@ -30,12 +30,35 @@ deferredRenderBatchSize = 10, DECLARATORS_AFTER = null;` — keeps the
   renders one selector per candidate anchor and runs the **production matcher
   over the full 7 MB AST** for each — so cost ≈ members × anchors × full-AST
   match. At ~0.08s/member that is ~350s for the whole chunk.
+- **Measured hot path** (a ~45s dogfood slice; `perf` is unavailable in this
+  container — `perf_event_paranoid=2`, `linux-tools` not installable — so a
+  gdb-based stack sampler took 117 main-thread samples, % = stacks containing
+  the frame):
+  - `member_binding_candidate_matches` / `find_matching_body_ranges` (the full
+    top-level scan): **56%**
+  - `AstWildcardMatcher` / `PreparedNeedle::matches` (per-statement match): **47%**
+  - `minimize_*`: **32%**; `cover_competitors` / `min_set_cover` /
+    `matched_body_indices`: **19%**
+  - parsing/lexer: **1%**; codegen/emit: **0%** — parsing is _not_ the
+    bottleneck during the cover phase (the chunk is parsed once up front).
+  - Slow call site: `find_matching_body_ranges` (`source_match.rs:2119`, single
+    `:2136` / window `:2153` paths) scans **every** `runtime_module.body`
+    top-level statement, invoked from `matched_body_indices`
+    (`selector_codemod.rs`) → `member_binding_candidate_matches`
+    (`source_match.rs:676`), called **once per candidate anchor per tier** by
+    `cover_competitors`. Net ≈ members × anchors × (full top-level scan ×
+    match-cost).
 - **Fix (planned): index-prefilter.** The chunk is already parsed once per
-  invocation, but the matcher is consulted per anchor. Use
-  `SelectorCandidateIndex` (PR 2251) posting lists to compute each anchor's
-  competitor exclusions without a matcher call, and reserve the matcher for
-  proving the single chosen candidate. Also share one `SelectorCandidateIndex`
-  across all members of a chunk. Until then, scope runs by `--module-prefix`.
+  invocation, but the matcher scans all top-level statements per anchor.
+  `SelectorCandidateIndex` (PR 2251) already exposes posting-list intersection
+  (`candidate_set_for_features` / `candidate_set_for_source_match`) but the
+  matcher path does not use it. Two wins: (1) inside `find_matching_body_ranges`
+  / `matched_body_indices`, query the index for the candidate body-index set
+  implied by the selector's features and run `AstWildcardMatcher` only on those
+  statements (O(plausible candidates) instead of O(top-level statements));
+  (2) build one `SelectorCandidateIndex` per chunk and share it across all
+  members, reserving the full matcher for proving the single chosen candidate.
+  Until then, scope runs by `--module-prefix`.
 
 ## What does not work / needs work
 
