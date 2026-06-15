@@ -34,7 +34,7 @@ use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 
 use super::{
-    ChunkSelectorIndex, NameBindingMember, matched_body_indices,
+    ChunkSelectorIndex, GroupSelectorOutcome, NameBindingMember, matched_body_indices,
     synthesize_simplest_selector_for_group,
 };
 
@@ -461,9 +461,10 @@ proptest! {
 
             // An ambiguous chunk (two alpha-identical declarations) cannot be
             // pinned even by the exact selector; the synthesizer errors and
-            // there is nothing to assert.
-            let Ok(group) =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true)
+            // there is nothing to assert. `full_ast_fallback = true` keeps the
+            // exact selector when minimization finds nothing sparse.
+            let Ok(GroupSelectorOutcome::Synthesized(group)) =
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
             else {
                 return Ok(());
             };

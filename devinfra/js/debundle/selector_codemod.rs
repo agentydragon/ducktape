@@ -54,6 +54,10 @@ pub struct SelectorCodemodConfig {
     pub apply: bool,
     pub rewrite: SelectorCodemodRewrite,
     pub minimize_synthesized_selectors: bool,
+    /// When a binding group minimizes to no sparse selector, emit the exact
+    /// full-AST `source_match` instead of skipping the member. Off by default:
+    /// full-AST selectors are rebuild-fragile, so the default skips them.
+    pub full_ast_fallback: bool,
     pub files: Vec<PathBuf>,
     pub modules: Vec<String>,
     pub module_prefixes: Vec<String>,
@@ -163,11 +167,8 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
         }
         summary.modules_scanned += 1;
 
-        let original_text =
-            fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
         let mut doc = yaml_edit::read_yaml(&file)?;
         let mut file_changed = false;
-        let mut text_edits = Vec::new();
         let Value::Mapping(root) = &mut doc else {
             candidates.push(skipped_candidate(
                 &module,
@@ -191,13 +192,12 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     .as_ref()
                     .expect("source-aware rewrite loaded synthesis index"),
                 selected_exports,
-                &original_text,
                 NameBindingRewriteOptions {
                     minimize_synthesized_selectors: config.minimize_synthesized_selectors,
+                    full_ast_fallback: config.full_ast_fallback,
                     apply: config.apply,
                 },
             )?;
-            text_edits.extend(outcomes.text_edits);
             summary.members_scanned += outcomes.members_scanned;
             summary.name_binding_members += outcomes.members_seen;
             summary.synthesized_groups += outcomes.groups_changed;
@@ -225,22 +225,16 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                         &file,
                         member_index,
                         member,
-                        &original_text,
                         config.apply,
                     ),
                     SelectorCodemodRewrite::AnythingHoles => {
                         rewrite_anything_holes(&module, &file, member_index, member, config.apply)
-                            .map(|outcome| outcome.map(SelectorCodemodOutcome::candidate_only))
                     }
                     SelectorCodemodRewrite::NameBindingToSourceMatch => unreachable!(),
                 };
-                let Some(outcome) = candidate? else {
+                let Some(candidate) = candidate? else {
                     continue;
                 };
-                if let Some(edit) = outcome.text_edit {
-                    text_edits.push(edit);
-                }
-                let candidate = outcome.candidate;
                 if matches!(
                     candidate.action,
                     SelectorCodemodAction::WouldChange | SelectorCodemodAction::Changed
@@ -255,35 +249,8 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             }
         }
 
-        if config.apply && file_changed {
-            let written = match config.rewrite {
-                SelectorCodemodRewrite::SingleTargetBinding => {
-                    let body = apply_text_edits(&original_text, &text_edits)
-                        .with_context(|| format!("patching {}", file.display()))?;
-                    let patched_doc: Value = serde_yaml::from_str(&body)
-                        .with_context(|| format!("parsing patched {}", file.display()))?;
-                    yaml_edit::write_yaml_body_if_semantic_changed(&file, &patched_doc, body)?
-                }
-                SelectorCodemodRewrite::AnythingHoles => {
-                    yaml_edit::write_yaml_if_semantic_changed(&file, &doc)?
-                }
-                SelectorCodemodRewrite::NameBindingToSourceMatch => {
-                    let body = apply_text_edits(&original_text, &text_edits)
-                        .with_context(|| format!("patching {}", file.display()))?;
-                    let patched_doc: Value = serde_yaml::from_str(&body)
-                        .with_context(|| format!("parsing patched {}", file.display()))?;
-                    if patched_doc != doc {
-                        bail!(
-                            "text-preserving YAML patch for {} did not match semantic rewrite",
-                            file.display()
-                        );
-                    }
-                    yaml_edit::write_yaml_body_if_semantic_changed(&file, &patched_doc, body)?
-                }
-            };
-            if written {
-                summary.files_written.push(file.display().to_string());
-            }
+        if config.apply && file_changed && yaml_edit::write_yaml_if_semantic_changed(&file, &doc)? {
+            summary.files_written.push(file.display().to_string());
         }
     }
 
@@ -299,87 +266,66 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
     })
 }
 
-struct SelectorCodemodOutcome {
-    candidate: SelectorCodemodCandidate,
-    text_edit: Option<TextEdit>,
-}
-
-impl SelectorCodemodOutcome {
-    fn candidate_only(candidate: SelectorCodemodCandidate) -> Self {
-        Self {
-            candidate,
-            text_edit: None,
-        }
-    }
-}
-
 fn rewrite_single_target_binding(
     module: &str,
     file: &Path,
     member_index: usize,
     member: &mut Value,
-    source_text: &str,
     apply: bool,
-) -> Result<Option<SelectorCodemodOutcome>> {
+) -> Result<Option<SelectorCodemodCandidate>> {
     let export_name = mapping_get(member, "name").and_then(value_as_string);
     let Some(source_match_value) = mapping_get_mut_path(member, &["selector", "source_match"])
     else {
         return Ok(None);
     };
     let Value::Mapping(source_match_mapping) = source_match_value else {
-        return Ok(Some(SelectorCodemodOutcome::candidate_only(
-            skipped_candidate(
-                module,
-                file,
-                member_index,
-                export_name,
-                "selector.source_match is not a mapping",
-            ),
+        return Ok(Some(skipped_candidate(
+            module,
+            file,
+            member_index,
+            export_name,
+            "selector.source_match is not a mapping",
         )));
     };
     let source_match: SourceMatch =
         serde_yaml::from_value(Value::Mapping(source_match_mapping.clone()))
             .with_context(|| format!("{module}: members[{member_index}].selector.source_match"))?;
     if source_match.target_binding.is_some() {
-        return Ok(Some(SelectorCodemodOutcome::candidate_only(
-            SelectorCodemodCandidate {
+        return Ok(Some(SelectorCodemodCandidate {
+            module: module.to_string(),
+            file: file.display().to_string(),
+            member_index,
+            export_name,
+            action: SelectorCodemodAction::Skipped,
+            target_binding: source_match.target_binding,
+            declared_bindings: Vec::new(),
+            group_id: None,
+            matched_body_index: None,
+            candidate_count: None,
+            rewritten_holes: Vec::new(),
+            replacement_count: 0,
+            reason: Some("target_binding already present".to_string()),
+        }));
+    }
+
+    let declared = match source_match::source_match_declared_binding_names(module, &source_match) {
+        Ok(declared) => declared,
+        Err(err) => {
+            return Ok(Some(SelectorCodemodCandidate {
                 module: module.to_string(),
                 file: file.display().to_string(),
                 member_index,
                 export_name,
                 action: SelectorCodemodAction::Skipped,
-                target_binding: source_match.target_binding,
+                target_binding: None,
                 declared_bindings: Vec::new(),
                 group_id: None,
                 matched_body_index: None,
                 candidate_count: None,
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
-                reason: Some("target_binding already present".to_string()),
-            },
-        )));
-    }
-
-    let declared = match source_match::source_match_declared_binding_names(module, &source_match) {
-        Ok(declared) => declared,
-        Err(err) => {
-            return Ok(Some(SelectorCodemodOutcome::candidate_only(
-                SelectorCodemodCandidate {
-                    module: module.to_string(),
-                    file: file.display().to_string(),
-                    member_index,
-                    export_name,
-                    action: SelectorCodemodAction::Skipped,
-                    target_binding: None,
-                    declared_bindings: Vec::new(),
-                    group_id: None,
-                    matched_body_index: None,
-                    candidate_count: None,
-                    rewritten_holes: Vec::new(),
-                    replacement_count: 0,
-                    reason: Some(format!("source_match did not parse: {err:#}")),
-                },
-            )));
+                reason: Some(format!("source_match did not parse: {err:#}")),
+            }));
         }
     };
 
@@ -388,69 +334,57 @@ fn rewrite_single_target_binding(
             0 => "source_match declares no top-level bindings".to_string(),
             n => format!("source_match declares {n} top-level bindings"),
         };
-        return Ok(Some(SelectorCodemodOutcome::candidate_only(
-            SelectorCodemodCandidate {
-                module: module.to_string(),
-                file: file.display().to_string(),
-                member_index,
-                export_name,
-                action: SelectorCodemodAction::Skipped,
-                target_binding: None,
-                declared_bindings: declared,
-                group_id: None,
-                matched_body_index: None,
-                candidate_count: None,
-                rewritten_holes: Vec::new(),
-                replacement_count: 0,
-                reason: Some(reason),
-            },
-        )));
-    };
-
-    let insertion = match target_binding_text_insertion(source_text, member_index, target) {
-        Ok(insertion) => insertion,
-        Err(err) => {
-            return Ok(Some(SelectorCodemodOutcome::candidate_only(
-                SelectorCodemodCandidate {
-                    module: module.to_string(),
-                    file: file.display().to_string(),
-                    member_index,
-                    export_name,
-                    action: SelectorCodemodAction::Skipped,
-                    target_binding: Some(target.clone()),
-                    declared_bindings: declared,
-                    group_id: None,
-                    matched_body_index: None,
-                    candidate_count: None,
-                    rewritten_holes: Vec::new(),
-                    replacement_count: 0,
-                    reason: Some(format!("cannot preserve YAML text edit: {err:#}")),
-                },
-            )));
-        }
-    };
-
-    Ok(Some(SelectorCodemodOutcome {
-        candidate: SelectorCodemodCandidate {
+        return Ok(Some(SelectorCodemodCandidate {
             module: module.to_string(),
             file: file.display().to_string(),
             member_index,
             export_name,
-            action: if apply {
-                SelectorCodemodAction::Changed
-            } else {
-                SelectorCodemodAction::WouldChange
-            },
-            target_binding: Some(target.clone()),
+            action: SelectorCodemodAction::Skipped,
+            target_binding: None,
             declared_bindings: declared,
             group_id: None,
             matched_body_index: None,
             candidate_count: None,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
-            reason: None,
+            reason: Some(reason),
+        }));
+    };
+
+    if apply {
+        // Insert `target_binding` ahead of the existing `match` key so the
+        // dumped mapping keeps the conventional ordering.
+        let mut rebuilt = serde_yaml::Mapping::new();
+        for (key, value) in source_match_mapping.iter() {
+            if key == &yk("match") && !rebuilt.contains_key(yk("target_binding")) {
+                rebuilt.insert(yk("target_binding"), Value::String(target.clone()));
+            }
+            rebuilt.insert(key.clone(), value.clone());
+        }
+        if !rebuilt.contains_key(yk("target_binding")) {
+            rebuilt.insert(yk("target_binding"), Value::String(target.clone()));
+        }
+        *source_match_mapping = rebuilt;
+    }
+
+    Ok(Some(SelectorCodemodCandidate {
+        module: module.to_string(),
+        file: file.display().to_string(),
+        member_index,
+        export_name,
+        action: if apply {
+            SelectorCodemodAction::Changed
+        } else {
+            SelectorCodemodAction::WouldChange
         },
-        text_edit: apply.then_some(insertion),
+        target_binding: Some(target.clone()),
+        declared_bindings: declared,
+        group_id: None,
+        matched_body_index: None,
+        candidate_count: None,
+        rewritten_holes: Vec::new(),
+        replacement_count: 0,
+        reason: None,
     }))
 }
 
@@ -567,7 +501,6 @@ struct NameBindingRewriteOutcomes {
     members_scanned: usize,
     members_seen: usize,
     groups_changed: usize,
-    text_edits: Vec<TextEdit>,
 }
 
 #[derive(Debug, Clone)]
@@ -581,6 +514,7 @@ struct NameBindingMember {
 #[derive(Debug, Clone, Copy)]
 struct NameBindingRewriteOptions {
     minimize_synthesized_selectors: bool,
+    full_ast_fallback: bool,
     apply: bool,
 }
 
@@ -642,7 +576,6 @@ fn rewrite_name_bindings_to_source_match(
     root: &mut serde_yaml::Mapping,
     index: &ChunkSelectorIndex,
     selected_exports: Option<&BTreeSet<String>>,
-    source_text: &str,
     options: NameBindingRewriteOptions,
 ) -> Result<NameBindingRewriteOutcomes> {
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
@@ -651,7 +584,6 @@ fn rewrite_name_bindings_to_source_match(
             members_scanned: 0,
             members_seen: 0,
             groups_changed: 0,
-            text_edits: Vec::new(),
         });
     };
     let mut candidates = Vec::new();
@@ -713,10 +645,12 @@ fn rewrite_name_bindings_to_source_match(
             });
     }
 
+    // `Some(value)` replaces the member in place (singleton group rewrites to a
+    // `source_match` member); `None` removes it (grouped members move into a
+    // `binding_groups` entry). The borrow of `members` is released before we
+    // touch `root` again to add `binding_groups`.
     let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
     let mut binding_groups = Vec::new();
-    let mut removed_group_member_indices = BTreeSet::new();
-    let mut text_edits = Vec::new();
     let mut groups_changed = 0;
     for (group_id, (decl_idx, group_members)) in grouped.into_iter().enumerate() {
         let synthesized = match synthesize_simplest_selector_for_group(
@@ -724,8 +658,21 @@ fn rewrite_name_bindings_to_source_match(
             decl_idx,
             &group_members,
             options.minimize_synthesized_selectors,
+            options.full_ast_fallback,
         ) {
-            Ok(synthesized) => synthesized,
+            Ok(GroupSelectorOutcome::Synthesized(synthesized)) => synthesized,
+            Ok(GroupSelectorOutcome::Skipped(reason)) => {
+                for member in group_members {
+                    candidates.push(skipped_candidate(
+                        module,
+                        file,
+                        member.member_index,
+                        Some(member.export_name),
+                        reason.clone(),
+                    ));
+                }
+                continue;
+            }
             Err(err) => {
                 for member in group_members {
                     candidates.push(skipped_candidate(
@@ -754,18 +701,6 @@ fn rewrite_name_bindings_to_source_match(
                 target_binding: Some(target.export_name.clone()),
             }));
             if options.apply {
-                let edit = source_match_selector_text_edit(
-                    source_text,
-                    member.member_index,
-                    &synthesized.match_source,
-                    &target.export_name,
-                )
-                .with_context(|| {
-                    format!(
-                        "cannot preserve YAML text edit for {module}:{}",
-                        member.export_name
-                    )
-                })?;
                 let replacement = member_with_source_match(
                     &member.export_name,
                     member.comment.clone(),
@@ -773,7 +708,6 @@ fn rewrite_name_bindings_to_source_match(
                     &target.export_name,
                 );
                 replacements.insert(member.member_index, Some(replacement));
-                text_edits.push(edit);
             }
         } else {
             for member in &group_members {
@@ -789,7 +723,6 @@ fn rewrite_name_bindings_to_source_match(
                 }));
                 if options.apply {
                     replacements.insert(member.member_index, None);
-                    removed_group_member_indices.insert(member.member_index);
                 }
             }
             if options.apply {
@@ -799,14 +732,6 @@ fn rewrite_name_bindings_to_source_match(
     }
 
     if options.apply {
-        if !binding_groups.is_empty() {
-            text_edits.extend(binding_group_text_edits(
-                source_text,
-                members.len(),
-                &removed_group_member_indices,
-                &binding_groups,
-            )?);
-        }
         apply_member_replacements(members, replacements);
         if !binding_groups.is_empty() {
             let entry = root
@@ -824,7 +749,6 @@ fn rewrite_name_bindings_to_source_match(
         members_scanned,
         members_seen,
         groups_changed,
-        text_edits,
     })
 }
 
@@ -1018,12 +942,23 @@ impl IndexedDeclaration {
     }
 }
 
+/// Outcome of trying to synthesize a selector for one declaration group.
+///
+/// `Skipped` is returned when minimization produces no sparse selector and the
+/// full-AST fallback is disabled (the default): rather than pin the exact AST
+/// (rebuild-fragile), the caller skips the members with this reason.
+enum GroupSelectorOutcome {
+    Synthesized(SynthesizedSelectorGroup),
+    Skipped(String),
+}
+
 fn synthesize_simplest_selector_for_group(
     index: &ChunkSelectorIndex,
     decl_idx: usize,
     members: &[NameBindingMember],
     minimize_synthesized_selectors: bool,
-) -> Result<SynthesizedSelectorGroup> {
+    full_ast_fallback: bool,
+) -> Result<GroupSelectorOutcome> {
     let decl = index
         .decls
         .get(decl_idx)
@@ -1049,36 +984,52 @@ fn synthesize_simplest_selector_for_group(
             )
         })
     };
+    let exact_proved =
+        |full_ast_fallback: bool| -> Result<Option<(String, BTreeSet<String>, usize)>> {
+            // The exact selector is the full-AST fallback. With `--no-minimize` the
+            // caller explicitly opted out of minimization and wants the exact
+            // selector, so emit it regardless of `full_ast_fallback`.
+            if minimize_synthesized_selectors && !full_ast_fallback {
+                return Ok(None);
+            }
+            let (exact_source, exact_holes) = exact_selector()?;
+            let candidate_count = prove_synthesized_selector(index, decl, &targets, &exact_source)
+                .context("proving exact synthesized selector")?;
+            Ok(Some((exact_source, exact_holes, candidate_count)))
+        };
     let specialized = minimize_synthesized_selectors
         .then(|| synthesize_specialized_selector(index, item, decl, &targets))
         .transpose()?
         .flatten();
-    let (match_source, rewritten_holes, candidate_count) = if let Some(specialized) = specialized {
+    let proved = if let Some(specialized) = specialized {
         let match_source = trim_selector_source_line_suffixes(&specialized.match_source);
         match prove_synthesized_selector(index, decl, &targets, &match_source) {
-            Ok(candidate_count) => (match_source, specialized.rewritten_holes, candidate_count),
-            Err(_) => {
-                let (exact_source, exact_holes) = exact_selector()?;
-                let candidate_count =
-                    prove_synthesized_selector(index, decl, &targets, &exact_source)
-                        .context("proving exact synthesized selector fallback")?;
-                (exact_source, exact_holes, candidate_count)
+            Ok(candidate_count) => {
+                Some((match_source, specialized.rewritten_holes, candidate_count))
             }
+            Err(_) => exact_proved(full_ast_fallback)?,
         }
     } else {
-        let (exact_source, exact_holes) = exact_selector()?;
-        let candidate_count = prove_synthesized_selector(index, decl, &targets, &exact_source)
-            .context("proving exact synthesized selector")?;
-        (exact_source, exact_holes, candidate_count)
+        exact_proved(full_ast_fallback)?
     };
 
-    Ok(SynthesizedSelectorGroup {
-        body_idx: decl.body_idx,
-        target_bindings: targets,
-        match_source,
-        rewritten_holes: rewritten_holes.into_iter().collect(),
-        candidate_count,
-    })
+    let Some((match_source, rewritten_holes, candidate_count)) = proved else {
+        return Ok(GroupSelectorOutcome::Skipped(
+            "minimization found no sparse selector; skipping full-AST pin \
+             (pass --full-ast-fallback to emit the exact selector)"
+                .to_string(),
+        ));
+    };
+
+    Ok(GroupSelectorOutcome::Synthesized(
+        SynthesizedSelectorGroup {
+            body_idx: decl.body_idx,
+            target_bindings: targets,
+            match_source,
+            rewritten_holes: rewritten_holes.into_iter().collect(),
+            candidate_count,
+        },
+    ))
 }
 
 fn prove_synthesized_selector(
@@ -2736,435 +2687,6 @@ fn var_kind_label(kind: VarDeclKind) -> &'static str {
 }
 
 #[derive(Debug, Clone)]
-struct TextEdit {
-    start: usize,
-    end: usize,
-    text: String,
-}
-
-fn target_binding_text_insertion(
-    source: &str,
-    member_index: usize,
-    target_binding: &str,
-) -> Result<TextEdit> {
-    if !is_safe_plain_yaml_scalar(target_binding) {
-        bail!("target_binding `{target_binding}` needs YAML quoting");
-    }
-    let lines = source_lines(source);
-    let members_line_idx =
-        find_mapping_key_line(&lines, 0, lines.len(), 0, "members").context("missing members:")?;
-    let member_starts = member_start_lines(&lines, members_line_idx + 1)?;
-    let Some(&member_start) = member_starts.get(member_index) else {
-        bail!("could not locate members[{member_index}] in source text");
-    };
-    let member_end = member_starts
-        .get(member_index + 1)
-        .copied()
-        .or_else(|| next_root_key_line(&lines, member_start + 1))
-        .unwrap_or(lines.len());
-
-    let source_match_line =
-        find_mapping_key_line(&lines, member_start, member_end, usize::MAX, "source_match")
-            .context("could not locate selector.source_match block in source text")?;
-    let source_match_indent = lines[source_match_line].indent;
-    let source_match_end = next_mapping_peer_or_parent_line(
-        &lines,
-        source_match_line + 1,
-        member_end,
-        source_match_indent,
-    )
-    .unwrap_or(member_end);
-    if find_mapping_key_line(
-        &lines,
-        source_match_line + 1,
-        source_match_end,
-        source_match_indent + 1,
-        "target_binding",
-    )
-    .is_some()
-    {
-        bail!("target_binding already present in source text");
-    }
-    let match_line = find_mapping_key_line(
-        &lines,
-        source_match_line + 1,
-        source_match_end,
-        source_match_indent + 1,
-        "match",
-    )
-    .context("could not locate source_match.match line in source text")?;
-    let indent = lines[match_line].indent_text();
-    Ok(TextEdit {
-        start: lines[match_line].start,
-        end: lines[match_line].start,
-        text: format!("{indent}target_binding: {target_binding}\n"),
-    })
-}
-
-fn source_match_selector_text_edit(
-    source: &str,
-    member_index: usize,
-    match_source: &str,
-    target_binding: &str,
-) -> Result<TextEdit> {
-    if !is_safe_plain_yaml_scalar(target_binding) {
-        bail!("target_binding `{target_binding}` needs YAML quoting");
-    }
-    let lines = source_lines(source);
-    let members_block = members_text_block(&lines)?;
-    let (member_start, member_end) = member_line_range(&members_block, member_index)?;
-    let selector_line =
-        find_mapping_key_line(&lines, member_start, member_end, usize::MAX, "selector")
-            .context("could not locate selector block in source text")?;
-    let selector_indent = lines[selector_line].indent;
-    let selector_end =
-        next_mapping_peer_or_parent_line(&lines, selector_line + 1, member_end, selector_indent)
-            .unwrap_or(member_end);
-    Ok(TextEdit {
-        start: lines[selector_line].start,
-        end: line_start_or_eof(source, &lines, selector_end),
-        text: render_source_match_selector_block(
-            lines[selector_line].indent_text(),
-            match_source,
-            target_binding,
-        ),
-    })
-}
-
-fn binding_group_text_edits(
-    source: &str,
-    member_count: usize,
-    removed_member_indices: &BTreeSet<usize>,
-    binding_groups: &[Value],
-) -> Result<Vec<TextEdit>> {
-    if binding_groups.is_empty() {
-        return Ok(Vec::new());
-    }
-    let lines = source_lines(source);
-    let members_block = members_text_block(&lines)?;
-    if removed_member_indices.len() == member_count {
-        let mut edits = Vec::new();
-        edits.push(TextEdit {
-            start: lines[members_block.members_line].start,
-            end: line_start_or_eof(source, &lines, members_block.end_line),
-            text: "members: []\n".to_string(),
-        });
-        edits.extend(binding_group_insertion_edits(
-            source,
-            &lines,
-            Some(members_block.end_line),
-            binding_groups,
-        )?);
-        return Ok(edits);
-    }
-
-    let mut edits = Vec::new();
-    for member_index in removed_member_indices {
-        let (start_line, end_line) = member_line_range(&members_block, *member_index)?;
-        edits.push(TextEdit {
-            start: lines[start_line].start,
-            end: line_start_or_eof(source, &lines, end_line),
-            text: String::new(),
-        });
-    }
-    edits.extend(binding_group_insertion_edits(
-        source,
-        &lines,
-        Some(members_block.end_line),
-        binding_groups,
-    )?);
-    Ok(edits)
-}
-
-fn binding_group_insertion_edits(
-    source: &str,
-    lines: &[SourceLine<'_>],
-    fallback_insert_line: Option<usize>,
-    binding_groups: &[Value],
-) -> Result<Vec<TextEdit>> {
-    if let Some(binding_groups_line) =
-        find_mapping_key_line_at_indent(lines, 0, lines.len(), 0, "binding_groups")
-    {
-        let existing_indent = lines
-            .iter()
-            .enumerate()
-            .skip(binding_groups_line + 1)
-            .find(|(_, line)| !line.trimmed.is_empty() && !line.trimmed.starts_with('#'))
-            .map(|(_, line)| line.indent_text().to_string())
-            .context("cannot append to empty or inline binding_groups block")?;
-        let binding_groups_end =
-            next_root_key_line(lines, binding_groups_line + 1).unwrap_or(lines.len());
-        return Ok(vec![TextEdit {
-            start: line_start_or_eof(source, lines, binding_groups_end),
-            end: line_start_or_eof(source, lines, binding_groups_end),
-            text: render_yaml_sequence_items(binding_groups, &existing_indent)?,
-        }]);
-    }
-
-    let insert_line = fallback_insert_line.context("missing insertion point for binding_groups")?;
-    let mut text = String::from("binding_groups:\n");
-    text.push_str(&render_yaml_sequence_items(binding_groups, "  ")?);
-    Ok(vec![TextEdit {
-        start: line_start_or_eof(source, lines, insert_line),
-        end: line_start_or_eof(source, lines, insert_line),
-        text,
-    }])
-}
-
-fn render_source_match_selector_block(
-    indent: &str,
-    match_source: &str,
-    target_binding: &str,
-) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("{indent}selector:\n"));
-    out.push_str(&format!("{indent}  source_match:\n"));
-    out.push_str(&format!("{indent}    identifiers: alpha_all\n"));
-    out.push_str(&format!("{indent}    target_binding: {target_binding}\n"));
-    out.push_str(&format!("{indent}    match: |-\n"));
-    push_literal_block(&mut out, match_source, &format!("{indent}      "));
-    out
-}
-
-fn render_yaml_sequence_items(items: &[Value], indent: &str) -> Result<String> {
-    let yaml = serde_yaml::to_string(&Value::Sequence(items.to_vec()))
-        .context("serializing YAML sequence items")?;
-    let mut out = String::new();
-    for line in yaml.lines() {
-        if line == "---" || line == "..." {
-            continue;
-        }
-        out.push_str(indent);
-        out.push_str(line);
-        out.push('\n');
-    }
-    Ok(out)
-}
-
-fn push_literal_block(out: &mut String, text: &str, indent: &str) {
-    for line in text.split('\n') {
-        if !line.is_empty() {
-            out.push_str(indent);
-            out.push_str(line);
-        }
-        out.push('\n');
-    }
-}
-
-fn apply_text_edits(source: &str, edits: &[TextEdit]) -> Result<String> {
-    let mut ordered = edits.to_vec();
-    ordered.sort_by_key(|edit| (edit.start, edit.end));
-    let mut output = String::with_capacity(
-        source.len() + ordered.iter().map(|edit| edit.text.len()).sum::<usize>(),
-    );
-    let mut cursor = 0;
-    for edit in ordered {
-        if edit.start < cursor
-            || edit.end < edit.start
-            || !source.is_char_boundary(edit.start)
-            || !source.is_char_boundary(edit.end)
-        {
-            bail!(
-                "invalid or overlapping text edit {}..{}",
-                edit.start,
-                edit.end
-            );
-        }
-        output.push_str(&source[cursor..edit.start]);
-        output.push_str(&edit.text);
-        cursor = edit.end;
-    }
-    output.push_str(&source[cursor..]);
-    Ok(output)
-}
-
-struct MembersTextBlock {
-    members_line: usize,
-    member_starts: Vec<usize>,
-    end_line: usize,
-}
-
-fn members_text_block(lines: &[SourceLine<'_>]) -> Result<MembersTextBlock> {
-    let members_line = find_mapping_key_line_at_indent(lines, 0, lines.len(), 0, "members")
-        .context("missing members:")?;
-    let member_starts = member_start_lines(lines, members_line + 1)?;
-    let end_line = next_root_key_line(lines, members_line + 1).unwrap_or(lines.len());
-    Ok(MembersTextBlock {
-        members_line,
-        member_starts,
-        end_line,
-    })
-}
-
-fn member_line_range(block: &MembersTextBlock, member_index: usize) -> Result<(usize, usize)> {
-    let Some(&member_start) = block.member_starts.get(member_index) else {
-        bail!("could not locate members[{member_index}] in source text");
-    };
-    let member_end = block
-        .member_starts
-        .get(member_index + 1)
-        .copied()
-        .unwrap_or(block.end_line);
-    Ok((member_start, member_end))
-}
-
-fn line_start_or_eof(source: &str, lines: &[SourceLine<'_>], line: usize) -> usize {
-    lines.get(line).map_or(source.len(), |line| line.start)
-}
-
-#[derive(Debug)]
-struct SourceLine<'a> {
-    start: usize,
-    text: &'a str,
-    indent: usize,
-    trimmed: &'a str,
-}
-
-impl SourceLine<'_> {
-    fn indent_text(&self) -> &str {
-        &self.text[..self.indent]
-    }
-}
-
-fn source_lines(source: &str) -> Vec<SourceLine<'_>> {
-    let mut offset = 0;
-    source
-        .split_inclusive('\n')
-        .map(|line| {
-            let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
-            let line_without_newline = line_without_newline
-                .strip_suffix('\r')
-                .unwrap_or(line_without_newline);
-            let indent = line_without_newline
-                .chars()
-                .take_while(|ch| *ch == ' ')
-                .count();
-            let start = offset;
-            offset += line.len();
-            SourceLine {
-                start,
-                text: line_without_newline,
-                indent,
-                trimmed: line_without_newline.trim_start(),
-            }
-        })
-        .collect()
-}
-
-fn member_start_lines(lines: &[SourceLine<'_>], start: usize) -> Result<Vec<usize>> {
-    let Some(first_member) = lines
-        .iter()
-        .enumerate()
-        .skip(start)
-        .find(|(_, line)| !line.trimmed.is_empty() && !line.trimmed.starts_with('#'))
-    else {
-        return Ok(Vec::new());
-    };
-    if !first_member.1.trimmed.starts_with("- ") {
-        bail!("members: is not followed by a block sequence");
-    }
-    let member_indent = first_member.1.indent;
-    Ok(lines
-        .iter()
-        .enumerate()
-        .skip(first_member.0)
-        .take_while(|(_, line)| {
-            line.trimmed.is_empty() || line.trimmed.starts_with('#') || line.indent >= member_indent
-        })
-        .filter_map(|(idx, line)| {
-            (line.indent == member_indent && line.trimmed.starts_with("- ")).then_some(idx)
-        })
-        .collect())
-}
-
-fn next_root_key_line(lines: &[SourceLine<'_>], start: usize) -> Option<usize> {
-    lines
-        .iter()
-        .enumerate()
-        .skip(start)
-        .find_map(|(idx, line)| {
-            (!line.trimmed.is_empty()
-                && !line.trimmed.starts_with('#')
-                && line.indent == 0
-                && mapping_key(line.trimmed).is_some())
-            .then_some(idx)
-        })
-}
-
-fn next_mapping_peer_or_parent_line(
-    lines: &[SourceLine<'_>],
-    start: usize,
-    end: usize,
-    parent_indent: usize,
-) -> Option<usize> {
-    lines
-        .iter()
-        .enumerate()
-        .take(end)
-        .skip(start)
-        .find_map(|(idx, line)| {
-            (!line.trimmed.is_empty()
-                && !line.trimmed.starts_with('#')
-                && line.indent <= parent_indent
-                && (line.trimmed.starts_with("- ") || mapping_key(line.trimmed).is_some()))
-            .then_some(idx)
-        })
-}
-
-fn find_mapping_key_line(
-    lines: &[SourceLine<'_>],
-    start: usize,
-    end: usize,
-    min_indent: usize,
-    key: &str,
-) -> Option<usize> {
-    lines
-        .iter()
-        .enumerate()
-        .take(end)
-        .skip(start)
-        .find_map(|(idx, line)| {
-            let indent_matches = min_indent == usize::MAX || line.indent >= min_indent;
-            (indent_matches && mapping_key(line.trimmed) == Some(key)).then_some(idx)
-        })
-}
-
-fn find_mapping_key_line_at_indent(
-    lines: &[SourceLine<'_>],
-    start: usize,
-    end: usize,
-    indent: usize,
-    key: &str,
-) -> Option<usize> {
-    lines
-        .iter()
-        .enumerate()
-        .take(end)
-        .skip(start)
-        .find_map(|(idx, line)| {
-            (line.indent == indent && mapping_key(line.trimmed) == Some(key)).then_some(idx)
-        })
-}
-
-fn mapping_key(trimmed: &str) -> Option<&str> {
-    if trimmed.starts_with('#') || trimmed.starts_with("- ") {
-        return None;
-    }
-    let (key, rest) = trimmed.split_once(':')?;
-    (!key.is_empty()
-        && !key.chars().any(char::is_whitespace)
-        && (rest.is_empty() || rest.starts_with(' ') || rest.starts_with('#')))
-    .then_some(key)
-}
-
-fn is_safe_plain_yaml_scalar(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$'))
-}
-
-#[derive(Debug, Clone)]
 struct SourceReplacement {
     start: usize,
     end: usize,
@@ -3401,3 +2923,140 @@ fn is_zero(value: &usize) -> bool {
 
 #[cfg(test)]
 mod selector_minimizer_proptest;
+
+#[cfg(test)]
+mod full_ast_fallback_tests {
+    use super::*;
+
+    fn outcome_for(
+        source: &str,
+        runtime: &str,
+        minimize: bool,
+        full_ast_fallback: bool,
+    ) -> GroupSelectorOutcome {
+        js_ast::with_swc_globals(|| {
+            let parsed =
+                js_ast::parse_js_module_consuming("<fallback-test>", source.to_string()).unwrap();
+            let index = ChunkSelectorIndex::new(parsed);
+            let decl_idx = *index
+                .binding_to_decl
+                .get(runtime)
+                .and_then(|decls| decls.first())
+                .expect("chunk declares the target binding");
+            let members = [NameBindingMember {
+                member_index: 0,
+                export_name: "Target".to_string(),
+                binding_name: runtime.to_string(),
+                comment: None,
+            }];
+            synthesize_simplest_selector_for_group(
+                &index,
+                decl_idx,
+                &members,
+                minimize,
+                full_ast_fallback,
+            )
+            .unwrap()
+        })
+    }
+
+    // A function whose body's only discriminator (a deep numeric literal) is
+    // not surfaced by the bounded body-anchor candidate generator, among
+    // same-arity siblings: the minimizer finds no sparse selector, so synthesis
+    // must fall back to the exact full-AST selector.
+    const HARD_TO_MINIMIZE: &str = "\
+function target(a, b) {\n\
+  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 1234567] })));\n\
+}\n\
+function siblingOne(a, b) {\n\
+  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 7654321] })));\n\
+}\n\
+function siblingTwo(a, b) {\n\
+  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 9999999] })));\n\
+}\n\
+function wrap(a, b, c) { return c; }\n\
+function deep(x) { return x; }\n\
+function nest(x) { return x; }\n\
+export { target };\n";
+
+    #[test]
+    fn full_ast_fallback_only_affects_the_exact_fallback_decision() {
+        // Core invariant of the flag: enabling it can only turn a default skip
+        // into an (exact) emission, never the reverse. Whenever the default
+        // (fallback off) skips, the reason is the no-sparse-selector message and
+        // the same group with the flag on emits instead.
+        js_ast::with_swc_globals(|| {
+            let index = ChunkSelectorIndex::new(
+                js_ast::parse_js_module_consuming("<fallback-test>", HARD_TO_MINIMIZE.to_string())
+                    .unwrap(),
+            );
+            let decl_idx = *index
+                .binding_to_decl
+                .get("target")
+                .unwrap()
+                .first()
+                .unwrap();
+            let members = [NameBindingMember {
+                member_index: 0,
+                export_name: "Target".to_string(),
+                binding_name: "target".to_string(),
+                comment: None,
+            }];
+            let off =
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false)
+                    .unwrap();
+            if let GroupSelectorOutcome::Skipped(reason) = &off {
+                assert!(reason.contains("no sparse selector"), "{reason}");
+                let on =
+                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
+                        .unwrap();
+                assert!(
+                    matches!(on, GroupSelectorOutcome::Synthesized(_)),
+                    "fallback on must emit where the default skipped"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn full_ast_fallback_on_never_skips_where_off_could_emit() {
+        // With the fallback enabled, the exact selector is emitted; the only
+        // non-emission is a hard error (alpha-ambiguous chunk), never a skip.
+        js_ast::with_swc_globals(|| {
+            let index = ChunkSelectorIndex::new(
+                js_ast::parse_js_module_consuming("<fallback-test>", HARD_TO_MINIMIZE.to_string())
+                    .unwrap(),
+            );
+            let decl_idx = *index
+                .binding_to_decl
+                .get("target")
+                .unwrap()
+                .first()
+                .unwrap();
+            let members = [NameBindingMember {
+                member_index: 0,
+                export_name: "Target".to_string(),
+                binding_name: "target".to_string(),
+                comment: None,
+            }];
+            let GroupSelectorOutcome::Synthesized(group) =
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
+                    .unwrap()
+            else {
+                panic!("full_ast_fallback=true must not skip");
+            };
+            assert_eq!(group.candidate_count, 1);
+            // The selector resolves uniquely back to the intended target.
+            let matched = matched_body_indices(&index, "Target", &group.match_source).unwrap();
+            assert_eq!(matched, BTreeSet::from([group.body_idx]));
+        });
+    }
+
+    #[test]
+    fn no_minimize_emits_exact_regardless_of_fallback_flag() {
+        // `--no-minimize` is an explicit request for the exact selector, so it
+        // emits even when full_ast_fallback is off.
+        let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
+        assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
+    }
+}

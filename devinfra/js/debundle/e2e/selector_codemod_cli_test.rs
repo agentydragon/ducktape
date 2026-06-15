@@ -452,6 +452,34 @@ export { selectedConfig };
 }
 
 #[test]
+fn synthesize_selectors_full_ast_fallback_flag_is_accepted() {
+    // The minimizer almost always finds a sparse selector for synthesizable
+    // declarations, so the full-AST fallback path is hard to trigger from a
+    // small fixture (the gating itself is unit-tested in selector_codemod.rs).
+    // Here we just confirm the `--full-ast-fallback` flag is wired into the CLI
+    // and does not change the result when minimization succeeds.
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_function_minimization_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/format:FormatValue",
+            "--full-ast-fallback",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["summary"]["skipped_candidates"], 0, "{parsed}");
+}
+
+#[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
@@ -502,7 +530,7 @@ fn dry_run_reports_single_binding_rewrite_without_writing() {
 }
 
 #[test]
-fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_text() {
+fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure() {
     let dir = tempfile::tempdir().unwrap();
     let (modules, source) = synthesis_single_member_text_fixture(dir.path());
 
@@ -528,38 +556,53 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_text() {
         "{parsed}"
     );
 
+    // The apply path now loads, mutates, and dumps the whole document with
+    // serde_yaml, so it intentionally does NOT preserve `#` comments or author
+    // formatting. Assert the resulting structure/content rather than bytes:
+    // explicit `comment:`/value fields survive, the unrelated member and
+    // `anonymous_statements` are untouched, and only the selected member is
+    // rewritten to a `source_match`.
     let rewritten = fs::read_to_string(modules.join("app/bootstrap.yaml")).unwrap();
-    assert_eq!(
-        rewritten,
-        r#"# merged from: legacy/bootstrap.yaml
-comment: |
-  Keep this module grouped with startup.
-members:
-  # keep the neighboring member untouched
-  - name: UntouchedBinding
-    selector:
-      binding:
-        name: untouchedBinding
-  # keep the selected member's surrounding YAML comment
-  - name: FormatValue
-    comment: Keep readable comment field.
-    # keep the pre-selector YAML comment
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: FormatValue
-        match: |-
-          function FormatValue(value) {
-            const trimmed = value.trim();
-
-            return trimmed.toUpperCase();
-          }
-anonymous_statements:
-  - match: |
-      initializeRuntime();
-"#
-    );
     assert_no_trailing_whitespace(&rewritten);
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    assert_eq!(
+        doc["comment"].as_str().unwrap().trim(),
+        "Keep this module grouped with startup."
+    );
+    let members = doc["members"].as_sequence().unwrap();
+    assert_eq!(members.len(), 2, "{doc:?}");
+
+    // Unrelated member is byte-for-byte the same shape: still a name-binding.
+    assert_eq!(members[0]["name"], "UntouchedBinding");
+    assert_eq!(
+        members[0]["selector"]["binding"]["name"],
+        "untouchedBinding"
+    );
+
+    // Selected member is rewritten to a source_match, keeping its `comment:`
+    // value field (a real YAML key, not a `#` comment).
+    assert_eq!(members[1]["name"], "FormatValue");
+    assert_eq!(members[1]["comment"], "Keep readable comment field.");
+    let source_match = &members[1]["selector"]["source_match"];
+    assert_eq!(source_match["identifiers"], "alpha_all");
+    assert_eq!(source_match["target_binding"], "FormatValue");
+    let match_source = source_match["match"].as_str().unwrap();
+    assert!(
+        match_source.contains("function FormatValue(value)"),
+        "{match_source}"
+    );
+    assert!(
+        match_source.contains("trimmed.toUpperCase()"),
+        "{match_source}"
+    );
+
+    assert_eq!(
+        doc["anonymous_statements"][0]["match"]
+            .as_str()
+            .unwrap()
+            .trim(),
+        "initializeRuntime();"
+    );
 }
 
 #[test]
@@ -726,6 +769,10 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     assert!(
         match_source.contains("DECLARATORS_BETWEEN"),
         "irrelevant middle declarator should become a gap:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("skipped"),
+        "the skipped middle declarator binding must not be copied:\n{match_source}"
     );
 }
 
@@ -995,7 +1042,7 @@ fn apply_adds_target_binding_and_honors_module_prefix_filter() {
 }
 
 #[test]
-fn apply_single_target_binding_preserves_comments_and_local_text() {
+fn apply_single_target_binding_rewrites_structure_via_serde() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let target = commented_single_target_fixture(&modules);
@@ -1018,34 +1065,45 @@ fn apply_single_target_binding_preserves_comments_and_local_text() {
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
     assert_eq!(parsed["summary"]["skipped_candidates"], 1, "{parsed}");
 
+    // The apply path is now load-mutate-dump via serde_yaml: `#` comments and
+    // author formatting are intentionally not preserved (binding/module notes
+    // live in explicit `comment:` value fields instead). Assert structure and
+    // content rather than exact bytes.
     let rewritten = fs::read_to_string(&target).unwrap();
+    assert_no_trailing_whitespace(&rewritten);
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
     assert_eq!(
-        rewritten,
-        r#"# module-level note must survive
-# another note that used to be lost by serde rewrites
-comment: |
-  Keep this module grouped with startup.
-members:
-  # keep the member comment
-  - name: StartupFactory
-    selector:
-      source_match:
-        identifiers: alpha_all
-        # keep the selector comment
-        target_binding: startupFactory
-        match: |
-          const startupFactory = createStartupFactory();
-  - name: AlreadyAnchored
-    selector:
-      source_match:
-        target_binding: alreadyAnchored
-        match: |
-          const alreadyAnchored = createAlreadyAnchored();
+        doc["comment"].as_str().unwrap().trim(),
+        "Keep this module grouped with startup."
+    );
+    let members = doc["members"].as_sequence().unwrap();
+    assert_eq!(members.len(), 2, "{doc:?}");
 
-anonymous_statements:
-  - match: |
-      initializeRuntime();
-"#
+    // First member: target_binding inserted ahead of the existing match.
+    assert_eq!(members[0]["name"], "StartupFactory");
+    let first = &members[0]["selector"]["source_match"];
+    assert_eq!(first["identifiers"], "alpha_all");
+    assert_eq!(first["target_binding"], "startupFactory");
+    assert_eq!(
+        first["match"].as_str().unwrap().trim(),
+        "const startupFactory = createStartupFactory();"
+    );
+
+    // Second member already had a target_binding, so it is skipped (unchanged).
+    assert_eq!(members[1]["name"], "AlreadyAnchored");
+    let second = &members[1]["selector"]["source_match"];
+    assert_eq!(second["target_binding"], "alreadyAnchored");
+    assert_eq!(
+        second["match"].as_str().unwrap().trim(),
+        "const alreadyAnchored = createAlreadyAnchored();"
+    );
+
+    assert_eq!(
+        doc["anonymous_statements"][0]["match"]
+            .as_str()
+            .unwrap()
+            .trim(),
+        "initializeRuntime();"
     );
 }
 
