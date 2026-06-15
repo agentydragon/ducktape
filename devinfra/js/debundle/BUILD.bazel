@@ -498,7 +498,10 @@ rust_test(
 
 rust_library(
     name = "selector_codemod",
-    srcs = ["selector_codemod.rs"],
+    srcs = [
+        "selector_codemod.rs",
+        "selector_minimizer_proptest.rs",
+    ],
     crate_root = "selector_codemod.rs",
     edition = "2024",
     deps = [
@@ -515,6 +518,13 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
+)
+
+rust_test(
+    name = "selector_codemod_test",
+    crate = ":selector_codemod",
+    edition = "2024",
+    deps = ["@crates//:proptest"],
 )
 
 rust_library(

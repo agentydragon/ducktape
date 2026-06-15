@@ -4801,3 +4801,6 @@ pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut St
 fn is_zero(value: &usize) -> bool {
     *value == 0
 }
+
+#[cfg(test)]
+mod selector_minimizer_proptest;
