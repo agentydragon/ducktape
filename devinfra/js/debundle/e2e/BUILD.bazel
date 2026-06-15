@@ -388,6 +388,24 @@ rust_test(
     ],
 )
 
+# Ignored target-behavior examples for recursive selector minimization.
+# Each case can be unignored independently as that selector shape lands.
+rust_test(
+    name = "selector_minimizer_expectation_test",
+    srcs = ["selector_minimizer_expectation_test.rs"],
+    compile_data = glob([
+        "testdata/selector_minimizer_expectations/**/*.js",
+    ]),
+    crate_root = "selector_minimizer_expectation_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
 # `debundle gate {list,describe,cut}` against REAL pipeline
 # artifacts: a cyclic spec is rejected by `debundle run`, then the
 # gate CLI is exercised against the owner_graph.json + cycles.json it
