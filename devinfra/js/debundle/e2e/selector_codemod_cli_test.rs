@@ -185,6 +185,9 @@ anonymous_statements:
 
 fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
+    // Keep `concat!` with explicit `\n`: lines carry intentional trailing
+    // whitespace/tabs (exercising selector whitespace normalization) that a raw
+    // string or `.js` include would lose to the trim-trailing-whitespace hook.
     write(
         &source,
         concat!(
@@ -245,6 +248,9 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
 
 fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
+    // Keep `concat!` with explicit `\n`: the body lines carry intentional
+    // trailing whitespace/tabs that a raw string or `.js` include would lose to
+    // the trim-trailing-whitespace hook.
     write(
         &source,
         concat!(
@@ -291,18 +297,17 @@ fn synthesis_function_minimization_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "function runtimeFormatter(value) {\n",
-            "  const normalized = value.trim().toUpperCase();\n",
-            "  if (normalized.length > 8) {\n",
-            "    return normalized.slice(0, 8);\n",
-            "  }\n",
-            "  return normalized.padEnd(8, \"_\");\n",
-            "}\n",
-            "const unrelatedValue = \"kept\";\n",
-            "console.log(runtimeFormatter(\" ok \"), unrelatedValue);\n",
-            "export { runtimeFormatter };\n",
-        ),
+        r#"function runtimeFormatter(value) {
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length > 8) {
+    return normalized.slice(0, 8);
+  }
+  return normalized.padEnd(8, "_");
+}
+const unrelatedValue = "kept";
+console.log(runtimeFormatter(" ok "), unrelatedValue);
+export { runtimeFormatter };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -321,24 +326,23 @@ fn synthesis_object_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedConfig = buildConfig({\n",
-            "  stableKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
-            "  generatedPayload: createPayload(() => Math.random()),\n",
-            "  extraNested: { generated: computeNested(\"selected\"), count: 3 },\n",
-            "});\n",
-            "const otherConfig = buildConfig({\n",
-            "  otherKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
-            "  generatedPayload: createPayload(() => Math.random()),\n",
-            "  extraNested: { generated: computeNested(\"other\"), count: 3 },\n",
-            "});\n",
-            "function buildConfig(value) { return value; }\n",
-            "function expensiveValue(value) { return value; }\n",
-            "function createPayload(value) { return value; }\n",
-            "function computeNested(value) { return value; }\n",
-            "console.log(selectedConfig.stableKey, otherConfig.otherKey);\n",
-            "export { selectedConfig };\n",
-        ),
+        r#"const selectedConfig = buildConfig({
+  stableKey: expensiveValue("selected", { noisy: [1, 2, 3] }),
+  generatedPayload: createPayload(() => Math.random()),
+  extraNested: { generated: computeNested("selected"), count: 3 },
+});
+const otherConfig = buildConfig({
+  otherKey: expensiveValue("selected", { noisy: [1, 2, 3] }),
+  generatedPayload: createPayload(() => Math.random()),
+  extraNested: { generated: computeNested("other"), count: 3 },
+});
+function buildConfig(value) { return value; }
+function expensiveValue(value) { return value; }
+function createPayload(value) { return value; }
+function computeNested(value) { return value; }
+console.log(selectedConfig.stableKey, otherConfig.otherKey);
+export { selectedConfig };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -357,24 +361,23 @@ fn synthesis_group_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedA = makeThing({\n",
-            "  stableA: computeValue(\"a\", { noisy: [1, 2, 3] }),\n",
-            "  volatileA: makeVolatile(() => Math.random()),\n",
-            "}),\n",
-            "  skipped = makeThing({ skippedKey: computeValue(\"skip\") }),\n",
-            "  selectedB = makeThing({\n",
-            "    stableB: computeValue(\"b\", { noisy: [4, 5, 6] }),\n",
-            "    volatileB: makeVolatile(() => Date.now()),\n",
-            "  });\n",
-            "const otherA = makeThing({ otherA: computeValue(\"a\") }),\n",
-            "  otherB = makeThing({ otherB: computeValue(\"b\") });\n",
-            "function makeThing(value) { return value; }\n",
-            "function computeValue(value) { return value; }\n",
-            "function makeVolatile(value) { return value; }\n",
-            "console.log(selectedA.stableA, selectedB.stableB, otherA.otherA, otherB.otherB);\n",
-            "export { selectedA, selectedB };\n",
-        ),
+        r#"const selectedA = makeThing({
+  stableA: computeValue("a", { noisy: [1, 2, 3] }),
+  volatileA: makeVolatile(() => Math.random()),
+}),
+  skipped = makeThing({ skippedKey: computeValue("skip") }),
+  selectedB = makeThing({
+    stableB: computeValue("b", { noisy: [4, 5, 6] }),
+    volatileB: makeVolatile(() => Date.now()),
+  });
+const otherA = makeThing({ otherA: computeValue("a") }),
+  otherB = makeThing({ otherB: computeValue("b") });
+function makeThing(value) { return value; }
+function computeValue(value) { return value; }
+function makeVolatile(value) { return value; }
+console.log(selectedA.stableA, selectedB.stableB, otherA.otherA, otherB.otherB);
+export { selectedA, selectedB };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -397,44 +400,43 @@ fn synthesis_branch_and_bound_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedConfig = makeConfig({\n",
-            "  alphaKey: computeValue(\"selected-alpha\"),\n",
-            "  betaKey: computeValue(\"selected-beta\"),\n",
-            "  gammaKey: computeValue(\"selected-gamma\"),\n",
-            "  deltaKey: computeValue(\"selected-delta\"),\n",
-            "  epsilonKey: computeValue(\"selected-epsilon\"),\n",
-            "});\n",
-            "const competitorOne = makeConfig({\n",
-            "  alphaKey: computeValue(\"one-alpha\"),\n",
-            "  betaKey: computeValue(\"one-beta\"),\n",
-            "  deltaKey: computeValue(\"one-delta\"),\n",
-            "});\n",
-            "const competitorTwo = makeConfig({\n",
-            "  alphaKey: computeValue(\"two-alpha\"),\n",
-            "  gammaKey: computeValue(\"two-gamma\"),\n",
-            "  epsilonKey: computeValue(\"two-epsilon\"),\n",
-            "});\n",
-            "const competitorThree = makeConfig({\n",
-            "  betaKey: computeValue(\"three-beta\"),\n",
-            "});\n",
-            "const competitorFour = makeConfig({\n",
-            "  gammaKey: computeValue(\"four-gamma\"),\n",
-            "});\n",
-            "const competitorAlphaBeta = makeConfig({ alphaKey: 1, betaKey: 1 });\n",
-            "const competitorAlphaGamma = makeConfig({ alphaKey: 1, gammaKey: 1 });\n",
-            "const competitorAlphaDelta = makeConfig({ alphaKey: 1, deltaKey: 1 });\n",
-            "const competitorAlphaEpsilon = makeConfig({ alphaKey: 1, epsilonKey: 1 });\n",
-            "const competitorBetaDelta = makeConfig({ betaKey: 1, deltaKey: 1 });\n",
-            "const competitorBetaEpsilon = makeConfig({ betaKey: 1, epsilonKey: 1 });\n",
-            "const competitorGammaDelta = makeConfig({ gammaKey: 1, deltaKey: 1 });\n",
-            "const competitorGammaEpsilon = makeConfig({ gammaKey: 1, epsilonKey: 1 });\n",
-            "const competitorDeltaEpsilon = makeConfig({ deltaKey: 1, epsilonKey: 1 });\n",
-            "function makeConfig(value) { return value; }\n",
-            "function computeValue(value) { return value; }\n",
-            "console.log(selectedConfig, competitorOne, competitorTwo, competitorThree, competitorFour);\n",
-            "export { selectedConfig };\n",
-        ),
+        r#"const selectedConfig = makeConfig({
+  alphaKey: computeValue("selected-alpha"),
+  betaKey: computeValue("selected-beta"),
+  gammaKey: computeValue("selected-gamma"),
+  deltaKey: computeValue("selected-delta"),
+  epsilonKey: computeValue("selected-epsilon"),
+});
+const competitorOne = makeConfig({
+  alphaKey: computeValue("one-alpha"),
+  betaKey: computeValue("one-beta"),
+  deltaKey: computeValue("one-delta"),
+});
+const competitorTwo = makeConfig({
+  alphaKey: computeValue("two-alpha"),
+  gammaKey: computeValue("two-gamma"),
+  epsilonKey: computeValue("two-epsilon"),
+});
+const competitorThree = makeConfig({
+  betaKey: computeValue("three-beta"),
+});
+const competitorFour = makeConfig({
+  gammaKey: computeValue("four-gamma"),
+});
+const competitorAlphaBeta = makeConfig({ alphaKey: 1, betaKey: 1 });
+const competitorAlphaGamma = makeConfig({ alphaKey: 1, gammaKey: 1 });
+const competitorAlphaDelta = makeConfig({ alphaKey: 1, deltaKey: 1 });
+const competitorAlphaEpsilon = makeConfig({ alphaKey: 1, epsilonKey: 1 });
+const competitorBetaDelta = makeConfig({ betaKey: 1, deltaKey: 1 });
+const competitorBetaEpsilon = makeConfig({ betaKey: 1, epsilonKey: 1 });
+const competitorGammaDelta = makeConfig({ gammaKey: 1, deltaKey: 1 });
+const competitorGammaEpsilon = makeConfig({ gammaKey: 1, epsilonKey: 1 });
+const competitorDeltaEpsilon = makeConfig({ deltaKey: 1, epsilonKey: 1 });
+function makeConfig(value) { return value; }
+function computeValue(value) { return value; }
+console.log(selectedConfig, competitorOne, competitorTwo, competitorThree, competitorFour);
+export { selectedConfig };
+"#,
     );
     let modules = root.join("modules");
     write(
