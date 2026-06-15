@@ -44,6 +44,31 @@ ordering noise, unrelated siblings). The cost model should _prefer retaining
 concrete meaningful content over incidental structure_, not merely minimize
 token count.
 
+### Selector groups are a first-class minimization target
+
+A **binding group** is one `source_match` + `exports:` map that resolves
+several members at once (spec `binding_groups:`; matcher support already exists
+via `resolve_member_binding_group_match`). Preferring a group over N individual
+selectors **avoids multiplication**: the shared enclosing structure is described
+once instead of N times, and the cluster re-identifies as a unit (fewer,
+sturdier anchors to maintain across rebuilds).
+
+Minimizing a group is the same anchor-cover search, but the uniqueness target is
+the _tuple_ of target slots resolving to the right exports. It must (1) hole all
+non-target slots/structure (`DECLARATORS_BETWEEN/_AFTER`, `OBJECT_PROPS`, ...),
+(2) keep enough shared anchors to claim the enclosing declaration uniquely among
+chunk siblings, and (3) keep enough per-member anchors to bind each export to
+the correct slot when members are otherwise alike (a literal like `"primary"`
+vs `"secondary"` can both claim the group and disambiguate members). The
+existing `VarSlotConstraintSearch` already does this for declarator groups
+(`binding_group_declarators` passes).
+
+The genuinely new piece is the **grouping decision** (`binding_group_partition`):
+partition requested targets into groups-vs-standalone — group those sharing
+structure, split off distant ones — so the minimizer emits one group + one
+standalone rather than three individual selectors. This is part of the
+objective, not a post-hoc step.
+
 ## Why the PR 2250 implementation produces over-/mis-pinned selectors
 
 Running the suite with `--ignored`: 1/7 pass (`binding_group_declarators`, the
