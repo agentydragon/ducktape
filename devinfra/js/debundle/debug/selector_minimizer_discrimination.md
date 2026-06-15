@@ -1,7 +1,10 @@
 # Recursive selector minimizer: discrimination-driven anchor selection
 
-Status: in progress (started 2026-06-15). Tracks the work behind the ignored
-`//devinfra/js/debundle/e2e:selector_minimizer_expectation_test` suite.
+Status: in progress (started 2026-06-15). The expectation suite
+`//devinfra/js/debundle/e2e:selector_minimizer_expectation_test` is fully
+un-ignored and green (function bodies, object literals, class bodies, var
+declarator groups, group-vs-standalone partitioning); a swc-native property
+test (`//devinfra/js/debundle:selector_codemod_test`) guards gate 1.
 
 ## Goal
 
@@ -13,6 +16,57 @@ holing the incidental/volatile rest (`ANYTHING`, `STMT_LIST`, `OBJECT_PROPS`,
 every nesting level.
 
 Perf budget: ideally <10s per invocation, 60s hard.
+
+## Use cases and the batch application
+
+There are two entry shapes, and the second is primary:
+
+1. **Pull out one item** — minimize a single named binding's selector.
+2. **Minify a module YAML** — take an existing extracted module's members
+   (today mostly `binding.name` minified-name pins) and rewrite them into
+   minified, forward-compatible `source_match` selectors and `binding_groups`.
+   This path **decides grouping**: members sharing an enclosing declaration
+   become one `binding_group`; one YAML may yield several groups plus
+   standalones. Use case 1 is the **N=1 special case** of this path, not a
+   separate code path.
+
+**Application:** run this mechanically over the `tana/re` web spec (~6k
+name-pins) to convert it to minified selectors/groups, then minimally tweak and
+review diffs. The algorithm therefore has to be a useful _first pass_, not
+perfect — it may occasionally over-pin (emit a wasteful fuller AST) as long as
+it finds the common, useful minimizations.
+
+### Scale (must work at Tana scale)
+
+- **Parse/index once per chunk, not per member.** A YAML's members all resolve
+  against the same chunk; share one parsed module + one `SelectorCandidateIndex`
+  (PR 2251) across every member's minimization.
+- **Prefilter competitors with the index before any matcher call.** The cover
+  is currently matcher-driven (~O(anchors × competitors) real matches per
+  binding), which is fine for test chunks but too slow for Tana-size chunks. Use
+  the index posting lists to narrow competitors first; fall back to the matcher
+  only to prove the chosen candidate.
+- Pragmatic over-pinning is acceptable if it keeps the algorithm fast and
+  simple; correctness (gate 1) is never traded away — every emitted selector is
+  proven by the real matcher.
+
+### Known mechanical limit (the policy tension)
+
+"Keep meaningful landmarks" and "exact-minimum cover" genuinely conflict on
+near-identical shapes, and no purely-AST rule resolves it (it needs the
+intelligence a human spec author has):
+
+- single `object_property_literals` _needs_ object-value literals
+  (`kind:"primary"`); group `binding_group_partition` _must skip_ the incidental
+  shared object-value `enabled: true`;
+- group `binding_group_declarators` _keeps_ a non-discriminating `15`; CLI
+  `stableKey` _drops_ a non-discriminating `count: 3`.
+
+Current resolution: groups keep each slot's **direct** shallow literals
+(declarator inits, call args — tracked via an `in_object` flag that skips
+object-property values); single-target uses exact-minimum cover. This is a
+deliberate per-path policy split, not a bug. Unifying to one policy means
+choosing one side and re-baselining a couple of CLI assertions.
 
 ### Motivation (why minimal selectors matter to a debundle user)
 
@@ -59,20 +113,22 @@ non-target slots/structure (`DECLARATORS_BETWEEN/_AFTER`, `OBJECT_PROPS`, ...),
 (2) keep enough shared anchors to claim the enclosing declaration uniquely among
 chunk siblings, and (3) keep enough per-member anchors to bind each export to
 the correct slot when members are otherwise alike (a literal like `"primary"`
-vs `"secondary"` can both claim the group and disambiguate members). The
-existing `VarSlotConstraintSearch` already does this for declarator groups
-(`binding_group_declarators` passes).
+vs `"secondary"` can both claim the group and disambiguate members).
+`minimize_var_group_selector` renders the shared declaration with
+`DECLARATORS_*` gaps for non-target runs and proves the tuple via the
+binding-group matcher.
 
-The genuinely new piece is the **grouping decision** (`binding_group_partition`):
-partition requested targets into groups-vs-standalone — group those sharing
-structure, split off distant ones — so the minimizer emits one group + one
-standalone rather than three individual selectors. This is part of the
-objective, not a post-hoc step.
+The **grouping decision** (`binding_group_partition`) partitions requested
+targets into groups-vs-standalone — group those sharing a declaration, split off
+distant ones — so the minimizer emits one group + one standalone rather than
+three individual selectors. This is part of the objective, not a post-hoc step.
 
-## Why the PR 2250 implementation produces over-/mis-pinned selectors
+## Background: why the PR 2250 implementation produced over-/mis-pinned selectors
 
-Running the suite with `--ignored`: 1/7 pass (`binding_group_declarators`, the
-var-group path). The other 6 fail with two root causes:
+(Historical — the diagnosis that motivated the current design; all of these are
+now fixed.) Running the suite with `--ignored`: 1/7 passed
+(`binding_group_declarators`, the var-group path). The other 6 failed with two
+root causes:
 
 1. **Objective is structural, not discriminative.** Candidates are ranked by
    `(cost, source.len())` where a _kept but fully holed_ statement
@@ -90,35 +146,6 @@ var-group path). The other 6 fail with two root causes:
    (`kind` + `mode`). The class path anchors on member _names_ only and renders
    member bodies as bare `STMT_LIST`; `class_body` needs a member body anchor
    (`return ANYTHING.format("stable", ANYTHING)`).
-
-## Design
-
-Mirror the working var-group path (`select_min_cost_var_slot_constraints` +
-`VarSlotConstraintSearch`, a weighted set-cover B&B) and generalize it to a
-single **anchor-cover search** over all declaration kinds.
-
-- **Anchor**: a renderable concrete feature at an AST path inside the target
-  (a literal value, a call callee/arg literal, an object `key: literal`, a
-  class member body statement, a var declarator value, ...). Each anchor has a
-  cost (count of concrete retained tokens) and an **exclusion set**: the
-  competitors it rules out (siblings whose corresponding position lacks it).
-- **Competitors**: top-level items sharing the target's mandatory skeleton
-  (same `TopLevelKind`, same function arity, ...). The `SelectorCandidateIndex`
-  (PR 2251) posting lists answer "which items have feature f" in O(1), so an
-  anchor's exclusion set is `competitors \ index[f]` — this is what keeps the
-  search inside the time budget without re-running the matcher per candidate.
-- **Search**: minimum-cost set of anchors whose exclusion sets cover every
-  competitor (weighted hitting set). Greedy upper bound + branch-and-bound,
-  bounded by the existing `MAX_*` node caps. Anchors that retain zero concrete
-  tokens are never generated (dropping is always cheaper).
-- **Render**: group chosen anchors by path and reconstruct the holey selector,
-  holing every position not on a chosen anchor's path. Then **prove** with the
-  production `source_match` matcher (`prove_synthesized_selector`) — the index
-  is only a prefilter; correctness comes from the real match.
-
-The index makes the candidate→exclusion step cheap; the matcher proof runs only
-on the single winning candidate (plus the exact-selector fallback), not per
-enumerated variant, which is the main speedup over the old enumerate-and-prove.
 
 ## Architecture (current)
 
@@ -140,23 +167,47 @@ enumerated variant, which is the main speedup over the old enumerate-and-prove.
   selectors are parsed and re-emitted by codegen (`normalize_selector`), so
   formatting is irrelevant and fixtures stay prettier-managed.
 
-## Implementation order (by tractability / shared machinery)
+## Status
 
-1. **DONE** — Statement-list / function bodies (`sparse_function_body`,
-   `call_argument_literal`, `nested_async_try`).
-2. **DONE** — Object literals (`object_property_literals`) via the var path
+Done (all via the AST-prune path, validated through swc, green):
+
+1. Statement-list / function bodies (`sparse_function_body`,
+   `call_argument_literal`, `nested_async_try`) — `minimize_function_selector`.
+2. Object literals (`object_property_literals`) via the var path
    (`minimize_var_selector`): `const X = <holed init>`, multi-key retention.
-3. **DONE** — Class bodies (`class_body`) via `minimize_class_selector`:
-   member-body descent, `CLASS_REST` for dropped member runs.
-   The shallow-literal/structural tier split keeps the existing
-   `selector_codemod_cli_test` anchor-quality guarantees (stable key over volatile
-   nested-call value; global-minimum cover over greedy prefix).
-4. TODO — Binding-group partitioning (`binding_group_partition`): when to group
-   vs split targets.
-5. TODO — Retire the legacy `render_*_selector_variants` zoo once every category
-   routes through the AST-prune path (function/var/class are migrated; the legacy
-   path still serves multi-target var groups and acts as a fallback).
-6. TODO — Extend the proptest generator beyond functions to var/object/class.
+3. Class bodies (`class_body`) — `minimize_class_selector`: member-body descent,
+   `CLASS_REST` for dropped member runs.
+4. Multi-target var binding groups + group-vs-standalone partitioning
+   (`binding_group_declarators`, `binding_group_partition`) —
+   `minimize_var_group_selector`: `DECLARATORS_*` gaps, shallow per-slot literal
+   keep (`in_object`-aware), binding-group matcher used as a resolves-uniquely
+   oracle.
+
+The shallow-literal/structural tier split also keeps the
+`selector_codemod_cli_test` anchor-quality guarantees (stable key over volatile
+nested-call value; global-minimum cover over greedy prefix).
+
+## Roadmap (toward the tana/re batch run)
+
+- **Unify single into N=1 group.** Make the module-YAML path the one entry that
+  takes a set of target bindings, partitions them into groups (sharing a
+  declaration) plus standalones, and minimizes each — with the single-item path
+  as the degenerate N=1 group. Pick one anchor policy (favor keep-shallow,
+  accept occasional over-pin per the pragmatic stance) and re-baseline the 1–2
+  strict-min CLI assertions this changes.
+- **Retire the legacy `render_*_selector_variants` / `VarSlotConstraintSearch`
+  zoo** once every path routes through AST-prune (they remain only as fallbacks
+  today).
+- **Index-prefilter for scale** — share one parse + `SelectorCandidateIndex` per
+  chunk across a YAML's members; narrow competitors via posting lists before
+  matcher calls.
+- **Regex-literal variable minimizer** — a dedicated heuristic for `binding`
+  selectors whose minified _name_ matches a stable regex, emitting
+  `STR_LITERAL_MATCHING_RE("^…$")` pins (the AST-anchor cover does not target
+  these).
+- **Dogfood on `tana/re`** — run the module-YAML path over real chunks, measure
+  conversion rate + speed, let results drive priorities.
+- Extend the proptest generator beyond functions to var/object/class/group.
 
 Each step is validated against the expectation suite (compared through swc). If
 the minimizer finds an equivalently-minimal-or-better shape than a fixture, the
