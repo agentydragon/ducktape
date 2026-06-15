@@ -334,6 +334,38 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Aspirational: a target class among many same-shape sibling classes should
+// minimize to CLASS_REST holes plus the one discriminating member, not fall
+// back to emitting the full class body. Today `minimize_class_selector` bails
+// against the sibling competitors and synthesis emits the entire class AST
+// (see the real `infra/http/PlatformApiService.yaml` conversion, ~330 lines).
+minimizer_expectation_case!(
+    #[ignore = "class minimizer falls back to full body among many siblings"]
+    minimizes_class_among_many_siblings,
+    fixture = "class_among_many_siblings",
+    name = "class among many siblings keeps only the discriminating member",
+    module = "app/services",
+    bindings = [("SelectedService", "selectedService")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a large object literal that shares most keys with sibling
+// objects should minimize to OBJECT_PROPS holes on both sides of the single
+// discriminating key, so the selector survives key reordering. Today the
+// minimizer keeps the discriminating key but omits the trailing OBJECT_PROPS
+// hole, anchoring the key to the object's right edge. On the real
+// `infra/feature_flags.yaml` conversion the same retention path kept all ~50
+// keys (each held to ANYTHING) instead of holing the non-discriminating ones.
+minimizer_expectation_case!(
+    #[ignore = "object minimizer retains all keys instead of OBJECT_PROPS + discriminator"]
+    minimizes_object_keys_over_pinned,
+    fixture = "object_keys_over_pinned",
+    name = "large object keeps only the discriminating key value",
+    module = "app/labels",
+    bindings = [("SelectedLabels", "selectedLabels")],
+    expected = "expected_match.js",
+);
+
 #[test]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {
