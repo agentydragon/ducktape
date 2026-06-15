@@ -122,14 +122,22 @@ enumerated variant, which is the main speedup over the old enumerate-and-prove.
 
 ## Implementation order (by tractability / shared machinery)
 
-1. Statement-list / function bodies (`sparse_function_body`,
-   `call_argument_literal`, `nested_async_try`) — fix objective + allow k>2
-   ordered statement anchors + forbid zero-concrete anchors.
+1. **DONE** — Statement-list / function bodies (`sparse_function_body`,
+   `call_argument_literal`, `nested_async_try`). Implemented as the
+   retention-driven renderer (`render_retained_*`) + matcher-driven tiered cover
+   (`cover_competitors`, literals before structural anchors) in
+   `selector_codemod.rs`, wired into `synthesize_specialized_function_selector`
+   with a fallback to the legacy variant search. Callee/method identity is kept
+   when a call is rendered (`render_callee_expr`). All three fixtures match
+   byte-exact; un-ignored alongside the already-passing `binding_group_declarators`.
 2. Object literals (`object_property_literals`, `binding_group_partition`
-   standalone) — multi-key retention.
+   standalone) — multi-key retention (the renderer already collapses dropped
+   prop runs into `OBJECT_PROPS`; needs wiring of the var/object path).
 3. Class bodies (`class_body`) — member-body descent.
 4. Binding-group partitioning (`binding_group_partition`) — when to group vs
    split targets.
+5. Retire the legacy `render_*_selector_variants` zoo once every category routes
+   through the retention renderer.
 
 Each step is validated against the (un-ignored, per-case) expectation suite. If
 the minimizer finds an equivalently-minimal-or-better shape than a fixture, the

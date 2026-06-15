@@ -226,6 +226,7 @@ fn assert_selector_shape(
 
 macro_rules! minimizer_expectation_case {
     (
+        $(#[$attr:meta])*
         $test_name:ident,
         fixture = $fixture:literal,
         name = $case_name:literal,
@@ -234,7 +235,7 @@ macro_rules! minimizer_expectation_case {
         expected = $expected:literal $(,)?
     ) => {
         #[test]
-        #[ignore = "target behavior for the future recursive selector minimizer"]
+        $(#[$attr])*
         fn $test_name() {
             run_case(&MinimizedSelectorCase {
                 name: $case_name,
@@ -281,6 +282,7 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
+    #[ignore = "target behavior: object-literal multi-key retention (not yet implemented)"]
     minimizes_object_property_literals,
     fixture = "object_property_literals",
     name = "object literal keeps minimal key value anchors",
@@ -311,6 +313,7 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
+    #[ignore = "target behavior: class member-body descent (not yet implemented)"]
     minimizes_class_body,
     fixture = "class_body",
     name = "class selector keeps only discriminating member body anchors",
