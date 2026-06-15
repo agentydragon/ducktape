@@ -382,6 +382,7 @@ rust_test(
     data = ["//devinfra/js/debundle"],
     edition = "2024",
     deps = [
+        "@crates//:regex",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",

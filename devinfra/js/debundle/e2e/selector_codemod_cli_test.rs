@@ -451,6 +451,118 @@ export { selectedConfig };
     (modules, source)
 }
 
+fn synthesis_regex_literal_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    // Several sibling var bindings whose values are string literals sharing a
+    // stable per-binding prefix and a rebuild-volatile hex suffix. The target's
+    // stable prefix (`primary-chunk-`) already discriminates it from the
+    // siblings (`secondary-chunk-`, `vendor-chunk-`), so the minimizer can pin
+    // the stable structure with a regex and wildcard the volatile hash.
+    write(
+        &source,
+        r#"const selectedAsset = loadChunk("primary-chunk-a1b2c3d4");
+const secondaryAsset = loadChunk("secondary-chunk-99887766");
+const vendorAsset = loadChunk("vendor-chunk-deadbeef");
+function loadChunk(value) { return value; }
+console.log(selectedAsset, secondaryAsset, vendorAsset);
+export { selectedAsset };
+"#,
+    );
+    let modules = root.join("modules");
+    write(
+        &modules.join("app/assets.yaml"),
+        r#"members:
+  - name: SelectedAsset
+    selector:
+      binding:
+        name: selectedAsset
+"#,
+    );
+    (modules, source)
+}
+
+#[test]
+fn synthesize_selectors_emits_regex_literal_anchor_for_volatile_suffix() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_regex_literal_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/assets:SelectedAsset",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    // Gate 1: the synthesized selector resolves uniquely to the intended binding.
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["candidates"][0]["candidate_count"], 1, "{parsed}");
+
+    let rewritten = fs::read_to_string(modules.join("app/assets.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
+        .as_str()
+        .unwrap();
+
+    // The minimizer pinned the volatile literal with a regex predicate rather
+    // than the exact spelling.
+    assert!(
+        match_source.contains("STR_LITERAL_MATCHING_RE"),
+        "expected a regex-literal anchor:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("a1b2c3d4"),
+        "the volatile suffix must not be pinned exactly:\n{match_source}"
+    );
+
+    // Extract the emitted pattern and assert its *semantics*: it matches the
+    // target literal (and rebuild variants of the same prefix) while excluding
+    // every sibling literal. This is the discrimination property, not a string
+    // equality of the rendered selector.
+    let pattern = extract_regex_literal_pattern(match_source);
+    let re = regex::Regex::new(&pattern).expect("emitted pattern must be a valid regex");
+    assert!(
+        re.is_match("primary-chunk-a1b2c3d4"),
+        "pattern must match the target literal: {pattern}"
+    );
+    assert!(
+        re.is_match("primary-chunk-00000000"),
+        "pattern must survive a rebuild of the volatile suffix: {pattern}"
+    );
+    assert!(
+        !re.is_match("secondary-chunk-99887766"),
+        "pattern must exclude the secondary sibling: {pattern}"
+    );
+    assert!(
+        !re.is_match("vendor-chunk-deadbeef"),
+        "pattern must exclude the vendor sibling: {pattern}"
+    );
+}
+
+/// Pull the pattern string out of a `STR_LITERAL_MATCHING_RE("<pattern>")`
+/// occurrence in a rendered selector.
+fn extract_regex_literal_pattern(match_source: &str) -> String {
+    let needle = "STR_LITERAL_MATCHING_RE(\"";
+    let start = match_source
+        .find(needle)
+        .map(|idx| idx + needle.len())
+        .unwrap_or_else(|| panic!("no regex predicate in:\n{match_source}"));
+    let rest = &match_source[start..];
+    let end = rest
+        .find('"')
+        .unwrap_or_else(|| panic!("unterminated regex pattern in:\n{match_source}"));
+    // The pattern lives inside a JS string literal in the rendered selector, so
+    // every backslash from `regex::escape` is doubled in the source text. The
+    // matcher's parser un-escapes it before compiling; mirror that here so the
+    // test compiles the same pattern the matcher does.
+    rest[..end].replace("\\\\", "\\")
+}
+
 #[test]
 fn synthesize_selectors_full_ast_fallback_flag_is_accepted() {
     // The minimizer almost always finds a sparse selector for synthesizable

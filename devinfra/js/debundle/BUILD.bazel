@@ -513,6 +513,7 @@ rust_library(
         ":spec_modules",
         ":yaml_edit",
         "@crates//:anyhow",
+        "@crates//:regex",
         "@crates//:serde",
         "@crates//:serde_yaml",
         "@crates//:swc_common",
