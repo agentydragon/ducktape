@@ -19,7 +19,7 @@ use serde::Serialize;
 use serde_yaml::Value;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
-use swc_common::{BytePos, Span, Spanned};
+use swc_common::{BytePos, DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -1357,6 +1357,9 @@ fn synthesize_specialized_class_selector(
     let Some(Decl::Class(class_decl)) = item_decl(item) else {
         return Ok(None);
     };
+    if let Some(minimized) = minimize_class_selector(index, &class_decl.class, decl, target)? {
+        return Ok(Some(minimized));
+    }
     let mut features = BTreeSet::from([SelectorAnchorFeature::DeclarationKind(
         IndexedDeclarationKind::Class,
     )]);
@@ -1408,6 +1411,11 @@ fn synthesize_specialized_var_selector(
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<SpecializedSelector>> {
     let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
+    if let [target] = targets {
+        if let Some(minimized) = minimize_var_selector(index, var, decl, target)? {
+            return Ok(Some(minimized));
+        }
+    }
     let target_slots = targets
         .iter()
         .map(|target| {
@@ -2218,287 +2226,303 @@ fn node_retains_any(node: Span, kept: &BTreeSet<AnchorSpan>) -> bool {
     kept.iter().any(|anchor| node_holds_anchor(node, *anchor))
 }
 
-fn anything_expr() -> String {
-    ANYTHING_HOLE_KEYWORD.to_string()
+fn ident_node(name: &str) -> Ident {
+    Ident::new_no_ctxt(name.into(), DUMMY_SP)
 }
 
-/// Render an expression to selector source, keeping only concrete tokens whose
-/// span is in `kept` and holing everything off a kept token's path.
-fn render_retained_expr(
-    index: &ChunkSelectorIndex,
-    expr: &Expr,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
+fn anything_expr() -> Expr {
+    Expr::Ident(ident_node(ANYTHING_HOLE_KEYWORD))
+}
+
+fn stmt_list_stmt() -> Stmt {
+    Stmt::Expr(ExprStmt {
+        span: DUMMY_SP,
+        expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
+    })
+}
+
+fn object_props_prop() -> PropOrSpread {
+    PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(
+        OBJECT_PROPS_HOLE_KEYWORD,
+    ))))
+}
+
+fn anything_pat() -> Pat {
+    Pat::Ident(BindingIdent {
+        id: ident_node(ANYTHING_HOLE_KEYWORD),
+        type_ann: None,
+    })
+}
+
+fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> BlockStmt {
+    let mut holed = block.clone();
+    holed.stmts = hole_stmts(&block.stmts, kept);
+    holed
+}
+
+/// Prune an expression into selector form: keep concrete tokens whose span is in
+/// `kept`, and replace every subtree off a kept token's path with an `ANYTHING`
+/// hole node. The result is an ordinary `swc` AST emitted by codegen, not a
+/// hand-built string.
+fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     if !node_retains_any(expr.span(), kept) {
-        return Ok(anything_expr());
+        return anything_expr();
     }
-    Ok(match expr {
-        Expr::Paren(paren) => render_retained_expr(index, &paren.expr, kept)?,
-        Expr::Lit(_) | Expr::Ident(_) | Expr::Tpl(_) => source_for_span(index, expr.span())?.text,
+    match expr {
+        Expr::Paren(paren) => hole_expr(&paren.expr, kept),
+        Expr::Lit(_) | Expr::Ident(_) | Expr::Tpl(_) => expr.clone(),
         Expr::Member(member) => {
-            let obj = render_retained_expr(index, &member.obj, kept)?;
-            format!("{obj}.{}", render_member_prop(index, &member.prop, kept)?)
+            let mut holed = member.clone();
+            holed.obj = Box::new(hole_expr(&member.obj, kept));
+            Expr::Member(holed)
         }
         Expr::Call(call) => {
-            let callee = render_retained_callee(index, &call.callee, kept)?;
-            format!(
-                "{callee}({})",
-                render_retained_args(index, &call.args, kept)?
-            )
+            let mut holed = call.clone();
+            holed.callee = hole_callee(&call.callee, kept);
+            holed.args = hole_args(&call.args, kept);
+            Expr::Call(holed)
         }
         Expr::New(new_expr) => {
-            let callee = render_callee_expr(index, &new_expr.callee, kept)?;
-            let args = new_expr.args.as_deref().unwrap_or_default();
-            format!("new {callee}({})", render_retained_args(index, args, kept)?)
+            let mut holed = new_expr.clone();
+            holed.callee = Box::new(hole_callee_expr(&new_expr.callee, kept));
+            holed.args = new_expr.args.as_ref().map(|args| hole_args(args, kept));
+            Expr::New(holed)
         }
-        Expr::Object(object) => render_retained_object(index, object, kept)?,
+        Expr::Object(object) => Expr::Object(hole_object(object, kept)),
         Expr::Await(await_expr) => {
-            format!(
-                "await {}",
-                render_retained_expr(index, &await_expr.arg, kept)?
-            )
+            let mut holed = await_expr.clone();
+            holed.arg = Box::new(hole_expr(&await_expr.arg, kept));
+            Expr::Await(holed)
         }
-        Expr::Unary(unary) => format!(
-            "{}{}",
-            unary.op.as_str(),
-            render_retained_expr(index, &unary.arg, kept)?
-        ),
-        Expr::Bin(bin) => format!(
-            "{} {} {}",
-            render_retained_expr(index, &bin.left, kept)?,
-            bin.op.as_str(),
-            render_retained_expr(index, &bin.right, kept)?
-        ),
-        // Unmodeled expression shapes that still carry a kept anchor: keep the
-        // original source rather than risk an unsound hole. Over-pinning here is
-        // a future refinement, not a correctness problem.
-        _ => source_for_span(index, expr.span())?.text,
-    })
+        Expr::Unary(unary) => {
+            let mut holed = unary.clone();
+            holed.arg = Box::new(hole_expr(&unary.arg, kept));
+            Expr::Unary(holed)
+        }
+        Expr::Bin(bin) => {
+            let mut holed = bin.clone();
+            holed.left = Box::new(hole_expr(&bin.left, kept));
+            holed.right = Box::new(hole_expr(&bin.right, kept));
+            Expr::Bin(holed)
+        }
+        // Unmodeled shapes carrying a kept anchor: keep verbatim rather than
+        // risk an unsound hole. Over-pinning here is a future refinement.
+        _ => expr.clone(),
+    }
 }
 
-fn render_member_prop(
-    index: &ChunkSelectorIndex,
-    prop: &MemberProp,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    Ok(match prop {
-        MemberProp::Ident(ident) => ident.sym.to_string(),
-        MemberProp::PrivateName(private) => format!("#{}", private.name),
-        MemberProp::Computed(computed) => {
-            format!("[{}]", render_retained_expr(index, &computed.expr, kept)?)
-        }
-    })
-}
-
-fn render_retained_callee(
-    index: &ChunkSelectorIndex,
-    callee: &Callee,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
+/// Hole a call's callee while keeping the invoked identity — a method name or a
+/// bare function reference is a meaningful, stable pin; only a member receiver
+/// is holed.
+fn hole_callee(callee: &Callee, kept: &BTreeSet<AnchorSpan>) -> Callee {
     match callee {
-        Callee::Expr(expr) => render_callee_expr(index, expr, kept),
-        Callee::Super(_) | Callee::Import(_) => Ok(source_for_span(index, callee.span())?.text),
+        Callee::Expr(expr) => Callee::Expr(Box::new(hole_callee_expr(expr, kept))),
+        Callee::Super(_) | Callee::Import(_) => callee.clone(),
     }
 }
 
-/// Render the callee of a rendered call. The invoked identity — a method name
-/// or a bare function reference — is a meaningful, stable pin, so it is kept
-/// even when no anchor lies inside it; only a member receiver is holed.
-fn render_callee_expr(
-    index: &ChunkSelectorIndex,
-    expr: &Expr,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
+fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     match expr {
-        Expr::Member(member) => Ok(format!(
-            "{}.{}",
-            render_retained_expr(index, &member.obj, kept)?,
-            render_member_prop(index, &member.prop, kept)?
-        )),
-        Expr::Ident(_) => Ok(source_for_span(index, expr.span())?.text),
-        Expr::Paren(paren) => render_callee_expr(index, &paren.expr, kept),
-        _ => render_retained_expr(index, expr, kept),
+        Expr::Member(member) => {
+            let mut holed = member.clone();
+            holed.obj = Box::new(hole_expr(&member.obj, kept));
+            Expr::Member(holed)
+        }
+        Expr::Ident(_) => expr.clone(),
+        Expr::Paren(paren) => hole_callee_expr(&paren.expr, kept),
+        _ => hole_expr(expr, kept),
     }
 }
 
-fn render_retained_args(
-    index: &ChunkSelectorIndex,
-    args: &[ExprOrSpread],
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    let rendered = args
-        .iter()
+fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
+    args.iter()
         .map(|arg| {
-            if arg.spread.is_some() {
-                Ok(source_for_span(index, arg.span())?.text)
-            } else {
-                render_retained_expr(index, &arg.expr, kept)
+            let mut holed = arg.clone();
+            if arg.spread.is_none() {
+                holed.expr = Box::new(hole_expr(&arg.expr, kept));
             }
+            holed
         })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(rendered.join(", "))
+        .collect()
 }
 
-fn render_retained_object(
-    index: &ChunkSelectorIndex,
-    object: &ObjectLit,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    let mut parts: Vec<String> = Vec::new();
+fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
+    let mut props = Vec::new();
     let mut dropped_run = false;
     for prop in &object.props {
         if node_retains_any(prop.span(), kept) {
             if dropped_run {
-                parts.push(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+                props.push(object_props_prop());
                 dropped_run = false;
             }
-            parts.push(render_retained_prop(index, prop, kept)?);
+            props.push(hole_prop(prop, kept));
         } else {
             dropped_run = true;
         }
     }
     if dropped_run {
-        parts.push(OBJECT_PROPS_HOLE_KEYWORD.to_string());
+        props.push(object_props_prop());
     }
-    if parts.is_empty() {
-        return Ok("{ }".to_string());
-    }
-    Ok(format!("{{ {} }}", parts.join(", ")))
+    let mut holed = object.clone();
+    holed.props = props;
+    holed
 }
 
-fn render_retained_prop(
-    index: &ChunkSelectorIndex,
-    prop: &PropOrSpread,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    let PropOrSpread::Prop(prop) = prop else {
-        return Ok(source_for_span(index, prop.span())?.text);
+fn hole_prop(prop: &PropOrSpread, kept: &BTreeSet<AnchorSpan>) -> PropOrSpread {
+    let PropOrSpread::Prop(inner) = prop else {
+        return prop.clone();
     };
-    Ok(match prop.as_ref() {
-        Prop::KeyValue(key_value) => {
-            let key = prop_name_to_string(&key_value.key).unwrap_or_else(|| {
-                source_for_span(index, key_value.key.span())
-                    .map(|s| s.text)
-                    .unwrap_or_default()
-            });
-            format!(
-                "{key}: {}",
-                render_retained_expr(index, &key_value.value, kept)?
-            )
-        }
-        _ => source_for_span(index, prop.span())?.text,
-    })
+    if let Prop::KeyValue(key_value) = inner.as_ref() {
+        let mut holed = key_value.clone();
+        holed.value = Box::new(hole_expr(&key_value.value, kept));
+        PropOrSpread::Prop(Box::new(Prop::KeyValue(holed)))
+    } else {
+        prop.clone()
+    }
 }
 
-/// Render a statement list, collapsing runs of dropped statements into a single
-/// `STMT_LIST;` hole.
-fn render_retained_stmt_list(
-    index: &ChunkSelectorIndex,
-    stmts: &[Stmt],
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    let mut lines: Vec<String> = Vec::new();
+/// Hole a statement list, collapsing runs of dropped statements into a single
+/// `STMT_LIST;` hole statement.
+fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
+    let mut out = Vec::new();
     let mut dropped_run = false;
     for stmt in stmts {
         if node_retains_any(stmt.span(), kept) {
             if dropped_run {
-                lines.push(format!("{STMT_LIST_HOLE_KEYWORD};"));
+                out.push(stmt_list_stmt());
                 dropped_run = false;
             }
-            lines.push(render_retained_stmt(index, stmt, kept)?);
+            out.push(hole_stmt(stmt, kept));
         } else {
             dropped_run = true;
         }
     }
-    if dropped_run || lines.is_empty() {
-        lines.push(format!("{STMT_LIST_HOLE_KEYWORD};"));
+    if dropped_run || out.is_empty() {
+        out.push(stmt_list_stmt());
     }
-    Ok(lines.join("\n"))
+    out
 }
 
-fn render_retained_stmt(
-    index: &ChunkSelectorIndex,
-    stmt: &Stmt,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    Ok(match stmt {
+fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
+    match stmt {
         Stmt::Expr(expr_stmt) => {
-            format!("{};", render_retained_expr(index, &expr_stmt.expr, kept)?)
+            let mut holed = expr_stmt.clone();
+            holed.expr = Box::new(hole_expr(&expr_stmt.expr, kept));
+            Stmt::Expr(holed)
         }
-        Stmt::Return(ret) => match &ret.arg {
-            Some(arg) => format!("return {};", render_retained_expr(index, arg, kept)?),
-            None => "return;".to_string(),
-        },
-        Stmt::Throw(throw) => format!("throw {};", render_retained_expr(index, &throw.arg, kept)?),
+        Stmt::Return(ret) => {
+            let mut holed = ret.clone();
+            holed.arg = ret.arg.as_ref().map(|arg| Box::new(hole_expr(arg, kept)));
+            Stmt::Return(holed)
+        }
+        Stmt::Throw(throw) => {
+            let mut holed = throw.clone();
+            holed.arg = Box::new(hole_expr(&throw.arg, kept));
+            Stmt::Throw(holed)
+        }
         Stmt::Decl(Decl::Var(var)) => {
-            let decls = var
-                .decls
-                .iter()
-                .map(|declarator| {
-                    let pat = source_for_span(index, declarator.name.span())?.text;
-                    match &declarator.init {
-                        Some(init) => Ok(format!(
-                            "{pat} = {}",
-                            render_retained_expr(index, init, kept)?
-                        )),
-                        None => Ok(pat),
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            format!("{} {};", var_kind_label(var.kind), decls.join(",\n  "))
+            let mut holed = (**var).clone();
+            for declarator in &mut holed.decls {
+                if let Some(init) = &declarator.init {
+                    declarator.init = Some(Box::new(hole_expr(init, kept)));
+                }
+            }
+            Stmt::Decl(Decl::Var(Box::new(holed)))
         }
         Stmt::If(if_stmt) => {
-            let test = render_retained_expr(index, &if_stmt.test, kept)?;
-            let cons = render_retained_block(index, &if_stmt.cons, kept)?;
-            format!("if ({test}) {{\n{}\n}}", indent_lines(&cons, "  "))
+            let mut holed = if_stmt.clone();
+            holed.test = Box::new(hole_expr(&if_stmt.test, kept));
+            let cons_stmts = match if_stmt.cons.as_ref() {
+                Stmt::Block(block) => hole_stmts(&block.stmts, kept),
+                other => hole_stmts(std::slice::from_ref(other), kept),
+            };
+            holed.cons = Box::new(Stmt::Block(BlockStmt {
+                span: DUMMY_SP,
+                ctxt: SyntaxContext::empty(),
+                stmts: cons_stmts,
+            }));
+            holed.alt = None;
+            Stmt::If(holed)
         }
         Stmt::Try(try_stmt) => {
-            let body = render_retained_stmt_list(index, &try_stmt.block.stmts, kept)?;
-            let catch = render_catch_clause_skeleton(&try_stmt.handler);
-            let finalizer = try_stmt
-                .finalizer
-                .as_ref()
-                .map(|_| format!(" finally {{\n  {STMT_LIST_HOLE_KEYWORD};\n}}"))
-                .unwrap_or_default();
-            format!(
-                "try {{\n{}\n}}{catch}{finalizer}",
-                indent_lines(&body, "  ")
-            )
+            let mut holed = try_stmt.clone();
+            holed.block = holed_block(&try_stmt.block, kept);
+            if let Some(handler) = &mut holed.handler {
+                if handler.param.is_some() {
+                    handler.param = Some(anything_pat());
+                }
+                handler.body = holed_block(&handler.body, kept);
+            }
+            if let Some(finalizer) = &mut holed.finalizer {
+                *finalizer = holed_block(finalizer, kept);
+            }
+            Stmt::Try(holed)
         }
-        Stmt::Block(block) => {
-            let body = render_retained_stmt_list(index, &block.stmts, kept)?;
-            format!("{{\n{}\n}}", indent_lines(&body, "  "))
-        }
+        Stmt::Block(block) => Stmt::Block(holed_block(block, kept)),
         // Unmodeled statement shapes carrying a kept anchor: keep verbatim.
-        _ => ensure_statement_semicolon(stmt, source_for_span(index, stmt.span())?.text),
-    })
-}
-
-fn render_retained_block(
-    index: &ChunkSelectorIndex,
-    stmt: &Stmt,
-    kept: &BTreeSet<AnchorSpan>,
-) -> Result<String> {
-    match stmt {
-        Stmt::Block(block) => render_retained_stmt_list(index, &block.stmts, kept),
-        _ => render_retained_stmt(index, stmt, kept),
+        _ => stmt.clone(),
     }
 }
 
 /// Candidate concrete anchors, split into preference tiers. Literal values are
 /// stable, meaningful landmarks (a magic string, a config number/bool), so they
-/// are tried first; member/property and key names are structural fallbacks used
-/// only when literals cannot discriminate the target on their own.
+/// are tried before structural member/property and key names. Among literals,
+/// shallower ones (fewer enclosing call/new levels) are preferred: a direct
+/// `key: "primary"` pins less nested structure — and is more rebuild-robust —
+/// than a literal buried inside `mk("primary")`.
 #[derive(Default)]
 struct AnchorCandidates {
-    literals: Vec<AnchorSpan>,
+    /// `(span, call-nesting depth)` for each literal anchor.
+    literals: Vec<(AnchorSpan, u32)>,
     structural: Vec<AnchorSpan>,
 }
 
+/// A literal at most this many call/new levels deep counts as a *direct* value
+/// or argument — a meaningful, stable pin worth keeping. Deeper literals are
+/// treated as buried in incidental computation and ranked below structural
+/// key/member presence.
+const SHALLOW_LITERAL_DEPTH: u32 = 1;
+
 impl AnchorCandidates {
-    /// Anchor tiers, most-preferred first.
-    fn tiers(&self) -> [&[AnchorSpan]; 2] {
-        [&self.literals, &self.structural]
+    /// Anchor tiers, most-preferred first:
+    /// 1. shallow literals (direct values/args), by ascending call depth;
+    /// 2. structural key/member presence;
+    /// 3. deeper literals (buried in nested calls).
+    ///
+    /// Structural presence sits above deep literals because pinning a key's
+    /// existence is leaner and more rebuild-robust than pinning a volatile
+    /// computed value (`stableKey: ANYTHING` over `stableKey: mk("x")`).
+    fn tiers(&self) -> Vec<Vec<AnchorSpan>> {
+        let literal_tier = |depth: u32| -> Vec<AnchorSpan> {
+            self.literals
+                .iter()
+                .filter(|(_, anchor_depth)| *anchor_depth == depth)
+                .map(|(span, _)| *span)
+                .collect()
+        };
+        let mut tiers = Vec::new();
+        let Some(max_depth) = self.literals.iter().map(|(_, depth)| *depth).max() else {
+            if !self.structural.is_empty() {
+                tiers.push(self.structural.clone());
+            }
+            return tiers;
+        };
+        for depth in 0..=max_depth.min(SHALLOW_LITERAL_DEPTH) {
+            let tier = literal_tier(depth);
+            if !tier.is_empty() {
+                tiers.push(tier);
+            }
+        }
+        if !self.structural.is_empty() {
+            tiers.push(self.structural.clone());
+        }
+        for depth in (SHALLOW_LITERAL_DEPTH + 1)..=max_depth {
+            let tier = literal_tier(depth);
+            if !tier.is_empty() {
+                tiers.push(tier);
+            }
+        }
+        tiers
     }
 }
 
@@ -2512,22 +2536,22 @@ fn collect_stmt_list_anchors(stmts: &[Stmt]) -> AnchorCandidates {
 
 fn collect_stmt_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
     match stmt {
-        Stmt::Expr(expr_stmt) => collect_expr_anchors(&expr_stmt.expr, candidates),
+        Stmt::Expr(expr_stmt) => collect_expr_anchors(&expr_stmt.expr, 0, candidates),
         Stmt::Return(ret) => {
             if let Some(arg) = &ret.arg {
-                collect_expr_anchors(arg, candidates);
+                collect_expr_anchors(arg, 0, candidates);
             }
         }
-        Stmt::Throw(throw) => collect_expr_anchors(&throw.arg, candidates),
+        Stmt::Throw(throw) => collect_expr_anchors(&throw.arg, 0, candidates),
         Stmt::Decl(Decl::Var(var)) => {
             for declarator in &var.decls {
                 if let Some(init) = &declarator.init {
-                    collect_expr_anchors(init, candidates);
+                    collect_expr_anchors(init, 0, candidates);
                 }
             }
         }
         Stmt::If(if_stmt) => {
-            collect_expr_anchors(&if_stmt.test, candidates);
+            collect_expr_anchors(&if_stmt.test, 0, candidates);
             collect_block_anchors(&if_stmt.cons, candidates);
         }
         Stmt::Try(try_stmt) => {
@@ -2555,33 +2579,35 @@ fn collect_block_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
     }
 }
 
-fn collect_expr_anchors(expr: &Expr, candidates: &mut AnchorCandidates) {
+/// `depth` counts enclosing call/new levels, so the tiered cover can prefer
+/// shallower literal anchors.
+fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidates) {
     match expr {
-        Expr::Lit(_) | Expr::Tpl(_) => candidates.literals.push(span_key(expr.span())),
-        Expr::Paren(paren) => collect_expr_anchors(&paren.expr, candidates),
+        Expr::Lit(_) | Expr::Tpl(_) => candidates.literals.push((span_key(expr.span()), depth)),
+        Expr::Paren(paren) => collect_expr_anchors(&paren.expr, depth, candidates),
         Expr::Member(member) => {
-            collect_expr_anchors(&member.obj, candidates);
+            collect_expr_anchors(&member.obj, depth, candidates);
             if let MemberProp::Ident(ident) = &member.prop {
                 candidates.structural.push(span_key(ident.span));
             } else if let MemberProp::Computed(computed) = &member.prop {
-                collect_expr_anchors(&computed.expr, candidates);
+                collect_expr_anchors(&computed.expr, depth, candidates);
             }
         }
         Expr::Call(call) => {
             if let Callee::Expr(callee) = &call.callee {
-                collect_expr_anchors(callee, candidates);
+                collect_expr_anchors(callee, depth, candidates);
             }
             for arg in &call.args {
                 if arg.spread.is_none() {
-                    collect_expr_anchors(&arg.expr, candidates);
+                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
                 }
             }
         }
         Expr::New(new_expr) => {
-            collect_expr_anchors(&new_expr.callee, candidates);
+            collect_expr_anchors(&new_expr.callee, depth, candidates);
             for arg in new_expr.args.as_deref().unwrap_or_default() {
                 if arg.spread.is_none() {
-                    collect_expr_anchors(&arg.expr, candidates);
+                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
                 }
             }
         }
@@ -2590,16 +2616,16 @@ fn collect_expr_anchors(expr: &Expr, candidates: &mut AnchorCandidates) {
                 if let PropOrSpread::Prop(prop) = prop {
                     if let Prop::KeyValue(key_value) = prop.as_ref() {
                         candidates.structural.push(span_key(key_value.key.span()));
-                        collect_expr_anchors(&key_value.value, candidates);
+                        collect_expr_anchors(&key_value.value, depth, candidates);
                     }
                 }
             }
         }
-        Expr::Await(await_expr) => collect_expr_anchors(&await_expr.arg, candidates),
-        Expr::Unary(unary) => collect_expr_anchors(&unary.arg, candidates),
+        Expr::Await(await_expr) => collect_expr_anchors(&await_expr.arg, depth, candidates),
+        Expr::Unary(unary) => collect_expr_anchors(&unary.arg, depth, candidates),
         Expr::Bin(bin) => {
-            collect_expr_anchors(&bin.left, candidates);
-            collect_expr_anchors(&bin.right, candidates);
+            collect_expr_anchors(&bin.left, depth, candidates);
+            collect_expr_anchors(&bin.right, depth, candidates);
         }
         _ => {}
     }
@@ -2643,9 +2669,37 @@ fn holes_present(source: &str) -> BTreeSet<String> {
     holes
 }
 
-/// Minimal anchor cover for a single-target function declaration: choose the
-/// fewest concrete anchors whose matcher-proven exclusion sets rule out every
-/// same-arity sibling, render the holey selector, and prove it.
+/// Minimal anchor cover for a single-target declaration. `render_with` renders
+/// the declaration's selector given a kept-anchor set, and `candidates` are its
+/// concrete anchors. Competitors are exactly the items the maximally-holed
+/// selector still matches; the tiered cover picks the fewest anchors that rule
+/// them out, and the chosen selector is rendered and proven once.
+fn minimize_via_retention(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    candidates: &AnchorCandidates,
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+) -> Result<Option<SpecializedSelector>> {
+    let empty = BTreeSet::new();
+    let mut competitors = matched_body_indices(index, &target.export_name, &render_with(&empty)?)?;
+    competitors.remove(&decl.body_idx);
+    if competitors.is_empty() {
+        return finish_minimized_selector(index, decl, target, render_with(&empty)?);
+    }
+    let Some(chosen) = cover_competitors(
+        index,
+        target,
+        &competitors,
+        &candidates.tiers(),
+        render_with,
+    )?
+    else {
+        return Ok(None);
+    };
+    finish_minimized_selector(index, decl, target, render_with(&chosen)?)
+}
+
 fn minimize_function_selector(
     index: &ChunkSelectorIndex,
     function: &Function,
@@ -2655,55 +2709,228 @@ fn minimize_function_selector(
     let Some(body) = &function.body else {
         return Ok(None);
     };
-    let header = render_function_selector_header(function, &target.export_name);
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        let body_source = render_retained_stmt_list(index, &body.stmts, kept)?;
-        Ok(trim_selector_source_line_suffixes(&format!(
-            "{header} {{\n{}\n}}",
-            indent_lines(&body_source, "  ")
-        )))
+        let mut holed = function.clone();
+        holed.params = function.params.iter().map(|_| anything_param()).collect();
+        if let Some(holed_body) = &mut holed.body {
+            holed_body.stmts = hole_stmts(&body.stmts, kept);
+        }
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Fn(FnDecl {
+            ident: ident_node(&target.export_name),
+            declare: false,
+            function: Box::new(holed),
+        }))))
     };
-
-    let skeleton_features = BTreeSet::from([
-        SelectorAnchorFeature::DeclarationKind(IndexedDeclarationKind::Function),
-        SelectorAnchorFeature::FunctionArity(function.params.len()),
-    ]);
-    let mut competitors = index.frontier_for_features(&skeleton_features);
-    competitors.remove(&decl.body_idx);
-
-    let empty = BTreeSet::new();
-    if competitors.is_empty() {
-        let source = render_with(&empty)?;
-        return finish_minimized_selector(index, decl, target, source);
-    }
-
     let candidates = collect_stmt_list_anchors(&body.stmts);
-    let Some(chosen) = cover_competitors(
-        index,
-        target,
-        &competitors,
-        &candidates.tiers(),
-        &render_with,
-    )?
-    else {
-        return Ok(None);
-    };
-    let source = render_with(&chosen)?;
-    finish_minimized_selector(index, decl, target, source)
+    minimize_via_retention(index, decl, target, &candidates, &render_with)
 }
 
-/// Tiered greedy set cover. Tiers are tried most-preferred first (literals
-/// before structural anchors): within a tier, repeatedly take the anchor
-/// excluding the most still-uncovered competitors until the tier is exhausted,
-/// then fall through to the next tier only for whatever remains uncovered. The
-/// matcher gives each anchor's exclusion set, so the result is sound and the
-/// final selector is proven once by the caller. Returns `None` if even all
+/// Minimal anchor cover for a single-target, single-declarator `var`/`let`/
+/// `const`: render `<kind> <export> = <retained init>` and cover sibling
+/// declarations. Multi-declarator groups fall back to the legacy slot search.
+fn minimize_var_selector(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+) -> Result<Option<SpecializedSelector>> {
+    let [declarator] = var.decls.as_slice() else {
+        return Ok(None);
+    };
+    if single_ident_pat_name(&declarator.name) != Some(target.runtime_binding.as_str()) {
+        return Ok(None);
+    }
+    let Some(init) = declarator.init.as_deref() else {
+        return Ok(None);
+    };
+    let export = target.export_name.clone();
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed_declarator = declarator.clone();
+        holed_declarator.name = named_pat(&export);
+        holed_declarator.init = Some(Box::new(hole_expr(init, kept)));
+        let mut holed_var = var.clone();
+        holed_var.declare = false;
+        holed_var.decls = vec![holed_declarator];
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+    };
+    let mut candidates = AnchorCandidates::default();
+    collect_expr_anchors(init, 0, &mut candidates);
+    minimize_via_retention(index, decl, target, &candidates, &render_with)
+}
+
+/// Minimal anchor cover for a single-target class: render the class keeping
+/// only members (and member-body statements) that carry a chosen anchor, with
+/// `CLASS_REST` for dropped member runs, and cover sibling classes.
+fn minimize_class_selector(
+    index: &ChunkSelectorIndex,
+    class: &Class,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+) -> Result<Option<SpecializedSelector>> {
+    let export = target.export_name.clone();
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed_class = class.clone();
+        holed_class.body = hole_class_members(&class.body, kept);
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
+            ident: ident_node(&export),
+            declare: false,
+            class: Box::new(holed_class),
+        }))))
+    };
+    let candidates = collect_class_anchors(class);
+    minimize_via_retention(index, decl, target, &candidates, &render_with)
+}
+
+fn anything_param() -> Param {
+    Param {
+        span: DUMMY_SP,
+        decorators: vec![],
+        pat: anything_pat(),
+    }
+}
+
+fn named_pat(name: &str) -> Pat {
+    Pat::Ident(BindingIdent {
+        id: ident_node(name),
+        type_ann: None,
+    })
+}
+
+/// A `CLASS_REST;` class-field hole that absorbs a run of dropped members.
+fn class_rest_member() -> ClassMember {
+    ClassMember::ClassProp(ClassProp {
+        span: DUMMY_SP,
+        key: PropName::Ident(IdentName::new(CLASS_REST_HOLE_KEYWORD.into(), DUMMY_SP)),
+        value: None,
+        type_ann: None,
+        is_static: false,
+        decorators: vec![],
+        accessibility: None,
+        is_abstract: false,
+        is_optional: false,
+        is_override: false,
+        readonly: false,
+        declare: false,
+        definite: false,
+    })
+}
+
+fn hole_class_members(members: &[ClassMember], kept: &BTreeSet<AnchorSpan>) -> Vec<ClassMember> {
+    let mut out = Vec::new();
+    let mut dropped_run = false;
+    for member in members {
+        if node_retains_any(member.span(), kept) {
+            if dropped_run {
+                out.push(class_rest_member());
+                dropped_run = false;
+            }
+            out.push(hole_class_member(member, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run || out.is_empty() {
+        out.push(class_rest_member());
+    }
+    out
+}
+
+fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> ClassMember {
+    match member {
+        ClassMember::Method(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Method(holed)
+        }
+        ClassMember::PrivateMethod(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::PrivateMethod(holed)
+        }
+        ClassMember::Constructor(ctor) => {
+            let mut holed = ctor.clone();
+            holed.params = ctor
+                .params
+                .iter()
+                .map(|_| ParamOrTsParamProp::Param(anything_param()))
+                .collect();
+            holed.body = ctor.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Constructor(holed)
+        }
+        // Class fields and other members carrying a kept anchor: keep verbatim.
+        _ => member.clone(),
+    }
+}
+
+/// Emit a synthesized selector item (a holed declaration) to source via the
+/// shared codegen — the only AST→string step, and the matcher's parse inverts it.
+fn emit_selector(item: ModuleItem) -> Result<String> {
+    js_ast::emit_module_source(&Module {
+        span: DUMMY_SP,
+        body: vec![item],
+        shebang: None,
+    })
+}
+
+fn collect_class_anchors(class: &Class) -> AnchorCandidates {
+    let mut candidates = AnchorCandidates::default();
+    for member in &class.body {
+        if let Some(span) = class_member_name_span(member) {
+            candidates.structural.push(span_key(span));
+        }
+        match member {
+            ClassMember::Method(m) => collect_block_stmt_anchors(&m.function.body, &mut candidates),
+            ClassMember::PrivateMethod(m) => {
+                collect_block_stmt_anchors(&m.function.body, &mut candidates)
+            }
+            ClassMember::Constructor(ctor) => {
+                collect_block_stmt_anchors(&ctor.body, &mut candidates)
+            }
+            ClassMember::ClassProp(prop) => {
+                if let Some(value) = &prop.value {
+                    collect_expr_anchors(value, 0, &mut candidates);
+                }
+            }
+            _ => {}
+        }
+    }
+    candidates
+}
+
+fn collect_block_stmt_anchors(body: &Option<BlockStmt>, candidates: &mut AnchorCandidates) {
+    if let Some(block) = body {
+        for stmt in &block.stmts {
+            collect_stmt_anchors(stmt, candidates);
+        }
+    }
+}
+
+fn class_member_name_span(member: &ClassMember) -> Option<Span> {
+    let prop_name_span = |name: &PropName| match name {
+        PropName::Ident(ident) => Some(ident.span),
+        _ => None,
+    };
+    match member {
+        ClassMember::Method(m) => prop_name_span(&m.key),
+        ClassMember::ClassProp(prop) => prop_name_span(&prop.key),
+        _ => None,
+    }
+}
+
+/// Tiered minimum set cover. Tiers are tried most-preferred first; within a
+/// tier, the matcher gives each anchor's exclusion set and a minimum-cardinality
+/// cover (branch-and-bound) clears as many still-uncovered competitors as the
+/// tier can, leaving the rest to later tiers. Tier order encodes meaning
+/// preference; minimum cardinality within a tier avoids greedy over-pinning.
+/// The final selector is proven once by the caller. Returns `None` if even all
 /// anchors together cannot single out the target.
 fn cover_competitors(
     index: &ChunkSelectorIndex,
     target: &SynthesizedTargetBinding,
     competitors: &BTreeSet<usize>,
-    tiers: &[&[AnchorSpan]],
+    tiers: &[Vec<AnchorSpan>],
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
 ) -> Result<Option<BTreeSet<AnchorSpan>>> {
     let mut uncovered = competitors.clone();
@@ -2719,35 +2946,84 @@ fn cover_competitors(
                 &target.export_name,
                 &render_with(&BTreeSet::from([anchor]))?,
             )?;
-            let excluded: BTreeSet<usize> = competitors.difference(&survivors).copied().collect();
+            let excluded: BTreeSet<usize> = uncovered.difference(&survivors).copied().collect();
             if !excluded.is_empty() {
                 exclusions.push((anchor, excluded));
             }
         }
-        while !uncovered.is_empty() {
-            let best = exclusions
-                .iter()
-                .filter(|(anchor, _)| !chosen.contains(anchor))
-                .max_by_key(|(anchor, excluded)| {
-                    (
-                        excluded.intersection(&uncovered).count(),
-                        std::cmp::Reverse(anchor.0),
-                    )
-                });
-            let Some((anchor, excluded)) = best else {
-                break;
-            };
-            if excluded.intersection(&uncovered).next().is_none() {
-                break;
-            }
-            chosen.insert(*anchor);
-            uncovered = uncovered.difference(excluded).copied().collect();
+        let coverable: BTreeSet<usize> = exclusions
+            .iter()
+            .flat_map(|(_, excluded)| excluded.iter().copied())
+            .collect();
+        if coverable.is_empty() {
+            continue;
         }
+        for anchor in min_set_cover(&exclusions, &coverable) {
+            chosen.insert(anchor);
+        }
+        uncovered = uncovered.difference(&coverable).copied().collect();
     }
     if uncovered.is_empty() {
         Ok(Some(chosen))
     } else {
         Ok(None)
+    }
+}
+
+/// Minimum-cardinality set cover of `universe` by `sets` (each an anchor and the
+/// competitors it excludes). Branch-and-bound on the least-coverable element;
+/// `universe` is the union of all sets, so a cover always exists. Instances are
+/// tiny (anchors and competitors are per-chunk), so exhaustive search with
+/// best-length pruning stays well within budget and avoids greedy over-pinning.
+fn min_set_cover(
+    sets: &[(AnchorSpan, BTreeSet<usize>)],
+    universe: &BTreeSet<usize>,
+) -> Vec<AnchorSpan> {
+    let mut best: Option<Vec<AnchorSpan>> = None;
+    let mut chosen: Vec<AnchorSpan> = Vec::new();
+    min_set_cover_search(sets, universe.clone(), &mut chosen, &mut best);
+    best.unwrap_or_default()
+}
+
+fn min_set_cover_search(
+    sets: &[(AnchorSpan, BTreeSet<usize>)],
+    remaining: BTreeSet<usize>,
+    chosen: &mut Vec<AnchorSpan>,
+    best: &mut Option<Vec<AnchorSpan>>,
+) {
+    if remaining.is_empty() {
+        if best.as_ref().is_none_or(|found| chosen.len() < found.len()) {
+            *best = Some(chosen.clone());
+        }
+        return;
+    }
+    if best
+        .as_ref()
+        .is_some_and(|found| chosen.len() + 1 >= found.len())
+    {
+        return;
+    }
+    // Branch on the still-uncovered competitor that the fewest anchors exclude:
+    // every cover must include one of those anchors, which keeps the tree narrow.
+    let Some(pivot) = remaining.iter().copied().min_by_key(|competitor| {
+        sets.iter()
+            .filter(|(_, excluded)| excluded.contains(competitor))
+            .count()
+    }) else {
+        return;
+    };
+    for (anchor, excluded) in sets {
+        if chosen.contains(anchor) || !excluded.contains(&pivot) {
+            continue;
+        }
+        chosen.push(*anchor);
+        min_set_cover_search(
+            sets,
+            remaining.difference(excluded).copied().collect(),
+            chosen,
+            best,
+        );
+        chosen.pop();
     }
 }
 

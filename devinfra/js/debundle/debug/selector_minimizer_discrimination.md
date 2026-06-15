@@ -120,26 +120,45 @@ The index makes the candidate→exclusion step cheap; the matcher proof runs onl
 on the single winning candidate (plus the exact-selector fallback), not per
 enumerated variant, which is the main speedup over the old enumerate-and-prove.
 
+## Architecture (current)
+
+- **Holing is an AST→AST prune, not a string render.** `hole_expr` / `hole_stmts`
+  / `hole_object` / `hole_class_members` clone the target's `swc` subtree and
+  replace dropped positions with ordinary marker nodes (`ANYTHING` ident,
+  `STMT_LIST;` expr-statement, `OBJECT_PROPS` shorthand prop, `CLASS_REST;` class
+  field). The holed declaration is serialized by **swc codegen**
+  (`js_ast::emit_module_source`) — the one AST→string step, which the matcher's
+  parse inverts. Selector and code are the same AST type; there is no second
+  serializer.
+- **Anchor selection** is a tiered minimum set cover (`cover_competitors` +
+  `min_set_cover` B&B). Tiers: shallow literals (≤`SHALLOW_LITERAL_DEPTH` calls
+  deep) → structural key/member presence → deeper literals. Within a tier, an
+  exact minimum-cardinality cover avoids greedy over-pinning. Each anchor's
+  exclusion set comes from the production matcher, so discrimination is exact;
+  the chosen union is proven once.
+- **Expectation tests compare through swc**, not text: both produced and expected
+  selectors are parsed and re-emitted by codegen (`normalize_selector`), so
+  formatting is irrelevant and fixtures stay prettier-managed.
+
 ## Implementation order (by tractability / shared machinery)
 
 1. **DONE** — Statement-list / function bodies (`sparse_function_body`,
-   `call_argument_literal`, `nested_async_try`). Implemented as the
-   retention-driven renderer (`render_retained_*`) + matcher-driven tiered cover
-   (`cover_competitors`, literals before structural anchors) in
-   `selector_codemod.rs`, wired into `synthesize_specialized_function_selector`
-   with a fallback to the legacy variant search. Callee/method identity is kept
-   when a call is rendered (`render_callee_expr`). All three fixtures match
-   byte-exact; un-ignored alongside the already-passing `binding_group_declarators`.
-2. Object literals (`object_property_literals`, `binding_group_partition`
-   standalone) — multi-key retention (the renderer already collapses dropped
-   prop runs into `OBJECT_PROPS`; needs wiring of the var/object path).
-3. Class bodies (`class_body`) — member-body descent.
-4. Binding-group partitioning (`binding_group_partition`) — when to group vs
-   split targets.
-5. Retire the legacy `render_*_selector_variants` zoo once every category routes
-   through the retention renderer.
+   `call_argument_literal`, `nested_async_try`).
+2. **DONE** — Object literals (`object_property_literals`) via the var path
+   (`minimize_var_selector`): `const X = <holed init>`, multi-key retention.
+3. **DONE** — Class bodies (`class_body`) via `minimize_class_selector`:
+   member-body descent, `CLASS_REST` for dropped member runs.
+   The shallow-literal/structural tier split keeps the existing
+   `selector_codemod_cli_test` anchor-quality guarantees (stable key over volatile
+   nested-call value; global-minimum cover over greedy prefix).
+4. TODO — Binding-group partitioning (`binding_group_partition`): when to group
+   vs split targets.
+5. TODO — Retire the legacy `render_*_selector_variants` zoo once every category
+   routes through the AST-prune path (function/var/class are migrated; the legacy
+   path still serves multi-target var groups and acts as a fallback).
+6. TODO — Extend the proptest generator beyond functions to var/object/class.
 
-Each step is validated against the (un-ignored, per-case) expectation suite. If
+Each step is validated against the expectation suite (compared through swc). If
 the minimizer finds an equivalently-minimal-or-better shape than a fixture, the
 fixture is updated to the produced `f(input)=output` (per the suite's own
 preamble) rather than forcing the old bytes.

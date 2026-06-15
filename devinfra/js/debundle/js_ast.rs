@@ -254,6 +254,24 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
     emit_js_module_with_comments(parsed, header_lines, &BTreeMap::new(), &BTreeMap::new())
 }
 
+/// Serialize a standalone AST `Module` (e.g. a synthesized selector built by
+/// pruning a parsed module) with the same codegen as the rest of the pipeline.
+/// Spans are ignored, so `DUMMY_SP` nodes are fine.
+pub fn emit_module_source(module: &Module) -> Result<String> {
+    let cm: Lrc<SourceMap> = Lrc::default();
+    let mut buf = Vec::new();
+    {
+        let mut emitter = Emitter {
+            cfg: Config::default(),
+            cm: cm.clone(),
+            comments: None,
+            wr: JsWriter::new(cm, "\n", &mut buf, None),
+        };
+        emitter.emit_module(module)?;
+    }
+    Ok(String::from_utf8(buf)?.trim_end().to_string())
+}
+
 /// Number of post-comma-list-split positions a top-level body item
 /// produces. Mirrors the owner-graph fact splitter: `var x = ..., y
 /// = ...;` is one body item but two statement ordinals; other

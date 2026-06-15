@@ -400,6 +400,7 @@ rust_test(
     data = ["//devinfra/js/debundle"],
     edition = "2024",
     deps = [
+        "//devinfra/js/debundle:js_ast",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",

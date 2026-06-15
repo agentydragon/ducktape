@@ -210,17 +210,31 @@ fn mapping_string_keys(value: &serde_yaml::Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// Canonicalize a selector by round-tripping it through swc (parse → codegen),
+/// so equality is checked on the AST shape, not on incidental text formatting
+/// (indentation, line breaks, trailing commas).
+fn normalize_selector(source: &str) -> String {
+    js_ast::with_swc_globals(|| {
+        let module =
+            js_ast::parse_js_module_ast("<selector expectation>", source).unwrap_or_else(|err| {
+                panic!("selector is not parseable JavaScript ({err}):\n{source}")
+            });
+        js_ast::emit_module_source(&module).expect("emit normalized selector")
+    })
+}
+
 fn assert_selector_shape(
     case_name: &str,
     output: &SelectorOutput,
     expected: &SelectorOutputExpectation,
 ) {
-    let match_source = output.match_source.trim();
     assert_eq!(
-        match_source,
-        expected.expected_match.trim(),
-        "{case_name}: selector for {:?}",
-        output.exports
+        normalize_selector(&output.match_source),
+        normalize_selector(expected.expected_match),
+        "{case_name}: selector for {:?}\n  got: {}\n want: {}",
+        output.exports,
+        output.match_source.trim(),
+        expected.expected_match.trim()
     );
 }
 
@@ -282,7 +296,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "target behavior: object-literal multi-key retention (not yet implemented)"]
     minimizes_object_property_literals,
     fixture = "object_property_literals",
     name = "object literal keeps minimal key value anchors",
@@ -313,7 +326,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "target behavior: class member-body descent (not yet implemented)"]
     minimizes_class_body,
     fixture = "class_body",
     name = "class selector keeps only discriminating member body anchors",
