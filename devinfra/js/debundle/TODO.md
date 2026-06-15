@@ -28,12 +28,16 @@ progress output and a resumable or cacheable plan.
 
 ### P0 — automation-first selector workflows
 
-1. **Minimal selector synthesis.** Implement the core operation "given this
-   binding, group, anonymous statement, or statement range, emit the simplest
-   selector that uniquely selects it." Start from exact source slices, relax
-   with holes, use source indexes to count candidates cheaply, and verify the
-   final selector through the real resolver. The first indexed slice covers
-   exact function/class declaration recovery and multi-declarator `var`/`let`/
+1. **Forward-compatible minimized selector synthesis.** Implement the core
+   operation "given this binding, group, anonymous statement, or statement
+   range, emit the loosest readable selector that uniquely selects it." The
+   generated spec must both work for today's chunk and be likely to survive
+   future minified-bundle drift. Start from exact source slices, relax with
+   holes, prefer `ANYTHING` / `EXPR` / `OBJECT_PROPS` / `DECLARATORS` /
+   `CLASS_REST` / `ARGS` / `STMT_LIST` over long incidental code bodies, use
+   source indexes to count candidates cheaply, and verify the final selector
+   through the real resolver. The first indexed slice covers exact
+   function/class declaration recovery and multi-declarator `var`/`let`/
    `const` groups selected from name-only members, with `DECLARATORS_*` gap
    holes and uniqueness proof. Grow that into the general primitive for
    new-spec bootstrap, old-spec stabilization, and version-port repair.
@@ -46,10 +50,11 @@ progress output and a resumable or cacheable plan.
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    preserve YAML comments where possible, apply with filters, and explain every
    skipped candidate. High-value rewrite classes:
-   - minimize generated `name-only-source-match` selectors by replacing
-     unnecessary expression arguments, object properties, class members, and
-     statement ranges with `ANYTHING` / `OBJECT_PROPS` / `STMT_LIST` while
-     preserving uniqueness;
+   - make generated `name-only-source-match` selectors minimized when produced,
+     not only by later cleanup: replace unnecessary expression arguments,
+     object properties, class members, and statement ranges with `ANYTHING`,
+     typed holes, `OBJECT_PROPS`, `CLASS_REST`, or `STMT_LIST` while preserving
+     uniqueness;
    - convert repeated member-form selectors over the same declaration context
      into one `binding_groups` entry, including cases that do not start from
      name-only inputs;

@@ -38,7 +38,11 @@ Before dispatching work, collect:
 - For selector-stabilization rounds, start with
   `debundle spec selector-debt --group-module-depth N --format json` and
   dispatch broad, coherent buckets to lane workers. Prefer buckets that can be
-  handled by `debundle spec synthesize-selectors` over hand-authored YAML.
+  handled by `debundle spec synthesize-selectors` over hand-authored YAML, but
+  do not treat exact long generated selectors as done merely because they match
+  the current chunk. The selector program's target is current correctness plus
+  likely forward compatibility, so over-narrow synthesis output should become
+  Ducktape minimization work before it is scaled across many modules.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
 - Use `debundle_integrator` for merge trains of worker commits.
@@ -58,7 +62,9 @@ dispatch the integrator.
 3. For structural-selector cleanup, run `selector-debt` with module grouping,
    choose high-yield buckets, and decide whether missing support should become
    Ducktape tooling work before asking humans or workers to hand-edit many
-   selectors.
+   selectors. A bucket is high quality only when its selectors are concise
+   enough to avoid pinning incidental implementation detail; use holes and
+   stable anchors where uniqueness permits.
 4. Ask intake for dispatchable seeds. Only `landable_today: true`
    proposals are directly dispatchable; `blocked_residual_dependency`
    rows need their closure grown (or manual co-location) before they

@@ -249,7 +249,11 @@ name-only selectors as a general authoring rule. Those names are not
 semantic handles: they can drift between versions, differ between chunks,
 or accidentally refer to a different symbol after a source refresh. Prefer
 structural selectors that describe the stable AST shape and let debundle
-resolve the current runtime binding.
+resolve the current runtime binding. Current uniqueness is necessary but not
+sufficient: a selector that copies a whole current function body, object
+literal, class body, or nested expression may be over-narrow and therefore
+fragile across the next minified-bundle version. Prefer the loosest readable
+selector that still proves uniqueness.
 
 Default to this ladder when writing or repairing selectors:
 
@@ -263,7 +267,11 @@ Default to this ladder when writing or repairing selectors:
    or diagnose.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
-4. Use `selector.binding.name` only for already-stable semantic names or as
+4. Avoid exact long bodies/subexpressions unless they are the stable signal
+   needed to disambiguate. If `ANYTHING`, `EXPR`, `OBJECT_PROPS`, `ARGS`,
+   `CLASS_REST`, `STMT_LIST`, or declarator gaps keep the selector unique, use
+   the hole form.
+5. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
 For broad old-spec conversion passes, use an automation-first loop:
@@ -293,8 +301,10 @@ For broad old-spec conversion passes, use an automation-first loop:
    reasons. After `--apply`, run `git diff --check`, the target regen/gate, and
    another `selector-debt` summary to measure the debt delta.
 5. Treat repeated skip reasons or oververbose generated selectors as Ducktape
-   feature backlog. Add tooling or a narrower supported selector form before
-   manually spelling large unstable source bodies.
+   feature backlog. Do not land broad batches of exact long selectors merely
+   because they pass today's uniqueness proof; add minimization tooling or a
+   narrower supported selector form before spelling large unstable source
+   bodies.
 
 When several `members[].selector.source_match` entries repeat the same
 multi-declarator selector with different `target_binding` values, run
@@ -319,7 +329,10 @@ Dry-run is the default. Add `--apply` only after inspecting the JSON summary.
 The command builds a per-chunk declaration/binding index, groups requested
 exports that come from the same top-level declaration, renders the simplest
 currently-supported selector form for that group, and then proves uniqueness
-with normal `source_match` resolution. The report includes the matched
+with normal `source_match` resolution. For synthesis work, "simplest" means the
+lowest-cost forward-compatible selector, not a byte-for-byte copy of the
+current source: prefer holes and stable anchors over incidental implementation
+detail whenever uniqueness is preserved. The report includes the matched
 top-level statement index, candidate count, group id, rewritten holes, files
 scanned, members scanned, and a structured skip reason for any item it cannot
 prove.
@@ -333,13 +346,14 @@ The first automated forms are intentionally narrow:
   entry, with unrelated declarator runs collapsed to `DECLARATORS_BEFORE`,
   `DECLARATORS_BETWEEN`, and `DECLARATORS_AFTER`.
 
-This is the first indexed subset of the broader minimization problem. Future
-passes should add stable initializer atoms, object-property keys, callee/member
-paths, literals, and statement/object/argument holes so the command can
-minimize more of the selector body. Apply mode uses targeted text edits so
-unrelated YAML ordering, comments, and neighboring members remain stable; still
-review the diff because generated selectors may expose a missing minimization
-feature or require a more concise hole form before they are worth landing.
+This is the first indexed subset of the broader minimization problem. Synthesis
+should move toward producing minimized selectors directly: stable initializer
+atoms, object-property keys, callee/member paths, literals, and
+statement/object/argument holes should be used to avoid pinning unimportant
+current code. Apply mode uses targeted text edits so unrelated YAML ordering,
+comments, and neighboring members remain stable; still review the diff because
+generated selectors may expose a missing minimization feature or require a more
+concise hole form before they are worth landing.
 
 Use `selector.source_match` for stable declaration shapes:
 

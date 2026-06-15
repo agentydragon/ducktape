@@ -7,6 +7,18 @@ versions. The target user is an agent operating on a large real-world bundle:
 the agent should spend most of its time reviewing ranked patch plans and
 blockers, not hand-authoring fragile selectors one binding at a time.
 
+Selector automation has two non-negotiable success criteria:
+
+1. The produced spec must work for the current chunk and resolve the intended
+   binding, group, or anonymous statement with a uniqueness proof.
+2. The produced selectors must be likely to keep working across future versions
+   of the minified chunks. A selector that copies an entire current function
+   body, object literal, class body, or nested expression is often just an exact
+   snapshot of today's code; it can be over-narrow even when it is unique. The
+   tooling should prefer the loosest readable selector that still proves
+   uniqueness, using holes and stable anchors instead of pinning incidental
+   implementation detail.
+
 This plan covers three product flows:
 
 1. Given one or more minified JavaScript chunks, produce a minimal spec that
@@ -27,8 +39,9 @@ An efficient agent loop should look like this:
 2. Ask debundle for ranked worklists: unstable selectors, unresolved selectors,
    ambiguous selectors, repeated selector bodies, and likely grouping
    opportunities.
-3. Ask debundle to synthesize a patch plan for a whole bucket, with dry-run
-   JSON/NDJSON explaining every applied and skipped candidate.
+3. Ask debundle to synthesize a patch plan for a whole bucket, preferring
+   minimized, forward-compatible selectors, with dry-run JSON/NDJSON explaining
+   every applied and skipped candidate.
 4. Apply the safe subset, preserving YAML comments and producing small
    deterministic diffs.
 5. Run the keep-going validation report, not just the first failing selector.
@@ -104,12 +117,20 @@ and let a ranker choose:
 
 Selectors should be ranked by a cost model that rewards uniqueness, stability,
 small readable source, grouped exports, exact stable literals/keys, and fewer
-unneeded pinned generated details.
+unneeded pinned generated details. Prefer wildcards over long code or
+subexpressions when both forms uniquely select the same target. Exact source
+should be retained only for stable signal: declaration kind, target binding
+position, stable literal/key/operator/callee shape, ordering, or a small
+context window that distinguishes otherwise ambiguous candidates.
 
 ### Minimizer
 
-"Produce the simplest selector that uniquely selects this entity" should be a
-first-class operation. For a target binding, group, or anonymous statement:
+"Produce the loosest readable selector that uniquely selects this entity" should
+be a first-class operation. "Simplest" does not mean merely shortest, and it
+does not mean exact current-source reproduction; it means the lowest-cost
+selector that is expected to survive unrelated source drift while still
+matching only the target today. For a target binding, group, or anonymous
+statement:
 
 1. Start from an exact source slice known to select the desired entity.
 2. Generate relaxations by replacing low-signal subtrees with holes and by
@@ -119,6 +140,13 @@ first-class operation. For a target binding, group, or anonymous statement:
 4. Verify final candidates through the real selector resolver.
 5. Emit the lowest-cost unique selector and structured rejected alternatives
    when useful for diagnostics.
+
+Over-narrow selectors should be reported as debt even if they currently match.
+Examples include long function bodies where the signature plus a stable literal
+or call shape would suffice, object literals where only a few stable keys are
+needed, generated class bodies where `CLASS_REST` preserves the useful member
+shape, and anonymous statement blocks where `STMT_LIST` can ignore unrelated
+setup or cleanup statements.
 
 The minimizer should be deterministic. Greedy relaxation is acceptable for the
 first implementation when each accepted relaxation is revalidated, but the

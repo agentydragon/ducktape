@@ -77,9 +77,12 @@ manual YAML:
 3. Apply only when the report shows useful candidate changes and bounded skip
    reasons. After `--apply`, check `git diff --check`, rerun the adapter's gate
    or regen command, and rerun `selector-debt` to record the debt delta.
-4. If generated selectors are too verbose, ambiguous, or repeatedly skipped,
-   route that as Ducktape tooling work instead of hand-authoring many fragile
-   one-off selectors.
+4. If generated selectors are too verbose, too exact, ambiguous, or repeatedly
+   skipped, route that as Ducktape tooling work instead of hand-authoring many
+   fragile one-off selectors. Current uniqueness is only the first gate:
+   selectors should also be likely to keep matching future minified-bundle
+   versions, so prefer wildcard/hole forms over long incidental code whenever
+   uniqueness still holds.
 
 ## Round Loop
 

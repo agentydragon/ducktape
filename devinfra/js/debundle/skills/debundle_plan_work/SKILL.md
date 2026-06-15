@@ -40,6 +40,13 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   coherent module-family peels, then give workers explicit `--item` lists or
   scoped `--module` / `--module-prefix` selectors for
   `debundle spec synthesize-selectors`.
+- Treat selector quality as a forward-compatibility problem, not only a
+  current-build problem. A synthesized selector that copies a long exact
+  function body, object literal, class body, or nested expression can be
+  over-narrow even when it uniquely matches today's chunk. Prefer worker lanes
+  that use minimized selectors with holes and stable anchors, and route
+  oververbose synthesis output back to Ducktape tooling before scaling the
+  pattern across many modules.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
@@ -59,6 +66,6 @@ queue is a heuristic projection from that DAG, not a serialized fact from
 commands in all new docs, scripts, and reports.
 
 Selector planning should also record tooling gaps. If `synthesize-selectors`
-skips a large repeated shape, produces selectors that are too verbose to review,
-or cannot express a concise stable anchor, recommend a Ducktape feature/fix
-before assigning many manual YAML edits.
+skips a large repeated shape, produces selectors that are too exact to be
+forward-compatible, or cannot express a concise stable anchor, recommend a
+Ducktape feature/fix before assigning many manual YAML edits.
