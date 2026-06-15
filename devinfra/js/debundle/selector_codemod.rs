@@ -15,8 +15,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use selector_candidate_index::SelectorCandidateIndex;
 use serde::Serialize;
 use serde_yaml::Value;
+use source_match::BodyIndexFilter;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::{BytePos, DUMMY_SP, Span, Spanned, SyntaxContext};
@@ -547,6 +549,11 @@ struct ChunkSelectorIndex {
     source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
+    /// Built once per chunk and shared across every member and binding group so
+    /// the minimizer's per-anchor matcher scans only plausible top-level body
+    /// indices instead of the whole chunk. A pure prefilter — see
+    /// [`matched_body_indices`].
+    candidate_index: SelectorCandidateIndex,
 }
 
 #[derive(Debug)]
@@ -891,11 +898,13 @@ impl ChunkSelectorIndex {
             }
             decls.push(indexed);
         }
+        let candidate_index = SelectorCandidateIndex::new(&parsed.module);
         Self {
             parsed,
             source,
             decls,
             binding_to_decl,
+            candidate_index,
         }
     }
 }
@@ -1716,6 +1725,14 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
 }
 
 /// Body indices a `target_binding` selector with `match_source` resolves to.
+///
+/// The shared per-chunk [`SelectorCandidateIndex`] narrows the matcher's scan to
+/// the top-level body indices whose features could still match the selector,
+/// turning the inner loop from O(all top-level statements) into O(plausible
+/// candidates). The candidate set is a sound superset of the full-scan matches,
+/// so the still-run structural matcher remains the source of truth: it proves
+/// every reported match and discards index false positives. See
+/// `prefilter_matches_brute_force_scan` for the superset invariant test.
 fn matched_body_indices(
     index: &ChunkSelectorIndex,
     export_name: &str,
@@ -1729,10 +1746,17 @@ fn matched_body_indices(
         target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     };
-    let matches = source_match::member_binding_candidate_matches(
+    let selector = source_match.selector();
+    let candidates: BTreeSet<usize> = index
+        .candidate_index
+        .candidate_set_for_source_match(&selector)?
+        .body_indices()
+        .collect();
+    let matches = source_match::member_binding_candidate_matches_within(
         &index.parsed.module,
         "<selector minimization>",
-        &source_match.selector(),
+        &selector,
+        BodyIndexFilter::Restricted(&candidates),
     )?;
     Ok(matches.iter().map(|candidate| candidate.body_idx).collect())
 }
@@ -3058,5 +3082,105 @@ export { target };\n";
         // emits even when full_ast_fallback is off.
         let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
         assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
+    }
+}
+
+#[cfg(test)]
+mod prefilter_soundness_tests {
+    use super::*;
+
+    /// Many same-shaped sibling `const`s plus a few non-var statements, so the
+    /// candidate-index prefilter has both true matches to keep and unrelated
+    /// statements to prune. Synthetic only.
+    fn many_sibling_chunk() -> String {
+        let mut chunk = String::new();
+        for idx in 0..200 {
+            chunk.push_str(&format!(
+                "const binding{idx} = makeWidget(\"token-{idx}\", {{ role: \"button\" }});\n"
+            ));
+        }
+        for idx in 0..50 {
+            chunk.push_str(&format!("function helper{idx}(a, b) {{ return a + b; }}\n"));
+        }
+        chunk.push_str("sideEffect();\n");
+        chunk
+    }
+
+    /// The full unfiltered scan: matcher over every top-level statement. Source
+    /// of truth the prefilter must not under-include.
+    fn brute_force_matches(
+        index: &ChunkSelectorIndex,
+        export: &str,
+        source: &str,
+    ) -> BTreeSet<usize> {
+        let source_match = SourceMatch {
+            match_source: source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: Some(export.to_string()),
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        };
+        source_match::member_binding_candidate_matches_within(
+            &index.parsed.module,
+            "<brute-force>",
+            &source_match.selector(),
+            BodyIndexFilter::All,
+        )
+        .unwrap()
+        .iter()
+        .map(|matched| matched.body_idx)
+        .collect()
+    }
+
+    #[test]
+    fn prefilter_matches_brute_force_scan() {
+        js_ast::with_swc_globals(|| {
+            let index = ChunkSelectorIndex::new(
+                js_ast::parse_js_module_consuming("<prefilter-test>", many_sibling_chunk())
+                    .unwrap(),
+            );
+            // A selector specific enough to match exactly one sibling, and a holed
+            // selector that matches every sibling: both must agree between the
+            // prefiltered and brute-force scans.
+            for (export, source) in [
+                (
+                    "Target",
+                    r#"const Target = makeWidget("token-137", { role: "button" });"#,
+                ),
+                (
+                    "Target",
+                    r#"const Target = makeWidget(EXPR_HOLE, { role: "button" });"#,
+                ),
+            ] {
+                let prefiltered = matched_body_indices(&index, export, source).unwrap();
+                let brute = brute_force_matches(&index, export, source);
+                let candidates: BTreeSet<usize> = index
+                    .candidate_index
+                    .candidate_set_for_source_match(&{
+                        SourceMatch {
+                            match_source: source.to_string(),
+                            identifiers: SourceMatchIdentifierMode::AlphaAll,
+                            target_binding: Some(export.to_string()),
+                            target_statement: None,
+                            target_statements: None,
+                            wildcard_string_literals: BTreeSet::new(),
+                        }
+                        .selector()
+                    })
+                    .unwrap()
+                    .body_indices()
+                    .collect();
+                assert!(
+                    brute.is_subset(&candidates),
+                    "candidate set must be a sound superset of the brute-force matches: \
+                     brute={brute:?} candidates={candidates:?}"
+                );
+                assert_eq!(
+                    prefiltered, brute,
+                    "prefiltered scan must report identical matches to the full scan"
+                );
+            }
+        });
     }
 }

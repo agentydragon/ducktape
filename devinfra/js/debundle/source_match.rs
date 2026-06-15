@@ -673,16 +673,57 @@ pub fn member_binding_candidates(
     )
 }
 
+/// Restricts which top-level body indices the matcher inspects as match anchors.
+///
+/// This is a pure performance prefilter, never a correctness gate: a caller may
+/// supply a candidate body-index set (e.g. from `SelectorCandidateIndex`) that
+/// must be a *sound superset* of every index the full scan would match. The
+/// matcher still proves every reported match structurally, so over-inclusion is
+/// harmless and under-inclusion would silently drop real matches — the caller is
+/// responsible for the superset invariant.
+#[derive(Clone, Copy)]
+pub enum BodyIndexFilter<'a> {
+    All,
+    Restricted(&'a BTreeSet<usize>),
+}
+
+impl BodyIndexFilter<'_> {
+    fn allows(&self, body_idx: usize) -> bool {
+        match self {
+            BodyIndexFilter::All => true,
+            BodyIndexFilter::Restricted(indices) => indices.contains(&body_idx),
+        }
+    }
+}
+
 pub fn member_binding_candidate_matches(
     runtime_module: &Module,
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
+    member_binding_candidate_matches_within(
+        runtime_module,
+        request_id,
+        selector,
+        BodyIndexFilter::All,
+    )
+}
+
+/// Like [`member_binding_candidate_matches`], but only inspects top-level body
+/// indices the `filter` admits. The reported matches are identical to the
+/// unfiltered scan whenever `filter` is a sound superset of the matchable
+/// indices (see [`BodyIndexFilter`]).
+pub fn member_binding_candidate_matches_within(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    filter: BodyIndexFilter<'_>,
+) -> Result<Vec<MemberBindingMatch>> {
     trace_source_match(
         "members[].selector.source_match candidates",
         request_id,
         selector,
-        || find_member_binding_matches(runtime_module, request_id, selector),
+        || find_member_binding_matches(runtime_module, request_id, selector, filter),
         |matches: &Vec<MemberBindingMatch>| {
             format!(
                 "matches={} body_indices={} bindings={}",
@@ -907,7 +948,12 @@ pub fn resolve_member_binding(
         request_id,
         selector,
         || {
-            let matches = find_member_binding_matches(runtime_module, request_id, selector)?;
+            let matches = find_member_binding_matches(
+                runtime_module,
+                request_id,
+                selector,
+                BodyIndexFilter::All,
+            )?;
             let target_binding_hint = selector
                 .target_binding
                 .as_deref()
@@ -1188,6 +1234,7 @@ fn find_member_binding_matches(
     runtime_module: &Module,
     request_id: &str,
     selector: &AnonymousStatementSelector,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     let parsed = parse_selector_module_with_capability_check(
         request_id,
@@ -1217,6 +1264,7 @@ fn find_member_binding_matches(
                 &parsed.body[0],
                 selector,
                 target_binding,
+                filter,
             );
         }
         return find_matching_target_bindings(
@@ -1225,6 +1273,7 @@ fn find_member_binding_matches(
             &parsed.body,
             selector,
             target_binding,
+            filter,
         );
     }
     let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
@@ -1244,10 +1293,10 @@ fn find_member_binding_matches(
         ),
     };
     if selector_single_var_declarator(needle).is_some() {
-        return find_matching_var_declarators(runtime_module, needle, selector);
+        return find_matching_var_declarators(runtime_module, needle, selector, filter);
     }
     let mut matches = Vec::new();
-    for body_idx in find_matching_body_indices(runtime_module, needle, selector) {
+    for body_idx in find_matching_body_indices(runtime_module, needle, selector, filter) {
         let item = runtime_module.body.get(body_idx).with_context(|| {
             format!("body index {body_idx} disappeared while resolving source_match")
         })?;
@@ -1282,6 +1331,7 @@ fn find_matching_target_bindings(
     needles: &[ModuleItem],
     selector: &AnonymousStatementSelector,
     target_binding: &str,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     if needles.len() == 1 && selector_var_decl_has_declarator_holes(&needles[0]) {
         return find_matching_target_var_decl_with_declarator_holes(
@@ -1290,6 +1340,7 @@ fn find_matching_target_bindings(
             &needles[0],
             selector,
             target_binding,
+            filter,
         );
     }
     let (target_item_idx, target_binding_idx) =
@@ -1301,10 +1352,13 @@ fn find_matching_target_bindings(
             selector,
             target_item_idx,
             target_binding_idx,
+            filter,
         );
     }
     let mut matches = Vec::new();
-    for body_idx in find_matching_body_ranges(runtime_module, needles, selector) {
+    for body_idx in
+        find_matching_body_ranges(runtime_module, needles, selector, target_item_idx, filter)
+    {
         let matched_body_idx = body_idx + target_item_idx;
         let item = runtime_module.body.get(matched_body_idx).with_context(|| {
             format!("body index {matched_body_idx} disappeared while resolving source_match")
@@ -1333,6 +1387,7 @@ fn find_matching_target_binding_ranges_with_single_declarator(
     selector: &AnonymousStatementSelector,
     target_item_idx: usize,
     target_binding_idx: usize,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     if needles.is_empty() || needles.len() > runtime_module.body.len() {
         return Ok(Vec::new());
@@ -1342,6 +1397,9 @@ fn find_matching_target_binding_ranges_with_single_declarator(
     let mut matches = Vec::new();
     SyntaxContext::within_ignored_ctxt(|| {
         for (body_idx, candidates) in runtime_module.body.windows(needles.len()).enumerate() {
+            if !filter.allows(body_idx + target_item_idx) {
+                continue;
+            }
             let mut matcher = AstWildcardMatcher::new(selector, &wildcard_idents, alpha);
             let window = SingleDeclaratorTargetWindow {
                 needles,
@@ -1421,6 +1479,7 @@ fn find_matching_target_var_declarators(
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
     target_binding: &str,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     let selector_bindings = declared_bindings(needle);
     let selector_binding_indices: Vec<usize> = selector_bindings
@@ -1447,6 +1506,9 @@ fn find_matching_target_var_declarators(
     let prefilter = VarDeclaratorPrefilter::new(needle, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
+        if !filter.allows(body_idx) {
+            continue;
+        }
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
@@ -1485,6 +1547,7 @@ fn find_matching_target_var_decl_with_declarator_holes(
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
     target_binding: &str,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     let needle_var =
         item_var_decl(needle).expect("caller checked selector_var_decl_has_declarator_holes");
@@ -1494,6 +1557,9 @@ fn find_matching_target_var_decl_with_declarator_holes(
     let prefilter = VarDeclWithDeclaratorHolesPrefilter::new(needle_var, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
+        if !filter.allows(body_idx) {
+            continue;
+        }
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
@@ -1721,11 +1787,15 @@ fn find_matching_var_declarators(
     runtime_module: &Module,
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
+    filter: BodyIndexFilter<'_>,
 ) -> Result<Vec<MemberBindingMatch>> {
     let prepared = PreparedNeedle::new(needle, selector);
     let prefilter = VarDeclaratorPrefilter::new(needle, &prepared);
     let mut matches = Vec::new();
     for (body_idx, item) in runtime_module.body.iter().enumerate() {
+        if !filter.allows(body_idx) {
+            continue;
+        }
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
@@ -2091,6 +2161,7 @@ fn find_matching_body_indices(
     runtime_module: &Module,
     needle: &ModuleItem,
     selector: &AnonymousStatementSelector,
+    filter: BodyIndexFilter<'_>,
 ) -> Vec<usize> {
     let prepared = PreparedNeedle::new(needle, selector);
     let declarator_hole_prefilter = item_var_decl(needle)
@@ -2104,6 +2175,7 @@ fn find_matching_body_indices(
         .body
         .iter()
         .enumerate()
+        .filter(|(body_idx, _)| filter.allows(*body_idx))
         .filter_map(|(body_idx, item)| {
             if let Some(prefilter) = &declarator_hole_prefilter {
                 let candidate_var = item_var_decl(item)?;
@@ -2116,10 +2188,15 @@ fn find_matching_body_indices(
         .collect()
 }
 
+/// `target_item_idx` is the offset of the matched/target statement within a
+/// multi-statement window; the `filter` is applied to that absolute target
+/// index (`window_start + target_item_idx`), not the window start.
 fn find_matching_body_ranges(
     runtime_module: &Module,
     needles: &[ModuleItem],
     selector: &AnonymousStatementSelector,
+    target_item_idx: usize,
+    filter: BodyIndexFilter<'_>,
 ) -> Vec<usize> {
     if needles.is_empty() || needles.len() > runtime_module.body.len() {
         return Vec::new();
@@ -2137,6 +2214,7 @@ fn find_matching_body_ranges(
             .body
             .iter()
             .enumerate()
+            .filter(|(body_idx, _)| filter.allows(*body_idx + target_item_idx))
             .filter_map(|(body_idx, candidate)| {
                 if let Some(prefilter) = &declarator_hole_prefilter {
                     let candidate_var = item_var_decl(candidate)?;
@@ -2154,6 +2232,7 @@ fn find_matching_body_ranges(
         .body
         .windows(needles.len())
         .enumerate()
+        .filter(|(body_idx, _)| filter.allows(*body_idx + target_item_idx))
         .filter_map(|(body_idx, candidates)| {
             SyntaxContext::within_ignored_ctxt(|| {
                 let mut matcher = AstWildcardMatcher::new(selector, &wildcard_idents, alpha);
@@ -3865,7 +3944,7 @@ const unrelatedB = "different-token-42";"#,
             let needle = parse_one(&selector.match_source);
 
             assert_eq!(
-                find_matching_body_indices(&runtime, &needle, &selector),
+                find_matching_body_indices(&runtime, &needle, &selector, BodyIndexFilter::All),
                 vec![1]
             );
         });

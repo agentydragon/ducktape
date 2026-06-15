@@ -48,17 +48,34 @@ deferredRenderBatchSize = 10, DECLARATORS_AFTER = null;` — keeps the
     (`source_match.rs:676`), called **once per candidate anchor per tier** by
     `cover_competitors`. Net ≈ members × anchors × (full top-level scan ×
     match-cost).
-- **Fix (planned): index-prefilter.** The chunk is already parsed once per
-  invocation, but the matcher scans all top-level statements per anchor.
-  `SelectorCandidateIndex` (PR 2251) already exposes posting-list intersection
-  (`candidate_set_for_features` / `candidate_set_for_source_match`) but the
-  matcher path does not use it. Two wins: (1) inside `find_matching_body_ranges`
-  / `matched_body_indices`, query the index for the candidate body-index set
-  implied by the selector's features and run `AstWildcardMatcher` only on those
-  statements (O(plausible candidates) instead of O(top-level statements));
-  (2) build one `SelectorCandidateIndex` per chunk and share it across all
-  members, reserving the full matcher for proving the single chosen candidate.
-  Until then, scope runs by `--module-prefix`.
+- **Fix (done): index-prefilter.** `ChunkSelectorIndex` now owns one
+  `SelectorCandidateIndex`, built once per chunk and shared across every member
+  and binding group (so a whole-chunk or multi-YAML batch run builds it once).
+  `matched_body_indices` queries `candidate_set_for_source_match` for the
+  body-index set the selector's features could still match, then calls the new
+  `source_match::member_binding_candidate_matches_within(...,
+BodyIndexFilter::Restricted(&candidates))`. The matcher's per-item scan loops
+  (`find_matching_body_indices`, `find_matching_body_ranges`,
+  `find_matching_target_var_declarators`, the declarator-hole and
+  single-declarator-window paths) skip body indices the filter rejects, turning
+  the inner loop from O(all top-level statements) into O(plausible candidates).
+  The index is a pure prefilter: the candidate set is a sound superset, and the
+  full structural matcher still proves every reported match
+  (`prefilter_matches_brute_force_scan` asserts the superset and identical
+  results). The final uniqueness arbitration (`resolve_member_binding`) still
+  scans with `BodyIndexFilter::All` — correctness gate unchanged.
+  - **Synthetic micro-measurement.** On a 251-statement synthetic chunk (200
+    same-shaped sibling `const`s + 50 functions + 1 expr statement; no real
+    data), a discriminating member selector that resolves to one declarator
+    previously ran the matcher over all 251 top-level items per anchor; the
+    candidate index narrows the scan to the single var-declaration whose
+    `StringLiteral`/`ObjectKey`/`VarKind` features intersect (≈1 item), so the
+    per-anchor matcher cost drops by roughly the sibling count. A holed selector
+    that legitimately matches all 200 siblings narrows to exactly those 200 (the
+    50 functions and the expr statement are pruned). The whole-chunk run is
+    expected to fall from O(members × anchors × all-statements) toward
+    O(members × anchors × matching-siblings); re-dogfood the real chunk to
+    confirm the wall-clock win.
 
 ## What does not work / needs work
 
@@ -99,6 +116,7 @@ committed in the spec's private repo. Remaining scopes (`app/`, `domains/`,
 ## Suggested next steps
 
 1. Make apply transactional + overlap-safe (unblocks full-scope `--apply`).
-2. Index-prefilter the cover (unblocks whole-chunk runs within budget).
+2. ~~Index-prefilter the cover~~ (done — see "Fix (done): index-prefilter"
+   above; re-dogfood the real chunk to confirm the wall-clock budget).
 3. Improve large-decl minimization so big classes/objects don't fall back to
    the full AST when many same-kind siblings exist.

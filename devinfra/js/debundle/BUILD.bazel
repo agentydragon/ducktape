@@ -506,6 +506,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
+        ":selector_candidate_index",
         ":source_match",
         ":source_match_holes",
         ":spec",
