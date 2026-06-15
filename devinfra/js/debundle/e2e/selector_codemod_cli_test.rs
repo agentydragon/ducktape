@@ -26,6 +26,14 @@ fn write(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
 }
 
+fn assert_no_trailing_whitespace(text: &str) {
+    assert!(
+        text.lines()
+            .all(|line| !line.ends_with(' ') && !line.ends_with('\t')),
+        "rewritten YAML contains trailing whitespace:\n{text}"
+    );
+}
+
 fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "spec",
@@ -179,23 +187,24 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        r#"const beforeConfig = helper("before"),
-  runtimePrimary = buildConfig({ stable: "primary", generated: "ignore-a" }),
-  middleConfig = helper("middle"),
-  runtimeSecondary = buildConfig({ stable: "secondary", generated: "ignore-b" }),
-  afterConfig = helper("after");
-function runtimeFormatter(value) {
-  return value.trim().toUpperCase();
-}
-function helper(value) {
-  return value;
-}
-function buildConfig(value) {
-  return value;
-}
-console.log(runtimePrimary, runtimeSecondary, runtimeFormatter(" ok "));
-export { runtimePrimary, runtimeSecondary, runtimeFormatter };
-"#,
+        concat!(
+            "const beforeConfig = helper(\"before\"),\n",
+            "  runtimePrimary = buildConfig({ stable: \"primary\", generated: \"ignore-a\" }),  \n",
+            "  middleConfig = helper(\"middle\"),\n",
+            "  runtimeSecondary = buildConfig({ stable: \"secondary\", generated: \"ignore-b\" }),\t\n",
+            "  afterConfig = helper(\"after\");\n",
+            "function runtimeFormatter(value) {\n",
+            "  return value.trim().toUpperCase();\n",
+            "}\n",
+            "function helper(value) {\n",
+            "  return value;\n",
+            "}\n",
+            "function buildConfig(value) {\n",
+            "  return value;\n",
+            "}\n",
+            "console.log(runtimePrimary, runtimeSecondary, runtimeFormatter(\" ok \"));\n",
+            "export { runtimePrimary, runtimeSecondary, runtimeFormatter };\n",
+        ),
     );
     let modules = root.join("modules");
     let module = modules.join("app/config.yaml");
@@ -238,16 +247,17 @@ fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        r#"function runtimeFormatter(value) {
-  const trimmed = value.trim();
-
-  return trimmed.toUpperCase();
-}
-function untouchedBinding() {
-  return "still name-only";
-}
-export { runtimeFormatter, untouchedBinding };
-"#,
+        concat!(
+            "function runtimeFormatter(value) {\n",
+            "  const trimmed = value.trim();  \n",
+            "  \t\n",
+            "  return trimmed.toUpperCase(); \t\n",
+            "}\n",
+            "function untouchedBinding() {\n",
+            "  return \"still name-only\";\n",
+            "}\n",
+            "export { runtimeFormatter, untouchedBinding };\n",
+        ),
     );
     let modules = root.join("modules");
     let module = modules.join("app/bootstrap.yaml");
@@ -384,10 +394,7 @@ anonymous_statements:
       initializeRuntime();
 "#
     );
-    assert!(
-        rewritten.lines().all(|line| !line.ends_with(' ')),
-        "rewritten YAML contains trailing whitespace:\n{rewritten}"
-    );
+    assert_no_trailing_whitespace(&rewritten);
 }
 
 #[test]
@@ -528,8 +535,9 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
     assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
 
     let module = modules.join("app/config.yaml");
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&fs::read_to_string(module).unwrap()).unwrap();
+    let rewritten = fs::read_to_string(module).unwrap();
+    assert_no_trailing_whitespace(&rewritten);
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
     let members = doc["members"].as_sequence().unwrap();
     assert_eq!(members.len(), 1, "{doc:?}");
     assert_eq!(members[0]["name"], "FormatValue");

@@ -1027,7 +1027,7 @@ fn synthesize_simplest_selector_for_group(
             runtime_binding: member.binding_name.clone(),
         })
         .collect::<Vec<_>>();
-    let (match_source, rewritten_holes) = match decl.kind {
+    let (mut match_source, rewritten_holes) = match decl.kind {
         IndexedDeclarationKind::Var => render_var_group_selector(index, item, decl, &targets)?,
         IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => {
             let target = targets
@@ -1050,6 +1050,9 @@ fn synthesize_simplest_selector_for_group(
             bail!("unsupported declaration kind for selector synthesis")
         }
     };
+    // Normalize before proving uniqueness, so generated YAML is diff-clean
+    // while semantically significant whitespace changes still fail matching.
+    match_source = trim_selector_source_line_suffixes(&match_source);
 
     let mut candidate_count = None;
     if targets.len() > 1 {
@@ -1314,6 +1317,14 @@ fn span_offsets(index: &ChunkSelectorIndex, span: Span) -> Result<(usize, usize)
 
 fn span_item_like_semicolon(source: &str) -> bool {
     source.starts_with("const ") || source.starts_with("let ") || source.starts_with("var ")
+}
+
+fn trim_selector_source_line_suffixes(source: &str) -> String {
+    source
+        .split('\n')
+        .map(|line| line.trim_end_matches([' ', '\t']))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn replace_ident_span_text(
