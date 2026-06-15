@@ -1,3 +1,3 @@
-const SelectedPrimary = makeEntry("primary", ANYTHING),
-  SelectedSecondary = makeEntry("secondary", ANYTHING),
+const SelectedPrimary = makeEntry("primary", { OBJECT_PROPS, enabled: true }),
+  SelectedSecondary = makeEntry("secondary", { OBJECT_PROPS, enabled: true }),
   DECLARATORS_AFTER = null;
