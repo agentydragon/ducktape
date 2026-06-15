@@ -55,6 +55,30 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_candidate_index",
+    srcs = ["selector_candidate_index.rs"],
+    crate_root = "selector_candidate_index.rs",
+    edition = "2024",
+    deps = [
+        ":binding_targets",
+        ":js_ast",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_candidate_index_test",
+    crate = ":selector_candidate_index",
+    edition = "2024",
+    deps = [
+        ":source_match",
+    ],
+)
+
+rust_library(
     name = "anonymous_resolution",
     srcs = ["anonymous_resolution.rs"],
     crate_root = "anonymous_resolution.rs",

@@ -1,0 +1,1047 @@
+//! Cheap candidate indexing for source-match selector search.
+//!
+//! This crate is intentionally a prefilter, not a replacement for the
+//! production `source_match` matcher. It builds one per-chunk inverted index of
+//! top-level statement features, then answers "which body items or declared
+//! bindings could this partial selector still match?" by intersecting posting
+//! lists. A returned candidate set may contain false positives; it must not
+//! omit a real matcher result.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use anyhow::{Context, Result};
+use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
+
+const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
+const EXPR_HOLE_KEYWORD: &str = "EXPR";
+const STMT_HOLE_KEYWORD: &str = "STMT";
+const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
+const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
+const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
+const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
+const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum TopLevelKind {
+    ImportDeclaration,
+    FunctionDeclaration,
+    ClassDeclaration,
+    VariableDeclaration,
+    ExportedFunctionDeclaration,
+    ExportedClassDeclaration,
+    ExportedVariableDeclaration,
+    ExpressionStatement,
+    Statement,
+    ModuleDeclaration,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum VarKind {
+    Var,
+    Let,
+    Const,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum SelectorFeature {
+    TopLevelKind(TopLevelKind),
+    VarKind(VarKind),
+    FunctionArity(usize),
+    StringLiteral(String),
+    ObjectKey(String),
+    ClassMember(String),
+    MemberProperty(String),
+    CallCallee(String),
+    ImportSource(String),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IndexedBindingCandidate {
+    pub body_idx: usize,
+    pub binding_idx: usize,
+    pub declarator_idx: Option<usize>,
+    pub name: String,
+    pub kind: BindingSourceKind,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IndexedTopLevelCandidate {
+    pub body_idx: usize,
+    pub kind: TopLevelKind,
+    pub declared_bindings: Vec<IndexedBindingCandidate>,
+    pub features: BTreeSet<SelectorFeature>,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct CandidateSet {
+    body_indices: BTreeSet<usize>,
+}
+
+impl CandidateSet {
+    pub fn all(body_indices: impl IntoIterator<Item = usize>) -> Self {
+        Self {
+            body_indices: body_indices.into_iter().collect(),
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.body_indices.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.body_indices.is_empty()
+    }
+
+    pub fn contains(&self, body_idx: usize) -> bool {
+        self.body_indices.contains(&body_idx)
+    }
+
+    pub fn body_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        self.body_indices.iter().copied()
+    }
+
+    pub fn intersect(&self, other: &CandidateSet) -> CandidateSet {
+        CandidateSet {
+            body_indices: self
+                .body_indices
+                .intersection(&other.body_indices)
+                .copied()
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct SelectorCandidateQuery {
+    alternatives: Vec<SelectorCandidateAlternative>,
+}
+
+impl SelectorCandidateQuery {
+    pub fn all() -> Self {
+        Self {
+            alternatives: vec![SelectorCandidateAlternative::default()],
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn alternatives(&self) -> &[SelectorCandidateAlternative] {
+        &self.alternatives
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct SelectorCandidateAlternative {
+    features: BTreeSet<SelectorFeature>,
+    binding_projection: Option<BindingProjection>,
+}
+
+impl SelectorCandidateAlternative {
+    pub fn features(&self) -> &BTreeSet<SelectorFeature> {
+        &self.features
+    }
+
+    pub fn binding_projection(&self) -> Option<&BindingProjection> {
+        self.binding_projection.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct BindingProjection {
+    pub binding_idx: usize,
+    pub kind: BindingSourceKind,
+}
+
+pub struct SelectorCandidateIndex {
+    items: Vec<IndexedTopLevelCandidate>,
+    feature_to_body_indices: BTreeMap<SelectorFeature, BTreeSet<usize>>,
+}
+
+impl SelectorCandidateIndex {
+    pub fn new(module: &Module) -> Self {
+        let mut items = Vec::new();
+        let mut feature_to_body_indices: BTreeMap<SelectorFeature, BTreeSet<usize>> =
+            BTreeMap::new();
+        for (body_idx, item) in module.body.iter().enumerate() {
+            let indexed = IndexedTopLevelCandidate::from_module_item(body_idx, item);
+            for feature in &indexed.features {
+                feature_to_body_indices
+                    .entry(feature.clone())
+                    .or_default()
+                    .insert(body_idx);
+            }
+            items.push(indexed);
+        }
+        Self {
+            items,
+            feature_to_body_indices,
+        }
+    }
+
+    pub fn top_level_candidates(&self) -> &[IndexedTopLevelCandidate] {
+        &self.items
+    }
+
+    pub fn candidate(&self, body_idx: usize) -> Option<&IndexedTopLevelCandidate> {
+        self.items.get(body_idx)
+    }
+
+    pub fn candidate_set_for_feature(&self, feature: &SelectorFeature) -> CandidateSet {
+        CandidateSet {
+            body_indices: self
+                .feature_to_body_indices
+                .get(feature)
+                .cloned()
+                .unwrap_or_default(),
+        }
+    }
+
+    pub fn candidate_set_for_features<'a>(
+        &self,
+        features: impl IntoIterator<Item = &'a SelectorFeature>,
+    ) -> CandidateSet {
+        let mut postings = features
+            .into_iter()
+            .map(|feature| {
+                self.feature_to_body_indices
+                    .get(feature)
+                    .map(|body_indices| (feature, body_indices))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(mut postings) = postings.take() else {
+            return CandidateSet::empty();
+        };
+        postings.sort_by_key(|(_, body_indices)| body_indices.len());
+        let Some((_, first)) = postings.first() else {
+            return CandidateSet::all(self.items.iter().map(|item| item.body_idx));
+        };
+        let mut body_indices = (*first).clone();
+        for (_, next) in postings.into_iter().skip(1) {
+            body_indices = body_indices.intersection(next).copied().collect();
+            if body_indices.is_empty() {
+                break;
+            }
+        }
+        CandidateSet { body_indices }
+    }
+
+    pub fn query_for_source_match(
+        selector: &AnonymousStatementSelector,
+    ) -> Result<SelectorCandidateQuery> {
+        js_ast::with_swc_globals(|| {
+            let parsed =
+                js_ast::parse_js_module_ast("<selector candidate query>", &selector.match_source)
+                    .with_context(|| {
+                    format!(
+                        "parsing source_match selector for candidate indexing:\n{}",
+                        selector.match_source
+                    )
+                })?;
+            Ok(query_for_selector_items(&parsed.body, selector))
+        })
+    }
+
+    pub fn candidate_set_for_query(&self, query: &SelectorCandidateQuery) -> CandidateSet {
+        if query.alternatives.is_empty() {
+            return CandidateSet::empty();
+        }
+        let mut body_indices = BTreeSet::new();
+        for alternative in &query.alternatives {
+            body_indices.extend(
+                self.candidate_set_for_features(&alternative.features)
+                    .body_indices,
+            );
+        }
+        CandidateSet { body_indices }
+    }
+
+    pub fn candidate_set_for_source_match(
+        &self,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<CandidateSet> {
+        Ok(self.candidate_set_for_query(&Self::query_for_source_match(selector)?))
+    }
+
+    pub fn candidate_bindings_for_set(&self, set: &CandidateSet) -> Vec<IndexedBindingCandidate> {
+        set.body_indices()
+            .filter_map(|body_idx| self.candidate(body_idx))
+            .flat_map(|candidate| candidate.declared_bindings.iter().cloned())
+            .collect()
+    }
+
+    pub fn candidate_bindings_for_query(
+        &self,
+        query: &SelectorCandidateQuery,
+    ) -> Vec<IndexedBindingCandidate> {
+        let mut bindings = BTreeMap::new();
+        for alternative in &query.alternatives {
+            let set = self.candidate_set_for_features(&alternative.features);
+            for body_idx in set.body_indices() {
+                let Some(candidate) = self.candidate(body_idx) else {
+                    continue;
+                };
+                let projected = alternative
+                    .binding_projection
+                    .and_then(|projection| projected_binding(candidate, projection));
+                let iter: Box<dyn Iterator<Item = IndexedBindingCandidate>> =
+                    if let Some(binding) = projected {
+                        Box::new(std::iter::once(binding))
+                    } else {
+                        Box::new(candidate.declared_bindings.iter().cloned())
+                    };
+                for binding in iter {
+                    bindings.insert((binding.body_idx, binding.binding_idx), binding);
+                }
+            }
+        }
+        bindings.into_values().collect()
+    }
+
+    pub fn candidate_bindings_for_source_match(
+        &self,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<IndexedBindingCandidate>> {
+        Ok(self.candidate_bindings_for_query(&Self::query_for_source_match(selector)?))
+    }
+}
+
+impl IndexedTopLevelCandidate {
+    fn from_module_item(body_idx: usize, item: &ModuleItem) -> Self {
+        let kind = top_level_kind(item);
+        let mut features = BTreeSet::from([SelectorFeature::TopLevelKind(kind)]);
+        collect_features_for_item(item, None, &mut features);
+        let declared_bindings = declared_bindings(item, body_idx);
+        Self {
+            body_idx,
+            kind,
+            declared_bindings,
+            features,
+        }
+    }
+}
+
+fn projected_binding(
+    candidate: &IndexedTopLevelCandidate,
+    projection: BindingProjection,
+) -> Option<IndexedBindingCandidate> {
+    candidate
+        .declared_bindings
+        .get(projection.binding_idx)
+        .filter(|binding| binding.kind == projection.kind)
+        .cloned()
+}
+
+fn query_for_selector_items(
+    items: &[ModuleItem],
+    selector: &AnonymousStatementSelector,
+) -> SelectorCandidateQuery {
+    let target_indices = target_item_indices(items, selector);
+    if target_indices.is_empty() {
+        return SelectorCandidateQuery::empty();
+    }
+
+    let alternatives = target_indices
+        .into_iter()
+        .filter_map(|item_idx| {
+            let item = items.get(item_idx)?;
+            if module_item_list_hole_name(item).is_some() {
+                return Some(SelectorCandidateAlternative::default());
+            }
+            let mut features =
+                BTreeSet::from([SelectorFeature::TopLevelKind(top_level_kind(item))]);
+            collect_features_for_item(item, Some(selector), &mut features);
+            let binding_projection = selector
+                .target_binding
+                .as_deref()
+                .and_then(|target| binding_projection_for_target(item, target));
+            Some(SelectorCandidateAlternative {
+                features,
+                binding_projection,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if alternatives.is_empty() {
+        SelectorCandidateQuery::empty()
+    } else {
+        SelectorCandidateQuery { alternatives }
+    }
+}
+
+fn target_item_indices(items: &[ModuleItem], selector: &AnonymousStatementSelector) -> Vec<usize> {
+    if let Some(target_binding) = selector.target_binding.as_deref() {
+        return items
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| {
+                declared_bindings(item, idx)
+                    .iter()
+                    .any(|binding| binding.name == target_binding)
+                    .then_some(idx)
+            })
+            .collect();
+    }
+    if let Some(target_statement) = selector.target_statement {
+        return (target_statement < items.len())
+            .then_some(target_statement)
+            .into_iter()
+            .collect();
+    }
+    if let Some(target_statements) = &selector.target_statements {
+        return match target_statements {
+            spec::TargetStatements::Indices(indices) => indices
+                .iter()
+                .copied()
+                .filter(|idx| *idx < items.len())
+                .collect(),
+            spec::TargetStatements::All(spec::TargetStatementsAll::All) => items
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, item)| module_item_list_hole_name(item).is_none().then_some(idx))
+                .collect(),
+        };
+    }
+    match items {
+        [] => Vec::new(),
+        [single] if module_item_list_hole_name(single).is_some() => vec![0],
+        [_] => vec![0],
+        _ => items
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| module_item_list_hole_name(item).is_none().then_some(idx))
+            .collect(),
+    }
+}
+
+fn binding_projection_for_target(
+    item: &ModuleItem,
+    target_binding: &str,
+) -> Option<BindingProjection> {
+    if item_var_decl(item).is_some_and(|var| {
+        var.decls
+            .iter()
+            .any(|declarator| declarator_list_hole_name(declarator).is_some())
+    }) {
+        return None;
+    }
+    let matches = declared_bindings(item, 0)
+        .into_iter()
+        .filter_map(|binding| {
+            (binding.name == target_binding).then_some(BindingProjection {
+                binding_idx: binding.binding_idx,
+                kind: binding.kind,
+            })
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [single] => Some(*single),
+        _ => None,
+    }
+}
+
+fn collect_features_for_item(
+    item: &ModuleItem,
+    selector: Option<&AnonymousStatementSelector>,
+    features: &mut BTreeSet<SelectorFeature>,
+) {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => collect_decl_features(decl, features),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+            collect_decl_features(&export.decl, features)
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+            features.insert(SelectorFeature::ImportSource(
+                import.src.value.to_string_lossy().to_string(),
+            ));
+        }
+        _ => {}
+    }
+    item.visit_with(&mut AstFeatureCollector::new(selector, features));
+}
+
+fn collect_decl_features(decl: &Decl, features: &mut BTreeSet<SelectorFeature>) {
+    match decl {
+        Decl::Fn(function) => {
+            features.insert(SelectorFeature::FunctionArity(
+                function.function.params.len(),
+            ));
+        }
+        Decl::Class(class) => {
+            for member in &class.class.body {
+                if class_rest_hole_name(member).is_none()
+                    && let Some(label) = class_member_label(member)
+                {
+                    features.insert(SelectorFeature::ClassMember(label));
+                }
+            }
+        }
+        Decl::Var(var) => {
+            features.insert(SelectorFeature::VarKind(var_kind(var.kind)));
+        }
+        _ => {}
+    }
+}
+
+struct AstFeatureCollector<'a, 'features> {
+    selector: Option<&'a AnonymousStatementSelector>,
+    features: &'features mut BTreeSet<SelectorFeature>,
+}
+
+impl<'a, 'features> AstFeatureCollector<'a, 'features> {
+    fn new(
+        selector: Option<&'a AnonymousStatementSelector>,
+        features: &'features mut BTreeSet<SelectorFeature>,
+    ) -> Self {
+        Self { selector, features }
+    }
+
+    fn selector_uses_exact_identifiers(&self) -> bool {
+        self.selector
+            .is_none_or(|selector| selector.identifiers == SourceMatchIdentifierMode::Exact)
+    }
+
+    fn string_literal_is_wildcard(&self, value: &str) -> bool {
+        self.selector
+            .is_some_and(|selector| selector.wildcard_string_literals.contains(value))
+    }
+}
+
+impl Visit for AstFeatureCollector<'_, '_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if expr_hole_name(expr).is_some() {
+            return;
+        }
+        if let Expr::Lit(Lit::Str(str_)) = expr {
+            let value = str_.value.to_string_lossy().to_string();
+            if !self.string_literal_is_wildcard(&value) {
+                self.features.insert(SelectorFeature::StringLiteral(value));
+            }
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if string_literal_regex_pattern_call(call) {
+            return;
+        }
+        if self.selector_uses_exact_identifiers()
+            && let Some(callee) = callee_label(&call.callee)
+        {
+            self.features.insert(SelectorFeature::CallCallee(callee));
+        }
+        call.visit_children_with(self);
+    }
+
+    fn visit_member_prop(&mut self, prop: &MemberProp) {
+        if let Some(label) = member_prop_label(prop) {
+            self.features.insert(SelectorFeature::MemberProperty(label));
+        }
+        prop.visit_children_with(self);
+    }
+
+    fn visit_object_lit(&mut self, object: &ObjectLit) {
+        for prop in &object.props {
+            if object_property_list_hole_name(prop).is_some() {
+                continue;
+            }
+            if let Some(label) = object_key_label(prop) {
+                self.features.insert(SelectorFeature::ObjectKey(label));
+            }
+            prop.visit_with(self);
+        }
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if class_rest_hole_name(member).is_some() {
+            return;
+        }
+        if let Some(label) = class_member_label(member) {
+            self.features.insert(SelectorFeature::ClassMember(label));
+        }
+        member.visit_children_with(self);
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if stmt_hole_name(stmt).is_some() {
+            return;
+        }
+        stmt.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if declarator_list_hole_name(declarator).is_some() {
+            declarator.init.visit_with(self);
+            return;
+        }
+        declarator.visit_children_with(self);
+    }
+}
+
+fn top_level_kind(item: &ModuleItem) -> TopLevelKind {
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => TopLevelKind::ImportDeclaration,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            Decl::Fn(_) => TopLevelKind::ExportedFunctionDeclaration,
+            Decl::Class(_) => TopLevelKind::ExportedClassDeclaration,
+            Decl::Var(_) => TopLevelKind::ExportedVariableDeclaration,
+            _ => TopLevelKind::ModuleDeclaration,
+        },
+        ModuleItem::ModuleDecl(_) => TopLevelKind::ModuleDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => TopLevelKind::FunctionDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => TopLevelKind::ClassDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))) => TopLevelKind::VariableDeclaration,
+        ModuleItem::Stmt(Stmt::Expr(_)) => TopLevelKind::ExpressionStatement,
+        ModuleItem::Stmt(_) => TopLevelKind::Statement,
+    }
+}
+
+fn declared_bindings(item: &ModuleItem, body_idx: usize) -> Vec<IndexedBindingCandidate> {
+    let mut bindings = Vec::new();
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => {
+            declared_bindings_for_decl(decl, body_idx, &mut bindings);
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+            declared_bindings_for_decl(&export.decl, body_idx, &mut bindings);
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+            for specifier in &import.specifiers {
+                let name = match specifier {
+                    ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                    ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+                };
+                push_binding(
+                    &mut bindings,
+                    body_idx,
+                    None,
+                    name,
+                    BindingSourceKind::ImportSpecifier,
+                );
+            }
+        }
+        _ => {}
+    }
+    bindings
+}
+
+fn declared_bindings_for_decl(
+    decl: &Decl,
+    body_idx: usize,
+    bindings: &mut Vec<IndexedBindingCandidate>,
+) {
+    match decl {
+        Decl::Fn(function) => push_binding(
+            bindings,
+            body_idx,
+            None,
+            function.ident.sym.to_string(),
+            BindingSourceKind::FunctionDeclaration,
+        ),
+        Decl::Class(class) => push_binding(
+            bindings,
+            body_idx,
+            None,
+            class.ident.sym.to_string(),
+            BindingSourceKind::ClassDeclaration,
+        ),
+        Decl::Var(var) => {
+            for (declarator_idx, declarator) in var.decls.iter().enumerate() {
+                if declarator_list_hole_name(declarator).is_some() {
+                    continue;
+                }
+                for name in binding_targets::binding_name_strings(&declarator.name) {
+                    push_binding(
+                        bindings,
+                        body_idx,
+                        Some(declarator_idx),
+                        name,
+                        BindingSourceKind::VariableDeclarator,
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_binding(
+    bindings: &mut Vec<IndexedBindingCandidate>,
+    body_idx: usize,
+    declarator_idx: Option<usize>,
+    name: String,
+    kind: BindingSourceKind,
+) {
+    bindings.push(IndexedBindingCandidate {
+        body_idx,
+        binding_idx: bindings.len(),
+        declarator_idx,
+        name,
+        kind,
+    });
+}
+
+fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn var_kind(kind: VarDeclKind) -> VarKind {
+    match kind {
+        VarDeclKind::Var => VarKind::Var,
+        VarDeclKind::Let => VarKind::Let,
+        VarDeclKind::Const => VarKind::Const,
+    }
+}
+
+fn hole_name(name: &str, keyword: &str) -> bool {
+    name == keyword
+        || name
+            .strip_prefix(keyword)
+            .is_some_and(|rest| rest.starts_with('_'))
+}
+
+fn expr_hole_name(expr: &Expr) -> Option<&str> {
+    let Expr::Ident(ident) = expr else {
+        return None;
+    };
+    let name = ident.sym.as_ref();
+    (hole_name(name, EXPR_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD)).then_some(name)
+}
+
+fn stmt_hole_name(stmt: &Stmt) -> Option<&str> {
+    let Stmt::Expr(expr) = stmt else {
+        return None;
+    };
+    let Expr::Ident(ident) = expr.expr.as_ref() else {
+        return None;
+    };
+    let name = ident.sym.as_ref();
+    (hole_name(name, STMT_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD)).then_some(name)
+}
+
+fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
+    let ModuleItem::Stmt(Stmt::Expr(expr)) = item else {
+        return None;
+    };
+    let Expr::Ident(ident) = expr.expr.as_ref() else {
+        return None;
+    };
+    let name = ident.sym.as_ref();
+    hole_name(name, STMT_LIST_HOLE_KEYWORD).then_some(name)
+}
+
+fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
+    let Pat::Ident(ident) = &declarator.name else {
+        return None;
+    };
+    let name = ident.id.sym.as_ref();
+    (hole_name(name, DECLARATORS_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
+        .then_some(name)
+}
+
+fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
+    let PropOrSpread::Prop(prop) = prop else {
+        return None;
+    };
+    match prop.as_ref() {
+        Prop::Shorthand(ident) => {
+            let name = ident.sym.as_ref();
+            (hole_name(name, OBJECT_PROPS_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
+                .then_some(name)
+        }
+        _ => None,
+    }
+}
+
+fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
+    let ClassMember::ClassProp(prop) = member else {
+        return None;
+    };
+    if prop.value.is_some() {
+        return None;
+    }
+    let PropName::Ident(ident) = &prop.key else {
+        return None;
+    };
+    let name = ident.sym.as_ref();
+    (hole_name(name, CLASS_REST_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
+        .then_some(name)
+}
+
+fn string_literal_regex_pattern_call(call: &CallExpr) -> bool {
+    let Callee::Expr(callee) = &call.callee else {
+        return false;
+    };
+    matches!(
+        callee.as_ref(),
+        Expr::Ident(ident) if ident.sym.as_ref() == STRING_LITERAL_REGEX_PREDICATE
+    )
+}
+
+fn callee_label(callee: &Callee) -> Option<String> {
+    match callee {
+        Callee::Expr(expr) => expr_label(expr),
+        Callee::Super(_) => Some("super".to_string()),
+        Callee::Import(_) => Some("import".to_string()),
+    }
+}
+
+fn expr_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Ident(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+            Some(ident.sym.to_string())
+        }
+        Expr::Member(member) => {
+            let object = expr_label(&member.obj)?;
+            let prop = member_prop_label(&member.prop)?;
+            Some(format!("{object}.{prop}"))
+        }
+        _ => None,
+    }
+}
+
+fn member_prop_label(prop: &MemberProp) -> Option<String> {
+    match prop {
+        MemberProp::Ident(ident) => Some(ident.sym.to_string()),
+        MemberProp::PrivateName(private) => Some(format!("#{}", private.name)),
+        MemberProp::Computed(_) => None,
+    }
+}
+
+fn object_key_label(prop: &PropOrSpread) -> Option<String> {
+    let PropOrSpread::Prop(prop) = prop else {
+        return None;
+    };
+    match prop.as_ref() {
+        Prop::Shorthand(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+            Some(ident.sym.to_string())
+        }
+        Prop::KeyValue(prop) => prop_name_label(&prop.key),
+        Prop::Assign(prop) if !hole_name(prop.key.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+            Some(prop.key.sym.to_string())
+        }
+        Prop::Getter(prop) => prop_name_label(&prop.key),
+        Prop::Setter(prop) => prop_name_label(&prop.key),
+        Prop::Method(prop) => prop_name_label(&prop.key),
+        _ => None,
+    }
+}
+
+fn class_member_label(member: &ClassMember) -> Option<String> {
+    match member {
+        ClassMember::Constructor(_) => Some("constructor".to_string()),
+        ClassMember::Method(method) => prop_name_label(&method.key),
+        ClassMember::PrivateMethod(method) => Some(format!("#{}", method.key.name)),
+        ClassMember::ClassProp(prop) => prop_name_label(&prop.key),
+        ClassMember::PrivateProp(prop) => Some(format!("#{}", prop.key.name)),
+        ClassMember::AutoAccessor(_) => None,
+        ClassMember::StaticBlock(_) | ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {
+            None
+        }
+    }
+}
+
+fn prop_name_label(name: &PropName) -> Option<String> {
+    match name {
+        PropName::Ident(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+            Some(ident.sym.to_string())
+        }
+        PropName::Ident(_) => None,
+        PropName::Str(str_) => Some(str_.value.to_string_lossy().to_string()),
+        PropName::Num(num) => Some(num.value.to_string()),
+        PropName::BigInt(bigint) => Some(bigint.value.to_string()),
+        PropName::Computed(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn parse_module(source: &str) -> Module {
+        js_ast::with_swc_globals(|| js_ast::parse_js_module_ast("<test>", source).unwrap())
+    }
+
+    fn selector(match_source: &str) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            match_source: match_source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: None,
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        }
+    }
+
+    fn exact_selector(match_source: &str) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            identifiers: SourceMatchIdentifierMode::Exact,
+            ..selector(match_source)
+        }
+    }
+
+    fn body_indices(set: CandidateSet) -> Vec<usize> {
+        set.body_indices().collect()
+    }
+
+    #[test]
+    fn indexes_top_level_statement_features_for_intersection() {
+        let runtime = parse_module(
+            r#"const alpha = makeWidget("shared-token", { role: "button" });
+const beta = makeOther("shared-token", { role: "button" });
+let gamma = makeWidget("shared-token", { role: "button" });
+class Panel { render() {} mount() {} }
+class Worker { mount() {} }
+function combine(first, second) { return first + second; }
+sideEffect();"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+
+        let shared_const = BTreeSet::from([
+            SelectorFeature::TopLevelKind(TopLevelKind::VariableDeclaration),
+            SelectorFeature::VarKind(VarKind::Const),
+            SelectorFeature::StringLiteral("shared-token".to_string()),
+        ]);
+        assert_eq!(
+            body_indices(index.candidate_set_for_features(&shared_const)),
+            vec![0, 1]
+        );
+
+        let narrowed = index.candidate_set_for_features(&shared_const).intersect(
+            &index
+                .candidate_set_for_feature(&SelectorFeature::CallCallee("makeWidget".to_string())),
+        );
+        assert_eq!(body_indices(narrowed), vec![0]);
+    }
+
+    #[test]
+    fn source_match_query_is_sound_for_class_selectors() {
+        let runtime = parse_module(
+            r#"class Panel { render() {} mount() {} }
+class Worker { mount() {} }
+function render(value) { return value; }"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let selector = selector("class ReadableName {\n  render() {}\n  CLASS_REST;\n}");
+
+        let exact = js_ast::with_swc_globals(|| {
+            source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
+                .unwrap()
+        });
+        let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
+
+        assert_eq!(exact, vec![0]);
+        assert!(exact.into_iter().all(|idx| candidate_set.contains(idx)));
+        assert_eq!(body_indices(candidate_set), vec![0]);
+    }
+
+    #[test]
+    fn alpha_queries_do_not_treat_callee_identifiers_as_exact() {
+        let runtime = parse_module(
+            r#"const alpha = makeWidget("shared-token");
+const beta = makeOther("shared-token");"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let selector = selector(r#"const readable = makeWidget("shared-token");"#);
+        let query = SelectorCandidateIndex::query_for_source_match(&selector).unwrap();
+
+        assert!(
+            !query.alternatives()[0]
+                .features()
+                .contains(&SelectorFeature::CallCallee("makeWidget".to_string()))
+        );
+        assert_eq!(
+            body_indices(index.candidate_set_for_query(&query)),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn exact_queries_can_use_callee_identifiers() {
+        let runtime = parse_module(
+            r#"const alpha = makeWidget("shared-token");
+const alpha = makeOther("shared-token");"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let selector = exact_selector(r#"const alpha = makeWidget("shared-token");"#);
+        let query = SelectorCandidateIndex::query_for_source_match(&selector).unwrap();
+
+        assert!(
+            query.alternatives()[0]
+                .features()
+                .contains(&SelectorFeature::CallCallee("makeWidget".to_string()))
+        );
+        assert_eq!(body_indices(index.candidate_set_for_query(&query)), vec![0]);
+    }
+
+    #[test]
+    fn wildcard_string_literals_are_not_index_anchors() {
+        let runtime = parse_module(
+            r#"const alpha = "runtime-a";
+const beta = "runtime-b";
+let gamma = "runtime-a";"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let mut selector = selector(r#"const readable = "STRING_HOLE";"#);
+        selector
+            .wildcard_string_literals
+            .insert("STRING_HOLE".to_string());
+
+        let query = SelectorCandidateIndex::query_for_source_match(&selector).unwrap();
+        assert!(
+            !query.alternatives()[0]
+                .features()
+                .iter()
+                .any(|feature| matches!(feature, SelectorFeature::StringLiteral(_)))
+        );
+        assert_eq!(
+            body_indices(index.candidate_set_for_query(&query)),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn target_binding_projection_returns_candidate_bindings() {
+        let runtime = parse_module(
+            r#"const runtimeName = "stable-token";
+const other = "other-token";
+function stableFn() {}"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let mut selector = selector(r#"const readableName = "stable-token";"#);
+        selector.target_binding = Some("readableName".to_string());
+
+        let bindings = index
+            .candidate_bindings_for_source_match(&selector)
+            .unwrap()
+            .into_iter()
+            .map(|binding| (binding.body_idx, binding.name, binding.kind))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            bindings,
+            vec![(
+                0,
+                "runtimeName".to_string(),
+                BindingSourceKind::VariableDeclarator
+            )]
+        );
+    }
+}
