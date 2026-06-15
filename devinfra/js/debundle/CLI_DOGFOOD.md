@@ -40,6 +40,14 @@ name-binding-to-source-match` showed that even one explicit
   top-level comment was dropped. Source-aware selector synthesis needs a
   text-preserving patch path for member selector replacement and
   binding-group/member collapse before broad generated patches are reviewable.
+- **Selector synthesis needs a minimization acceptance loop.** A generated
+  selector that exactly copies today's large function body, object literal,
+  argument list, or class body can match uniquely while still being fragile
+  spec debt. Dry-run/apply output should surface when a
+  candidate is long/exact and should either minimize it automatically with
+  `ANYTHING`, typed holes, `OBJECT_PROPS`, `CLASS_REST`, `STMT_LIST`, or
+  `DECLARATORS`, or emit a stable tooling-gap diagnostic that agents can route
+  instead of hand-maintaining the exact body.
 - **Orthogonal patch-plan workflow.** New spec automation should converge on
   the inventory/plan/apply/validate/explain model in
   <plans/automated_spec_workflows.md>. A dry-run that proposes edits should be

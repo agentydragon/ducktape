@@ -43,10 +43,12 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 - Treat selector quality as a forward-compatibility problem, not only a
   current-build problem. A synthesized selector that copies a long exact
   function body, object literal, class body, or nested expression can be
-  over-narrow even when it uniquely matches today's chunk. Prefer worker lanes
-  that use minimized selectors with holes and stable anchors, and route
-  oververbose synthesis output back to Ducktape tooling before scaling the
-  pattern across many modules.
+  over-narrow even when it uniquely matches today's chunk. A landable selector
+  should both match the current declaration and avoid pinning incidental
+  bodies, argument lists, object values, and unrelated siblings. Prefer worker
+  lanes that use minimized selectors with holes and stable anchors, and route
+  oververbose synthesis output back to Ducktape minimization/tooling before
+  scaling the pattern across many modules.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
@@ -68,4 +70,6 @@ commands in all new docs, scripts, and reports.
 Selector planning should also record tooling gaps. If `synthesize-selectors`
 skips a large repeated shape, produces selectors that are too exact to be
 forward-compatible, or cannot express a concise stable anchor, recommend a
-Ducktape feature/fix before assigning many manual YAML edits.
+Ducktape feature/fix before assigning many manual YAML edits. Do not plan lanes
+whose work is simply to hand-transcribe exact long generated selectors; that is
+minimization backlog, not finished selector stabilization.

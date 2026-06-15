@@ -53,6 +53,11 @@ enough stable anchors to be unique and leave unrelated structure behind
 Ambiguous structural selectors must remain failures; refine them with stable
 code shape, holes, or context instead of relying on source order or opaque
 hashes.
+Selector acceptance has two gates: it must match and claim the intended current
+code, and it must be concise enough not to overpin incidental bodies, arguments,
+generated object values, or unrelated sibling declarations. Exact long
+synthesized selectors satisfy only the first gate; treat them as drafts to
+minimize, not as finished work.
 
 To audit where a spec already carries this debt, run
 `debundle spec selector-debt --modules <modules-dir>`. It ranks name-only
@@ -82,7 +87,9 @@ manual YAML:
    fragile one-off selectors. Current uniqueness is only the first gate:
    selectors should also be likely to keep matching future minified-bundle
    versions, so prefer wildcard/hole forms over long incidental code whenever
-   uniqueness still holds.
+   uniqueness still holds. If no concise supported selector exists yet, leave
+   the binding as visible selector debt and record the generic tooling gap
+   rather than committing a manually maintained exact generated body.
 
 ## Round Loop
 

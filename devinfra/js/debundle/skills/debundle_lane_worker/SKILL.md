@@ -54,10 +54,15 @@ The orchestrator or project adapter provides:
    to confirm the assigned bucket, then run
    `debundle spec synthesize-selectors` in dry-run JSON mode scoped with
    `--item`, `--module`, `--module-prefix`, or `--file`. Apply with `--apply`
-   only when the candidate count, skipped reasons, and file scope look
-   reviewable. After applying, run `git diff --check`, the adapter's
-   gate/regen command, and another `selector-debt` summary to report the debt
-   delta.
+   only when the candidate count, skipped reasons, file scope, and selector
+   shape look reviewable. A synthesized selector that copies an exact long
+   function body, object literal, argument list, class body, or nested
+   expression is not done merely because it resolves against the current chunk.
+   It must also avoid overpinning incidental implementation detail. Minimize it
+   with holes/stable anchors first, or route the shape to Ducktape
+   minimization/tooling before scaling the pattern. After applying, run
+   `git diff --check`, the adapter's gate/regen command, and another
+   `selector-debt` summary to report the debt delta.
 
    When hand-editing selectors is still necessary, follow
    `references/guide.md` "Workflow: authoring portable selectors": avoid
@@ -74,7 +79,11 @@ The orchestrator or project adapter provides:
    comma-list declaration, write a single-declarator `source_match` with
    `target_binding` and optional adjacent top-level context instead of spelling
    unrelated sibling declarators. Keep ambiguous structural matches rejecting
-   rather than source-order selected. Do not modify the upstream/source bundle.
+   rather than source-order selected. Do not turn an oververbose generated
+   selector into a manual maintenance burden by preserving exact incidental
+   bodies or generated object values; either minimize it or leave the binding as
+   explicit selector debt with a generic tooling blocker. Do not modify the
+   upstream/source bundle.
    After touching selectors, sanity-check the debt you added with
    `debundle spec selector-debt --modules <modules-dir> --min-score 70`; if
    your new members show up as high-score name-only selectors, reach for a

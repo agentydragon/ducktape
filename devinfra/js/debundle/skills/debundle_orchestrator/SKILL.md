@@ -41,8 +41,10 @@ Before dispatching work, collect:
   handled by `debundle spec synthesize-selectors` over hand-authored YAML, but
   do not treat exact long generated selectors as done merely because they match
   the current chunk. The selector program's target is current correctness plus
-  likely forward compatibility, so over-narrow synthesis output should become
-  Ducktape minimization work before it is scaled across many modules.
+  likely forward compatibility: selectors should avoid pinning incidental
+  bodies, argument lists, object values, and unrelated sibling declarations.
+  Over-narrow synthesis output should become Ducktape minimization work before
+  it is scaled across many modules.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
 - Use `debundle_integrator` for merge trains of worker commits.
@@ -64,7 +66,8 @@ dispatch the integrator.
    Ducktape tooling work before asking humans or workers to hand-edit many
    selectors. A bucket is high quality only when its selectors are concise
    enough to avoid pinning incidental implementation detail; use holes and
-   stable anchors where uniqueness permits.
+   stable anchors where uniqueness permits. Do not dispatch work whose expected
+   output is a pile of manually maintained exact generated bodies.
 4. Ask intake for dispatchable seeds. Only `landable_today: true`
    proposals are directly dispatchable; `blocked_residual_dependency`
    rows need their closure grown (or manual co-location) before they

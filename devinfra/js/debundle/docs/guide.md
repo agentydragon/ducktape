@@ -255,6 +255,15 @@ literal, class body, or nested expression may be over-narrow and therefore
 fragile across the next minified-bundle version. Prefer the loosest readable
 selector that still proves uniqueness.
 
+A selector is done only when it satisfies both sides of that contract: it
+matches and claims the intended current declaration/statement, and it avoids
+pinning incidental bodies, argument lists, generated object values, or unrelated
+sibling declarations. Exact long synthesized selectors are intermediate
+evidence, not an acceptable endpoint, unless the exact source is itself the
+stable fingerprint being claimed. If a generated selector is only correct
+because it copied today's implementation body, minimize it with holes/stable
+anchors or route the shape back to Ducktape tooling before scaling the pattern.
+
 Default to this ladder when writing or repairing selectors:
 
 1. Use `selector.source_match` / `binding_groups` for the declaration,
@@ -298,8 +307,10 @@ For broad old-spec conversion passes, use an automation-first loop:
    bucket. Use `--item` for explicit export lists when available; current
    implementations prune item/module filters before scanning unrelated YAML.
 4. Apply only after the JSON summary shows a useful hit rate and bounded skip
-   reasons. After `--apply`, run `git diff --check`, the target regen/gate, and
-   another `selector-debt` summary to measure the debt delta.
+   reasons, and after spot-checking that the proposed selectors are concise
+   enough to be forward-compatible. After `--apply`, run `git diff --check`,
+   the target regen/gate, and another `selector-debt` summary to measure the
+   debt delta.
 5. Treat repeated skip reasons or oververbose generated selectors as Ducktape
    feature backlog. Do not land broad batches of exact long selectors merely
    because they pass today's uniqueness proof; add minimization tooling or a
@@ -336,6 +347,16 @@ detail whenever uniqueness is preserved. The report includes the matched
 top-level statement index, candidate count, group id, rewritten holes, files
 scanned, members scanned, and a structured skip reason for any item it cannot
 prove.
+
+Treat the generated `match:` body as a draft that still needs selector-quality
+review. Passing the production matcher only proves today's code is addressed;
+it does not prove that exact parameter destructuring, helper call arguments,
+object property values, or nested statement bodies are durable. When dry-run or
+apply output is visibly overpinned, prefer `ANYTHING`, `EXPR`, `ARGS`,
+`STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, or `DECLARATORS` minimization where
+the matcher supports it. If the concise selector cannot be expressed yet, leave
+the binding as selector debt and record a generic minimization gap rather than
+committing a hand-maintained exact long selector.
 
 The first automated forms are intentionally narrow:
 
