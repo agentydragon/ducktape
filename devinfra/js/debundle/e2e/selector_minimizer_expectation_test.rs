@@ -334,6 +334,12 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
+// slot's direct shallow literals including object-property values. The group's
+// shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
+// / call arg `"settings"` are over-pinned versus the old `ANYTHING` holes. The
+// design note accepts this occasional over-pin as the price of one policy across
+// single (N=1 group) and multi-target group paths.
 #[test]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {
