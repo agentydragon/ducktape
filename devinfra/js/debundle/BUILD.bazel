@@ -524,7 +524,10 @@ rust_test(
     name = "selector_codemod_test",
     crate = ":selector_codemod",
     edition = "2024",
-    deps = ["@crates//:proptest"],
+    deps = [
+        "@crates//:proptest",
+        "@crates//:swc_ecma_codegen",
+    ],
 )
 
 rust_library(
