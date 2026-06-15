@@ -10,18 +10,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
+use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
+    OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+};
 use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
-
-const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
-const EXPR_HOLE_KEYWORD: &str = "EXPR";
-const STMT_HOLE_KEYWORD: &str = "STMT";
-const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
-const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
-const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
-const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
-const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum TopLevelKind {
@@ -709,19 +705,12 @@ fn var_kind(kind: VarDeclKind) -> VarKind {
     }
 }
 
-fn hole_name(name: &str, keyword: &str) -> bool {
-    name == keyword
-        || name
-            .strip_prefix(keyword)
-            .is_some_and(|rest| rest.starts_with('_'))
-}
-
 fn expr_hole_name(expr: &Expr) -> Option<&str> {
     let Expr::Ident(ident) = expr else {
         return None;
     };
     let name = ident.sym.as_ref();
-    (hole_name(name, EXPR_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD)).then_some(name)
+    hole_name_for(name, EXPR_HOLE_KEYWORD).or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
 fn stmt_hole_name(stmt: &Stmt) -> Option<&str> {
@@ -732,7 +721,7 @@ fn stmt_hole_name(stmt: &Stmt) -> Option<&str> {
         return None;
     };
     let name = ident.sym.as_ref();
-    (hole_name(name, STMT_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD)).then_some(name)
+    hole_name_for(name, STMT_HOLE_KEYWORD).or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
 fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
@@ -742,8 +731,7 @@ fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
     let Expr::Ident(ident) = expr.expr.as_ref() else {
         return None;
     };
-    let name = ident.sym.as_ref();
-    hole_name(name, STMT_LIST_HOLE_KEYWORD).then_some(name)
+    hole_name_for(ident.sym.as_ref(), STMT_LIST_HOLE_KEYWORD)
 }
 
 fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
@@ -751,8 +739,8 @@ fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
         return None;
     };
     let name = ident.id.sym.as_ref();
-    (hole_name(name, DECLARATORS_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
-        .then_some(name)
+    hole_name_for(name, DECLARATORS_HOLE_KEYWORD)
+        .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
 fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
@@ -762,8 +750,8 @@ fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
     match prop.as_ref() {
         Prop::Shorthand(ident) => {
             let name = ident.sym.as_ref();
-            (hole_name(name, OBJECT_PROPS_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
-                .then_some(name)
+            hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD)
+                .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
         }
         _ => None,
     }
@@ -780,8 +768,8 @@ fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
         return None;
     };
     let name = ident.sym.as_ref();
-    (hole_name(name, CLASS_REST_HOLE_KEYWORD) || hole_name(name, ANYTHING_HOLE_KEYWORD))
-        .then_some(name)
+    hole_name_for(name, CLASS_REST_HOLE_KEYWORD)
+        .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
 fn string_literal_regex_pattern_call(call: &CallExpr) -> bool {
@@ -804,7 +792,9 @@ fn callee_label(callee: &Callee) -> Option<String> {
 
 fn expr_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Ident(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+        Expr::Ident(ident)
+            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+        {
             Some(ident.sym.to_string())
         }
         Expr::Member(member) => {
@@ -829,11 +819,15 @@ fn object_key_label(prop: &PropOrSpread) -> Option<String> {
         return None;
     };
     match prop.as_ref() {
-        Prop::Shorthand(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+        Prop::Shorthand(ident)
+            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+        {
             Some(ident.sym.to_string())
         }
         Prop::KeyValue(prop) => prop_name_label(&prop.key),
-        Prop::Assign(prop) if !hole_name(prop.key.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+        Prop::Assign(prop)
+            if hole_name_for(prop.key.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+        {
             Some(prop.key.sym.to_string())
         }
         Prop::Getter(prop) => prop_name_label(&prop.key),
@@ -859,7 +853,9 @@ fn class_member_label(member: &ClassMember) -> Option<String> {
 
 fn prop_name_label(name: &PropName) -> Option<String> {
     match name {
-        PropName::Ident(ident) if !hole_name(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD) => {
+        PropName::Ident(ident)
+            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+        {
             Some(ident.sym.to_string())
         }
         PropName::Ident(_) => None,

@@ -23,14 +23,14 @@ use swc_common::{BytePos, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
-const EXPR_HOLE_KEYWORD: &str = "EXPR";
-const STMT_HOLE_KEYWORD: &str = "STMT";
-const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
-const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
-const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
-const ARGS_HOLE_KEYWORD: &str = "ARGS";
-const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
+// Hole keyword spellings come from `source_match_holes` so the minimizer
+// emits exactly the tokens the matcher resolves.
+use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    hole_name_for,
+};
+
 const MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL: usize = 4096;
 const MAX_VAR_FEATURE_SEARCH_NODES: usize = 200_000;
 const MAX_FUNCTION_SELECTOR_CANDIDATES: usize = 512;
@@ -1322,10 +1322,10 @@ fn synthesize_specialized_function_selector(
         IndexedDeclarationKind::Function,
     ));
     Ok(Some(SpecializedSelector {
-        match_source: format!("{header} {{\n  STMT_LIST;\n}}"),
+        match_source: format!("{header} {{\n  {STMT_LIST_HOLE_KEYWORD};\n}}"),
         rewritten_holes: BTreeSet::from([
             ANYTHING_HOLE_KEYWORD.to_string(),
-            "STMT_LIST".to_string(),
+            STMT_LIST_HOLE_KEYWORD.to_string(),
         ]),
     }))
 }
@@ -1359,8 +1359,11 @@ fn synthesize_specialized_class_selector(
     )]);
     if frontier_is_small_and_contains_target(index, decl, &features) {
         return Ok(Some(SpecializedSelector {
-            match_source: format!("class {} {{\n  CLASS_REST;\n}}", target.export_name),
-            rewritten_holes: BTreeSet::from(["CLASS_REST".to_string()]),
+            match_source: format!(
+                "class {} {{\n  {CLASS_REST_HOLE_KEYWORD};\n}}",
+                target.export_name
+            ),
+            rewritten_holes: BTreeSet::from([CLASS_REST_HOLE_KEYWORD.to_string()]),
         }));
     }
 
@@ -1386,8 +1389,8 @@ fn synthesize_specialized_class_selector(
                 match_source: format!("class {} {{\n{members}}}", target.export_name),
                 rewritten_holes: BTreeSet::from([
                     ANYTHING_HOLE_KEYWORD.to_string(),
-                    "STMT_LIST".to_string(),
-                    "CLASS_REST".to_string(),
+                    STMT_LIST_HOLE_KEYWORD.to_string(),
+                    CLASS_REST_HOLE_KEYWORD.to_string(),
                 ]),
             }));
         }
@@ -3060,21 +3063,20 @@ fn is_hole_expr(expr: &Expr) -> bool {
 }
 
 fn is_hole_name(name: &str) -> bool {
-    name == ANYTHING_HOLE_KEYWORD
-        || name == EXPR_HOLE_KEYWORD
-        || name.starts_with("EXPR_")
-        || name == STMT_HOLE_KEYWORD
-        || name.starts_with("STMT_")
-        || name == "STMT_LIST"
-        || name.starts_with("STMT_LIST_")
-        || name == CLASS_REST_HOLE_KEYWORD
-        || name.starts_with("CLASS_REST_")
-        || name == DECLARATORS_HOLE_KEYWORD
-        || name.starts_with("DECLARATORS_")
-        || name == ARGS_HOLE_KEYWORD
-        || name.starts_with("ARGS_")
-        || name == OBJECT_PROPS_HOLE_KEYWORD
-        || name.starts_with("OBJECT_PROPS_")
+    // `STMT` subsumes `STMT_LIST` here: a `<keyword>_<suffix>` match on `STMT`
+    // already covers the list spelling for this membership test.
+    [
+        ANYTHING_HOLE_KEYWORD,
+        EXPR_HOLE_KEYWORD,
+        STMT_HOLE_KEYWORD,
+        STMT_LIST_HOLE_KEYWORD,
+        CLASS_REST_HOLE_KEYWORD,
+        DECLARATORS_HOLE_KEYWORD,
+        ARGS_HOLE_KEYWORD,
+        OBJECT_PROPS_HOLE_KEYWORD,
+    ]
+    .iter()
+    .any(|keyword| hole_name_for(name, keyword).is_some())
 }
 
 fn render_var_group_selector(

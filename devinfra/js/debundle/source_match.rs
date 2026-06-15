@@ -19,45 +19,14 @@ use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-/// Syntactic-hole keywords. For single-node holes, the **bare keyword**
-/// is the anonymous form: it matches independently at every occurrence
-/// and never binds, so authors don't have to mint a unique name per
-/// throwaway placeholder. A `<keyword>_<name>` identifier is the
-/// **named** form, which binds for cross-occurrence equality — the same
-/// name must match the same subtree/statement everywhere it appears.
-///
-/// `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-/// statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, and
-/// `DECLARATORS` are variable-length list holes (see
-/// [`AstWildcardMatcher::match_list_with_holes`]): `ARGS` absorbs a run
-/// of call/new arguments, `STMT_LIST` absorbs a run of block statements
-/// (or top-level anonymous selector statements), `OBJECT_PROPS` absorbs
-/// a run of object literal properties/spreads, `CLASS_REST` absorbs a run
-/// of class members, and `DECLARATORS` absorbs a run of variable
-/// declarators inside one `var`/`let`/`const` declaration. List-hole suffixes
-/// are labels for readability; they do not bind the absorbed sequence for
-/// cross-occurrence equality.
-///
-/// `ANYTHING` is parse-position polymorphic sugar for the anonymous
-/// typed hole at positions where plain JavaScript can parse it. In an
-/// expression position it behaves like `EXPR`; as a bare expression
-/// statement it behaves like `STMT`; as a variable declarator name it
-/// behaves like `DECLARATORS`; as a non-declarator binding pattern it
-/// matches any pattern; as an object-literal shorthand property it
-/// absorbs object properties/spreads; as a class field with no initializer
-/// it behaves like `CLASS_REST`. Use the typed spellings when a named
-/// hole is helpful or when the position would otherwise be ambiguous.
-/// `STMT_LIST` must be checked before `STMT`, since `STMT` is a
-/// keyword-prefix of it.
-const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
-const EXPR_HOLE_KEYWORD: &str = "EXPR";
-const STMT_HOLE_KEYWORD: &str = "STMT";
-const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
-const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
-const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
-const ARGS_HOLE_KEYWORD: &str = "ARGS";
-const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
-const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
+// Syntactic-hole keyword vocabulary lives in `source_match_holes` so the
+// matcher, the `selector_codemod` minimizer, and `selector_candidate_index`
+// share one spelling. See that module's docs for the hole language.
+use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+};
 
 const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
 const SOURCE_MATCH_TIMING_THRESHOLD_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS";
@@ -6284,15 +6253,6 @@ fn object_property_list_hole_name(prop_or_spread: &PropOrSpread) -> Option<&str>
     };
     hole_name_for(ident.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD)
         .or_else(|| anything_hole_name(ident.sym.as_ref()))
-}
-
-/// If `name` is a hole identifier for `keyword` — the bare keyword
-/// (anonymous) or a `<keyword>_<suffix>` (named) form — return it. The
-/// keyword must be followed by end-of-string or `_`, so `EXPR` and
-/// `EXPR_FOO` match for keyword `EXPR` but `EXPRESSION` does not.
-fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
-    let rest = name.strip_prefix(keyword)?;
-    (rest.is_empty() || rest.starts_with('_')).then_some(name)
 }
 
 fn anything_hole_name(name: &str) -> Option<&str> {

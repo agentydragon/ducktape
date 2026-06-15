@@ -31,6 +31,13 @@ rust_test(
 )
 
 rust_library(
+    name = "source_match_holes",
+    srcs = ["source_match_holes.rs"],
+    crate_root = "source_match_holes.rs",
+    edition = "2024",
+)
+
+rust_library(
     name = "source_match",
     srcs = ["source_match.rs"],
     crate_root = "source_match.rs",
@@ -38,6 +45,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_match_holes",
         ":spec",
         "@crates//:anyhow",
         "@crates//:regex",
@@ -62,6 +70,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_match_holes",
         ":spec",
         "@crates//:anyhow",
         "@crates//:swc_ecma_ast",
@@ -495,6 +504,7 @@ rust_library(
     deps = [
         ":js_ast",
         ":source_match",
+        ":source_match_holes",
         ":spec",
         ":spec_modules",
         ":yaml_edit",
