@@ -1486,14 +1486,15 @@ fn select_min_cost_var_slot_constraints(
     target_slots: &[usize],
 ) -> Option<Vec<BTreeSet<SelectorAnchorFeature>>> {
     let empty_constraints = vec![BTreeSet::new(); target_count];
-    let tuples = var_group_frontier(index, var_kind, target_count, &empty_constraints)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let tuples =
+        var_group_frontier_with_features(index, var_kind, target_count, &empty_constraints);
     let target_tuple = VarGroupTuple {
         body_idx: decl.body_idx,
         slots: target_slots.to_vec(),
     };
-    let target_tuple_idx = tuples.iter().position(|tuple| tuple == &target_tuple)?;
+    let target_tuple_idx = tuples
+        .iter()
+        .position(|tuple| tuple.tuple == target_tuple)?;
     let competitors = tuples
         .iter()
         .enumerate()
@@ -1503,7 +1504,7 @@ fn select_min_cost_var_slot_constraints(
         return Some(empty_constraints);
     }
 
-    let options = var_slot_feature_options(index, &tuples[target_tuple_idx], target_count);
+    let options = var_slot_feature_options(&tuples[target_tuple_idx], target_count);
     if options.is_empty() {
         return None;
     }
@@ -1513,7 +1514,7 @@ fn select_min_cost_var_slot_constraints(
             competitors
                 .iter()
                 .filter_map(|tuple_idx| {
-                    (!var_group_tuple_has_slot_feature(index, &tuples[*tuple_idx], option))
+                    (!var_group_tuple_has_slot_feature(&tuples[*tuple_idx], option))
                         .then_some(*tuple_idx)
                 })
                 .collect::<BTreeSet<_>>()
@@ -1573,13 +1574,16 @@ impl SelectorSearchCost {
 }
 
 fn var_slot_feature_options(
-    index: &ChunkSelectorIndex,
-    target_tuple: &VarGroupTuple,
+    target_tuple: &VarGroupTupleWithFeatures,
     target_count: usize,
 ) -> Vec<VarSlotFeatureOption> {
     (0..target_count)
         .flat_map(|target_pos| {
-            var_group_tuple_slot_features(index, target_tuple, target_pos)
+            target_tuple
+                .slot_features
+                .get(target_pos)
+                .cloned()
+                .unwrap_or_default()
                 .into_iter()
                 .map(move |feature| VarSlotFeatureOption {
                     target_pos,
@@ -1592,45 +1596,13 @@ fn var_slot_feature_options(
 }
 
 fn var_group_tuple_has_slot_feature(
-    index: &ChunkSelectorIndex,
-    tuple: &VarGroupTuple,
+    tuple: &VarGroupTupleWithFeatures,
     option: &VarSlotFeatureOption,
 ) -> bool {
-    var_group_tuple_slot_features(index, tuple, option.target_pos).contains(&option.feature)
-}
-
-fn var_group_tuple_slot_features(
-    index: &ChunkSelectorIndex,
-    tuple: &VarGroupTuple,
-    target_pos: usize,
-) -> BTreeSet<SelectorAnchorFeature> {
-    let Some(slot) = tuple.slots.get(target_pos) else {
-        return BTreeSet::new();
-    };
-    let Some(var) = var_decl_at_body_index(index, tuple.body_idx) else {
-        return BTreeSet::new();
-    };
-    let Some(init) = var
-        .decls
-        .get(*slot)
-        .and_then(|declarator| declarator.init.as_deref())
-    else {
-        return BTreeSet::new();
-    };
-    let mut features = BTreeSet::new();
-    collect_renderable_var_anchor_features(init, &mut features);
-    features
-}
-
-fn var_decl_at_body_index(index: &ChunkSelectorIndex, body_idx: usize) -> Option<&VarDecl> {
-    match index.parsed.module.body.get(body_idx)? {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-            decl: Decl::Var(var),
-            ..
-        })) => Some(var),
-        _ => None,
-    }
+    tuple
+        .slot_features
+        .get(option.target_pos)
+        .is_some_and(|features| features.contains(&option.feature))
 }
 
 struct VarSlotConstraintSearch {
@@ -1845,6 +1817,12 @@ struct VarGroupTuple {
     slots: Vec<usize>,
 }
 
+#[derive(Debug, Clone)]
+struct VarGroupTupleWithFeatures {
+    tuple: VarGroupTuple,
+    slot_features: Vec<BTreeSet<SelectorAnchorFeature>>,
+}
+
 fn selector_anchor_features_for_item(
     item: &ModuleItem,
     kind: IndexedDeclarationKind,
@@ -2001,7 +1979,19 @@ fn var_group_frontier(
     target_count: usize,
     slot_constraints: &[BTreeSet<SelectorAnchorFeature>],
 ) -> BTreeSet<VarGroupTuple> {
-    let mut tuples = BTreeSet::new();
+    var_group_frontier_with_features(index, var_kind, target_count, slot_constraints)
+        .into_iter()
+        .map(|tuple| tuple.tuple)
+        .collect()
+}
+
+fn var_group_frontier_with_features(
+    index: &ChunkSelectorIndex,
+    var_kind: VarDeclKind,
+    target_count: usize,
+    slot_constraints: &[BTreeSet<SelectorAnchorFeature>],
+) -> Vec<VarGroupTupleWithFeatures> {
+    let mut tuples = Vec::new();
     for decl in &index.decls {
         if decl.kind != IndexedDeclarationKind::Var {
             continue;
@@ -2017,6 +2007,17 @@ fn var_group_frontier(
         if var.kind != var_kind || var.decls.len() < target_count {
             continue;
         }
+        let declarator_features = var
+            .decls
+            .iter()
+            .map(|declarator| {
+                let mut features = BTreeSet::new();
+                if let Some(init) = declarator.init.as_deref() {
+                    collect_renderable_var_anchor_features(init, &mut features);
+                }
+                features
+            })
+            .collect::<Vec<_>>();
         let mut combinations = Vec::new();
         collect_slot_combinations(
             var.decls.len(),
@@ -2029,20 +2030,21 @@ fn var_group_frontier(
             let matches_constraints = slots.iter().enumerate().all(|(target_pos, slot)| {
                 let constraints = &slot_constraints[target_pos];
                 constraints.is_empty()
-                    || var
-                        .decls
+                    || declarator_features
                         .get(*slot)
-                        .and_then(|declarator| declarator.init.as_deref())
-                        .is_some_and(|init| {
-                            let mut features = BTreeSet::new();
-                            collect_expr_anchor_features(init, &mut features);
-                            constraints.is_subset(&features)
-                        })
+                        .is_some_and(|features| constraints.is_subset(features))
             });
             if matches_constraints {
-                tuples.insert(VarGroupTuple {
-                    body_idx: decl.body_idx,
-                    slots,
+                let slot_features = slots
+                    .iter()
+                    .map(|slot| declarator_features.get(*slot).cloned().unwrap_or_default())
+                    .collect();
+                tuples.push(VarGroupTupleWithFeatures {
+                    tuple: VarGroupTuple {
+                        body_idx: decl.body_idx,
+                        slots,
+                    },
+                    slot_features,
                 });
             }
         }
