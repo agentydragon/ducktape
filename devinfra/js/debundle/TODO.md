@@ -31,9 +31,11 @@ progress output and a resumable or cacheable plan.
 One-line status for each `plans/` design doc; this is the discovery index.
 
 - <plans/readoff_minimization.md> — **active.** Read-off selector minimizer
-  (chunk-wide AST-shape index). Layer-1 index + function/object read-off landed;
-  var/class/group migration, co-occurrence grouping, cover-search deletion, and
-  whole-spec validation open. Holds its own current-state + backlog.
+  (chunk-wide AST-shape index). Layer-1 index, function/object/class read-off,
+  key-set minimization, adjacent-function grouping, prove-gate-via-index, and
+  whole-spec perf validation (W4) landed; var migration, general co-occurrence
+  grouping, whole-body interior holing, and cover-search deletion open. Holds its
+  own current-state + backlog.
 - <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
   (complete).** Literature spike that gates the read-off design; durable, not a
   TODO.
@@ -56,10 +58,11 @@ propose`.
 1. **Forward-compatible minimized selector synthesis + shared source index.**
    Owned by <plans/readoff_minimization.md>: the read-off AST-shape index
    (`shape_index.rs`, superseting `selector_candidate_index.rs`),
-   function/object read-off, literal/regex anchors, and hole-based minimization
-   have landed; class/var/group migration, co-occurrence grouping, the
-   prove-gate perf fix, cover-search deletion, and whole-spec validation are in
-   that plan's backlog. Don't duplicate its design or status here.
+   function/object/class read-off, literal/regex anchors, hole-based
+   minimization, the prove-gate perf fix, and whole-spec validation have landed;
+   var migration, general co-occurrence grouping, whole-body interior holing, and
+   cover-search deletion are in that plan's backlog. Don't duplicate its design or
+   status here.
 2. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    apply with filters, and explain every skipped candidate. (Selector
