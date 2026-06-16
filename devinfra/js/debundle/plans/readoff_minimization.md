@@ -253,6 +253,18 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    single scalar), nested-value dicts (`object_nested_value_dict`), grouped
    objects (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`), wide
    destructure (`wide_destructure_block`).
+   - **Key-set minimization (gaffer-dogfood feedback).** When an object is
+     discriminated by its _key set_ rather than any value — every value already
+     holed to `ANYTHING`, e.g. a CSS-styles dict
+     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }`, or a
+     schema object `ee({ coreMessage: …, type: …, … })` kept whole — the minimizer
+     keeps **every** key. It should keep only the **minimal key subset** whose
+     presence still discriminates the target from its siblings and collapse the
+     rest to `OBJECT_PROPS` (the key-set analogue of greedy set-cover: anchor on
+     the rarest discriminating keys, `OBJECT_PROPS` the common ones). Note these
+     over-pins surface inside multi-declarator var groups
+     (`DECLARATORS_BEFORE`/`_AFTER`), so the object key-set minimization must run
+     on the per-declarator object even when the statement is a declarator group.
 6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
    and **var** migration (needs binding-group/declarator-slot tuple resolution).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
