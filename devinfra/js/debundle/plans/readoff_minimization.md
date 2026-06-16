@@ -250,17 +250,20 @@ real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
 and is encoded as disabled E2E cases. Completed items are removed, not annotated;
 the landed architecture is in "Current state" above.
 
-1. **Interior holing of no-sparse-anchor bodies (the dominant lever; GitHub
-   #2289).** When uniqueness was proven by the full body, nothing is holed. Two sub-cases: (a) sibling-less single targets emit a _vacuous_ selector
-   (`class X { CLASS_REST }`, `const X = ANYTHING`) — disabled fixtures
-   `single_target_class_whole_body`, `component_wide_destructure_whole_body`;
-   (b) real-spec bodies with a genuine deep unique anchor the renderer can't
-   interleave holes down to (`nr_name === "HAS IMAGE"`, `n.BundleInstaller`),
-   wrongly bucketed "no sparse selector". Closing needs a **robustness-anchor
-   policy** (keep a holed-down deep value anchor even when the bare scaffold
-   already resolves — trades against the current "leanest scaffold preferred" fast
-   path) plus interior set-cover at subtree granularity. Reclaims a meaningful
-   share of the ~2,024 "no sparse selector" tail, not just the ~200 bulky-convertible.
+1. **Candidate-index anchor deepening for no-sparse-anchor bodies (the dominant
+   lever; GitHub #2289).** Two render-side pieces have landed: `hole_expr` recurses
+   into function/arrow-valued subexpressions (#2301), and the **robustness-anchor
+   policy** keeps a holed-down value anchor instead of the degenerate bare scaffold
+   when one is available (#2303). The remaining blocker is that the candidate index
+   does **not collect anchors inside class method bodies or function-expression
+   bodies**, so for the whole-body cases the read-off has no value anchor to prefer
+   and still falls back to the scaffold (disabled fixtures
+   `single_target_class_whole_body`, `component_wide_destructure_whole_body`; and
+   real-spec deep anchors like `nr_name === "HAS IMAGE"`, `n.BundleInstaller`
+   wrongly bucketed "no sparse selector"). Deepen the index to collect those deep
+   anchors, then add interior set-cover at subtree granularity. Reclaims a
+   meaningful share of the ~2,024 "no sparse selector" tail, not just the ~200
+   bulky-convertible.
 2. **Object-dict family — remaining forms.** Nested-value dicts
    (`object_nested_value_dict`: hole all but one anchored nested property) and wide
    destructure (`wide_destructure_block`: `OBJECT_PROPS` around the one
