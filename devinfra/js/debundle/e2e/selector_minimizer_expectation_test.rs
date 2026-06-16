@@ -513,19 +513,15 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a large lookup dictionary whose VALUES are nested objects
-// (e.g. an id -> config map) should minimize to OBJECT_PROPS holes on both
-// sides of the one entry whose nested value carries the discriminating
-// literal, and that entry's own nested object should itself collapse to the
-// discriminating property plus an OBJECT_PROPS hole. This generalizes
-// `object_keys_over_pinned` (whose entry values are scalar string literals) to
-// the common nested-object-value case. Today the minimizer keeps every entry's
-// full nested object whole, over-pinning the entire dictionary where one
-// anchored nested property would resolve uniquely. Mirrors the real spec's
-// id->config maps (feature-flag / registry dicts) kept whole across ~50+
-// nested-object entries.
+// A large lookup dictionary whose VALUES are nested objects (e.g. an id -> config
+// map) minimizes to OBJECT_PROPS holes on both sides of the one entry whose nested
+// value carries the discriminating literal, and that entry's own nested object
+// itself collapses to the discriminating property plus OBJECT_PROPS. Generalizes
+// `object_keys_over_pinned` (scalar entry values) to the nested-object-value case;
+// handled by the read-off drilling through the nested object/array holing
+// (`hole_object` / `hole_array` recursion). Mirrors the real spec's id->config
+// maps (feature-flag / registry dicts) otherwise kept whole across ~50+ entries.
 minimizer_expectation_case!(
-    #[ignore = "nested-value-dict minimizer keeps all entries' full nested objects instead of OBJECT_PROPS around one anchored nested property"]
     minimizes_object_nested_value_dict,
     fixture = "object_nested_value_dict",
     name = "nested-object-value dictionary keeps only the discriminating nested property",
@@ -567,7 +563,7 @@ minimizer_expectation_case!(
 // `{ ... } = e` prop destructure is kept verbatim at the top of an otherwise
 // holed body.
 minimizer_expectation_case!(
-    #[ignore = "wide-destructure minimizer keeps the entire destructuring pattern instead of OBJECT_PROPS around the one discriminating property"]
+    #[ignore = "the discriminator is a destructure-pattern property key (`uniqueDiscriminatorProp`), which the candidate index does not collect, and holing an `ObjectPat` (keep one property + OBJECT_PROPS) is not yet implemented; the read-off bails with no sparse selector. Needs destructure-pattern-key anchor indexing + pattern holing."]
     minimizes_wide_destructure_block,
     fixture = "wide_destructure_block",
     name = "wide destructuring block keeps only the discriminating destructured property",

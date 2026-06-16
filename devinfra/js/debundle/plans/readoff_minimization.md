@@ -264,11 +264,15 @@ the landed architecture is in "Current state" above.
    anchors, then add interior set-cover at subtree granularity. Reclaims a
    meaningful share of the ~2,024 "no sparse selector" tail, not just the ~200
    bulky-convertible.
-2. **Object-dict family — remaining forms.** Nested-value dicts
-   (`object_nested_value_dict`: hole all but one anchored nested property) and wide
-   destructure (`wide_destructure_block`: `OBJECT_PROPS` around the one
-   discriminating destructured property). The `ee({ coreMessage: …, type: … })`
-   schema-object-call form is a call kept whole — folds into item 1.
+2. **Wide destructure (`wide_destructure_block`).** A `const { …, x } = props`
+   whose discriminator is a destructured property key (`x`) bails with "no sparse
+   selector": the candidate index does not collect destructure-pattern property
+   keys as anchors, and holing an `ObjectPat` (keep one property + `OBJECT_PROPS`,
+   hole the RHS) is not implemented (`hole_expr` is expression-only). Needs
+   destructure-pattern-key anchor indexing plus pattern holing. (Nested-value
+   dicts — `object_nested_value_dict` — already minimize via the nested
+   object/array holing recursion; the `ee({ coreMessage: …, type: … })`
+   schema-object-call form folds into item 1.)
 3. **Multi-target var binding-group read-off.** Groups still use the keep-shallow
    path (`minimize_var_group_selector`) because per-slot declarator-tuple
    resolution is something the chunk-wide read-off cannot express. Designing a
@@ -284,8 +288,13 @@ the landed architecture is in "Current state" above.
 6. **Retire the keep-shallow group cover** once item 3 lands — removes
    `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`, and
    `AnchorCandidates::{shallow_literals,deep_cover_tiers}`.
-7. **`selector_codemod.rs` by-form split** — the file is ~4.2k lines; splitting by
-   form enables parallel per-form fan-out (do after item 6 reshapes the var path).
+7. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
+   splitting by form enables parallel per-form fan-out (do after item 6 reshapes
+   the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
+   and `minimize_var_group_selector` each build a near-identical var `render_with`
+   closure (iterate `var.decls`, `DECLARATORS_*` holes for non-target slots, holed
+   target init); factor one shared slot-render helper parameterized by the
+   per-slot init holing.
 8. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
