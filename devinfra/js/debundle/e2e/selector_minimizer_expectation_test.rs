@@ -350,6 +350,30 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Multi-target binding-group read-off (plan item 3): a group of sibling key-set
+// objects, two of them exported targets, each discriminated only by its own
+// uniquely-present key (`logViewer` / `alertChip`, values shared `theme.base`
+// member accesses holed to `ANYTHING`). The binding-group read-off reads each
+// target declarator slot's minimal anchor off the shape index + a slot-aware
+// greedy, restricts the kept spans to that slot, UNIONs them, and proves the
+// tuple through the binding-group matcher — so each slot pins only its
+// discriminating key with `OBJECT_PROPS` for the gaps and `DECLARATORS_AFTER` for
+// the non-target third declarator, instead of the keep-shallow path's over-pin
+// (which, with every value already a non-literal member access, would escalate to
+// keeping *every* key of both target objects). The per-slot declarator-tuple
+// resolution the chunk-wide read-off cannot express.
+minimizer_expectation_case!(
+    minimizes_binding_group_key_set_readoff,
+    fixture = "binding_group_key_set_readoff",
+    name = "multi-target group reads off each slot's discriminating key",
+    module = "app/badges",
+    bindings = [
+        ("ErrorBadge", "errorBadge"),
+        ("WarningBadge", "warningBadge")
+    ],
+    expected = "expected_match.js",
+);
+
 minimizer_expectation_case!(
     minimizes_nested_async_try,
     fixture = "nested_async_try",
@@ -640,14 +664,18 @@ minimizer_expectation_case!(
 );
 
 // Single vs group split after the var read-off migration: the multi-target group
-// (`SelectedPrimary`/`SelectedSecondary`) still uses the keep-shallow anchor policy
-// — both slots keep their direct shallow literals, including the shared
-// `enabled: true` over-pin (per-slot tuple resolution remains the cover's job). The
-// single-target `SelectedStandalone` now reads its minimal anchor off the shape
-// index: `kind: "panel"` alone discriminates it from `sameRouteDifferentKind`, so
-// the shared non-discriminating call arg `"settings"` holes to `ANYTHING` and the
-// redundant `title: "Settings"` collapses into `OBJECT_PROPS` — sparser and more
-// rebuild-robust than the keep-shallow over-pin.
+// (`SelectedPrimary`/`SelectedSecondary`) now reads off per-slot minimal anchors
+// (binding-group read-off, plan item 3). Each slot pins only what singles its own
+// declarator out within the statement: slot 0's `enabled: true` (vs
+// `unrelatedPrimary`'s `enabled: false`) is enough, so its `makeEntry` argument
+// holes to `ANYTHING`; slot 1 still needs `"secondary"` because `{ enabled: true }`
+// alone would also fit slot 0. The per-slot kept spans union and the binding-group
+// matcher proves the tuple — sparser than the keep-shallow path's "keep every
+// slot's shallow literals" (which pinned both `"primary"` and `"secondary"`). The
+// single-target `SelectedStandalone` reads its minimal anchor off the shape index:
+// `kind: "panel"` alone discriminates it from `sameRouteDifferentKind`, so the
+// shared non-discriminating call arg `"settings"` holes to `ANYTHING` and the
+// redundant `title: "Settings"` collapses into `OBJECT_PROPS`.
 #[test]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {

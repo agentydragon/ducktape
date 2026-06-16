@@ -163,11 +163,16 @@ stable-prefix/volatile-tail strings (trailing hex/digit runs).
 function/class anchor collectors) is **deleted**: single-target function, class,
 object, and var all route through the read-off, which subsumes it once W3 added
 number/bool features (its last reason to exist). A target the read-off cannot
-single out is reported as debt, never full-AST-pinned. The one cover that
-remains is the **multi-target var binding-group keep-shallow path**
+single out is reported as debt, never full-AST-pinned. Multi-target var binding
+groups also read off now (`try_var_group_read_off`, backlog item 3): each target
+declarator slot reads its minimal anchor off the shape index plus a slot-aware
+greedy (`slot_minimal_anchors`), the per-slot kept spans union, and the
+binding-group matcher proves the tuple. The **keep-shallow path**
 (`minimize_var_group_selector` + `collect_expr_anchors` +
-`AnchorCandidates::{shallow_literals,deep_cover_tiers}`), which does the per-slot
-tuple resolution the chunk-wide read-off cannot express.
+`AnchorCandidates::{shallow_literals,deep_cover_tiers}`) remains only as the
+**fallback** for groups whose per-slot single-binding view cannot single a slot
+out (a value shared across sibling statements that resolves only as a tuple);
+retiring it is gated as backlog item 6.
 
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
@@ -183,6 +188,7 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
+`binding_group_key_set_readoff` (multi-target group per-slot key read-off, item 3),
 `interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
 landed, #2289), `sequential_assignment_block` (unignored once the `hole_expr`
 `Expr::Assign` arm landed), `sibling_class_declaration_group` (the general
@@ -278,15 +284,32 @@ the landed architecture is in "Current state" above.
    dicts — `object_nested_value_dict` — already minimize via the nested
    object/array holing recursion; the `ee({ coreMessage: …, type: … })`
    schema-object-call form folds into item 1.)
-3. **Multi-target var binding-group read-off.** Groups still use the keep-shallow
-   path (`minimize_var_group_selector`) because per-slot declarator-tuple
-   resolution is something the chunk-wide read-off cannot express. Designing a
-   per-slot anchor union proven through the binding-group matcher would let groups
-   read off too — the last consumer of the keep-shallow cover and the gate for
-   items 4/5 below.
-4. **Retire the keep-shallow group cover** once item 3 lands — removes
+3. **Multi-target var binding-group read-off — LANDED (keep-shallow retirement
+   still open, item 4).** `try_var_group_read_off` (in `selector_codemod.rs`) now
+   reads each target declarator slot's minimal anchor off the shape index
+   (restricted to the slot), extends it with a slot-aware greedy
+   (`slot_minimal_anchors`, reusing `cover_object_slot`'s `(target slot not yet
+resolved, total matches)` scoring via the single-binding matcher), UNIONs the
+   per-slot kept spans, renders through `render_var_group_readoff` (object slots →
+   padded `OBJECT_PROPS`, others → `hole_expr`), and proves the tuple through the
+   binding-group matcher (`prove_synthesized_selector`); the regex upgrade applies
+   across slots. The keep-shallow path (`minimize_var_group_selector`'s escalation
+   over `collect_expr_anchors` + `AnchorCandidates`) is **kept as the fallback**
+   for groups whose per-slot anchors cannot single a slot out (e.g.
+   `binding_group_declarators`, where a value shared with a sibling statement
+   resolves only as a tuple). E2E: `binding_group_key_set_readoff` (sparse
+   per-slot key read-off); `binding_group_partition`'s group output re-baselined
+   sparser. **Retiring the keep-shallow cover is still open as item 4** — gated on
+   migrating the remaining fallback-only groups (the value-shared-across-statements
+   tuples the per-slot single-binding view cannot resolve alone) onto a
+   tuple-aware read-off, or accepting them as debt.
+4. **Retire the keep-shallow group cover.** Item 3 landed the binding-group
+   read-off, but the keep-shallow path stays as the fallback for groups whose
+   per-slot single-binding view cannot single a slot out (a value shared across
+   sibling _statements_ resolves only as a tuple). Removing
    `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`, and
-   `AnchorCandidates::{shallow_literals,deep_cover_tiers}`.
+   `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
+   tuple-aware read-off for those residual groups (or accepting them as debt).
 5. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
    splitting by form enables parallel per-form fan-out (do after item 4 reshapes
    the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
