@@ -531,6 +531,20 @@ where
     }
 }
 
+/// For a command whose primary output is an array: when `format` is `Ndjson`,
+/// emit one compact JSON line per item and return `true` (the caller should
+/// stop). Otherwise emit nothing and return `false`, so the caller falls through
+/// to [`print_report`] for the text/json rendering of the whole report.
+pub fn print_ndjson_list<T: Serialize>(items: &[T], format: OutputFormat) -> Result<bool> {
+    if format != OutputFormat::Ndjson {
+        return Ok(false);
+    }
+    for item in items {
+        println!("{}", serde_json::to_string(item)?);
+    }
+    Ok(true)
+}
+
 pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     let mut report = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),

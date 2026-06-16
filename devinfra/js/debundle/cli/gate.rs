@@ -207,10 +207,7 @@ fn run_list(args: GateListArgs) -> Result<()> {
             .collect(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if format == peel::OutputFormat::Ndjson {
-        for entry in &report.blocking_sccs {
-            println!("{}", serde_json::to_string(entry)?);
-        }
+    if peel::print_ndjson_list(&report.blocking_sccs, format)? {
         return Ok(());
     }
     peel::print_report(&report, format, render_list_text).context("writing gate list output")
@@ -319,10 +316,7 @@ fn run_cut(args: GateIdArgs) -> Result<()> {
         cut: entry.cut.clone(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if format == peel::OutputFormat::Ndjson {
-        for edge in &report.cut {
-            println!("{}", serde_json::to_string(edge)?);
-        }
+    if peel::print_ndjson_list(&report.cut, format)? {
         return Ok(());
     }
     peel::print_report(&report, format, render_cut_text).context("writing gate cut output")

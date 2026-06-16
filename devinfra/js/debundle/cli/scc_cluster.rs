@@ -3,7 +3,10 @@
 
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
-use peel::{CommonArgs as PeelCommonArgs, OutputFormat, print_report, resolve_binding_owners};
+use peel::{
+    CommonArgs as PeelCommonArgs, OutputFormat, print_ndjson_list, print_report,
+    resolve_binding_owners,
+};
 
 /// Args for `debundle scc`.
 #[derive(Debug, ClapArgs)]
@@ -155,10 +158,7 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
     }
     let report = SccReport { sccs: entries };
     let format = OutputFormat::resolve(args.format);
-    if format == OutputFormat::Ndjson {
-        for entry in &report.sccs {
-            println!("{}", serde_json::to_string(entry)?);
-        }
+    if print_ndjson_list(&report.sccs, format)? {
         return Ok(());
     }
     print_report(&report, format, render_scc_text).context("writing scc output")
