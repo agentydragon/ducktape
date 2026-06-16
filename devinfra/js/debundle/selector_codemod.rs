@@ -1117,10 +1117,28 @@ fn prove_synthesized_selector(
         wildcard_string_literals: BTreeSet::new(),
     };
     let selector = source_match.selector();
-    let matches = source_match::member_binding_candidate_matches(
+    // Prove fast-path. The candidate index is a sound match superset: every
+    // body index the matcher could resolve for this selector carries all of the
+    // selector's anchor features, so true matches ⊆ the posting-list
+    // intersection. Restrict the (correctness-bearing) matcher to that
+    // intersection instead of scanning the whole chunk. When the intersection is
+    // already `{decl.body_idx}` the matcher inspects a single item — proving
+    // both existence and uniqueness — rather than the O(chunk) per-member scan
+    // the unfiltered `member_binding_candidate_matches` would run. The matcher
+    // still gates the result, so an index false positive (a body in the
+    // intersection the matcher rejects) can never be accepted, and an empty/
+    // ambiguous match still `bail!`s below. See `prove_fast_path_*` tests and
+    // `selector_candidate_index`'s superset invariant.
+    let candidates: BTreeSet<usize> = index
+        .candidate_index
+        .candidate_set_for_source_match(&selector)?
+        .body_indices()
+        .collect();
+    let matches = source_match::member_binding_candidate_matches_within(
         &index.parsed.module,
         "<selector synthesis>",
         &selector,
+        BodyIndexFilter::Restricted(&candidates),
     )?;
     let candidate_count = matches.len();
     let [candidate] = matches.as_slice() else {
@@ -3666,6 +3684,106 @@ mod prefilter_soundness_tests {
                     "prefiltered scan must report identical matches to the full scan"
                 );
             }
+        });
+    }
+
+    /// Candidate set for the single-target prove selector (same construction as
+    /// the fast-path in `prove_synthesized_selector`).
+    fn prove_candidate_set(
+        index: &ChunkSelectorIndex,
+        export: &str,
+        source: &str,
+    ) -> BTreeSet<usize> {
+        let source_match = SourceMatch {
+            match_source: source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: Some(export.to_string()),
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        };
+        index
+            .candidate_index
+            .candidate_set_for_source_match(&source_match.selector())
+            .unwrap()
+            .body_indices()
+            .collect()
+    }
+
+    /// The prove fast-path's soundness contract: for sampled synthesized
+    /// single-target selectors, whenever the index candidate set is a singleton
+    /// `{body_idx}`, the production matcher must resolve uniquely to exactly that
+    /// body index — i.e. an index-singleton proof never differs from the
+    /// full-matcher verdict. Walks the synthesized selector for every `const`
+    /// sibling in the chunk, so it covers both the genuinely-discriminated
+    /// targets (singleton candidate set) and any that need matcher
+    /// disambiguation (non-singleton, fall-through path).
+    #[test]
+    fn index_singleton_proof_implies_unique_matcher_resolution() {
+        js_ast::with_swc_globals(|| {
+            let index = ChunkSelectorIndex::new(
+                js_ast::parse_js_module_consuming("<prove-fast-path>", many_sibling_chunk())
+                    .unwrap(),
+            );
+            let mut singleton_hits = 0usize;
+            for sample in [0usize, 1, 42, 137, 199] {
+                let runtime = format!("binding{sample}");
+                let decl_idx = *index
+                    .binding_to_decl
+                    .get(&runtime)
+                    .and_then(|decls| decls.first())
+                    .expect("chunk declares the sampled binding");
+                let members = [NameBindingMember {
+                    member_index: 0,
+                    export_name: "Target".to_string(),
+                    binding_name: runtime.clone(),
+                    comment: None,
+                }];
+                let GroupSelectorOutcome::Synthesized(group) =
+                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false)
+                        .unwrap()
+                else {
+                    panic!("each distinct-token sibling must synthesize a selector");
+                };
+
+                let candidates = prove_candidate_set(&index, "Target", &group.match_source);
+                // The full, unfiltered matcher verdict — the source of truth.
+                let brute = brute_force_matches(&index, "Target", &group.match_source);
+                assert!(
+                    brute.is_subset(&candidates),
+                    "index candidate set must be a sound match superset: \
+                     brute={brute:?} candidates={candidates:?}"
+                );
+                if candidates == BTreeSet::from([decl_idx]) {
+                    singleton_hits += 1;
+                    // The crux: a singleton index proof must coincide with the
+                    // matcher resolving uniquely to that same body index.
+                    assert_eq!(
+                        brute,
+                        BTreeSet::from([decl_idx]),
+                        "index-singleton proof must imply unique matcher resolution; \
+                         selector:\n{}",
+                        group.match_source
+                    );
+                }
+                // Independently, the prove gate (which now runs the candidate-
+                // restricted matcher) must agree the selector resolves uniquely.
+                let targets = [SynthesizedTargetBinding {
+                    export_name: "Target".to_string(),
+                    runtime_binding: runtime,
+                }];
+                let decl = &index.decls[decl_idx];
+                assert_eq!(
+                    prove_synthesized_selector(&index, decl, &targets, &group.match_source)
+                        .unwrap(),
+                    1,
+                    "prove gate must accept the synthesized selector as unique"
+                );
+            }
+            assert!(
+                singleton_hits > 0,
+                "the distinct-token siblings must exercise the singleton fast-path"
+            );
         });
     }
 }
