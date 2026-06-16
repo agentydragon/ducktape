@@ -162,11 +162,11 @@ Full scope table in <../debug/selector_minimizer_dogfood.md>.
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
-`class_among_many_siblings`, `sibling_subclass_hierarchy`, and (unignored once
-the object key-set cover landed) `grouped_enum_objects`, `object_key_set_group`,
-`object_key_set_subset`. Ignored as aspirational (the named form not yet
-read-off-expressible): `sequential_assignment_block`, `deeply_nested_call_args`,
-`object_nested_value_dict`, `wide_destructure_block`.
+`class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
+and (unignored once the object key-set cover landed) `grouped_enum_objects`,
+`object_key_set_group`, `object_key_set_subset`. Ignored as aspirational (the named
+form not yet read-off-expressible): `sequential_assignment_block`,
+`deeply_nested_call_args`, `object_nested_value_dict`, `wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -313,17 +313,25 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
 6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
    and **var** migration (needs binding-group/declarator-slot tuple resolution).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
-   minimal-selector overlap threshold) → `binding_group`.
+   minimal-selector overlap threshold) → `binding_group`. The shared-declaration
+   trigger (multi-declarator var) and the adjacent-function sub-item below have
+   landed; the general co-occurrence trigger for non-function runs (statement runs,
+   sibling object/class declarations that are not a single var statement) is still
+   open.
    - **Adjacent same-shape function declarations (gaffer-dogfood feedback).**
-     `binding_group` already groups consecutive `function` declarations (the
-     `source_match` is the run of declarations, `exports` maps each), but the
-     trigger doesn't fire for runs of tiny near-identical accessors, which emit N
-     standalone selectors instead. Real example: `app/state/accessors.yaml`
-     `use{AppUser,NodeSpace,FocusService,CoreServices}` — four adjacent
-     `function useX() { return ANYTHING.nodeSpace.…; }` hooks, each its own
-     selector; they should collapse into one group (concise + DRY). The
-     minimal-selector-overlap trigger must catch a run of adjacent functions whose
-     selectors share the bulk of their shape. E2E: `adjacent_accessor_group`.
+     **Landed.** `merge_adjacent_function_runs` (in `selector_codemod.rs`) collapses
+     a maximal run of adjacent single-target function declarations whose
+     individually-minimized selectors share the same canonical shape into one
+     run-based `binding_group` (the `source_match` is the run of declarations,
+     `exports` maps each), instead of N standalone selectors. The minimal-selector
+     overlap is realized as exact canonical-shape equality computed on the
+     _minimized_ selectors: each accessor minimizes to its single discriminating
+     member with the shared receiver chain holed to `ANYTHING`, so a DRY cluster
+     collapses to one shape once every identifier / member-key / literal leaf is
+     blanked (`selector_shape_signature`). The merged run-selector is re-proven
+     through the matcher gate; on proof failure the run is emitted individually.
+     E2E: `adjacent_accessor_group`. Real-spec analogue: `app/state/accessors.yaml`
+     `use{AppUser,NodeSpace,FocusService,CoreServices}`.
 8. **Delete the cover search** once all forms route through read-off
    (`minimize_via_retention`, `cover_competitors`, `min_set_cover`,
    `collect_*_anchors`) — shrinks `selector_codemod.rs` substantially.

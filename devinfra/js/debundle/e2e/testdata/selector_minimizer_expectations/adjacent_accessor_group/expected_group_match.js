@@ -1,11 +1,11 @@
 function selectedAlphaAccessor() {
-  return ANYTHING.services.alpha;
+  return ANYTHING.alpha;
 }
 function selectedBetaAccessor() {
-  return ANYTHING.services.beta;
+  return ANYTHING.beta;
 }
 function selectedGammaAccessor() {
-  return ANYTHING.services.gamma;
+  return ANYTHING.gamma;
 }
 function selectedDeltaAccessor() {
   return ANYTHING.coreServices;

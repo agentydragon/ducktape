@@ -645,18 +645,17 @@ fn minimizes_binding_group_partition() {
     });
 }
 
-// Aspirational: a run of adjacent, near-identical accessor functions should
-// collapse into ONE binding_group (the source_match is the consecutive run of
-// the four `function …Accessor() { return ANYTHING.…; }` declarations, with
-// `exports` mapping each), rather than four standalone source_match selectors.
-// Today the grouping fires for some same-statement clusters but not for this
-// run, so the minimizer emits four individual outputs (the assertion below
-// expects one grouped output and fails). Real-spec analogue:
-// `app/state/accessors.yaml` `use{AppUser,NodeSpace,FocusService,CoreServices}`,
-// four adjacent context-accessor hooks each emitted as its own selector. The
-// grouping trigger (item 7: shared declaration OR minimal-selector overlap) must
-// cover adjacent same-shape function declarations with high selector overlap.
-#[ignore = "adjacent near-identical accessor functions emit N standalone selectors instead of one binding_group"]
+// A run of adjacent, near-identical accessor functions collapses into ONE
+// binding_group: the source_match is the consecutive run of the four
+// `function …Accessor() { return ANYTHING.<key>; }` declarations, with `exports`
+// mapping each, rather than four standalone source_match selectors. Each
+// accessor is first minimized individually (the shared `resolveContext().services`
+// receiver holes to `ANYTHING`, keeping the single discriminating member), then
+// the anti-unification grouping pass (readoff_minimization.md item 7) detects
+// that the adjacent minimized selectors share the same canonical shape and merges
+// the run. Real-spec analogue: `app/state/accessors.yaml`
+// `use{AppUser,NodeSpace,FocusService,CoreServices}`, four adjacent
+// context-accessor hooks that previously emitted four individual selectors.
 #[test]
 fn minimizes_adjacent_accessor_group() {
     run_case(&MinimizedSelectorCase {

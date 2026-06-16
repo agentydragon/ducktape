@@ -538,6 +538,18 @@ pub struct SynthesizedTargetBinding {
     runtime_binding: String,
 }
 
+/// One synthesized selector together with the members it covers and the
+/// representative (first) declaration it was proven against. The anti-unification
+/// grouping pass ([`merge_adjacent_function_runs`]) operates on these: a
+/// single-declaration group may merge with adjacent same-shape neighbors into a
+/// run-based group whose `synthesized` spans several declarations.
+#[derive(Debug, Clone)]
+struct SynthesizedDeclGroup {
+    decl_idx: usize,
+    members: Vec<NameBindingMember>,
+    synthesized: SynthesizedSelectorGroup,
+}
+
 /// Indexed source facts for selector synthesis.
 ///
 /// The target architecture is a trie/lattice of stable AST discriminants:
@@ -659,22 +671,25 @@ fn rewrite_name_bindings_to_source_match(
             });
     }
 
-    // `Some(value)` replaces the member in place (singleton group rewrites to a
-    // `source_match` member); `None` removes it (grouped members move into a
-    // `binding_groups` entry). The borrow of `members` is released before we
-    // touch `root` again to add `binding_groups`.
-    let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
-    let mut binding_groups = Vec::new();
-    let mut groups_changed = 0;
-    for (group_id, (decl_idx, group_members)) in grouped.into_iter().enumerate() {
-        let synthesized = match synthesize_simplest_selector_for_group(
+    // Synthesize each declaration group; collect the successes for the grouping
+    // pass and emit skip/error candidates immediately (they carry no selector to
+    // group).
+    let mut synthesized_groups = Vec::new();
+    for (decl_idx, group_members) in grouped {
+        match synthesize_simplest_selector_for_group(
             index,
             decl_idx,
             &group_members,
             options.minimize_synthesized_selectors,
             options.full_ast_fallback,
         ) {
-            Ok(GroupSelectorOutcome::Synthesized(synthesized)) => synthesized,
+            Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
+                synthesized_groups.push(SynthesizedDeclGroup {
+                    decl_idx,
+                    members: group_members,
+                    synthesized,
+                });
+            }
             Ok(GroupSelectorOutcome::Skipped(reason)) => {
                 for member in group_members {
                     candidates.push(skipped_candidate(
@@ -685,7 +700,6 @@ fn rewrite_name_bindings_to_source_match(
                         reason.clone(),
                     ));
                 }
-                continue;
             }
             Err(err) => {
                 for member in group_members {
@@ -697,10 +711,29 @@ fn rewrite_name_bindings_to_source_match(
                         format!("{err:#}"),
                     ));
                 }
-                continue;
             }
-        };
-        groups_changed += 1;
+        }
+    }
+
+    // Anti-unification grouping (readoff_minimization.md item 7): collapse maximal
+    // runs of adjacent, same-shape single-target function declarations into one
+    // run-based binding_group. Multi-declarator var groups (already grouped by
+    // shared declaration) and lone groups pass through unchanged.
+    let prepared_groups = merge_adjacent_function_runs(index, synthesized_groups);
+
+    // `Some(value)` replaces the member in place (singleton group rewrites to a
+    // `source_match` member); `None` removes it (grouped members move into a
+    // `binding_groups` entry). The borrow of `members` is released before we
+    // touch `root` again to add `binding_groups`.
+    let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
+    let mut binding_groups = Vec::new();
+    let groups_changed = prepared_groups.len();
+    for (group_id, prepared) in prepared_groups.into_iter().enumerate() {
+        let SynthesizedDeclGroup {
+            members: group_members,
+            synthesized,
+            ..
+        } = prepared;
         if group_members.len() == 1 {
             let member = &group_members[0];
             let target = &synthesized.target_bindings[0];
@@ -1048,6 +1081,189 @@ fn synthesize_simplest_selector_for_group(
             candidate_count,
         },
     ))
+}
+
+// ===========================================================================
+// Anti-unification grouping (readoff_minimization.md item 7).
+//
+// `synthesize_simplest_selector_for_group` already groups members that share an
+// enclosing declaration (multi-declarator var statements). The second grouping
+// trigger — "minimal selectors overlap beyond a threshold" — collapses a run of
+// adjacent, near-identical *function* declarations whose individually-minimized
+// selectors share the bulk of their shape (e.g. four context-accessor hooks each
+// `function useX() { return ANYTHING.…; }`) into one run-based binding_group,
+// instead of N standalone source_match selectors.
+//
+// The overlap test runs on the *minimized* selectors: same-purpose accessors
+// collapse to the same minimal shape (`ANYTHING.<key>`), so two selectors are
+// "same shape" iff their canonical signatures — every identifier, member/key
+// name, and literal value blanked, leaving only structure ([`selector_shape_signature`])
+// — are equal. The merged run-selector is re-proven through the matcher gate; on
+// failure the run is emitted as individual selectors, never an unproven group.
+// ===========================================================================
+
+/// Collapse maximal runs of adjacent, same-shape single-target function groups
+/// into one run-based binding_group. Other groups (multi-declarator var groups,
+/// classes, lone functions, anything whose merged run fails the matcher gate)
+/// pass through unchanged, preserving source order.
+fn merge_adjacent_function_runs(
+    index: &ChunkSelectorIndex,
+    groups: Vec<SynthesizedDeclGroup>,
+) -> Vec<SynthesizedDeclGroup> {
+    let mut merged = Vec::with_capacity(groups.len());
+    let mut run: Vec<SynthesizedDeclGroup> = Vec::new();
+    for group in groups {
+        let extends_run = run
+            .last()
+            .is_some_and(|prev| function_run_extends(index, prev, &group));
+        if !extends_run {
+            flush_function_run(index, std::mem::take(&mut run), &mut merged);
+        }
+        run.push(group);
+    }
+    flush_function_run(index, run, &mut merged);
+    merged
+}
+
+/// Emit a candidate run: merge it into one binding_group when it holds ≥2 groups
+/// and the merged selector proves unique, else emit each group individually.
+fn flush_function_run(
+    index: &ChunkSelectorIndex,
+    run: Vec<SynthesizedDeclGroup>,
+    out: &mut Vec<SynthesizedDeclGroup>,
+) {
+    if run.len() >= 2
+        && let Some(group) = merge_function_run(index, &run)
+    {
+        out.push(group);
+        return;
+    }
+    out.extend(run);
+}
+
+/// Whether `next` continues a function run started by `prev`: both are
+/// single-target function declarations, they are consecutive in source order,
+/// and their minimized selectors share the same canonical shape.
+fn function_run_extends(
+    index: &ChunkSelectorIndex,
+    prev: &SynthesizedDeclGroup,
+    next: &SynthesizedDeclGroup,
+) -> bool {
+    is_single_function_group(index, prev)
+        && is_single_function_group(index, next)
+        && next.synthesized.body_idx == prev.synthesized.body_idx + 1
+        && same_selector_shape(
+            &prev.synthesized.match_source,
+            &next.synthesized.match_source,
+        )
+}
+
+fn is_single_function_group(index: &ChunkSelectorIndex, group: &SynthesizedDeclGroup) -> bool {
+    group.members.len() == 1
+        && index
+            .decls
+            .get(group.decl_idx)
+            .is_some_and(|decl| decl.kind == IndexedDeclarationKind::Function)
+}
+
+/// Build one run-based binding_group from `run`: the source_match is the run's
+/// declarations concatenated in source order, `exports` maps every target. The
+/// merged selector is re-proven through the matcher gate; `None` (proof failed)
+/// leaves the run to be emitted individually.
+fn merge_function_run(
+    index: &ChunkSelectorIndex,
+    run: &[SynthesizedDeclGroup],
+) -> Option<SynthesizedDeclGroup> {
+    let first = run.first()?;
+    let decl = index.decls.get(first.decl_idx)?;
+    let match_source = run
+        .iter()
+        .map(|group| group.synthesized.match_source.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let targets = run
+        .iter()
+        .flat_map(|group| group.synthesized.target_bindings.iter().cloned())
+        .collect::<Vec<_>>();
+    let candidate_count = prove_synthesized_selector(index, decl, &targets, &match_source).ok()?;
+    let members = run
+        .iter()
+        .flat_map(|group| group.members.iter().cloned())
+        .collect::<Vec<_>>();
+    Some(SynthesizedDeclGroup {
+        decl_idx: first.decl_idx,
+        members,
+        synthesized: SynthesizedSelectorGroup {
+            body_idx: first.synthesized.body_idx,
+            target_bindings: targets,
+            rewritten_holes: holes_present(&match_source).into_iter().collect(),
+            match_source,
+            candidate_count,
+        },
+    })
+}
+
+/// Whether two single-declaration selector sources have the same canonical shape
+/// (equal once every value-bearing leaf is blanked). `false` if either fails to
+/// parse, so an unparseable source never grafts onto a run.
+fn same_selector_shape(left: &str, right: &str) -> bool {
+    matches!(
+        (selector_shape_signature(left), selector_shape_signature(right)),
+        (Some(left), Some(right)) if left == right
+    )
+}
+
+/// Canonical structural signature of a selector source: the AST re-emitted with
+/// every identifier, member/property name, object key, and literal value blanked
+/// to a fixed placeholder, so selectors that differ only in their discriminating
+/// anchors (a DRY accessor cluster) share a signature.
+fn selector_shape_signature(match_source: &str) -> Option<String> {
+    let mut module =
+        js_ast::parse_js_module_ast("<selector shape signature>", match_source).ok()?;
+    module.visit_mut_with(&mut ShapeSignatureCanonicalizer);
+    js_ast::emit_module_source(&module).ok()
+}
+
+/// Placeholder every value-bearing leaf collapses to in a shape signature.
+const SHAPE_SIGNATURE_BLANK: &str = "_";
+
+/// Blanks identifiers, member/property names, object keys, and literal values so
+/// only structural shape survives (see [`selector_shape_signature`]).
+struct ShapeSignatureCanonicalizer;
+
+impl VisitMut for ShapeSignatureCanonicalizer {
+    fn visit_mut_ident(&mut self, ident: &mut Ident) {
+        ident.sym = SHAPE_SIGNATURE_BLANK.into();
+    }
+
+    fn visit_mut_binding_ident(&mut self, ident: &mut BindingIdent) {
+        ident.id.sym = SHAPE_SIGNATURE_BLANK.into();
+        ident.type_ann.visit_mut_with(self);
+    }
+
+    fn visit_mut_member_prop(&mut self, prop: &mut MemberProp) {
+        match prop {
+            MemberProp::Ident(ident) => ident.sym = SHAPE_SIGNATURE_BLANK.into(),
+            MemberProp::PrivateName(_) => {}
+            MemberProp::Computed(computed) => computed.visit_mut_children_with(self),
+        }
+    }
+
+    fn visit_mut_prop_name(&mut self, name: &mut PropName) {
+        match name {
+            PropName::Ident(ident) => ident.sym = SHAPE_SIGNATURE_BLANK.into(),
+            PropName::Str(str_lit) => js_ast::set_str_value(str_lit, SHAPE_SIGNATURE_BLANK.into()),
+            other => other.visit_mut_children_with(self),
+        }
+    }
+
+    fn visit_mut_expr(&mut self, expr: &mut Expr) {
+        if matches!(expr, Expr::Lit(_)) {
+            *expr = Expr::Lit(Lit::Null(Null { span: DUMMY_SP }));
+            return;
+        }
+        expr.visit_mut_children_with(self);
+    }
 }
 
 fn prove_synthesized_selector(
@@ -3609,6 +3825,68 @@ mod regex_anchor_pattern_tests {
         assert_eq!(regex_anchor_pattern("deadbeef"), None);
         // Separator-only prefix is likewise rejected.
         assert_eq!(regex_anchor_pattern("-123456"), None);
+    }
+}
+
+#[cfg(test)]
+mod adjacent_function_grouping_tests {
+    use super::*;
+
+    fn signature(source: &str) -> String {
+        js_ast::with_swc_globals(|| selector_shape_signature(source).expect("selector parses"))
+    }
+
+    #[test]
+    fn accessors_differing_only_in_member_key_share_a_shape() {
+        // The minimized accessor selectors differ only in the holed function name
+        // and the trailing member key; blanking those discriminating leaves
+        // collapses them to one canonical shape — the run-grouping trigger.
+        let alpha = "function selectedAlphaAccessor() { return ANYTHING.alpha; }";
+        let beta = "function selectedBetaAccessor() { return ANYTHING.beta; }";
+        let core = "function selectedDeltaAccessor() { return ANYTHING.coreServices; }";
+        assert_eq!(signature(alpha), signature(beta));
+        assert_eq!(signature(alpha), signature(core));
+    }
+
+    #[test]
+    fn different_shapes_do_not_share_a_signature() {
+        // A zero-arg member-return accessor anti-unifies to neither a one-arg
+        // arithmetic helper (param count + body differ) nor a bare call (body
+        // structure differs), so such neighbors never merge into one run.
+        let accessor = "function a() { return ANYTHING.alpha; }";
+        assert_ne!(
+            signature(accessor),
+            signature("function h(value) { return value * 2; }")
+        );
+        assert_ne!(
+            signature(accessor),
+            signature("function c() { return ANYTHING(); }")
+        );
+    }
+
+    #[test]
+    fn member_chain_depth_is_structural() {
+        // Blanking erases key *names* but keeps chain depth, so a one-member and a
+        // two-member access are distinct shapes and stay separate selectors.
+        assert_ne!(
+            signature("function a() { return ANYTHING.alpha; }"),
+            signature("function a() { return ANYTHING.services.alpha; }")
+        );
+    }
+
+    #[test]
+    fn same_selector_shape_matches_same_shape_only() {
+        js_ast::with_swc_globals(|| {
+            assert!(same_selector_shape(
+                "function a() { return ANYTHING.alpha; }",
+                "function b() { return ANYTHING.beta; }",
+            ));
+            // A structurally different neighbor never grafts onto the run.
+            assert!(!same_selector_shape(
+                "function a() { return ANYTHING.alpha; }",
+                "function h(value) { return value * 2; }",
+            ));
+        });
     }
 }
 
