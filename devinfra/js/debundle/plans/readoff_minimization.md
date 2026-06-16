@@ -127,6 +127,10 @@ Migrated to read-off as their primary path:
   always leads+trails with `OBJECT_PROPS` so the discriminating `key: value`
   matches as an interior subsequence element (survives key reorder), never
   anchored to the object's right edge.
+- **Single-target class** (`minimize_class_selector` → `render_via_read_off`):
+  holes `extends` to `ANYTHING` and keeps only the member runs carrying a chosen
+  anchor between `CLASS_REST` holes; the value-over-name ranking key prefers a
+  member's value literal/key over a bare member name.
 
 **Selector language features the read-off renderer pins through.** All list holes
 exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
@@ -137,10 +141,11 @@ stable-prefix/volatile-tail strings (trailing hex/digit runs).
 
 **Strangler-fig boundary.** The cover search (`minimize_via_retention`,
 `cover_competitors`, the B&B `min_set_cover`, `collect_*_anchors`) is **not
-deleted**; it backs single-target var (non-object), single-target class, and the
-binding-group / multi-declarator paths, plus any tail a read-off cannot yet
-single out. `selector_codemod.rs` is ~3.7k lines and shrinks substantially once
-the cover is removed.
+deleted**; it backs single-target var (non-object) and the binding-group /
+multi-declarator paths, plus any tail a read-off cannot yet single out (including
+single-target classes whose own value features don't discriminate).
+`selector_codemod.rs` is ~3.7k lines and shrinks substantially once the cover is
+removed.
 
 **Measured perf.** Whole ~7 MB / ~4k-member spec minimizes in ~113 s today
 (pre-read-off baseline). The `≤10s` ideal is validated only on the synthetic
@@ -149,10 +154,11 @@ sweep so far; the real-chunk size-sweep is W4 (backlog).
 **E2E expectation suite** (`e2e/selector_minimizer_expectation_test.rs`). Active:
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
-`object_keys_over_pinned` (unignored once the object read-off landed),
-`binding_group_partition`. Ignored as aspirational (the named form not yet
-read-off-expressible): `class_among_many_siblings`, `sibling_subclass_hierarchy`,
-`sequential_assignment_block`, `deeply_nested_call_args`, `grouped_enum_objects`.
+`object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
+and (unignored once the class read-off landed) `class_among_many_siblings`,
+`sibling_subclass_hierarchy`. Ignored as aspirational (the named form not yet
+read-off-expressible): `sequential_assignment_block`, `deeply_nested_call_args`,
+`grouped_enum_objects`, `object_nested_value_dict`, `wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -193,14 +199,33 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    **sound superset**, so when the selector's anchor-feature posting-list
    intersection is the singleton `{target}` that _is_ a uniqueness proof — skip
    the matcher; full matcher only for non-singleton cases. Collapses per-member
-   cost for the `OPT=1` majority toward the ≤10s target.
+   cost for the `OPT=1` majority toward the ≤10s target. **(Landed: #2280.)**
 2. **Function** whole-body anchoring (~1,455 full + ~1,743 holed; biggest count) —
    anchor a deep unique literal/member, hole the rest (`sparse_function_body`).
 3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
    bodies) — `CLASS_REST` + discriminating member (`class_among_many_siblings`,
-   `sibling_subclass_hierarchy`).
+   `sibling_subclass_hierarchy`, `class_body`). **Landed.** `minimize_class_selector`
+   routes single-target classes through `render_via_read_off`, holing `extends` to
+   `ANYTHING` (the superclass identifier is alpha-volatile) and falling back to
+   the cover search when the read-off cannot single the class out. Two design
+   points that made it work:
+   - **Value-over-name ranking.** The read-off's third ranking key (above `cost`,
+     below selectivity/stability) prefers a semantic **value** anchor (literal,
+     object key) over a bare **name/reference** (class-member / member-property
+     name) over a **structural** feature. So among equally selective anchors the
+     subclass pins `kind = "uniqueDiscriminatorShape"` rather than the equally
+     selective `area` method name, and the many-siblings class pins the unique
+     `accept:` string — the value survives a rebuild where a renamed method would
+     not. (The earlier WIP predated this key and the now-merged `cost` key, so it
+     anchored on whatever was shortest/structural.)
+   - **Selectivity still dominates.** A genuinely unique member _name_ (a sole
+     `dispose`/`constructor`) is strictly more selective than a value pair, so the
+     ranking can't override it — `class_body`'s fixture was tightened so all
+     siblings share the constructor/render/dispose shape and the only discriminator
+     is the `format`+`"stable"` body pair, which is what the case is meant to test.
 4. **Long-literal-value anchor** (~25; extreme severity, clean fix) — prefer a
    short discriminating key over the largest node (`long_literal_value_anchor`).
+   **(Landed: #2281 — retained-source cost tiebreak; skeletons rank last on cost.)**
 5. **Object-dict family** — over-pinned keys (`object_keys_over_pinned`, done for
    single scalar), nested-value dicts (`object_nested_value_dict`), grouped
    objects (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`), wide

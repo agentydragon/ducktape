@@ -2409,6 +2409,13 @@ fn minimize_class_selector(
     let export = target.export_name.clone();
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
         let mut holed_class = class.clone();
+        // A minified superclass identifier is alpha-wildcarded, so always hole
+        // `extends` to ANYTHING — it still discriminates "has a superclass" from a
+        // bare class without pinning the volatile name.
+        holed_class.super_class = class
+            .super_class
+            .as_ref()
+            .map(|_| Box::new(anything_expr()));
         holed_class.body = hole_class_members(&class.body, kept);
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
             ident: ident_node(&export),
@@ -2416,6 +2423,16 @@ fn minimize_class_selector(
             class: Box::new(holed_class),
         }))))
     };
+    // Single-target classes read off their minimal anchor set the same way
+    // functions and objects do: the holed scaffold pins the class kind plus
+    // `extends ANYTHING`, and value anchors (a member name, a literal or callee
+    // inside a member body) map to their token spans so only the member runs
+    // carrying them survive between `CLASS_REST` holes. Fall back to the tiered
+    // cover search when the read-off cannot single the class out through its own
+    // value features.
+    if let Some(selector) = render_via_read_off(index, decl, target, &render_with)? {
+        return Ok(Some(selector));
+    }
     let candidates = collect_class_anchors(class);
     minimize_via_retention(index, decl, target, &candidates, &render_with)
 }

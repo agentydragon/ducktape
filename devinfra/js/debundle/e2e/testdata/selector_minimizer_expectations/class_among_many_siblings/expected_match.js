@@ -1,10 +1,8 @@
 class SelectedService {
   CLASS_REST;
   async fetchSnapshot(ANYTHING) {
-    STMT_LIST;
-    const response = await this.client.request({
-      path: `workspaces/${ANYTHING}/snapshot`,
-      method: "GET",
+    const response = await ANYTHING.request({
+      OBJECT_PROPS,
       accept: "application/vnd.uniqueDiscriminator+json",
       OBJECT_PROPS,
     });

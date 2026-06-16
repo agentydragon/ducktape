@@ -348,13 +348,13 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a target class among many same-shape sibling classes should
-// minimize to CLASS_REST holes plus the one discriminating member, not fall
-// back to emitting the full class body. Today `minimize_class_selector` bails
-// against the sibling competitors and synthesis emits the entire class AST
-// (see the real `infra/http/PlatformApiService.yaml` conversion, ~330 lines).
+// A target class among many same-shape sibling classes minimizes to CLASS_REST
+// holes plus the one member run carrying the discriminating value anchor (the
+// unique `accept:` string), holing the receiver and the non-discriminating
+// properties — never emitting the full class body (cf. the real
+// `infra/http/PlatformApiService.yaml` conversion, ~330 lines). Routed through
+// the class read-off path.
 minimizer_expectation_case!(
-    #[ignore = "class minimizer falls back to full body among many siblings"]
     minimizes_class_among_many_siblings,
     fixture = "class_among_many_siblings",
     name = "class among many siblings keeps only the discriminating member",
@@ -377,15 +377,15 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a subclass among many sibling subclasses of a shared base
-// should minimize to the `extends` clause (superclass holed with ANYTHING)
-// plus the single discriminating class field, with CLASS_REST holes absorbing
-// every other member. Today the minimizer dumps the whole class body (every
-// field and method) rather than anchoring on the one field literal that
-// distinguishes this subclass from its siblings, mirroring large blocks of
-// sibling subclass declarations kept whole in the real spec.
+// A subclass among many sibling subclasses of a shared base minimizes to the
+// `extends` clause (superclass holed with ANYTHING) plus the single
+// discriminating class field, with CLASS_REST holes absorbing every other
+// member. The read-off prefers the field's semantic value literal
+// (`kind = "uniqueDiscriminatorShape"`) over the equally-selective `area` method
+// name, anchoring on the value that survives a rebuild rather than the member
+// name (cf. large blocks of sibling subclass declarations kept whole in the real
+// spec).
 minimizer_expectation_case!(
-    #[ignore = "subclass minimizer keeps full body instead of extends + discriminating field"]
     minimizes_sibling_subclass_hierarchy,
     fixture = "sibling_subclass_hierarchy",
     name = "subclass among siblings keeps only the discriminating field initializer",

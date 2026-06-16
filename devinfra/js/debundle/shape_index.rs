@@ -796,8 +796,42 @@ const SKELETON_NOISE_MULTIPLICITY: u32 = 4;
 /// those, a short anchor wins, and a long literal value is retained only when no
 /// shorter anchor discriminates. Wrapped in a comparable tuple; smaller sorts
 /// first.
-fn rank_key(f: &ScoredFeature) -> (usize, std::cmp::Reverse<Stability>, usize) {
-    (f.selectivity, std::cmp::Reverse(f.stability), f.cost)
+fn rank_key(f: &ScoredFeature) -> (usize, std::cmp::Reverse<Stability>, u8, usize) {
+    (
+        f.selectivity,
+        std::cmp::Reverse(f.stability),
+        anchor_class(&f.feature),
+        f.cost,
+    )
+}
+
+/// Forward-compatibility class for the ranking's third key (smaller wins),
+/// subordinate to selectivity and stability but *above* cost: among equally
+/// selective+stable anchors, prefer a semantic **value** (a literal value or an
+/// object key — the actual identifying payload) over a bare **name/reference**
+/// (a class-member or member-property name), and a name over a purely
+/// **structural** feature (skeleton, kind, arity). A renamed or removed method
+/// name silently breaks a name pin, whereas the value it carries (`kind:
+/// "shape"`, `format("stable")`) survives, so value anchors are the more
+/// rebuild-stable choice even when longer — hence this key outranks `cost`.
+fn anchor_class(feature: &ShapeFeature) -> u8 {
+    let ShapeFeature::Selector(feature) = feature else {
+        // Shape skeletons pin no concrete token; least preferred.
+        return 2;
+    };
+    match feature {
+        SelectorFeature::StringLiteral(_)
+        | SelectorFeature::NumberLiteral(_)
+        | SelectorFeature::BoolLiteral(_)
+        | SelectorFeature::ObjectKey(_) => 0,
+        SelectorFeature::ClassMember(_)
+        | SelectorFeature::MemberProperty(_)
+        | SelectorFeature::CallCallee(_) => 1,
+        SelectorFeature::TopLevelKind(_)
+        | SelectorFeature::VarKind(_)
+        | SelectorFeature::FunctionArity(_)
+        | SelectorFeature::ImportSource(_) => 2,
+    }
 }
 
 /// Retained-anchor cost for an existing selector feature: the character length
