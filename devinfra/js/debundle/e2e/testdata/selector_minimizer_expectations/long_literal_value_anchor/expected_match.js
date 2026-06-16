@@ -1,4 +1,5 @@
 const SelectedDefinition = {
-  id: "uniqueDiscriminatorId",
+  OBJECT_PROPS,
+  rank: 3,
   OBJECT_PROPS,
 };

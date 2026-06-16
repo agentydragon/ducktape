@@ -535,6 +535,15 @@ pub struct ScoredFeature {
     /// maximally selective (uniquely identifies its item).
     pub selectivity: usize,
     pub stability: Stability,
+    /// Retained-anchor cost: the source size this anchor forces the renderer to
+    /// pin verbatim (the literal value's character length, a key/member label's
+    /// length; `usize::MAX` for a structural skeleton, which pins no renderable
+    /// token and so must rank last on this key). Used as the ranking's third key
+    /// so that among equally selective+stable anchors a *short* renderable one
+    /// wins; a long literal value (a hundreds-of-lines template / string shared
+    /// across siblings) is a last-resort anchor, chosen only when nothing shorter
+    /// discriminates.
+    pub cost: usize,
 }
 
 /// Outcome of a read-off for one target item.
@@ -661,6 +670,7 @@ impl ShapeIndex {
             scored.push(ScoredFeature {
                 selectivity: self.posting(&f).len(),
                 stability: selector_feature_stability(feature),
+                cost: selector_feature_cost(feature),
                 feature: f,
             });
         }
@@ -680,6 +690,15 @@ impl ShapeIndex {
             scored.push(ScoredFeature {
                 selectivity: self.posting(&f).len(),
                 stability,
+                // A skeleton pins no concrete token — the renderer holes it away
+                // and keeps nothing, so it cannot serve as a retained anchor. It
+                // must therefore *lose* the cost tiebreak to any renderable value
+                // anchor of equal selectivity+stability (otherwise a skeleton
+                // would win and the render would hole the only discriminator,
+                // yielding a non-unique selector). It still wins on the
+                // higher-priority selectivity/stability keys when strictly
+                // better; only the cost tiebreak ranks it last.
+                cost: usize::MAX,
                 feature: f,
             });
         }
@@ -770,10 +789,38 @@ impl ShapeIndex {
 /// is distinctive enough to rank as a semantic anchor on stability ties.
 const SKELETON_NOISE_MULTIPLICITY: u32 = 4;
 
-/// Ranking key: most selective first (smallest posting list), then most stable.
-/// Wrapped in a comparable tuple; smaller sorts first.
-fn rank_key(f: &ScoredFeature) -> (usize, std::cmp::Reverse<Stability>) {
-    (f.selectivity, std::cmp::Reverse(f.stability))
+/// Ranking key: most selective first (smallest posting list), then most stable,
+/// then cheapest to retain (smallest pinned source size). The cost tiebreak is
+/// strictly subordinate to selectivity and stability, so it only orders anchors
+/// that are *already* equally discriminating and equally rebuild-stable: among
+/// those, a short anchor wins, and a long literal value is retained only when no
+/// shorter anchor discriminates. Wrapped in a comparable tuple; smaller sorts
+/// first.
+fn rank_key(f: &ScoredFeature) -> (usize, std::cmp::Reverse<Stability>, usize) {
+    (f.selectivity, std::cmp::Reverse(f.stability), f.cost)
+}
+
+/// Retained-anchor cost for an existing selector feature: the character length
+/// of the concrete source token the anchor pins. A long literal value (a
+/// shared template / string spanning hundreds of characters) therefore costs far
+/// more than a one-token discriminating key, so it loses the cost tiebreak to
+/// any equally selective+stable shorter anchor. Structural features (kinds,
+/// arities, import sources) pin nothing via a value span and cost `0`.
+fn selector_feature_cost(feature: &SelectorFeature) -> usize {
+    match feature {
+        SelectorFeature::StringLiteral(value) | SelectorFeature::NumberLiteral(value) => {
+            value.chars().count()
+        }
+        SelectorFeature::ObjectKey(label)
+        | SelectorFeature::ClassMember(label)
+        | SelectorFeature::MemberProperty(label)
+        | SelectorFeature::CallCallee(label) => label.chars().count(),
+        SelectorFeature::BoolLiteral(_) => 1,
+        SelectorFeature::TopLevelKind(_)
+        | SelectorFeature::VarKind(_)
+        | SelectorFeature::FunctionArity(_)
+        | SelectorFeature::ImportSource(_) => 0,
+    }
 }
 
 /// Whether `feature` is sound as an anchor under alpha-equivalent matching.

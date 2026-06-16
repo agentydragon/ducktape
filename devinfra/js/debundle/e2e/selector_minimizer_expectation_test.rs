@@ -464,22 +464,22 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: an object that carries both a short discriminating key literal
-// and a very long string / template-literal value (shared verbatim across
-// siblings, so non-discriminating) should anchor on the short unique key and
-// hole everything else with OBJECT_PROPS. Today the minimizer drags the entire
-// long literal value into the selector as part of the retained anchor, even
-// though a much shorter sibling key already discriminates uniquely; the long
-// value is the largest node so it dominates the kept shape. This produces
-// rebuild-fragile, hundreds-of-lines selectors in the real spec (tool/command
-// definitions and feature-flag tables whose `description`/`prose` template
-// literals run for hundreds of lines while a one-token `name`/`id` key would
-// have sufficed).
+// An object that carries a very long string / template-literal value (shared
+// verbatim across siblings, so non-discriminating) alongside shorter unique
+// features must never anchor on the long value. The cost tiebreak ranks equally
+// selective+stable anchors by retained-source length, so the minimizer picks
+// the *shortest* discriminator and holes everything else with OBJECT_PROPS. Here
+// the shortest unique feature is `rank: 3` (siblings are rank 1/2), which beats
+// the longer-but-also-unique `id: "uniqueDiscriminatorId"`. Without this, the
+// long shared `prose` value (the largest node) would dominate the kept shape and
+// produce rebuild-fragile, hundreds-of-lines selectors in the real spec
+// (tool/command definitions and feature-flag tables whose `description`/`prose`
+// template literals run for hundreds of lines).
 minimizer_expectation_case!(
-    #[ignore = "literal-anchor minimizer retains the long template-literal value instead of anchoring on the short discriminating key"]
     minimizes_long_literal_value_anchor,
     fixture = "long_literal_value_anchor",
-    name = "object anchors on the short discriminating key, not the long shared literal value",
+    name =
+        "object anchors on the shortest discriminating feature, not the long shared literal value",
     module = "app/definitions",
     bindings = [("SelectedDefinition", "selectedDefinition")],
     expected = "expected_match.js",
