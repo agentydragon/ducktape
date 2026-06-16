@@ -124,7 +124,11 @@ Migrated to read-off as their primary path:
 
 - **Single-target function** (`minimize_function_selector` → `render_via_read_off`):
   reads off `minimal_anchor_set`, prefers the empty-kept structural scaffold when
-  it already discriminates, renders through the shared `render_with`.
+  it already discriminates, renders through the shared `render_with`. A body that
+  is a run of sequential assignment statements holes to `STMT_LIST` runs around
+  the one anchored assignment, whose LHS receiver (a minified parameter) holes to
+  `ANYTHING` while the stable property name and discriminating RHS literal stay
+  (the `hole_expr` `Expr::Assign` arm; `sequential_assignment_block`).
 - **Single-target object** (`try_object_read_off` → `hole_object_padded`):
   surrounds every kept prop with `OBJECT_PROPS` (leads, trails, **and**
   interleaves) so a discriminating `key: value` — or a minimal _key set_ — matches
@@ -180,12 +184,13 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
 `interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
-landed, #2289), and (unignored once the object key-set cover landed)
-`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`. Ignored as
-aspirational (the named form not yet read-off-expressible):
-`sequential_assignment_block`, `deeply_nested_call_args`, `object_nested_value_dict`,
-`wide_destructure_block`, `single_target_class_whole_body`,
-`component_wide_destructure_whole_body`.
+landed, #2289), `sequential_assignment_block` (unignored once the `hole_expr`
+`Expr::Assign` arm landed), `sibling_class_declaration_group` (the general
+non-function co-occurrence group), and (unignored once the object key-set cover
+landed) `grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`.
+Ignored as aspirational (the named form not yet read-off-expressible):
+`deeply_nested_call_args`, `object_nested_value_dict`, `wide_destructure_block`,
+`single_target_class_whole_body`, `component_wide_destructure_whole_body`.
 
 ## Acceptance criteria
 
@@ -278,39 +283,33 @@ the landed architecture is in "Current state" above.
    resolution is something the chunk-wide read-off cannot express. Designing a
    per-slot anchor union proven through the binding-group matcher would let groups
    read off too — the last consumer of the keep-shallow cover and the gate for
-   items 6/7 below.
-4. **Statement runs** (`sequential_assignment_block`): `STMT_LIST` holes on both
-   sides of the one assignment whose RHS carries the discriminating literal.
-5. **General co-occurrence grouping → `binding_group`.** The shared-declaration
-   trigger (multi-declarator var) and adjacent same-shape function runs have
-   landed; the general co-occurrence trigger for non-function runs (statement runs,
-   sibling object/class declarations that are not a single var statement) is open.
-6. **Retire the keep-shallow group cover** once item 3 lands — removes
+   items 4/5 below.
+4. **Retire the keep-shallow group cover** once item 3 lands — removes
    `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`, and
    `AnchorCandidates::{shallow_literals,deep_cover_tiers}`.
-7. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
-   splitting by form enables parallel per-form fan-out (do after item 6 reshapes
+5. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
+   splitting by form enables parallel per-form fan-out (do after item 4 reshapes
    the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
    and `minimize_var_group_selector` each build a near-identical var `render_with`
    closure (iterate `var.decls`, `DECLARATORS_*` holes for non-target slots, holed
    target init); factor one shared slot-render helper parameterized by the
    per-slot init holing.
-8. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+6. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-9. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
+7. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
    the leaf but keeps bare-function callees pinned (`hole_callee` keeps a bare
    function reference) and holes dropped args to arity-exact `ANYTHING` rather than
    a variadic `ARGS` run-hole. Closing both is a cross-cutting `hole_callee` /
    `hole_args` policy change affecting all read-off paths; weigh against existing
    fixtures.
-10. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+8. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
-    beneficial minimized selectors. Operational PR rule: **revert any converted
-    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
-    Keep pin-compatible (gaffer validates with a _pinned_ debundle release) and
-    regen the pipeline goldens. Each capability above re-applies here as it lands.
+   beneficial minimized selectors. Operational PR rule: **revert any converted
+   selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
+   Keep pin-compatible (gaffer validates with a _pinned_ debundle release) and
+   regen the pipeline goldens. Each capability above re-applies here as it lands.
 
 ## Orchestration & process notes
 

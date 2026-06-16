@@ -540,7 +540,7 @@ pub struct SynthesizedTargetBinding {
 
 /// One synthesized selector together with the members it covers and the
 /// representative (first) declaration it was proven against. The anti-unification
-/// grouping pass ([`merge_adjacent_function_runs`]) operates on these: a
+/// grouping pass ([`merge_adjacent_same_shape_runs`]) operates on these: a
 /// single-declaration group may merge with adjacent same-shape neighbors into a
 /// run-based group whose `synthesized` spans several declarations.
 #[derive(Debug, Clone)]
@@ -715,11 +715,12 @@ fn rewrite_name_bindings_to_source_match(
         }
     }
 
-    // Anti-unification grouping (readoff_minimization.md item 7): collapse maximal
-    // runs of adjacent, same-shape single-target function declarations into one
-    // run-based binding_group. Multi-declarator var groups (already grouped by
-    // shared declaration) and lone groups pass through unchanged.
-    let prepared_groups = merge_adjacent_function_runs(index, synthesized_groups);
+    // Anti-unification grouping (readoff_minimization.md items 5 + 7): collapse
+    // maximal runs of adjacent, same-shape single-target declarations (any kind:
+    // function, class, var) into one run-based binding_group. Multi-declarator var
+    // groups (already grouped by shared declaration) and lone groups pass through
+    // unchanged.
+    let prepared_groups = merge_adjacent_same_shape_runs(index, synthesized_groups);
 
     // `Some(value)` replaces the member in place (singleton group rewrites to a
     // `source_match` member); `None` removes it (grouped members move into a
@@ -1084,29 +1085,33 @@ fn synthesize_simplest_selector_for_group(
 }
 
 // ===========================================================================
-// Anti-unification grouping (readoff_minimization.md item 7).
+// Anti-unification grouping (readoff_minimization.md items 5 + 7).
 //
 // `synthesize_simplest_selector_for_group` already groups members that share an
 // enclosing declaration (multi-declarator var statements). The second grouping
 // trigger — "minimal selectors overlap beyond a threshold" — collapses a run of
-// adjacent, near-identical *function* declarations whose individually-minimized
-// selectors share the bulk of their shape (e.g. four context-accessor hooks each
-// `function useX() { return ANYTHING.…; }`) into one run-based binding_group,
-// instead of N standalone source_match selectors.
+// adjacent, near-identical *single-target declarations* whose individually-
+// minimized selectors share the bulk of their shape into one run-based
+// binding_group, instead of N standalone source_match selectors. This started
+// function-only (four context-accessor hooks each `function useX() { return
+// ANYTHING.…; }`) and now generalizes to any single-target declaration kind:
+// sibling class declarations, statement-run functions, object/var declarations,
+// etc. — the same co-occurrence idea, not specialized to functions.
 //
-// The overlap test runs on the *minimized* selectors: same-purpose accessors
+// The overlap test runs on the *minimized* selectors: same-purpose siblings
 // collapse to the same minimal shape (`ANYTHING.<key>`), so two selectors are
 // "same shape" iff their canonical signatures — every identifier, member/key
 // name, and literal value blanked, leaving only structure ([`selector_shape_signature`])
-// — are equal. The merged run-selector is re-proven through the matcher gate; on
-// failure the run is emitted as individual selectors, never an unproven group.
+// — are equal. The merged run-selector is re-proven through the matcher gate
+// (kind-agnostic multi-statement alignment); on failure the run is emitted as
+// individual selectors, never an unproven group.
 // ===========================================================================
 
-/// Collapse maximal runs of adjacent, same-shape single-target function groups
-/// into one run-based binding_group. Other groups (multi-declarator var groups,
-/// classes, lone functions, anything whose merged run fails the matcher gate)
+/// Collapse maximal runs of adjacent, same-shape single-target declaration
+/// groups into one run-based binding_group. Other groups (multi-declarator var
+/// groups, lone declarations, anything whose merged run fails the matcher gate)
 /// pass through unchanged, preserving source order.
-fn merge_adjacent_function_runs(
+fn merge_adjacent_same_shape_runs(
     index: &ChunkSelectorIndex,
     groups: Vec<SynthesizedDeclGroup>,
 ) -> Vec<SynthesizedDeclGroup> {
@@ -1115,25 +1120,25 @@ fn merge_adjacent_function_runs(
     for group in groups {
         let extends_run = run
             .last()
-            .is_some_and(|prev| function_run_extends(index, prev, &group));
+            .is_some_and(|prev| same_shape_run_extends(index, prev, &group));
         if !extends_run {
-            flush_function_run(index, std::mem::take(&mut run), &mut merged);
+            flush_same_shape_run(index, std::mem::take(&mut run), &mut merged);
         }
         run.push(group);
     }
-    flush_function_run(index, run, &mut merged);
+    flush_same_shape_run(index, run, &mut merged);
     merged
 }
 
 /// Emit a candidate run: merge it into one binding_group when it holds ≥2 groups
 /// and the merged selector proves unique, else emit each group individually.
-fn flush_function_run(
+fn flush_same_shape_run(
     index: &ChunkSelectorIndex,
     run: Vec<SynthesizedDeclGroup>,
     out: &mut Vec<SynthesizedDeclGroup>,
 ) {
     if run.len() >= 2
-        && let Some(group) = merge_function_run(index, &run)
+        && let Some(group) = merge_same_shape_run(index, &run)
     {
         out.push(group);
         return;
@@ -1141,36 +1146,48 @@ fn flush_function_run(
     out.extend(run);
 }
 
-/// Whether `next` continues a function run started by `prev`: both are
-/// single-target function declarations, they are consecutive in source order,
-/// and their minimized selectors share the same canonical shape.
-fn function_run_extends(
+/// Whether `next` continues a same-shape run started by `prev`: both are
+/// single-target declaration groups of the same declaration kind, they are
+/// consecutive in source order, and their minimized selectors share the same
+/// canonical shape.
+fn same_shape_run_extends(
     index: &ChunkSelectorIndex,
     prev: &SynthesizedDeclGroup,
     next: &SynthesizedDeclGroup,
 ) -> bool {
-    is_single_function_group(index, prev)
-        && is_single_function_group(index, next)
-        && next.synthesized.body_idx == prev.synthesized.body_idx + 1
+    matches!(
+        (single_target_decl_kind(index, prev), single_target_decl_kind(index, next)),
+        (Some(prev_kind), Some(next_kind)) if prev_kind == next_kind
+    ) && next.synthesized.body_idx == prev.synthesized.body_idx + 1
         && same_selector_shape(
             &prev.synthesized.match_source,
             &next.synthesized.match_source,
         )
 }
 
-fn is_single_function_group(index: &ChunkSelectorIndex, group: &SynthesizedDeclGroup) -> bool {
-    group.members.len() == 1
-        && index
-            .decls
-            .get(group.decl_idx)
-            .is_some_and(|decl| decl.kind == IndexedDeclarationKind::Function)
+/// The declaration kind of a single-target (one-member) group, or `None` when
+/// the group covers multiple members (a multi-declarator var group, already
+/// grouped by its shared declaration) or its declaration index is unknown. A
+/// run only merges declarations of one kind so the concatenated selector stays a
+/// homogeneous sibling run. `Other`-kind declarations are excluded: their
+/// selector is an unmodeled verbatim statement, not a holed shape, so a
+/// shape-signature match would be coincidental rather than a true co-occurrence.
+fn single_target_decl_kind(
+    index: &ChunkSelectorIndex,
+    group: &SynthesizedDeclGroup,
+) -> Option<IndexedDeclarationKind> {
+    if group.members.len() != 1 {
+        return None;
+    }
+    let kind = index.decls.get(group.decl_idx)?.kind;
+    (kind != IndexedDeclarationKind::Other).then_some(kind)
 }
 
 /// Build one run-based binding_group from `run`: the source_match is the run's
 /// declarations concatenated in source order, `exports` maps every target. The
 /// merged selector is re-proven through the matcher gate; `None` (proof failed)
 /// leaves the run to be emitted individually.
-fn merge_function_run(
+fn merge_same_shape_run(
     index: &ChunkSelectorIndex,
     run: &[SynthesizedDeclGroup],
 ) -> Option<SynthesizedDeclGroup> {
@@ -1626,6 +1643,17 @@ fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.right = Box::new(hole_expr(&bin.right, kept));
             Expr::Bin(holed)
         }
+        // Assignment expression (`state.delta = "value"`): the dominant statement
+        // shape in sequential write-block bodies. Hole the LHS target's receiver
+        // (`state` → `ANYTHING`) while keeping the stable property name, and recurse
+        // into the RHS so a discriminating literal there is kept and everything else
+        // holed. The member property is preserved verbatim, mirroring `Expr::Member`.
+        Expr::Assign(assign) => {
+            let mut holed = assign.clone();
+            holed.left = hole_assign_target(&assign.left, kept);
+            holed.right = Box::new(hole_expr(&assign.right, kept));
+            Expr::Assign(holed)
+        }
         // Function/arrow-valued subexpressions (e.g. a `wrap(function(){…})` or
         // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole the
         // params to `ANYTHING` and the body to `STMT_LIST` around the anchor, the
@@ -1653,6 +1681,23 @@ fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         // Unmodeled shapes carrying a kept anchor: keep verbatim rather than
         // risk an unsound hole. Over-pinning here is a future refinement.
         _ => expr.clone(),
+    }
+}
+
+/// Hole an assignment target. A member target (`receiver.prop`) holes its
+/// receiver expression (a minified binding such as a function parameter) while
+/// keeping the stable property name, mirroring [`hole_expr`]'s `Expr::Member`
+/// arm. Bare-ident and pattern targets are kept verbatim — an ident assign
+/// target is itself a (usually minified) name with nothing to hole, and
+/// destructuring patterns are left intact rather than risk an unsound hole.
+fn hole_assign_target(target: &AssignTarget, kept: &BTreeSet<AnchorSpan>) -> AssignTarget {
+    match target {
+        AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+            let mut holed = member.clone();
+            holed.obj = Box::new(hole_expr(&member.obj, kept));
+            AssignTarget::Simple(SimpleAssignTarget::Member(holed))
+        }
+        _ => target.clone(),
     }
 }
 

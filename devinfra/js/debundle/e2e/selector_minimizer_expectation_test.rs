@@ -428,15 +428,14 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a function whose body is a long run of sequential assignment
-// statements should minimize to STMT_LIST holes on both sides of the single
-// assignment whose right-hand side carries the discriminating literal. Today
-// the minimizer finds no sparse statement-level selector and bails (skips
-// rather than emitting a full-AST pin), so the flat sequence of writes is
-// never reduced to the one anchored assignment that uniquely identifies the
-// target among siblings sharing the same write-block shape.
+// A function whose body is a long run of sequential assignment statements
+// minimizes to STMT_LIST holes on both sides of the single assignment whose
+// right-hand side carries the discriminating literal. The assignment's LHS
+// receiver (`state`, a minified parameter) holes to `ANYTHING` while the stable
+// property name and discriminating RHS literal are kept, so the flat sequence of
+// writes reduces to the one anchored `ANYTHING.delta = "…"` assignment that
+// uniquely identifies the target among siblings sharing the write-block shape.
 minimizer_expectation_case!(
-    #[ignore = "statement minimizer bails instead of STMT_LIST + discriminating assignment"]
     minimizes_sequential_assignment_block,
     fixture = "sequential_assignment_block",
     name = "sequential assignment block keeps only the discriminating assignment",
@@ -734,6 +733,54 @@ fn minimizes_adjacent_accessor_group() {
             ],
             expected_match: include_str!(
                 "testdata/selector_minimizer_expectations/adjacent_accessor_group/expected_group_match.js"
+            ),
+        }],
+    });
+}
+
+// General co-occurrence grouping for non-function runs (readoff_minimization.md
+// item 5): four adjacent sibling *class* declarations, each individually
+// minimized to `class …Card { kind = "<unique>"; CLASS_REST }`, share the same
+// canonical selector shape and collapse into ONE binding_group whose
+// source_match is the consecutive run, instead of four standalone source_match
+// selectors. Exercises that the anti-unification grouping pass is no longer
+// function-specific: the same overlap-detection that merges DRY accessor hooks
+// now merges a sibling class-declaration cluster.
+#[test]
+fn minimizes_sibling_class_declaration_group() {
+    run_case(&MinimizedSelectorCase {
+        name: "adjacent sibling class declarations collapse into one binding_group",
+        source: include_str!(
+            "testdata/selector_minimizer_expectations/sibling_class_declaration_group/source.js"
+        ),
+        module: "app/cards",
+        bindings: &[
+            BindingCase {
+                export_name: "selectedAlphaCard",
+                runtime_name: "selectedAlphaCard",
+            },
+            BindingCase {
+                export_name: "selectedBetaCard",
+                runtime_name: "selectedBetaCard",
+            },
+            BindingCase {
+                export_name: "selectedGammaCard",
+                runtime_name: "selectedGammaCard",
+            },
+            BindingCase {
+                export_name: "selectedDeltaCard",
+                runtime_name: "selectedDeltaCard",
+            },
+        ],
+        outputs: &[SelectorOutputExpectation {
+            exports: &[
+                "selectedAlphaCard",
+                "selectedBetaCard",
+                "selectedGammaCard",
+                "selectedDeltaCard",
+            ],
+            expected_match: include_str!(
+                "testdata/selector_minimizer_expectations/sibling_class_declaration_group/expected_group_match.js"
             ),
         }],
     });
