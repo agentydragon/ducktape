@@ -1,12 +1,14 @@
-# Web session profile — `profile` install mode (DUCKTAPE_WEB_SETUP_MODE=profile,
-# the default): web_setup.sh runs `nix profile install .#devtools` and symlinks
-# the nix-profile bin into /usr/local/bin.
+# Web session profile — `home-manager` install mode
+# (DUCKTAPE_WEB_SETUP_MODE=home-manager): web_setup.sh runs
+# `home-manager switch --flake .#claude-web`, which installs the devtools into
+# the home-manager profile at ${HOME}/.nix-profile. Point
+# DUCKTAPE_CLAUDE_HOOKS_PROFILE at THIS file (not profile.yaml) for that mode.
 #
-# SYNC: home-manager.yaml (this dir) is the home-manager-mode sibling. The two
-# are standalone copies that MUST stay in sync EXCEPT for the env_exports PATH
+# SYNC: profile.yaml (this dir) is the `profile`-mode sibling. The two are
+# standalone copies that MUST stay in sync EXCEPT for the env_exports PATH
 # prepend (the only intended divergence):
-#   - this file (profile mode):    PATH via the /usr/local/bin symlink bridge
-#   - home-manager.yaml (HM mode): PATH via ${HOME}/.nix-profile/bin directly
+#   - profile.yaml (profile mode): PATH via the /usr/local/bin symlink bridge
+#   - this file (HM mode):         PATH via ${HOME}/.nix-profile/bin directly
 # Change startup_env_script, background_commands, context_template, and git_shim
 # in both files together.
 startup_env_script: devinfra/secrets/web_env.sh
@@ -31,11 +33,11 @@ env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
   # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must come
-  # before /opt/node22/bin so the nix versions are preferred. In `profile` mode
-  # web_setup.sh symlinks the nix-profile bin into /usr/local/bin (on PATH, but
-  # after /opt/node22), so prepend it here to win.
-  # SYNC: home-manager.yaml uses ${HOME}/.nix-profile/bin instead.
-  export PATH="/usr/local/bin:${PATH}"
+  # before /opt/node22/bin so the nix versions are preferred. In home-manager
+  # mode the devtools live in the home-manager profile, so prepend its bin
+  # directly — no reliance on the /usr/local/bin symlink bridge.
+  # SYNC: profile.yaml uses /usr/local/bin instead.
+  export PATH="${HOME}/.nix-profile/bin:${PATH}"
 background_commands:
   # Materializes ~/.kube/config from the SOPS-encrypted JWT in
   # secrets/claude-web-k8s-jwt.yaml. See kubeconfig.py's module

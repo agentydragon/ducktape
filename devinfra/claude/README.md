@@ -208,6 +208,13 @@ direnv + nix-direnv plus the shared skills module. It deliberately does **not** 
 full home-manager host config, so — unlike the NixOS hosts — it deploys no Claude Code
 settings, plugins, or MCP servers.
 
+Each mode pairs with its own hooks profile (`DUCKTAPE_CLAUDE_HOOKS_PROFILE`); they are
+standalone copies kept in sync, differing only in how the Nix devtools reach the agent's
+`PATH`: <claude_hook/profiles/web/profile.yaml> (`profile` mode, via the `/usr/local/bin`
+symlink bridge) vs. <claude_hook/profiles/web/home-manager.yaml> (`home-manager` mode, via
+`~/.nix-profile/bin` directly). In `home-manager` mode, point `DUCKTAPE_CLAUDE_HOOKS_PROFILE`
+at the `home-manager.yaml` sibling.
+
 Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
 delivered only to the interactive Claude Code process — not to the setup script. All
 decryption happens in the hook daemon via `startup_env_script` (`web_env.sh`) at
