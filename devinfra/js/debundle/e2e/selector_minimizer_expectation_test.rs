@@ -591,7 +591,6 @@ minimizer_expectation_case!(
 // already; the gap is holing INTO nested object/array literals within a kept
 // expression.
 minimizer_expectation_case!(
-    #[ignore = "nested object literal in a kept call arg pins every property; non-anchor props should hole to OBJECT_PROPS"]
     minimizes_interior_object_arg_holing,
     fixture = "interior_object_arg_holing",
     name = "nested object in a kept call arg keeps only the discriminating property, OBJECT_PROPS for the rest",

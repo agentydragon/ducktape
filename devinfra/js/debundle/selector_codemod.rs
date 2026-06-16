@@ -1594,6 +1594,7 @@ fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             Expr::New(holed)
         }
         Expr::Object(object) => Expr::Object(hole_object(object, kept)),
+        Expr::Array(array) => Expr::Array(hole_array(array, kept)),
         Expr::Await(await_expr) => {
             let mut holed = await_expr.clone();
             holed.arg = Box::new(hole_expr(&await_expr.arg, kept));
@@ -1649,6 +1650,29 @@ fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSp
             holed
         })
         .collect()
+}
+
+/// Prune the elements of an array literal, holing each non-anchor element to
+/// `ANYTHING` (an arity-exact `EXPR` hole) and recursing into the ones that
+/// carry an anchor. The matcher matches array elements element-wise (no list
+/// hole for arrays), so the holed array keeps the same length; elisions and
+/// spreads are preserved verbatim, mirroring [`hole_args`].
+fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
+    let mut holed = array.clone();
+    holed.elems = array
+        .elems
+        .iter()
+        .map(|elem| {
+            elem.as_ref().map(|element| {
+                let mut holed_element = element.clone();
+                if element.spread.is_none() {
+                    holed_element.expr = Box::new(hole_expr(&element.expr, kept));
+                }
+                holed_element
+            })
+        })
+        .collect();
+    holed
 }
 
 fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
@@ -4224,5 +4248,89 @@ mod prefilter_soundness_tests {
                 "the distinct-token siblings must exercise the singleton fast-path"
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod interior_holing_tests {
+    use super::*;
+
+    /// Round-trip `source` through swc parse + codegen so equality is on AST
+    /// shape, not incidental formatting.
+    fn normalize(source: &str) -> String {
+        js_ast::with_swc_globals(|| {
+            let module = js_ast::parse_js_module_ast("<interior-holing>", source).unwrap();
+            js_ast::emit_module_source(&module).unwrap()
+        })
+    }
+
+    /// Span of the first string literal whose value is `needle`.
+    fn string_literal_span(expr: &Expr, needle: &str) -> Span {
+        struct Find<'a> {
+            needle: &'a str,
+            found: Option<Span>,
+        }
+        impl Visit for Find<'_> {
+            fn visit_str(&mut self, str_: &Str) {
+                if self.found.is_none() && str_.value.to_string_lossy() == self.needle {
+                    self.found = Some(str_.span);
+                }
+            }
+        }
+        let mut find = Find {
+            needle,
+            found: None,
+        };
+        expr.visit_with(&mut find);
+        find.found.expect("needle literal present in expression")
+    }
+
+    /// Hole the single expression-statement in `source`, pinning the lone
+    /// `anchor` string literal as the kept span.
+    fn hole_statement_expr(source: &str, anchor: &str) -> String {
+        js_ast::with_swc_globals(|| {
+            let module = js_ast::parse_js_module_ast("<interior-holing>", source).unwrap();
+            let [ModuleItem::Stmt(Stmt::Expr(stmt))] = module.body.as_slice() else {
+                panic!("expected a single expression statement");
+            };
+            let kept = BTreeSet::from([span_key(string_literal_span(&stmt.expr, anchor))]);
+            emit_selector(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
+                span: DUMMY_SP,
+                expr: Box::new(hole_expr(&stmt.expr, &kept)),
+            })))
+            .unwrap()
+        })
+    }
+
+    #[test]
+    fn holes_nested_object_inside_a_kept_array_argument() {
+        // The object nested in a kept `ANYTHING.run([{…}])` keeps only the anchor
+        // property, holing the rest to OBJECT_PROPS. Regression guard for the
+        // `Expr::Array` recursion: the array used to fall through `hole_expr`'s
+        // verbatim catch-all, so every property was pinned.
+        let holed = hole_statement_expr(
+            r#"ctx.engine.run([{ source: ctx.node, mode: "keepMe", silent: true }]);"#,
+            "keepMe",
+        );
+        assert_eq!(
+            normalize(&holed),
+            normalize(r#"ANYTHING.run([{ OBJECT_PROPS, mode: "keepMe", OBJECT_PROPS }]);"#),
+        );
+    }
+
+    #[test]
+    fn holes_non_anchor_array_elements_to_anything() {
+        // Array elements carrying no anchor hole to ANYTHING (arity-exact, since
+        // the matcher matches array elements element-wise); only the element
+        // holding the anchor is recursed into. The lone-prop object keeps its one
+        // anchor prop with no OBJECT_PROPS padding (nothing was dropped).
+        let holed = hole_statement_expr(
+            r#"render([first(), { mode: "keepMe" }, third()]);"#,
+            "keepMe",
+        );
+        assert_eq!(
+            normalize(&holed),
+            normalize(r#"render([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
+        );
     }
 }

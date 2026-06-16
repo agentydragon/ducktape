@@ -167,10 +167,13 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
-and (unignored once the object key-set cover landed) `grouped_enum_objects`,
-`object_key_set_group`, `object_key_set_subset`. Ignored as aspirational (the named
-form not yet read-off-expressible): `sequential_assignment_block`,
-`deeply_nested_call_args`, `object_nested_value_dict`, `wide_destructure_block`.
+`interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
+landed, #2289), and (unignored once the object key-set cover landed)
+`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`. Ignored as
+aspirational (the named form not yet read-off-expressible):
+`sequential_assignment_block`, `deeply_nested_call_args`, `object_nested_value_dict`,
+`wide_destructure_block`, `single_target_class_whole_body`,
+`component_wide_destructure_whole_body`.
 
 ## Acceptance criteria
 
@@ -251,22 +254,38 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    _call-chain links_, and _callbacks_ when a sparse anchor exists: with a clean
    discriminator a `svc.fetchToken().then(…).catch(e => {…})` chain correctly
    minimizes to `ANYTHING.then((ANYTHING) => { <anchor> }).catch(ANYTHING)` (the
-   non-discriminating catch callback holes to `ANYTHING`). Two gaps remain:
-   - **Nested object / array literals inside a kept expression are pinned whole**
+   non-discriminating catch callback holes to `ANYTHING`). Two gaps:
+   - **Nested object / array literals inside a kept expression were pinned whole**
      rather than holed to `OBJECT_PROPS` / `ARGS` around the discriminating
-     element. Demonstrated by `interior_object_arg_holing`: the move-options object
-     in a kept `engine.run([{…}])` keeps every property instead of
-     `[{ OBJECT_PROPS, mode: "…", OBJECT_PROPS }]`. (Real-spec analogues:
-     `moveProcessedInboxAudioNodeToTarget`, the `Se({…})` command objects.) Fix:
-     extend the kept-span prune to recurse into object/array literals, holing
-     maximal non-anchor property/element runs the same way the top-level object
-     form does.
-   - **No-sparse-anchor bodies are kept verbatim** (the single-target / weak-anchor
+     element, e.g. the move-options object in a kept `engine.run([{…}])` keeping
+     every property instead of `[{ OBJECT_PROPS, mode: "…", OBJECT_PROPS }]`.
+     (Real-spec analogues: `moveProcessedInboxAudioNodeToTarget`, the `Se({…})`
+     command objects.) **Landed (#2289).** Object literals in a kept call arg
+     already holed (`hole_object` runs via `hole_expr`'s `Expr::Object` arm); the
+     only hole in the recursion was `Expr::Array`, which fell through to the
+     verbatim catch-all and froze any object nested in an array. `hole_expr` now
+     has an `Expr::Array` arm (`hole_array`) that recurses into each element
+     (non-anchor elements → `ANYTHING`, arity-exact since the matcher matches
+     array elements element-wise — no array list hole), so a nested object inside
+     `[…]` holes the same way a top-level call-arg object does.
+     `interior_object_arg_holing` unignored.
+   - **No-sparse-anchor bodies kept un-holed** (the single-target / weak-anchor
      family — `single_target_class_whole_body`, `component_wide_destructure_whole_body`,
      and function analogues like `redirectElectronAppWithCustomToken` keeping its
-     whole then+catch). Here uniqueness was proven by the full body, so nothing was
-     holed; the win is finding the minimal subtree set that still proves unique and
-     holing the rest (interior set-cover at subtree granularity).
+     whole then+catch). Still open, and **distinct from the nested-literal gap
+     above.** The two disabled fixtures have no same-shape sibling, so the read-off
+     never keeps the body to prove uniqueness: the structural fast path
+     (`render_via_read_off`) / keep-shallow var path emits a _vacuous_ selector
+     (`class X { CLASS_REST }`, `const X = ANYTHING`), not the real-spec "kept
+     verbatim". Closing them needs a **robustness-anchor policy** — keep a stable
+     deep value anchor (holed down) even when the bare scaffold already resolves,
+     which directly trades against the fast path's current "leanest scaffold
+     preferred" rationale — and, for the component case, `collect_expr_anchors` /
+     `hole_expr` recursion into function/arrow-valued initializers plus the var →
+     read-off migration (item 6). The "minimal subtree set that still proves
+     unique" framing degenerates to the empty set on a sibling-less fixture, so
+     the win there is robustness, not cardinality-minimality; the real-spec
+     cover-keeps-the-body case is the interior set-cover at subtree granularity.
 3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
    bodies) — `CLASS_REST` + discriminating member (`class_among_many_siblings`,
    `sibling_subclass_hierarchy`, `class_body`). **Landed.** `minimize_class_selector`
