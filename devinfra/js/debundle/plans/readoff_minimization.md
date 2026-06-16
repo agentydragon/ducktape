@@ -1,9 +1,13 @@
 # Plan: read-off selector minimization
 
-Status: active. The agreed target architecture for the debundle selector
-minimizer — a single chunk-wide AST-shape index that selectors are **read off**
-rather than searched. This doc is the current state plus the open backlog; it is
-not a changelog. Sibling planning docs are indexed from <../TODO.md>.
+Status: **core complete** — every form (function/class/object/var + multi-target
+group) is migrated, interior holing + multi-feature value-anchor cover landed, the
+branch-and-bound cover is deleted, and the `render_var_slots` dedup is done. What
+remains is **dogfood value-capture** (apply to the real spec) plus a low-priority
+polish tail. The architecture is a single chunk-wide AST-shape index that
+selectors are **read off** rather than searched. This doc is the current state
+plus the open backlog; it is not a changelog. Sibling planning docs are indexed
+from <../TODO.md>; the cross-program priority is in <../TODO.md>'s "Current focus".
 
 ## Motivation
 
@@ -284,30 +288,31 @@ body interior holing + anchoring). Re-measure this split after each wave lands.
 
 ## Backlog (open only)
 
-Severity-ordered minimality work. Counts are members in a representative
-real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
-and is encoded as disabled E2E cases. Completed items are removed, not annotated;
-the landed architecture is in "Current state" above.
+Priority-ordered. With the minimizer core complete, **value-capture leads**;
+the rest is a maintenance-priority polish tail. Counts are members in a
+representative real-spec sample (5,556 selectors). Completed items are removed,
+not annotated; the landed architecture is in "Current state" above.
 
-1. **Retire the keep-shallow group cover.** The multi-target var binding-group
-   read-off (`try_var_group_read_off`) landed, but the keep-shallow path
-   (`minimize_var_group_selector`'s escalation over `collect_expr_anchors` +
+1. **Dogfood-apply on gaffer-private (ongoing — top priority).** Run
+   `synthesize-selectors --apply` on the real spec to convert the now-large set of
+   fragile name-pins into robust `source_match` selectors, review for over-pin, and
+   PR the beneficial ones; re-measure the fragile-pin debt. This is why the
+   minimizer exists, and it validates every landed capability. Operational PR rule:
+   **revert any converted selector whose `match` block is >40 lines AND has ≤2
+   holes** back to a name pin. Keep pin-compatible (gaffer validates with a _pinned_
+   debundle release) and regen the pipeline goldens.
+2. **Retire the keep-shallow group cover** (cleanup). The multi-target var
+   binding-group read-off (`try_var_group_read_off`) landed, but the keep-shallow
+   path (`minimize_var_group_selector`'s escalation over `collect_expr_anchors` +
    `AnchorCandidates`) stays as the fallback for groups whose per-slot
    single-binding view cannot single a slot out (a value shared across sibling
    _statements_ resolves only as a tuple, e.g. `binding_group_declarators`).
-   Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
-   and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
-   tuple-aware read-off for those residual groups (or accepting them as debt).
-2. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+   Removing it is gated on a tuple-aware read-off for those residual groups (or
+   accepting them as debt).
+3. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
-   emission stabilizes (after the cover/keep-shallow paths fully retire), since it
-   rewrites emitted selectors and touches many fixtures.
-3. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
---apply` on the real spec after each wave, review for over-pin, and PR the
-   beneficial minimized selectors. Operational PR rule: **revert any converted
-   selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
-   Keep pin-compatible (gaffer validates with a _pinned_ debundle release) and
-   regen the pipeline goldens. Each capability above re-applies here as it lands.
+   emission stabilizes (after the keep-shallow path retires), since it rewrites
+   emitted selectors and touches many fixtures.
 
 ## Orchestration & process notes
 

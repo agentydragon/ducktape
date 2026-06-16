@@ -19,6 +19,29 @@ hold category-specific evidence:
 - <perf/> — measured performance notes. Update these from actual profiles
   before major matcher/index rewrites.
 
+**Current focus (2026-06-16 reprioritization).** The read-off **minimizer is
+complete** — every form migrated, interior holing + multi-feature value-anchor
+cover landed, the branch-and-bound cover deleted, the `render_var_slots` dedup
+done, and the enclosing-context residual handled; only a low-priority polish tail
+remains in <plans/readoff_minimization.md>. The active frontier has shifted to the
+**automation product flows**, in dispatch order:
+
+1. **Dogfood-apply on gaffer-private** — capture the landed minimizer wins on the
+   real spec (fragile name-pins → robust `source_match`, re-measure debt). Highest
+   value: it validates everything and is the reason the minimizer exists.
+2. **Spec repair from diagnostics (P0.3)** — build on the landed keep-going
+   diagnostics (#2302) to propose mechanically-proven patch plans.
+3. **Patch-plan / dry-run / explain infrastructure (P0.1)** — the apply-with-review
+   substrate the repair + bulk-codemod flows pipe through.
+4. **Version-port (P1.1) and new-app bootstrap (P1.2)** — the remaining
+   `automated_spec_workflows.md` milestones.
+5. **Excalidraw public live-browser smoke (P1.7)** — public-CI repro leverage,
+   independent of all the above.
+
+The minimizer polish tail (keep-shallow group-cover retirement, language
+simplification) is maintenance-priority — pick up opportunistically, not ahead of
+the frontier above.
+
 Prefer dispatching work in this order. Large downstream spec migrations should
 lean on tooling generated from this queue instead of hand-authored YAML.
 Interactive agent-facing commands should target under 10 seconds on warmed
@@ -30,15 +53,11 @@ progress output and a resumable or cacheable plan.
 
 One-line status for each `plans/` design doc; this is the discovery index.
 
-- <plans/readoff_minimization.md> — **active.** Read-off selector minimizer
-  (chunk-wide AST-shape index). Layer-1 index, function/object/class/var read-off,
-  key-set minimization, (adjacent-function + general) co-occurrence grouping,
-  multi-target var binding-group read-off, whole-body interior holing (incl. the
-  multi-feature value-anchor cover), wide destructure, callee/arg holing,
-  enclosing-context residual anchoring, prove-gate-via-index, whole-spec perf
-  validation (W4), and the branch-and-bound cover deletion landed; keep-shallow
-  group-cover retirement, by-form split, and language simplification open. Holds
-  its own current-state + backlog.
+- <plans/readoff_minimization.md> — **core complete.** Read-off selector
+  minimizer (chunk-wide AST-shape index); every form migrated and the cover
+  deleted. Open: dogfood value-capture (top priority) + a polish tail (keep-shallow
+  group-cover retirement, language simplification). Holds its own current-state +
+  backlog.
 - <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
   (complete).** Literature spike that gates the read-off design; durable, not a
   TODO.
@@ -58,18 +77,7 @@ propose`.
 
 ### P0 — automation-first selector workflows
 
-1. **Forward-compatible minimized selector synthesis + shared source index.**
-   Owned by <plans/readoff_minimization.md>: the read-off AST-shape index
-   (`shape_index.rs`, superseting `selector_candidate_index.rs`),
-   function/object/class/var read-off, literal/regex anchors, hole-based
-   minimization, multi-target var binding-group read-off, co-occurrence grouping,
-   whole-body interior holing (incl. the multi-feature value-anchor cover), wide
-   destructure, callee/arg holing, enclosing-context residual anchoring, the
-   prove-gate perf fix, whole-spec validation, and the branch-and-bound cover
-   deletion have landed; keep-shallow group-cover retirement,
-   `selector_codemod.rs` by-form split, and language simplification are in that
-   plan's backlog. Don't duplicate its design or status here.
-2. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
+1. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    apply with filters, and explain every skipped candidate. (Selector
    minimization at synthesis time, unique-literal-initializer → structural
@@ -78,25 +86,23 @@ propose`.
    `binding_groups` is the co-occurrence-grouping item in the read-off backlog.
    The open work here is the dry-run / patch-plan / explain-every-skip
    infrastructure that the rewrite classes pipe through.)
-3. **Selector diagnostics as machine-readable reports.** The keep-going JSON
-   report (`debundle spec validate --keep-going --format text|json|ndjson`)
-   classifies unresolved, ambiguous, and duplicate-claim selector failures with
-   module path, export name, selector kind, target binding, first mismatch,
-   nearest candidates, and recommended next action; the shared contract lives in
-   `selector_diagnostics.rs`. Still open: emit structured entries for
-   anonymous-statement `source_match` failures and blocker comments (today the
-   report carries them only as a `coverage_notes` gap), and add the
+2. **Selector diagnostics — remaining extensions.** The keep-going JSON report
+   (`debundle spec validate --keep-going --format text|json|ndjson`) landed
+   (#2302; shared contract in `selector_diagnostics.rs`) and classifies
+   unresolved / ambiguous / duplicate-claim failures with full provenance. Still
+   open: structured entries for anonymous-statement `source_match` failures and
+   blocker comments (today carried only as a `coverage_notes` gap), and the
    free-readable-identifier class (P1.5) so `alpha_all` readable names that are
    free references rather than local binders are reported, not silently dropped.
-4. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
+3. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
    report, proposes mechanically proven patch plans for no-match, ambiguous,
    duplicate-claim, and unsupported-selector cases, and leaves residual semantic
    decisions as explicit tasks.
-5. **Orthogonal CLI surface.** Converge new automation on the
+4. **Orthogonal CLI surface.** Converge new automation on the
    inventory/plan/apply/validate/explain model in
    <plans/automated_spec_workflows.md>. Avoid one-off command shapes that cannot
    pipe a dry-run plan into review, apply, validation, and repair.
-6. **Workflow latency budget.** Interactive commands target <10s on warmed
+5. **Workflow latency budget.** Interactive commands target <10s on warmed
    inputs; >60s is a blocker unless explicitly an offline/profile mode with
    progress output and a resumable plan. The whole-spec minimize budget and the
    measured real-chunk numbers live in <plans/readoff_minimization.md> (W4) and
