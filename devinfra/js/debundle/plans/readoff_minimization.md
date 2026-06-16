@@ -147,9 +147,10 @@ single-target classes whose own value features don't discriminate).
 `selector_codemod.rs` is ~3.7k lines and shrinks substantially once the cover is
 removed.
 
-**Measured perf.** Whole ~7 MB / ~4k-member spec minimizes in ~113 s today
-(pre-read-off baseline). The `≤10s` ideal is validated only on the synthetic
-sweep so far; the real-chunk size-sweep is W4 (backlog).
+**Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
+the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
+hard budget**, narrowly over the ≤10 s ideal (per-member ~0.0027 s, ~9× cheaper).
+Full scope table in <../debug/selector_minimizer_dogfood.md>.
 
 **E2E expectation suite** (`e2e/selector_minimizer_expectation_test.rs`). Active:
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
@@ -199,7 +200,8 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    **sound superset**, so when the selector's anchor-feature posting-list
    intersection is the singleton `{target}` that _is_ a uniqueness proof — skip
    the matcher; full matcher only for non-singleton cases. Collapses per-member
-   cost for the `OPT=1` majority toward the ≤10s target. **(Landed: #2280.)**
+   cost for the `OPT=1` majority toward the ≤10s target. **(Landed: #2280;
+   validated — whole chunk ~110s → ~13s, see W4 below.)**
 2. **Function** whole-body anchoring (~1,455 full + ~1,743 holed; biggest count) —
    anchor a deep unique literal/member, hole the rest (`sparse_function_body`).
 3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
@@ -240,8 +242,10 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
 9. **`selector_codemod.rs` refactor** — after cover deletion (deletion reshapes
    the file; splitting by form earlier also enables parallel per-form fan-out).
 10. **Language simplification** (see below).
-11. **W4 — whole-spec validation:** ≤10/30 s + real-chunk size-sweep; refresh the
-    dogfood note (current real-chunk baseline ~110s recorded there).
+11. **W4 — whole-spec validation:** **hard budget met** — whole chunk ~13s after
+    #2280 (was ~110s), every sub-scope ≤8s; ≤10s ideal narrowly missed. Measured
+    and recorded in the dogfood note. Remaining: close the last ~3s to the ideal
+    (parse/index floor or batching residual non-singleton proofs) if desired.
 
 Each capability re-applies to gaffer-private as it lands (review diffs for
 over-pin; gaffer validates with a _pinned_ debundle release, so spec PRs must
