@@ -4,9 +4,9 @@
 #
 # SYNC: home-manager.yaml (this dir) is the home-manager-mode sibling. The two
 # are standalone copies that MUST stay in sync EXCEPT for the env_exports PATH
-# prepend (the only intended divergence):
-#   - this file (profile mode):    PATH via the /usr/local/bin symlink bridge
-#   - home-manager.yaml (HM mode): PATH via ${HOME}/.nix-profile/bin directly
+# wiring (the only intended divergence):
+#   - this file (profile mode):    prepend /usr/local/bin (the symlink bridge)
+#   - home-manager.yaml (HM mode): source hm-session-vars.sh (full HM session env)
 # Change startup_env_script, background_commands, context_template, and git_shim
 # in both files together.
 startup_env_script: devinfra/secrets/web_env.sh
@@ -34,7 +34,7 @@ env_exports: |
   # before /opt/node22/bin so the nix versions are preferred. In `profile` mode
   # web_setup.sh symlinks the nix-profile bin into /usr/local/bin (on PATH, but
   # after /opt/node22), so prepend it here to win.
-  # SYNC: home-manager.yaml uses ${HOME}/.nix-profile/bin instead.
+  # SYNC: home-manager.yaml sources hm-session-vars.sh instead.
   export PATH="/usr/local/bin:${PATH}"
 background_commands:
   # Materializes ~/.kube/config from the SOPS-encrypted JWT in

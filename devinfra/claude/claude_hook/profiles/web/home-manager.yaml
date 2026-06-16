@@ -6,9 +6,9 @@
 #
 # SYNC: profile.yaml (this dir) is the `profile`-mode sibling. The two are
 # standalone copies that MUST stay in sync EXCEPT for the env_exports PATH
-# prepend (the only intended divergence):
-#   - profile.yaml (profile mode): PATH via the /usr/local/bin symlink bridge
-#   - this file (HM mode):         PATH via ${HOME}/.nix-profile/bin directly
+# wiring (the only intended divergence):
+#   - profile.yaml (profile mode): prepend /usr/local/bin (the symlink bridge)
+#   - this file (HM mode):         source hm-session-vars.sh (full HM session env)
 # Change startup_env_script, background_commands, context_template, and git_shim
 # in both files together.
 startup_env_script: devinfra/secrets/web_env.sh
@@ -32,12 +32,23 @@ idle_watchdog: false
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
-  # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must come
-  # before /opt/node22/bin so the nix versions are preferred. In home-manager
-  # mode the devtools live in the home-manager profile, so prepend its bin
-  # directly — no reliance on the /usr/local/bin symlink bridge.
-  # SYNC: profile.yaml uses /usr/local/bin instead.
-  export PATH="${HOME}/.nix-profile/bin:${PATH}"
+  # Pull the full home-manager session environment into the agent's Bash tool
+  # env — PATH (nix-profile bin, placed ahead of /opt/node22 so the nix devtools
+  # win), NIX_PROFILES, XDG_DATA_DIRS, LOCALE_ARCHIVE_2_27, XCURSOR_PATH — not
+  # just PATH. home-manager activation wrote this script; the agent's frozen
+  # shell snapshot never sources the HM rc, so source it here.
+  #
+  # USER must be exported first: hm-session-vars sources nix.sh, whose body (the
+  # PATH prepend included) is gated on `[ -n "$USER" ]`, and Claude Code launches
+  # the agent shell with USER unset. nix.sh re-points NIX_SSL_CERT_FILE at
+  # /etc/ssl/certs/ca-certificates.crt — already the session value (Anthropic's
+  # MITM CA bundle) — so HTTPS keeps working.
+  # SYNC: profile.yaml prepends /usr/local/bin instead; only home-manager mode
+  # writes hm-session-vars.sh (nix profile install does not), so the modes differ.
+  export USER="${USER:-$(id -un)}"
+  if [ -f "${HOME}/.nix-profile/etc/profile.d/hm-session-vars.sh" ]; then
+    . "${HOME}/.nix-profile/etc/profile.d/hm-session-vars.sh"
+  fi
 background_commands:
   # Materializes ~/.kube/config from the SOPS-encrypted JWT in
   # secrets/claude-web-k8s-jwt.yaml. See kubeconfig.py's module
