@@ -1,5 +1,5 @@
 const SelectedDefinition = {
-  OBJECT_PROPS,
+  ANYTHING,
   rank: 3,
-  OBJECT_PROPS,
+  ANYTHING,
 };

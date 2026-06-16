@@ -194,7 +194,8 @@ impl Visit for SpanCollector<'_> {
         // A destructured property key is the same `ObjectKey` anchor as an
         // object-literal key (the stable source property name). Pin the key
         // token so the prune keeps it (and holes the rest of the pattern with
-        // `OBJECT_PROPS`), exactly as `visit_object_lit` does for literals.
+        // the object-property run hole), exactly as `visit_object_lit` does for
+        // literals.
         for prop in &pat.props {
             if let Some((label, key_span)) = object_pat_key_label_span(prop)
                 && self.anchors.contains(&ValueAnchor::ObjectKey(label))

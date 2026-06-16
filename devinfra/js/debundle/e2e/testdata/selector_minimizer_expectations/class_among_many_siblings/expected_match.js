@@ -1,12 +1,12 @@
 class SelectedService {
-  CLASS_REST;
+  ANYTHING;
   async fetchSnapshot(ANYTHING) {
     const response = await ANYTHING.request({
-      OBJECT_PROPS,
+      ANYTHING,
       accept: "application/vnd.uniqueDiscriminator+json",
-      OBJECT_PROPS,
+      ANYTHING,
     });
     STMT_LIST;
   }
-  CLASS_REST;
+  ANYTHING;
 }

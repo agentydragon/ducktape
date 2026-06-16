@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::Result;
-use source_match_holes::CLASS_REST_HOLE_KEYWORD;
+use source_match_holes::ANYTHING_HOLE_KEYWORD;
 use swc_common::{DUMMY_SP, Spanned};
 use swc_ecma_ast::*;
 
@@ -17,8 +17,9 @@ use crate::{
 };
 
 /// Minimal anchor cover for a single-target class: render the class keeping
-/// only members (and member-body statements) that carry a chosen anchor, with
-/// `CLASS_REST` for dropped member runs, and cover sibling classes.
+/// only members (and member-body statements) that carry a chosen anchor, with an
+/// `ANYTHING` class-member run hole for dropped member runs, and cover sibling
+/// classes.
 pub(crate) fn minimize_class_selector(
     index: &ChunkSelectorIndex,
     class: &Class,
@@ -46,17 +47,22 @@ pub(crate) fn minimize_class_selector(
     // functions and objects do: the holed scaffold pins the class kind plus
     // `extends ANYTHING`, and value anchors (a member name, a literal or callee
     // inside a member body) map to their token spans so only the member runs
-    // carrying them survive between `CLASS_REST` holes. A class the read-off
+    // carrying them survive between `ANYTHING` class-member run holes. A class the read-off
     // cannot single out through its own value features returns `None` and is
     // reported as debt (never a full-AST pin).
     render_via_read_off(index, decl, target, &render_with)
 }
 
-/// A `CLASS_REST;` class-field hole that absorbs a run of dropped members.
+/// A class-member run-absorber hole, emitted as an `ANYTHING;` no-init field. In
+/// class-member position `ANYTHING` is a run-absorber identical to the
+/// (still-accepted) `CLASS_REST` keyword — `is_class_rest_hole` matches both — so
+/// we emit the shorter, position-polymorphic `ANYTHING` (the "prefer ANYTHING
+/// where the context is unambiguous" emission rule). Hand-written input selectors
+/// may still spell it `CLASS_REST`.
 fn class_rest_member() -> ClassMember {
     ClassMember::ClassProp(ClassProp {
         span: DUMMY_SP,
-        key: PropName::Ident(IdentName::new(CLASS_REST_HOLE_KEYWORD.into(), DUMMY_SP)),
+        key: PropName::Ident(IdentName::new(ANYTHING_HOLE_KEYWORD.into(), DUMMY_SP)),
         value: None,
         type_ann: None,
         is_static: false,

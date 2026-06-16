@@ -173,11 +173,33 @@ exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
 `STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`, and `CASE_REST`
 (switch-case-run — closes the survey's inexpressible many-arm-`switch` shape).
 `OBJECT_PROPS` absorbs object-literal properties **and** destructure-pattern
-properties (`const { OBJECT_PROPS, x } = …`), where a shorthand pattern key is
+properties (`const { ANYTHING, x } = …`), where a shorthand pattern key is
 matched by exact spelling (the stable source property name) rather than as an
 alpha-renameable binding, so it discriminates. Regex-over-string-literal anchors
 (`STR_LITERAL_MATCHING_RE`) fire for stable-prefix/volatile-tail strings
 (trailing hex/digit runs).
+
+**Language simplification — `ANYTHING` for unambiguous run holes (landed).**
+`ANYTHING` is parse-position-polymorphic and is a run-absorber in exactly the
+positions whose list-hole detector predicate carries an `ANYTHING` fallback
+(`object_property_list_hole_name`, `object_pat_prop_list_hole_name`,
+`is_class_rest_hole`). The renderer therefore emits the anonymous object-property
+and class-member run holes as bare `ANYTHING` (`object_props_prop` /
+`object_props_pat_prop` in `render.rs`, `class_rest_member` in `minimize/class.rs`)
+instead of the `OBJECT_PROPS` / `CLASS_REST` keywords — sparser and one less
+keyword to read. Anonymous `EXPR` / `STMT` were already emitted as bare `ANYTHING`
+(`anything_expr`; `STMT_LIST` is the only statement-run hole). **Deviation:**
+`ARGS`, `STMT_LIST`, and `CASE_REST` stay load-bearing keywords — a bare `ANYTHING`
+in those positions collapses to an arity-exact single-node `EXPR`/`STMT` hole (or,
+for `CASE_REST`, has no spelling), so emitting `ANYTHING` there would be a
+correctness regression. `OBJECT_PROPS` / `CLASS_REST` / suffixed `DECLARATORS_*`
+remain accepted-but-not-emitted sugar: the matcher and `holes_present` still
+recognize them, so hand-written input selectors keep working, and the renderer
+never emits an anonymous `DECLARATORS` (it always carries a positional
+`_BEFORE`/`_BETWEEN`/`_AFTER` suffix). Equivalence is pinned by the matcher
+interchangeability tests in `syntactic_holes_test.rs`
+(`{object_props,declarators,class_rest}_and_anything_are_interchangeable_run_absorbers`)
+and the re-baselined `selector_minimizer_expectations` fixtures.
 
 **Strangler-fig boundary.** The matcher-driven branch-and-bound cover search
 (`minimize_via_retention`, `cover_competitors`, `min_set_cover`, and the
@@ -307,12 +329,9 @@ not annotated; the landed architecture is in "Current state" above.
    `AnchorCandidates`) stays as the fallback for groups whose per-slot
    single-binding view cannot single a slot out (a value shared across sibling
    _statements_ resolves only as a tuple, e.g. `binding_group_declarators`).
-   Removing it is gated on a tuple-aware read-off for those residual groups (or
-   accepting them as debt).
-3. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
-   `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
-   emission stabilizes (after the keep-shallow path retires), since it rewrites
-   emitted selectors and touches many fixtures.
+   Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
+   and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
+   tuple-aware read-off for those residual groups (or accepting them as debt).
 
 ## Orchestration & process notes
 
@@ -349,7 +368,11 @@ Lower priority / opportunistic:
   (currently trailing hex/digit only).
 - Skeleton-feature stability: refine further by multiplicity / depth.
 
-## Language simplification: prefer `ANYTHING` where the context is unambiguous
+## Reference: `ANYTHING` redundancy by hole position
+
+This is the matcher-behavior reference behind the landed "prefer `ANYTHING` where
+the context is unambiguous" emission (summarized under "Current state"): which
+keywords the renderer now emits as bare `ANYTHING` and which stay load-bearing.
 
 `ANYTHING` is parse-position-polymorphic (see `source_match_holes.rs`), but its
 behavior is **not** uniformly "the list hole legal here". Verified against the
@@ -397,38 +420,31 @@ ordered-subsequence `match_list_with_holes` path. `case CASE_REST:` has no
 | `STMT_LIST`    | **NO**                          | block statement                    | `ANYTHING;` stmt = single `STMT` (arity-exact), NOT a run-absorber. Diverges on length ≠ 1. Tests: `stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt` (diverge), `stmt_and_anything_agree_on_a_single_statement_block` (agree).    |
 | `CASE_REST`    | **NO**                          | empty `switch` case clause         | No `ANYTHING` spelling exists for a case-list hole; the marker is a `case` clause, not an identifier expression. Test: `case_rest_is_not_expressible_via_anything`.                                                                                 |
 
-### Emission rule (the deferred change)
+### Emission rule (landed)
 
-Mechanical and unambiguous given the table — for the minimizer/renderer
-(`selector_codemod.rs` / `readoff_render.rs`), in position **P**:
+Mechanical and unambiguous given the table — the renderer (`render.rs` /
+`minimize/class.rs`), in position **P**:
 
-- **OBJECT_PROPS / DECLARATORS / CLASS_REST**: an _anonymous_ (unsuffixed) hole
-  in P may be emitted as `ANYTHING` instead of the keyword. A **named** list
-  hole (`OBJECT_PROPS_MID`, `DECLARATORS_AFTER`) carries a readability label and
-  is not equality-binding, so substituting `ANYTHING` is still semantically
-  safe but loses the label — keep the keyword when a suffix is present, or
-  accept the label loss as a deliberate readability tradeoff (decide at
-  emission time; the matcher accepts both).
-- **EXPR / STMT**: an _anonymous_ hole may be emitted as `ANYTHING`. A **named**
-  hole (`EXPR_LEFT`, `STMT_SETUP`) binds for cross-occurrence equality and is
-  **not** replaceable — `ANYTHING` is always anonymous (see `bind_expr` /
-  `bind_stmt`).
-- **ARGS / STMT_LIST / CASE_REST**: **never** emit `ANYTHING` in these
-  positions. `ARGS`/`STMT_LIST` would silently change a run-absorber into an
-  arity-exact single-node hole (a correctness regression), and `CASE_REST` has
-  no `ANYTHING` form. These keywords stay load-bearing.
+- **OBJECT_PROPS / CLASS_REST**: the _anonymous_ (unsuffixed) run-absorber hole
+  in P is emitted as `ANYTHING` (`object_props_prop` / `object_props_pat_prop` /
+  `class_rest_member`). The matcher still accepts the keyword spelling from
+  hand-written input selectors.
+- **DECLARATORS**: the renderer only ever emits the **suffixed** positional form
+  (`DECLARATORS_BEFORE`/`_BETWEEN`/`_AFTER`), which carries a readability label;
+  there is no anonymous `DECLARATORS` to convert, so the keyword stays in emitted
+  binding-group selectors.
+- **EXPR / STMT**: already emitted as bare `ANYTHING` (`anything_expr`; the only
+  statement-run hole is `STMT_LIST`). A **named** hole (`EXPR_LEFT`, `STMT_SETUP`)
+  binds for cross-occurrence equality and is **not** replaceable — but the
+  renderer never mints named single-node holes, so nothing to do.
+- **ARGS / STMT_LIST / CASE_REST**: **never** emitted as `ANYTHING`.
+  `ARGS`/`STMT_LIST` would silently change a run-absorber into an arity-exact
+  single-node hole (a correctness regression), and `CASE_REST` has no `ANYTHING`
+  form. These keywords stay load-bearing.
 
-Do this **after** minimizer emission stabilizes (after migration + cover
-deletion), since it rewrites emitted selectors and touches many fixtures:
-
-- The matcher already accepts `ANYTHING` in the redundant positions, so this is
-  an emission + fixture change, not a matcher change. Confirm equivalence
-  through swc; the prove-gate is unchanged.
-- Decide per keyword whether to deprecate/remove it once fully subsumed (affects
-  existing specs — needs a sweep) or keep it as accepted-but-not-emitted sugar.
-  `ARGS`, `STMT_LIST`, and `CASE_REST` are NOT subsumable and must be kept.
-  Default for the rest: keep accepting, stop emitting; revisit removal
-  separately.
+`OBJECT_PROPS` / `DECLARATORS` / `CLASS_REST` remain accepted-but-not-emitted
+sugar (matcher + `holes_present` still recognize them); a separate sweep could
+deprecate them later, but that is out of scope here.
 
 ### Matcher gap note
 

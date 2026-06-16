@@ -1,6 +1,6 @@
 const ErrorPanelStyles = {
-    OBJECT_PROPS,
+    ANYTHING,
     logViewer: ANYTHING,
-    OBJECT_PROPS,
+    ANYTHING,
   },
   DECLARATORS_AFTER = null;

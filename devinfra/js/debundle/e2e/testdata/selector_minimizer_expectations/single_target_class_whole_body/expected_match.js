@@ -1,8 +1,8 @@
 class SelectedRunner {
-  CLASS_REST;
+  ANYTHING;
   applyChange(ANYTHING) {
     STMT_LIST;
     ANYTHING.set("running");
   }
-  CLASS_REST;
+  ANYTHING;
 }

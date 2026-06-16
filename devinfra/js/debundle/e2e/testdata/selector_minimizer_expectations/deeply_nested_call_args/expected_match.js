@@ -2,7 +2,7 @@ const SelectedView = ANYTHING(
   ANYTHING(
     ANYTHING({
       mode: "uniqueDiscriminatorMode",
-      OBJECT_PROPS,
+      ANYTHING,
     }),
     ARGS
   )

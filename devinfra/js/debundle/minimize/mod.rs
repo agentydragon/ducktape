@@ -3,9 +3,12 @@
 //! A selector is the target rendered with a *retention set*: the byte spans of
 //! the concrete tokens (literals, member/property names, callees, object keys)
 //! the selector pins. A node renders concretely iff a kept span lies inside it;
-//! every other position is holed — `ANYTHING` for a bare expression, and the
-//! run holes `STMT_LIST` / `OBJECT_PROPS` / `CLASS_REST` for dropped statement /
-//! object-property / class-member runs.
+//! every other position is holed — `ANYTHING` for a bare expression and for the
+//! object-property / class-member run holes (emitted as `ANYTHING`, the
+//! run-absorber form their detector predicates fall back to), and the
+//! load-bearing run holes `STMT_LIST` / `ARGS` / `CASE_REST` for dropped
+//! statement / argument / switch-case runs (where `ANYTHING` would collapse to
+//! an arity-exact single-node hole).
 //!
 //! Single targets (function, class, object, and non-object var) read their
 //! minimal anchor set off the chunk-wide shape index (`render_via_read_off` /

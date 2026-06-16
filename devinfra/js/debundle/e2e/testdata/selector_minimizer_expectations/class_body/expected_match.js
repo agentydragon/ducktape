@@ -1,8 +1,8 @@
 class SelectedWidget {
-  CLASS_REST;
+  ANYTHING;
   render(ANYTHING) {
     STMT_LIST;
     return ANYTHING.format("stable", ARGS);
   }
-  CLASS_REST;
+  ANYTHING;
 }

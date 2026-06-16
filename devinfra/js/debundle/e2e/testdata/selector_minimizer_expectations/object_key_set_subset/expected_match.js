@@ -1,7 +1,7 @@
 const TargetShape = {
-  OBJECT_PROPS,
+  ANYTHING,
   alpha: ANYTHING,
-  OBJECT_PROPS,
+  ANYTHING,
   delta: ANYTHING,
-  OBJECT_PROPS,
+  ANYTHING,
 };

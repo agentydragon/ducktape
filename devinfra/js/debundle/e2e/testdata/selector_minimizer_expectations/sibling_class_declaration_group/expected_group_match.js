@@ -1,16 +1,16 @@
 class selectedAlphaCard {
   kind = "uniqueAlphaCard";
-  CLASS_REST;
+  ANYTHING;
 }
 class selectedBetaCard {
   kind = "uniqueBetaCard";
-  CLASS_REST;
+  ANYTHING;
 }
 class selectedGammaCard {
   kind = "uniqueGammaCard";
-  CLASS_REST;
+  ANYTHING;
 }
 class selectedDeltaCard {
   kind = "uniqueDeltaCard";
-  CLASS_REST;
+  ANYTHING;
 }

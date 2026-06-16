@@ -1,7 +1,7 @@
 const DECLARATORS_BEFORE = null,
   SelectedPalette = {
-    OBJECT_PROPS,
+    ANYTHING,
     accent: "uniqueDiscriminatorAccent",
-    OBJECT_PROPS,
+    ANYTHING,
   },
   DECLARATORS_AFTER = null;

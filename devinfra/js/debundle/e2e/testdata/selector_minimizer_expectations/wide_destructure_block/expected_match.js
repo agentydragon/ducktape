@@ -1,4 +1,4 @@
 function SelectedComponent(ANYTHING) {
-  const { OBJECT_PROPS, uniqueDiscriminatorProp } = ANYTHING;
+  const { ANYTHING, uniqueDiscriminatorProp } = ANYTHING;
   STMT_LIST;
 }

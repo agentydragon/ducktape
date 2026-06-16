@@ -898,7 +898,8 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
 // object-bearing call (`makeConfig({…})`) reads its minimal anchor off the shape
 // index. Each entry's value (`computeValue("selected-beta")`) carries a globally
 // unique string, so the read-off pins ONE discriminating `key: value` and holes
-// every sibling key to `OBJECT_PROPS` — sparser than the keep-shallow "keep all
+// every sibling key to the object-property run hole (emitted as `ANYTHING`) —
+// sparser than the keep-shallow "keep all
 // keys" output and sparser than the {betaKey, gammaKey} key-set the B&B set-cover
 // would compute (a unique value beats a multi-key presence cover). It still
 // resolves uniquely to the intended binding. The min-cover guarantee still backs
@@ -931,9 +932,11 @@ fn synthesize_selectors_var_object_keys_resolve_uniquely() {
         .as_str()
         .unwrap();
     // One discriminating `key: value` with a globally-unique string value is the
-    // minimal read-off anchor; the rest collapse to `OBJECT_PROPS`.
+    // minimal read-off anchor; the rest collapse to the object-property run hole,
+    // emitted as `ANYTHING` (the run-absorber form the minimizer now prefers in
+    // object-property position).
     assert!(
-        match_source.contains("selected-") && match_source.matches("OBJECT_PROPS").count() >= 1,
+        match_source.contains("selected-") && match_source.matches("ANYTHING").count() >= 1,
         "a single discriminating value anchor should remain, rest holed:\n{match_source}"
     );
 }

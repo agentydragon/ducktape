@@ -1,5 +1,5 @@
 const SelectedLabels = {
-  OBJECT_PROPS,
+  ANYTHING,
   10: "uniqueDiscriminatorLabel",
-  OBJECT_PROPS,
+  ANYTHING,
 };

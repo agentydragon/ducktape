@@ -4,9 +4,12 @@
 //! the byte spans of the concrete tokens (literals, member/property names,
 //! callees, object keys) the selector pins. A node renders concretely iff a kept
 //! span lies inside it; every other position is holed — `ANYTHING` for a bare
-//! expression, and the run holes `STMT_LIST` / `OBJECT_PROPS` / `CASE_REST` for
-//! dropped statement / object-property / switch-case runs. These primitives are
-//! form-agnostic; the per-form minimizers (`crate::minimize`) drive them.
+//! expression and for the object-property / class-member run holes (whose
+//! detector predicates carry an `ANYTHING` fallback), and the load-bearing
+//! run holes `STMT_LIST` / `ARGS` / `CASE_REST` for dropped statement / argument
+//! / switch-case runs (where `ANYTHING` would collapse to an arity-exact
+//! single-node hole, so the keyword stays). These primitives are form-agnostic;
+//! the per-form minimizers (`crate::minimize`) drive them.
 
 use std::collections::BTreeSet;
 
@@ -50,10 +53,14 @@ fn stmt_list_stmt() -> Stmt {
     })
 }
 
+/// An object-property run-absorber hole, emitted as a bare `ANYTHING` shorthand
+/// property. In object-property position `ANYTHING` is a run-absorber identical to
+/// the (still-accepted) `OBJECT_PROPS` keyword — `object_property_list_hole_name`
+/// carries an `ANYTHING` fallback — so we emit the shorter, position-polymorphic
+/// `ANYTHING` (the "prefer ANYTHING where the context is unambiguous" emission
+/// rule). Hand-written input selectors may still spell it `OBJECT_PROPS`.
 fn object_props_prop() -> PropOrSpread {
-    PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(
-        OBJECT_PROPS_HOLE_KEYWORD,
-    ))))
+    PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
 }
 
 /// An `ARGS` argument-list hole that absorbs a run of dropped (non-anchor)
@@ -294,14 +301,16 @@ fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
     holed
 }
 
-/// The `OBJECT_PROPS` destructure-pattern hole prop — a shorthand binding whose
-/// name is the keyword — absorbing a run of dropped destructured properties.
-/// The pattern analog of [`object_props_prop`].
+/// A destructure-pattern run-absorber hole — a shorthand binding whose name is
+/// `ANYTHING` — absorbing a run of dropped destructured properties. The pattern
+/// analog of [`object_props_prop`]; `object_pat_prop_list_hole_name` carries the
+/// same `ANYTHING` fallback as the object-literal position, so emitting the bare
+/// keyword is equivalent to the (still-accepted) `OBJECT_PROPS` spelling.
 fn object_props_pat_prop() -> ObjectPatProp {
     ObjectPatProp::Assign(AssignPatProp {
         span: DUMMY_SP,
         key: BindingIdent {
-            id: ident_node(OBJECT_PROPS_HOLE_KEYWORD),
+            id: ident_node(ANYTHING_HOLE_KEYWORD),
             type_ann: None,
         },
         value: None,
@@ -638,16 +647,17 @@ mod interior_holing_tests {
     #[test]
     fn holes_nested_object_inside_a_kept_array_argument() {
         // The object nested in a kept `ANYTHING.run([{…}])` keeps only the anchor
-        // property, holing the rest to OBJECT_PROPS. Regression guard for the
-        // `Expr::Array` recursion: the array used to fall through `hole_expr`'s
-        // verbatim catch-all, so every property was pinned.
+        // property, holing the rest to the object-property run hole (emitted as
+        // `ANYTHING`, the run-absorber form in object-property position).
+        // Regression guard for the `Expr::Array` recursion: the array used to fall
+        // through `hole_expr`'s verbatim catch-all, so every property was pinned.
         let holed = hole_statement_expr(
             r#"ctx.engine.run([{ source: ctx.node, mode: "keepMe", silent: true }]);"#,
             "keepMe",
         );
         assert_eq!(
             normalize(&holed),
-            normalize(r#"ANYTHING.run([{ OBJECT_PROPS, mode: "keepMe", OBJECT_PROPS }]);"#),
+            normalize(r#"ANYTHING.run([{ ANYTHING, mode: "keepMe", ANYTHING }]);"#),
         );
     }
 
@@ -667,5 +677,57 @@ mod interior_holing_tests {
             normalize(&holed),
             normalize(r#"ANYTHING([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
         );
+    }
+
+    /// The object-property run hole is emitted as the bare `ANYTHING` keyword, not
+    /// `OBJECT_PROPS` — the run-absorber form the renderer now prefers in
+    /// object-property position (the matcher accepts both; equivalence is pinned by
+    /// `object_props_and_anything_are_interchangeable_run_absorbers` in
+    /// `syntactic_holes_test.rs`). Both the literal and destructure-pattern holes
+    /// are exercised; the padded key-set form interleaves the hole around the kept
+    /// discriminating key.
+    #[test]
+    fn object_property_run_holes_emit_anything() {
+        js_ast::with_swc_globals(|| {
+            let module = js_ast::parse_js_module_ast(
+                "<object-prop-hole>",
+                r#"const x = { drop_a: 1, keepMe: "v", drop_b: 2 };"#,
+            )
+            .unwrap();
+            let [ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))] = module.body.as_slice() else {
+                panic!("expected a single var declaration");
+            };
+            let Some(Expr::Object(object)) = var.decls[0].init.as_deref() else {
+                panic!("expected an object initializer");
+            };
+            let key_span = {
+                let PropOrSpread::Prop(prop) = &object.props[1] else {
+                    panic!("expected a key-value prop");
+                };
+                let Prop::KeyValue(kv) = prop.as_ref() else {
+                    panic!("expected a key-value prop");
+                };
+                kv.key.span()
+            };
+            let kept = BTreeSet::from([span_key(key_span)]);
+            let mut holed_decl = (**var).clone();
+            holed_decl.decls[0].init =
+                Some(Box::new(Expr::Object(hole_object_padded(object, &kept))));
+            let holed = emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
+                holed_decl,
+            )))))
+            .unwrap();
+            assert!(
+                !holed.contains("OBJECT_PROPS"),
+                "object-property run hole must not emit OBJECT_PROPS:\n{holed}"
+            );
+            // The kept anchor is the `keepMe` key token; its value holes to
+            // `ANYTHING`, and the dropped sibling-prop runs on both sides become
+            // the object-property run hole, also emitted as `ANYTHING`.
+            assert_eq!(
+                normalize(&holed),
+                normalize(r#"const x = { ANYTHING, keepMe: ANYTHING, ANYTHING };"#),
+            );
+        });
     }
 }
