@@ -90,8 +90,10 @@ The literature spike (<readoff_algorithm_research.md> + five strand reports in
 
 ## Current state (on `devel`)
 
-The three-layer index and the read-off path for the first two forms are built and
-behavior-preserving; the bespoke cover search still backs the unmigrated forms.
+The three-layer index and the read-off path back every single-target form
+(function, class, object, var); the branch-and-bound cover search they replaced is
+deleted. The only remaining bespoke cover is the multi-target var binding-group
+keep-shallow path.
 
 **Layer 1 — shape index.** `shape_index.rs` builds the hash-consed Merkle DAG with
 alpha-leaf canonicalization, multi-granularity shape features, inverted posting
@@ -137,6 +139,13 @@ Migrated to read-off as their primary path:
   holes `extends` to `ANYTHING` and keeps only the member runs carrying a chosen
   anchor between `CLASS_REST` holes; the value-over-name ranking key prefers a
   member's value literal/key over a bare member name.
+- **Single-target var (non-object)** (`try_var_read_off`): holes the initializer
+  with `hole_expr` around the read-off anchors, restricting kept spans to the
+  target declarator; drills into nested call/object/array trees down to the
+  discriminating leaf. No empty-kept fast path — a var's holed scaffold
+  (`const X = ANYTHING`) is degenerate, so an empty anchor set defers to the
+  keep-shallow group path. The `STR_LITERAL_MATCHING_RE` upgrade is shared with
+  the group path via `accepted_regex_anchors`.
 
 **Selector language features the read-off renderer pins through.** All list holes
 exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
@@ -216,7 +225,7 @@ serde); embedded/non-trailing volatility in regex anchors (future).
   the member is left as a name pin. These are **whole-body-only** members
   (uniqueness needs ~the entire body). Concentrated in `features` (955),
   `domains` (462), `app` (425). Recovering them is the hard, high-count tail:
-  needs **interior holing of whole bodies** (item 2b gap 2 — keep the body but
+  needs **interior holing of whole bodies** (backlog item 1 — keep the body but
   hole non-identifying subtrees so a fuller pin is at least less fragile / can be
   emitted) and/or deeper anchoring. Biggest number, hardest; do not expect a
   clean compact selector for most.
@@ -225,9 +234,8 @@ serde); embedded/non-trailing volatility in regex anchors (future).
   **~55% var/object, ~42% function, ~3% class**; median ~35 lines, tail to ~700.
   These are the **achievable near-term wins**: the over-pin-reduction waves shrink
   them under the threshold so they ship as compact selectors —
-  - var/object (the plurality) → **interior object/array holing** (item 2b gap 1)
-    - **key-set minimization** + the object-dict family (item 5);
-  - function → **interior holing** within kept bodies (item 2b);
+  - var/object (the plurality) → the remaining object-dict forms (backlog item 2);
+  - function → **interior holing** within kept bodies (backlog item 1);
   - a re-apply after each wave reconverts whatever now fits ≤30 lines.
 - 1 — `async` parse edge case (single; ignore).
 
@@ -237,183 +245,60 @@ body interior holing + anchoring). Re-measure this split after each wave lands.
 
 ## Backlog (open only)
 
-Agreed order (interleave perf-first, then severity-ordered minimality). Counts
-are members in a representative real-spec sample (5,556 selectors); the
-non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
+Severity-ordered minimality work. Counts are members in a representative
+real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
+and is encoded as disabled E2E cases. Completed items are removed, not annotated;
+the landed architecture is in "Current state" above.
 
-1. **Perf — prove-gate via index.** Whole-chunk minimize is ~110s, almost all of
-   it the per-member full-matcher proof (`prove_synthesized_selector` →
-   `resolve_member_binding`) — read-off made synthesis cheap but the prove-gate is
-   the bottleneck, unchanged from the 113s search baseline. Fix: the index is a
-   **sound superset**, so when the selector's anchor-feature posting-list
-   intersection is the singleton `{target}` that _is_ a uniqueness proof — skip
-   the matcher; full matcher only for non-singleton cases. Collapses per-member
-   cost for the `OPT=1` majority toward the ≤10s target. **(Landed: #2280;
-   validated — whole chunk ~110s → ~13s, see W4 below.)**
-2. **Function** whole-body anchoring (~1,455 full + ~1,743 holed; biggest count) —
-   anchor a deep unique literal/member, hole the rest (`sparse_function_body`).
-   2b. **Interior holing — hole non-anchor subtrees within kept statements
-   (gaffer-dogfood feedback).** The read-off already prunes off-anchor _statements_,
-   _call-chain links_, and _callbacks_ when a sparse anchor exists: with a clean
-   discriminator a `svc.fetchToken().then(…).catch(e => {…})` chain correctly
-   minimizes to `ANYTHING.then((ANYTHING) => { <anchor> }).catch(ANYTHING)` (the
-   non-discriminating catch callback holes to `ANYTHING`). Two gaps:
-   - **Nested object / array literals inside a kept expression were pinned whole**
-     rather than holed to `OBJECT_PROPS` / `ARGS` around the discriminating
-     element, e.g. the move-options object in a kept `engine.run([{…}])` keeping
-     every property instead of `[{ OBJECT_PROPS, mode: "…", OBJECT_PROPS }]`.
-     (Real-spec analogues: `moveProcessedInboxAudioNodeToTarget`, the `Se({…})`
-     command objects.) **Landed (#2289).** Object literals in a kept call arg
-     already holed (`hole_object` runs via `hole_expr`'s `Expr::Object` arm); the
-     only hole in the recursion was `Expr::Array`, which fell through to the
-     verbatim catch-all and froze any object nested in an array. `hole_expr` now
-     has an `Expr::Array` arm (`hole_array`) that recurses into each element
-     (non-anchor elements → `ANYTHING`, arity-exact since the matcher matches
-     array elements element-wise — no array list hole), so a nested object inside
-     `[…]` holes the same way a top-level call-arg object does.
-     `interior_object_arg_holing` unignored.
-   - **No-sparse-anchor bodies kept un-holed** (the single-target / weak-anchor
-     family — `single_target_class_whole_body`, `component_wide_destructure_whole_body`,
-     and function analogues like `redirectElectronAppWithCustomToken` keeping its
-     whole then+catch). Still open, and **distinct from the nested-literal gap
-     above.** The two disabled fixtures have no same-shape sibling, so the read-off
-     never keeps the body to prove uniqueness: the structural fast path
-     (`render_via_read_off`) / keep-shallow var path emits a _vacuous_ selector
-     (`class X { CLASS_REST }`, `const X = ANYTHING`), not the real-spec "kept
-     verbatim". Closing them needs a **robustness-anchor policy** — keep a stable
-     deep value anchor (holed down) even when the bare scaffold already resolves,
-     which directly trades against the fast path's current "leanest scaffold
-     preferred" rationale — and, for the component case, `collect_expr_anchors` /
-     `hole_expr` recursion into function/arrow-valued initializers plus the var →
-     read-off migration (item 6). The "minimal subtree set that still proves
-     unique" framing degenerates to the empty set on a sibling-less fixture, so
-     the win there is robustness, not cardinality-minimality; the real-spec
-     cover-keeps-the-body case is the interior set-cover at subtree granularity.
-3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
-   bodies) — `CLASS_REST` + discriminating member (`class_among_many_siblings`,
-   `sibling_subclass_hierarchy`, `class_body`). **Landed.** `minimize_class_selector`
-   routes single-target classes through `render_via_read_off`, holing `extends` to
-   `ANYTHING` (the superclass identifier is alpha-volatile) and falling back to
-   the cover search when the read-off cannot single the class out. Two design
-   points that made it work:
-   - **Value-over-name ranking.** The read-off's third ranking key (above `cost`,
-     below selectivity/stability) prefers a semantic **value** anchor (literal,
-     object key) over a bare **name/reference** (class-member / member-property
-     name) over a **structural** feature. So among equally selective anchors the
-     subclass pins `kind = "uniqueDiscriminatorShape"` rather than the equally
-     selective `area` method name, and the many-siblings class pins the unique
-     `accept:` string — the value survives a rebuild where a renamed method would
-     not. (The earlier WIP predated this key and the now-merged `cost` key, so it
-     anchored on whatever was shortest/structural.)
-   - **Selectivity still dominates.** A genuinely unique member _name_ (a sole
-     `dispose`/`constructor`) is strictly more selective than a value pair, so the
-     ranking can't override it — `class_body`'s fixture was tightened so all
-     siblings share the constructor/render/dispose shape and the only discriminator
-     is the `format`+`"stable"` body pair, which is what the case is meant to test.
-4. **Long-literal-value anchor** (~25; extreme severity, clean fix) — prefer a
-   short discriminating key over the largest node (`long_literal_value_anchor`).
-   **(Landed: #2281 — retained-source cost tiebreak; skeletons rank last on cost.)**
-5. **Object-dict family** — over-pinned keys (`object_keys_over_pinned`, done for
-   single scalar), grouped objects (`grouped_enum_objects`: `DECLARATORS` + padded
-   `OBJECT_PROPS`, **landed** — see key-set below), and the still-open
-   nested-value dicts (`object_nested_value_dict`) and wide destructure
-   (`wide_destructure_block`).
-   - **Key-set minimization (gaffer-dogfood feedback). Landed (#2290).** When an
-     object is discriminated by its _key set_ rather than any value — every value
-     already holed to `ANYTHING`, e.g. a CSS-styles dict
-     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }` — the
-     minimizer used to keep **every** key. It now keeps only the **minimal key
-     subset** whose presence discriminates the target from its siblings and
-     collapses the rest to `OBJECT_PROPS` (the key-set analogue of greedy
-     set-cover: anchor the rarest discriminating keys, `OBJECT_PROPS` the common
-     ones). `hole_object_padded` interleaves `OBJECT_PROPS` between every kept prop
-     so a multi-key subset survives key reorder; `try_object_read_off` runs on the
-     per-declarator object even inside a `DECLARATORS_BEFORE`/`_AFTER` group, with
-     a slot-aware `cover_object_slot` greedy (scores by whether the _target
-     binding's_ slot resolves, since the matcher reports one alignment per body)
-     for the per-slot key sets the chunk-wide read-off cannot see. E2E:
-     `object_key_set_group`, `object_key_set_subset`, `grouped_enum_objects`.
-     Still open: the `ee({ coreMessage: …, type: …, … })` schema-object form is a
-     **call** kept whole (the no-sparse-anchor body family, item 2b), not the
-     object-literal-valued var this covers.
-6. **Var migration.** Single-target `var`/`let`/`const` now reads off the shape
-   index (`try_var_read_off`, objects via `try_object_read_off`), mirroring
-   function/class. **Landed.** This drilled `deeply_nested_call_args` down to the
-   discriminating leaf (still ignored: bare-function callees stay pinned and
-   dropped args hole to arity-exact `ANYTHING`, not `ARGS` — cross-cutting
-   `hole_callee`/`hole_args` policy). Still open: **multi-target binding groups**
-   (per-slot declarator-tuple resolution; they keep the keep-shallow path) and
-   **statement runs** (`sequential_assignment_block`).
-7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
-   minimal-selector overlap threshold) → `binding_group`. The shared-declaration
-   trigger (multi-declarator var) and the adjacent-function sub-item below have
+1. **Interior holing of no-sparse-anchor bodies (the dominant lever; GitHub
+   #2289).** When uniqueness was proven by the full body, nothing is holed. Two sub-cases: (a) sibling-less single targets emit a _vacuous_ selector
+   (`class X { CLASS_REST }`, `const X = ANYTHING`) — disabled fixtures
+   `single_target_class_whole_body`, `component_wide_destructure_whole_body`;
+   (b) real-spec bodies with a genuine deep unique anchor the renderer can't
+   interleave holes down to (`nr_name === "HAS IMAGE"`, `n.BundleInstaller`),
+   wrongly bucketed "no sparse selector". Closing needs a **robustness-anchor
+   policy** (keep a holed-down deep value anchor even when the bare scaffold
+   already resolves — trades against the current "leanest scaffold preferred" fast
+   path) plus interior set-cover at subtree granularity. Reclaims a meaningful
+   share of the ~2,024 "no sparse selector" tail, not just the ~200 bulky-convertible.
+2. **Object-dict family — remaining forms.** Nested-value dicts
+   (`object_nested_value_dict`: hole all but one anchored nested property) and wide
+   destructure (`wide_destructure_block`: `OBJECT_PROPS` around the one
+   discriminating destructured property). The `ee({ coreMessage: …, type: … })`
+   schema-object-call form is a call kept whole — folds into item 1.
+3. **Multi-target var binding-group read-off.** Groups still use the keep-shallow
+   path (`minimize_var_group_selector`) because per-slot declarator-tuple
+   resolution is something the chunk-wide read-off cannot express. Designing a
+   per-slot anchor union proven through the binding-group matcher would let groups
+   read off too — the last consumer of the keep-shallow cover and the gate for
+   items 6/7 below.
+4. **Statement runs** (`sequential_assignment_block`): `STMT_LIST` holes on both
+   sides of the one assignment whose RHS carries the discriminating literal.
+5. **General co-occurrence grouping → `binding_group`.** The shared-declaration
+   trigger (multi-declarator var) and adjacent same-shape function runs have
    landed; the general co-occurrence trigger for non-function runs (statement runs,
-   sibling object/class declarations that are not a single var statement) is still
-   open.
-   - **Adjacent same-shape function declarations (gaffer-dogfood feedback).**
-     **Landed.** `merge_adjacent_function_runs` (in `selector_codemod.rs`) collapses
-     a maximal run of adjacent single-target function declarations whose
-     individually-minimized selectors share the same canonical shape into one
-     run-based `binding_group` (the `source_match` is the run of declarations,
-     `exports` maps each), instead of N standalone selectors. The minimal-selector
-     overlap is realized as exact canonical-shape equality computed on the
-     _minimized_ selectors: each accessor minimizes to its single discriminating
-     member with the shared receiver chain holed to `ANYTHING`, so a DRY cluster
-     collapses to one shape once every identifier / member-key / literal leaf is
-     blanked (`selector_shape_signature`). The merged run-selector is re-proven
-     through the matcher gate; on proof failure the run is emitted individually.
-     E2E: `adjacent_accessor_group`. Real-spec analogue: `app/state/accessors.yaml`
-     `use{AppUser,NodeSpace,FocusService,CoreServices}`.
-8. **Delete the cover search.** The branch-and-bound cover (`minimize_via_retention`,
-   `cover_competitors`, `min_set_cover`, the function/class anchor collectors,
-   `AnchorCandidates::tiers`) is **deleted** — read-off subsumed it once W3 added
-   number/bool features (−305 lines). Remaining cover: the multi-target var
-   binding-group keep-shallow path, retired only once group read-off (item 6) lands.
-9. **`selector_codemod.rs` refactor** — the cover deletion reshaped the file
-   (~4.2k lines); a by-form split is still open and enables parallel per-form
-   fan-out.
-10. **Language simplification** (see below).
-11. **W4 — whole-spec validation:** **hard budget met** — whole chunk ~13s after
-    #2280 (was ~110s), every sub-scope ≤8s; ≤10s ideal narrowly missed. Measured
-    and recorded in the dogfood note.
-12. **Perf — close the ≤10s ideal (index-build cost).** With the prove-gate cheap,
-    the remaining cost is dominated by the **index build**, not parsing or the
-    per-member proof. callgrind on the real chunk (see
-    <../debug/selector_minimizer_perf.md>) attributes the top self-cost to
-    `Ord::cmp` on `SelectorFeature` / `ShapeFeature` / `ShapeNode` (String-label
-    `memcmp`) inside the `BTreeMap`/`BTreeSet` build, plus ~30% allocator churn
-    (`malloc`/`free`/`malloc_consolidate`) from the many small posting-list nodes.
-    Targets, highest-leverage first: (a) **intern feature labels to integer IDs**
-    so feature comparison is an int compare, not `memcmp` on Strings; (b) swap the
-    posting-list `BTreeMap`/`BTreeSet` for a hashed map (`FxHashMap`/`FxHashSet`)
-    where ordered iteration isn't required; (c) reserve/amortise allocations in
-    `SelectorCandidateIndex::new` / `ShapeIndex::with_extractor`. Any one likely
-    recovers the last ~3s. **(Landed: #2291 — did (b)+(c) with
-    `roaring::RoaringBitmap` posting lists (the standard inverted-index structure,
-    `CandidateSet`) keyed by `FxHashMap` inverted indices + hash-cons table; (a)
-    interning was not needed. Measured: ≈1.8× faster index build / 4.5× faster
-    read-off on the synthetic sweep; real-chunk same-spec whole-chunk ~8.2s → ~7.3s
-    median (roaring's per-container overhead keeps RSS flat with the baseline on
-    this selective-heavy chunk — a bespoke sorted `Vec<u32>` would be ~21 MB leaner
-    but non-standard). Identical posting contents / `OPT=1` distribution; soundness
-    stays gated by `shape_index_soundness_test.rs`. See
-    <../debug/selector_minimizer_perf.md>.)**
-13. **Dogfood-apply on gaffer-private (in progress).** Run `synthesize-selectors
---apply` on the real spec, review for over-pin, and PR the beneficial minimized
-    selectors (fragile minified-name pins → forward-compatible `source_match`). On
-    the first apply ~79% of conversions were sparse/beneficial and ~21% over-pinned
-    (187 fully verbatim); the operational PR rule is **revert any converted selector
-    whose `match` block is >40 lines AND has ≤2 holes** back to a name pin (a
-    900-line verbatim pin is no less fragile than a 1-line minified-name pin, just
-    bigger). The over-pin patterns feed the disabled E2E cases
-    (`single_target_class_whole_body`, `component_wide_destructure_whole_body`, and
-    the existing `object_nested_value_dict` / `long_literal_value_anchor`, now
-    confirmed live on the real spec). Re-applies as each later wave lands; keep
-    pin-compatible and regen pipeline goldens.
-
-Each capability re-applies to gaffer-private as it lands (review diffs for
-over-pin; gaffer validates with a _pinned_ debundle release, so spec PRs must
-regen the pipeline goldens and stay pin-compatible).
+   sibling object/class declarations that are not a single var statement) is open.
+6. **Retire the keep-shallow group cover** once item 3 lands — removes
+   `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`, and
+   `AnchorCandidates::{shallow_literals,deep_cover_tiers}`.
+7. **`selector_codemod.rs` by-form split** — the file is ~4.2k lines; splitting by
+   form enables parallel per-form fan-out (do after item 6 reshapes the var path).
+8. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+   `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
+   emission stabilizes (after the cover/keep-shallow paths fully retire), since it
+   rewrites emitted selectors and touches many fixtures.
+9. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
+   the leaf but keeps bare-function callees pinned (`hole_callee` keeps a bare
+   function reference) and holes dropped args to arity-exact `ANYTHING` rather than
+   a variadic `ARGS` run-hole. Closing both is a cross-cutting `hole_callee` /
+   `hole_args` policy change affecting all read-off paths; weigh against existing
+   fixtures.
+10. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+--apply` on the real spec after each wave, review for over-pin, and PR the
+    beneficial minimized selectors. Operational PR rule: **revert any converted
+    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
+    Keep pin-compatible (gaffer validates with a _pinned_ debundle release) and
+    regen the pipeline goldens. Each capability above re-applies here as it lands.
 
 ## Orchestration & process notes
 
