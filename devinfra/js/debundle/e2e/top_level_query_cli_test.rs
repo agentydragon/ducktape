@@ -5,14 +5,12 @@
 //! Calls the library entry points directly (no binary execution) so
 //! the test runs in-process and stays fast.
 
-use std::fs;
-use std::path::Path;
-
 use analysis::{
     AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleEntry, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientSccReport,
     SourceLocation, StatementKind, StatementOrdinal,
 };
+use debundle_e2e_support::write_text_file as write;
 use peel::plan::PatchPlanStatus;
 use peel::{
     CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionArgs,
@@ -21,13 +19,6 @@ use peel::{
 };
 use report_fixtures::{module_ref, module_table};
 use tempfile::TempDir;
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 fn member(binding: &str, export: &str) -> BindingReport {
     BindingReport {

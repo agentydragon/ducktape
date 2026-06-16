@@ -18,19 +18,13 @@ use analysis::{
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientEdgeReport,
     QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
+use debundle_e2e_support::write_text_file as write;
 use peel::{
     CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
     run_explain_report, run_source_slice_report,
 };
 use report_fixtures::{module_entry, module_ref};
 use tempfile::TempDir;
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 fn member(binding: &str, export: &str) -> BindingReport {
     BindingReport {

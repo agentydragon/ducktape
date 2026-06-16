@@ -7,15 +7,9 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_cli::module::merge_modules;
+use debundle_e2e_support::debundler_path as debundle_binary;
 use serde_yaml::Value;
 use tempfile::TempDir;
-
-fn debundle_binary() -> std::path::PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle")
-}
 
 fn write(root: &Path, rel: &str, body: &str) {
     let path = root.join(rel);

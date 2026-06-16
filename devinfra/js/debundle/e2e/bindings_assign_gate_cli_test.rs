@@ -14,23 +14,10 @@
 //! gate's reconstruction joins YAML members → owners by binding
 //! name, matching `gate_post_edit_partition`'s wire contract.
 
+use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle")
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 /// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
 /// form an atomic unit via a mutual `eager_rebind` edge. Per

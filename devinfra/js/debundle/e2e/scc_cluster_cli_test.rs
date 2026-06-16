@@ -1,23 +1,9 @@
 //! E2e for `debundle scc` and `debundle cluster` against a synthetic
 //! owner-graph fixture.
 
+use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::Command;
-
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle")
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 /// Build a small owner_graph.json with a 2-module SCC + a singleton.
 fn synthetic_graph_json() -> String {
