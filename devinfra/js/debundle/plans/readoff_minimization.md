@@ -1,8 +1,9 @@
 # Plan: read-off selector minimization
 
-Status: active (agreed 2026-06-16). Supersedes the search-based cover as the
-target architecture. Tracks the redesign of the debundle selector minimizer
-around a single chunk-wide AST-shape index.
+Status: active. The agreed target architecture for the debundle selector
+minimizer — a single chunk-wide AST-shape index that selectors are **read off**
+rather than searched. This doc is the current state plus the open backlog; it is
+not a changelog. Sibling planning docs are indexed from <../TODO.md>.
 
 ## Motivation
 
@@ -14,115 +15,52 @@ kept anchors). The minimizer's job: mechanically turn name-pins into the
 identifies the target** among its chunk siblings — discrimination _and_
 meaningful value pinning, holes interleaved at every nesting level.
 
-Today's minimizer **searches**: per member it generates candidate anchors,
-renders selectors, and runs the matcher to test discrimination (now
-index-prefiltered, #2254). That is per-member work with a cover search inside.
-Whole-chunk (~7 MB, ~4k members) runs in ~113 s and three spec shapes still
-over-pin (large objects keep all keys, large sibling classes dump full bodies,
-some grouped objects keep every key).
-
 ## Thesis: read off, don't search
 
 Build **one inverted feature index over AST shapes per chunk**, then read the
-minimal selector off it instead of searching.
+minimal selector off it instead of searching per member.
 
 - **One pass, O(N):** walk every subtree once; at each node emit position-aware,
   **alpha-equivalent** shape features (minified identifiers holed; stable things
   kept): shallow literal values, object keys, member/method names, callee
   identities, bounded-depth shape skeletons.
 - **Posting lists:** feature → set of items (bindings / top-level statements)
-  exhibiting it. This is the "pseudo-trie generalized to AST trees": instead of
-  indexing strings by character prefix, index subtrees by structural prefix
-  (path-from-root + shape); the leaves are the items sharing that shape.
-- **Selector = conjunction of features**, whose match set is the **intersection
-  of posting lists**. A _minimal_ selector for a target is the smallest subset of
-  the target's own features whose intersection is the singleton `{target}`.
+  exhibiting it — the "pseudo-trie generalized to AST trees": index subtrees by
+  structural prefix (path-from-root + shape); the leaves are the items sharing
+  that shape.
+- **Selector = conjunction of features**, whose match set is the intersection of
+  posting lists. A _minimal_ selector for a target is the smallest subset of the
+  target's own features whose intersection is the singleton `{target}`.
 - **Read-off:** scan the target's features (O(target size)), rank by **selective
-  × stable**, take the most selective+stable; if its posting list is already
+  × stable**; if the most selective+stable feature's posting list is already
   `{target}`, done in one anchor. Most real code has such a feature, so the
   common case is a read-off, not a search.
 - **Tail:** when no small stable combination is singleton, fall to a _bounded_
   intersection over the target's few features (greedy-near-optimal via
   selectivity ranking). Never an unbounded chunk-wide search.
 - **Prove-gate stays:** the production matcher confirms the read-off selector
-  resolves uniquely (gate 1). It is the correctness gate, never the search
-  engine.
+  resolves uniquely. It is the correctness gate, never the search engine.
 
 Net cost: `O(N + Σ target sizes) ≈ O(M+N)` — linear in chunk + spec size.
 
-### Two things this makes principled, not bolted-on
+Two things this makes principled, not bolted-on:
 
 - **Grouping overlapping captures.** Targets that would get near-identical
   selectors co-occur in the same posting lists — a lookup, not a heuristic.
   Group when targets **share an enclosing declaration OR their minimal selectors
   overlap beyond a threshold**, emitting a `binding_group` (with `DECLARATORS`
   holes) instead of N overlapping standalone selectors.
-- **Forward-compatibility.** Feature ranking is two-key — **selective × stable**.
-  Prefer semantic literals, exported names, structural shape; deprioritize
+- **Forward-compatibility.** Feature ranking is two-key (**selective × stable**):
+  prefer semantic literals, exported names, structural shape; deprioritize
   minified names and volatile hashes (hole them, or regex-anchor a stable prefix
-  per the `STR_LITERAL_MATCHING_RE` path). Minimal + stable = survives rebuilds,
-  which is the higher goal: auto-minimized specs that are forward-compatible.
+  per the `STR_LITERAL_MATCHING_RE` path). Minimal + stable = survives rebuilds.
 
-### Honest caveats
-
-Read-off is linear in the _common_ case; the tail (no singleton feature) is
-bounded set-cover, and the per-item prove-gate has real cost. Index build emits
-several features per node and holds posting lists for a 7 MB chunk — watch
-constant factors and memory. `≤10s` is plausible with this structure, not free:
-a **size-sweep benchmark** measures the real slope (time vs members across
-scopes; build ~constant per chunk, per-item ~constant) rather than asserting
-linearity.
-
-## Goal & acceptance criteria
-
-**Read-off minimization.** Rebuild the minimizer around one chunk-wide AST-shape
-index so minimal, forward-compatible selectors are read off rather than searched.
-
-1. **Perf** — whole ~7 MB / ~4k-member spec minimizes in **≤10 s ideal, ≤30 s
-   hard** (now 113 s); linearity shown by the size-sweep.
-2. **Minimality** — emitted selectors are minimal-or-near (metric: retained
-   AST-node count vs the read-off lower bound). **Hard rule: never dump an
-   untrimmed AST.** `--full-ast-fallback` stays off by default; a run _reports_
-   any member it could not minimize instead of dumping the full AST.
-3. **No overlapping captures** — zero large-overlap standalone selector pairs on
-   the dogfood spec; such cases become `binding_group`s.
-4. **Coverage** — var (single + group), function, class, object, including the
-   large-object / large-class cases that currently over-pin. The aspirational
-   E2E cases (`object_keys_over_pinned`, `class_among_many_siblings`, grouped
-   large object) get unignored as capabilities land.
-5. **Forward-compat** — stable-anchor preference, validated by a
-   rebuild-perturbation test (perturb volatile fragments → selector still
-   resolves).
-6. **Code health** — one unified minimization path, no double implementations;
-   the old per-form cover search is deleted once everything routes through
-   read-off. STYLE-clean.
-7. **gaffer-private** — apply across the whole spec, replacing fragile
-   `binding.name` pins and exact-minified-name pins; commit; quantify the
-   fragile-pin reduction.
-
-**Non-goals / accepted imperfections:** perfect cardinality-minimality on
-adversarial tail cases (near-minimal is fine); preserving YAML comments (out via
-serde); embedded/non-trailing volatility in regex anchors (future).
-
-## Decisions (agreed 2026-06-16)
-
-- **Migration: strangler-fig.** Build the index + read-off path alongside the
-  current minimizer; migrate one spec form at a time keeping all tests green;
-  delete the old search only once everything routes through read-off. Every PR
-  is independently landable.
-- **Grouping trigger:** shared enclosing declaration OR minimal-selector overlap
-  beyond a threshold.
-- **Runtime:** ≤10 s ideal, ≤30 s hard commit; optimize toward 10 s and report
-  the real number.
-- **Old pins:** replace fragile gaffer-private pins in the same wave as each
-  scope re-minimizes cleanly.
-
-## Validated architecture & locked decisions (W0 research spike — done 2026-06-16)
+## Validated architecture (three layers)
 
 The literature spike (<readoff_algorithm_research.md> + five strand reports in
 <readoff_research/>) is complete and confirms the **three-layer architecture**:
 
-1. **Canonicalization + shape index (O(N), build now).** Hash-consed Merkle DAG
+1. **Canonicalization + shape index (O(N)).** Hash-consed Merkle DAG
    (Downey-Sethi-Tarjan) with alpha-leaf canonicalization; multi-granularity
    shape features; inverted posting lists; selectivity (free byproduct) +
    stability scores. Supersets `SelectorCandidateIndex`.
@@ -132,106 +70,165 @@ The literature spike (<readoff_algorithm_research.md> + five strand reports in
    greedy is provably near-optimal, so "mostly minimal" is the correct target,
    not a compromise. The production matcher is the prove-gate, never the engine.
 3. **Grouping (n-ary anti-unification / LGG).** Linear; co-occurrence in posting
-   lists detects overlap. (Wave 2.)
+   lists detects overlap.
 
-**Locked decisions (confirmed before W1):**
+**Locked decisions:**
 
-1. **List-hole encoding = cons-spine binarization + bounded-depth shape
-   skeletons, behind a swappable feature-extraction interface.** No arity
-   assumption is baked into the index or greedy core; all variadic handling
-   lives behind the `ShapeFeatureExtractor` trait (default `ConsSpineExtractor`)
-   and the matcher-verify boundary, so it can later be swapped for hedge
-   automata (TATA ch. 8) _iff_ deep list-body matching proves load-bearing.
-2. **Build the full Layer-1 index now** (not just a measurement spike), and emit
-   the OPT / read-off-depth distribution as part of the benchmark.
+- **List-hole encoding = cons-spine binarization + bounded-depth shape
+  skeletons, behind a swappable feature-extraction interface.** No arity
+  assumption is baked into the index or greedy core; variadic handling lives
+  behind the `ShapeFeatureExtractor` trait (default `ConsSpineExtractor`) and the
+  matcher-verify boundary, so it can later be swapped for hedge automata
+  (TATA ch. 8) _iff_ deep list-body matching proves load-bearing.
+- **Migration is strangler-fig.** The index + read-off path runs alongside the
+  existing cover search; forms migrate one at a time keeping all tests green; the
+  old search is deleted only once everything routes through read-off.
+- **Grouping trigger:** shared enclosing declaration OR minimal-selector overlap
+  beyond a threshold.
+- **Old pins:** replace fragile gaffer-private pins in the same wave as each
+  scope re-minimizes cleanly.
 
-## Work waves
+## Current state (on `devel`)
 
-- **W1 — Index foundation (DONE 2026-06-16).** Generalized AST-shape index as a
-  superset of `SelectorCandidateIndex`: multi-granularity, alpha-equivalent,
-  stability-ranked features with posting lists; `minimal_anchor_set(item)`
-  read-off API; size-sweep + OPT-distribution benchmark. Shipped as
-  `shape_index.rs` (lib), `shape_index_soundness_test.rs` (matcher-backed
-  soundness gate), `shape_index_bench.rs` (synthetic sweep). Additive
-  (strangler-fig): the existing minimizer's decision path is unchanged and all
-  prior tests stay green. **Benchmark result (synthetic, N=200/1000/4000):**
-  build is linear (~0.034-0.051 ms/item; ~1.27 distinct shapes/item); among
-  resolvable items the OPT=1 share is **100%** — strongly validating the
-  Zipfian `OPT=1`-majority assumption that underwrites the near-linear /
-  `≤10s`-ideal target. Caveat surfaced for W2: items that are genuinely
-  alpha-duplicates return `None` ("unminimizable", honest) and currently pay an
-  O(N) greedy-universe allocation each — cheap to bound, but flag it.
-- **W2 — Read-off minimizer + grouping.** Route forms through read-off behind the
-  existing tests (strangler-fig); principled grouping from feature co-occurrence;
-  begin deleting the bespoke cover search.
-- **W3 — Tail + over-pin elimination.** Bounded cover for non-singleton cases;
-  large-object → `OBJECT_PROPS` + discriminator, large-class → `CLASS_REST` +
-  member. Unignore the E2E cases. Finish deleting the old search.
-- **W4 — Whole-spec apply + validation.** Apply across gaffer-private, replace
-  fragile pins, validate ≤10/30 s + linearity, update the dogfood note.
+The three-layer index and the read-off path for the first two forms are built and
+behavior-preserving; the bespoke cover search still backs the unmigrated forms.
 
-## Execution model (PM)
+**Layer 1 — shape index.** `shape_index.rs` builds the hash-consed Merkle DAG with
+alpha-leaf canonicalization, multi-granularity shape features, inverted posting
+lists, and `selective × stable` scoring; `minimal_anchor_set(item) -> AnchorSet`
+is the read-off API. Built on `selector_candidate_index.rs` (the prefilter
+`SelectorCandidateIndex`), which it supersets, not forks. Soundness is gated by
+`shape_index_soundness_test.rs` (matcher-backed: the indexed candidate set is
+always a sound match superset) and a synthetic size-sweep + OPT-distribution
+benchmark in `shape_index_bench.rs`. Measured (synthetic, N=200/1000/4000): build
+is linear (~0.034-0.051 ms/item; ~1.27 distinct shapes/item) and among resolvable
+items the **OPT=1 share is 100%**, validating the Zipfian `OPT=1`-majority
+assumption that underwrites the near-linear `≤10s`-ideal target. Greedy set-cover
+seeds `covered` from the smallest relevant posting list, so unresolvable items pay
+O(smallest posting) per step, not O(N).
 
-Foundational worker (W1) runs first; later waves stack and parallelize where
-independent, each worker in its own worktree + output base (disk-aware, one heavy
-build at a time). Coordinator reviews every diff, re-validates on RBE, opens and
-**subscribes to each PR immediately**, lands as mergeable, rebases the stack on
-each merge, and unignores E2E cases progressively. Build/test recipe: `bazelisk`
+**Feature taxonomy.** `SelectorFeature` indexes string, **number, and boolean**
+literals (number/bool canonicalized and scored `Semantic`; never wildcarded — the
+matcher discriminates by `eq_ignore_span`, so the candidate set stays a sound
+match superset), object keys, member/method/callee names, and bounded-depth
+skeletons. High-multiplicity skeletons (interned >4×) demote to `Structural` so
+value anchors win stability ties.
 
-- session bazelrc + system Java + RBE (not `bbr`, whose git-mirroring is broken
-  in this environment).
+**Layer 2 — read-off renderer + migrated forms.** `readoff_render.rs`
+(`kept_spans_for_anchor_set`) maps a read-off `AnchorSet` to the kept-span set the
+existing `selector_codemod` prune + swc-codegen machinery consumes — no second
+serializer; skeleton/arity anchors pin via the holed scaffold (no kept span).
+Migrated to read-off as their primary path:
 
-## Progress log
+- **Single-target function** (`minimize_function_selector` → `render_via_read_off`):
+  reads off `minimal_anchor_set`, prefers the empty-kept structural scaffold when
+  it already discriminates, renders through the shared `render_with`.
+- **Single-target object** (`try_single_object_read_off` → `hole_object_padded`):
+  always leads+trails with `OBJECT_PROPS` so the discriminating `key: value`
+  matches as an interior subsequence element (survives key reorder), never
+  anchored to the object's right edge.
 
-- 2026-06-16: #2253 (unify + serde apply), #2254 (index-prefilter + regex-literal
-  anchors, folding #2255) landed on `devel`. Whole-chunk run 113 s; apply
-  transactional; regex anchors firing. Plan agreed; W1 dispatched.
-- 2026-06-16: W0 research spike landed (#2257). W1 built on
-  `claude/debundle-shape-index`: Layer-1 shape index + read-off API + soundness
-  test + benchmark, additive/behavior-preserving. OPT=1 share 100% on synthetic
-  resolvable items; build linear. Ready for W2 (route forms through read-off).
-- 2026-06-16: W2 built on `claude/debundle-readoff-render`: production read-off
-  renderer (`readoff_render.rs`) maps a read-off `AnchorSet` to the kept-span
-  set the existing `selector_codemod` prune + swc-codegen machinery consumes (no
-  second serializer); skeleton/arity anchors pin via the holed scaffold (no kept
-  span). **Single-target function** migrated to read-off as its primary path:
-  `minimize_function_selector` reads off `minimal_anchor_set`, prefers the
-  structural empty-kept scaffold when it already discriminates, and renders
-  through the shared `render_with`. The cover search backs it as the
-  not-yet-expressible tail (chiefly _number/bool literal_ discriminators, which
-  the W1 feature taxonomy does not index — string literals only) and is **not
-  deleted** (strangler-fig). Var / class / object / group stay on the cover
-  (W3). Applied W1 hand-off note #1: greedy set-cover seeds `covered` from the
-  smallest relevant posting list (most-selective feature), not `0..N`, so
-  unresolvable items pay O(smallest posting) per step instead of O(N).
-  Equivalent-or-better fixture updates: `sparse_function_body` (2 anchors -> 1:
-  `Date.now()` member-property), `nested_async_try` (`includeMeta: true` ->
-  `trace` object key, both 1 anchor); both gate-proven unique. W3 should extend
-  the feature taxonomy to number/bool literals (drops the function cover
-  fallback) and migrate var / class / object / group.
-- 2026-06-16: W3 built on `claude/debundle-readoff-object`. (a) **Feature
-  taxonomy extended to number/bool literals.** `SelectorFeature` gains
-  `NumberLiteral(String)` (canonical `f64`/BigInt decimal) and `BoolLiteral(bool)`;
-  `AstFeatureCollector` indexes them (never wildcarded, matcher discriminates by
-  `eq_ignore_span`, so the candidate set stays a sound match superset), scored
-  `Semantic`, rendered as kept literal spans by `readoff_render`. Soundness test
-  `number_and_bool_literal_features_keep_candidate_set_a_match_superset` asserts
-  the #2254 superset property still holds; matcher-backed read-off tests for
-  number and bool discriminators added. `call_argument_literal` (discriminator
-  `.bar` + `123`) now migrates to the function read-off (its fixture output is
-  unchanged — read-off renders the identical selector the cover did). (b)
-  **Single-target object migrated to read-off.** `try_single_object_read_off`
-  (single target binding, single declarator, object-literal init) reads the
-  minimal anchor set off the shape index and renders via `hole_object_padded`,
-  which always leads+trails with `OBJECT_PROPS` so the discriminating key:value
-  matches as an interior subsequence element (survives key reorder) rather than
-  anchoring to the object's right edge. Structural-only read-offs (empty kept
-  set) defer to the group path. Unignored `object_keys_over_pinned` (now
-  `OBJECT_PROPS, 10: "uniqueDiscriminatorLabel", OBJECT_PROPS`). `grouped_enum_objects`
-  stays ignored — it is a multi-declarator group, out of the single-target object
-  scope (W4/group wave). (c) W2 note #3: skeleton stability now demotes
-  high-multiplicity shapes (interned > 4×) to `Structural` so value anchors win
-  stability ties. Strangler-fig intact: var (single non-object + group), class,
-  group stay on the cover; the cover search is not deleted. All 116 debundle
-  tests green on RBE. Next wave: migrate var (non-object single) / class /
-  subclass / grouped-object forms, then delete the cover search.
+**Selector language features the read-off renderer pins through.** All list holes
+exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
+`STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`, and `CASE_REST`
+(switch-case-run — closes the survey's inexpressible many-arm-`switch` shape).
+Regex-over-string-literal anchors (`STR_LITERAL_MATCHING_RE`) fire for
+stable-prefix/volatile-tail strings (trailing hex/digit runs).
+
+**Strangler-fig boundary.** The cover search (`minimize_via_retention`,
+`cover_competitors`, the B&B `min_set_cover`, `collect_*_anchors`) is **not
+deleted**; it backs single-target var (non-object), single-target class, and the
+binding-group / multi-declarator paths, plus any tail a read-off cannot yet
+single out. `selector_codemod.rs` is ~3.7k lines and shrinks substantially once
+the cover is removed.
+
+**Measured perf.** Whole ~7 MB / ~4k-member spec minimizes in ~113 s today
+(pre-read-off baseline). The `≤10s` ideal is validated only on the synthetic
+sweep so far; the real-chunk size-sweep is W4 (backlog).
+
+**E2E expectation suite** (`e2e/selector_minimizer_expectation_test.rs`). Active:
+`sparse_function_body`, `call_argument_literal`, `object_property_literals`,
+`binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
+`object_keys_over_pinned` (unignored once the object read-off landed),
+`binding_group_partition`. Ignored as aspirational (the named form not yet
+read-off-expressible): `class_among_many_siblings`, `sibling_subclass_hierarchy`,
+`sequential_assignment_block`, `deeply_nested_call_args`, `grouped_enum_objects`.
+
+## Acceptance criteria
+
+1. **Perf** — whole ~7 MB / ~4k-member spec minimizes in **≤10 s ideal, ≤30 s
+   hard** (from 113 s); linearity shown by a real-chunk size-sweep.
+2. **Minimality** — emitted selectors are minimal-or-near (metric: retained
+   AST-node count vs the read-off lower bound). **Hard rule: never dump an
+   untrimmed AST.** `--full-ast-fallback` stays off by default; a run _reports_
+   any member it could not minimize instead of dumping the full AST.
+3. **No overlapping captures** — zero large-overlap standalone selector pairs on
+   the dogfood spec; such cases become `binding_group`s.
+4. **Coverage** — var (single + group), function, class, object, including the
+   large-object / large-class cases that currently over-pin; the ignored E2E
+   cases get unignored as capabilities land.
+5. **Forward-compat** — stable-anchor preference, validated by a
+   rebuild-perturbation test (perturb volatile fragments → selector still
+   resolves).
+6. **Code health** — one unified minimization path; the cover search is deleted
+   once everything routes through read-off. STYLE-clean.
+7. **gaffer-private** — apply across the whole spec, replacing fragile
+   `binding.name` pins and exact-minified-name pins; quantify the fragile-pin
+   reduction.
+
+**Non-goals / accepted imperfections:** perfect cardinality-minimality on
+adversarial tail cases (near-minimal is fine); preserving YAML comments (out via
+serde); embedded/non-trailing volatility in regex anchors (future).
+
+## Backlog (open only)
+
+Prioritized, next-up first:
+
+1. **Incremental gaffer-private apply** (ongoing) — as each capability lands,
+   re-minimize real scopes and open gaffer PRs (review diffs for over-pin).
+2. **Migrate remaining forms to read-off:** single-target var (needs read-off to
+   model binding-group/declarator-slot tuple resolution), class/subclass
+   (`class_among_many_siblings`, `sibling_subclass_hierarchy`), statement runs
+   (`sequential_assignment_block`, `deeply_nested_call_args`), grouped objects
+   (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`). Unignore each
+   E2E case as it lands.
+3. **Anti-unification grouping** from posting co-occurrence (shared declaration
+   OR minimal-selector overlap threshold) → `binding_group`.
+4. **Delete the cover search** once all forms route through read-off
+   (`minimize_via_retention`, `cover_competitors`, `min_set_cover`,
+   `collect_*_anchors`) — shrinks `selector_codemod.rs` substantially.
+5. **`selector_codemod.rs` refactor** — do AFTER the cover deletion (deletion
+   reshapes the file; refactoring before it would conflict).
+6. **Language simplification** (see below).
+7. **W4 — whole-spec validation:** ≤10/30 s + real-chunk size-sweep; refresh the
+   dogfood note.
+
+Lower priority / opportunistic:
+
+- Regex-literal anchors: embedded / non-trailing volatility, GUID/base64 shapes
+  (currently trailing hex/digit only).
+- Skeleton-feature stability: refine further by multiplicity / depth.
+
+## Language simplification: prefer `ANYTHING` where the context is unambiguous
+
+`ANYTHING` is already parse-position-polymorphic (see `source_match_holes.rs`):
+in an expression position it behaves like `EXPR`, as a bare expression statement
+like `STMT`, as a declarator name like `DECLARATORS`, as an object shorthand it
+absorbs `OBJECT_PROPS`, as an init-less class field like `CLASS_REST`, etc. So in
+any position where **only one kind of placeholder is syntactically legal**, the
+specific keyword (`OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`, `ARGS`, ...) is
+redundant with `ANYTHING`. Reducing to one placeholder where unambiguous cuts
+language surface and reader ambiguity.
+
+Do this **after** minimizer emission stabilizes (after migration + cover deletion),
+since it rewrites emitted selectors and touches many fixtures:
+
+- **Emit `ANYTHING`** from the minimizer/renderer in unambiguous positions instead
+  of the specific list hole; keep the specific keyword only where the position
+  genuinely admits more than one placeholder kind (document which).
+- The matcher already accepts `ANYTHING` in those positions, so this is an
+  emission + fixture change, not a matcher change. Confirm equivalence through
+  swc; the prove-gate is unchanged.
+- Decide per keyword whether to deprecate/remove it once fully subsumed (affects
+  existing specs — needs a sweep) or keep it as accepted-but-not-emitted sugar.
+  Default: keep accepting, stop emitting; revisit removal separately.
