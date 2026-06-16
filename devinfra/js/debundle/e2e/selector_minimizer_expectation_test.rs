@@ -506,6 +506,48 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Aspirational: a SINGLE-target class with no same-shape sibling to discriminate
+// against should still hole its body down to a few stable anchors (a unique
+// member name plus a discriminating literal), absorbing every other member and
+// the constructor with CLASS_REST and holing the kept member's body with
+// STMT_LIST. Today, with no sibling to read off against, the minimizer finds no
+// sparse selector and keeps the ENTIRE class body verbatim (zero holes) — the
+// single most common and largest over-pin in the real survey (cf.
+// `domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept whole,
+// and ~360 other fully-verbatim conversions). A whole-body pin is only
+// marginally better than the original minified-name pin: alpha-matched and
+// fails loudly, but rebuild-fragile and huge.
+minimizer_expectation_case!(
+    #[ignore = "single-target class with no sibling keeps the whole body verbatim instead of CLASS_REST + one anchored member"]
+    minimizes_single_target_class_whole_body,
+    fixture = "single_target_class_whole_body",
+    name = "single-target class keeps only one discriminating member, not the whole body",
+    module = "app/runners",
+    bindings = [("SelectedRunner", "selectedRunner")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a single-target React-style component (a function bound to a
+// const, wrapped in a HOC call) whose body opens with a wide prop-destructure
+// and continues with many hooks/handlers should minimize to a holed wrapper
+// call (ANYTHING), a STMT_LIST-holed body, and a single anchored leaf — here the
+// returned element's discriminating `className` literal — with OBJECT_PROPS
+// absorbing the other element props. Today the minimizer keeps the whole
+// component verbatim: the entire wide destructure pattern AND every body
+// statement (cf. `features/nodes/cardView.yaml` `NodeAsCard`, ~1340 lines kept
+// whole with only the outer declarator/wrapper holed). This is the
+// whole-function-body analogue of `wide_destructure_block`, which isolates only
+// the destructure-pattern holing on an already-sparse body.
+minimizer_expectation_case!(
+    #[ignore = "single-target component keeps the whole function body (wide destructure + every statement) instead of STMT_LIST down to the discriminating element literal"]
+    minimizes_component_wide_destructure_whole_body,
+    fixture = "component_wide_destructure_whole_body",
+    name = "single-target component keeps only the discriminating returned-element literal, not the whole body",
+    module = "app/components",
+    bindings = [("SelectedComponent", "selectedComponent")],
+    expected = "expected_match.js",
+);
+
 // Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
 // slot's direct shallow literals including object-property values. The group's
 // shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`

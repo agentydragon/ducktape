@@ -244,8 +244,32 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
 10. **Language simplification** (see below).
 11. **W4 — whole-spec validation:** **hard budget met** — whole chunk ~13s after
     #2280 (was ~110s), every sub-scope ≤8s; ≤10s ideal narrowly missed. Measured
-    and recorded in the dogfood note. Remaining: close the last ~3s to the ideal
-    (parse/index floor or batching residual non-singleton proofs) if desired.
+    and recorded in the dogfood note.
+12. **Perf — close the ≤10s ideal (index-build cost).** With the prove-gate cheap,
+    the remaining cost is dominated by the **index build**, not parsing or the
+    per-member proof. callgrind on the real chunk (see
+    <../debug/selector_minimizer_perf.md>) attributes the top self-cost to
+    `Ord::cmp` on `SelectorFeature` / `ShapeFeature` / `ShapeNode` (String-label
+    `memcmp`) inside the `BTreeMap`/`BTreeSet` build, plus ~30% allocator churn
+    (`malloc`/`free`/`malloc_consolidate`) from the many small posting-list nodes.
+    Targets, highest-leverage first: (a) **intern feature labels to integer IDs**
+    so feature comparison is an int compare, not `memcmp` on Strings; (b) swap the
+    posting-list `BTreeMap`/`BTreeSet` for a hashed map (`FxHashMap`/`FxHashSet`)
+    where ordered iteration isn't required; (c) reserve/amortise allocations in
+    `SelectorCandidateIndex::new` / `ShapeIndex::with_extractor`. Any one likely
+    recovers the last ~3s.
+13. **Dogfood-apply on gaffer-private (in progress).** Run `synthesize-selectors
+--apply` on the real spec, review for over-pin, and PR the beneficial minimized
+    selectors (fragile minified-name pins → forward-compatible `source_match`). On
+    the first apply ~79% of conversions were sparse/beneficial and ~21% over-pinned
+    (187 fully verbatim); the operational PR rule is **revert any converted selector
+    whose `match` block is >40 lines AND has ≤2 holes** back to a name pin (a
+    900-line verbatim pin is no less fragile than a 1-line minified-name pin, just
+    bigger). The over-pin patterns feed the disabled E2E cases
+    (`single_target_class_whole_body`, `component_wide_destructure_whole_body`, and
+    the existing `object_nested_value_dict` / `long_literal_value_anchor`, now
+    confirmed live on the real spec). Re-applies as each later wave lands; keep
+    pin-compatible and regen pipeline goldens.
 
 Each capability re-applies to gaffer-private as it lands (review diffs for
 over-pin; gaffer validates with a _pinned_ debundle release, so spec PRs must
