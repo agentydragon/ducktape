@@ -23,9 +23,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 // matcher, the `selector_codemod` minimizer, and `selector_candidate_index`
 // share one spelling. See that module's docs for the hole language.
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
 };
 
 const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
@@ -3949,6 +3949,124 @@ const unrelatedB = "different-token-42";"#,
             );
         });
     }
+
+    #[test]
+    fn case_rest_hole_is_recognized_only_as_bare_keyword_empty_case() {
+        js_ast::with_swc_globals(|| {
+            let item = parse_one("switch (x) { case CASE_REST: }");
+            let Stmt::Switch(switch) = &item.as_stmt().unwrap() else {
+                panic!("expected switch");
+            };
+            assert!(is_case_rest_hole(&switch.cases[0]));
+
+            // A `case CASE_REST:` with a body is a real case, not a hole.
+            let with_body = parse_one("switch (x) { case CASE_REST: break; }");
+            let Stmt::Switch(switch) = &with_body.as_stmt().unwrap() else {
+                panic!("expected switch");
+            };
+            assert!(!is_case_rest_hole(&switch.cases[0]));
+
+            // `default:` is never a hole; nor is an unrelated literal.
+            let other = parse_one(r#"switch (x) { default: case "a": }"#);
+            let Stmt::Switch(switch) = &other.as_stmt().unwrap() else {
+                panic!("expected switch");
+            };
+            assert!(!is_case_rest_hole(&switch.cases[0]));
+            assert!(!is_case_rest_hole(&switch.cases[1]));
+        });
+    }
+
+    #[test]
+    fn case_rest_hole_absorbs_surrounding_case_runs() {
+        js_ast::with_swc_globals(|| {
+            let selector = selector(
+                r#"function readable(ANYTHING) {
+  switch (ANYTHING) {
+    case CASE_REST:
+    case "go":
+      STMT_LIST
+    case CASE_REST:
+  }
+}"#,
+            );
+            let needle = parse_one(&selector.match_source);
+            let prepared = PreparedNeedle::new(&needle, &selector);
+
+            // `case "go":` with arbitrary cases before and after.
+            let middle = parse_one(
+                r#"function m(t) {
+  switch (t) {
+    case "a": return 1;
+    case "go": doThing(); break;
+    case "b": return 2;
+    default: return 3;
+  }
+}"#,
+            );
+            assert!(prepared.matches(&middle));
+
+            // `case "go":` as the very first arm (leading hole absorbs zero).
+            let leading = parse_one(
+                r#"function m(t) {
+  switch (t) {
+    case "go": go();
+    case "z": zz();
+  }
+}"#,
+            );
+            assert!(prepared.matches(&leading));
+
+            // No `case "go":` arm at all — must not match.
+            let no_go = parse_one(
+                r#"function m(t) {
+  switch (t) {
+    case "a": return 1;
+    case "b": return 2;
+  }
+}"#,
+            );
+            assert!(!prepared.matches(&no_go));
+        });
+    }
+
+    #[test]
+    fn case_rest_hole_does_not_change_non_hole_switch_matching() {
+        js_ast::with_swc_globals(|| {
+            // A switch selector with no CASE_REST hole still matches exactly.
+            let selector = selector(
+                r#"function readable(ANYTHING) {
+  switch (ANYTHING) {
+    case "a": STMT_LIST
+    case "b": STMT_LIST
+  }
+}"#,
+            );
+            let needle = parse_one(&selector.match_source);
+            let prepared = PreparedNeedle::new(&needle, &selector);
+
+            let exact = parse_one(
+                r#"function m(t) {
+  switch (t) {
+    case "a": one();
+    case "b": two();
+  }
+}"#,
+            );
+            assert!(prepared.matches(&exact));
+
+            // Extra trailing case is rejected without a CASE_REST hole.
+            let extra = parse_one(
+                r#"function m(t) {
+  switch (t) {
+    case "a": one();
+    case "b": two();
+    case "c": three();
+  }
+}"#,
+            );
+            assert!(!prepared.matches(&extra));
+        });
+    }
 }
 
 #[derive(Clone, Default)]
@@ -4409,7 +4527,7 @@ impl<'a> AstWildcardMatcher<'a> {
             }
             (Stmt::Switch(needle), Stmt::Switch(candidate)) => {
                 self.match_expr(&needle.discriminant, &candidate.discriminant)
-                    && self.match_slice(&needle.cases, &candidate.cases, Self::match_switch_case)
+                    && self.match_switch_case_slice(&needle.cases, &candidate.cases)
             }
             (Stmt::Throw(needle), Stmt::Throw(candidate)) => {
                 self.match_expr(&needle.arg, &candidate.arg)
@@ -5679,6 +5797,24 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
+    /// Match a `switch` case list. `case CASE_REST:` holes split the
+    /// needle into fixed segments matched as an ordered subsequence with
+    /// gaps (see [`Self::match_list_with_holes`]); with no hole this is an
+    /// exact element-wise match. The run absorbed by a hole may contain
+    /// `case`/`default` clauses freely.
+    fn match_switch_case_slice(&mut self, needle: &[SwitchCase], candidate: &[SwitchCase]) -> bool {
+        if needle.iter().any(is_case_rest_hole) {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                is_case_rest_hole,
+                Self::match_switch_case,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_switch_case)
+        }
+    }
+
     /// Match a variable declarator list. `DECLARATORS` /
     /// `DECLARATORS_*` holes split the needle into fixed declarator
     /// segments matched as an ordered subsequence with gaps. The return
@@ -6093,6 +6229,10 @@ struct WildcardIdents {
     /// `Ident`), so it survives alpha-canonicalization without being
     /// reserved — only presence matters for routing.
     class_rest_present: bool,
+    /// Whether the selector contains any `case CASE_REST:` switch-case
+    /// hole. The marker is a `case` test identifier; only presence
+    /// matters for routing to the structural matcher.
+    case_rest_present: bool,
 }
 
 impl WildcardIdents {
@@ -6110,6 +6250,7 @@ impl WildcardIdents {
             && self.patterns.is_empty()
             && !self.string_literal_regex_present
             && !self.class_rest_present
+            && !self.case_rest_present
     }
 }
 
@@ -6171,6 +6312,14 @@ impl Visit for WildcardIdentCollector {
             return;
         }
         member.visit_children_with(self);
+    }
+
+    fn visit_switch_case(&mut self, case: &SwitchCase) {
+        if is_case_rest_hole(case) {
+            self.idents.case_rest_present = true;
+            return;
+        }
+        case.visit_children_with(self);
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
@@ -6366,6 +6515,20 @@ fn is_class_rest_hole(member: &ClassMember) -> bool {
             PropName::Ident(ident)
                 if ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
                     || ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD
+        )
+}
+
+/// Whether `case` is a `case CASE_REST:` switch-case hole: a `case`
+/// clause whose test is exactly the bare keyword identifier and whose
+/// body is empty. Matched as an exact token (not a `CASE_REST_*` prefix)
+/// so it never collides with a real `case CASE_REST:` discriminant; since
+/// it never binds, a suffix would carry no meaning anyway. A `default:`
+/// clause is never a hole.
+fn is_case_rest_hole(case: &SwitchCase) -> bool {
+    case.cons.is_empty()
+        && matches!(
+            case.test.as_deref(),
+            Some(Expr::Ident(ident)) if ident.sym.as_ref() == CASE_REST_HOLE_KEYWORD
         )
 }
 

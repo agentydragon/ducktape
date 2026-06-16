@@ -14,15 +14,23 @@
 //! subtree/statement everywhere it appears.
 //!
 //! `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-//! statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, and
-//! `DECLARATORS` are variable-length list holes: `ARGS` absorbs a run of
-//! call/new arguments, `STMT_LIST` absorbs a run of block statements (or
-//! top-level anonymous selector statements), `OBJECT_PROPS` absorbs a run of
-//! object literal properties/spreads, `CLASS_REST` absorbs a run of class
-//! members, and `DECLARATORS` absorbs a run of variable declarators inside
-//! one `var`/`let`/`const` declaration. List-hole suffixes are labels for
-//! readability; they do not bind the absorbed sequence for cross-occurrence
-//! equality.
+//! statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`,
+//! `CASE_REST`, and `DECLARATORS` are variable-length list holes: `ARGS`
+//! absorbs a run of call/new arguments, `STMT_LIST` absorbs a run of block
+//! statements (or top-level anonymous selector statements), `OBJECT_PROPS`
+//! absorbs a run of object literal properties/spreads, `CLASS_REST` absorbs a
+//! run of class members, `CASE_REST` absorbs a run of `case`/`default`
+//! clauses inside one `switch` statement, and `DECLARATORS` absorbs a run of
+//! variable declarators inside one `var`/`let`/`const` declaration.
+//! List-hole suffixes are labels for readability; they do not bind the
+//! absorbed sequence for cross-occurrence equality.
+//!
+//! The `CASE_REST` list hole is spelled as a `case CASE_REST:` clause with no
+//! body (the switch analog of the `CLASS_REST;` class field): a selector like
+//! `switch (ANYTHING) { case CASE_REST: case "x": STMT_LIST; case CASE_REST: }`
+//! matches a `switch` that has a `case "x":` arm preceded/followed by any
+//! other `case`/`default` clauses. Like `CLASS_REST`, it is matched as an
+//! exact token with no suffix and never binds.
 //!
 //! `ANYTHING` is parse-position polymorphic sugar for the anonymous typed
 //! hole at positions where plain JavaScript can parse it. In an expression
@@ -40,6 +48,7 @@ pub const EXPR_HOLE_KEYWORD: &str = "EXPR";
 pub const STMT_HOLE_KEYWORD: &str = "STMT";
 pub const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 pub const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
+pub const CASE_REST_HOLE_KEYWORD: &str = "CASE_REST";
 pub const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 pub const ARGS_HOLE_KEYWORD: &str = "ARGS";
 pub const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";

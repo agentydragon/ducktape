@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
-    OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
 };
 use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
 use swc_ecma_ast::*;
@@ -573,6 +573,16 @@ impl Visit for AstFeatureCollector<'_, '_> {
         stmt.visit_children_with(self);
     }
 
+    fn visit_switch_case(&mut self, case: &SwitchCase) {
+        // A `case CASE_REST:` hole contributes no feature: it stands in
+        // for an arbitrary run of dropped cases, so a candidate switch
+        // need not carry any literal from it.
+        if case_rest_hole_name(case).is_some() {
+            return;
+        }
+        case.visit_children_with(self);
+    }
+
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         if declarator_list_hole_name(declarator).is_some() {
             declarator.init.visit_with(self);
@@ -772,6 +782,16 @@ fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
         .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
+fn case_rest_hole_name(case: &SwitchCase) -> Option<&str> {
+    if !case.cons.is_empty() {
+        return None;
+    }
+    let Some(Expr::Ident(ident)) = case.test.as_deref() else {
+        return None;
+    };
+    hole_name_for(ident.sym.as_ref(), CASE_REST_HOLE_KEYWORD)
+}
+
 fn string_literal_regex_pattern_call(call: &CallExpr) -> bool {
     let Callee::Expr(callee) = &call.callee else {
         return false;
@@ -946,6 +966,31 @@ function render(value) { return value; }"#,
         assert_eq!(exact, vec![0]);
         assert!(exact.into_iter().all(|idx| candidate_set.contains(idx)));
         assert_eq!(body_indices(candidate_set), vec![0]);
+    }
+
+    #[test]
+    fn source_match_query_is_sound_for_switch_case_rest_selectors() {
+        let runtime = parse_module(
+            r#"switch (a) { case "x": doX(); case "y": doY(); }
+switch (b) { case "z": doZ(); }
+function unrelated() { return 1; }"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        // The discriminating `case "x":` literal must keep the candidate
+        // set a sound superset; the `case CASE_REST:` holes contribute no
+        // feature, so only the switch that carries `"x"` survives.
+        let selector = selector(
+            "switch (ANYTHING) {\n  case CASE_REST:\n  case \"x\":\n    STMT_LIST;\n  case CASE_REST:\n}",
+        );
+
+        let exact = js_ast::with_swc_globals(|| {
+            source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
+                .unwrap()
+        });
+        let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
+
+        assert_eq!(exact, vec![0]);
+        assert!(exact.into_iter().all(|idx| candidate_set.contains(idx)));
     }
 
     #[test]

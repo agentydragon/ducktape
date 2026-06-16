@@ -30,9 +30,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -1308,6 +1308,16 @@ fn object_props_prop() -> PropOrSpread {
     ))))
 }
 
+/// A `case CASE_REST:` switch-case hole that absorbs a run of dropped
+/// `case`/`default` clauses (the switch analog of `CLASS_REST;`).
+fn case_rest_case() -> SwitchCase {
+    SwitchCase {
+        span: DUMMY_SP,
+        test: Some(Box::new(Expr::Ident(ident_node(CASE_REST_HOLE_KEYWORD)))),
+        cons: vec![],
+    }
+}
+
 fn anything_pat() -> Pat {
     Pat::Ident(BindingIdent {
         id: ident_node(ANYTHING_HOLE_KEYWORD),
@@ -1520,9 +1530,49 @@ fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
             Stmt::Try(holed)
         }
         Stmt::Block(block) => Stmt::Block(holed_block(block, kept)),
+        Stmt::Switch(switch) => {
+            let mut holed = switch.clone();
+            holed.discriminant = Box::new(hole_expr(&switch.discriminant, kept));
+            holed.cases = hole_switch_cases(&switch.cases, kept);
+            Stmt::Switch(holed)
+        }
         // Unmodeled statement shapes carrying a kept anchor: keep verbatim.
         _ => stmt.clone(),
     }
+}
+
+/// Prune a `switch`'s case list: drop runs of non-discriminating
+/// `case`/`default` clauses into `case CASE_REST:` holes, keeping only the
+/// clauses that retain an anchor (their test literal or a body statement).
+/// Mirrors [`hole_class_members`].
+fn hole_switch_cases(cases: &[SwitchCase], kept: &BTreeSet<AnchorSpan>) -> Vec<SwitchCase> {
+    let mut out = Vec::new();
+    let mut dropped_run = false;
+    for case in cases {
+        if node_retains_any(case.span(), kept) {
+            if dropped_run {
+                out.push(case_rest_case());
+                dropped_run = false;
+            }
+            out.push(hole_switch_case(case, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run || out.is_empty() {
+        out.push(case_rest_case());
+    }
+    out
+}
+
+fn hole_switch_case(case: &SwitchCase, kept: &BTreeSet<AnchorSpan>) -> SwitchCase {
+    let mut holed = case.clone();
+    holed.test = case
+        .test
+        .as_ref()
+        .map(|test| Box::new(hole_expr(test, kept)));
+    holed.cons = hole_stmts(&case.cons, kept);
+    holed
 }
 
 /// Candidate concrete anchors, split into preference tiers. Literal values are
@@ -1660,6 +1710,20 @@ fn collect_stmt_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
         Stmt::Block(block) => {
             for stmt in &block.stmts {
                 collect_stmt_anchors(stmt, candidates);
+            }
+        }
+        Stmt::Switch(switch) => {
+            collect_expr_anchors(&switch.discriminant, 0, candidates);
+            for case in &switch.cases {
+                // A case test literal (`case "x":`) is the discriminating
+                // landmark that the `CASE_REST` hole keeps; collect it as a
+                // shallow literal so the cover can retain it.
+                if let Some(test) = &case.test {
+                    collect_expr_anchors(test, 0, candidates);
+                }
+                for stmt in &case.cons {
+                    collect_stmt_anchors(stmt, candidates);
+                }
             }
         }
         _ => {}

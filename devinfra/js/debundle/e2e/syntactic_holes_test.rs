@@ -24,6 +24,9 @@
 //!   want to pin.
 //! - `CLASS_REST;` as a class field absorbs a run of class members —
 //!   e.g. "match this class by these members, ignore the rest".
+//! - `case CASE_REST:` as an empty switch case absorbs a run of
+//!   `case`/`default` clauses — e.g. "match this switch by these
+//!   discriminating cases, ignore the rest".
 //! - `DECLARATORS` / `DECLARATORS_name = null` in a variable declaration
 //!   absorbs a run of declarators — e.g. match a few stable entries in a
 //!   wider `const` list without spelling unrelated siblings.
@@ -1561,6 +1564,67 @@ export { Counter };
         // The full class moved, members and all.
         &["class", "increment", "reset"],
         &["CLASS_REST", "STMT_LIST_CTOR"],
+    );
+}
+
+#[test]
+fn member_source_match_case_rest_hole_selects_switch_ignoring_other_cases() {
+    // Pin the function by one discriminating `case "go":` arm and let the
+    // `case CASE_REST:` holes absorb the surrounding cases. The whole
+    // function still moves — the holes are only in the selector.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function dispatch(kind) {
+  switch (kind) {
+    case "alpha":
+      return 1;
+    case "beta":
+      return 2;
+    case "go":
+      return 42;
+    case "delta":
+      return 4;
+    default:
+      return 0;
+  }
+}
+console.log(dispatch("go"));
+export { dispatch };
+"#,
+        vec![logical_module(
+            "router",
+            &[Member::source_alpha(
+                "dispatch",
+                r#"function readable(ANYTHING) {
+  switch (ANYTHING) {
+    case CASE_REST:
+    case "go":
+      STMT_LIST_GO;
+    case CASE_REST:
+  }
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "42\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/router.js",
+        &["dispatch"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/router.js",
+        // The full switch moved, every case and all.
+        &[
+            "function dispatch",
+            "switch",
+            "\"alpha\"",
+            "\"go\"",
+            "default",
+        ],
+        &["CASE_REST", "STMT_LIST_GO"],
     );
 }
 

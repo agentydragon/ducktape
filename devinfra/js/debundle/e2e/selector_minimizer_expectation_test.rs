@@ -334,6 +334,20 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// A target function whose body is a many-arm `switch` among same-shaped
+// sibling switches minimizes to `case CASE_REST:` holes around the single
+// discriminating `case` literal — closing the over-pin gap the survey flagged
+// for many-arm switches. Active: `hole_switch_cases` emits the run holes and
+// the matcher proves unique resolution.
+minimizer_expectation_case!(
+    minimizes_switch_case_run,
+    fixture = "switch_case_run",
+    name = "many-arm switch keeps only the discriminating case literal",
+    module = "app/routers",
+    bindings = [("SelectedRouter", "selectedRouter")],
+    expected = "expected_match.js",
+);
+
 // Aspirational: a target class among many same-shape sibling classes should
 // minimize to CLASS_REST holes plus the one discriminating member, not fall
 // back to emitting the full class body. Today `minimize_class_selector` bails

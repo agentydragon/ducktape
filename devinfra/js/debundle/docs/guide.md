@@ -271,15 +271,15 @@ Default to this ladder when writing or repairing selectors:
    stable.
 2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
    signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
-   `OBJECT_PROPS`, `CLASS_REST`, or `DECLARATORS`) when the syntactic role, a
-   typed list hole, or a named/equality hole makes the selector easier to read
-   or diagnose.
+   `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`) when the
+   syntactic role, a typed list hole, or a named/equality hole makes the
+   selector easier to read or diagnose.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
 4. Avoid exact long bodies/subexpressions unless they are the stable signal
    needed to disambiguate. If `ANYTHING`, `EXPR`, `OBJECT_PROPS`, `ARGS`,
-   `CLASS_REST`, `STMT_LIST`, or declarator gaps keep the selector unique, use
-   the hole form.
+   `CLASS_REST`, `CASE_REST`, `STMT_LIST`, or declarator gaps keep the selector
+   unique, use the hole form.
 5. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
@@ -353,8 +353,8 @@ review. Passing the production matcher only proves today's code is addressed;
 it does not prove that exact parameter destructuring, helper call arguments,
 object property values, or nested statement bodies are durable. When dry-run or
 apply output is visibly overpinned, prefer `ANYTHING`, `EXPR`, `ARGS`,
-`STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, or `DECLARATORS` minimization where
-the matcher supports it. If the concise selector cannot be expressed yet, leave
+`STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`
+minimization where the matcher supports it. If the concise selector cannot be expressed yet, leave
 the binding as selector debt and record a generic minimization gap rather than
 committing a hand-maintained exact long selector.
 
@@ -804,6 +804,21 @@ absorbed sequence for cross-occurrence equality.
 - `CLASS_REST;` as a class field (no initializer) matches a run of class
   members — "this class by these members, ignore the rest". `CLASS_REST` is an
   exact token (not a prefix).
+- `case CASE_REST:` as an empty switch case (no body) matches a run of
+  `case`/`default` clauses — "this switch by these discriminating cases,
+  ignore the rest". `CASE_REST` is an exact token (not a prefix), and a
+  `default:` clause is never a hole. Use it to pin a many-arm `switch` by the
+  one or two cases that discriminate it without spelling every arm:
+
+  ```js
+  switch (ANYTHING) {
+    case CASE_REST:
+    case "target":
+      STMT_LIST;
+    case CASE_REST:
+  }
+  ```
+
 - `DECLARATORS` (or `DECLARATORS_name = null`) inside one variable declaration
   matches a run of declarators.
 
