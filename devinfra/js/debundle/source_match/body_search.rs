@@ -1,5 +1,16 @@
 use super::*;
 
+/// Fetch the runtime-module top-level item a matcher resolved to. The
+/// index always comes from a window/alignment computed against
+/// `runtime_module.body` itself, so a miss is an internal invariant
+/// break, not a user error.
+pub(crate) fn require_body_item(runtime_module: &Module, body_idx: usize) -> Result<&ModuleItem> {
+    runtime_module
+        .body
+        .get(body_idx)
+        .with_context(|| format!("body index {body_idx} disappeared while resolving source_match"))
+}
+
 pub(crate) fn find_matching_body_indices(
     runtime_module: &Module,
     needle: &ModuleItem,

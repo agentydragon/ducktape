@@ -93,12 +93,8 @@ fn resolve_member_selector_claims_in_globals(
 
     let mut parsed_by_source = BTreeMap::new();
     for source_path in &source_paths {
-        let resolved =
-            resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
-        let source = fs::read_to_string(&resolved)
-            .with_context(|| format!("reading source file {}", resolved.display()))?;
-        let parsed = js_ast::parse_js_module(source_path, &source)
-            .with_context(|| format!("parsing source file {}", resolved.display()))?;
+        let parsed =
+            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
         parsed_by_source.insert(source_path.clone(), parsed);
     }
 
@@ -206,12 +202,8 @@ fn addressable_anonymous_statement_owner_ids_in_globals(
 
     let mut out = BTreeSet::<String>::new();
     for source_path in &source_paths {
-        let resolved =
-            resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
-        let source = fs::read_to_string(&resolved)
-            .with_context(|| format!("reading source file {}", resolved.display()))?;
-        let parsed = js_ast::parse_js_module(source_path, &source)
-            .with_context(|| format!("parsing source file {}", resolved.display()))?;
+        let parsed =
+            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
         let unique_body_indices: BTreeSet<usize> = SyntaxContext::within_ignored_ctxt(|| {
             parsed
                 .module
@@ -286,12 +278,8 @@ fn resolve_anonymous_statement_claims_in_globals(
 
     let mut parsed_by_source = BTreeMap::new();
     for source_path in &source_paths {
-        let resolved =
-            resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
-        let source = fs::read_to_string(&resolved)
-            .with_context(|| format!("reading source file {}", resolved.display()))?;
-        let parsed = js_ast::parse_js_module(source_path, &source)
-            .with_context(|| format!("parsing source file {}", resolved.display()))?;
+        let parsed =
+            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
         parsed_by_source.insert(source_path.clone(), parsed);
     }
 
@@ -348,6 +336,22 @@ fn resolve_anonymous_statement_claims_in_globals(
     }
 
     Ok(out)
+}
+
+/// Resolve `source_path` to a file on disk, read it, and parse it as a JS
+/// module. The resolve/read/parse trio every selector-claim resolver in this
+/// module repeats; the read and parse error contexts name the resolved file.
+fn read_and_parse_source(
+    source_path: &str,
+    source_root: Option<&Path>,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+) -> Result<js_ast::ParsedJsModule> {
+    let resolved = resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
+    let source = fs::read_to_string(&resolved)
+        .with_context(|| format!("reading source file {}", resolved.display()))?;
+    js_ast::parse_js_module(source_path, &source)
+        .with_context(|| format!("parsing source file {}", resolved.display()))
 }
 
 fn resolve_source_file(

@@ -9,12 +9,7 @@ pub fn source_match_declared_binding_names(
         "binding_groups[].source_match",
         format!("<binding group source_match in {request_id}>"),
         &source_match.match_source,
-        || {
-            format!(
-                "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
-                source_match.match_source
-            )
-        },
+        "binding_groups[].source_match",
     )?;
     Ok(parsed
         .body
@@ -281,12 +276,7 @@ pub fn find_anonymous_statement_body_index_groups(
                 "anonymous_statements[].source_match",
                 format!("<anonymous_statement match in {request_id}>"),
                 &selector.match_source,
-                || {
-                    format!(
-                        "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{}",
-                        selector.match_source
-                    )
-                },
+                "anonymous_statements[].match",
             )?;
             let target_indices =
                 anonymous_selector_target_statement_indices(request_id, selector, &parsed.body)?;
@@ -340,12 +330,7 @@ pub fn source_match_body_debt(
         "source_match",
         format!("<source_match debt in {request_id}>"),
         &selector.match_source,
-        || {
-            format!(
-                "logical_module {request_id}: source_match did not parse as JS:\n{}",
-                selector.match_source
-            )
-        },
+        "source_match",
     )?;
     let exact_groups = find_matching_body_group_alignments(runtime_module, &parsed.body, selector);
     let [needle] = parsed.body.as_slice() else {
@@ -538,12 +523,7 @@ pub(crate) fn resolve_member_binding_group_impl(
         "binding_groups[].source_match",
         format!("<binding group source_match in {request_id}>"),
         &selector.match_source,
-        || {
-            format!(
-                "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
-                selector.match_source
-            )
-        },
+        "binding_groups[].source_match",
     )?;
     if parsed.body.is_empty() {
         bail!(
@@ -647,9 +627,7 @@ pub(crate) fn resolve_member_binding_group_impl(
             );
         };
         let matched_body_idx = *matched_body_idx;
-        let item = runtime_module.body.get(matched_body_idx).with_context(|| {
-            format!("body index {matched_body_idx} disappeared while resolving source_match")
-        })?;
+        let item = require_body_item(runtime_module, matched_body_idx)?;
         let declared = declared_bindings(item);
         let Some(binding) = declared.get(target_binding_idx) else {
             bail!(

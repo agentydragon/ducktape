@@ -1,5 +1,39 @@
 use super::*;
 
+/// `target_binding` names a binding the selector source never declares.
+/// Shared by the statement-level, declarator-level, and single-needle
+/// target-binding location resolvers, which all reject this case identically.
+fn target_binding_not_declared(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "logical_module {request_id}: members[].selector.source_match target_binding \
+         `{target_binding}` is not declared by the selector source:\n{match_source}",
+        match_source = selector.match_source,
+    )
+}
+
+/// `target_binding` is declared more than once in the selector source.
+/// `index_kind` names what the reported `indices` count (e.g.
+/// `"statement/binding"`, `"declared-binding"`, `"declarator/binding"`), the
+/// only detail that varies between the resolvers.
+fn target_binding_ambiguous(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+    index_kind: &str,
+    indices: impl std::fmt::Debug,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "logical_module {request_id}: members[].selector.source_match target_binding \
+         `{target_binding}` is ambiguous within the selector source at {index_kind} \
+         indices {indices:?}. Refine the selector source:\n{match_source}",
+        match_source = selector.match_source,
+    )
+}
+
 pub(crate) fn selector_binding_location(
     needles: &[ModuleItem],
     request_id: &str,
@@ -19,18 +53,18 @@ pub(crate) fn selector_binding_location(
         .collect();
     match selector_binding_locations.as_slice() {
         [single] => Ok(*single),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is not declared by the selector source:\n{match_source}",
-            match_source = selector.match_source,
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is ambiguous within the selector source at statement/binding \
-             indices {:?}. Refine the selector source:\n{match_source}",
+        [] => Err(target_binding_not_declared(
+            request_id,
+            selector,
+            target_binding,
+        )),
+        multiple => Err(target_binding_ambiguous(
+            request_id,
+            selector,
+            target_binding,
+            "statement/binding",
             multiple,
-            match_source = selector.match_source,
-        ),
+        )),
     }
 }
 
@@ -45,12 +79,7 @@ pub(crate) fn find_member_binding_matches(
         "members[].selector.source_match",
         format!("<member source_match in {request_id}>"),
         &selector.match_source,
-        || {
-            format!(
-                "logical_module {request_id}: members[].selector.source_match did not parse as JS:\n{}",
-                selector.match_source
-            )
-        },
+        "members[].selector.source_match",
     )?;
     if let Some(target_binding) = &selector.target_binding {
         if parsed.body.is_empty() {
@@ -101,9 +130,7 @@ pub(crate) fn find_member_binding_matches(
     }
     let mut matches = Vec::new();
     for body_idx in find_matching_body_indices(runtime_module, needle, selector, filter) {
-        let item = runtime_module.body.get(body_idx).with_context(|| {
-            format!("body index {body_idx} disappeared while resolving source_match")
-        })?;
+        let item = require_body_item(runtime_module, body_idx)?;
         let declared = declared_bindings(item);
         match declared.as_slice() {
             [single] => matches.push(MemberBindingMatch {
@@ -164,9 +191,7 @@ pub(crate) fn find_matching_target_bindings(
         find_matching_body_ranges(runtime_module, needles, selector, target_item_idx, filter)
     {
         let matched_body_idx = body_idx + target_item_idx;
-        let item = runtime_module.body.get(matched_body_idx).with_context(|| {
-            format!("body index {matched_body_idx} disappeared while resolving source_match")
-        })?;
+        let item = require_body_item(runtime_module, matched_body_idx)?;
         let declared = declared_bindings(item);
         let Some(binding) = declared.get(target_binding_idx) else {
             bail!(
@@ -293,18 +318,22 @@ pub(crate) fn find_matching_target_var_declarators(
         .collect();
     let target_binding_idx = match selector_binding_indices.as_slice() {
         [single] => *single,
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is not declared by the selector source:\n{match_source}",
-            match_source = selector.match_source,
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is ambiguous within the selector source at declared-binding \
-             indices {:?}. Refine the selector source:\n{match_source}",
-            multiple,
-            match_source = selector.match_source,
-        ),
+        [] => {
+            return Err(target_binding_not_declared(
+                request_id,
+                selector,
+                target_binding,
+            ));
+        }
+        multiple => {
+            return Err(target_binding_ambiguous(
+                request_id,
+                selector,
+                target_binding,
+                "declared-binding",
+                multiple,
+            ));
+        }
     };
     let prepared = PreparedNeedle::new(needle, selector);
     let prefilter = VarDeclaratorPrefilter::new(needle, &prepared);
@@ -551,18 +580,18 @@ pub(crate) fn selector_var_declarator_binding_location(
         .collect::<Vec<_>>();
     match selector_binding_locations.as_slice() {
         [single] => Ok(*single),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is not declared by the selector source:\n{match_source}",
-            match_source = selector.match_source,
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match target_binding \
-             `{target_binding}` is ambiguous within the selector source at declarator/binding \
-             indices {:?}. Refine the selector source:\n{match_source}",
+        [] => Err(target_binding_not_declared(
+            request_id,
+            selector,
+            target_binding,
+        )),
+        multiple => Err(target_binding_ambiguous(
+            request_id,
+            selector,
+            target_binding,
+            "declarator/binding",
             multiple,
-            match_source = selector.match_source,
-        ),
+        )),
     }
 }
 

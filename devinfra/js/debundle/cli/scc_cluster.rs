@@ -99,16 +99,7 @@ pub struct ClusterReport {
 }
 
 pub fn run_scc(args: SccArgs) -> Result<()> {
-    let graph: analysis::OwnerGraphReport = serde_json::from_str(
-        &std::fs::read_to_string(&args.common.owner_graph_path)
-            .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
-    )
-    .with_context(|| {
-        format!(
-            "parsing owner graph {}",
-            args.common.owner_graph_path.display()
-        )
-    })?;
+    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
     // If a binding was supplied, find its owner -> destination module
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_owners` helper so minified and
@@ -192,10 +183,7 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 
 pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     let sym = args.resolve_sym()?;
-    let graph: analysis::OwnerGraphReport = serde_json::from_str(
-        &std::fs::read_to_string(&args.common.owner_graph_path)
-            .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
-    )?;
+    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
     // Use the shared `resolve_binding_owners` helper (same code path
     // `describe` / `show-source` / `scc --binding` use), so minified
     // and readable names both work.

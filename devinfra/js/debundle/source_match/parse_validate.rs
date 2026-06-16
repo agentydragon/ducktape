@@ -149,10 +149,14 @@ pub(crate) fn parse_selector_module_with_capability_check(
     selector_kind: &str,
     file_label: String,
     match_source: &str,
-    parse_error_context: impl FnOnce() -> String,
+    // Field path used only in the "did not parse as JS" message; usually
+    // equals `selector_kind`, but a few callers name the narrower `.match`
+    // sub-field whose source actually failed to parse.
+    parse_label: &str,
 ) -> Result<Module> {
-    let parsed =
-        js_ast::parse_js_module_ast(&file_label, match_source).with_context(parse_error_context)?;
+    let parsed = js_ast::parse_js_module_ast(&file_label, match_source).with_context(|| {
+        format!("logical_module {request_id}: {parse_label} did not parse as JS:\n{match_source}")
+    })?;
     validate_anything_holes(&parsed.body)?;
     validate_selector_capabilities(request_id, selector_kind, match_source, &parsed)?;
     Ok(parsed)

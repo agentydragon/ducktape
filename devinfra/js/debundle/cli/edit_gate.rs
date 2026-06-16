@@ -349,11 +349,7 @@ pub fn gate_post_edit_partition(
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
 ) -> Result<()> {
-    let owner_graph_report: OwnerGraphReport = serde_json::from_str(
-        &fs::read_to_string(owner_graph_path)
-            .with_context(|| format!("reading {}", owner_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing owner graph {}", owner_graph_path.display()))?;
+    let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
     // The gate algorithm walks edges + partition, not declared sets.
     // Pass `&[]` for facts — `from_report` leaves `declared` empty,

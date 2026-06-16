@@ -42,6 +42,16 @@ use selector_debt::{
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
+/// Read and JSON-parse an `owner_graph.json` into an [`OwnerGraphReport`],
+/// the load every `cli` verb that takes `--graph` shares.
+pub(crate) fn load_owner_graph_report(
+    path: &std::path::Path,
+) -> Result<analysis::OwnerGraphReport> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_str(&text).with_context(|| format!("parsing owner graph {}", path.display()))
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "debundle",

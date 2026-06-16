@@ -191,10 +191,7 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
 }
 
 fn load_graph(common: &GateCommonArgs) -> Result<OwnerGraphReport> {
-    let text = std::fs::read_to_string(&common.owner_graph_path)
-        .with_context(|| format!("reading {}", common.owner_graph_path.display()))?;
-    serde_json::from_str(&text)
-        .with_context(|| format!("parsing owner graph {}", common.owner_graph_path.display()))
+    crate::load_owner_graph_report(&common.owner_graph_path)
 }
 
 fn run_list(args: GateListArgs) -> Result<()> {
