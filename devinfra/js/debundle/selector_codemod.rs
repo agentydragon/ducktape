@@ -1567,6 +1567,19 @@ fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> BlockStmt {
     holed
 }
 
+/// Hole a function for selector form: every parameter to an `ANYTHING` pattern
+/// (pinning arity, not names) and the body's statements to `STMT_LIST` runs
+/// around the kept anchors. Used both for top-level function selectors and for
+/// function-valued subexpressions reached through [`hole_expr`].
+fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) -> Function {
+    let mut holed = function.clone();
+    holed.params = function.params.iter().map(|_| anything_param()).collect();
+    if let Some(body) = &function.body {
+        holed.body = Some(holed_block(body, kept));
+    }
+    holed
+}
+
 /// Prune an expression into selector form: keep concrete tokens whose span is in
 /// `kept`, and replace every subtree off a kept token's path with an `ANYTHING`
 /// hole node. The result is an ordinary `swc` AST emitted by codegen, not a
@@ -1612,6 +1625,30 @@ fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.left = Box::new(hole_expr(&bin.left, kept));
             holed.right = Box::new(hole_expr(&bin.right, kept));
             Expr::Bin(holed)
+        }
+        // Function/arrow-valued subexpressions (e.g. a `wrap(function(){…})` or
+        // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole the
+        // params to `ANYTHING` and the body to `STMT_LIST` around the anchor, the
+        // same interior holing the top-level function selector does. A callback
+        // with no kept anchor never reaches here — the leading `node_retains_any`
+        // guard already collapsed it to `ANYTHING`.
+        Expr::Fn(fn_expr) => {
+            let mut holed = fn_expr.clone();
+            holed.function = Box::new(hole_function(&fn_expr.function, kept));
+            Expr::Fn(holed)
+        }
+        Expr::Arrow(arrow) => {
+            let mut holed = arrow.clone();
+            holed.params = arrow.params.iter().map(|_| anything_pat()).collect();
+            holed.body = Box::new(match arrow.body.as_ref() {
+                BlockStmtOrExpr::BlockStmt(block) => {
+                    BlockStmtOrExpr::BlockStmt(holed_block(block, kept))
+                }
+                BlockStmtOrExpr::Expr(expr) => {
+                    BlockStmtOrExpr::Expr(Box::new(hole_expr(expr, kept)))
+                }
+            });
+            Expr::Arrow(holed)
         }
         // Unmodeled shapes carrying a kept anchor: keep verbatim rather than
         // risk an unsound hole. Over-pinning here is a future refinement.
@@ -2050,19 +2087,14 @@ fn minimize_function_selector(
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
 ) -> Result<Option<SpecializedSelector>> {
-    let Some(body) = &function.body else {
+    if function.body.is_none() {
         return Ok(None);
-    };
+    }
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        let mut holed = function.clone();
-        holed.params = function.params.iter().map(|_| anything_param()).collect();
-        if let Some(holed_body) = &mut holed.body {
-            holed_body.stmts = hole_stmts(&body.stmts, kept);
-        }
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Fn(FnDecl {
             ident: ident_node(&target.export_name),
             declare: false,
-            function: Box::new(holed),
+            function: Box::new(hole_function(function, kept)),
         }))))
     };
     // Single-target functions read their minimal anchor set off the shape index.

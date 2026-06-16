@@ -295,6 +295,20 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// A single-target var initialized by a call wrapping a function expression
+// (`registerHandler(function (event) {…})`) drills into the function body via the
+// `hole_expr` `Expr::Fn` arm: the params hole to `ANYTHING`, the body to
+// `STMT_LIST` runs around the one statement carrying the discriminating string,
+// instead of pinning the whole callback verbatim.
+minimizer_expectation_case!(
+    minimizes_function_valued_init_holing,
+    fixture = "function_valued_init_holing",
+    name = "function-valued var init holes the callback body around the anchor",
+    module = "app/handlers",
+    bindings = [("SelectedHandler", "selectedHandler")],
+    expected = "expected_match.js",
+);
+
 // A single-target var initialized by an object-bearing call (`buildWidget({…})`)
 // routes through the var read-off path (`try_var_read_off` → `hole_expr` →
 // `hole_object`). The read-off picks the uniquely-present `onClick` key (held to
