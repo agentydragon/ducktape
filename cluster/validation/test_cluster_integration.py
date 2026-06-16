@@ -5,9 +5,9 @@ Tests that parse the cluster kustomization tree and check structural invariants
 blueprint completeness). All kustomizations are built with kustomize to validate
 they render correctly and to provide build results for resource-level checks.
 
-TODO: These checks duplicate validate_cluster (run via pre-commit). Consolidate by
-enforcing affected bazel tests pass before commit (PR #819 WIP), then remove the
-validate_cluster pre-commit hook and use this test as the single source of truth.
+These Bazel tests are the single source of truth for cluster validation; the
+former `cluster-validate` pre-commit hook was removed in favor of running them
+(and the sibling `test_*.py` targets) in CI.
 """
 
 from __future__ import annotations

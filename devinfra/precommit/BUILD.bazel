@@ -105,7 +105,6 @@ py_library(
         ":commit_tag",
         ":filename_conventions",
         ":frozen_specimens",
-        "//cluster/validation:validate_all",
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
         "//util:otel",

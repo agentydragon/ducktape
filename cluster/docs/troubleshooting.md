@@ -412,9 +412,9 @@ some `cluster/k8s/.../flux-kustomization.yaml` reference in
 tracked tree. Fix the reference (or recommit the missing directory), then
 all the queued-up downstream changes apply at once.
 
-A pre-commit `cluster-validate` check that catches dangling resource
-references in `cluster/k8s/kustomization.yaml` would prevent this class of
-silent wedge entirely.
+The Bazel test `//cluster/validation:test_cluster_integration` catches dangling
+resource references in `cluster/k8s/kustomization.yaml` (its orphaned-files and
+dependency checks), preventing this class of silent wedge from reaching `devel`.
 
 ## Quick Reference
 

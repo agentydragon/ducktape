@@ -183,7 +183,6 @@ py_wheel(
 py_package(
     name = "ducktape_git_hooks_pkg",
     packages = [
-        "cluster.validation",
         "devinfra",
         "devinfra.precommit",
         "devinfra.precommit.enforce_bazel_tests",

@@ -96,17 +96,17 @@ All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                 | Source                       | Purpose                  |
-| -------------------- | ---------------------------- | ------------------------ |
-| `ruff-check`         | astral-sh/ruff-pre-commit    | Python linting           |
-| `ruff-format`        | astral-sh/ruff-pre-commit    | Python formatting        |
-| `buildifier`         | keith/pre-commit-buildifier  | Starlark formatting      |
-| `buildifier-lint`    | keith/pre-commit-buildifier  | Starlark linting         |
-| `ducktape-precommit` | local (system)               | Validations              |
-| `prettier`           | local (node)                 | JS/TS/MD/YAML formatting |
-| `rustfmt`            | local (system)               | Rust formatting          |
-| `nixfmt`             | local (static binary)        | Nix formatting           |
-| `markdownlint-cli2`  | DavidAnson/markdownlint-cli2 | Markdown linting         |
+| Hook                 | Source                       | Purpose                           |
+| -------------------- | ---------------------------- | --------------------------------- |
+| `ruff-check`         | astral-sh/ruff-pre-commit    | Python linting                    |
+| `ruff-format`        | astral-sh/ruff-pre-commit    | Python formatting                 |
+| `buildifier`         | keith/pre-commit-buildifier  | Starlark formatting               |
+| `buildifier-lint`    | keith/pre-commit-buildifier  | Starlark linting                  |
+| `ducktape-precommit` | local (system)               | Filename + frozen-specimen checks |
+| `prettier`           | local (node)                 | JS/TS/MD/YAML formatting          |
+| `rustfmt`            | local (system)               | Rust formatting                   |
+| `nixfmt`             | local (static binary)        | Nix formatting                    |
+| `markdownlint-cli2`  | DavidAnson/markdownlint-cli2 | Markdown linting                  |
 
 Cluster-specific hooks run only on `cluster/` files:
 
@@ -115,6 +115,10 @@ Cluster-specific hooks run only on `cluster/` files:
 - `tflint` - Terraform linting
 
 Terraform validation and linting are also covered by Bazel `tf_module` test targets (`rules_tf`).
+
+Cluster structural validation (kustomize builds, CRD layering, orphaned files, Flux
+dependencies, health checks, blueprint completeness) runs as the
+`//cluster/validation:test_*` Bazel test suite, not as a pre-commit hook.
 
 ## Version Management
 

@@ -151,7 +151,8 @@ README, transcluded here:
 
 Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease).
 Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
-Violations detected by pre-commit (`validate_kustomizations.py`).
+Violations are caught by the Bazel test `//cluster/validation:test_crd_layering`
+(part of the `//cluster/validation:test_*` suite that validates the cluster in CI).
 
 - Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn

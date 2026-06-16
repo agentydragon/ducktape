@@ -1,7 +1,7 @@
 """Git hook entry points for pre-commit framework.
 
 Installed as separate console scripts via the claude-hooks wheel:
-- ducktape-precommit: file validations (filenames, cluster, frozen-specimens)
+- ducktape-precommit: file validations (filenames, frozen-specimens)
 - ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
 - ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
@@ -22,7 +22,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
-from cluster.validation.validate_all import validate as validate_cluster
 from devinfra.precommit.commit_tag import TestTagError, check_commit_message
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
@@ -40,12 +39,6 @@ def _is_ignored(repo: pygit2.Repository, path: str) -> bool:
     return any(repo.get_attr(path, a) in (True, "true") for a in _IGNORE_ATTRS)
 
 
-def is_cluster_validated(p: Path) -> bool:
-    if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
-        return True
-    return p.is_relative_to("cluster/terraform") and "cilium" in p.parts
-
-
 async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> str | None:
     """Check that test files have pytest_bazel.main() calls."""
     if not files:
@@ -61,20 +54,6 @@ async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index:
     failed = [r for r in results if not r.passed]
     if failed:
         return "\n".join(f"{r.file_path}: {r.reason}" for r in failed)
-    return None
-
-
-async def run_cluster_validate(files: list[Path], repo_root: Path) -> str | None:
-    if not any(is_cluster_validated(f) for f in files):
-        return None
-    # Pre-commit only flags orphans introduced by this commit — unstaged YAML
-    # left on disk by a parallel agent shouldn't fail an unrelated diff.
-    orphan_candidates = {(repo_root / f).resolve() for f in files}
-    errors = await validate_cluster(
-        repo_root / "cluster/k8s", skip_flux_build=True, orphan_candidates=orphan_candidates
-    )
-    if errors:
-        return "\n".join(f"  {e.strip()}" for e in errors)
     return None
 
 
@@ -120,16 +99,13 @@ def _setup_tracing(repo: pygit2.Repository) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _run_pre_commit(argv: list[str]) -> int:
+async def _run_pre_commit() -> int:
     repo = pygit2.Repository(".")
-    repo_root = Path(repo.workdir)
     _setup_tracing(repo)
 
     with tracer.start_as_current_span("precommit"):
         head_tree, all_deltas = _staged_deltas(repo)
         deltas = [d for d in all_deltas if not _is_ignored(repo, d.new_file.path)]
-
-        files = [Path(f) for f in argv] if argv else get_all_files(repo)
 
         async def _traced(name: str, coro: Awaitable[str | None]) -> tuple[str, str | None]:
             with tracer.start_as_current_span(name):
@@ -138,11 +114,10 @@ async def _run_pre_commit(argv: list[str]) -> int:
                     trace.get_current_span().set_status(StatusCode.ERROR, error[:200])
                 return (name, error)
 
-        print(f"Validating {len(files)} files...")
+        print(f"Validating {len(deltas)} changed files...")
         results = list(
             await asyncio.gather(
                 _traced("filename-conventions", run_filename_convention_check(deltas, head_tree)),
-                _traced("cluster-validate", run_cluster_validate(files, repo_root)),
                 _traced("frozen-specimens", run_frozen_specimens_check(deltas, head_tree)),
             )
         )
@@ -225,7 +200,7 @@ def _run_commit_msg(argv: list[str]) -> int:
 
 
 def main_pre_commit() -> int:
-    return asyncio.run(_run_pre_commit(sys.argv[1:]))
+    return asyncio.run(_run_pre_commit())
 
 
 def main_pytest_main_check() -> int:

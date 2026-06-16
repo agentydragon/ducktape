@@ -192,12 +192,14 @@ repos:
         files: "pyproject\\.toml$"
         exclude: "^pyproject\\.toml$"
 
-      # Pre-commit file validations (tf-centralization, filenames, cluster, frozen-specimens)
+      # Pre-commit file validations (filenames, frozen-specimens). These are
+      # git-diff-based checks with no static repo-state equivalent. Cluster
+      # validation moved to the Bazel test //cluster/validation:test_* targets.
       - id: ducktape-precommit
         name: ducktape pre-commit
         entry: ducktape-precommit
         language: system
-        pass_filenames: true
+        pass_filenames: false
         always_run: true
         stages: [pre-commit]
 
