@@ -87,6 +87,59 @@ rust_test(
     ],
 )
 
+# Layer-1 AST-shape index + read-off API (W1 of the read-off minimization
+# redesign; see plans/readoff_minimization.md). Built alongside the existing
+# minimizer (strangler-fig); additive, no behavior change.
+rust_library(
+    name = "shape_index",
+    srcs = ["shape_index.rs"],
+    crate_root = "shape_index.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":selector_candidate_index",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "shape_index_test",
+    crate = ":shape_index",
+    edition = "2024",
+)
+
+# Soundness validation: every read-off, rendered to a source_match and run
+# through the production matcher, must resolve uniquely to the intended item.
+# Separate crate so it exercises the public shape_index API plus the matcher.
+rust_test(
+    name = "shape_index_soundness_test",
+    srcs = ["shape_index_soundness_test.rs"],
+    crate_root = "shape_index_soundness_test.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":selector_candidate_index",
+        ":shape_index",
+        ":source_match",
+        ":spec",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+# OPT/read-off-depth distribution + size-sweep benchmark over synthetic
+# chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
+rust_binary(
+    name = "shape_index_bench",
+    srcs = ["shape_index_bench.rs"],
+    crate_root = "shape_index_bench.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":shape_index",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
 rust_library(
     name = "anonymous_resolution",
     srcs = ["anonymous_resolution.rs"],
