@@ -39,56 +39,13 @@ impl DuplicateBindingClaim {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(super) struct SelectorDiagnosticsReport {
-    pub chunk_id: String,
-    pub counts: BTreeMap<String, usize>,
-    pub diagnostics: Vec<SelectorDiagnosticEntry>,
-    pub coverage_notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(super) struct SelectorDiagnosticEntry {
-    pub category: String,
-    pub module_id: String,
-    pub module_path: Option<String>,
-    pub export_name: Option<String>,
-    pub selector_kind: String,
-    pub target_binding: Option<String>,
-    pub claim_origin: Option<String>,
-    pub body_indices: Vec<usize>,
-    pub first_mismatch: Option<String>,
-    pub nearest_candidates: Vec<SelectorNearestCandidate>,
-    pub source_match_preview: Option<String>,
-    pub source_match_hash: Option<String>,
-    pub source_match_body_hash: Option<String>,
-    pub duplicate_claim: Option<DuplicateClaimReport>,
-    pub message: String,
-    pub recommended_next_action: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(super) struct SelectorNearestCandidate {
-    pub body_index: usize,
-    pub declared_bindings: Vec<String>,
-    pub score: usize,
-    pub first_mismatch: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(super) struct DuplicateClaimReport {
-    pub chunk_id: String,
-    pub binding: String,
-    pub existing: DuplicateClaimSiteReport,
-    pub duplicate: DuplicateClaimSiteReport,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(super) struct DuplicateClaimSiteReport {
-    pub module_id: String,
-    pub export_name: Option<String>,
-    pub claim_origin: Option<String>,
-}
+// The serialized report shape is the debundler-owned JSON contract shared
+// with the `debundle spec validate --keep-going` reader; it lives in the
+// `selector_diagnostics` crate so writer and reader cannot drift.
+use selector_diagnostics::{
+    DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
+    SelectorDiagnosticsReport, SelectorNearestCandidate,
+};
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {

@@ -33,10 +33,15 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformRunOptions {
     pub dry_run: bool,
     pub keep_going: bool,
+    /// Force per-chunk reports (owner graph, selector diagnostics, …) to this
+    /// directory, overriding the spec's `materialize_logical_modules.report_out_dir`.
+    /// Used by `debundle spec validate --keep-going` to capture the keep-going
+    /// selector diagnostics regardless of how the spec configures reporting.
+    pub report_dir_override: Option<PathBuf>,
 }
 
 impl Default for TransformRunOptions {
@@ -44,6 +49,7 @@ impl Default for TransformRunOptions {
         Self {
             dry_run: false,
             keep_going: true,
+            report_dir_override: None,
         }
     }
 }
@@ -238,6 +244,9 @@ pub fn run_transform_cli_with_options(
             report_out_dir,
             target_dir,
         } = spec.materialize_logical_modules.clone();
+        // `validate --keep-going` forces reports to its own capture dir even
+        // when the spec leaves `report_out_dir` unset; otherwise honor the spec.
+        let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
         // `materialize_logical_modules` derives its own per-run indexes
         // internally (it prunes chunks first); the pipeline indexes are
         // not consumed here, but the artifact mutates, so the update
@@ -905,6 +914,7 @@ mod tests {
                 TransformRunOptions {
                     dry_run: true,
                     keep_going: false,
+                    report_dir_override: None,
                 },
             )?;
 

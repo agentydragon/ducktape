@@ -105,6 +105,7 @@ _STANDARD_E2E_DEPS = [
         "pass_two_tdz_cut_diagnosis_test",
         "spec_comments_test",
         "selector_diagnostics_report_test",
+        "spec_validate_cli_test",
         "syntactic_holes_test",
     ]
 ]

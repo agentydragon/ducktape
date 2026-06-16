@@ -72,11 +72,16 @@ propose`.
    `binding_groups` is the co-occurrence-grouping item in the read-off backlog.
    The open work here is the dry-run / patch-plan / explain-every-skip
    infrastructure that the rewrite classes pipe through.)
-3. **Selector diagnostics as machine-readable reports.** Emit a keep-going
-   JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
-   and blocker comments. Include module path, export name, selector kind,
-   target binding, first mismatch, nearest candidates, and recommended next
-   action. This lets coordinators batch failures instead of scraping logs.
+3. **Selector diagnostics as machine-readable reports.** The keep-going JSON
+   report (`debundle spec validate --keep-going --format text|json|ndjson`)
+   classifies unresolved, ambiguous, and duplicate-claim selector failures with
+   module path, export name, selector kind, target binding, first mismatch,
+   nearest candidates, and recommended next action; the shared contract lives in
+   `selector_diagnostics.rs`. Still open: emit structured entries for
+   anonymous-statement `source_match` failures and blocker comments (today the
+   report carries them only as a `coverage_notes` gap), and add the
+   free-readable-identifier class (P1.5) so `alpha_all` readable names that are
+   free references rather than local binders are reported, not silently dropped.
 4. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
    report, proposes mechanically proven patch plans for no-match, ambiguous,
    duplicate-claim, and unsupported-selector cases, and leaves residual semantic

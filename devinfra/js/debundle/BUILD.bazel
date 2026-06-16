@@ -192,6 +192,16 @@ rust_library(
 )
 
 rust_library(
+    name = "selector_diagnostics",
+    srcs = ["selector_diagnostics.rs"],
+    crate_root = "selector_diagnostics.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
     name = "artifact",
     srcs = ["artifact.rs"],
     crate_root = "artifact.rs",
@@ -783,6 +793,7 @@ rust_library(
         ":js_ast",
         ":output_layout",
         ":program_analysis",
+        ":selector_diagnostics",
         ":source_match",
         ":spec",
         ":stage_one",
@@ -908,6 +919,7 @@ rust_library(
         "cli/module.rs",
         "cli/outcome.rs",
         "cli/scc_cluster.rs",
+        "cli/validate.rs",
         "cli/yaml_edit.rs",
     ],
     crate_name = "debundle_cli",
@@ -923,6 +935,7 @@ rust_library(
         ":pipeline",
         ":selector_codemod",
         ":selector_debt",
+        ":selector_diagnostics",
         ":source_match",
         ":spec",
         ":spec_modules",
@@ -933,6 +946,7 @@ rust_library(
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:swc_atoms",
+        "@crates//:tempfile",
     ],
 )
 

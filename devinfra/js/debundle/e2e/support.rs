@@ -1012,6 +1012,49 @@ fn run_rejection_fixture_with_args_and_env(
     }
 }
 
+/// A written transform spec ready to feed to a `debundle` subcommand other
+/// than `run` (e.g. `spec validate`). The held [`TempDir`] keeps the spec,
+/// source snapshot, and js-list alive for the duration of the test.
+pub struct ValidateFixture {
+    pub spec_path: PathBuf,
+    _root: TempDir,
+}
+
+/// Materialize `opts` into an on-disk transform spec without running the
+/// pipeline. Lets a CLI test point `debundle spec validate --spec <path>` at
+/// exactly the same fixture shape the keep-going materialize tests build.
+pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
+    let setup = setup_fixture(&opts);
+    let spec_path = setup.root.path().join("transform_spec.yaml");
+    let spec = build_spec(&opts, &setup);
+    write_yaml_file(&spec_path, &spec);
+    ValidateFixture {
+        spec_path,
+        _root: setup.root,
+    }
+}
+
+/// Run `debundle spec validate --spec <path> <extra_args>` and return its
+/// captured stdio + exit status.
+pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
+    let bin = debundler_path();
+    let mut command = Command::new(&bin);
+    command
+        .arg("spec")
+        .arg("validate")
+        .arg("--spec")
+        .arg(spec_path);
+    command.args(extra_args);
+    let output = command
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
 }

@@ -5,6 +5,7 @@ pub mod gate;
 pub mod module;
 pub mod outcome;
 pub mod scc_cluster;
+pub mod validate;
 pub mod yaml_edit;
 
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
+use crate::validate::{ValidateArgs, run_validate_cmd};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
@@ -123,6 +125,10 @@ enum SpecNsCommand {
     /// Synthesize structural selectors for selected name-only members.
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
+    /// Keep-going selector validation: report every selector problem
+    /// (no-match, ambiguous, duplicate-claim, resolution error) in one
+    /// machine-readable pass.
+    Validate(ValidateArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -549,6 +555,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
                 TransformRunOptions {
                     dry_run,
                     keep_going,
+                    report_dir_override: None,
                 },
             )?;
             if dry_run {
@@ -604,6 +611,9 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             SpecNsCommand::SynthesizeSelectors(mut s) => {
                 s.rewrite = SelectorCodemodRewriteArg::NameBindingToSourceMatch;
                 run_selector_codemod_cmd(s)
+            }
+            SpecNsCommand::Validate(v) => {
+                run_validate_cmd(v).context("running keep-going selector validation")
             }
         },
         // Don't wrap with a generic context — `gate` subcommands
