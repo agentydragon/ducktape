@@ -213,6 +213,13 @@ if [ "$MODE" = "home-manager" ]; then
   # -b hm-backup: back up any pre-existing dotfiles (Anthropic-landed
   #   ~/.claude/settings.json etc.) instead of failing the activation.
   # nix run .#home-manager pins the HM CLI to our flake input (release-25.11).
+  #
+  # The init-script env does not reliably export USER, and the home-manager CLI
+  # runs under `set -u` (dies with "USER: unbound variable"). Export it (and
+  # guard HOME) so both the CLI and the impure claude-web eval see them.
+  export USER="${USER:-$(id -un)}"
+  export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
+  log "Home Manager: USER=$USER HOME=$HOME"
   nix run --max-jobs auto "${FLAKE}#home-manager" -- switch \
     --impure -b hm-backup --max-jobs auto --flake "${FLAKE}#claude-web"
   log "Home Manager profile 'claude-web' activated."
