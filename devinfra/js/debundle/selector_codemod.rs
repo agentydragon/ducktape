@@ -1480,7 +1480,7 @@ fn synthesize_specialized_var_selector(
 }
 
 // ===========================================================================
-// Retention-driven selector minimizer.
+// Selector minimizer (read-off based).
 //
 // A selector is the target rendered with a *retention set*: the byte spans of
 // the concrete tokens (literals, member/property names, callees, object keys)
@@ -1489,19 +1489,21 @@ fn synthesize_specialized_var_selector(
 // run holes `STMT_LIST` / `OBJECT_PROPS` / `CLASS_REST` for dropped statement /
 // object-property / class-member runs.
 //
-// Anchor selection favors keeping shallow literals (direct values/args), then
-// escalates by tier (structural key/member presence, then deeper literals).
-// Function and class single targets resolve through a matcher-driven minimum
-// set cover (`cover_competitors` + `min_set_cover` B&B): each anchor's exclusion
-// set is computed by the production matcher, so discrimination is exact and the
-// cover is minimum-cardinality. Var declarations (single and multi-target
-// groups) share one keep-shallow-then-escalate path (`minimize_var_group_selector`,
-// the single declarator being its N=1 case), proven through the binding-group
-// matcher used as a resolves-uniquely oracle; it keeps each slot's direct shallow
-// literals and may over-pin rather than run an exact-minimum cover. Either way the
-// chosen union is rendered once and proven by the matcher. This is a mechanical
-// first pass — it finds *a* robust pin for the routine cases, not necessarily the
-// most semantically meaningful one.
+// Single targets (function, class, object, and non-object var) read their
+// minimal anchor set off the chunk-wide shape index (`render_via_read_off` /
+// `try_object_read_off` / `try_var_read_off`): the index ranks each candidate
+// feature by selective × stable, so the chosen anchors are sparse and
+// rebuild-robust, and the production matcher proves the rendered selector
+// resolves uniquely (gate 1). A target the read-off cannot single out returns
+// `None` and is reported as debt — never a full-AST pin.
+//
+// Multi-target var binding groups still use a keep-shallow path
+// (`minimize_var_group_selector`): per-slot tuple resolution the chunk-wide
+// read-off cannot express. It keeps each slot's direct shallow literals,
+// escalating to structural/deeper anchors only until the group resolves to the
+// right declarators, proven through the binding-group matcher as a
+// resolves-uniquely oracle; it may over-pin rather than run an exact-minimum
+// cover (near-minimal is the accepted target).
 // ===========================================================================
 
 /// `(lo, hi)` byte offsets of a retained concrete token.
@@ -1879,47 +1881,6 @@ struct AnchorCandidates {
 const SHALLOW_LITERAL_DEPTH: u32 = 1;
 
 impl AnchorCandidates {
-    /// Anchor tiers, most-preferred first:
-    /// 1. shallow literals (direct values/args), by ascending call depth;
-    /// 2. structural key/member presence;
-    /// 3. deeper literals (buried in nested calls).
-    ///
-    /// Structural presence sits above deep literals because pinning a key's
-    /// existence is leaner and more rebuild-robust than pinning a volatile
-    /// computed value (`stableKey: ANYTHING` over `stableKey: mk("x")`).
-    fn tiers(&self) -> Vec<Vec<AnchorSpan>> {
-        let literal_tier = |depth: u32| -> Vec<AnchorSpan> {
-            self.literals
-                .iter()
-                .filter(|(_, anchor_depth)| *anchor_depth == depth)
-                .map(|(span, _)| *span)
-                .collect()
-        };
-        let mut tiers = Vec::new();
-        let Some(max_depth) = self.literals.iter().map(|(_, depth)| *depth).max() else {
-            if !self.structural.is_empty() {
-                tiers.push(self.structural.clone());
-            }
-            return tiers;
-        };
-        for depth in 0..=max_depth.min(SHALLOW_LITERAL_DEPTH) {
-            let tier = literal_tier(depth);
-            if !tier.is_empty() {
-                tiers.push(tier);
-            }
-        }
-        if !self.structural.is_empty() {
-            tiers.push(self.structural.clone());
-        }
-        for depth in (SHALLOW_LITERAL_DEPTH + 1)..=max_depth {
-            let tier = literal_tier(depth);
-            if !tier.is_empty() {
-                tiers.push(tier);
-            }
-        }
-        tiers
-    }
-
     /// Shallow literal anchors — direct values/args worth keeping as meaningful
     /// per-slot pins even when structure alone would already discriminate. This
     /// includes object-property values (`kind: "primary"`): the unified anchor
@@ -1958,77 +1919,10 @@ impl AnchorCandidates {
     }
 }
 
-fn collect_stmt_list_anchors(stmts: &[Stmt]) -> AnchorCandidates {
-    let mut candidates = AnchorCandidates::default();
-    for stmt in stmts {
-        collect_stmt_anchors(stmt, &mut candidates);
-    }
-    candidates
-}
-
-fn collect_stmt_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
-    match stmt {
-        Stmt::Expr(expr_stmt) => collect_expr_anchors(&expr_stmt.expr, 0, candidates),
-        Stmt::Return(ret) => {
-            if let Some(arg) = &ret.arg {
-                collect_expr_anchors(arg, 0, candidates);
-            }
-        }
-        Stmt::Throw(throw) => collect_expr_anchors(&throw.arg, 0, candidates),
-        Stmt::Decl(Decl::Var(var)) => {
-            for declarator in &var.decls {
-                if let Some(init) = &declarator.init {
-                    collect_expr_anchors(init, 0, candidates);
-                }
-            }
-        }
-        Stmt::If(if_stmt) => {
-            collect_expr_anchors(&if_stmt.test, 0, candidates);
-            collect_block_anchors(&if_stmt.cons, candidates);
-        }
-        Stmt::Try(try_stmt) => {
-            for stmt in &try_stmt.block.stmts {
-                collect_stmt_anchors(stmt, candidates);
-            }
-        }
-        Stmt::Block(block) => {
-            for stmt in &block.stmts {
-                collect_stmt_anchors(stmt, candidates);
-            }
-        }
-        Stmt::Switch(switch) => {
-            collect_expr_anchors(&switch.discriminant, 0, candidates);
-            for case in &switch.cases {
-                // A case test literal (`case "x":`) is the discriminating
-                // landmark that the `CASE_REST` hole keeps; collect it as a
-                // shallow literal so the cover can retain it.
-                if let Some(test) = &case.test {
-                    collect_expr_anchors(test, 0, candidates);
-                }
-                for stmt in &case.cons {
-                    collect_stmt_anchors(stmt, candidates);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-fn collect_block_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
-    match stmt {
-        Stmt::Block(block) => {
-            for stmt in &block.stmts {
-                collect_stmt_anchors(stmt, candidates);
-            }
-        }
-        _ => collect_stmt_anchors(stmt, candidates),
-    }
-}
-
-/// `depth` counts enclosing call/new levels, so the tiered cover can prefer
-/// shallower literal anchors. Object-property values (`kind: "primary"`) are
-/// collected at the enclosing depth like any other literal; the unified
-/// keep-shallow policy retains them rather than treating them as incidental.
+/// `depth` counts enclosing call/new levels, so the keep-shallow group path can
+/// prefer shallower literal anchors. Object-property values (`kind: "primary"`)
+/// are collected at the enclosing depth like any other literal; the keep-shallow
+/// policy retains them rather than treating them as incidental.
 fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidates) {
     match expr {
         Expr::Lit(_) | Expr::Tpl(_) => {
@@ -2119,7 +2013,8 @@ fn matched_binding_candidates(
 }
 
 /// Distinct body indices the selector resolves to (slot alignments within one
-/// body collapse). Used by the body-index cover ([`cover_competitors`]).
+/// body collapse). Used by the read-off structural fast path
+/// ([`render_via_read_off`]).
 fn matched_body_indices(
     index: &ChunkSelectorIndex,
     export_name: &str,
@@ -2149,37 +2044,6 @@ fn holes_present(source: &str) -> BTreeSet<String> {
     holes
 }
 
-/// Minimal anchor cover for a single-target declaration. `render_with` renders
-/// the declaration's selector given a kept-anchor set, and `candidates` are its
-/// concrete anchors. Competitors are exactly the items the maximally-holed
-/// selector still matches; the tiered cover picks the fewest anchors that rule
-/// them out, and the chosen selector is rendered and proven once.
-fn minimize_via_retention(
-    index: &ChunkSelectorIndex,
-    decl: &IndexedDeclaration,
-    target: &SynthesizedTargetBinding,
-    candidates: &AnchorCandidates,
-    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
-) -> Result<Option<SpecializedSelector>> {
-    let empty = BTreeSet::new();
-    let mut competitors = matched_body_indices(index, &target.export_name, &render_with(&empty)?)?;
-    competitors.remove(&decl.body_idx);
-    if competitors.is_empty() {
-        return finish_minimized_selector(index, decl, target, render_with(&empty)?);
-    }
-    let Some(chosen) = cover_competitors(
-        index,
-        target,
-        &competitors,
-        &candidates.tiers(),
-        render_with,
-    )?
-    else {
-        return Ok(None);
-    };
-    finish_minimized_selector(index, decl, target, render_with(&chosen)?)
-}
-
 fn minimize_function_selector(
     index: &ChunkSelectorIndex,
     function: &Function,
@@ -2201,26 +2065,14 @@ fn minimize_function_selector(
             function: Box::new(holed),
         }))))
     };
-    // W2: single-target functions read their minimal anchor set off the shape
-    // index instead of running the cover search. The holed scaffold already
-    // pins the param arity (one `ANYTHING` per real param), so a structural /
-    // skeleton anchor needs no kept span; value anchors (string literals,
-    // member/method names, member-path callees) map to the spans of the tokens
-    // that exhibit them. The matcher proves the result (gate 1).
-    //
-    // Fallback: when the read-off cannot single out the target through its own
-    // features — chiefly because the discriminator is a *number/bool* literal,
-    // which the W1 feature taxonomy does not yet index (string literals only) —
-    // it returns `None` and we fall through to the cover search, which collects
-    // every literal kind. This keeps the migration honest (read-off is the
-    // primary path; the cover is the not-yet-expressible tail), not full-AST:
-    // the cover itself skips rather than dumping an untrimmed body. A later wave
-    // that extends the feature taxonomy can drop this fallback.
-    if let Some(selector) = render_via_read_off(index, decl, target, &render_with)? {
-        return Ok(Some(selector));
-    }
-    let candidates = collect_stmt_list_anchors(&body.stmts);
-    minimize_via_retention(index, decl, target, &candidates, &render_with)
+    // Single-target functions read their minimal anchor set off the shape index.
+    // The holed scaffold already pins the param arity (one `ANYTHING` per real
+    // param), so a structural / skeleton anchor needs no kept span; value anchors
+    // (string/number/bool literals, member/method names, member-path callees) map
+    // to the spans of the tokens that exhibit them. The matcher proves the result
+    // (gate 1); a target the read-off cannot single out returns `None` and is
+    // reported as debt (never a full-AST pin).
+    render_via_read_off(index, decl, target, &render_with)
 }
 
 /// Render a single-target selector via the W1 read-off API (W2).
@@ -2490,10 +2342,10 @@ fn object_anchor_ranking(object: &ObjectLit) -> Vec<AnchorSpan> {
 /// Slot-aware minimal cover for a single-target object inside a `var` group: a
 /// greedy key-set set-cover that, at each step, adds the `ranked` anchor that best
 /// steers the selector toward resolving to the target binding's own declarator
-/// slot, until it proves unique. Unlike [`cover_competitors`] (which covers
-/// distinct body indices and so cannot see two sibling declarators of the *same*
-/// statement), this scores by whether the **target binding** is the one the
-/// selector resolves, then by the match count.
+/// slot, until it proves unique. The chunk-wide read-off resolves by distinct
+/// body index and so cannot see two sibling declarators of the *same* statement;
+/// this scores by whether the **target binding** is the one the selector
+/// resolves, then by the match count.
 ///
 /// The matcher reports one alignment per body (the leftmost declarator the holed
 /// pattern fits), so a key shared with an *earlier* sibling slot
@@ -2961,14 +2813,10 @@ fn minimize_class_selector(
     // functions and objects do: the holed scaffold pins the class kind plus
     // `extends ANYTHING`, and value anchors (a member name, a literal or callee
     // inside a member body) map to their token spans so only the member runs
-    // carrying them survive between `CLASS_REST` holes. Fall back to the tiered
-    // cover search when the read-off cannot single the class out through its own
-    // value features.
-    if let Some(selector) = render_via_read_off(index, decl, target, &render_with)? {
-        return Ok(Some(selector));
-    }
-    let candidates = collect_class_anchors(class);
-    minimize_via_retention(index, decl, target, &candidates, &render_with)
+    // carrying them survive between `CLASS_REST` holes. A class the read-off
+    // cannot single out through its own value features returns `None` and is
+    // reported as debt (never a full-AST pin).
+    render_via_read_off(index, decl, target, &render_with)
 }
 
 fn anything_param() -> Param {
@@ -3062,159 +2910,6 @@ fn emit_selector(item: ModuleItem) -> Result<String> {
         body: vec![item],
         shebang: None,
     })
-}
-
-fn collect_class_anchors(class: &Class) -> AnchorCandidates {
-    let mut candidates = AnchorCandidates::default();
-    for member in &class.body {
-        if let Some(span) = class_member_name_span(member) {
-            candidates.structural.push(span_key(span));
-        }
-        match member {
-            ClassMember::Method(m) => collect_block_stmt_anchors(&m.function.body, &mut candidates),
-            ClassMember::PrivateMethod(m) => {
-                collect_block_stmt_anchors(&m.function.body, &mut candidates)
-            }
-            ClassMember::Constructor(ctor) => {
-                collect_block_stmt_anchors(&ctor.body, &mut candidates)
-            }
-            ClassMember::ClassProp(prop) => {
-                if let Some(value) = &prop.value {
-                    collect_expr_anchors(value, 0, &mut candidates);
-                }
-            }
-            _ => {}
-        }
-    }
-    candidates
-}
-
-fn collect_block_stmt_anchors(body: &Option<BlockStmt>, candidates: &mut AnchorCandidates) {
-    if let Some(block) = body {
-        for stmt in &block.stmts {
-            collect_stmt_anchors(stmt, candidates);
-        }
-    }
-}
-
-fn class_member_name_span(member: &ClassMember) -> Option<Span> {
-    let prop_name_span = |name: &PropName| match name {
-        PropName::Ident(ident) => Some(ident.span),
-        _ => None,
-    };
-    match member {
-        ClassMember::Method(m) => prop_name_span(&m.key),
-        ClassMember::ClassProp(prop) => prop_name_span(&prop.key),
-        _ => None,
-    }
-}
-
-/// Tiered minimum set cover. Tiers are tried most-preferred first; within a
-/// tier, the matcher gives each anchor's exclusion set and a minimum-cardinality
-/// cover (branch-and-bound) clears as many still-uncovered competitors as the
-/// tier can, leaving the rest to later tiers. Tier order encodes meaning
-/// preference; minimum cardinality within a tier avoids greedy over-pinning.
-/// The final selector is proven once by the caller. Returns `None` if even all
-/// anchors together cannot single out the target.
-fn cover_competitors(
-    index: &ChunkSelectorIndex,
-    target: &SynthesizedTargetBinding,
-    competitors: &BTreeSet<usize>,
-    tiers: &[Vec<AnchorSpan>],
-    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
-) -> Result<Option<BTreeSet<AnchorSpan>>> {
-    let mut uncovered = competitors.clone();
-    let mut chosen = BTreeSet::new();
-    for tier in tiers {
-        if uncovered.is_empty() {
-            break;
-        }
-        let mut exclusions: Vec<(AnchorSpan, BTreeSet<usize>)> = Vec::new();
-        for &anchor in tier.iter().take(MAX_MINIMIZER_ANCHORS) {
-            let survivors = matched_body_indices(
-                index,
-                &target.export_name,
-                &render_with(&BTreeSet::from([anchor]))?,
-            )?;
-            let excluded: BTreeSet<usize> = uncovered.difference(&survivors).copied().collect();
-            if !excluded.is_empty() {
-                exclusions.push((anchor, excluded));
-            }
-        }
-        let coverable: BTreeSet<usize> = exclusions
-            .iter()
-            .flat_map(|(_, excluded)| excluded.iter().copied())
-            .collect();
-        if coverable.is_empty() {
-            continue;
-        }
-        for anchor in min_set_cover(&exclusions, &coverable) {
-            chosen.insert(anchor);
-        }
-        uncovered = uncovered.difference(&coverable).copied().collect();
-    }
-    if uncovered.is_empty() {
-        Ok(Some(chosen))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Minimum-cardinality set cover of `universe` by `sets` (each an anchor and the
-/// competitors it excludes). Branch-and-bound on the least-coverable element;
-/// `universe` is the union of all sets, so a cover always exists. Instances are
-/// tiny (anchors and competitors are per-chunk), so exhaustive search with
-/// best-length pruning stays well within budget and avoids greedy over-pinning.
-fn min_set_cover(
-    sets: &[(AnchorSpan, BTreeSet<usize>)],
-    universe: &BTreeSet<usize>,
-) -> Vec<AnchorSpan> {
-    let mut best: Option<Vec<AnchorSpan>> = None;
-    let mut chosen: Vec<AnchorSpan> = Vec::new();
-    min_set_cover_search(sets, universe.clone(), &mut chosen, &mut best);
-    best.unwrap_or_default()
-}
-
-fn min_set_cover_search(
-    sets: &[(AnchorSpan, BTreeSet<usize>)],
-    remaining: BTreeSet<usize>,
-    chosen: &mut Vec<AnchorSpan>,
-    best: &mut Option<Vec<AnchorSpan>>,
-) {
-    if remaining.is_empty() {
-        if best.as_ref().is_none_or(|found| chosen.len() < found.len()) {
-            *best = Some(chosen.clone());
-        }
-        return;
-    }
-    if best
-        .as_ref()
-        .is_some_and(|found| chosen.len() + 1 >= found.len())
-    {
-        return;
-    }
-    // Branch on the still-uncovered competitor that the fewest anchors exclude:
-    // every cover must include one of those anchors, which keeps the tree narrow.
-    let Some(pivot) = remaining.iter().copied().min_by_key(|competitor| {
-        sets.iter()
-            .filter(|(_, excluded)| excluded.contains(competitor))
-            .count()
-    }) else {
-        return;
-    };
-    for (anchor, excluded) in sets {
-        if chosen.contains(anchor) || !excluded.contains(&pivot) {
-            continue;
-        }
-        chosen.push(*anchor);
-        min_set_cover_search(
-            sets,
-            remaining.difference(excluded).copied().collect(),
-            chosen,
-            best,
-        );
-        chosen.pop();
-    }
 }
 
 fn finish_minimized_selector(
