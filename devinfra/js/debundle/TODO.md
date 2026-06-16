@@ -53,72 +53,40 @@ propose`.
 
 ### P0 — automation-first selector workflows
 
-1. **Forward-compatible minimized selector synthesis.** Implement the core
-   operation "given this binding, group, anonymous statement, or statement
-   range, emit the loosest readable selector that uniquely selects it." The
-   generated spec must both work for today's chunk and be likely to survive
-   future minified-bundle drift. Start from exact source slices, relax with
-   holes, prefer `ANYTHING` / `EXPR` / `OBJECT_PROPS` / `DECLARATORS` /
-   `CLASS_REST` / `ARGS` / `STMT_LIST` over long incidental code bodies, use
-   source indexes to count candidates cheaply, and verify the final selector
-   through the real resolver. Model this as a best-first or branch-and-bound
-   search over an AST-feature constraint lattice, not as string rewriting in a
-   fixed direction: exact source is a known-working upper bound, the loose hole
-   selector is a lower bound, and candidate selectors are subsets or
-   generalizations of target AST constraints. Maintain candidate match sets
-   with indexed bitsets, add or remove constraints by set operations, and avoid
-   full-matcher trial loops over every removable subtree. Binding groups should
-   use the same approach over `(declaration/range, target-slot mapping)` match
-   sets and should choose group vs repeated selectors by total selector cost.
-   The first indexed slice covers exact
-   function/class declaration recovery and multi-declarator `var`/`let`/
-   `const` groups selected from name-only members, with `DECLARATORS_*` gap
-   holes and uniqueness proof. Grow that into the general primitive for
-   new-spec bootstrap, old-spec stabilization, and version-port repair.
-2. **Shared source inventory/index.** Extract a reusable per-chunk index for
-   top-level statement identity, binding identity, stable literals/keys,
-   canonical fingerprints, source slices, and candidate-count queries. Use it
-   from `selector-debt`, `selector-codemod`, repair diagnostics, and future
-   port tooling rather than adding more per-command AST walks.
-3. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
+1. **Forward-compatible minimized selector synthesis + shared source index.**
+   Owned by <plans/readoff_minimization.md>: the read-off AST-shape index
+   (`shape_index.rs`, superseting `selector_candidate_index.rs`),
+   function/object read-off, literal/regex anchors, and hole-based minimization
+   have landed; class/var/group migration, co-occurrence grouping, the
+   prove-gate perf fix, cover-search deletion, and whole-spec validation are in
+   that plan's backlog. Don't duplicate its design or status here.
+2. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
-   preserve YAML comments where possible, apply with filters, and explain every
-   skipped candidate. High-value rewrite classes:
-   - make generated `name-only-source-match` selectors minimized when produced,
-     not only by later cleanup: replace unnecessary expression arguments,
-     object properties, class members, and statement ranges with `ANYTHING`,
-     typed holes, `OBJECT_PROPS`, `CLASS_REST`, or `STMT_LIST` while preserving
-     uniqueness;
-   - convert repeated member-form selectors over the same declaration context
-     into one `binding_groups` entry, including cases that do not start from
-     name-only inputs;
-   - merge multiple eligible generated selectors from the same declaration into
-     one `binding_groups` entry;
-   - convert unique literal-initializer bindings into structural selectors when
-     the source value is stable enough;
-   - source-aware reports or apply-safe rewrites for overpinned object literals
-     that can now use `ANYTHING` / `OBJECT_PROPS` around stable keys;
-   - grow selector synthesis from the declaration/binding index into a
-     trie/lattice of stable AST atoms: declaration kind, wrapper shape,
-     initializer kind, callee/member paths, object keys, literals, JSX tags,
-     class/function names, arity, and statement/declarator slots.
-4. **Selector diagnostics as machine-readable reports.** Emit a keep-going
+   apply with filters, and explain every skipped candidate. (Selector
+   minimization at synthesis time, unique-literal-initializer → structural
+   selectors, and over-pinned-object `OBJECT_PROPS` rewrites are done via the
+   read-off path; converting repeated member-form selectors into
+   `binding_groups` is the co-occurrence-grouping item in the read-off backlog.
+   The open work here is the dry-run / patch-plan / explain-every-skip
+   infrastructure that the rewrite classes pipe through.)
+3. **Selector diagnostics as machine-readable reports.** Emit a keep-going
    JSON report for unresolved selectors, ambiguous selectors, duplicate claims,
    and blocker comments. Include module path, export name, selector kind,
    target binding, first mismatch, nearest candidates, and recommended next
    action. This lets coordinators batch failures instead of scraping logs.
-5. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
+4. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
    report, proposes mechanically proven patch plans for no-match, ambiguous,
    duplicate-claim, and unsupported-selector cases, and leaves residual semantic
    decisions as explicit tasks.
-6. **Orthogonal CLI surface.** Converge new automation on the
+5. **Orthogonal CLI surface.** Converge new automation on the
    inventory/plan/apply/validate/explain model in
    <plans/automated_spec_workflows.md>. Avoid one-off command shapes that cannot
    pipe a dry-run plan into review, apply, validation, and repair.
-7. **Workflow latency budget.** Keep P0 reports and dry-run patch planners
-   fast enough for iterative agent use: parse/index each chunk once, stream
-   NDJSON as work is found, emit per-phase timings, and treat >60s runs as
-   urgent perf bugs unless they are deliberately offline.
+6. **Workflow latency budget.** Interactive commands target <10s on warmed
+   inputs; >60s is a blocker unless explicitly an offline/profile mode with
+   progress output and a resumable plan. The whole-spec minimize budget and the
+   measured real-chunk numbers live in <plans/readoff_minimization.md> (W4) and
+   <debug/selector_minimizer_dogfood.md>.
 
 ### P1 — broad workflow integration
 

@@ -125,66 +125,24 @@ context window that distinguishes otherwise ambiguous candidates.
 
 ### Minimizer
 
-"Produce the loosest readable selector that uniquely selects this entity" should
-be a first-class operation. "Simplest" does not mean merely shortest, and it
-does not mean exact current-source reproduction; it means the lowest-cost
-selector that is expected to survive unrelated source drift while still
-matching only the target today. For a target binding, group, or anonymous
-statement, model minimization as a search over an AST-feature constraint
-lattice:
+"Produce the loosest readable selector that uniquely selects this entity" is a
+first-class operation. Its design and implementation now live in
+<readoff_minimization.md> (the read-off AST-shape index + a greedy set-cover over
+a `selective × stable` feature ranking, with the production matcher as the
+prove-gate); this section defers to that plan rather than restating the algorithm
+and drifting.
 
-1. Use exact source as the target AST and a known-working upper bound. Use the
-   loosest syntactically valid hole selector for the target kind as the lower
-   bound. The implementation may traverse from either side, but it should
-   reason about candidate selectors as constraint sets between those bounds.
-2. Index stable target features once per chunk. Features should include
-   declaration kind, arity, declarator slot, literal/key/operator/callee/member
-   shape, class member names, object-property keys, statement-kind sequence,
-   and small context-window anchors.
-3. Represent each feature or partial selector by its denotation: an efficient
-   bitset of candidate statements, declarations, declarators, ranges, or slot
-   mappings from the source inventory.
-4. Search for the lowest-cost selector whose denotation is unique. Adding a
-   constraint is set intersection; removing a constraint or replacing a subtree
-   with a hole is generalization. A best-first or branch-and-bound search can
-   use denotation size and remaining differentiating features as pruning
-   evidence.
-5. Use a cost model that prefers low-cost stable anchors that cut the candidate
-   set sharply, and assigns high cost to long exact function bodies, object
-   values, class bodies, anonymous statement runs, and nested expressions.
-6. Verify final candidates through the real selector resolver and emit the
-   lowest-cost unique selector plus structured rejected alternatives when useful
-   for diagnostics.
-
-Avoid an algorithm shaped like "try every subtree deletion and run the full
-matcher each time"; on large chunks that is roughly
-`O(selector_nodes * candidate_statements * matcher_cost)` per selector. The
-target shape is closer to `O(chunk_ast_size + feature_count + search_frontier *
-bitset_cost + proof_matcher_cost)` after the inventory is built, with the full
-matcher used as a verifier rather than the inner loop.
-
-Binding groups need the same treatment, but their candidate universe is
-declaration/range plus slot mapping rather than one statement. The inventory
-should index each top-level declaration or statement range with ordered
-bindings/declarators and stable range features. A group minimizer should
-maintain a bitset of possible `(declaration_or_range_id, target_slot_mapping)`
-tuples. Shared declaration constraints and per-target slot constraints are
-ordinary features in the same lattice. The cost model should compare one
-`binding_groups` selector against repeated member selectors: prefer the group
-when shared stable context makes it cheaper and more forward-compatible, but
-split the group if one huge selector would need long exact bodies or volatile
-initializers to be unique.
-
-Over-narrow selectors should be reported as debt even if they currently match.
-Examples include long function bodies where the signature plus a stable literal
-or call shape would suffice, object literals where only a few stable keys are
-needed, generated class bodies where `CLASS_REST` preserves the useful member
-shape, and anonymous statement blocks where `STMT_LIST` can ignore unrelated
-setup or cleanup statements.
-
-The minimizer should be deterministic. Greedy relaxation is acceptable for the
-first implementation when each accepted relaxation is revalidated, but the
-interfaces should allow a later branch-and-bound or trie-backed search.
+The product-vision intent this doc still owns: "simplest" means
+lowest-cost-forward-compatible, not shortest or exact-source — prefer low-cost
+stable anchors that cut the candidate set sharply, assign high cost to long exact
+function/object/class bodies, statement runs, and nested expressions, and
+**report over-narrow selectors as debt even when they currently match** (long
+function bodies where a signature + stable literal would suffice; object literals
+where a few stable keys suffice; class bodies where `CLASS_REST` keeps the useful
+member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Binding groups
+use the same cost model, comparing one `binding_groups` selector against repeated
+member selectors and splitting when one huge selector would need long exact
+bodies or volatile initializers to be unique.
 
 ### Patch Plans
 
