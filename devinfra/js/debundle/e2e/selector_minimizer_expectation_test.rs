@@ -443,19 +443,19 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a large lookup dictionary whose VALUES are nested objects
-// (e.g. an id -> config map) should minimize to OBJECT_PROPS holes on both
-// sides of the one entry whose nested value carries the discriminating
-// literal, and that entry's own nested object should itself collapse to the
-// discriminating property plus an OBJECT_PROPS hole. This generalizes
-// `object_keys_over_pinned` (whose entry values are scalar string literals) to
-// the common nested-object-value case. Today the minimizer keeps every entry's
-// full nested object whole, over-pinning the entire dictionary where one
-// anchored nested property would resolve uniquely. Mirrors the real spec's
+// A large lookup dictionary whose VALUES are nested objects (e.g. an id ->
+// config map) minimizes to OBJECT_PROPS holes on both sides of the one entry
+// whose nested value carries the discriminating literal, and that entry's own
+// nested object itself collapses to the discriminating property plus an
+// OBJECT_PROPS hole. This generalizes `object_keys_over_pinned` (whose entry
+// values are scalar string literals) to the common nested-object-value case:
+// the read-off picks the nested string literal as anchor, the top-level
+// `hole_object_padded` pads both edges around the one retained entry, and that
+// entry's value (a nested object) recurses through `hole_object`, collapsing to
+// the anchored property plus an OBJECT_PROPS run-hole. Mirrors the real spec's
 // id->config maps (feature-flag / registry dicts) kept whole across ~50+
 // nested-object entries.
 minimizer_expectation_case!(
-    #[ignore = "nested-value-dict minimizer keeps all entries' full nested objects instead of OBJECT_PROPS around one anchored nested property"]
     minimizes_object_nested_value_dict,
     fixture = "object_nested_value_dict",
     name = "nested-object-value dictionary keeps only the discriminating nested property",
