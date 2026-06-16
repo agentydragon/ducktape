@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 /// to X but doesn't install accessors; conservatively included so the
 /// rule is "X must not be written through, period" without per-builtin
 /// reasoning about which kinds of properties end up on X.
-pub(super) const PLAIN_DATA_HOSTILE_BUILTINS: &[(&str, &str)] = &[
+pub(crate) const PLAIN_DATA_HOSTILE_BUILTINS: &[(&str, &str)] = &[
     ("Object", "defineProperty"),
     ("Object", "defineProperties"),
     ("Object", "setPrototypeOf"),
@@ -29,7 +29,7 @@ pub(super) const PLAIN_DATA_HOSTILE_BUILTINS: &[(&str, &str)] = &[
 /// Static-property reads on these globals are Pure (no
 /// observable side effect, no getter to fire). Indexed as
 /// `(receiver_ident, property_name)`.
-pub(super) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
+pub(crate) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
     ("Math", "PI"),
     ("Math", "E"),
     ("Math", "LN2"),
@@ -69,7 +69,7 @@ pub(super) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
 /// for the agent-facing rule. New entries land only with a spec
 /// citation showing no user-callback path; "common in practice"
 /// is not sufficient.
-pub(super) const PURE_STATIC_CALLS: &[(&str, &str)] = &[
+pub(crate) const PURE_STATIC_CALLS: &[(&str, &str)] = &[
     // Type predicate — checks the IsArray internal slot. Spec
     // explicitly says: "does not perform a call to ToObject on its
     // argument".
@@ -92,7 +92,7 @@ pub(super) const PURE_STATIC_CALLS: &[(&str, &str)] = &[
 /// Pure global callables (no receiver). Same admission contract as
 /// `PURE_STATIC_CALLS`: the call must fire no user code on any
 /// argument value.
-pub(super) const PURE_GLOBAL_CALLS: &[&str] = &[
+pub(crate) const PURE_GLOBAL_CALLS: &[&str] = &[
     // ToBoolean is type-cased and fires no callbacks (objects are
     // unconditionally `true`; primitives are checked structurally).
     "Boolean",
@@ -114,7 +114,7 @@ pub(super) const PURE_GLOBAL_CALLS: &[&str] = &[
 ///   beyond the fresh symbol. `Symbol` without `new`; `new Symbol(...)`
 ///   throws TypeError, but `new`-call form is `Expr::New` not
 ///   `Expr::Call`, so this rule never fires for it.
-pub(super) const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
+pub(crate) const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 
 /// Built-in container constructors whose `new X()` (no args)
 /// form is pure. ECMA-262 spec for each construct algorithm:
@@ -139,7 +139,7 @@ pub(super) const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 ///   absent the query list is empty; no parsing, no user code. The
 ///   one-string-arg form is also pure — see
 ///   `PURE_BUILTIN_NEW_STRING_LITERAL_ARG`.
-pub(super) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
+pub(crate) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
     "Map",
     "Set",
     "WeakMap",
@@ -167,7 +167,7 @@ pub(super) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
 /// soundly requires statically validating the pattern against the
 /// ECMA-262 grammar (a `regress`-style validator), tracked as the
 /// ignore-reason of `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`.
-pub(super) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchParams"];
+pub(crate) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchParams"];
 
 /// Built-in container constructors whose 1-arg form is pure when
 /// the argument is an Array literal with all-Pure elements (no holes;
@@ -199,7 +199,7 @@ pub(super) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchPara
 ///   - `new Set(spreadable)` invokes the iterable's
 ///     `[Symbol.iterator]()`, which can fire user code on
 ///     anything other than a literal array.
-pub(super) const PURE_BUILTIN_NEW_ARRAY_ITERABLE: &[&str] = &["Map", "Set"];
+pub(crate) const PURE_BUILTIN_NEW_ARRAY_ITERABLE: &[&str] = &["Map", "Set"];
 
 /// Static-property READS on these globals are Pure: the property
 /// is an own data property of the receiver per ECMA-262 (no getter
@@ -212,7 +212,7 @@ pub(super) const PURE_BUILTIN_NEW_ARRAY_ITERABLE: &[&str] = &["Map", "Set"];
 /// negative `static_function_ref_*_call_remains_unknown` test
 /// pinning that distinction. See AGENTS.md "Pure-call whitelist
 /// soundness".
-pub(super) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
+pub(crate) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
     // All entries below are own data properties of the `Object`
     // built-in per ECMA-262 §20.1.2 — reads fire no getter. The
     // CALL of each is unsafe in distinct ways and intentionally
@@ -258,7 +258,7 @@ pub(super) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
 /// the excluded shortlist (`Object.assign`,
 /// `Object.getOwnPropertyNames`, `Array.from`) live in
 /// <docs/purity_soundness.md> § "PURE_OBJECT_CALLS_ON_PLAIN_DATA".
-pub(super) const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
+pub(crate) const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
     ("Object", "keys"),
     ("Object", "values"),
     ("Object", "entries"),
