@@ -18,7 +18,8 @@
 //! `CASE_REST`, and `DECLARATORS` are variable-length list holes: `ARGS`
 //! absorbs a run of call/new arguments, `STMT_LIST` absorbs a run of block
 //! statements (or top-level anonymous selector statements), `OBJECT_PROPS`
-//! absorbs a run of object literal properties/spreads, `CLASS_REST` absorbs a
+//! absorbs a run of object literal properties/spreads (or destructured
+//! properties in an object binding/assignment pattern), `CLASS_REST` absorbs a
 //! run of class members, `CASE_REST` absorbs a run of `case`/`default`
 //! clauses inside one `switch` statement, and `DECLARATORS` absorbs a run of
 //! variable declarators inside one `var`/`let`/`const` declaration.
@@ -37,7 +38,8 @@
 //! position it behaves like `EXPR`; as a bare expression statement it behaves
 //! like `STMT`; as a variable declarator name it behaves like `DECLARATORS`;
 //! as a non-declarator binding pattern it matches any pattern; as an
-//! object-literal shorthand property it absorbs object properties/spreads; as
+//! object-literal shorthand property — or a destructure-pattern shorthand
+//! property — it absorbs object/destructured properties/spreads; as
 //! a class field with no initializer it behaves like `CLASS_REST`. Use the
 //! typed spellings when a named hole is helpful or when the position would
 //! otherwise be ambiguous. `STMT_LIST` must be checked before `STMT`, since

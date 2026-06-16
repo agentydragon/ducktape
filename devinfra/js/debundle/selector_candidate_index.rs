@@ -613,6 +613,20 @@ impl Visit for AstFeatureCollector<'_, '_> {
         }
     }
 
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        // A destructured property key (`const { …, foo } = obj`, or
+        // `{ foo: localBinding }`) is the source object's stable property name —
+        // the matcher matches it exactly, exactly like an object-literal key —
+        // not the (minified) local binding it introduces. Index it as the same
+        // `ObjectKey` feature so a wide-destructure discriminator can be read off
+        // and pinned. The minified binding itself is alpha-volatile and never a
+        // feature.
+        if let Some(label) = object_pat_key_label(prop) {
+            self.features.insert(SelectorFeature::ObjectKey(label));
+        }
+        prop.visit_children_with(self);
+    }
+
     fn visit_class_member(&mut self, member: &ClassMember) {
         if class_rest_hole_name(member).is_some() {
             return;
@@ -911,6 +925,22 @@ fn object_key_label(prop: &PropOrSpread) -> Option<String> {
         Prop::Setter(prop) => prop_name_label(&prop.key),
         Prop::Method(prop) => prop_name_label(&prop.key),
         _ => None,
+    }
+}
+
+/// The stable property-name label of a destructure-pattern property, or `None`
+/// for the `OBJECT_PROPS`/`ANYTHING` list hole, a rest element, or a computed
+/// key. Mirrors [`object_key_label`] for the object-pattern case.
+fn object_pat_key_label(prop: &ObjectPatProp) -> Option<String> {
+    match prop {
+        ObjectPatProp::KeyValue(kv) => prop_name_label(&kv.key),
+        ObjectPatProp::Assign(assign)
+            if hole_name_for(assign.key.id.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD).is_none()
+                && hole_name_for(assign.key.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+        {
+            Some(assign.key.id.sym.to_string())
+        }
+        ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => None,
     }
 }
 

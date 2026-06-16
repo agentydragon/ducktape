@@ -69,6 +69,17 @@ impl Visit for UnsupportedAnythingCollector {
         pat.visit_children_with(self);
     }
 
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        // `{ ANYTHING }` / `{ OBJECT_PROPS }` is the destructure-pattern
+        // property-list hole (the pattern analog of the object-literal
+        // `OBJECT_PROPS` hole), so the shorthand `ANYTHING` here is supported
+        // sugar, not a stray `ANYTHING` binding identifier.
+        if object_pat_prop_list_hole_name(prop).is_some() {
+            return;
+        }
+        prop.visit_children_with(self);
+    }
+
     fn visit_class_member(&mut self, member: &ClassMember) {
         if is_anything_class_rest_hole(member) {
             return;

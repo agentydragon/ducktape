@@ -584,7 +584,6 @@ minimizer_expectation_case!(
 // `{ ... } = e` prop destructure is kept verbatim at the top of an otherwise
 // holed body.
 minimizer_expectation_case!(
-    #[ignore = "the discriminator is a destructure-pattern property key (`uniqueDiscriminatorProp`), which the candidate index does not collect, and holing an `ObjectPat` (keep one property + OBJECT_PROPS) is not yet implemented; the read-off bails with no sparse selector. Needs destructure-pattern-key anchor indexing + pattern holing."]
     minimizes_wide_destructure_block,
     fixture = "wide_destructure_block",
     name = "wide destructuring block keeps only the discriminating destructured property",

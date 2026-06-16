@@ -1803,6 +1803,58 @@ fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
     holed
 }
 
+/// The `OBJECT_PROPS` destructure-pattern hole prop — a shorthand binding whose
+/// name is the keyword — absorbing a run of dropped destructured properties.
+/// The pattern analog of [`object_props_prop`].
+fn object_props_pat_prop() -> ObjectPatProp {
+    ObjectPatProp::Assign(AssignPatProp {
+        span: DUMMY_SP,
+        key: BindingIdent {
+            id: ident_node(OBJECT_PROPS_HOLE_KEYWORD),
+            type_ann: None,
+        },
+        value: None,
+    })
+}
+
+/// Prune a binding pattern into selector form. An object destructuring pattern
+/// (`const { …, x } = e`) holes down to the props carrying a kept anchor (a
+/// discriminating destructured key) via [`hole_object_pat`]; every other
+/// pattern is kept verbatim — a bare minified binding name is already
+/// alpha-wildcarded by the matcher, so there is nothing to hole.
+fn hole_pat(pat: &Pat, kept: &BTreeSet<AnchorSpan>) -> Pat {
+    match pat {
+        Pat::Object(object) => Pat::Object(hole_object_pat(object, kept)),
+        _ => pat.clone(),
+    }
+}
+
+/// Hole a destructuring object pattern: keep only the props carrying a kept
+/// anchor (the discriminating destructured key), dropping every other run into
+/// an `OBJECT_PROPS` hole. The pattern analog of [`hole_object`]; a kept prop is
+/// retained verbatim (its bound local is alpha-wildcarded by the matcher).
+fn hole_object_pat(object: &ObjectPat, kept: &BTreeSet<AnchorSpan>) -> ObjectPat {
+    let mut props = Vec::new();
+    let mut dropped_run = false;
+    for prop in &object.props {
+        if node_retains_any(prop.span(), kept) {
+            if dropped_run {
+                props.push(object_props_pat_prop());
+                dropped_run = false;
+            }
+            props.push(prop.clone());
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run {
+        props.push(object_props_pat_prop());
+    }
+    let mut holed = object.clone();
+    holed.props = props;
+    holed
+}
+
 fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     let mut props = Vec::new();
     let mut dropped_run = false;
@@ -1906,6 +1958,7 @@ fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
         Stmt::Decl(Decl::Var(var)) => {
             let mut holed = (**var).clone();
             for declarator in &mut holed.decls {
+                declarator.name = hole_pat(&declarator.name, kept);
                 if let Some(init) = &declarator.init {
                     declarator.init = Some(Box::new(hole_expr(init, kept)));
                 }

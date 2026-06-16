@@ -115,9 +115,11 @@ O(smallest posting) per step, not O(N).
 **Feature taxonomy.** `SelectorFeature` indexes string, **number, and boolean**
 literals (number/bool canonicalized and scored `Semantic`; never wildcarded — the
 matcher discriminates by `eq_ignore_span`, so the candidate set stays a sound
-match superset), object keys, member/method/callee names, and bounded-depth
-skeletons. High-multiplicity skeletons (interned >4×) demote to `Structural` so
-value anchors win stability ties.
+match superset), object keys (object-literal **and** destructure-pattern
+property keys — the stable source property name, not the minified local
+binding), member/method/callee names, and bounded-depth skeletons.
+High-multiplicity skeletons (interned >4×) demote to `Structural` so value
+anchors win stability ties.
 
 **Layer 2 — read-off renderer + migrated forms.** `readoff_render.rs`
 (`kept_spans_for_anchor_set`) maps a read-off `AnchorSet` to the kept-span set the
@@ -131,7 +133,11 @@ Migrated to read-off as their primary path:
   is a run of sequential assignment statements holes to `STMT_LIST` runs around
   the one anchored assignment, whose LHS receiver (a minified parameter) holes to
   `ANYTHING` while the stable property name and discriminating RHS literal stay
-  (the `hole_expr` `Expr::Assign` arm; `sequential_assignment_block`).
+  (the `hole_expr` `Expr::Assign` arm; `sequential_assignment_block`). A body
+  opening with a wide object-destructure (`const { …, x } = props`) whose
+  discriminator is a destructured property key holes the pattern to
+  `{ OBJECT_PROPS, x }` (keep the anchored key, absorb the rest) and the RHS to
+  `ANYTHING` (`hole_object_pat`; `wide_destructure_block`).
 - **Single-target object** (`try_object_read_off` → `hole_object_padded`):
   surrounds every kept prop with `OBJECT_PROPS` (leads, trails, **and**
   interleaves) so a discriminating `key: value` — or a minimal _key set_ — matches
@@ -162,8 +168,12 @@ Migrated to read-off as their primary path:
 exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
 `STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`, and `CASE_REST`
 (switch-case-run — closes the survey's inexpressible many-arm-`switch` shape).
-Regex-over-string-literal anchors (`STR_LITERAL_MATCHING_RE`) fire for
-stable-prefix/volatile-tail strings (trailing hex/digit runs).
+`OBJECT_PROPS` absorbs object-literal properties **and** destructure-pattern
+properties (`const { OBJECT_PROPS, x } = …`), where a shorthand pattern key is
+matched by exact spelling (the stable source property name) rather than as an
+alpha-renameable binding, so it discriminates. Regex-over-string-literal anchors
+(`STR_LITERAL_MATCHING_RE`) fire for stable-prefix/volatile-tail strings
+(trailing hex/digit runs).
 
 **Strangler-fig boundary.** The matcher-driven branch-and-bound cover search
 (`minimize_via_retention`, `cover_competitors`, `min_set_cover`, and the
@@ -171,7 +181,7 @@ function/class anchor collectors) is **deleted**: single-target function, class,
 object, and var all route through the read-off, which subsumes it once W3 added
 number/bool features (its last reason to exist). A target the read-off cannot
 single out is reported as debt, never full-AST-pinned. Multi-target var binding
-groups also read off now (`try_var_group_read_off`, backlog item 3): each target
+groups also read off now (`try_var_group_read_off`, backlog item 2): each target
 declarator slot reads its minimal anchor off the shape index plus a slot-aware
 greedy (`slot_minimal_anchors`), the per-slot kept spans union, and the
 binding-group matcher proves the tuple. The **keep-shallow path**
@@ -179,7 +189,7 @@ binding-group matcher proves the tuple. The **keep-shallow path**
 `AnchorCandidates::{shallow_literals,deep_cover_tiers}`) remains only as the
 **fallback** for groups whose per-slot single-binding view cannot single a slot
 out (a value shared across sibling statements that resolves only as a tuple);
-retiring it is gated as backlog item 3.
+retiring it is gated as backlog item 2.
 
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
@@ -195,17 +205,18 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
-`binding_group_key_set_readoff` (multi-target group per-slot key read-off, item 3),
+`binding_group_key_set_readoff` (multi-target group per-slot key read-off, item 2),
 `interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
 landed, #2289), `sequential_assignment_block` (`hole_expr` `Expr::Assign` arm),
 `sibling_class_declaration_group` (the general non-function co-occurrence group),
 `single_target_class_whole_body`, `component_wide_destructure_whole_body`
 (unignored once the robustness-anchor candidate-walk landed, #2289 item 1),
 `object_nested_value_dict`, and (unignored once the object key-set cover landed)
-`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`, and
+`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`,
 (unignored once `hole_callee`/`hole_args` holed bare-function callees and
-non-anchor argument runs) `deeply_nested_call_args`. Ignored as aspirational (the
-named form not yet read-off-expressible): `wide_destructure_block`.
+non-anchor argument runs) `deeply_nested_call_args`, and (destructure-pattern-key
+`ObjectKey` anchors + `ObjectPat` holing, #2310) `wide_destructure_block`. Every
+catalogued expectation case is now active.
 
 ## Acceptance criteria
 
@@ -254,7 +265,9 @@ serde); embedded/non-trailing volatility in regex anchors (future).
   **~55% var/object, ~42% function, ~3% class**; median ~35 lines, tail to ~700.
   These are the **achievable near-term wins**: the over-pin-reduction waves shrink
   them under the threshold so they ship as compact selectors —
-  - var/object (the plurality) → the remaining object-dict forms (backlog item 2);
+  - var/object (the plurality) → wide object-destructure patterns now hole to
+    the discriminating key (landed, #2310); residual object-dict over-pin folds
+    into item 1's interior holing;
   - function → **interior holing** within kept bodies (backlog item 1);
   - a re-apply after each wave reconverts whatever now fits ≤30 lines.
 - 1 — `async` parse edge case (single; ignore).
@@ -280,16 +293,7 @@ the landed architecture is in "Current state" above.
    `__decorate` family). These have no discriminating feature _inside_ the
    declaration, so they need **enclosing-context anchoring** (`before`/`after`/`near`
    a stable neighbor) or stay name-pinned as accepted debt.
-2. **Wide destructure (`wide_destructure_block`).** A `const { …, x } = props`
-   whose discriminator is a destructured property key (`x`) bails with "no sparse
-   selector": the candidate index does not collect destructure-pattern property
-   keys as anchors, and holing an `ObjectPat` (keep one property + `OBJECT_PROPS`,
-   hole the RHS) is not implemented (`hole_expr` is expression-only). Needs
-   destructure-pattern-key anchor indexing plus pattern holing. (Nested-value
-   dicts — `object_nested_value_dict` — already minimize via the nested
-   object/array holing recursion; the `ee({ coreMessage: …, type: … })`
-   schema-object-call form folds into item 1.)
-3. **Retire the keep-shallow group cover.** The multi-target var binding-group
+2. **Retire the keep-shallow group cover.** The multi-target var binding-group
    read-off (`try_var_group_read_off`) landed, but the keep-shallow path
    (`minimize_var_group_selector`'s escalation over `collect_expr_anchors` +
    `AnchorCandidates`) stays as the fallback for groups whose per-slot
@@ -298,18 +302,18 @@ the landed architecture is in "Current state" above.
    Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
    and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
    tuple-aware read-off for those residual groups (or accepting them as debt).
-4. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
-   splitting by form enables parallel per-form fan-out (do after item 3 reshapes
+3. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
+   splitting by form enables parallel per-form fan-out (do after item 2 reshapes
    the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
    and `minimize_var_group_selector` each build a near-identical var `render_with`
    closure (iterate `var.decls`, `DECLARATORS_*` holes for non-target slots, holed
    target init); factor one shared slot-render helper parameterized by the
    per-slot init holing.
-5. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+4. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-6. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+5. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
    beneficial minimized selectors. Operational PR rule: **revert any converted
    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.

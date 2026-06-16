@@ -160,4 +160,19 @@ impl Visit for WildcardIdentCollector {
         }
         prop_or_spread.visit_children_with(self);
     }
+
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        // An `OBJECT_PROPS` hole in destructure-pattern position
+        // (`const { OBJECT_PROPS, x } = …`). Routed to the same
+        // ordered-subsequence property matching as the object-literal hole; the
+        // shorthand-binding token must not be alpha-canonicalized as a real
+        // binding.
+        if let Some(hole_name) = object_pat_prop_list_hole_name(prop) {
+            self.idents
+                .object_property_lists
+                .insert(hole_name.to_string());
+            return;
+        }
+        prop.visit_children_with(self);
+    }
 }

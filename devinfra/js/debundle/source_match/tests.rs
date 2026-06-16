@@ -170,6 +170,51 @@ fn prepared_needle_matches_via_table() {
 }"#,
             expected: false,
         },
+        // `OBJECT_PROPS` in a destructure pattern absorbs the other destructured
+        // properties; the kept shorthand key matches by exact spelling.
+        MatchCase {
+            intent: "OBJECT_PROPS pattern hole keeps a discriminating destructure key",
+            selector_src: r#"function readable(ANYTHING) {
+  const { OBJECT_PROPS, target } = ANYTHING;
+  STMT_LIST
+}"#,
+            subject_src: r#"function m(p) {
+  const { a, b, c, target } = p;
+  return use(target);
+}"#,
+            expected: true,
+        },
+        // The destructure key is the stable property name (exact spelling), so a
+        // wide destructure lacking it does not match — without exact-key matching
+        // the shorthand key would alpha-bind to any sibling property and stop
+        // discriminating.
+        MatchCase {
+            intent: "destructure-key pattern hole discriminates on the exact key name",
+            selector_src: r#"function readable(ANYTHING) {
+  const { OBJECT_PROPS, target } = ANYTHING;
+  STMT_LIST
+}"#,
+            subject_src: r#"function m(p) {
+  const { a, b, c } = p;
+  return use(a);
+}"#,
+            expected: false,
+        },
+        // A KeyValue destructure (`{ key: minifiedBinding }`, the realistic
+        // minified form) discriminates on the exact key through the same pattern
+        // list-hole routing, while the bound local stays alpha-renameable.
+        MatchCase {
+            intent: "OBJECT_PROPS pattern hole keeps a KeyValue destructure key, binding stays alpha",
+            selector_src: r#"function readable(ANYTHING) {
+  const { OBJECT_PROPS, target: bound } = ANYTHING;
+  STMT_LIST
+}"#,
+            subject_src: r#"function m(p) {
+  const { a: x, target: y } = p;
+  return use(y);
+}"#,
+            expected: true,
+        },
     ]);
 }
 

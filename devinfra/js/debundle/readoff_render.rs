@@ -190,6 +190,21 @@ impl Visit for SpanCollector<'_> {
         }
     }
 
+    fn visit_object_pat(&mut self, pat: &ObjectPat) {
+        // A destructured property key is the same `ObjectKey` anchor as an
+        // object-literal key (the stable source property name). Pin the key
+        // token so the prune keeps it (and holes the rest of the pattern with
+        // `OBJECT_PROPS`), exactly as `visit_object_lit` does for literals.
+        for prop in &pat.props {
+            if let Some((label, key_span)) = object_pat_key_label_span(prop)
+                && self.anchors.contains(&ValueAnchor::ObjectKey(label))
+            {
+                self.keep(key_span);
+            }
+            prop.visit_with(self);
+        }
+    }
+
     fn visit_class_member(&mut self, member: &ClassMember) {
         if let Some((label, key_span)) = class_member_label_span(member)
             && self.anchors.contains(&ValueAnchor::ClassMember(label))
@@ -242,6 +257,14 @@ fn object_key_label_span(prop: &PropOrSpread) -> Option<(String, Span)> {
         Prop::Getter(getter) => prop_name_label_span(&getter.key),
         Prop::Setter(setter) => prop_name_label_span(&setter.key),
         Prop::Method(method) => prop_name_label_span(&method.key),
+    }
+}
+
+fn object_pat_key_label_span(prop: &ObjectPatProp) -> Option<(String, Span)> {
+    match prop {
+        ObjectPatProp::KeyValue(kv) => prop_name_label_span(&kv.key),
+        ObjectPatProp::Assign(assign) => Some((assign.key.id.sym.to_string(), assign.key.id.span)),
+        ObjectPatProp::Rest(_) => None,
     }
 }
 

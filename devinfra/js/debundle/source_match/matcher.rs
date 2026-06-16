@@ -857,11 +857,7 @@ impl<'a> AstWildcardMatcher<'a> {
             (Pat::Object(needle), Pat::Object(candidate)) => {
                 needle.optional == candidate.optional
                     && needle.type_ann.eq_ignore_span(&candidate.type_ann)
-                    && self.match_slice(
-                        &needle.props,
-                        &candidate.props,
-                        Self::match_object_pat_prop,
-                    )
+                    && self.match_object_pat_prop_slice(&needle.props, &candidate.props)
             }
             (Pat::Assign(needle), Pat::Assign(candidate)) => {
                 self.match_assign_pat(needle, candidate)
@@ -883,6 +879,32 @@ impl<'a> AstWildcardMatcher<'a> {
             && self.match_expr(&needle.right, &candidate.right)
     }
 
+    /// Match a destructuring object-pattern property list. An `OBJECT_PROPS`
+    /// hole (`const { OBJECT_PROPS, x } = …`) splits the needle into fixed
+    /// segments matched as an ordered subsequence with gaps (see
+    /// [`Self::match_list_with_holes`]); with no hole this is an exact
+    /// element-wise match. Mirrors [`Self::match_prop_or_spread_slice`] for the
+    /// object-literal case.
+    fn match_object_pat_prop_slice(
+        &mut self,
+        needle: &[ObjectPatProp],
+        candidate: &[ObjectPatProp],
+    ) -> bool {
+        if needle
+            .iter()
+            .any(|prop| object_pat_prop_list_hole_name(prop).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |prop| object_pat_prop_list_hole_name(prop).is_some(),
+                Self::match_object_pat_prop,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_object_pat_prop)
+        }
+    }
+
     fn match_object_pat_prop(&mut self, needle: &ObjectPatProp, candidate: &ObjectPatProp) -> bool {
         match (needle, candidate) {
             (ObjectPatProp::KeyValue(needle), ObjectPatProp::KeyValue(candidate)) => {
@@ -896,7 +918,17 @@ impl<'a> AstWildcardMatcher<'a> {
                 self.match_assign_pat_against_key_value_pat(needle, candidate)
             }
             (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
-                self.match_binding_binding_ident(&needle.key, &candidate.key)
+                // A shorthand destructure key is a stable source property name:
+                // it matches by exact spelling, like a KeyValue pattern key
+                // (`match_prop_name_exact`), an object-literal key, and the
+                // KeyValue↔Assign cross-forms below — never as an
+                // alpha-renameable binding. `match_binding_binding_ident` then
+                // registers the introduced local in the alpha scope so later
+                // references resolve. Without the exact-spelling gate a wide
+                // `{ OBJECT_PROPS, foo }` selector would alpha-bind `foo` to any
+                // sibling's property and stop discriminating.
+                needle.key.id.sym == candidate.key.id.sym
+                    && self.match_binding_binding_ident(&needle.key, &candidate.key)
                     && self.match_option_box_expr(&needle.value, &candidate.value)
             }
             (ObjectPatProp::Rest(needle), ObjectPatProp::Rest(candidate)) => {
@@ -925,11 +957,7 @@ impl<'a> AstWildcardMatcher<'a> {
             (Pat::Object(needle), Pat::Object(candidate)) => {
                 needle.optional == candidate.optional
                     && needle.type_ann.eq_ignore_span(&candidate.type_ann)
-                    && self.match_slice(
-                        &needle.props,
-                        &candidate.props,
-                        Self::match_ref_object_pat_prop,
-                    )
+                    && self.match_ref_object_pat_prop_slice(&needle.props, &candidate.props)
             }
             (Pat::Assign(needle), Pat::Assign(candidate)) => {
                 self.match_ref_assign_pat(needle, candidate)
@@ -959,6 +987,28 @@ impl<'a> AstWildcardMatcher<'a> {
             && self.match_expr(&needle.right, &candidate.right)
     }
 
+    /// Reference-position analog of [`Self::match_object_pat_prop_slice`] (an
+    /// assignment-target destructure such as `({ OBJECT_PROPS, x } = …)`).
+    fn match_ref_object_pat_prop_slice(
+        &mut self,
+        needle: &[ObjectPatProp],
+        candidate: &[ObjectPatProp],
+    ) -> bool {
+        if needle
+            .iter()
+            .any(|prop| object_pat_prop_list_hole_name(prop).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |prop| object_pat_prop_list_hole_name(prop).is_some(),
+                Self::match_ref_object_pat_prop,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_ref_object_pat_prop)
+        }
+    }
+
     fn match_ref_object_pat_prop(
         &mut self,
         needle: &ObjectPatProp,
@@ -976,7 +1026,10 @@ impl<'a> AstWildcardMatcher<'a> {
                 self.match_assign_pat_against_key_value_ref_pat(needle, candidate)
             }
             (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
-                self.match_binding_ident_as_ref(&needle.key, &candidate.key)
+                // The destructure key is a stable property name (exact spelling);
+                // see the binding-position note in `match_object_pat_prop`.
+                needle.key.id.sym == candidate.key.id.sym
+                    && self.match_binding_ident_as_ref(&needle.key, &candidate.key)
                     && self.match_option_box_expr(&needle.value, &candidate.value)
             }
             (ObjectPatProp::Rest(needle), ObjectPatProp::Rest(candidate)) => {
