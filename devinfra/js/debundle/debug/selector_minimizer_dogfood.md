@@ -73,3 +73,27 @@ near the parse/index floor plus cheap per-member work.
   the candidate-index intersection is a singleton `{target}` for the overwhelming
   majority of members, so the matcher proves uniqueness by inspecting one item and
   the residual per-member cost is negligible.
+
+## Index-build perf (#2291, posting lists as sorted `Vec<u32>` + `FxHashMap`)
+
+Same `-c opt` whole-chunk dry-run as above, on the **current** spec (the
+dogfood-apply backlog has since converted ~half the name-pins, so the spec now
+reports **2,227** `name_binding_members`, not the 4,506 of the table above —
+fewer members to minimize, so even the unmodified binary is already under the
+≤10s ideal). To isolate the data-structure change from the spec-size change,
+both binaries were built `-c opt` and run back-to-back on this same spec
+(`static/index-DI2GynTv.js`, `time.perf_counter` × 3, `RUSAGE_CHILDREN`):
+
+| binary                           | whole chunk (median) | best  | peak RSS |
+| -------------------------------- | -------------------- | ----- | -------- |
+| before (`BTreeMap`/`BTreeSet`)   | 8.2 s                | 7.4 s | ~243 MB  |
+| after (`FxHashMap`/sorted `Vec`) | 7.0 s                | 6.6 s | ~222 MB  |
+
+≈ **15% wall-clock** and **~21 MB peak RSS** off the whole chunk (the smaller
+`Vec<u32>` posting lists replace the many small `BTreeSet` nodes). The largest
+single scope (`features`, 1,037 members both runs) drops 4.0 s → 3.7 s best. The
+isolated index-build + read-off lever is larger (≈1.9× build / 3.7× read-off on
+the synthetic sweep — see <selector_minimizer_perf.md>); on the real chunk the
+fixed swc parse of the 7 MB chunk and the per-member render/prove work dilute it,
+but both phases the change touches got materially cheaper and the ≤10s ideal is
+met with margin.

@@ -44,9 +44,12 @@
 //! the opaque feature set the extractor emits, so a later wave can swap in a
 //! hedge-automaton extractor without touching them.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use selector_candidate_index::{IndexedTopLevelCandidate, SelectorCandidateIndex, SelectorFeature};
+use rustc_hash::FxHashMap;
+use selector_candidate_index::{
+    CandidateSet, IndexedTopLevelCandidate, SelectorCandidateIndex, SelectorFeature,
+};
 use swc_ecma_ast::*;
 
 /// Canonical identity of an alpha-equivalent subtree shape. Two subtrees share
@@ -124,7 +127,7 @@ struct ShapeNode {
 /// whole DAG is O(N) in chunk size.
 #[derive(Debug, Default)]
 pub struct ShapeInterner {
-    by_node: BTreeMap<ShapeNode, ShapeId>,
+    by_node: FxHashMap<ShapeNode, ShapeId>,
     /// Per-shape multiplicity across everything interned so far. The collision
     /// count is exactly the per-shape selectivity signal (free byproduct).
     multiplicity: Vec<u32>,
@@ -521,7 +524,7 @@ fn prop_name_string(name: &PropName) -> Option<String> {
 /// [`SelectorFeature`]s (literals, keys, member/callee names, kinds) or a
 /// bounded-depth shape skeleton id. Tagging them in one enum lets the greedy
 /// cover rank heterogeneous features uniformly by `(selectivity, stability)`.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ShapeFeature {
     Selector(SelectorFeature),
     Skeleton(ShapeId),
@@ -573,8 +576,10 @@ pub struct ShapeIndex {
     items: Vec<ShapeIndexedItem>,
     interner: ShapeInterner,
     /// feature -> set of item body indices exhibiting it (inverted index).
-    /// Covers both selector features and shape skeletons.
-    postings: BTreeMap<ShapeFeature, BTreeSet<usize>>,
+    /// Covers both selector features and shape skeletons. Hashed (no ordered
+    /// iteration needed) with sorted-`Vec` posting lists for cheap build +
+    /// intersection (issue #2291).
+    postings: FxHashMap<ShapeFeature, CandidateSet>,
 }
 
 impl ShapeIndex {
@@ -585,7 +590,7 @@ impl ShapeIndex {
     pub fn with_extractor(module: &Module, extractor: &dyn ShapeFeatureExtractor) -> Self {
         let prefilter = SelectorCandidateIndex::new(module);
         let mut interner = ShapeInterner::default();
-        let mut postings: BTreeMap<ShapeFeature, BTreeSet<usize>> = BTreeMap::new();
+        let mut postings: FxHashMap<ShapeFeature, CandidateSet> = FxHashMap::default();
         let mut items = Vec::with_capacity(module.body.len());
 
         for (body_idx, module_item) in module.body.iter().enumerate() {
@@ -597,14 +602,14 @@ impl ShapeIndex {
                 postings
                     .entry(ShapeFeature::Selector(feature.clone()))
                     .or_default()
-                    .insert(body_idx);
+                    .push_ascending(body_idx);
             }
             let skeletons = extractor.shape_features(module_item, &mut interner);
             for &shape in &skeletons {
                 postings
                     .entry(ShapeFeature::Skeleton(shape))
                     .or_default()
-                    .insert(body_idx);
+                    .push_ascending(body_idx);
             }
             items.push(ShapeIndexedItem {
                 candidate,
@@ -641,8 +646,8 @@ impl ShapeIndex {
         self.items.get(body_idx).map(|item| &item.candidate)
     }
 
-    fn posting(&self, feature: &ShapeFeature) -> &BTreeSet<usize> {
-        static EMPTY: BTreeSet<usize> = BTreeSet::new();
+    fn posting(&self, feature: &ShapeFeature) -> &CandidateSet {
+        static EMPTY: CandidateSet = CandidateSet::EMPTY;
         self.postings.get(feature).unwrap_or(&EMPTY)
     }
 
@@ -726,7 +731,7 @@ impl ShapeIndex {
         if let Some(top) = scored.first()
             && self.posting(&top.feature).len() == 1
         {
-            debug_assert!(self.posting(&top.feature).contains(&body_idx));
+            debug_assert!(self.posting(&top.feature).contains(body_idx));
             return Some(AnchorSet {
                 body_idx,
                 anchors: vec![top.clone()],
@@ -748,34 +753,31 @@ impl ShapeIndex {
         // items pay O(smallest posting) per step rather than O(N).
         let mut remaining = scored;
         let seed = remaining.first()?;
-        let mut covered: BTreeSet<usize> = self.posting(&seed.feature).clone();
+        let mut covered = self.posting(&seed.feature).clone();
         let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
+        let mut scratch = CandidateSet::empty();
 
         while covered.len() > 1 {
-            let best = remaining
+            // The feature that shrinks the candidate set the most; ranked by
+            // intersection size only (no allocation), ties broken toward the
+            // better-ranked feature (lower index). Only the winner is then
+            // materialized, into the reused scratch buffer.
+            let (best_i, best_len) = remaining
                 .iter()
                 .enumerate()
-                .map(|(i, f)| {
-                    let next: BTreeSet<usize> = covered
-                        .intersection(self.posting(&f.feature))
-                        .copied()
-                        .collect();
-                    (i, next)
-                })
-                // The feature that shrinks the candidate set the most; ties
-                // broken toward the better-ranked feature (lower index).
-                .min_by(|(ai, a), (bi, b)| a.len().cmp(&b.len()).then(ai.cmp(bi)))?;
-            let (best_i, next_covered) = best;
+                .map(|(i, f)| (i, covered.intersection_len(self.posting(&f.feature))))
+                .min_by(|(ai, a), (bi, b)| a.cmp(b).then(ai.cmp(bi)))?;
             // No feature makes progress: the target is not separable by its own
             // features. Report "unminimizable" rather than loop forever.
-            if next_covered.len() == covered.len() {
+            if best_len == covered.len() {
                 return None;
             }
-            covered = next_covered;
+            covered.intersect_into(self.posting(&remaining[best_i].feature), &mut scratch);
+            std::mem::swap(&mut covered, &mut scratch);
             chosen.push(remaining.remove(best_i));
         }
 
-        (covered == BTreeSet::from([body_idx])).then_some(AnchorSet {
+        (covered.len() == 1 && covered.contains(body_idx)).then_some(AnchorSet {
             body_idx,
             opt_one: chosen.len() == 1,
             anchors: chosen,
@@ -999,14 +1001,11 @@ const c = other("third-token");"#,
         /// exactly `{body_idx}` (the index-level uniqueness check; the matcher
         /// is the production gate, exercised in the integration test crate).
         fn read_off_resolves_uniquely(&self, body_idx: usize, anchor: &AnchorSet) -> bool {
-            let mut covered: BTreeSet<usize> = (0..self.items.len()).collect();
+            let mut covered = CandidateSet::all(0..self.items.len());
             for scored in &anchor.anchors {
-                covered = covered
-                    .intersection(self.posting(&scored.feature))
-                    .copied()
-                    .collect();
+                covered = covered.intersect(self.posting(&scored.feature));
             }
-            covered == BTreeSet::from([body_idx])
+            covered.len() == 1 && covered.contains(body_idx)
         }
     }
 

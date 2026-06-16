@@ -88,3 +88,39 @@ only ~6% on `app` — #2280 did its job. What dominates is:
 
 Any one of (1)–(2) should recover the last ~3s to the ≤10s ideal; (1) is the
 highest-leverage and most self-contained.
+
+## Resolution (#2291): sorted `Vec<u32>` posting lists + `FxHashMap`
+
+Landed targets **(1)**, **(3)**, and **(4)** — the self-contained data-structure
+swap, no feature-label interning needed:
+
+- **Posting lists / candidate sets are now ascending-sorted `Vec<u32>`**
+  (`CandidateSet` in `selector_candidate_index.rs`), built in one pass via
+  `push_ascending` (body indices arrive in order, so no per-element insert/sort).
+  Intersection is a two-pointer linear merge into a **reused scratch buffer**;
+  the greedy read-off ranks candidate features by `intersection_len` (count-only,
+  no allocation) and materializes only the winner. This removes the
+  `BTreeMap::Iter::next` / `IntoIter::dying_next` / `Drop` / `from_iter` cost and
+  most of the small-node allocator churn.
+- **The inverted indices are `FxHashMap`** (`feature_to_body_indices`,
+  `ShapeIndex::postings`, and the `ShapeInterner` hash-cons table `by_node`) —
+  ordered iteration was never needed, so hashing removes the `SelectorFeature` /
+  `ShapeFeature` / `ShapeNode` `Ord::cmp` (String-label `memcmp`) and the
+  tree-rebalance cost from every build insert and lookup.
+
+The feature taxonomy and posting-list **contents** are unchanged (same
+`distinct_shapes` / `posting_entries`, same `OPT=1` distribution), so the read-off
+results are identical — only the representation is faster. Soundness stays gated
+by `shape_index_soundness_test.rs`.
+
+**Measured.** Synthetic `shape_index_bench` (isolated index-build + read-off
+lever), `-c opt`:
+
+| N    | build before | build after | read-off before | read-off after |
+| ---- | ------------ | ----------- | --------------- | -------------- |
+| 200  | 0.0067 ms/it | 0.0038      | 1.61 µs/it      | 0.72           |
+| 1000 | 0.0069 ms/it | 0.0039      | 3.26 µs/it      | 1.06           |
+| 4000 | 0.0081 ms/it | 0.0042      | 8.82 µs/it      | 2.41           |
+
+≈ **1.9× faster index build** and **3.7× faster read-off** at N=4000. Real-chunk
+same-spec whole-chunk wall-clock and peak RSS in <selector_minimizer_dogfood.md>.

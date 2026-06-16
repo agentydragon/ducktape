@@ -150,7 +150,11 @@ removed.
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
 hard budget**, narrowly over the ≤10 s ideal (per-member ~0.0027 s, ~9× cheaper).
-Full scope table in <../debug/selector_minimizer_dogfood.md>.
+Full scope table in <../debug/selector_minimizer_dogfood.md>. #2291 then closed
+the index-build cost (posting lists as sorted `Vec<u32>` + `FxHashMap` inverted
+indices): ≈1.9× faster build / 3.7× faster read-off on the synthetic sweep, and on
+the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
+**~7 s**, comfortably under the ≤10 s ideal.
 
 **E2E expectation suite** (`e2e/selector_minimizer_expectation_test.rs`). Active:
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
@@ -300,7 +304,15 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
     posting-list `BTreeMap`/`BTreeSet` for a hashed map (`FxHashMap`/`FxHashSet`)
     where ordered iteration isn't required; (c) reserve/amortise allocations in
     `SelectorCandidateIndex::new` / `ShapeIndex::with_extractor`. Any one likely
-    recovers the last ~3s.
+    recovers the last ~3s. **(Landed: #2291 — did (b)+(c) plus sorted-`Vec<u32>`
+    posting lists with reused-scratch linear-merge intersection; (a) interning was
+    not needed. Posting lists/candidate sets are now ascending-sorted `Vec<u32>`
+    (`CandidateSet`), the inverted indices + hash-cons table are `FxHashMap`.
+    Measured: ≈1.9× faster index build / 3.7× faster read-off on the synthetic
+    sweep; real-chunk same-spec whole-chunk ~8.2s → ~7.0s median with ~21 MB less
+    peak RSS. Identical posting contents / `OPT=1` distribution; soundness stays
+    gated by `shape_index_soundness_test.rs`. See
+    <../debug/selector_minimizer_perf.md>.)**
 13. **Dogfood-apply on gaffer-private (in progress).** Run `synthesize-selectors
 --apply` on the real spec, review for over-pin, and PR the beneficial minimized
     selectors (fragile minified-name pins → forward-compatible `source_match`). On

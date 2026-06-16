@@ -73,6 +73,7 @@ rust_library(
         ":source_match_holes",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:rustc-hash",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -98,6 +99,7 @@ rust_library(
     deps = [
         ":js_ast",
         ":selector_candidate_index",
+        "@crates//:rustc-hash",
         "@crates//:swc_ecma_ast",
     ],
 )

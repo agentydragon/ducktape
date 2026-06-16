@@ -7,9 +7,11 @@
 //! lists. A returned candidate set may contain false positives; it must not
 //! omit a real matcher result.
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
+use rustc_hash::FxHashMap;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
@@ -19,7 +21,7 @@ use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierM
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum TopLevelKind {
     ImportDeclaration,
     FunctionDeclaration,
@@ -33,14 +35,14 @@ pub enum TopLevelKind {
     ModuleDeclaration,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum VarKind {
     Var,
     Let,
     Const,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum SelectorFeature {
     TopLevelKind(TopLevelKind),
     VarKind(VarKind),
@@ -76,20 +78,50 @@ pub struct IndexedTopLevelCandidate {
     pub features: BTreeSet<SelectorFeature>,
 }
 
+/// A set of top-level body indices, stored as an ascending-sorted, de-duplicated
+/// `Vec<u32>`. Body indices are dense small integers `0..N`, so a sorted vector
+/// makes intersection a linear two-pointer merge (no per-element allocation or
+/// ordered-tree traversal) and keeps the whole set in one contiguous allocation —
+/// the index-build perf lever for whole-chunk minimize (issue #2291).
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct CandidateSet {
-    body_indices: BTreeSet<usize>,
+    body_indices: Vec<u32>,
 }
 
 impl CandidateSet {
+    /// The empty set as a `const`, so callers can hand out a `&'static` empty
+    /// posting list without allocating.
+    pub const EMPTY: CandidateSet = CandidateSet {
+        body_indices: Vec::new(),
+    };
+
     pub fn all(body_indices: impl IntoIterator<Item = usize>) -> Self {
-        Self {
-            body_indices: body_indices.into_iter().collect(),
-        }
+        Self::from_unsorted(body_indices.into_iter().map(|idx| idx as u32).collect())
     }
 
     pub fn empty() -> Self {
         Self::default()
+    }
+
+    /// Build from possibly-unsorted, possibly-duplicated indices.
+    fn from_unsorted(mut body_indices: Vec<u32>) -> Self {
+        body_indices.sort_unstable();
+        body_indices.dedup();
+        Self { body_indices }
+    }
+
+    /// Append a body index that is strictly greater than every index appended so
+    /// far. The index builders walk body items in order, so each posting list is
+    /// produced already ascending and unique — this keeps the invariant without a
+    /// trailing sort. Cheaper than `BTreeSet::insert` (no node allocation).
+    pub fn push_ascending(&mut self, body_idx: usize) {
+        debug_assert!(
+            self.body_indices
+                .last()
+                .is_none_or(|&last| (body_idx as u32) > last),
+            "push_ascending requires strictly increasing indices"
+        );
+        self.body_indices.push(body_idx as u32);
     }
 
     pub fn len(&self) -> usize {
@@ -101,22 +133,69 @@ impl CandidateSet {
     }
 
     pub fn contains(&self, body_idx: usize) -> bool {
-        self.body_indices.contains(&body_idx)
+        u32::try_from(body_idx).is_ok_and(|idx| self.body_indices.binary_search(&idx).is_ok())
     }
 
     pub fn body_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.body_indices.iter().copied()
+        self.body_indices.iter().map(|&idx| idx as usize)
     }
 
     pub fn intersect(&self, other: &CandidateSet) -> CandidateSet {
-        CandidateSet {
-            body_indices: self
-                .body_indices
-                .intersection(&other.body_indices)
-                .copied()
-                .collect(),
+        let mut out = CandidateSet::empty();
+        self.intersect_into(other, &mut out);
+        out
+    }
+
+    /// Intersect into a reusable buffer (cleared first), so a per-member loop can
+    /// keep one scratch set instead of allocating a fresh one each step.
+    pub fn intersect_into(&self, other: &CandidateSet, out: &mut CandidateSet) {
+        sorted_intersect_into(
+            &self.body_indices,
+            &other.body_indices,
+            &mut out.body_indices,
+        );
+    }
+
+    /// Size of the intersection without materializing it — for ranking candidate
+    /// features by how much they shrink the working set.
+    pub fn intersection_len(&self, other: &CandidateSet) -> usize {
+        sorted_intersection_len(&self.body_indices, &other.body_indices)
+    }
+}
+
+/// Two-pointer intersection of two ascending-sorted slices into `out` (cleared
+/// first). Result stays ascending-sorted and de-duplicated.
+fn sorted_intersect_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            Ordering::Less => i += 1,
+            Ordering::Greater => j += 1,
+            Ordering::Equal => {
+                out.push(a[i]);
+                i += 1;
+                j += 1;
+            }
         }
     }
+}
+
+/// Count of common elements in two ascending-sorted slices, without allocating.
+fn sorted_intersection_len(a: &[u32], b: &[u32]) -> usize {
+    let (mut i, mut j, mut count) = (0, 0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            Ordering::Less => i += 1,
+            Ordering::Greater => j += 1,
+            Ordering::Equal => {
+                count += 1;
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    count
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
@@ -164,21 +243,21 @@ pub struct BindingProjection {
 
 pub struct SelectorCandidateIndex {
     items: Vec<IndexedTopLevelCandidate>,
-    feature_to_body_indices: BTreeMap<SelectorFeature, BTreeSet<usize>>,
+    feature_to_body_indices: FxHashMap<SelectorFeature, CandidateSet>,
 }
 
 impl SelectorCandidateIndex {
     pub fn new(module: &Module) -> Self {
-        let mut items = Vec::new();
-        let mut feature_to_body_indices: BTreeMap<SelectorFeature, BTreeSet<usize>> =
-            BTreeMap::new();
+        let mut items = Vec::with_capacity(module.body.len());
+        let mut feature_to_body_indices: FxHashMap<SelectorFeature, CandidateSet> =
+            FxHashMap::default();
         for (body_idx, item) in module.body.iter().enumerate() {
             let indexed = IndexedTopLevelCandidate::from_module_item(body_idx, item);
             for feature in &indexed.features {
                 feature_to_body_indices
                     .entry(feature.clone())
                     .or_default()
-                    .insert(body_idx);
+                    .push_ascending(body_idx);
             }
             items.push(indexed);
         }
@@ -197,42 +276,40 @@ impl SelectorCandidateIndex {
     }
 
     pub fn candidate_set_for_feature(&self, feature: &SelectorFeature) -> CandidateSet {
-        CandidateSet {
-            body_indices: self
-                .feature_to_body_indices
-                .get(feature)
-                .cloned()
-                .unwrap_or_default(),
-        }
+        self.feature_to_body_indices
+            .get(feature)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn candidate_set_for_features<'a>(
         &self,
         features: impl IntoIterator<Item = &'a SelectorFeature>,
     ) -> CandidateSet {
-        let mut postings = features
+        // A feature absent from the index has an empty posting list, so the whole
+        // intersection is empty; no features at all means every item qualifies.
+        let postings: Option<Vec<&CandidateSet>> = features
             .into_iter()
-            .map(|feature| {
-                self.feature_to_body_indices
-                    .get(feature)
-                    .map(|body_indices| (feature, body_indices))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(mut postings) = postings.take() else {
+            .map(|feature| self.feature_to_body_indices.get(feature))
+            .collect();
+        let Some(mut postings) = postings else {
             return CandidateSet::empty();
         };
-        postings.sort_by_key(|(_, body_indices)| body_indices.len());
-        let Some((_, first)) = postings.first() else {
+        postings.sort_by_key(|posting| posting.len());
+        let Some((first, rest)) = postings.split_first() else {
             return CandidateSet::all(self.items.iter().map(|item| item.body_idx));
         };
-        let mut body_indices = (*first).clone();
-        for (_, next) in postings.into_iter().skip(1) {
-            body_indices = body_indices.intersection(next).copied().collect();
-            if body_indices.is_empty() {
+        // Intersect smallest-first into a reused scratch buffer.
+        let mut acc = (*first).clone();
+        let mut scratch = CandidateSet::empty();
+        for next in rest.iter().copied() {
+            acc.intersect_into(next, &mut scratch);
+            std::mem::swap(&mut acc, &mut scratch);
+            if acc.is_empty() {
                 break;
             }
         }
-        CandidateSet { body_indices }
+        acc
     }
 
     pub fn query_for_source_match(
@@ -255,14 +332,16 @@ impl SelectorCandidateIndex {
         if query.alternatives.is_empty() {
             return CandidateSet::empty();
         }
-        let mut body_indices = BTreeSet::new();
+        // Union the per-alternative candidate sets.
+        let mut merged = Vec::new();
         for alternative in &query.alternatives {
-            body_indices.extend(
-                self.candidate_set_for_features(&alternative.features)
+            merged.extend_from_slice(
+                &self
+                    .candidate_set_for_features(&alternative.features)
                     .body_indices,
             );
         }
-        CandidateSet { body_indices }
+        CandidateSet::from_unsorted(merged)
     }
 
     pub fn candidate_set_for_source_match(
