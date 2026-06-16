@@ -34,10 +34,10 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (chunk-wide AST-shape index). Layer-1 index, function/object/class/var read-off,
   key-set minimization, (adjacent-function + general) co-occurrence grouping,
   multi-target var binding-group read-off, whole-body interior holing (incl. the
-  multi-feature value-anchor cover), prove-gate-via-index, whole-spec perf
-  validation (W4), and the branch-and-bound cover deletion landed; wide destructure,
-  keep-shallow group-cover retirement, by-form split, language simplification,
-  callee/arg holing, and the enclosing-context residual open. Holds its own
+  multi-feature value-anchor cover), wide destructure, callee/arg holing,
+  prove-gate-via-index, whole-spec perf validation (W4), and the branch-and-bound
+  cover deletion landed; keep-shallow group-cover retirement, by-form split,
+  language simplification, and the enclosing-context residual open. Holds its own
   current-state + backlog.
 - <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
   (complete).** Literature spike that gates the read-off design; durable, not a
@@ -63,12 +63,12 @@ propose`.
    (`shape_index.rs`, superseting `selector_candidate_index.rs`),
    function/object/class/var read-off, literal/regex anchors, hole-based
    minimization, multi-target var binding-group read-off, co-occurrence grouping,
-   whole-body interior holing (incl. the multi-feature value-anchor cover), the
-   prove-gate perf fix, whole-spec validation, and the branch-and-bound cover
-   deletion have landed; wide destructure, keep-shallow group-cover retirement,
-   `selector_codemod.rs` by-form split, language simplification, callee/arg holing,
-   and the enclosing-context residual are in that plan's backlog. Don't duplicate
-   its design or status here.
+   whole-body interior holing (incl. the multi-feature value-anchor cover), wide
+   destructure, callee/arg holing, the prove-gate perf fix, whole-spec validation,
+   and the branch-and-bound cover deletion have landed; keep-shallow group-cover
+   retirement, `selector_codemod.rs` by-form split, language simplification, and
+   the enclosing-context residual are in that plan's backlog. Don't duplicate its
+   design or status here.
 2. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    apply with filters, and explain every skipped candidate. (Selector
