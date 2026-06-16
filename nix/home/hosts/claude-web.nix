@@ -1,34 +1,39 @@
-# Claude Code web session — standalone home-manager profile.
+# Claude Code web session — standalone, minimal home-manager profile.
 #
-# Headless, non-NixOS. This is the home-manager counterpart to the
-# `nix profile install .#devtools` + manual skill-symlink path in
-# <devinfra/claude/web_setup.sh>: it installs the same devtools and deploys
-# Claude Code settings + skills through the shared home-manager skills module
-# (../skills.nix, via the ../claude_code module).
+# Deliberately independent of the shared nix/home host structure (it does NOT
+# import home.nix or the claude_code module). It contains only what
+# web_setup.sh's home-manager mode explicitly needs:
+#   - the devtools (same list the .#devtools profile install ships)
+#   - direnv + nix-direnv
+#   - skill deployment into ~/.claude/skills via the shared skills module
+#
+# The Claude Code CLI itself is provided by Anthropic in the web session, so it
+# is not installed here (and the nixpkgs build downloads the binary from
+# downloads.claude.ai, which 403s in the web container anyway).
 #
 # Portable across whatever user the web container runs as: home.username and
 # home.homeDirectory are read from the environment, so activation needs
-# --impure (same as the atlas profile):
+# --impure:
 #
 #   home-manager switch --impure --flake .#claude-web
 {
   pkgs,
-  lib,
   webDevTools,
+  sharedSkillsArgs,
   ...
 }:
 let
   envUser = builtins.getEnv "USER";
   envHome = builtins.getEnv "HOME";
+  user = if envUser != "" then envUser else "user";
+
+  # The reason this profile exists: deploy skills to ~/.claude/skills via the
+  # shared home-manager skills module.
+  mkSkills = import ../skills.nix sharedSkillsArgs;
 in
 {
-  imports = [
-    ../claude_code
-  ];
-
-  home.username = if envUser != "" then envUser else "user";
-  home.homeDirectory =
-    if envHome != "" then envHome else "/home/${if envUser != "" then envUser else "user"}";
+  home.username = user;
+  home.homeDirectory = if envHome != "" then envHome else "/home/${user}";
   home.stateVersion = "25.11";
 
   programs.home-manager.enable = true;
@@ -54,4 +59,6 @@ in
   # bbr, bbapi, gh, sops, kubectl, …). Reuses the flake's devToolPackages list
   # so the two install paths can never drift.
   home.packages = webDevTools;
+
+  home.file = mkSkills { prefix = ".claude"; };
 }

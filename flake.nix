@@ -416,20 +416,19 @@
         };
 
         # Claude Code web session — headless standalone profile installed by
-        # web_setup.sh's home-manager mode. Portable across the web container's
-        # user (home.username/homeDirectory read from the env), so it must be
-        # built/activated with --impure:
+        # web_setup.sh's home-manager mode. Independent of the shared host
+        # structure: it only needs the devtools list and the skills args.
+        # Portable across the web container's user (home.username/homeDirectory
+        # read from the env), so it must be built/activated with --impure:
         #   home-manager switch --impure --flake .#claude-web
         claude-web = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = [
             ./nix/home/hosts/claude-web.nix
             {
-              _module.args = hmCommonArgs // {
-                enableGui = false;
-                isNixOS = false;
-                isK8sWorker = false;
+              _module.args = {
                 webDevTools = devToolPackages;
+                inherit (hmCommonArgs) sharedSkillsArgs;
               };
             }
           ];
