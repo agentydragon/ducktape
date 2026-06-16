@@ -37,9 +37,12 @@ These are the current standalone `homeConfigurations` exposed by the flake:
 ```bash
 home-manager switch --flake ~/code/ducktape#nixos-vm
 home-manager switch --impure --flake ~/code/ducktape#atlas
+home-manager switch --impure --flake ~/code/ducktape#claude-web
 ```
 
 Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
+`claude-web` needs `--impure` because it reads `home.username`/`home.homeDirectory`
+from `$USER`/`$HOME` so the same profile works for whatever user the web container runs as.
 
 ## Available Hosts
 
@@ -55,10 +58,11 @@ Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
 
 ### Home-Manager Configs (`homeConfigurations`)
 
-| Host       | OS       | Description                     |
-| ---------- | -------- | ------------------------------- |
-| `atlas`    | Proxmox  | Proxmox VE host home config     |
-| `nixos-vm` | NixOS VM | Simplified standalone HM config |
+| Host         | OS        | Description                                                                                                                          |
+| ------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `atlas`      | Proxmox   | Proxmox VE host home config                                                                                                          |
+| `nixos-vm`   | NixOS VM  | Simplified standalone HM config                                                                                                      |
+| `claude-web` | Web (any) | Headless Claude Code web-session profile; installed by `web_setup.sh` (home-manager mode). Reads `$USER`/`$HOME` → needs `--impure`. |
 
 ## Common Commands
 

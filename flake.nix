@@ -372,6 +372,11 @@
             name = "ducktape-rbetools";
             paths = devToolPackages;
           };
+          # home-manager CLI, pinned to our flake input (release-25.11). Used by
+          # web_setup.sh's home-manager install mode so activation does not pull
+          # an unpinned home-manager from the registry:
+          #   nix run .#home-manager -- switch --impure --flake .#claude-web
+          inherit (home-manager.packages.${system}) home-manager;
           # NixOS container tarball for docker import.
           # Build: nix build .#bazel-test-docker
           # Load:  docker import result ducktape-nixos-bazel
@@ -408,6 +413,26 @@
           enableGui = true;
           isNixOS = false;
 
+        };
+
+        # Claude Code web session — headless standalone profile installed by
+        # web_setup.sh's home-manager mode. Portable across the web container's
+        # user (home.username/homeDirectory read from the env), so it must be
+        # built/activated with --impure:
+        #   home-manager switch --impure --flake .#claude-web
+        claude-web = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./nix/home/hosts/claude-web.nix
+            {
+              _module.args = hmCommonArgs // {
+                enableGui = false;
+                isNixOS = false;
+                isK8sWorker = false;
+                webDevTools = devToolPackages;
+              };
+            }
+          ];
         };
       };
 

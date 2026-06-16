@@ -7,6 +7,15 @@
 #   3. git remote + bbr config for BuildBuddy remote execution
 #   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
+# Install modes (DUCKTAPE_WEB_SETUP_MODE env var, or --mode=<...> arg):
+#   profile       (default) — `nix profile install .#devtools`, then manually
+#                  symlink skills into ~/.claude/skills/ (steps 2 + 4 above).
+#   home-manager  — `home-manager switch --flake .#claude-web`. Home Manager
+#                  installs the same devtools and deploys Claude Code settings +
+#                  skills through the shared HM skills module (nix/home/skills.nix),
+#                  so step 4 is owned by HM. See homeConfigurations.claude-web in
+#                  flake.nix and <nix/home/hosts/claude-web.nix>.
+#
 # Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
 # only available to Claude Code and its subprocesses — not to this setup script.
 # This script is run directly by environment-manager as a bash init script
@@ -53,9 +62,21 @@ warn() {
 # Hook implementation is Rust-only. Keep parsing the old selector so stale web
 # UI env vars or setup args do not break session startup.
 HOOK_IMPL="rust"
+# Install mode: "profile" (nix profile install) or "home-manager".
+MODE="${DUCKTAPE_WEB_SETUP_MODE:-profile}"
 for arg in "$@"; do
-  case "$arg" in --impl=*) warn "Ignoring deprecated $arg; claude-hook is Rust-only" ;; esac
+  case "$arg" in
+    --impl=*) warn "Ignoring deprecated $arg; claude-hook is Rust-only" ;;
+    --mode=*) MODE="${arg#--mode=}" ;;
+  esac
 done
+case "$MODE" in
+  profile | home-manager) ;;
+  *)
+    warn "Unknown DUCKTAPE_WEB_SETUP_MODE='$MODE'; falling back to 'profile'"
+    MODE="profile"
+    ;;
+esac
 if [ -n "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" ] && [ "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" != "rust" ]; then
   warn "Ignoring deprecated DUCKTAPE_CLAUDE_HOOK_IMPL=$DUCKTAPE_CLAUDE_HOOK_IMPL; claude-hook is Rust-only"
 fi
@@ -116,8 +137,6 @@ ls -la
 # first so `install` re-evaluates `.#devtools` against the current flake.
 #
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
-nix profile remove devtools 2>/dev/null || true
-nix profile remove devtools-rust 2>/dev/null || true
 # TODO: `attic login` against cache.allegedly.works/{main,gaffer} before this
 # install so devtools (and any gaffer-built closures pulled transitively) hit
 # the private cache instead of building from source. The reader JWT is in
@@ -133,13 +152,38 @@ nix profile remove devtools-rust 2>/dev/null || true
 # sops decrypt into web_setup.sh directly using SOPS_AGE_KEY. Today the
 # install path falls back to building from source if main isn't reachable
 # anonymously — slow but works.
-nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
-log "Dev tools installed (impl=$HOOK_IMPL)."
+log "Install mode: $MODE"
+if [ "$MODE" = "home-manager" ]; then
+  # Home Manager installs the same devtools (homeConfigurations.claude-web reuses
+  # the flake's devToolPackages list) and deploys skills + Claude Code settings
+  # itself, so the standalone skill symlink in step 4 is skipped below.
+  #
+  # --impure: claude-web reads home.username/homeDirectory from $USER/$HOME.
+  # -b hm-backup: back up any pre-existing dotfiles (Anthropic-landed
+  #   ~/.claude/settings.json etc.) instead of failing the activation.
+  # nix run .#home-manager pins the HM CLI to our flake input (release-25.11).
+  nix run --max-jobs auto "${FLAKE}#home-manager" -- switch \
+    --impure -b hm-backup --max-jobs auto --flake "${FLAKE}#claude-web"
+  log "Home Manager profile 'claude-web' activated."
+  # home.packages land in the Nix user profile. Determinate/XDG-base-dir Nix may
+  # site it under ~/.local/state instead of ~/.nix-profile; pick whichever has bin/.
+  NIX_PROFILE="${HOME}/.nix-profile"
+  if [ ! -d "${NIX_PROFILE}/bin" ] && [ -d "${HOME}/.local/state/nix/profiles/profile/bin" ]; then
+    NIX_PROFILE="${HOME}/.local/state/nix/profiles/profile"
+  fi
+else
+  # CRITICAL: remove first so install re-evaluates against the current flake
+  # (see the "Pin drift on persistent rootfs" comment in the CRITICAL note above).
+  nix profile remove devtools 2>/dev/null || true
+  nix profile remove devtools-rust 2>/dev/null || true
+  NIX_PROFILE="/nix/var/nix/profiles/default"
+  nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
+  log "Dev tools installed (impl=$HOOK_IMPL)."
+fi
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so the Nix profile bin
 # is not in PATH when hooks run. /usr/local/bin is always in PATH.
-NIX_PROFILE="/nix/var/nix/profiles/default"
 for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
@@ -174,11 +218,17 @@ log "Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
-log "Deploying skills to ~/.claude/skills/..."
-mkdir -p ~/.claude/skills
-for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
-  ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
-done
+# Skipped in home-manager mode: the claude-web profile deploys skills via the
+# shared HM skills module (nix/home/skills.nix).
+if [ "$MODE" = "home-manager" ]; then
+  log "Skills deployed by Home Manager (claude-web profile); skipping manual symlink."
+else
+  log "Deploying skills to ~/.claude/skills/..."
+  mkdir -p ~/.claude/skills
+  for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
+    ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
+  done
+fi
 
 log "Setup complete. Log: ${LOG_FILE}"
 
