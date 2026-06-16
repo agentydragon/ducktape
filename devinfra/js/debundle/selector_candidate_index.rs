@@ -7,10 +7,10 @@
 //! lists. A returned candidate set may contain false positives; it must not
 //! omit a real matcher result.
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
+use roaring::RoaringBitmap;
 use rustc_hash::FxHashMap;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
@@ -78,54 +78,41 @@ pub struct IndexedTopLevelCandidate {
     pub features: BTreeSet<SelectorFeature>,
 }
 
-/// A set of top-level body indices, stored as an ascending-sorted, de-duplicated
-/// `Vec<u32>`. Body indices are dense small integers `0..N`, so a sorted vector
-/// makes intersection a linear two-pointer merge (no per-element allocation or
-/// ordered-tree traversal) and keeps the whole set in one contiguous allocation —
-/// the index-build perf lever for whole-chunk minimize (issue #2291).
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+/// A set of top-level body indices, backed by a [`RoaringBitmap`]. Body indices
+/// are dense small integers `0..N` — exactly the workload roaring's compressed
+/// bitmaps target: intersection is `&` / [`RoaringBitmap::intersection_len`] over
+/// adaptive array/bitmap containers, with no ordered-tree traversal or per-element
+/// allocation. The index-build perf lever for whole-chunk minimize (issue #2291).
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CandidateSet {
-    body_indices: Vec<u32>,
+    body_indices: RoaringBitmap,
 }
 
 impl CandidateSet {
-    /// The empty set as a `const`, so callers can hand out a `&'static` empty
-    /// posting list without allocating.
-    pub const EMPTY: CandidateSet = CandidateSet {
-        body_indices: Vec::new(),
-    };
-
     pub fn all(body_indices: impl IntoIterator<Item = usize>) -> Self {
-        Self::from_unsorted(body_indices.into_iter().map(|idx| idx as u32).collect())
+        Self {
+            body_indices: body_indices.into_iter().map(|idx| idx as u32).collect(),
+        }
     }
 
     pub fn empty() -> Self {
         Self::default()
     }
 
-    /// Build from possibly-unsorted, possibly-duplicated indices.
-    fn from_unsorted(mut body_indices: Vec<u32>) -> Self {
-        body_indices.sort_unstable();
-        body_indices.dedup();
-        Self { body_indices }
-    }
-
-    /// Append a body index that is strictly greater than every index appended so
-    /// far. The index builders walk body items in order, so each posting list is
-    /// produced already ascending and unique — this keeps the invariant without a
-    /// trailing sort. Cheaper than `BTreeSet::insert` (no node allocation).
+    /// Append a body index strictly greater than every index appended so far. The
+    /// index builders walk body items in order, so each posting list is produced
+    /// already ascending and unique; `RoaringBitmap::push` appends in O(1) under
+    /// exactly that precondition (and returns `false` if it is violated).
     pub fn push_ascending(&mut self, body_idx: usize) {
+        let appended = self.body_indices.push(body_idx as u32);
         debug_assert!(
-            self.body_indices
-                .last()
-                .is_none_or(|&last| (body_idx as u32) > last),
+            appended,
             "push_ascending requires strictly increasing indices"
         );
-        self.body_indices.push(body_idx as u32);
     }
 
     pub fn len(&self) -> usize {
-        self.body_indices.len()
+        self.body_indices.len() as usize
     }
 
     pub fn is_empty(&self) -> bool {
@@ -133,69 +120,32 @@ impl CandidateSet {
     }
 
     pub fn contains(&self, body_idx: usize) -> bool {
-        u32::try_from(body_idx).is_ok_and(|idx| self.body_indices.binary_search(&idx).is_ok())
+        u32::try_from(body_idx).is_ok_and(|idx| self.body_indices.contains(idx))
     }
 
     pub fn body_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.body_indices.iter().map(|&idx| idx as usize)
+        self.body_indices.iter().map(|idx| idx as usize)
     }
 
     pub fn intersect(&self, other: &CandidateSet) -> CandidateSet {
-        let mut out = CandidateSet::empty();
-        self.intersect_into(other, &mut out);
-        out
+        CandidateSet {
+            body_indices: &self.body_indices & &other.body_indices,
+        }
     }
 
-    /// Intersect into a reusable buffer (cleared first), so a per-member loop can
-    /// keep one scratch set instead of allocating a fresh one each step.
+    /// Intersect into a reusable buffer, so a per-member loop can keep one scratch
+    /// set instead of allocating a fresh one each step: `clone_from` reuses `out`'s
+    /// container allocations, then `&=` intersects in place.
     pub fn intersect_into(&self, other: &CandidateSet, out: &mut CandidateSet) {
-        sorted_intersect_into(
-            &self.body_indices,
-            &other.body_indices,
-            &mut out.body_indices,
-        );
+        out.body_indices.clone_from(&self.body_indices);
+        out.body_indices &= &other.body_indices;
     }
 
     /// Size of the intersection without materializing it — for ranking candidate
     /// features by how much they shrink the working set.
     pub fn intersection_len(&self, other: &CandidateSet) -> usize {
-        sorted_intersection_len(&self.body_indices, &other.body_indices)
+        self.body_indices.intersection_len(&other.body_indices) as usize
     }
-}
-
-/// Two-pointer intersection of two ascending-sorted slices into `out` (cleared
-/// first). Result stays ascending-sorted and de-duplicated.
-fn sorted_intersect_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
-    out.clear();
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            Ordering::Less => i += 1,
-            Ordering::Greater => j += 1,
-            Ordering::Equal => {
-                out.push(a[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-}
-
-/// Count of common elements in two ascending-sorted slices, without allocating.
-fn sorted_intersection_len(a: &[u32], b: &[u32]) -> usize {
-    let (mut i, mut j, mut count) = (0, 0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            Ordering::Less => i += 1,
-            Ordering::Greater => j += 1,
-            Ordering::Equal => {
-                count += 1;
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    count
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
@@ -333,15 +283,15 @@ impl SelectorCandidateIndex {
             return CandidateSet::empty();
         }
         // Union the per-alternative candidate sets.
-        let mut merged = Vec::new();
+        let mut merged = RoaringBitmap::new();
         for alternative in &query.alternatives {
-            merged.extend_from_slice(
-                &self
-                    .candidate_set_for_features(&alternative.features)
-                    .body_indices,
-            );
+            merged |= self
+                .candidate_set_for_features(&alternative.features)
+                .body_indices;
         }
-        CandidateSet::from_unsorted(merged)
+        CandidateSet {
+            body_indices: merged,
+        }
     }
 
     pub fn candidate_set_for_source_match(

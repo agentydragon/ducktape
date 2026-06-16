@@ -45,6 +45,7 @@
 //! hedge-automaton extractor without touching them.
 
 use std::collections::BTreeSet;
+use std::sync::LazyLock;
 
 use rustc_hash::FxHashMap;
 use selector_candidate_index::{
@@ -647,8 +648,10 @@ impl ShapeIndex {
     }
 
     fn posting(&self, feature: &ShapeFeature) -> &CandidateSet {
-        static EMPTY: CandidateSet = CandidateSet::EMPTY;
-        self.postings.get(feature).unwrap_or(&EMPTY)
+        static EMPTY: LazyLock<CandidateSet> = LazyLock::new(CandidateSet::empty);
+        self.postings
+            .get(feature)
+            .unwrap_or_else(|| LazyLock::force(&EMPTY))
     }
 
     /// Every feature exhibited by `body_idx` that is sound to use as an anchor

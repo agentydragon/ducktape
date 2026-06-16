@@ -74,26 +74,33 @@ near the parse/index floor plus cheap per-member work.
   majority of members, so the matcher proves uniqueness by inspecting one item and
   the residual per-member cost is negligible.
 
-## Index-build perf (#2291, posting lists as sorted `Vec<u32>` + `FxHashMap`)
+## Index-build perf (#2291, roaring-bitmap posting lists + `FxHashMap`)
 
 Same `-c opt` whole-chunk dry-run as above, on the **current** spec (the
 dogfood-apply backlog has since converted ~half the name-pins, so the spec now
 reports **2,227** `name_binding_members`, not the 4,506 of the table above —
 fewer members to minimize, so even the unmodified binary is already under the
 ≤10s ideal). To isolate the data-structure change from the spec-size change,
-both binaries were built `-c opt` and run back-to-back on this same spec
+binaries were built `-c opt` and run back-to-back on this same spec
 (`static/index-DI2GynTv.js`, `time.perf_counter` × 3, `RUSAGE_CHILDREN`):
 
 | binary                           | whole chunk (median) | best  | peak RSS |
 | -------------------------------- | -------------------- | ----- | -------- |
-| before (`BTreeMap`/`BTreeSet`)   | 8.2 s                | 7.4 s | ~243 MB  |
-| after (`FxHashMap`/sorted `Vec`) | 7.0 s                | 6.6 s | ~222 MB  |
+| baseline (`BTreeMap`/`BTreeSet`) | 8.2 s                | 7.4 s | ~243 MB  |
+| sorted `Vec<u32>` (intermediate) | 7.0 s                | 6.6 s | ~222 MB  |
+| **roaring (shipped)**            | **7.3 s**            | 6.9 s | ~243 MB  |
 
-≈ **15% wall-clock** and **~21 MB peak RSS** off the whole chunk (the smaller
-`Vec<u32>` posting lists replace the many small `BTreeSet` nodes). The largest
-single scope (`features`, 1,037 members both runs) drops 4.0 s → 3.7 s best. The
-isolated index-build + read-off lever is larger (≈1.9× build / 3.7× read-off on
-the synthetic sweep — see <selector_minimizer_perf.md>); on the real chunk the
-fixed swc parse of the 7 MB chunk and the per-member render/prove work dilute it,
-but both phases the change touches got materially cheaper and the ≤10s ideal is
-met with margin.
+The shipped change (roaring) is ≈ **11% off the whole-chunk wall-clock** vs the
+baseline; the largest single scope (`features`, 1,037 members both runs) drops
+4.0 s → 3.65 s best. The isolated index-build + read-off lever is larger (≈1.8×
+build / 4.5× read-off on the synthetic sweep — see <selector_minimizer_perf.md>);
+on the real chunk the fixed swc parse of the 7 MB chunk and the per-member
+render/prove work dilute it.
+
+Roaring is the standard posting-list structure and its read-off intersection beat
+a hand-rolled sorted-`Vec` merge in the synthetic sweep. On this **selective-heavy
+real chunk** (most posting lists are size 1–2) a bespoke `Vec<u32>` would have been
+~21 MB leaner (the intermediate row) — roaring's per-container overhead keeps the
+footprint flat with the baseline rather than improving it. That memory delta was
+the accepted tradeoff for using the vetted structure; wall-clock and the ≤10s ideal
+are unaffected.

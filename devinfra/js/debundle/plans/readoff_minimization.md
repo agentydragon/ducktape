@@ -157,8 +157,8 @@ removed.
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
 hard budget**, narrowly over the ≤10 s ideal (per-member ~0.0027 s, ~9× cheaper).
 Full scope table in <../debug/selector_minimizer_dogfood.md>. #2291 then closed
-the index-build cost (posting lists as sorted `Vec<u32>` + `FxHashMap` inverted
-indices): ≈1.9× faster build / 3.7× faster read-off on the synthetic sweep, and on
+the index-build cost (`roaring::RoaringBitmap` posting lists + `FxHashMap` inverted
+indices): ≈1.8× faster build / 4.5× faster read-off on the synthetic sweep, and on
 the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 **~7 s**, comfortably under the ≤10 s ideal.
 
@@ -349,14 +349,15 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
     posting-list `BTreeMap`/`BTreeSet` for a hashed map (`FxHashMap`/`FxHashSet`)
     where ordered iteration isn't required; (c) reserve/amortise allocations in
     `SelectorCandidateIndex::new` / `ShapeIndex::with_extractor`. Any one likely
-    recovers the last ~3s. **(Landed: #2291 — did (b)+(c) plus sorted-`Vec<u32>`
-    posting lists with reused-scratch linear-merge intersection; (a) interning was
-    not needed. Posting lists/candidate sets are now ascending-sorted `Vec<u32>`
-    (`CandidateSet`), the inverted indices + hash-cons table are `FxHashMap`.
-    Measured: ≈1.9× faster index build / 3.7× faster read-off on the synthetic
-    sweep; real-chunk same-spec whole-chunk ~8.2s → ~7.0s median with ~21 MB less
-    peak RSS. Identical posting contents / `OPT=1` distribution; soundness stays
-    gated by `shape_index_soundness_test.rs`. See
+    recovers the last ~3s. **(Landed: #2291 — did (b)+(c) with
+    `roaring::RoaringBitmap` posting lists (the standard inverted-index structure,
+    `CandidateSet`) keyed by `FxHashMap` inverted indices + hash-cons table; (a)
+    interning was not needed. Measured: ≈1.8× faster index build / 4.5× faster
+    read-off on the synthetic sweep; real-chunk same-spec whole-chunk ~8.2s → ~7.3s
+    median (roaring's per-container overhead keeps RSS flat with the baseline on
+    this selective-heavy chunk — a bespoke sorted `Vec<u32>` would be ~21 MB leaner
+    but non-standard). Identical posting contents / `OPT=1` distribution; soundness
+    stays gated by `shape_index_soundness_test.rs`. See
     <../debug/selector_minimizer_perf.md>.)**
 13. **Dogfood-apply on gaffer-private (in progress).** Run `synthesize-selectors
 --apply` on the real spec, review for over-pin, and PR the beneficial minimized
