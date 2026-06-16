@@ -67,7 +67,7 @@ jobs:
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
           unset NODE_OPTIONS
-          pre-commit run --all-files --show-diff-on-failure
+          pre-commit run --all-files --show-diff-on-failure -v
 
       # ============================================================================
       # CACHE SAVES
