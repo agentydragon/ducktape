@@ -6,6 +6,7 @@
 #   2. devtools — Rust claude-hook, statusline, bbapi, gh, skills; from flake via attic binary cache
 #   3. git remote + bbr config for BuildBuddy remote execution
 #   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
+#   5. user-level ~/.bazelrc with a shared local --disk_cache (web sessions only)
 #
 # Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
 # only available to Claude Code and its subprocesses — not to this setup script.
@@ -179,6 +180,45 @@ mkdir -p ~/.claude/skills
 for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
   ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
 done
+
+# --- Step 5: User-level Bazel disk cache (web sessions only) ---
+# A single local --disk_cache shared by every Bazel server instance and worktree
+# in the container. Claude Code web runs on a persistent Firecracker rootfs, so
+# this cache survives session boundaries and speeds up local `bazelisk` / `bb run`
+# action execution. (bbr/RBE work is cached remotely on BuildBuddy and is
+# unaffected — disk_cache and remote cache coexist.)
+#
+# Installed at ~/.bazelrc (Bazel's home rc): the bazelisk/bazel shims inject the
+# session bazelrc via an extra --bazelrc= but do NOT pass --nohome_rc, so Bazel
+# still reads this file. The home rc is read before the session --bazelrc, and no
+# other layer sets --disk_cache, so this wins.
+#
+# Web-only by construction: this script runs only in web sessions. CLI sessions
+# on local machines already configure their own shared disk cache via
+# home-manager (see <devinfra/docs/bazel_worktree_cache_sharing.md>), so we must
+# not clobber it there — and we don't, because this code path never runs on them.
+#
+# GC bounds keep the cache off the container's ~41 GiB usable root disk ceiling
+# (84% of blocks are root-reserved; see <web_env/docs/container_spec.md>).
+BAZEL_DISK_CACHE="${HOME}/.cache/bazel/disk"
+mkdir -p "$BAZEL_DISK_CACHE"
+HOME_BAZELRC="${HOME}/.bazelrc"
+BAZELRC_BEGIN="# >>> ducktape web disk cache >>>"
+BAZELRC_END="# <<< ducktape web disk cache <<<"
+# Drop any prior managed block, then re-append a fresh one so re-runs (every
+# session, per the persistent-rootfs note above) stay idempotent.
+if [ -f "$HOME_BAZELRC" ]; then
+  sed -i "/$BAZELRC_BEGIN/,/$BAZELRC_END/d" "$HOME_BAZELRC"
+fi
+cat >>"$HOME_BAZELRC" <<EOF
+$BAZELRC_BEGIN
+# Managed by devinfra/claude/web_setup.sh — do not edit by hand.
+build --disk_cache=${BAZEL_DISK_CACHE}
+build --experimental_disk_cache_gc_max_size=20G
+build --experimental_disk_cache_gc_max_age=7d
+$BAZELRC_END
+EOF
+log "Installed user-level Bazel disk cache: ${BAZEL_DISK_CACHE} (${HOME_BAZELRC})"
 
 log "Setup complete. Log: ${LOG_FILE}"
 
