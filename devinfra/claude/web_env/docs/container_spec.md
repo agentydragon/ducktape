@@ -43,9 +43,11 @@ This is safe — the reservation is for `nobody:nogroup` which no process in the
 container uses. Verified: a 50 GiB sequential write to `/tmp` succeeded after
 the change, and `df` correctly reports ~235 GiB available.
 
-The session start hook should run this on startup. The change is persistent for
-the lifetime of the VM (survives across sessions on the same container, but not
-container recreation).
+`web_setup.sh` (Step 0) performs this on startup — it frees ~90% of the
+reservation via `tune2fs -r` (keeping a 10% margin rather than dropping to 1%),
+idempotently skipping once the reservation is already low. The change is
+persistent for the lifetime of the VM (survives across sessions on the same
+container, but not container recreation).
 
 The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
 root disk. There are **no tmpfs mounts** for Bazel cache or container storage.

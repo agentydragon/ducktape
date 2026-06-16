@@ -179,11 +179,17 @@ This runs <web_setup.sh> which installs:
 1. Nix + devtools (`claude-hook` Rust binary, Python statusline, `bbapi`, `gh`, `sops`, skills)
 2. `github-no-proxy` git remote + `buildbuddy.remote-bazel-remote-name` for bbr
 3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
-4. A user-level `~/.bazelrc` with a shared local `--disk_cache` at `~/.cache/bazel/disk`,
-   so all Bazel server instances and worktrees in the container reuse locally-executed
-   action results across the persistent rootfs. Web sessions only — CLI machines
-   configure their own (<../docs/bazel_worktree_cache_sharing.md>). The shims inject the
-   session bazelrc without `--nohome_rc`, so Bazel still reads this home rc.
+4. A user-level `~/.bazelrc` with a shared local `--disk_cache` (50 GiB GC cap) at
+   `~/.cache/bazel/disk`, so all Bazel server instances and worktrees in the container
+   reuse locally-executed action results across the persistent rootfs. Web sessions
+   only — CLI machines configure their own (<../docs/bazel_worktree_cache_sharing.md>).
+   The shims inject the session bazelrc without `--nohome_rc`, so Bazel still reads this
+   home rc.
+
+It also reclaims ~90% of the root ext4's `nobody:nogroup`-reserved blocks (the container
+ships with ~84% reserved; we run as root) via `tune2fs -r`, freeing most of the 256 GiB
+disk that is otherwise inaccessible — idempotent and skipped once the reservation is low.
+See <web_env/docs/container_spec.md>.
 
 Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
 delivered only to the interactive Claude Code process — not to the setup script. All

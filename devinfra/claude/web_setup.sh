@@ -8,6 +8,9 @@
 #   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #   5. user-level ~/.bazelrc with a shared local --disk_cache (web sessions only)
 #
+# Also reclaims ~90% of the root ext4's nobody-reserved blocks up front (the
+# container ships with ~84% reserved; we run as root, so it's pure overhead).
+#
 # Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
 # only available to Claude Code and its subprocesses — not to this setup script.
 # This script is run directly by environment-manager as a bash init script
@@ -65,6 +68,53 @@ DEVTOOLS_OUTPUT="devtools"
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
 log "web_setup.sh commit: $SETUP_COMMIT"
+
+# --- Step 0: Reclaim root-reserved ext4 blocks ---
+# The web container's root ext4 ships with ~84% of blocks reserved for
+# nobody:nogroup (tune2fs default is 5%), leaving only ~41 GiB of the 256 GiB
+# disk usable — see <web_env/docs/container_spec.md>. We run as root (UID 0),
+# so those blocks are pure overhead, not a safety margin. Free ~90% of the
+# reservation (keep 10%) before the disk-hungry Nix install runs.
+#
+# Idempotent: skipped once the reservation is already low, so the per-session
+# re-runs (persistent rootfs) don't keep shrinking it toward zero.
+reclaim_reserved_blocks() {
+  command -v tune2fs >/dev/null 2>&1 || {
+    warn "tune2fs not found; skipping reserved-block reclaim"
+    return 0
+  }
+  local dev fstype
+  dev=$(findmnt -no SOURCE / 2>/dev/null || echo /dev/vda)
+  fstype=$(findmnt -no FSTYPE / 2>/dev/null || echo unknown)
+  if [ "$fstype" != "ext4" ]; then
+    warn "root fs is '$fstype' (not ext4); skipping reserved-block reclaim"
+    return 0
+  fi
+  local info total reserved
+  info=$(tune2fs -l "$dev" 2>/dev/null) || {
+    warn "could not read tune2fs -l $dev; skipping reserved-block reclaim"
+    return 0
+  }
+  total=$(awk -F: '/^Block count:/ {gsub(/ /,"",$2); print $2}' <<<"$info")
+  reserved=$(awk -F: '/^Reserved block count:/ {gsub(/ /,"",$2); print $2}' <<<"$info")
+  if [ -z "$total" ] || [ -z "$reserved" ] || [ "$total" -eq 0 ]; then
+    warn "could not parse block counts from $dev; skipping reserved-block reclaim"
+    return 0
+  fi
+  local pct=$((reserved * 100 / total))
+  if [ "$pct" -le 20 ]; then
+    log "Reserved blocks already low (${pct}% of ${total}); skipping reclaim."
+    return 0
+  fi
+  local target=$((reserved / 10)) # keep ~10%, free ~90%
+  log "Reclaiming reserved blocks on ${dev}: ${reserved} (${pct}%) -> ${target}"
+  if tune2fs -r "$target" "$dev" >/dev/null 2>&1; then
+    log "Reserved block count set to ${target} on ${dev}."
+  else
+    warn "tune2fs -r failed on ${dev}; reserved blocks unchanged."
+  fi
+}
+reclaim_reserved_blocks
 
 # --- Step 1: Install Nix (Determinate Systems installer) ---
 # Uses the Determinate Systems installer instead of the official one because:
@@ -198,8 +248,9 @@ done
 # home-manager (see <devinfra/docs/bazel_worktree_cache_sharing.md>), so we must
 # not clobber it there — and we don't, because this code path never runs on them.
 #
-# GC bounds keep the cache off the container's ~41 GiB usable root disk ceiling
-# (84% of blocks are root-reserved; see <web_env/docs/container_spec.md>).
+# GC bounds keep the cache bounded; Step 0 reclaims most of the root-reserved
+# blocks, so ~50 GiB is comfortable on the 256 GiB root disk
+# (see <web_env/docs/container_spec.md>).
 BAZEL_DISK_CACHE="${HOME}/.cache/bazel/disk"
 mkdir -p "$BAZEL_DISK_CACHE"
 HOME_BAZELRC="${HOME}/.bazelrc"
@@ -214,7 +265,7 @@ cat >>"$HOME_BAZELRC" <<EOF
 $BAZELRC_BEGIN
 # Managed by devinfra/claude/web_setup.sh — do not edit by hand.
 build --disk_cache=${BAZEL_DISK_CACHE}
-build --experimental_disk_cache_gc_max_size=20G
+build --experimental_disk_cache_gc_max_size=50G
 build --experimental_disk_cache_gc_max_age=7d
 $BAZELRC_END
 EOF
