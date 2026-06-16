@@ -26,6 +26,31 @@ inputs for the largest known downstream specs. Anything over 60 seconds is a
 workflow blocker unless the command is explicitly an offline/profile mode with
 progress output and a resumable or cacheable plan.
 
+### Live plan docs (debundle planning index)
+
+One-line status for each `plans/` design doc; this is the discovery index.
+
+- <plans/readoff_minimization.md> — **active.** Read-off selector minimizer
+  (chunk-wide AST-shape index). Layer-1 index + function/object read-off landed;
+  var/class/group migration, co-occurrence grouping, cover-search deletion, and
+  whole-spec validation open. Holds its own current-state + backlog.
+- <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
+  (complete).** Literature spike that gates the read-off design; durable, not a
+  TODO.
+- <plans/automated_spec_workflows.md> — **active.** North-star for the
+  inventory/plan/apply/validate CLI surface and the synthesize / stabilize /
+  version-port / new-app-bootstrap flows. Foundational milestones realized by the
+  read-off work; repair-report, version-port, and bootstrap flows not started.
+- <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
+  identifier bijection so one selector both locates a declaration and adopts
+  readable names onto its params/locals/nested bindings.
+- <plans/factor_vocabulary_rename.md> — **not started.** Rename "factor"
+  vocabulary to graph-theoretic names (`OwnerGraph` / `AtomicDAG` / `ModuleDAG` /
+  `ModuleAssignment`); atomic ducktape + gaffer-private cutover.
+- <x/graph_planner_factorization.md> — **active (scratch).** Graph-derived module
+  planner design space + algorithm/analysis backlog behind `debundle modules
+propose`.
+
 ### P0 — automation-first selector workflows
 
 1. **Forward-compatible minimized selector synthesis.** Implement the core

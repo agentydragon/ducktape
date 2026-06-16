@@ -497,33 +497,14 @@ Patch planning and application should be deterministic:
 
 ## Implementation Milestones
 
-### Milestone 0: Consolidate Current Tooling
-
-- Keep the existing `selector-codemod` source-backed name-only conversion as
-  the first concrete synthesis slice.
-- Ensure dry-run/apply reports are stable and contain enough data to feed a
-  later batch planner.
-- Document current limitations: no comment-preserving group collapse yet, no
-  global minimizer yet.
-
-### Milestone 1: Source Inventory and Minimal Selector Synthesis
-
-- Extract the current per-command source index into a shared module.
-- Add explicit target input: binding names, export names, body indices,
-  declarator indices, and anonymous statement IDs.
-- Generate exact structural selectors for functions, classes,
-  single-declarator variables, multi-declarator variables, and anonymous
-  top-level statements.
-- Verify each generated selector through the real resolver.
-
-### Milestone 2: Minimization and Grouping
-
-- Add hole relaxation for expressions, arguments, object properties,
-  declarators, class bodies, and statement lists.
-- Collapse repeated member selectors into `binding_groups`, preserving comments
-  and export names.
-- Batch multiple targets from the same declaration/context into one selector
-  when possible.
+Milestones 0-2 (consolidate `selector-codemod`, shared source inventory +
+structural selector synthesis, hole-based minimization) are largely landed: the
+shared per-chunk index (`selector_candidate_index.rs` → `shape_index.rs`), the
+read-off minimizer, the list-hole renderer, and resolver-verified emission are
+the concrete realization, tracked in <readoff_minimization.md>. Open items in
+that scope (co-occurrence-based `binding_groups` grouping, remaining over-pin
+forms, whole-spec apply) live in that doc's backlog. The remaining milestones
+below are the not-yet-started product flows.
 
 ### Milestone 3: Repair Reports and Patch Plans
 
