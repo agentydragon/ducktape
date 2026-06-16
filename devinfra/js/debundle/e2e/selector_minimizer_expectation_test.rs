@@ -366,6 +366,72 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Aspirational: a subclass among many sibling subclasses of a shared base
+// should minimize to the `extends` clause (superclass holed with ANYTHING)
+// plus the single discriminating class field, with CLASS_REST holes absorbing
+// every other member. Today the minimizer dumps the whole class body (every
+// field and method) rather than anchoring on the one field literal that
+// distinguishes this subclass from its siblings, mirroring large blocks of
+// sibling subclass declarations kept whole in the real spec.
+minimizer_expectation_case!(
+    #[ignore = "subclass minimizer keeps full body instead of extends + discriminating field"]
+    minimizes_sibling_subclass_hierarchy,
+    fixture = "sibling_subclass_hierarchy",
+    name = "subclass among siblings keeps only the discriminating field initializer",
+    module = "app/shapes",
+    bindings = [("SelectedShape", "selectedShape")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a function whose body is a long run of sequential assignment
+// statements should minimize to STMT_LIST holes on both sides of the single
+// assignment whose right-hand side carries the discriminating literal. Today
+// the minimizer finds no sparse statement-level selector and bails (skips
+// rather than emitting a full-AST pin), so the flat sequence of writes is
+// never reduced to the one anchored assignment that uniquely identifies the
+// target among siblings sharing the same write-block shape.
+minimizer_expectation_case!(
+    #[ignore = "statement minimizer bails instead of STMT_LIST + discriminating assignment"]
+    minimizes_sequential_assignment_block,
+    fixture = "sequential_assignment_block",
+    name = "sequential assignment block keeps only the discriminating assignment",
+    module = "app/reducers",
+    bindings = [("SelectedReducer", "selectedReducer")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a binding initialized by a deeply nested call tree should
+// minimize to ANYTHING-holed outer callees and ARGS holes for their sibling
+// arguments, drilling only to the one deep object literal that carries the
+// discriminating key. Today the minimizer keeps the entire nested call/object
+// tree whole, over-pinning every wrapper call and every transient argument
+// instead of holing the path down to the single discriminating leaf.
+minimizer_expectation_case!(
+    #[ignore = "nested-call minimizer keeps whole tree instead of holing wrappers down to the leaf"]
+    minimizes_deeply_nested_call_args,
+    fixture = "deeply_nested_call_args",
+    name = "deeply nested call tree keeps only the discriminating leaf literal",
+    module = "app/views",
+    bindings = [("SelectedView", "selectedView")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a target object inside a multi-declarator group of sibling
+// enum/lookup objects should minimize to DECLARATORS holes around the target
+// declarator plus OBJECT_PROPS holes on both sides of the single discriminating
+// key. Today the minimizer keeps every sibling declarator's full object value
+// and every key of the target object, over-pinning a whole group of lookup
+// dicts where one declarator with one anchored key would resolve uniquely.
+minimizer_expectation_case!(
+    #[ignore = "group minimizer keeps all declarators and all keys instead of DECLARATORS + OBJECT_PROPS"]
+    minimizes_grouped_enum_objects,
+    fixture = "grouped_enum_objects",
+    name = "grouped enum objects keep only the target declarator's discriminating key",
+    module = "app/palettes",
+    bindings = [("SelectedPalette", "selectedPalette")],
+    expected = "expected_match.js",
+);
+
 // Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
 // slot's direct shallow literals including object-property values. The group's
 // shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
