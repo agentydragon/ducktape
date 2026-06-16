@@ -2668,35 +2668,24 @@ fn try_object_read_off(
     };
     let target_decl_span = declarator.span();
 
-    // Slot-aware render: `DECLARATORS_*` holes for the non-target declarators
-    // (none when the target stands alone), the target's object holed to its kept
-    // keys padded + interleaved with `OBJECT_PROPS`.
+    // Slot-aware render via the shared var-slot renderer: `DECLARATORS_*` holes
+    // for the non-target declarators (none when the target stands alone), the
+    // target's object holed to its kept keys padded + interleaved with
+    // `OBJECT_PROPS` (`hole_var_init_padded`'s object arm). The object path never
+    // upgrades to a regex anchor, so the regex map is always empty.
+    let only_target = BTreeSet::from([target_slot]);
+    let no_regex: BTreeMap<AnchorSpan, String> = BTreeMap::new();
+    let export_for =
+        |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        let mut decls: Vec<VarDeclarator> = Vec::new();
-        let mut skipped_run = false;
-        let mut target_seen = 0usize;
-        for (idx, other) in var.decls.iter().enumerate() {
-            if idx != target_slot {
-                skipped_run = true;
-                continue;
-            }
-            if skipped_run {
-                decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
-                skipped_run = false;
-            }
-            let mut holed = other.clone();
-            holed.name = named_pat(&target.export_name);
-            holed.init = Some(Box::new(Expr::Object(hole_object_padded(object, kept))));
-            decls.push(holed);
-            target_seen += 1;
-        }
-        if skipped_run {
-            decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
-        }
-        let mut holed_var = var.clone();
-        holed_var.declare = false;
-        holed_var.decls = decls;
-        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+        render_var_slots(
+            var,
+            &only_target,
+            &export_for,
+            kept,
+            &no_regex,
+            &hole_var_init_padded,
+        )
     };
 
     if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
@@ -2763,41 +2752,24 @@ fn try_var_read_off(
     }
     let target_decl_span = declarator.span();
     let targets = std::slice::from_ref(target);
+    let only_target = BTreeSet::from([target_slot]);
+    let export_for =
+        |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
 
+    // Shared var-slot render: `DECLARATORS_*` holes for the non-target declarators
+    // (none when the target stands alone), the target's non-object init holed via
+    // `hole_var_init_padded` (the `other` arm, i.e. `hole_expr`).
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        let mut decls: Vec<VarDeclarator> = Vec::new();
-        let mut skipped_run = false;
-        let mut target_seen = 0usize;
-        for (idx, other) in var.decls.iter().enumerate() {
-            if idx != target_slot {
-                skipped_run = true;
-                continue;
-            }
-            if skipped_run {
-                decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
-                skipped_run = false;
-            }
-            let mut holed = other.clone();
-            holed.name = named_pat(&target.export_name);
-            let mut holed_init = hole_expr(init, kept);
-            if !regex_anchors.is_empty() {
-                holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
-                    patterns: regex_anchors,
-                });
-            }
-            holed.init = Some(Box::new(holed_init));
-            decls.push(holed);
-            target_seen += 1;
-        }
-        if skipped_run {
-            decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
-        }
-        let mut holed_var = var.clone();
-        holed_var.declare = false;
-        holed_var.decls = decls;
-        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+        render_var_slots(
+            var,
+            &only_target,
+            &export_for,
+            kept,
+            regex_anchors,
+            &hole_var_init_padded,
+        )
     };
 
     let item = index
@@ -2862,19 +2834,36 @@ fn try_var_read_off(
     Ok(None)
 }
 
-/// Render a binding-group selector for a read-off pass: keep the target
-/// declarators (each `export = <holed init>`), `DECLARATORS_*` holes for the
-/// non-target runs. Each kept slot's init is holed by its anchor set — an object
-/// init via [`hole_object_padded`] (interleaved `OBJECT_PROPS`, the key-set form
-/// `try_object_read_off` uses) and any other init via [`hole_expr`]. The optional
-/// `regex_anchors` post-pass swaps a kept volatile-tail literal for the
-/// `STR_LITERAL_MATCHING_RE` predicate across every slot.
-fn render_var_group_readoff(
+/// Per-slot initializer holing for the read-off var paths: an object init holes
+/// to its key-set form ([`hole_object_padded`], interleaved `OBJECT_PROPS`),
+/// every other init via [`hole_expr`]. The keep-shallow group path passes plain
+/// [`hole_expr`] instead (objects hole via [`hole_object`], not padded).
+fn hole_var_init_padded(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
+    match init {
+        Expr::Object(object) => Expr::Object(hole_object_padded(object, kept)),
+        other => hole_expr(other, kept),
+    }
+}
+
+/// Render a `var` binding-group selector: keep the target declarator slots (each
+/// renamed to its export via `export_for`, init holed by `hole_init` then the
+/// optional `regex_anchors` `STR_LITERAL_MATCHING_RE` post-pass), with
+/// `DECLARATORS_*` holes absorbing the runs of non-target slots. The single-target
+/// var and object read-offs are the N=1 case (one target slot, no `DECLARATORS_*`
+/// gaps).
+///
+/// The per-slot initializer holing is the one axis the call sites differ on, so
+/// it is a parameter: the read-off paths pass [`hole_var_init_padded`] (object →
+/// padded key-set holing); the keep-shallow group path passes [`hole_expr`].
+/// Factored from the near-identical `render_with` closures the object, var, and
+/// var-group minimizers each used to build inline.
+fn render_var_slots(
     var: &VarDecl,
     target_slots: &BTreeSet<usize>,
     export_for: &impl Fn(&str) -> Option<String>,
     kept: &BTreeSet<AnchorSpan>,
     regex_anchors: &BTreeMap<AnchorSpan, String>,
+    hole_init: &impl Fn(&Expr, &BTreeSet<AnchorSpan>) -> Expr,
 ) -> Result<String> {
     let mut decls: Vec<VarDeclarator> = Vec::new();
     let mut skipped_run = false;
@@ -2896,10 +2885,7 @@ fn render_var_group_readoff(
         let mut holed = declarator.clone();
         holed.name = named_pat(&export_for(name).expect("target declarator has an export"));
         holed.init = declarator.init.as_ref().map(|init| {
-            let mut holed_init = match init.as_ref() {
-                Expr::Object(object) => Expr::Object(hole_object_padded(object, kept)),
-                other => hole_expr(other, kept),
-            };
+            let mut holed_init = hole_init(init, kept);
             if !regex_anchors.is_empty() {
                 holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
                     patterns: regex_anchors,
@@ -2983,7 +2969,14 @@ fn slot_minimal_anchors(
     let export_for = |name: &str| (name == runtime).then(|| export.to_string());
     let no_regex = BTreeMap::new();
     let render_slot = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        render_var_group_readoff(var, &only_this, &export_for, kept, &no_regex)
+        render_var_slots(
+            var,
+            &only_this,
+            &export_for,
+            kept,
+            &no_regex,
+            &hole_var_init_padded,
+        )
     };
     // The slot resolves when the single-binding matcher singles out exactly this
     // declarator: one match, at the target statement, bound to the target slot's
@@ -3024,7 +3017,7 @@ fn slot_minimal_anchors(
 /// its minimal anchor off the shape index (restricted to that slot) and, when the
 /// chunk-wide set does not single the slot out within the statement, extend it
 /// with a slot-aware greedy ([`slot_minimal_anchors`]). UNION the per-slot kept
-/// spans, render the whole group through [`render_var_group_readoff`], and prove
+/// spans, render the whole group through [`render_var_slots`], and prove
 /// the tuple with [`prove_synthesized_selector`] (the binding-group matcher as the
 /// resolves-uniquely oracle). The regex-literal upgrade applies across all slots.
 ///
@@ -3090,7 +3083,14 @@ fn try_var_group_read_off(
         index,
         decl,
         targets,
-        &render_var_group_readoff(var, target_slots, &export_for, &union, &no_regex)?,
+        &render_var_slots(
+            var,
+            target_slots,
+            &export_for,
+            &union,
+            &no_regex,
+            &hole_var_init_padded,
+        )?,
     )
     .is_err()
     {
@@ -3108,7 +3108,14 @@ fn try_var_group_read_off(
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        render_var_group_readoff(var, target_slots, &export_for, kept, regex_anchors)
+        render_var_slots(
+            var,
+            target_slots,
+            &export_for,
+            kept,
+            regex_anchors,
+            &hole_var_init_padded,
+        )
     };
     let regex_anchors = accepted_regex_anchors(
         index,
@@ -3148,7 +3155,7 @@ fn minimize_var_group_selector(
         targets
             .iter()
             .find(|target| target.runtime_binding == runtime)
-            .map(|target| target.export_name.as_str())
+            .map(|target| target.export_name.clone())
     };
     let target_slots: BTreeSet<usize> = var
         .decls
@@ -3206,52 +3213,21 @@ fn minimize_var_group_selector(
         return Ok(Some(selector));
     }
 
+    // Keep-shallow render via the shared var-slot renderer. Unlike the read-off
+    // paths, the keep-shallow path holes every init (objects included) through
+    // plain [`hole_expr`] — an object init holes via [`hole_object`] (list hole
+    // only where a run dropped), not the padded key-set form.
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        let mut decls: Vec<VarDeclarator> = Vec::new();
-        let mut skipped_run = false;
-        let mut target_seen = 0usize;
-        for (idx, declarator) in var.decls.iter().enumerate() {
-            if !target_slots.contains(&idx) {
-                skipped_run = true;
-                continue;
-            }
-            if skipped_run {
-                decls.push(declarator_hole(declarator_hole_name(
-                    target_seen,
-                    targets.len(),
-                )));
-                skipped_run = false;
-            }
-            let name = single_ident_pat_name(&declarator.name)
-                .expect("target declarator is a plain identifier");
-            let mut holed = declarator.clone();
-            holed.name = named_pat(export_for(name).expect("target declarator has an export"));
-            holed.init = declarator.init.as_ref().map(|init| {
-                let mut holed_init = hole_expr(init, kept);
-                if !regex_anchors.is_empty() {
-                    // Post-pass: swap each kept literal whose span was chosen as
-                    // a regex anchor for the `STR_LITERAL_MATCHING_RE` predicate.
-                    holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
-                        patterns: regex_anchors,
-                    });
-                }
-                Box::new(holed_init)
-            });
-            decls.push(holed);
-            target_seen += 1;
-        }
-        if skipped_run {
-            decls.push(declarator_hole(declarator_hole_name(
-                target_seen,
-                targets.len(),
-            )));
-        }
-        let mut holed_var = var.clone();
-        holed_var.declare = false;
-        holed_var.decls = decls;
-        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+        render_var_slots(
+            var,
+            &target_slots,
+            &export_for,
+            kept,
+            regex_anchors,
+            &hole_expr,
+        )
     };
 
     let mut candidates = AnchorCandidates::default();
