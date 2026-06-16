@@ -1,7 +1,4 @@
 function SelectedWorker(ANYTHING, ANYTHING, ANYTHING) {
-  STMT_LIST;
-  const marker = 123;
-  STMT_LIST;
-  ANYTHING.foo(ANYTHING, 123);
+  const transient = makeTransient(ANYTHING, ANYTHING.now());
   STMT_LIST;
 }

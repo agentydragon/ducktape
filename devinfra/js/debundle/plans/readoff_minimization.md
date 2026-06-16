@@ -190,3 +190,22 @@ each merge, and unignores E2E cases progressively. Build/test recipe: `bazelisk`
   `claude/debundle-shape-index`: Layer-1 shape index + read-off API + soundness
   test + benchmark, additive/behavior-preserving. OPT=1 share 100% on synthetic
   resolvable items; build linear. Ready for W2 (route forms through read-off).
+- 2026-06-16: W2 built on `claude/debundle-readoff-render`: production read-off
+  renderer (`readoff_render.rs`) maps a read-off `AnchorSet` to the kept-span
+  set the existing `selector_codemod` prune + swc-codegen machinery consumes (no
+  second serializer); skeleton/arity anchors pin via the holed scaffold (no kept
+  span). **Single-target function** migrated to read-off as its primary path:
+  `minimize_function_selector` reads off `minimal_anchor_set`, prefers the
+  structural empty-kept scaffold when it already discriminates, and renders
+  through the shared `render_with`. The cover search backs it as the
+  not-yet-expressible tail (chiefly _number/bool literal_ discriminators, which
+  the W1 feature taxonomy does not index — string literals only) and is **not
+  deleted** (strangler-fig). Var / class / object / group stay on the cover
+  (W3). Applied W1 hand-off note #1: greedy set-cover seeds `covered` from the
+  smallest relevant posting list (most-selective feature), not `0..N`, so
+  unresolvable items pay O(smallest posting) per step instead of O(N).
+  Equivalent-or-better fixture updates: `sparse_function_body` (2 anchors -> 1:
+  `Date.now()` member-property), `nested_async_try` (`includeMeta: true` ->
+  `trace` object key, both 1 anchor); both gate-proven unique. W3 should extend
+  the feature taxonomy to number/bool literals (drops the function cover
+  fallback) and migrate var / class / object / group.

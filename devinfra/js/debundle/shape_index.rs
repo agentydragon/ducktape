@@ -709,10 +709,19 @@ impl ShapeIndex {
         // Greedy set-cover tail: bounded to the target's own features. The
         // "universe" is the non-target items still in the running intersection;
         // each step takes the feature excluding the most of them.
-        let all_indices: BTreeSet<usize> = (0..self.items.len()).collect();
-        let mut covered = all_indices;
-        let mut chosen: Vec<ScoredFeature> = Vec::new();
+        //
+        // W1 hand-off note #1 (cheap perf fix): seed `covered` from the *smallest
+        // relevant posting list* — the most-selective feature, which is
+        // `scored.first()` since `scored` is sorted by ascending selectivity —
+        // rather than `0..N`. The final intersection is a subset of every chosen
+        // feature's posting list, so seeding from one of them (the target is in
+        // all of its own features' lists) loses nothing; it just bounds per-item
+        // cost to that list's size instead of the whole chunk, so unresolvable
+        // items pay O(smallest posting) per step rather than O(N).
         let mut remaining = scored;
+        let seed = remaining.first()?;
+        let mut covered: BTreeSet<usize> = self.posting(&seed.feature).clone();
+        let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
 
         while covered.len() > 1 {
             let best = remaining

@@ -15,9 +15,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use readoff_render::kept_spans_for_anchor_set;
 use selector_candidate_index::SelectorCandidateIndex;
 use serde::Serialize;
 use serde_yaml::Value;
+use shape_index::ShapeIndex;
 use source_match::BodyIndexFilter;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
@@ -555,6 +557,10 @@ struct ChunkSelectorIndex {
     /// indices instead of the whole chunk. A pure prefilter — see
     /// [`matched_body_indices`].
     candidate_index: SelectorCandidateIndex,
+    /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
+    /// forms (single-target function and var) read their minimal anchor set off
+    /// it instead of running the cover search. The matcher stays the gate.
+    shape_index: ShapeIndex,
 }
 
 #[derive(Debug)]
@@ -900,12 +906,14 @@ impl ChunkSelectorIndex {
             decls.push(indexed);
         }
         let candidate_index = SelectorCandidateIndex::new(&parsed.module);
+        let shape_index = ShapeIndex::new(&parsed.module);
         Self {
             parsed,
             source,
             decls,
             binding_to_decl,
             candidate_index,
+            shape_index,
         }
     }
 }
@@ -1830,8 +1838,66 @@ fn minimize_function_selector(
             function: Box::new(holed),
         }))))
     };
+    // W2: single-target functions read their minimal anchor set off the shape
+    // index instead of running the cover search. The holed scaffold already
+    // pins the param arity (one `ANYTHING` per real param), so a structural /
+    // skeleton anchor needs no kept span; value anchors (string literals,
+    // member/method names, member-path callees) map to the spans of the tokens
+    // that exhibit them. The matcher proves the result (gate 1).
+    //
+    // Fallback: when the read-off cannot single out the target through its own
+    // features — chiefly because the discriminator is a *number/bool* literal,
+    // which the W1 feature taxonomy does not yet index (string literals only) —
+    // it returns `None` and we fall through to the cover search, which collects
+    // every literal kind. This keeps the migration honest (read-off is the
+    // primary path; the cover is the not-yet-expressible tail), not full-AST:
+    // the cover itself skips rather than dumping an untrimmed body. A later wave
+    // that extends the feature taxonomy can drop this fallback.
+    if let Some(selector) = render_via_read_off(index, decl, target, &render_with)? {
+        return Ok(Some(selector));
+    }
     let candidates = collect_stmt_list_anchors(&body.stmts);
     minimize_via_retention(index, decl, target, &candidates, &render_with)
+}
+
+/// Render a single-target selector via the W1 read-off API (W2).
+///
+/// Reads the minimal [`AnchorSet`] off the shape index, maps its value anchors
+/// to kept byte spans over the target item, and renders + proves through the
+/// supplied `render_with` (the same prune + codegen the cover path uses — no
+/// second serializer). Returns `None` when the read-off cannot single out the
+/// target (a genuine alpha-duplicate) or the rendered selector fails the matcher
+/// gate, so the caller falls back to current behavior (exact-or-skip; never a
+/// full-AST pin unless `--full-ast-fallback`).
+fn render_via_read_off(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+) -> Result<Option<SpecializedSelector>> {
+    // Structural fast path (mirrors the cover's empty-competitors case): if the
+    // holed scaffold already pins enough — the declaration kind plus the param
+    // arity / declarator shape the scaffold renders for free — to resolve
+    // uniquely, keep no concrete token. This is the leanest, most rebuild-stable
+    // selector, so it is preferred over any value anchor the read-off would add.
+    let empty = BTreeSet::new();
+    if matched_body_indices(index, &target.export_name, &render_with(&empty)?)?
+        == BTreeSet::from([decl.body_idx])
+    {
+        return finish_minimized_selector(index, decl, target, render_with(&empty)?);
+    }
+
+    let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) else {
+        return Ok(None);
+    };
+    let item = index
+        .parsed
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")?;
+    let kept = kept_spans_for_anchor_set(item, &anchor_set);
+    finish_minimized_selector(index, decl, target, render_with(&kept)?)
 }
 
 // ===========================================================================
