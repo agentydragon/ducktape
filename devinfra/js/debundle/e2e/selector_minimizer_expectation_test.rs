@@ -377,6 +377,24 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// A target object inside a multi-declarator var group, discriminated purely by
+// its KEY SET (every value is a non-discriminating call, alpha-wildcarded),
+// minimizes to OBJECT_PROPS holes around the single rarest discriminating key
+// (`logSection`, which the same-shape sibling group lacks) plus DECLARATORS_AFTER
+// for the trailing helper declarator. Previously the group cover added every
+// object key at once (the coarse structural tier), keeping all keys held to
+// ANYTHING; the key-set greedy cover (#2290) adds keys rarest-first and stops at
+// the minimal discriminating subset. Real-spec analogues: CSS-styles dicts and
+// schema objects kept whole inside `var a={…},b={…},…` groups.
+minimizer_expectation_case!(
+    minimizes_object_keyset_group,
+    fixture = "object_keyset_group",
+    name = "key-set-discriminated object in a var group keeps only the rarest discriminating key",
+    module = "app/styles",
+    bindings = [("SelectedStyles", "selectedStyles")],
+    expected = "expected_match.js",
+);
+
 // A subclass among many sibling subclasses of a shared base minimizes to the
 // `extends` clause (superclass holed with ANYTHING) plus the single
 // discriminating class field, with CLASS_REST holes absorbing every other

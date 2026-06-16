@@ -646,6 +646,14 @@ impl ShapeIndex {
         self.postings.get(feature).unwrap_or(&EMPTY)
     }
 
+    /// Chunk-wide selectivity of a selector feature: the number of top-level
+    /// items whose shape exhibits it (smaller = rarer = more discriminating).
+    /// Used by the var-group key-set cover to rank object keys rarest-first
+    /// before adding them to the matcher-proven anchor set.
+    pub fn selector_feature_selectivity(&self, feature: &SelectorFeature) -> usize {
+        self.posting(&ShapeFeature::Selector(feature.clone())).len()
+    }
+
     /// Every feature exhibited by `body_idx` that is sound to use as an anchor
     /// under alpha-equivalent matching (the mode the read-off minimizer emits),
     /// each scored with its index-wide selectivity and stability. The read-off

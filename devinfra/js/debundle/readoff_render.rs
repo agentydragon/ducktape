@@ -231,7 +231,11 @@ fn member_prop_label(prop: &MemberProp) -> Option<String> {
     }
 }
 
-fn object_key_label_span(prop: &PropOrSpread) -> Option<(String, Span)> {
+/// The key label and its source span for an object property, mirroring
+/// `selector_candidate_index::object_key_label` (same labeling) plus the span.
+/// Reused by the var-group key-set cover to enumerate a declarator object's
+/// keys; spreads and computed keys carry no stable label and yield `None`.
+pub fn object_key_label_span(prop: &PropOrSpread) -> Option<(String, Span)> {
     let PropOrSpread::Prop(prop) = prop else {
         return None;
     };

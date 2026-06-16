@@ -155,11 +155,12 @@ Full scope table in <../debug/selector_minimizer_dogfood.md>.
 **E2E expectation suite** (`e2e/selector_minimizer_expectation_test.rs`). Active:
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
-`object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
-and (unignored once the class read-off landed) `class_among_many_siblings`,
-`sibling_subclass_hierarchy`. Ignored as aspirational (the named form not yet
-read-off-expressible): `sequential_assignment_block`, `deeply_nested_call_args`,
-`grouped_enum_objects`, `object_nested_value_dict`, `wide_destructure_block`.
+`object_keys_over_pinned`, `object_keyset_group`, `long_literal_value_anchor`,
+`binding_group_partition`, and (unignored once the class read-off landed)
+`class_among_many_siblings`, `sibling_subclass_hierarchy`. Ignored as aspirational
+(the named form not yet read-off-expressible): `sequential_assignment_block`,
+`deeply_nested_call_args`, `grouped_enum_objects`, `object_nested_value_dict`,
+`wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -253,18 +254,25 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    single scalar), nested-value dicts (`object_nested_value_dict`), grouped
    objects (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`), wide
    destructure (`wide_destructure_block`).
-   - **Key-set minimization (gaffer-dogfood feedback).** When an object is
-     discriminated by its _key set_ rather than any value — every value already
-     holed to `ANYTHING`, e.g. a CSS-styles dict
-     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }`, or a
-     schema object `ee({ coreMessage: …, type: …, … })` kept whole — the minimizer
-     keeps **every** key. It should keep only the **minimal key subset** whose
-     presence still discriminates the target from its siblings and collapse the
-     rest to `OBJECT_PROPS` (the key-set analogue of greedy set-cover: anchor on
-     the rarest discriminating keys, `OBJECT_PROPS` the common ones). Note these
-     over-pins surface inside multi-declarator var groups
-     (`DECLARATORS_BEFORE`/`_AFTER`), so the object key-set minimization must run
-     on the per-declarator object even when the statement is a declarator group.
+   - **Key-set minimization (gaffer-dogfood feedback). Landed (#2290).** When an
+     object is discriminated by its _key set_ rather than any value — every value
+     already holed to `ANYTHING`, e.g. a CSS-styles dict
+     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }` — the
+     minimizer kept **every** key. The single-declarator object form already
+     handled this via `minimal_anchor_set` (object keys are scored features, so
+     greedy set-cover already covers them); the gap was the **multi-declarator var
+     group** cover, which added every object key at once (the coarse `structural`
+     tier). `minimize_var_group_selector` now runs a key-set greedy cover
+     (`ranked_object_key_anchors_for_slots` → `ShapeIndex::selector_feature_selectivity`)
+     before that tier: it adds each target slot's object keys one at a time
+     rarest-first, re-proving with the matcher oracle, and stops at the minimal
+     discriminating subset; direct object-literal inits render through
+     `hole_object_padded` so the kept keys are interior `OBJECT_PROPS` subsequence
+     elements (survive reorder). E2E `object_keyset_group`. Still open:
+     value-discriminated grouped objects keeping all _value_ literals
+     (`grouped_enum_objects` — a value-vs-key anchor-preference question, distinct
+     from the key-set case) and `ee({ … })`-style schema objects passed as a call
+     argument rather than a direct init.
 6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
    and **var** migration (needs binding-group/declarator-slot tuple resolution).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR

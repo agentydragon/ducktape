@@ -15,8 +15,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use readoff_render::kept_spans_for_anchor_set;
-use selector_candidate_index::SelectorCandidateIndex;
+use readoff_render::{kept_spans_for_anchor_set, object_key_label_span};
+use selector_candidate_index::{SelectorCandidateIndex, SelectorFeature};
 use serde::Serialize;
 use serde_yaml::Value;
 use shape_index::ShapeIndex;
@@ -2234,6 +2234,42 @@ fn try_single_object_read_off(
     finish_minimized_selector(index, decl, target, render_with(&kept)?)
 }
 
+/// Object-key anchor spans of every target slot whose init is a direct object
+/// literal, ranked rarest-first: chunk-wide key selectivity ascending, then
+/// shorter key label, then source order. The var-group key-set cover adds these
+/// to the matcher-proven anchor set one at a time, so an object discriminated by
+/// its key *set* (every value non-discriminating) keeps only the minimal
+/// discriminating subset — the rarest keys — with `OBJECT_PROPS` for the rest,
+/// instead of every key. Mirrors the single-declarator object read-off
+/// ([`try_single_object_read_off`]), which the group path cannot use directly
+/// because per-declarator scoping needs the group matcher oracle.
+fn ranked_object_key_anchors_for_slots(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    target_slots: &BTreeSet<usize>,
+) -> Vec<AnchorSpan> {
+    let mut ranked: Vec<(usize, usize, AnchorSpan)> = Vec::new();
+    for (idx, declarator) in var.decls.iter().enumerate() {
+        if !target_slots.contains(&idx) {
+            continue;
+        }
+        let Some(Expr::Object(object)) = declarator.init.as_deref() else {
+            continue;
+        };
+        for prop in &object.props {
+            let Some((label, span)) = object_key_label_span(prop) else {
+                continue;
+            };
+            let selectivity = index
+                .shape_index
+                .selector_feature_selectivity(&SelectorFeature::ObjectKey(label.clone()));
+            ranked.push((selectivity, label.chars().count(), span_key(span)));
+        }
+    }
+    ranked.sort();
+    ranked.into_iter().map(|(_, _, span)| span).collect()
+}
+
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
 /// shared declaration keeping the target declarators (each `export = <holed
 /// init>`) with `DECLARATORS_*` holes for non-target runs, and pin just enough
@@ -2303,7 +2339,15 @@ fn minimize_var_group_selector(
             let mut holed = declarator.clone();
             holed.name = named_pat(export_for(name).expect("target declarator has an export"));
             holed.init = declarator.init.as_ref().map(|init| {
-                let mut holed_init = hole_expr(init, kept);
+                // A direct object-literal init holes through the padded form
+                // (leading + trailing `OBJECT_PROPS`) so a kept key matches as an
+                // interior subsequence element and survives key reorder — the same
+                // treatment the single-declarator object read-off applies via
+                // `hole_object_padded`. Other inits use the run-padding `hole_expr`.
+                let mut holed_init = match init.as_ref() {
+                    Expr::Object(object) => Expr::Object(hole_object_padded(object, kept)),
+                    _ => hole_expr(init, kept),
+                };
                 if !regex_anchors.is_empty() {
                     // Post-pass: swap each kept literal whose span was chosen as
                     // a regex anchor for the `STR_LITERAL_MATCHING_RE` predicate.
@@ -2348,16 +2392,32 @@ fn minimize_var_group_selector(
     // meaningful targets), then escalate to structural/deeper anchors only if
     // the group does not yet resolve uniquely to the right bindings.
     let mut kept: BTreeSet<AnchorSpan> = candidates.shallow_literals().into_iter().collect();
-    if !resolves(&kept)? {
-        for tier in candidates.deep_cover_tiers() {
-            kept.extend(tier);
+    let mut resolved = resolves(&kept)?;
+    // Key-set minimization (#2290): when shallow values do not discriminate, add
+    // target-slot object keys one at a time rarest-first (greedy set-cover)
+    // before the coarse all-keys structural tier, so an object identified by its
+    // key set keeps only the minimal discriminating subset (`OBJECT_PROPS` the
+    // common ones) instead of every key. The matcher oracle proves each addition.
+    if !resolved {
+        for key_span in ranked_object_key_anchors_for_slots(index, var, &target_slots) {
+            kept.insert(key_span);
             if resolves(&kept)? {
+                resolved = true;
                 break;
             }
         }
-        if !resolves(&kept)? {
-            return Ok(None);
+    }
+    if !resolved {
+        for tier in candidates.deep_cover_tiers() {
+            kept.extend(tier);
+            if resolves(&kept)? {
+                resolved = true;
+                break;
+            }
         }
+    }
+    if !resolved {
+        return Ok(None);
     }
 
     // Regex-literal upgrade: among kept string literals, offer a robust
@@ -3602,6 +3662,90 @@ export { target };\n";
         // emits even when full_ast_fallback is off.
         let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
         assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
+    }
+}
+
+#[cfg(test)]
+mod var_group_keyset_cover_tests {
+    use super::*;
+
+    /// Minimize the group selector for `runtime` and return its match source,
+    /// asserting it resolves uniquely back to the intended declaration.
+    fn minimized_match(source: &str, runtime: &str, export: &str) -> String {
+        js_ast::with_swc_globals(|| {
+            let parsed =
+                js_ast::parse_js_module_consuming("<keyset-test>", source.to_string()).unwrap();
+            let index = ChunkSelectorIndex::new(parsed);
+            let decl_idx = *index
+                .binding_to_decl
+                .get(runtime)
+                .and_then(|decls| decls.first())
+                .expect("chunk declares the target binding");
+            let members = [NameBindingMember {
+                member_index: 0,
+                export_name: export.to_string(),
+                binding_name: runtime.to_string(),
+                comment: None,
+            }];
+            let GroupSelectorOutcome::Synthesized(group) =
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false)
+                    .unwrap()
+            else {
+                panic!("key-set group must synthesize a minimized selector");
+            };
+            assert_eq!(
+                matched_body_indices(&index, export, &group.match_source).unwrap(),
+                BTreeSet::from([group.body_idx]),
+                "minimized selector must resolve uniquely: {}",
+                group.match_source
+            );
+            group.match_source
+        })
+    }
+
+    #[test]
+    fn keeps_only_the_rarest_key_in_a_declarator_group() {
+        // `selectedStyles` shares three keys with the same-shape sibling group and
+        // differs only by `logSection`; every value is a non-discriminating call.
+        // The greedy cover keeps just `logSection`, OBJECT_PROPS the shared keys,
+        // and holes the trailing helper declarator with DECLARATORS_AFTER.
+        let source = "\
+var selectedStyles = { diagnosticsSection: clsx(base), detailsToggle: clsx(base), details: clsx(base), logSection: clsx(base) }, styleHelper = register(theme);\n\
+var siblingStyles = { diagnosticsSection: clsx(base), detailsToggle: clsx(base), details: clsx(base), footer: clsx(base) }, otherHelper = register(theme);\n\
+export { selectedStyles };\n";
+        let match_source = minimized_match(source, "selectedStyles", "SelectedStyles");
+        assert!(match_source.contains("logSection"), "{match_source}");
+        assert!(match_source.contains("OBJECT_PROPS"), "{match_source}");
+        assert!(match_source.contains("DECLARATORS_AFTER"), "{match_source}");
+        // The shared keys (`details` also covers `detailsToggle`) are holed, not
+        // pinned — the over-pin this fix removes.
+        for shared in ["diagnosticsSection", "details"] {
+            assert!(
+                !match_source.contains(shared),
+                "kept shared key `{shared}`: {match_source}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_a_minimal_two_key_cover_when_no_single_key_is_unique() {
+        // No single key is unique to the target: `alpha` is absent from sibOne and
+        // `beta` from sibTwo, so the greedy cover must keep both; `gamma`/`delta`
+        // are shared across all three groups and stay holed.
+        let source = "\
+var selectedThing = { alpha: r0, beta: r1, gamma: r2, delta: r3 }, helperA = build(shared);\n\
+var sibOne = { beta: r1, gamma: r2, delta: r3, extraX: r8 }, helperB = build(shared);\n\
+var sibTwo = { alpha: r0, gamma: r2, delta: r3, extraY: r9 }, helperC = build(shared);\n\
+export { selectedThing };\n";
+        let match_source = minimized_match(source, "selectedThing", "SelectedThing");
+        assert!(match_source.contains("alpha"), "{match_source}");
+        assert!(match_source.contains("beta"), "{match_source}");
+        for shared in ["gamma", "delta"] {
+            assert!(
+                !match_source.contains(shared),
+                "kept shared key `{shared}`: {match_source}"
+            );
+        }
     }
 }
 
