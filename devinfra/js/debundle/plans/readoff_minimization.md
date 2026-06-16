@@ -259,24 +259,91 @@ Lower priority / opportunistic:
 
 ## Language simplification: prefer `ANYTHING` where the context is unambiguous
 
-`ANYTHING` is already parse-position-polymorphic (see `source_match_holes.rs`):
-in an expression position it behaves like `EXPR`, as a bare expression statement
-like `STMT`, as a declarator name like `DECLARATORS`, as an object shorthand it
-absorbs `OBJECT_PROPS`, as an init-less class field like `CLASS_REST`, etc. So in
-any position where **only one kind of placeholder is syntactically legal**, the
-specific keyword (`OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`, `ARGS`, ...) is
-redundant with `ANYTHING`. Reducing to one placeholder where unambiguous cuts
-language surface and reader ambiguity.
+`ANYTHING` is parse-position-polymorphic (see `source_match_holes.rs`), but its
+behavior is **not** uniformly "the list hole legal here". Verified against the
+matcher (`source_match/matcher.rs`, `source_match/holes.rs`,
+`source_match/wildcard_idents.rs`), the decisive fact is:
 
-Do this **after** minimizer emission stabilizes (after migration + cover deletion),
-since it rewrites emitted selectors and touches many fixtures:
+> **`ANYTHING` is a run-absorbing list hole only in the positions where the
+> list-hole detector predicate carries an explicit `ANYTHING` fallback.** In
+> every other position a bare `ANYTHING` collapses to a _single-node_ hole
+> (`EXPR` / `STMT`) — or is not expressible at all.
 
-- **Emit `ANYTHING`** from the minimizer/renderer in unambiguous positions instead
-  of the specific list hole; keep the specific keyword only where the position
-  genuinely admits more than one placeholder kind (document which).
-- The matcher already accepts `ANYTHING` in those positions, so this is an
-  emission + fixture change, not a matcher change. Confirm equivalence through
-  swc; the prove-gate is unchanged.
+The detector predicates and their `ANYTHING` handling:
+
+| Position            | Detector (in `holes.rs`)         | `ANYTHING` fallback?      | Slice router (`matcher.rs`)                 |
+| ------------------- | -------------------------------- | ------------------------- | ------------------------------------------- |
+| object property     | `object_property_list_hole_name` | **yes** (`.or_else`)      | `match_prop_or_spread_slice`                |
+| variable declarator | `declarator_list_hole_name`      | **yes** (`.or_else`)      | `match_var_declarator_slice_with_alignment` |
+| class member        | `is_class_rest_hole`             | **yes** (`\|\| ANYTHING`) | `match_class_member_slice`                  |
+| call/`new` argument | `argument_list_hole_name`        | **no**                    | `match_expr_or_spread_slice`                |
+| block statement     | `statement_list_hole_name`       | **no**                    | `match_stmt_slice`                          |
+| `switch` case       | `is_case_rest_hole`              | **no**                    | `match_switch_case_slice`                   |
+
+Why the single-node collapse happens for `ARGS`/`STMT_LIST`: the collector
+(`WildcardIdentCollector`) visits a bare `ANYTHING` argument via
+`visit_expr_or_spread`, finds no `argument_list_hole_name` match, recurses into
+the child expression, and registers it as an **expression** hole; likewise a bare
+`ANYTHING` expression-statement is registered as a **statement** hole (the
+`hole_name == ANYTHING` branch in `visit_stmt`, which is reached only _after_
+the `STMT_LIST` check fails). A single-node hole then routes through the
+length-exact `match_slice` path (arity must equal), never the
+ordered-subsequence `match_list_with_holes` path. `case CASE_REST:` has no
+`ANYTHING` spelling at all (`is_case_rest_hole` matches only the literal
+`CASE_REST` test ident; a bare `ANYTHING` statement is not a `case` clause).
+
+### Per-keyword redundancy table
+
+| Keyword        | Redundant with bare `ANYTHING`? | Unambiguous position               | Equivalence / inequivalence (evidence)                                                                                                                                                                                                              |
+| -------------- | ------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXPR`         | **yes** (bare/anon form)        | any expression position            | `ANYTHING` ≡ `EXPR`; both anonymous single-expr (`bind_expr`). Tests: `member_source_match_anything_matches_expression_subtrees`, `single_node_hole_keeps_later_identifiers_aligned`. Named `EXPR_x` (cross-occurrence binding) is NOT replaceable. |
+| `STMT`         | **yes** (bare/anon form)        | bare expression-statement position | `ANYTHING;` ≡ `STMT;`; both anonymous single-stmt (`bind_stmt`). Test: `stmt_and_anything_agree_on_a_single_statement_block`. Named `STMT_x` is NOT replaceable.                                                                                    |
+| `OBJECT_PROPS` | **yes**                         | object-literal shorthand property  | run-absorber; `object_property_list_hole_name` has `ANYTHING` fallback. Test: `object_props_and_anything_are_interchangeable_run_absorbers` (+ existing `member_source_match_anything_object_property_hole_skips_arbitrary_key_values`).            |
+| `DECLARATORS`  | **yes**                         | variable declarator name           | run-absorber; `declarator_list_hole_name` has `ANYTHING` fallback. Test: `declarators_and_anything_are_interchangeable_run_absorbers` (+ existing `member_source_match_anything_declarator_*`).                                                     |
+| `CLASS_REST`   | **yes**                         | no-init class field                | run-absorber; `is_class_rest_hole` matches `CLASS_REST` or `ANYTHING`. Test: `class_rest_and_anything_are_interchangeable_run_absorbers` (+ existing `member_source_match_anything_class_member_*`).                                                |
+| `ARGS`         | **NO**                          | call/`new` argument                | `ANYTHING` arg = single `EXPR` (arity-exact), NOT a run-absorber. Diverges on arity ≠ 1. Tests: `args_run_absorber_is_not_redundant_with_anything_single_arg` (diverge), `args_and_anything_agree_on_a_single_argument_call` (agree at arity 1).    |
+| `STMT_LIST`    | **NO**                          | block statement                    | `ANYTHING;` stmt = single `STMT` (arity-exact), NOT a run-absorber. Diverges on length ≠ 1. Tests: `stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt` (diverge), `stmt_and_anything_agree_on_a_single_statement_block` (agree).    |
+| `CASE_REST`    | **NO**                          | empty `switch` case clause         | No `ANYTHING` spelling exists for a case-list hole; the marker is a `case` clause, not an identifier expression. Test: `case_rest_is_not_expressible_via_anything`.                                                                                 |
+
+### Emission rule (the deferred change)
+
+Mechanical and unambiguous given the table — for the minimizer/renderer
+(`selector_codemod.rs` / `readoff_render.rs`), in position **P**:
+
+- **OBJECT_PROPS / DECLARATORS / CLASS_REST**: an _anonymous_ (unsuffixed) hole
+  in P may be emitted as `ANYTHING` instead of the keyword. A **named** list
+  hole (`OBJECT_PROPS_MID`, `DECLARATORS_AFTER`) carries a readability label and
+  is not equality-binding, so substituting `ANYTHING` is still semantically
+  safe but loses the label — keep the keyword when a suffix is present, or
+  accept the label loss as a deliberate readability tradeoff (decide at
+  emission time; the matcher accepts both).
+- **EXPR / STMT**: an _anonymous_ hole may be emitted as `ANYTHING`. A **named**
+  hole (`EXPR_LEFT`, `STMT_SETUP`) binds for cross-occurrence equality and is
+  **not** replaceable — `ANYTHING` is always anonymous (see `bind_expr` /
+  `bind_stmt`).
+- **ARGS / STMT_LIST / CASE_REST**: **never** emit `ANYTHING` in these
+  positions. `ARGS`/`STMT_LIST` would silently change a run-absorber into an
+  arity-exact single-node hole (a correctness regression), and `CASE_REST` has
+  no `ANYTHING` form. These keywords stay load-bearing.
+
+Do this **after** minimizer emission stabilizes (after migration + cover
+deletion), since it rewrites emitted selectors and touches many fixtures:
+
+- The matcher already accepts `ANYTHING` in the redundant positions, so this is
+  an emission + fixture change, not a matcher change. Confirm equivalence
+  through swc; the prove-gate is unchanged.
 - Decide per keyword whether to deprecate/remove it once fully subsumed (affects
   existing specs — needs a sweep) or keep it as accepted-but-not-emitted sugar.
-  Default: keep accepting, stop emitting; revisit removal separately.
+  `ARGS`, `STMT_LIST`, and `CASE_REST` are NOT subsumable and must be kept.
+  Default for the rest: keep accepting, stop emitting; revisit removal
+  separately.
+
+### Matcher gap note
+
+No matcher change is needed or proposed. The asymmetry (list-hole fallback for
+`OBJECT_PROPS`/`DECLARATORS`/`CLASS_REST` but not `ARGS`/`STMT_LIST`/`CASE_REST`)
+is the _reason_ `ARGS`/`STMT_LIST`/`CASE_REST` are not droppable, not a bug to
+fix: making `ANYTHING` a run-absorber in argument/statement position would make
+it impossible to write a single-node `EXPR`/`STMT` hole anonymously there, since
+both spell as a lone `ANYTHING`. The two keyword families intentionally cover
+different cardinalities.

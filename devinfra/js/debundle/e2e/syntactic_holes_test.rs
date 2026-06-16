@@ -2307,3 +2307,360 @@ export { actual };
         object_gap.stderr
     );
 }
+
+// ---------------------------------------------------------------------------
+// `ANYTHING`-vs-keyword redundancy proofs (de-risk "language simplification")
+//
+// `ANYTHING` is a *run-absorbing* list hole ONLY in the positions where the
+// matcher's list-hole detector predicate carries an `ANYTHING` fallback:
+// `OBJECT_PROPS` (`object_property_list_hole_name`), `DECLARATORS`
+// (`declarator_list_hole_name`), and `CLASS_REST` (`is_class_rest_hole`). In a
+// call/`new` argument position (`argument_list_hole_name` has no `ANYTHING`
+// fallback) and a block-statement position (`statement_list_hole_name` has no
+// `ANYTHING` fallback), a bare `ANYTHING` is a *single-node* hole — `EXPR`
+// resp. `STMT` — so it is NOT interchangeable with `ARGS` / `STMT_LIST`. A
+// `case CASE_REST:` clause has no `ANYTHING` spelling at all.
+//
+// The matched pairs below pin each claim against a representative subject.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn args_run_absorber_is_not_redundant_with_anything_single_arg() {
+    // Subject call has two arguments. `joinParts(ARGS)` absorbs the run and
+    // matches; `joinParts(ANYTHING)` is a single-expression hole, so it
+    // requires arity 1 and does NOT match a 2-argument call.
+    let subject = r#"function joinParts(...parts) {
+  return parts.join("|");
+}
+const actual = joinParts("alpha", "beta");
+console.log(actual);
+export { actual };
+"#;
+
+    // ARGS: run-absorber matches the two-arg call.
+    let with_args = run_fixture(FixtureOpts::new(
+        subject,
+        vec![logical_module(
+            "joined",
+            &[Member::source_alpha(
+                "joinedValue",
+                r#"const selectedValue = joinParts(ARGS);"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&with_args, "alpha|beta\n");
+    assert_module_exports(
+        &with_args.out_root,
+        "static/app/modules/joined.js",
+        &["joinedValue"],
+        &["actual"],
+    );
+
+    // ANYTHING in the same position is a single EXPR: arity 1 != 2, no match.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            subject,
+            vec![logical_module(
+                "joined",
+                &[Member::source_alpha(
+                    "joinedValue",
+                    r#"const selectedValue = joinParts(ANYTHING);"#,
+                )],
+            )],
+        ),
+        &[
+            "static/app::joined",
+            "did not match any top-level declaration",
+        ],
+    );
+}
+
+#[test]
+fn args_and_anything_agree_on_a_single_argument_call() {
+    // Companion to the inequivalence proof: when the subject call has exactly
+    // one argument, `ARGS` and `ANYTHING` are observationally identical (both
+    // match). The divergence is purely about run-vs-single arity, not about
+    // what a single argument matches.
+    let subject = r#"function wrap(value) {
+  return `[${value}]`;
+}
+const actual = wrap("solo");
+console.log(actual);
+export { actual };
+"#;
+
+    for selector in [
+        r#"const selectedValue = wrap(ARGS);"#,
+        r#"const selectedValue = wrap(ANYTHING);"#,
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            subject,
+            vec![logical_module(
+                "wrapped",
+                &[Member::source_alpha("wrappedValue", selector)],
+            )],
+        ));
+        assert_entry_output(&fixture, "[solo]\n");
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/wrapped.js",
+            &["wrappedValue"],
+            &["actual"],
+        );
+    }
+}
+
+#[test]
+fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
+    // The `if` block has three statements. `{ STMT_LIST; }` absorbs the run
+    // and matches; `{ ANYTHING; }` is a single-statement hole (arity 1 != 3)
+    // and does NOT match.
+    let subject = r#"if (true) {
+  console.log("a");
+  console.log("b");
+  console.log("c");
+}
+const marker = "ready";
+export { marker };
+"#;
+
+    // STMT_LIST: run-absorber matches the three-statement block.
+    let with_stmt_list = run_fixture(FixtureOpts::new(
+        subject,
+        vec![logical_module_with_anon_alpha(
+            "init",
+            &[Member::new("marker")],
+            r#"if (true) {
+  STMT_LIST;
+}"#,
+        )],
+    ));
+    assert_entry_output(&with_stmt_list, "a\nb\nc\n");
+
+    // ANYTHING as a block statement is a single STMT: arity 1 != 3, no match.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            subject,
+            vec![logical_module_with_anon_alpha(
+                "init",
+                &[Member::new("marker")],
+                r#"if (true) {
+  ANYTHING;
+}"#,
+            )],
+        ),
+        &["static/app::init", "did not match"],
+    );
+}
+
+#[test]
+fn stmt_and_anything_agree_on_a_single_statement_block() {
+    // Companion: a single-statement block is matched identically by a bare
+    // `STMT` and a bare `ANYTHING` (both single-node holes). So in the
+    // statement position `ANYTHING` is redundant with `STMT`, NOT `STMT_LIST`.
+    let subject = r#"if (true) {
+  console.log("only");
+}
+const marker = "ready";
+export { marker };
+"#;
+
+    for body in ["STMT;", "ANYTHING;"] {
+        let fixture = run_fixture(FixtureOpts::new(
+            subject,
+            vec![logical_module_with_anon_alpha(
+                "init",
+                &[Member::new("marker")],
+                &format!("if (true) {{\n  {body}\n}}"),
+            )],
+        ));
+        assert_entry_output(&fixture, "only\n");
+    }
+}
+
+#[test]
+fn case_rest_is_not_expressible_via_anything() {
+    // `case CASE_REST:` absorbs surrounding `case`/`default` clauses. There is
+    // no `ANYTHING` spelling for a switch-case-list hole: `is_case_rest_hole`
+    // matches only the literal `CASE_REST` test identifier. A bare `ANYTHING`
+    // statement is not a `case` clause, so attempting to use it to skip cases
+    // cannot parse into the case-list-hole shape — the keyword stays load-
+    // bearing. Here the `CASE_REST` form matches the multi-case switch.
+    let subject = r#"function dispatch(kind) {
+  switch (kind) {
+    case "alpha":
+      return 1;
+    case "go":
+      return 42;
+    default:
+      return 0;
+  }
+}
+console.log(dispatch("go"));
+export { dispatch };
+"#;
+
+    let with_case_rest = run_fixture(FixtureOpts::new(
+        subject,
+        vec![logical_module(
+            "router",
+            &[Member::source_alpha(
+                "dispatch",
+                r#"function readable(ANYTHING) {
+  switch (ANYTHING) {
+    case CASE_REST:
+    case "go":
+      STMT_LIST_GO;
+    case CASE_REST:
+  }
+}"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&with_case_rest, "42\n");
+    assert_module_exports(
+        &with_case_rest.out_root,
+        "static/app/modules/router.js",
+        &["dispatch"],
+        &[],
+    );
+}
+
+#[test]
+fn object_props_and_anything_are_interchangeable_run_absorbers() {
+    // Positive redundancy proof: `OBJECT_PROPS_*` and `ANYTHING` shorthand are
+    // both run-absorbing property-list holes
+    // (`object_property_list_hole_name` carries the `ANYTHING` fallback), so
+    // they match the same object against the same gap.
+    let subject = r#"const actual = {
+  stable: 1,
+  generatedA: 2,
+  generatedB: 3,
+  tail: 4,
+};
+console.log(actual.stable + actual.tail);
+export { actual };
+"#;
+
+    for selector in [
+        r#"const readable = { stable: EXPR, OBJECT_PROPS_MID, tail: EXPR };"#,
+        r#"const readable = { stable: ANYTHING, ANYTHING, tail: ANYTHING };"#,
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            subject,
+            vec![logical_module(
+                "config",
+                &[Member::source_alpha_target(
+                    "config_object",
+                    "readable",
+                    selector,
+                )],
+            )],
+        ));
+        assert_entry_output(&fixture, "5\n");
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/config.js",
+            &["config_object"],
+            &["actual"],
+        );
+    }
+}
+
+#[test]
+fn declarators_and_anything_are_interchangeable_run_absorbers() {
+    // Positive redundancy proof: `DECLARATORS_*` and `ANYTHING` declarator
+    // names are both run-absorbing declarator-list holes
+    // (`declarator_list_hole_name` carries the `ANYTHING` fallback), bracketing
+    // the same pinned declarator in the same wider `const` list.
+    let subject = r#"const runtimePrefix = "prefix",
+  runtimeTarget = makeTarget("value"),
+  runtimeSuffix = "suffix";
+function makeTarget(value) {
+  return `target:${value}`;
+}
+console.log(runtimePrefix, runtimeTarget, runtimeSuffix);
+export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
+"#;
+
+    for selector in [
+        r#"const DECLARATORS_BEFORE = null,
+  Target = makeTarget("value"),
+  DECLARATORS_AFTER = null;"#,
+        r#"const ANYTHING = null,
+  Target = makeTarget("value"),
+  ANYTHING = null;"#,
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            subject,
+            vec![logical_module(
+                "target",
+                &[Member::source_exact_target(
+                    "SelectedTarget",
+                    "Target",
+                    selector,
+                )],
+            )],
+        ));
+        assert_entry_output(&fixture, "prefix target:value suffix\n");
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/target.js",
+            &["SelectedTarget"],
+            &["runtimeTarget"],
+        );
+    }
+}
+
+#[test]
+fn class_rest_and_anything_are_interchangeable_run_absorbers() {
+    // Positive redundancy proof: `CLASS_REST;` and a no-init `ANYTHING;` class
+    // field are both run-absorbing class-member-list holes (`is_class_rest_hole`
+    // matches either keyword), bracketing the same pinned method.
+    let subject = r#"class Widget {
+  setup() {
+    return 0;
+  }
+  open() {
+    return 7;
+  }
+  close() {
+    return 3;
+  }
+}
+console.log(new Widget().open());
+export { Widget };
+"#;
+
+    for selector in [
+        r#"class K {
+  CLASS_REST;
+  open() {
+    STMT_LIST_O;
+  }
+  CLASS_REST;
+}"#,
+        r#"class K {
+  ANYTHING;
+  open() {
+    ANYTHING;
+  }
+  ANYTHING;
+}"#,
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            subject,
+            vec![logical_module(
+                "shapes",
+                &[Member::source_alpha("Widget", selector)],
+            )],
+        ));
+        assert_entry_output(&fixture, "7\n");
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/shapes.js",
+            &["Widget"],
+            &[],
+        );
+    }
+}
