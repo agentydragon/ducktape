@@ -40,12 +40,18 @@ in
     "flakes"
   ];
 
+  # direnv + nix-direnv with the bash hook wired in (programs.bash.enable is
+  # required for home-manager to emit the hook into the shell rc) so `cd`ing into
+  # the repo activates the .envrc devshell.
+  programs.bash.enable = true;
+  programs.direnv = {
+    enable = true;
+    enableBashIntegration = true;
+    nix-direnv.enable = true;
+  };
+
   # Same toolset the .#devtools profile install ships (claude-hook, statusline,
   # bbr, bbapi, gh, sops, kubectl, …). Reuses the flake's devToolPackages list
   # so the two install paths can never drift.
-  home.packages = webDevTools ++ [
-    pkgs.jq
-    pkgs.ripgrep
-    pkgs.fd
-  ];
+  home.packages = webDevTools;
 }
