@@ -187,6 +187,37 @@ read-off-expressible): `sequential_assignment_block`, `deeply_nested_call_args`,
 adversarial tail cases (near-minimal is fine); preserving YAML comments (out via
 serde); embedded/non-trailing volatility in regex anchors (future).
 
+## Remaining minified-pin debt (measured, gaffer `main` after #360)
+
+`spec selector-debt` on the converted spec: **5,108 robust `source_match`** vs
+**2,226 still-fragile name-only** pins (~70% converted). Re-running the minimizer
+(`synthesize-selectors`, dry) over the 2,226 splits the debt by _why_ it remains
+— the prioritization input for the waves below:
+
+- **~2,024 (~91%) — "no sparse selector" (minimizer skips).** No compact
+  discriminating anchor set resolves uniquely, so with `--full-ast-fallback` off
+  the member is left as a name pin. These are **whole-body-only** members
+  (uniqueness needs ~the entire body). Concentrated in `features` (955),
+  `domains` (462), `app` (425). Recovering them is the hard, high-count tail:
+  needs **interior holing of whole bodies** (item 2b gap 2 — keep the body but
+  hole non-identifying subtrees so a fuller pin is at least less fragile / can be
+  emitted) and/or deeper anchoring. Biggest number, hardest; do not expect a
+  clean compact selector for most.
+- **~200 (~9%) — convertible but >30 lines (filtered out of #360).** The minimizer
+  _does_ synthesize a selector; it's just over the compact threshold. Shape mix:
+  **~55% var/object, ~42% function, ~3% class**; median ~35 lines, tail to ~700.
+  These are the **achievable near-term wins**: the over-pin-reduction waves shrink
+  them under the threshold so they ship as compact selectors —
+  - var/object (the plurality) → **interior object/array holing** (item 2b gap 1)
+    - **key-set minimization** + the object-dict family (item 5);
+  - function → **interior holing** within kept bodies (item 2b);
+  - a re-apply after each wave reconverts whatever now fits ≤30 lines.
+- 1 — `async` parse edge case (single; ignore).
+
+**Takeaway:** the ~200 bulky-convertible are the cheap recovery (over-pin waves,
+mostly object-shaped); the ~2,024 no-sparse are the structural long tail (whole-
+body interior holing + anchoring). Re-measure this split after each wave lands.
+
 ## Backlog (open only)
 
 Agreed order (interleave perf-first, then severity-ordered minimality). Counts
