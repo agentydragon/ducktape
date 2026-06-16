@@ -443,6 +443,69 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Aspirational: a large lookup dictionary whose VALUES are nested objects
+// (e.g. an id -> config map) should minimize to OBJECT_PROPS holes on both
+// sides of the one entry whose nested value carries the discriminating
+// literal, and that entry's own nested object should itself collapse to the
+// discriminating property plus an OBJECT_PROPS hole. This generalizes
+// `object_keys_over_pinned` (whose entry values are scalar string literals) to
+// the common nested-object-value case. Today the minimizer keeps every entry's
+// full nested object whole, over-pinning the entire dictionary where one
+// anchored nested property would resolve uniquely. Mirrors the real spec's
+// id->config maps (feature-flag / registry dicts) kept whole across ~50+
+// nested-object entries.
+minimizer_expectation_case!(
+    #[ignore = "nested-value-dict minimizer keeps all entries' full nested objects instead of OBJECT_PROPS around one anchored nested property"]
+    minimizes_object_nested_value_dict,
+    fixture = "object_nested_value_dict",
+    name = "nested-object-value dictionary keeps only the discriminating nested property",
+    module = "app/registries",
+    bindings = [("SelectedRegistry", "selectedRegistry")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: an object that carries both a short discriminating key literal
+// and a very long string / template-literal value (shared verbatim across
+// siblings, so non-discriminating) should anchor on the short unique key and
+// hole everything else with OBJECT_PROPS. Today the minimizer drags the entire
+// long literal value into the selector as part of the retained anchor, even
+// though a much shorter sibling key already discriminates uniquely; the long
+// value is the largest node so it dominates the kept shape. This produces
+// rebuild-fragile, hundreds-of-lines selectors in the real spec (tool/command
+// definitions and feature-flag tables whose `description`/`prose` template
+// literals run for hundreds of lines while a one-token `name`/`id` key would
+// have sufficed).
+minimizer_expectation_case!(
+    #[ignore = "literal-anchor minimizer retains the long template-literal value instead of anchoring on the short discriminating key"]
+    minimizes_long_literal_value_anchor,
+    fixture = "long_literal_value_anchor",
+    name = "object anchors on the short discriminating key, not the long shared literal value",
+    module = "app/definitions",
+    bindings = [("SelectedDefinition", "selectedDefinition")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a function (commonly a UI component) whose body opens with a
+// wide object-destructuring binding (`const { a, b, c, ... } = props;`) should
+// minimize to OBJECT_PROPS holes around the single destructured property that
+// discriminates this target from its siblings, plus STMT_LIST holes for the
+// rest of the body. Today the minimizer keeps the entire wide destructuring
+// pattern whole — every destructured name — even when one anchored property
+// (and one body statement) would resolve uniquely, because the destructure
+// block is a single large node it retains intact rather than holing its
+// property run. Mirrors the real spec's React components whose 10-25-name
+// `{ ... } = e` prop destructure is kept verbatim at the top of an otherwise
+// holed body.
+minimizer_expectation_case!(
+    #[ignore = "wide-destructure minimizer keeps the entire destructuring pattern instead of OBJECT_PROPS around the one discriminating property"]
+    minimizes_wide_destructure_block,
+    fixture = "wide_destructure_block",
+    name = "wide destructuring block keeps only the discriminating destructured property",
+    module = "app/components",
+    bindings = [("SelectedComponent", "selectedComponent")],
+    expected = "expected_match.js",
+);
+
 // Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
 // slot's direct shallow literals including object-property values. The group's
 // shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
