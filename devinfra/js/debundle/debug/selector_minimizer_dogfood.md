@@ -147,6 +147,82 @@ now transactional and the whole chunk under the 5-minute cap, the remaining
 scopes are unblocked for review-and-commit; the only gate is reading each diff
 for the pattern-b over-pin before committing.
 
+## Read-off minimizer real-chunk perf (2026-06-16)
+
+W4 perf acceptance measurement of the **current read-off minimizer** (shape-index
+`minimal_anchor_set` + `kept_spans_for_anchor_set`, the default minimization path;
+no `--no-minimize`). Dry run (no `--apply`), `name-binding-to-source-match`
+rewrite, binary run directly (no Bazel overhead), wall-clock via `time.perf_counter`,
+peak RSS via `getrusage(RUSAGE_CHILDREN)` on a fresh child per scope. Members
+counted as `name_binding_members` (the members the minimizer actually processes).
+The spec has accreted more outstanding name pins since the prior baseline, so
+per-scope member counts are higher than the 2026-pre-fix table above.
+
+| Scope           | Files | members | seconds     | s/member  | peak RSS    |
+| --------------- | ----- | ------- | ----------- | --------- | ----------- |
+| infra           | 53    | 155     | 6.5         | 0.042     | ~253 MB     |
+| integrations    | 42    | 51      | 4.1         | 0.080     | ~253 MB     |
+| shared          | 115   | 247     | 8.7         | 0.035     | ~253 MB     |
+| app             | 221   | 940     | 27.0        | 0.029     | ~253 MB     |
+| domains         | 497   | 1082    | 27.0        | 0.025     | ~253 MB     |
+| features        | 817   | 1976    | 57.6        | 0.029     | ~253 MB     |
+| **whole chunk** | 1745  | 4451    | **107–112** | **0.024** | **~253 MB** |
+
+(Whole-chunk timed twice: 106.6s and 112.5s — stable around ~110s. Peak RSS is
+flat at ~253 MB across every scope: the parsed 7 MB AST + indices dominate and the
+per-member work allocates little, so memory is not scope-sensitive.)
+
+- **Index/parse floor ≈ 3.3s.** A scope whose prefix matches zero files (0 members
+  processed) still pays ~3.3s — parse the chunk once, build the candidate index and
+  the read-off shape index. This one-time cost dominates small scopes and is the
+  floor every invocation pays.
+- **Per-member cost is ~linear and ~constant** at ~0.024–0.04 s/member once the
+  parse floor is amortised (small scopes look more expensive only because the fixed
+  floor is divided over few members). Whole chunk = floor + members × ~0.024s.
+
+### Budget verdict
+
+- **Misses the ≤10s ideal and the ≤30s hard budget on the whole chunk by a wide
+  margin.** Whole chunk is ~110s — ~3.7× over the 30s hard cap and ~11× over the
+  10s ideal. The read-off minimizer does **not** meet the W4 whole-chunk budget on
+  real data.
+- **Sub-scopes do meet budget**, with one exception: `infra`, `integrations`,
+  `shared`, `app`, `domains` all land ≤30s; `features` (~58s, ~2k members) is the
+  only single subtree over the hard cap. So scope-at-a-time review stays inside
+  budget for every subtree except the largest, but the whole-chunk acceptance
+  criterion is not met.
+
+### Where the time goes
+
+The read-off layer makes the **selector choice** cheap (shape-index anchor set, no
+full-AST scan), but it does not remove the per-member **uniqueness proof**:
+`synthesize_simplest_selector_for_group` still calls `prove_synthesized_selector`
+(`source_match::resolve_member_binding{,_group_match}` — the production matcher)
+for every emitted selector. That proof runs the matcher over the
+candidate-index-filtered AST once per member group, and is the dominant per-member
+cost. So the split is: **~3.3s one-time build (parse + candidate index + shape
+index)** + **~0.024 s/member prove-gate**, the prove-gate accounting for essentially
+all of the ~107s of per-member time on the whole chunk.
+
+### Comparison to prior numbers
+
+- **vs. 113s search-based baseline:** the whole-chunk wall-clock is **unchanged**
+  (~110s vs 113s). The read-off minimizer's _selector-synthesis_ phase is cheaper
+  than the old search-based cover, but because the prove-gate (full matcher, once
+  per member) was already the bottleneck and is untouched, total wall-clock did not
+  move. The s/member is also flat (~0.024 vs ~0.027; the small delta is noise plus
+  the larger member count amortising the fixed floor better). **The read-off work
+  optimised the cheap half; the prove-gate is now the entire cost.**
+- **vs. synthetic `OPT=1` = 100% prediction:** the synthetic micro-benchmark
+  predicted the candidate-index prefilter would collapse the per-anchor scan from
+  O(all top-level statements) to O(matching siblings) — i.e. the _matcher_ call gets
+  cheaper per invocation. That holds (the prefilter is in place and the proof runs
+  on a filtered candidate set), but it does **not** make the whole-chunk run hit a
+  10s/30s budget: the residual ~0.024 s/member × ~4.5k members = ~107s still
+  dominates. The synthetic prediction was about per-call matcher cost, not about
+  eliminating the once-per-member proof — the whole-chunk budget needs the proof
+  itself amortised or batched across members, not just narrowed.
+
 ## Suggested next steps
 
 1. ~~Make apply transactional + overlap-safe~~ (done — serde whole-document
@@ -156,3 +232,9 @@ for the pattern-b over-pin before committing.
 3. Improve large-decl minimization so big classes/objects don't fall back to the
    full AST / keep all keys when many same-kind siblings exist (patterns a + b;
    tracked by the two ignored expectation cases).
+4. **Whole-chunk W4 budget (≤10s/≤30s) is not met (~110s).** The remaining cost is
+   the once-per-member `prove_synthesized_selector` matcher proof, not selector
+   synthesis (which read-off already made cheap). To hit budget the proof must be
+   amortised/batched across members rather than run per member, or the prove-gate
+   restricted to a cheaper equivalence check the read-off shape index can already
+   discharge for the common (single proven-unique) cases.
