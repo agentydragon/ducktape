@@ -1004,7 +1004,7 @@ impl QuotientGraph {
         let partition = self.realizability_index.partition();
         let mut cycles: Vec<CycleClassSet> = Vec::new();
         for scc in &verdict.unrealizable_sccs {
-            let modules_in_scc: BTreeSet<ModuleId> = scc.modules.iter().copied().collect();
+            let modules_in_scc: BTreeSet<ModuleId> = scc.core.modules.iter().copied().collect();
             let mut owner_ids: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
             for (owner_idx, owner_id_str) in self.owner_ids.iter().enumerate() {
@@ -1161,7 +1161,7 @@ impl QuotientGraph {
         for scc in &verdict.unrealizable_sccs {
             let mut owner_ids: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
-            for module in &scc.modules {
+            for module in &scc.core.modules {
                 let Some(idxs) = module_to_owners.get(module) else {
                     continue;
                 };
@@ -2394,7 +2394,7 @@ pub fn build_seed_quotient(
             // Walk owners; bucket those whose current partition
             // assignment falls in this SCC's module set.
             let modules_in_scc: BTreeSet<analysis::ModuleId> =
-                scc.modules.iter().copied().collect();
+                scc.core.modules.iter().copied().collect();
             let mut owners: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
             for (owner_idx, owner_id) in q.owner_ids.iter().enumerate() {

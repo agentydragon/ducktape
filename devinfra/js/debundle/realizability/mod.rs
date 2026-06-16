@@ -42,6 +42,7 @@ use analysis::OwnerId;
 use analysis::graph::{OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
+use analysis::reports::SccCore;
 
 mod condensation_order;
 #[cfg(test)]
@@ -59,33 +60,25 @@ use incremental_quotient::{IncrementalQuotient, JournalEntry, QuotientOverlay};
 /// [`RealizabilityVerdict`] violates clause 3 (multi-module SCC in
 /// the constraining-edge subgraph of the quotient).
 ///
-/// This is the **primitive** shape: typed `ModuleId`s and typed
-/// `OwnerEdgeId` evidence, no rendering. Downstream projection types
-/// derive their fields from this:
+/// This is the in-memory consumer of the shared [`SccCore`] shape
+/// (typed `ModuleId`s + `OwnerEdgeId` evidence, no rendering) plus one
+/// decoration — `rejection`. The exact edge set in `core` depends on
+/// `rejection`:
 ///
-/// - [`crate::validation::CycleReport`] — validator's rendered
-///   projection: stringified module names + `evidence` and FAS `cut`
-///   decorations.
-/// - [`analysis::reports::schema::QuotientSccReport`] — wire-format
-///   projection: stringified module ids + edge ids. Covers every
-///   SCC of the dep graph (including realizable single-module ones),
-///   not only the offending diagnoses listed here.
+/// - [`SccRejection::MutualConstrainingCycle`]: every constraining
+///   cross-module owner edge whose endpoints both fall inside
+///   `core.modules`.
+/// - [`SccRejection::EsmEvaluationTdz`]: only the owner edges backing
+///   the constraining `(from, to)` pairs whose simulated post-order
+///   check failed — the surgical set whose removal (by co-locating the
+///   binding pair) lifts the violation.
+///
+/// [`SccCore`] documents the rendered/wire projections of the same
+/// shape ([`crate::validation::CycleReport`],
+/// [`analysis::reports::schema::QuotientSccReport`]).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SccDiagnosis {
-    /// Modules participating in the cycle.
-    pub modules: BTreeSet<ModuleId>,
-    /// Constraining owner-edge evidence the rejection is composed of,
-    /// in stable `OwnerEdgeId` order. The exact edge set depends on
-    /// `rejection`:
-    ///
-    /// - [`SccRejection::MutualConstrainingCycle`]: every constraining
-    ///   cross-module owner edge whose endpoints both fall inside
-    ///   `modules`.
-    /// - [`SccRejection::EsmEvaluationTdz`]: only the owner edges
-    ///   backing the constraining `(from, to)` pairs whose simulated
-    ///   post-order check failed — the surgical set whose removal
-    ///   (by co-locating the binding pair) lifts the violation.
-    pub constraining_owner_edges: Vec<OwnerEdgeId>,
+    pub core: SccCore,
     /// Which gate pass rejected this SCC.
     pub rejection: SccRejection,
 }
@@ -137,7 +130,7 @@ impl RealizabilityVerdict {
     pub fn modules_in_unrealizable_sccs(&self) -> BTreeSet<ModuleId> {
         let mut out = BTreeSet::new();
         for scc in &self.unrealizable_sccs {
-            for &m in &scc.modules {
+            for &m in &scc.core.modules {
                 out.insert(m);
             }
         }
@@ -221,8 +214,10 @@ pub fn check_realizability(
         owner_edges.sort();
         reported.insert(modules.clone());
         verdict.unrealizable_sccs.push(SccDiagnosis {
-            modules,
-            constraining_owner_edges: owner_edges,
+            core: SccCore {
+                modules,
+                constraining_owner_edges: owner_edges,
+            },
             rejection: SccRejection::MutualConstrainingCycle,
         });
     }
@@ -289,8 +284,10 @@ pub fn check_realizability(
             }
             owner_edges.sort();
             verdict.unrealizable_sccs.push(SccDiagnosis {
-                modules,
-                constraining_owner_edges: owner_edges,
+                core: SccCore {
+                    modules,
+                    constraining_owner_edges: owner_edges,
+                },
                 rejection: SccRejection::EsmEvaluationTdz,
             });
         }
@@ -322,7 +319,7 @@ pub fn check_realizability_touching(
         unrealizable_sccs: full
             .unrealizable_sccs
             .into_iter()
-            .filter(|scc| scc.modules.contains(&module))
+            .filter(|scc| scc.core.modules.contains(&module))
             .collect(),
         cross_rebinds: full
             .cross_rebinds

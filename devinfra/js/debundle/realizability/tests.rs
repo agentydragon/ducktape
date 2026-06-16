@@ -80,7 +80,7 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
         verdict
             .unrealizable_sccs
             .iter()
-            .all(|scc| !scc.constraining_owner_edges.is_empty()),
+            .all(|scc| !scc.core.constraining_owner_edges.is_empty()),
         "every SCC must carry owner-edge evidence"
     );
 }
@@ -832,8 +832,9 @@ fn normalize_verdict(verdict: RealizabilityVerdict) -> NormalizedVerdict {
         .unrealizable_sccs
         .into_iter()
         .map(|scc| {
-            let modules: Vec<ModuleId> = scc.modules.into_iter().collect();
+            let modules: Vec<ModuleId> = scc.core.modules.into_iter().collect();
             let edges: Vec<usize> = scc
+                .core
                 .constraining_owner_edges
                 .into_iter()
                 .map(|edge| edge.0)
@@ -857,7 +858,7 @@ fn filter_verdict_touching(
         unrealizable_sccs: verdict
             .unrealizable_sccs
             .iter()
-            .filter(|scc| scc.modules.contains(&module))
+            .filter(|scc| scc.core.modules.contains(&module))
             .cloned()
             .collect(),
         cross_rebinds: verdict

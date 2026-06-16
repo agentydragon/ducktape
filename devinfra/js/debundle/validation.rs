@@ -39,11 +39,12 @@ pub struct FactorizationReport {
     pub cross_rebinds: Vec<String>,
 }
 
-/// Validator's rendered projection of one unrealizable SCC. The
-/// in-memory primitive is [`crate::realizability::SccDiagnosis`]
-/// (typed `ModuleId`s + `OwnerEdgeId` evidence); this shape
-/// stringifies the module names and decorates the diagnosis with the
-/// `cut` / `lazy_closure` rows the bail-message renderer consumes.
+/// Validator's rendered projection of one unrealizable SCC. The shared
+/// "modules in the SCC + edges in the SCC" core is
+/// [`analysis::reports::SccCore`]; the in-memory primitive that carries
+/// it is [`crate::realizability::SccDiagnosis`]. This shape stringifies
+/// the module names and decorates the diagnosis with the `cut` /
+/// `lazy_closure` rows the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
     pub modules: Vec<ModulePath>,
@@ -373,7 +374,7 @@ pub fn validate_factorization(
                     compute_realizability_cut(
                         owner_graph,
                         partition,
-                        &diagnosis.constraining_owner_edges,
+                        &diagnosis.core.constraining_owner_edges,
                         module_path,
                         &from_binding_by_ordinal,
                     ),
@@ -386,21 +387,27 @@ pub fn validate_factorization(
                     cycle_edges_for(
                         owner_graph,
                         partition,
-                        diagnosis.constraining_owner_edges.iter().copied(),
+                        diagnosis.core.constraining_owner_edges.iter().copied(),
                         module_path,
                         &from_binding_by_ordinal,
                     ),
                     lazy_closure_edges(
                         owner_graph,
                         partition,
-                        &diagnosis.modules,
+                        &diagnosis.core.modules,
                         module_path,
                         &from_binding_by_ordinal,
                     ),
                 ),
             };
             CycleReport {
-                modules: diagnosis.modules.iter().copied().map(module_path).collect(),
+                modules: diagnosis
+                    .core
+                    .modules
+                    .iter()
+                    .copied()
+                    .map(module_path)
+                    .collect(),
                 cut,
                 lazy_closure,
             }

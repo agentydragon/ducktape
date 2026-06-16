@@ -188,13 +188,13 @@ pub struct QuotientEdgeReport {
     pub constrains_init_order: bool,
 }
 
-/// Wire-format projection of one quotient SCC. The in-memory
-/// primitive for **unrealizable** SCCs is
-/// `SccDiagnosis` (gate crate); this shape covers **every**
-/// SCC the dep graph turns up (single-module non-self-loops are
-/// filtered out at the builder), with `realizable` distinguishing the
-/// offending ones, and uses wire-stable string ids (`module_key`,
-/// `quotient_edge:N`) instead of typed `ModuleId` / `OwnerEdgeId`.
+/// Wire-format projection of the shared [`super::SccCore`] shape
+/// ("modules in the SCC + edges in the SCC"). Deviation from that
+/// in-memory core: this shape covers **every** SCC the dep graph turns
+/// up (single-module non-self-loops are filtered out at the builder),
+/// with `realizable` distinguishing the offending ones, and uses
+/// wire-stable string ids (`module_key`, `quotient_edge:N`) instead of
+/// typed `ModuleId` / `OwnerEdgeId`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotientSccReport {
     pub id: String,

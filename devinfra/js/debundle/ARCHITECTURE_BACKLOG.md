@@ -82,6 +82,8 @@ OwnerGraphReport       // reports/schema.rs (the JSON view of the typed OwnerGra
 
 Six distinct types in the orbit of "stuff a chunk analysis produced" (after the `ChunkAnalysis`/`ChunkAnalysisReport` split). A reader still can't tell from the name alone which one carries which data without grepping. Some of this is unavoidable (the JSON-wire / typed-IR split is real), but the layering of `ChunkAnalysis` → `ChunkFactorization` → `FactorizationReport` could plausibly collapse to two: an IR with optional partition state + a derive-to-report adapter.
 
+**Verdict (2026-06, do not attempt):** the proposed two-layer shape — an IR with optional partition state plus a derive-to-report adapter — is already the shape in practice. `ChunkAnalysis` is the partition-free IR; `ChunkFactorization` is that IR plus applied partition state; `FactorizationReport` is the derive-to-report adapter (`validate()`). Collapsing the `Arc<ChunkAnalysis>` boundary inside `ChunkFactorization` (folding the wrapper into a single partition-optional IR type) is a large, risky change touching the materializer/emitter path for no behavior gain, so it is deliberately left alone. The naming-clarity nit (`ChunkFactorization` vs `ChunkAnalysis`) survives in "Name overloading" below.
+
 ### `pub(crate)` on internals is broad
 
 `OwnerGraph` fields are private, but `RealizabilityIndex` holds
@@ -96,7 +98,6 @@ makes invalid operations impossible.
 Watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`SccDiagnosis` (`realizability/mod.rs`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 

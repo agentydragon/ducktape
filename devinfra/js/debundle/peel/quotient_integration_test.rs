@@ -1132,8 +1132,9 @@ fn normalize_verdict(verdict: RealizabilityVerdict) -> NormalizedVerdict {
         .unrealizable_sccs
         .into_iter()
         .map(|scc| {
-            let modules: Vec<analysis::ModuleId> = scc.modules.into_iter().collect();
+            let modules: Vec<analysis::ModuleId> = scc.core.modules.into_iter().collect();
             let edges: Vec<usize> = scc
+                .core
                 .constraining_owner_edges
                 .into_iter()
                 .map(|e| e.0)

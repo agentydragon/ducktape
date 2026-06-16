@@ -33,11 +33,11 @@ pub struct ConflictingClaim {
 /// more distinct destinations — unrealizable by construction.
 ///
 /// Atom-level (binding members claimed across distinct destinations),
-/// not SCC-level. The module-quotient-SCC counterpart is
-/// `SccDiagnosis` (gate crate); the two share the
-/// "unrealizable, here's why" framing but operate on different
-/// domains (atomic unit membership vs. inter-module constraining
-/// cycles) and intentionally remain separate types.
+/// not SCC-level — the atom-level sibling of the module-quotient-SCC
+/// shape [`crate::reports::SccCore`]. Both carry the "unrealizable,
+/// here's why" framing, but this one's domain is owners in an atomic
+/// unit rather than modules in an SCC, so it does not reuse that core
+/// and stays a separate type.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct AtomicUnitConflict {
     /// Members sorted by `OwnerId`.

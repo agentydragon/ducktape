@@ -10,6 +10,7 @@ use analysis::OwnerId;
 use analysis::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
+use analysis::reports::SccCore;
 
 use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 
@@ -800,8 +801,10 @@ impl IncrementalQuotient {
             let constraining_owner_edges = self.constraining_edges_inside(&modules);
             reported.insert(modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
-                modules,
-                constraining_owner_edges,
+                core: SccCore {
+                    modules,
+                    constraining_owner_edges,
+                },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
         }
@@ -830,8 +833,10 @@ impl IncrementalQuotient {
                 }
                 let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
                 verdict.unrealizable_sccs.push(SccDiagnosis {
-                    modules,
-                    constraining_owner_edges,
+                    core: SccCore {
+                        modules,
+                        constraining_owner_edges,
+                    },
                     rejection: SccRejection::EsmEvaluationTdz,
                 });
             }
@@ -858,8 +863,10 @@ impl IncrementalQuotient {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
-                modules: constraining_modules,
-                constraining_owner_edges,
+                core: SccCore {
+                    modules: constraining_modules,
+                    constraining_owner_edges,
+                },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
         }
@@ -882,8 +889,10 @@ impl IncrementalQuotient {
                 if !tdz_pairs.is_empty() {
                     let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
                     verdict.unrealizable_sccs.push(SccDiagnosis {
-                        modules: i_modules,
-                        constraining_owner_edges,
+                        core: SccCore {
+                            modules: i_modules,
+                            constraining_owner_edges,
+                        },
                         rejection: SccRejection::EsmEvaluationTdz,
                     });
                 }
@@ -927,8 +936,10 @@ impl IncrementalQuotient {
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
             reported.insert(constraining_modules.clone());
             verdict.unrealizable_sccs.push(SccDiagnosis {
-                modules: constraining_modules,
-                constraining_owner_edges,
+                core: SccCore {
+                    modules: constraining_modules,
+                    constraining_owner_edges,
+                },
                 rejection: SccRejection::MutualConstrainingCycle,
             });
         }
@@ -945,8 +956,10 @@ impl IncrementalQuotient {
                     let constraining_owner_edges =
                         self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
                     verdict.unrealizable_sccs.push(SccDiagnosis {
-                        modules: i_modules,
-                        constraining_owner_edges,
+                        core: SccCore {
+                            modules: i_modules,
+                            constraining_owner_edges,
+                        },
                         rejection: SccRejection::EsmEvaluationTdz,
                     });
                 }
