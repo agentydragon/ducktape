@@ -1457,24 +1457,27 @@ fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     holed
 }
 
-/// Hole an object literal for the read-off object form: keep only props
-/// carrying a kept anchor and **always** lead and trail with an `OBJECT_PROPS`
-/// hole, regardless of whether the kept prop sits at a source edge.
+/// Hole an object literal for the read-off object form: keep only props carrying
+/// a kept anchor, with an `OBJECT_PROPS` run hole before the first kept prop,
+/// after the last, and **between every pair** of kept props.
 ///
 /// Unlike [`hole_object`] (which only emits a list hole where a run of props was
-/// actually dropped), this pads both edges unconditionally. Object properties
-/// are unordered enum/lookup entries: a key that is genuinely last in this build
-/// can move on a rebuild, so anchoring it to the object's right edge
-/// (`anchored_right` in the matcher) is fragile. Padding both sides matches the
-/// discriminating key as an interior subsequence element, surviving reorder.
+/// actually dropped), this pads both edges and interleaves unconditionally.
+/// Object properties are unordered enum/lookup entries: a kept key can move on a
+/// rebuild, so anchoring one to the object's edge (`anchored_right` in the
+/// matcher) or assuming two kept keys stay adjacent is fragile. Surrounding every
+/// kept prop with `OBJECT_PROPS` matches each as an independent interior
+/// subsequence element, so a minimal *key set* survives key reorder and arbitrary
+/// gaps. With no kept prop this is a bare `{ OBJECT_PROPS }`; with one it is the
+/// padded single-key form (unchanged from the edge-padding behavior).
 fn hole_object_padded(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     let mut props = vec![object_props_prop()];
     for prop in &object.props {
         if node_retains_any(prop.span(), kept) {
             props.push(hole_prop(prop, kept));
+            props.push(object_props_prop());
         }
     }
-    props.push(object_props_prop());
     let mut holed = object.clone();
     holed.props = props;
     holed
@@ -1838,7 +1841,8 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
     }
 }
 
-/// Body indices a `target_binding` selector with `match_source` resolves to.
+/// Every `(body, binding-slot)` alignment a `target_binding` selector with
+/// `match_source` resolves to.
 ///
 /// The shared per-chunk [`SelectorCandidateIndex`] narrows the matcher's scan to
 /// the top-level body indices whose features could still match the selector,
@@ -1847,11 +1851,11 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
 /// so the still-run structural matcher remains the source of truth: it proves
 /// every reported match and discards index false positives. See
 /// `prefilter_matches_brute_force_scan` for the superset invariant test.
-fn matched_body_indices(
+fn matched_binding_candidates(
     index: &ChunkSelectorIndex,
     export_name: &str,
     match_source: &str,
-) -> Result<BTreeSet<usize>> {
+) -> Result<Vec<source_match::MemberBindingMatch>> {
     let source_match = SourceMatch {
         match_source: match_source.to_string(),
         identifiers: SourceMatchIdentifierMode::AlphaAll,
@@ -1866,13 +1870,27 @@ fn matched_body_indices(
         .candidate_set_for_source_match(&selector)?
         .body_indices()
         .collect();
-    let matches = source_match::member_binding_candidate_matches_within(
+    source_match::member_binding_candidate_matches_within(
         &index.parsed.module,
         "<selector minimization>",
         &selector,
         BodyIndexFilter::Restricted(&candidates),
-    )?;
-    Ok(matches.iter().map(|candidate| candidate.body_idx).collect())
+    )
+}
+
+/// Distinct body indices the selector resolves to (slot alignments within one
+/// body collapse). Used by the body-index cover ([`cover_competitors`]).
+fn matched_body_indices(
+    index: &ChunkSelectorIndex,
+    export_name: &str,
+    match_source: &str,
+) -> Result<BTreeSet<usize>> {
+    Ok(
+        matched_binding_candidates(index, export_name, match_source)?
+            .iter()
+            .map(|candidate| candidate.body_idx)
+            .collect(),
+    )
 }
 
 fn holes_present(source: &str) -> BTreeSet<String> {
@@ -2169,69 +2187,193 @@ fn declarator_hole(name: &str) -> VarDeclarator {
     }
 }
 
-/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
-/// declarator value is an object literal (W3).
+/// Ranked anchor spans for an object literal's key-set cover, best-first: each
+/// direct literal/template **value** (a value-level discriminator, tried first)
+/// then each **key** (the key-set discriminator). Value member accesses and
+/// nested expressions are intentionally excluded — a minified `.prop` is
+/// rebuild-volatile, so the cover pins the stable key and holes the value to
+/// `ANYTHING` rather than anchoring on a churning property name.
 ///
-/// Applies only to the single-target, single-declarator-target object case (the
-/// general group path stays unmigrated). Reads the minimal [`AnchorSet`] off the
-/// shape index, maps its value anchors to kept byte spans over the object, and
-/// renders the object with [`hole_object_padded`] (both-edge `OBJECT_PROPS`) so
-/// the discriminating key:value survives key reordering. Returns `None` — so the
-/// caller falls back to the keep-shallow group path — when the target is not a
-/// single object declarator, the structural scaffold already resolves (let the
-/// group path keep its leaner all-holed form), the read-off cannot single out
-/// the target, or the rendered selector fails the matcher gate.
-fn try_single_object_read_off(
+/// Within each class the order is source order; the cover's slot-resolution
+/// greedy ([`cover_object_slot`]) then picks the most discriminating anchor, so
+/// this ordering only breaks ties — preferring a unique value (`accent:
+/// "…Accent"`) over its equally-unique key (`accent: ANYTHING`) when both single
+/// out the slot.
+fn object_anchor_ranking(object: &ObjectLit) -> Vec<AnchorSpan> {
+    let key_value_props = || {
+        object.props.iter().filter_map(|prop| match prop {
+            PropOrSpread::Prop(prop) => match prop.as_ref() {
+                Prop::KeyValue(key_value) => Some(key_value),
+                _ => None,
+            },
+            PropOrSpread::Spread(_) => None,
+        })
+    };
+    let values = key_value_props()
+        .filter(|kv| matches!(kv.value.as_ref(), Expr::Lit(_) | Expr::Tpl(_)))
+        .map(|kv| span_key(kv.value.span()));
+    let keys = key_value_props().map(|kv| span_key(kv.key.span()));
+    values.chain(keys).collect()
+}
+
+/// Slot-aware minimal cover for a single-target object inside a `var` group: a
+/// greedy key-set set-cover that, at each step, adds the `ranked` anchor that best
+/// steers the selector toward resolving to the target binding's own declarator
+/// slot, until it proves unique. Unlike [`cover_competitors`] (which covers
+/// distinct body indices and so cannot see two sibling declarators of the *same*
+/// statement), this scores by whether the **target binding** is the one the
+/// selector resolves, then by the match count.
+///
+/// The matcher reports one alignment per body (the leftmost declarator the holed
+/// pattern fits), so a key shared with an *earlier* sibling slot
+/// (`blue: "#00f"`, also in `firstPalette`) resolves there, not to the target —
+/// hence the score's first key is "did the target slot resolve at all", which a
+/// key/value unique to the target slot (`accent`) flips true. Keeps adding the
+/// best anchor until the matcher's uniqueness proof passes, or the target's own
+/// anchors are exhausted (then `None`, and the caller keeps its keep-shallow
+/// form).
+fn cover_object_slot(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    ranked: &[AnchorSpan],
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+) -> Result<Option<SpecializedSelector>> {
+    let targets = std::slice::from_ref(target);
+    let mut kept: BTreeSet<AnchorSpan> = BTreeSet::new();
+    while prove_synthesized_selector(index, decl, targets, &render_with(&kept)?).is_err() {
+        // Score a trial by `(target slot not yet resolved, total matches)`; a
+        // smaller score is better, so an anchor that makes the target binding the
+        // resolved one and rules out the most competitors wins.
+        let mut best: Option<((bool, usize), AnchorSpan)> = None;
+        for &anchor in ranked.iter().take(MAX_MINIMIZER_ANCHORS) {
+            if kept.contains(&anchor) {
+                continue;
+            }
+            let mut trial = kept.clone();
+            trial.insert(anchor);
+            let matches =
+                matched_binding_candidates(index, &target.export_name, &render_with(&trial)?)?;
+            let target_unresolved = !matches.iter().any(|m| {
+                m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
+            });
+            let score = (target_unresolved, matches.len());
+            if best.is_none_or(|(best_score, _)| score < best_score) {
+                best = Some((score, anchor));
+            }
+        }
+        // No remaining anchor to add: the target's own keys/values cannot single
+        // out its slot. Defer to the caller.
+        let Some((_, anchor)) = best else {
+            return Ok(None);
+        };
+        kept.insert(anchor);
+    }
+    finish_minimized_selector(index, decl, target, render_with(&kept)?)
+}
+
+/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
+/// target declarator value is an object literal (W3 + key-set minimization).
+///
+/// Handles the single-target object whether it stands alone or sits inside a
+/// multi-declarator group (one target slot, `DECLARATORS_*` holes for the rest).
+/// Two passes, both rendering through one slot-aware `render_with` that holes the
+/// object with [`hole_object_padded`] (interleaved `OBJECT_PROPS`) so the kept key
+/// subset survives key reorder:
+///
+///   1. **Read-off.** The chunk-wide shape index ranks the statement's own
+///      features by selective × stable, so a globally-rare discriminating
+///      key/value wins. Its kept spans are restricted to the target declarator (a
+///      group's anchor set may name a key carried only by a *sibling* declarator
+///      this selector holes away), and the matcher proves the restricted pin.
+///   2. **Cover fallback.** A matcher-driven minimal cover over the target
+///      object's own keys (and direct literal values) — the key-set analogue of
+///      greedy set-cover: anchor the rarest discriminating keys, `OBJECT_PROPS`
+///      the common ones. This is what singles out a target object inside a
+///      multi-declarator group, where the chunk-wide read-off cannot see the
+///      per-slot key sets.
+///
+/// Returns `None` — so the caller falls back to the keep-shallow group path —
+/// when the target is not a single object declarator or neither pass resolves it.
+fn try_object_read_off(
     index: &ChunkSelectorIndex,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
     target_slots: &BTreeSet<usize>,
 ) -> Result<Option<SpecializedSelector>> {
-    // Only the genuine single-declarator case: one target binding and one
-    // declarator in the whole var. A multi-declarator group (even with a single
-    // target slot) needs the `DECLARATORS_*` holes the group path renders, so it
-    // stays unmigrated (later wave).
+    // Only the single-target case (one binding). A multi-target group needs the
+    // tuple-resolving binding-group path; this owns the single object slot.
     let [target] = targets else {
         return Ok(None);
     };
-    if var.decls.len() != 1 || target_slots.len() != 1 {
+    if target_slots.len() != 1 {
         return Ok(None);
     }
-    let declarator = &var.decls[0];
+    let target_slot = *target_slots.iter().next().expect("one target slot");
+    let declarator = &var.decls[target_slot];
     let Some(Expr::Object(object)) = declarator.init.as_deref() else {
         return Ok(None);
     };
+    let target_decl_span = declarator.span();
 
+    // Slot-aware render: `DECLARATORS_*` holes for the non-target declarators
+    // (none when the target stands alone), the target's object holed to its kept
+    // keys padded + interleaved with `OBJECT_PROPS`.
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        let mut holed = declarator.clone();
-        holed.name = named_pat(&target.export_name);
-        holed.init = Some(Box::new(Expr::Object(hole_object_padded(object, kept))));
+        let mut decls: Vec<VarDeclarator> = Vec::new();
+        let mut skipped_run = false;
+        let mut target_seen = 0usize;
+        for (idx, other) in var.decls.iter().enumerate() {
+            if idx != target_slot {
+                skipped_run = true;
+                continue;
+            }
+            if skipped_run {
+                decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
+                skipped_run = false;
+            }
+            let mut holed = other.clone();
+            holed.name = named_pat(&target.export_name);
+            holed.init = Some(Box::new(Expr::Object(hole_object_padded(object, kept))));
+            decls.push(holed);
+            target_seen += 1;
+        }
+        if skipped_run {
+            decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
+        }
         let mut holed_var = var.clone();
         holed_var.declare = false;
-        holed_var.decls = vec![holed];
+        holed_var.decls = decls;
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
     };
 
-    let anchor_set = index.shape_index.minimal_anchor_set(decl.body_idx);
-    let Some(anchor_set) = anchor_set else {
-        return Ok(None);
-    };
-    let item = index
-        .parsed
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
-    let kept = kept_spans_for_anchor_set(item, &anchor_set);
-    // A structural / skeleton-only read-off keeps no concrete object token: the
-    // padded scaffold would be `{ OBJECT_PROPS, OBJECT_PROPS }`, which pins
-    // nothing about the object and is no leaner than the group path's form.
-    // Defer to the group path so the migration only owns the value-anchored case.
-    if kept.is_empty() {
-        return Ok(None);
+    if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
+        let item = index
+            .parsed
+            .module
+            .body
+            .get(decl.body_idx)
+            .context("read-off body index no longer in module")?;
+        let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
+            .into_iter()
+            .filter(|span| node_holds_anchor(target_decl_span, *span))
+            .collect();
+        if !kept.is_empty()
+            && let Some(selector) =
+                finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+        {
+            return Ok(Some(selector));
+        }
     }
-    finish_minimized_selector(index, decl, target, render_with(&kept)?)
+
+    cover_object_slot(
+        index,
+        decl,
+        target,
+        &object_anchor_ranking(object),
+        &render_with,
+    )
 }
 
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
@@ -2270,13 +2412,15 @@ fn minimize_var_group_selector(
         return Ok(None);
     }
 
-    // W3: single-target var whose value is an object literal reads its minimal
-    // selector off the shape index — `OBJECT_PROPS` holes around the
-    // discriminating key(s) instead of keeping every key (the
-    // `object_keys_over_pinned` over-pin). The matcher proves it (gate 1); on
-    // `None` we fall through to the keep-shallow group path below, so a target
-    // the read-off cannot single out is handled exactly as before.
-    if let Some(selector) = try_single_object_read_off(index, var, decl, targets, &target_slots)? {
+    // W3 + key-set minimization: a single-target var whose target declarator is
+    // an object literal reads its minimal selector off the shape index, then
+    // (slot-aware) covers the target object's own keys — `OBJECT_PROPS` holes
+    // around the discriminating key subset instead of keeping every key (the
+    // `object_keys_over_pinned` / key-set group over-pin). Works whether the
+    // object stands alone or sits inside a multi-declarator group. The matcher
+    // proves it (gate 1); on `None` we fall through to the keep-shallow group path
+    // below, so a target neither pass can single out is handled exactly as before.
+    if let Some(selector) = try_object_read_off(index, var, decl, targets, &target_slots)? {
         return Ok(Some(selector));
     }
 

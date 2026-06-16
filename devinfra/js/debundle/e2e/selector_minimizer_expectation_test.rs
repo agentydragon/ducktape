@@ -427,19 +427,51 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a target object inside a multi-declarator group of sibling
-// enum/lookup objects should minimize to DECLARATORS holes around the target
-// declarator plus OBJECT_PROPS holes on both sides of the single discriminating
-// key. Today the minimizer keeps every sibling declarator's full object value
-// and every key of the target object, over-pinning a whole group of lookup
-// dicts where one declarator with one anchored key would resolve uniquely.
+// A target object inside a multi-declarator group of sibling enum/lookup objects
+// minimizes to DECLARATORS holes around the target declarator plus OBJECT_PROPS
+// holes on both sides of the single discriminating entry. The slot-aware
+// `cover_object_slot` greedy pins the entry whose value is globally unique
+// (`accent: "uniqueDiscriminatorAccent"`), resolving the binding to the right
+// declarator slot without keeping every sibling declarator's full object or every
+// key of the target object.
 minimizer_expectation_case!(
-    #[ignore = "group minimizer keeps all declarators and all keys instead of DECLARATORS + OBJECT_PROPS"]
     minimizes_grouped_enum_objects,
     fixture = "grouped_enum_objects",
     name = "grouped enum objects keep only the target declarator's discriminating key",
     module = "app/palettes",
     bindings = [("SelectedPalette", "selectedPalette")],
+    expected = "expected_match.js",
+);
+
+// Key-set minimization inside a multi-declarator group (#2290): when an object is
+// discriminated by its *key set* — every value already holed to ANYTHING (here
+// `theme.base` member accesses shared across all siblings) — the minimizer keeps
+// only the minimal discriminating key (`logViewer`, unique to the target slot)
+// with OBJECT_PROPS holes for the rest, and DECLARATORS holes for the sibling
+// declarators, instead of keeping every key of the target object. Mirrors the
+// real gaffer CSS-styles dicts (`{ diagnosticsSection: …, detailsToggle: …, … }`)
+// kept whole inside `DECLARATORS_BEFORE`/`_AFTER` groups.
+minimizer_expectation_case!(
+    minimizes_object_key_set_group,
+    fixture = "object_key_set_group",
+    name = "key-set object in a declarator group keeps only the discriminating key",
+    module = "app/styles",
+    bindings = [("ErrorPanelStyles", "errorPanelStyles")],
+    expected = "expected_match.js",
+);
+
+// Key-set minimization needing a *subset* of keys (#2290): no single key is
+// unique (each is shared with one sibling) but the pair `{ alpha, delta }`
+// discriminates the target. With every value holed to ANYTHING, the minimizer
+// keeps exactly those two non-adjacent keys, each surrounded by OBJECT_PROPS so
+// the key set matches as independent interior elements (surviving key reorder),
+// rather than keeping all four keys.
+minimizer_expectation_case!(
+    minimizes_object_key_set_subset,
+    fixture = "object_key_set_subset",
+    name = "key-set object keeps the minimal discriminating key subset",
+    module = "app/shapes",
+    bindings = [("TargetShape", "targetShape")],
     expected = "expected_match.js",
 );
 

@@ -123,10 +123,16 @@ Migrated to read-off as their primary path:
 - **Single-target function** (`minimize_function_selector` → `render_via_read_off`):
   reads off `minimal_anchor_set`, prefers the empty-kept structural scaffold when
   it already discriminates, renders through the shared `render_with`.
-- **Single-target object** (`try_single_object_read_off` → `hole_object_padded`):
-  always leads+trails with `OBJECT_PROPS` so the discriminating `key: value`
-  matches as an interior subsequence element (survives key reorder), never
-  anchored to the object's right edge.
+- **Single-target object** (`try_object_read_off` → `hole_object_padded`):
+  surrounds every kept prop with `OBJECT_PROPS` (leads, trails, **and**
+  interleaves) so a discriminating `key: value` — or a minimal _key set_ — matches
+  as independent interior subsequence elements (survives key reorder and gaps),
+  never anchored to the object's right edge or assuming two kept keys stay
+  adjacent. Handles the object whether it stands alone or sits in a
+  multi-declarator group (one target slot, `DECLARATORS_*` holes for the rest):
+  reads its anchors off the shape index, then falls back to a slot-aware key-set
+  cover (`cover_object_slot`) that singles out the target declarator's own keys —
+  the per-slot view the chunk-wide read-off cannot see.
 - **Single-target class** (`minimize_class_selector` → `render_via_read_off`):
   holes `extends` to `ANYTHING` and keeps only the member runs carrying a chosen
   anchor between `CLASS_REST` holes; the value-over-name ranking key prefers a
@@ -156,10 +162,11 @@ Full scope table in <../debug/selector_minimizer_dogfood.md>.
 `sparse_function_body`, `call_argument_literal`, `object_property_literals`,
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
-and (unignored once the class read-off landed) `class_among_many_siblings`,
-`sibling_subclass_hierarchy`. Ignored as aspirational (the named form not yet
+`class_among_many_siblings`, `sibling_subclass_hierarchy`, and (unignored once
+the object key-set cover landed) `grouped_enum_objects`, `object_key_set_group`,
+`object_key_set_subset`. Ignored as aspirational (the named form not yet
 read-off-expressible): `sequential_assignment_block`, `deeply_nested_call_args`,
-`grouped_enum_objects`, `object_nested_value_dict`, `wide_destructure_block`.
+`object_nested_value_dict`, `wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -250,21 +257,28 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    short discriminating key over the largest node (`long_literal_value_anchor`).
    **(Landed: #2281 — retained-source cost tiebreak; skeletons rank last on cost.)**
 5. **Object-dict family** — over-pinned keys (`object_keys_over_pinned`, done for
-   single scalar), nested-value dicts (`object_nested_value_dict`), grouped
-   objects (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`), wide
-   destructure (`wide_destructure_block`).
-   - **Key-set minimization (gaffer-dogfood feedback).** When an object is
-     discriminated by its _key set_ rather than any value — every value already
-     holed to `ANYTHING`, e.g. a CSS-styles dict
-     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }`, or a
-     schema object `ee({ coreMessage: …, type: …, … })` kept whole — the minimizer
-     keeps **every** key. It should keep only the **minimal key subset** whose
-     presence still discriminates the target from its siblings and collapse the
-     rest to `OBJECT_PROPS` (the key-set analogue of greedy set-cover: anchor on
-     the rarest discriminating keys, `OBJECT_PROPS` the common ones). Note these
-     over-pins surface inside multi-declarator var groups
-     (`DECLARATORS_BEFORE`/`_AFTER`), so the object key-set minimization must run
-     on the per-declarator object even when the statement is a declarator group.
+   single scalar), grouped objects (`grouped_enum_objects`: `DECLARATORS` + padded
+   `OBJECT_PROPS`, **landed** — see key-set below), and the still-open
+   nested-value dicts (`object_nested_value_dict`) and wide destructure
+   (`wide_destructure_block`).
+   - **Key-set minimization (gaffer-dogfood feedback). Landed (#2290).** When an
+     object is discriminated by its _key set_ rather than any value — every value
+     already holed to `ANYTHING`, e.g. a CSS-styles dict
+     `{ diagnosticsSection: ANYTHING, detailsToggle: ANYTHING, … 11 keys }` — the
+     minimizer used to keep **every** key. It now keeps only the **minimal key
+     subset** whose presence discriminates the target from its siblings and
+     collapses the rest to `OBJECT_PROPS` (the key-set analogue of greedy
+     set-cover: anchor the rarest discriminating keys, `OBJECT_PROPS` the common
+     ones). `hole_object_padded` interleaves `OBJECT_PROPS` between every kept prop
+     so a multi-key subset survives key reorder; `try_object_read_off` runs on the
+     per-declarator object even inside a `DECLARATORS_BEFORE`/`_AFTER` group, with
+     a slot-aware `cover_object_slot` greedy (scores by whether the _target
+     binding's_ slot resolves, since the matcher reports one alignment per body)
+     for the per-slot key sets the chunk-wide read-off cannot see. E2E:
+     `object_key_set_group`, `object_key_set_subset`, `grouped_enum_objects`.
+     Still open: the `ee({ coreMessage: …, type: …, … })` schema-object form is a
+     **call** kept whole (the no-sparse-anchor body family, item 2b), not the
+     object-literal-valued var this covers.
 6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
    and **var** migration (needs binding-group/declarator-slot tuple resolution).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
