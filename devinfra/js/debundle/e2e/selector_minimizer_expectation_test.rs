@@ -542,15 +542,18 @@ minimizer_expectation_case!(
 // against should still hole its body down to a few stable anchors (a unique
 // member name plus a discriminating literal), absorbing every other member and
 // the constructor with CLASS_REST and holing the kept member's body with
-// STMT_LIST. Today, with no sibling to read off against, the minimizer finds no
-// sparse selector and keeps the ENTIRE class body verbatim (zero holes) — the
-// single most common and largest over-pin in the real survey (cf.
-// `domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept whole,
-// and ~360 other fully-verbatim conversions). A whole-body pin is only
-// marginally better than the original minified-name pin: alpha-matched and
-// fails loudly, but rebuild-fragile and huge.
+// STMT_LIST. Today, with no sibling to read off against, the structural read-off
+// over-generalizes the *other* way: the empty scaffold `class SelectedRunner {
+// CLASS_REST; }` resolves uniquely (it is the only class), so the minimizer emits
+// it and keeps no anchor at all — degenerate, not whole-body. It resolves today
+// but matches any class a rebuild adds (criterion 5). The real-survey whole-body
+// over-pin (`domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept
+// whole; ~360 other fully-verbatim conversions) only manifests when same-shape
+// SIBLING classes force body-content discrimination, so faithfully reproducing it
+// here needs sibling-bearing fixtures; this reduction instead pins down the
+// degenerate-scaffold half of the gap. See plan item 2b.
 minimizer_expectation_case!(
-    #[ignore = "single-target class with no sibling keeps the whole body verbatim instead of CLASS_REST + one anchored member"]
+    #[ignore = "single-target class with no sibling emits a degenerate `class X { CLASS_REST }` scaffold instead of CLASS_REST + one anchored member"]
     minimizes_single_target_class_whole_body,
     fixture = "single_target_class_whole_body",
     name = "single-target class keeps only one discriminating member, not the whole body",
@@ -564,14 +567,18 @@ minimizer_expectation_case!(
 // and continues with many hooks/handlers should minimize to a holed wrapper
 // call (ANYTHING), a STMT_LIST-holed body, and a single anchored leaf — here the
 // returned element's discriminating `className` literal — with OBJECT_PROPS
-// absorbing the other element props. Today the minimizer keeps the whole
-// component verbatim: the entire wide destructure pattern AND every body
-// statement (cf. `features/nodes/cardView.yaml` `NodeAsCard`, ~1340 lines kept
-// whole with only the outer declarator/wrapper holed). This is the
-// whole-function-body analogue of `wide_destructure_block`, which isolates only
-// the destructure-pattern holing on an already-sparse body.
+// absorbing the other element props. Today, with no same-shape sibling, the var
+// read-off over-generalizes the *other* way: the whole initializer holes to
+// `const SelectedComponent = ANYTHING` (degenerate, not whole-body), which
+// resolves uniquely now but matches any wrapped-const a rebuild adds (criterion
+// 5). The real whole-body over-pin (cf. `features/nodes/cardView.yaml`
+// `NodeAsCard`, ~1340 lines kept whole with only the outer declarator/wrapper
+// holed) needs sibling-bearing fixtures to reproduce; this reduction pins the
+// degenerate-scaffold half. The whole-function-body analogue of
+// `wide_destructure_block`, which isolates only the destructure-pattern holing on
+// an already-sparse body. See plan item 2b.
 minimizer_expectation_case!(
-    #[ignore = "single-target component keeps the whole function body (wide destructure + every statement) instead of STMT_LIST down to the discriminating element literal"]
+    #[ignore = "single-target component holes its whole initializer to a degenerate `const X = ANYTHING` instead of STMT_LIST down to the discriminating element literal"]
     minimizes_component_wide_destructure_whole_body,
     fixture = "component_wide_destructure_whole_body",
     name = "single-target component keeps only the discriminating returned-element literal, not the whole body",
