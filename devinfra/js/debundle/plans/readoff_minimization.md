@@ -269,6 +269,16 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    and **var** migration (needs binding-group/declarator-slot tuple resolution).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
    minimal-selector overlap threshold) → `binding_group`.
+   - **Adjacent same-shape function declarations (gaffer-dogfood feedback).**
+     `binding_group` already groups consecutive `function` declarations (the
+     `source_match` is the run of declarations, `exports` maps each), but the
+     trigger doesn't fire for runs of tiny near-identical accessors, which emit N
+     standalone selectors instead. Real example: `app/state/accessors.yaml`
+     `use{AppUser,NodeSpace,FocusService,CoreServices}` — four adjacent
+     `function useX() { return ANYTHING.nodeSpace.…; }` hooks, each its own
+     selector; they should collapse into one group (concise + DRY). The
+     minimal-selector-overlap trigger must catch a run of adjacent functions whose
+     selectors share the bulk of their shape. E2E: `adjacent_accessor_group`.
 8. **Delete the cover search** once all forms route through read-off
    (`minimize_via_retention`, `cover_competitors`, `min_set_cover`,
    `collect_*_anchors`) — shrinks `selector_codemod.rs` substantially.
