@@ -786,6 +786,61 @@ impl ShapeIndex {
             anchors: chosen,
         })
     }
+
+    /// Every individually-discriminating value anchor of `body_idx`, each as a
+    /// single-anchor [`AnchorSet`], ranked best-first by the same
+    /// `selective x stable x class x cost` key [`minimal_anchor_set`] uses.
+    ///
+    /// A *value* anchor is one [`kept_spans_for_anchor_set`] can map to a concrete
+    /// token (literal, object key, member/method name, member-path callee) —
+    /// purely structural features (kind, arity, skeletons) are excluded because
+    /// they render no kept span and would re-derive the degenerate scaffold.
+    /// "Individually discriminating" means the anchor's posting list is already
+    /// the singleton `{body_idx}`, so each returned set resolves uniquely at the
+    /// index level on its own.
+    ///
+    /// This backs the renderer's robustness-anchor fallback: `minimal_anchor_set`
+    /// returns the single best-ranked anchor, but that anchor's *rendered*
+    /// selector may not prove (e.g. a deep literal whose only home is a large
+    /// statement the holer keeps verbatim, leaving raw subtrees that the matcher
+    /// rejects). The renderer walks these candidates best-first and emits the
+    /// first whose holed selector proves uniquely — recovering a genuinely sparse
+    /// deep-value pin instead of falling back to the bare scaffold. The whole-body
+    /// fixtures (`single_target_class_whole_body`,
+    /// `component_wide_destructure_whole_body`) close on exactly this path.
+    pub fn unique_value_anchor_candidates(&self, body_idx: usize) -> Vec<AnchorSet> {
+        self.scored_features(body_idx)
+            .into_iter()
+            .filter(|scored| {
+                anchor_renders_a_value(&scored.feature) && self.posting(&scored.feature).len() == 1
+            })
+            .map(|scored| AnchorSet {
+                body_idx,
+                anchors: vec![scored],
+                opt_one: true,
+            })
+            .collect()
+    }
+}
+
+/// Whether a feature maps to a concrete kept token the renderer can pin (a
+/// *value* anchor), as opposed to a purely structural feature (kind, arity,
+/// shape skeleton) honored only by the holed scaffold. Mirrors the value-bearing
+/// arms of `readoff_render::ValueAnchor::from_selector_feature`.
+fn anchor_renders_a_value(feature: &ShapeFeature) -> bool {
+    let ShapeFeature::Selector(feature) = feature else {
+        return false;
+    };
+    matches!(
+        feature,
+        SelectorFeature::StringLiteral(_)
+            | SelectorFeature::NumberLiteral(_)
+            | SelectorFeature::BoolLiteral(_)
+            | SelectorFeature::ObjectKey(_)
+            | SelectorFeature::ClassMember(_)
+            | SelectorFeature::MemberProperty(_)
+            | SelectorFeature::CallCallee(_)
+    )
 }
 
 /// Multiplicity above which a shape skeleton reads as structural noise rather
@@ -1024,5 +1079,41 @@ const b = make("shared", "beta");"#,
         let index = ShapeIndex::new(&module);
         let anchor = index.minimal_anchor_set(0).unwrap();
         assert!(index.read_off_resolves_uniquely(0, &anchor));
+    }
+
+    #[test]
+    fn unique_value_anchor_candidates_are_value_bearing_singletons_best_first() {
+        // The lone class carries several deep value anchors inside a method body.
+        // Every candidate must be (a) value-bearing — a token the renderer can pin,
+        // never a kind/arity/skeleton — and (b) individually unique, and they come
+        // ranked best-first by the same key `minimal_anchor_set` uses.
+        let module = parse(
+            r#"class runner {
+  applyChange(c) {
+    this.boxed.set("running");
+  }
+}
+export { runner };"#,
+        );
+        let index = ShapeIndex::new(&module);
+        let candidates = index.unique_value_anchor_candidates(0);
+        assert!(!candidates.is_empty());
+        for candidate in &candidates {
+            let [scored] = candidate.anchors.as_slice() else {
+                panic!("each candidate is a single-anchor set");
+            };
+            assert!(anchor_renders_a_value(&scored.feature), "{scored:?}");
+            assert_eq!(index.posting(&scored.feature).len(), 1, "{scored:?}");
+        }
+        // Best-first: the deep `"running"` string literal (a value, cost 7) must
+        // precede the `applyChange` member name (a name/reference, cost 11).
+        let position = |needle: &ShapeFeature| {
+            candidates
+                .iter()
+                .position(|c| &c.anchors[0].feature == needle)
+        };
+        let running = ShapeFeature::Selector(SelectorFeature::StringLiteral("running".into()));
+        let member = ShapeFeature::Selector(SelectorFeature::ClassMember("applyChange".into()));
+        assert!(position(&running) < position(&member));
     }
 }

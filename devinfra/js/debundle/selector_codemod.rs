@@ -2175,13 +2175,16 @@ fn render_via_read_off(
     target: &SynthesizedTargetBinding,
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
 ) -> Result<Option<SpecializedSelector>> {
+    let item = index
+        .parsed
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")?;
+
+    // Primary read-off: the single minimal anchor set. When its value anchor
+    // renders to a holed selector that proves uniquely, keep it.
     if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
-        let item = index
-            .parsed
-            .module
-            .body
-            .get(decl.body_idx)
-            .context("read-off body index no longer in module")?;
         let kept = kept_spans_for_anchor_set(item, &anchor_set);
         if !kept.is_empty()
             && let Some(selector) =
@@ -2191,9 +2194,31 @@ fn render_via_read_off(
         }
     }
 
-    // Fallback: the bare structural scaffold, used only when it resolves uniquely
-    // (a purely structural discriminator — arity/shape — with no value anchor to
-    // keep). The scaffold itself is degenerate for `var`, so the var path skips
+    // Robustness-anchor fallback: the minimal anchor's *value* may not survive
+    // holing — a deep literal whose only occurrence sits inside a large statement
+    // the holer keeps verbatim leaves raw subtrees the matcher rejects, and a
+    // structural-only minimal set keeps nothing at all. Rather than collapse to
+    // the degenerate scaffold, walk the target's individually-discriminating value
+    // anchors best-first and emit the first whose holed selector proves uniquely.
+    // This is what drills a whole-body class/component down to one anchored member
+    // (e.g. `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`,
+    // anchoring on the `"running"` literal) instead of `class X { CLASS_REST }`.
+    for anchor_set in index
+        .shape_index
+        .unique_value_anchor_candidates(decl.body_idx)
+    {
+        let kept = kept_spans_for_anchor_set(item, &anchor_set);
+        if !kept.is_empty()
+            && let Some(selector) =
+                finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+        {
+            return Ok(Some(selector));
+        }
+    }
+
+    // Last resort: the bare structural scaffold, used only when it resolves
+    // uniquely (a purely structural discriminator — arity/shape — with no value
+    // anchor to keep). The scaffold is degenerate for `var`, so the var path skips
     // this entirely and returns `None` for the keep-shallow path to handle.
     let empty = BTreeSet::new();
     if matched_body_indices(index, &target.export_name, &render_with(&empty)?)?
@@ -2661,45 +2686,62 @@ fn try_var_read_off(
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
     };
 
-    let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) else {
-        return Ok(None);
-    };
     let item = index
         .parsed
         .module
         .body
         .get(decl.body_idx)
         .context("read-off body index no longer in module")?;
-    let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
-        .into_iter()
-        .filter(|span| node_holds_anchor(target_decl_span, *span))
-        .collect();
-    if kept.is_empty() {
-        return Ok(None);
-    }
     let no_regex = BTreeMap::new();
-    // Prove the read-off resolves uniquely before offering the regex upgrade; on
-    // failure the caller falls back to the keep-shallow group path.
-    if prove_synthesized_selector(index, decl, targets, &render_with(&kept, &no_regex)?).is_err() {
-        return Ok(None);
+
+    // Try the single minimal anchor set first, then — robustness-anchor fallback —
+    // the target's individually-discriminating value anchors best-first. A deep
+    // value anchor whose minimal pick does not prove (it lands in a statement the
+    // holer keeps verbatim, leaving raw subtrees the matcher rejects) is recovered
+    // here instead of collapsing to the degenerate `const X = ANYTHING` scaffold;
+    // this drills a whole-body component initializer down to one anchored leaf.
+    let anchor_sets = index
+        .shape_index
+        .minimal_anchor_set(decl.body_idx)
+        .into_iter()
+        .chain(
+            index
+                .shape_index
+                .unique_value_anchor_candidates(decl.body_idx),
+        );
+    for anchor_set in anchor_sets {
+        let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
+            .into_iter()
+            .filter(|span| node_holds_anchor(target_decl_span, *span))
+            .collect();
+        if kept.is_empty() {
+            continue;
+        }
+        // Prove the read-off resolves uniquely before offering the regex upgrade.
+        if prove_synthesized_selector(index, decl, targets, &render_with(&kept, &no_regex)?)
+            .is_err()
+        {
+            continue;
+        }
+        // Preserve the keep-shallow path's regex-literal upgrade: among kept string
+        // literals, swap a volatile-suffix value for a `STR_LITERAL_MATCHING_RE`
+        // anchor when the upgraded selector still resolves uniquely.
+        let regex_anchors = accepted_regex_anchors(
+            index,
+            decl,
+            targets,
+            &collect_regex_anchor_candidates(init),
+            &kept,
+            &render_with,
+        )?;
+        let source = render_with(&kept, &regex_anchors)?;
+        let rewritten_holes = holes_present(&source);
+        return Ok(Some(SpecializedSelector {
+            match_source: source,
+            rewritten_holes,
+        }));
     }
-    // Preserve the keep-shallow path's regex-literal upgrade: among kept string
-    // literals, swap a volatile-suffix value for a `STR_LITERAL_MATCHING_RE`
-    // anchor when the upgraded selector still resolves uniquely.
-    let regex_anchors = accepted_regex_anchors(
-        index,
-        decl,
-        targets,
-        &collect_regex_anchor_candidates(init),
-        &kept,
-        &render_with,
-    )?;
-    let source = render_with(&kept, &regex_anchors)?;
-    let rewritten_holes = holes_present(&source);
-    Ok(Some(SpecializedSelector {
-        match_source: source,
-        rewritten_holes,
-    }))
+    Ok(None)
 }
 
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the

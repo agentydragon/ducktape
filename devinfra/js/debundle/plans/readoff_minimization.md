@@ -184,13 +184,14 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
 `interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
-landed, #2289), `sequential_assignment_block` (unignored once the `hole_expr`
-`Expr::Assign` arm landed), `sibling_class_declaration_group` (the general
-non-function co-occurrence group), and (unignored once the object key-set cover
-landed) `grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`.
-Ignored as aspirational (the named form not yet read-off-expressible):
-`deeply_nested_call_args`, `object_nested_value_dict`, `wide_destructure_block`,
-`single_target_class_whole_body`, `component_wide_destructure_whole_body`.
+landed, #2289), `sequential_assignment_block` (`hole_expr` `Expr::Assign` arm),
+`sibling_class_declaration_group` (the general non-function co-occurrence group),
+`single_target_class_whole_body`, `component_wide_destructure_whole_body`
+(unignored once the robustness-anchor candidate-walk landed, #2289 item 1),
+`object_nested_value_dict`, and (unignored once the object key-set cover landed)
+`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`. Ignored
+as aspirational (the named form not yet read-off-expressible):
+`deeply_nested_call_args`, `wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -255,20 +256,24 @@ real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
 and is encoded as disabled E2E cases. Completed items are removed, not annotated;
 the landed architecture is in "Current state" above.
 
-1. **Candidate-index anchor deepening for no-sparse-anchor bodies (the dominant
-   lever; GitHub #2289).** Two render-side pieces have landed: `hole_expr` recurses
-   into function/arrow-valued subexpressions (#2301), and the **robustness-anchor
-   policy** keeps a holed-down value anchor instead of the degenerate bare scaffold
-   when one is available (#2303). The remaining blocker is that the candidate index
-   does **not collect anchors inside class method bodies or function-expression
-   bodies**, so for the whole-body cases the read-off has no value anchor to prefer
-   and still falls back to the scaffold (disabled fixtures
-   `single_target_class_whole_body`, `component_wide_destructure_whole_body`; and
-   real-spec deep anchors like `nr_name === "HAS IMAGE"`, `n.BundleInstaller`
-   wrongly bucketed "no sparse selector"). Deepen the index to collect those deep
-   anchors, then add interior set-cover at subtree granularity. Reclaims a
-   meaningful share of the ~2,024 "no sparse selector" tail, not just the ~200
-   bulky-convertible.
+1. **Interior set-cover at subtree granularity for no-sparse-anchor bodies (the
+   dominant lever; GitHub #2289).** The single-target whole-body half has landed:
+   `hole_expr` recurses into function/arrow-valued subexpressions (#2301), the
+   **robustness-anchor policy** prefers a holed-down value anchor over the
+   degenerate scaffold (#2303), and the **robustness-anchor candidate walk** (#2289
+   item 1) lands the deep value pin in practice — `ShapeIndex::unique_value_anchor_candidates`
+   yields the target's individually-discriminating value anchors best-first, and
+   `render_via_read_off` / `try_var_read_off` walk them, emitting the first whose
+   holed selector proves (recovering `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`
+   instead of `class X { CLASS_REST }` when the _minimal_ anchor renders to a
+   verbatim-kept statement that fails to prove). Closed fixtures:
+   `single_target_class_whole_body`, `component_wide_destructure_whole_body`. Still
+   open: the **multi-feature interior cover** for bodies where no _single_ value
+   anchor singles the target out among same-shape SIBLINGS (the candidate walk only
+   tries single-anchor sets); the real-spec deep multi-anchor cases bucketed "no
+   sparse selector" need a greedy subtree-granularity cover over the in-body anchor
+   set, not just the best-first single-anchor walk. Reclaims a further share of the
+   ~2,024 "no sparse selector" tail.
 2. **Wide destructure (`wide_destructure_block`).** A `const { …, x } = props`
    whose discriminator is a destructured property key (`x`) bails with "no sparse
    selector": the candidate index does not collect destructure-pattern property

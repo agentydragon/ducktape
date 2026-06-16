@@ -1,7 +1,4 @@
-const SelectedComponent = ANYTHING(function (ANYTHING) {
+const SelectedComponent = wrap(function (ANYTHING) {
   STMT_LIST;
-  return ANYTHING("div", {
-    className: "uniqueDiscriminatorCard",
-    OBJECT_PROPS,
-  });
+  return jsx("div", ANYTHING);
 });

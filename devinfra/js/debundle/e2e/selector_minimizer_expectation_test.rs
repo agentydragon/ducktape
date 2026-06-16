@@ -571,22 +571,24 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a SINGLE-target class with no same-shape sibling to discriminate
-// against should still hole its body down to a few stable anchors (a unique
-// member name plus a discriminating literal), absorbing every other member and
-// the constructor with CLASS_REST and holing the kept member's body with
-// STMT_LIST. Today, with no sibling to read off against, the structural read-off
-// over-generalizes the *other* way: the empty scaffold `class SelectedRunner {
-// CLASS_REST; }` resolves uniquely (it is the only class), so the minimizer emits
-// it and keeps no anchor at all — degenerate, not whole-body. It resolves today
-// but matches any class a rebuild adds (criterion 5). The real-survey whole-body
-// over-pin (`domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept
-// whole; ~360 other fully-verbatim conversions) only manifests when same-shape
-// SIBLING classes force body-content discrimination, so faithfully reproducing it
-// here needs sibling-bearing fixtures; this reduction instead pins down the
-// degenerate-scaffold half of the gap. See plan item 2b.
+// A SINGLE-target class with no same-shape sibling holes its body down to one
+// stable value anchor, absorbing every other member and the constructor with
+// CLASS_REST and holing the kept member's body with STMT_LIST. The empty scaffold
+// `class SelectedRunner { CLASS_REST; }` resolves uniquely (it is the only class)
+// but pins nothing rebuild-stable (criterion 5); the robustness-anchor policy
+// instead drills to a value anchor. The candidate index already collects literals
+// inside method bodies, but the *minimal* anchor (`NumberLiteral("0")`, in class
+// fields / a `void 0`) renders to a constructor the holer keeps verbatim, which
+// fails to prove. The renderer then walks the target's individually-discriminating
+// value anchors best-first (issue #2289 item 1) and lands on `"running"` inside
+// `applyChange`, holing the receiver chain to `ANYTHING.set("running")` — sparser
+// and more rebuild-robust than pinning the minified `this.boxedStatus` receiver.
+// The real-survey whole-body over-pin
+// (`domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept whole;
+// ~360 other fully-verbatim conversions) only manifests when same-shape SIBLING
+// classes force body-content discrimination; this reduction pins the
+// single-target degenerate-scaffold half of the gap.
 minimizer_expectation_case!(
-    #[ignore = "discriminating value lives in a class method body, which the candidate index does not yet collect, so the read-off falls back to the degenerate scaffold; needs candidate-index anchor deepening on top of the robustness-anchor policy"]
     minimizes_single_target_class_whole_body,
     fixture = "single_target_class_whole_body",
     name = "single-target class keeps only one discriminating member, not the whole body",
@@ -595,23 +597,22 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a single-target React-style component (a function bound to a
-// const, wrapped in a HOC call) whose body opens with a wide prop-destructure
-// and continues with many hooks/handlers should minimize to a holed wrapper
-// call (ANYTHING), a STMT_LIST-holed body, and a single anchored leaf — here the
-// returned element's discriminating `className` literal — with OBJECT_PROPS
-// absorbing the other element props. Today, with no same-shape sibling, the var
-// read-off over-generalizes the *other* way: the whole initializer holes to
-// `const SelectedComponent = ANYTHING` (degenerate, not whole-body), which
-// resolves uniquely now but matches any wrapped-const a rebuild adds (criterion
-// 5). The real whole-body over-pin (cf. `features/nodes/cardView.yaml`
-// `NodeAsCard`, ~1340 lines kept whole with only the outer declarator/wrapper
-// holed) needs sibling-bearing fixtures to reproduce; this reduction pins the
-// degenerate-scaffold half. The whole-function-body analogue of
-// `wide_destructure_block`, which isolates only the destructure-pattern holing on
-// an already-sparse body. See plan item 2b.
+// A single-target React-style component (a function bound to a const, wrapped in
+// a HOC call) whose body opens with a wide prop-destructure and continues with
+// many hooks/handlers minimizes to a STMT_LIST-holed function body drilled down to
+// the discriminating returned-element literal, rather than the degenerate
+// `const SelectedComponent = ANYTHING`. The var read-off iterates the target's
+// individually-discriminating value anchors best-first (issue #2289 item 1) and
+// keeps `jsx("div", ANYTHING)` — anchoring on the unique `"div"` tag literal — with
+// the prop destructure and hooks absorbed into `STMT_LIST`. The bare callees
+// `wrap`/`jsx` stay pinned (the documented `hole_callee` policy keeps a bare
+// function reference as a stable pin); holing them to `ANYTHING` is the
+// cross-cutting `hole_callee` change tracked by `deeply_nested_call_args`. The real
+// whole-body over-pin (cf. `features/nodes/cardView.yaml` `NodeAsCard`, ~1340 lines
+// kept whole with only the outer declarator/wrapper holed) needs sibling-bearing
+// fixtures to reproduce; this reduction pins the single-target degenerate-scaffold
+// half.
 minimizer_expectation_case!(
-    #[ignore = "single-target component holes its whole initializer to a degenerate `const X = ANYTHING` instead of STMT_LIST down to the discriminating element literal"]
     minimizes_component_wide_destructure_whole_body,
     fixture = "component_wide_destructure_whole_body",
     name = "single-target component keeps only the discriminating returned-element literal, not the whole body",
