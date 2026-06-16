@@ -39,8 +39,8 @@ rust_library(
 
 rust_library(
     name = "source_match",
-    srcs = ["source_match.rs"],
-    crate_root = "source_match.rs",
+    srcs = glob(["source_match/*.rs"]),
+    crate_root = "source_match/mod.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
