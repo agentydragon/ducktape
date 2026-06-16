@@ -1,0 +1,121 @@
+//! Single-target class selector minimization (read-off + class-member holing).
+
+use std::collections::BTreeSet;
+
+use anyhow::Result;
+use source_match_holes::CLASS_REST_HOLE_KEYWORD;
+use swc_common::{DUMMY_SP, Spanned};
+use swc_ecma_ast::*;
+
+use super::render_via_read_off;
+use crate::render::{
+    AnchorSpan, anything_expr, anything_param, emit_selector, holed_block, ident_node,
+    node_retains_any,
+};
+use crate::{
+    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
+};
+
+/// Minimal anchor cover for a single-target class: render the class keeping
+/// only members (and member-body statements) that carry a chosen anchor, with
+/// `CLASS_REST` for dropped member runs, and cover sibling classes.
+pub(crate) fn minimize_class_selector(
+    index: &ChunkSelectorIndex,
+    class: &Class,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+) -> Result<Option<SpecializedSelector>> {
+    let export = target.export_name.clone();
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed_class = class.clone();
+        // A minified superclass identifier is alpha-wildcarded, so always hole
+        // `extends` to ANYTHING — it still discriminates "has a superclass" from a
+        // bare class without pinning the volatile name.
+        holed_class.super_class = class
+            .super_class
+            .as_ref()
+            .map(|_| Box::new(anything_expr()));
+        holed_class.body = hole_class_members(&class.body, kept);
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
+            ident: ident_node(&export),
+            declare: false,
+            class: Box::new(holed_class),
+        }))))
+    };
+    // Single-target classes read off their minimal anchor set the same way
+    // functions and objects do: the holed scaffold pins the class kind plus
+    // `extends ANYTHING`, and value anchors (a member name, a literal or callee
+    // inside a member body) map to their token spans so only the member runs
+    // carrying them survive between `CLASS_REST` holes. A class the read-off
+    // cannot single out through its own value features returns `None` and is
+    // reported as debt (never a full-AST pin).
+    render_via_read_off(index, decl, target, &render_with)
+}
+
+/// A `CLASS_REST;` class-field hole that absorbs a run of dropped members.
+fn class_rest_member() -> ClassMember {
+    ClassMember::ClassProp(ClassProp {
+        span: DUMMY_SP,
+        key: PropName::Ident(IdentName::new(CLASS_REST_HOLE_KEYWORD.into(), DUMMY_SP)),
+        value: None,
+        type_ann: None,
+        is_static: false,
+        decorators: vec![],
+        accessibility: None,
+        is_abstract: false,
+        is_optional: false,
+        is_override: false,
+        readonly: false,
+        declare: false,
+        definite: false,
+    })
+}
+
+fn hole_class_members(members: &[ClassMember], kept: &BTreeSet<AnchorSpan>) -> Vec<ClassMember> {
+    let mut out = Vec::new();
+    let mut dropped_run = false;
+    for member in members {
+        if node_retains_any(member.span(), kept) {
+            if dropped_run {
+                out.push(class_rest_member());
+                dropped_run = false;
+            }
+            out.push(hole_class_member(member, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run || out.is_empty() {
+        out.push(class_rest_member());
+    }
+    out
+}
+
+fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> ClassMember {
+    match member {
+        ClassMember::Method(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Method(holed)
+        }
+        ClassMember::PrivateMethod(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::PrivateMethod(holed)
+        }
+        ClassMember::Constructor(ctor) => {
+            let mut holed = ctor.clone();
+            holed.params = ctor
+                .params
+                .iter()
+                .map(|_| ParamOrTsParamProp::Param(anything_param()))
+                .collect();
+            holed.body = ctor.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Constructor(holed)
+        }
+        // Class fields and other members carrying a kept anchor: keep verbatim.
+        _ => member.clone(),
+    }
+}

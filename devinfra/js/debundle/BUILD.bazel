@@ -613,6 +613,14 @@ rust_test(
 rust_library(
     name = "selector_codemod",
     srcs = [
+        "minimize/class.rs",
+        "minimize/function.rs",
+        "minimize/group.rs",
+        "minimize/mod.rs",
+        "minimize/object.rs",
+        "minimize/var.rs",
+        "regex_anchor.rs",
+        "render.rs",
         "selector_codemod.rs",
         "selector_minimizer_proptest.rs",
     ],
