@@ -2107,44 +2107,56 @@ fn minimize_function_selector(
     render_via_read_off(index, decl, target, &render_with)
 }
 
-/// Render a single-target selector via the W1 read-off API (W2).
+/// Render a single-target selector via the read-off API.
 ///
 /// Reads the minimal [`AnchorSet`] off the shape index, maps its value anchors
 /// to kept byte spans over the target item, and renders + proves through the
-/// supplied `render_with` (the same prune + codegen the cover path uses — no
-/// second serializer). Returns `None` when the read-off cannot single out the
-/// target (a genuine alpha-duplicate) or the rendered selector fails the matcher
-/// gate, so the caller falls back to current behavior (exact-or-skip; never a
-/// full-AST pin unless `--full-ast-fallback`).
+/// supplied `render_with` (the same prune + codegen — no second serializer).
+///
+/// **Robustness-anchor policy.** A holed-down *value* anchor is preferred over
+/// the bare structural scaffold even when the scaffold alone would resolve. A
+/// scaffold that pins only declaration kind + arity (`class X { CLASS_REST }`,
+/// `function f(ANYTHING) { STMT_LIST }`, `const X = ANYTHING`) is a degenerate
+/// selector: it pins nothing rebuild-stable and matches any same-shape sibling a
+/// rebuild adds. So the read-off keeps its chosen value anchor when it has one,
+/// and falls back to the bare scaffold only when the target has no renderable
+/// value anchor — `minimal_anchor_set` chose a purely structural skeleton (empty
+/// kept spans) because nothing but shape discriminates — or the value anchor
+/// fails to prove. Returns `None` when neither route singles the target out (a
+/// genuine alpha-duplicate); the caller reports it as debt, never a full-AST pin.
 fn render_via_read_off(
     index: &ChunkSelectorIndex,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
 ) -> Result<Option<SpecializedSelector>> {
-    // Structural fast path (mirrors the cover's empty-competitors case): if the
-    // holed scaffold already pins enough — the declaration kind plus the param
-    // arity / declarator shape the scaffold renders for free — to resolve
-    // uniquely, keep no concrete token. This is the leanest, most rebuild-stable
-    // selector, so it is preferred over any value anchor the read-off would add.
+    if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
+        let item = index
+            .parsed
+            .module
+            .body
+            .get(decl.body_idx)
+            .context("read-off body index no longer in module")?;
+        let kept = kept_spans_for_anchor_set(item, &anchor_set);
+        if !kept.is_empty()
+            && let Some(selector) =
+                finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+        {
+            return Ok(Some(selector));
+        }
+    }
+
+    // Fallback: the bare structural scaffold, used only when it resolves uniquely
+    // (a purely structural discriminator — arity/shape — with no value anchor to
+    // keep). The scaffold itself is degenerate for `var`, so the var path skips
+    // this entirely and returns `None` for the keep-shallow path to handle.
     let empty = BTreeSet::new();
     if matched_body_indices(index, &target.export_name, &render_with(&empty)?)?
         == BTreeSet::from([decl.body_idx])
     {
         return finish_minimized_selector(index, decl, target, render_with(&empty)?);
     }
-
-    let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) else {
-        return Ok(None);
-    };
-    let item = index
-        .parsed
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
-    let kept = kept_spans_for_anchor_set(item, &anchor_set);
-    finish_minimized_selector(index, decl, target, render_with(&kept)?)
+    Ok(None)
 }
 
 // ===========================================================================

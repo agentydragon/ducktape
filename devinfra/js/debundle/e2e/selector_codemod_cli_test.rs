@@ -755,9 +755,15 @@ fn synthesize_selectors_minimizes_function_body_by_default() {
         "{match_source}"
     );
     assert!(match_source.contains("STMT_LIST;"), "{match_source}");
+    // The body is holed down to a single anchored statement, not copied whole:
+    // `runtimeFormatter` is the only function in the chunk, so the bare scaffold
+    // alone would resolve — but the robustness-anchor policy keeps one
+    // discriminating value anchor (rather than the degenerate empty body) while
+    // still dropping the irrelevant statements (`trim().toUpperCase()`, the
+    // length `if`, `slice`) to `STMT_LIST`.
     assert!(
-        !match_source.contains("padEnd"),
-        "irrelevant function body should not be copied:\n{match_source}"
+        !match_source.contains("toUpperCase") && !match_source.contains("slice"),
+        "irrelevant function body statements should not be copied:\n{match_source}"
     );
 }
 

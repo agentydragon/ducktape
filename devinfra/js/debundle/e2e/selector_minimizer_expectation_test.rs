@@ -295,6 +295,21 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Robustness-anchor policy: a function that the bare scaffold alone would resolve
+// (it is the only arity-2 function in the chunk) still keeps its discriminating
+// value anchor (`"uniqueRobustnessToken"`) rather than emitting the degenerate
+// `function X(ANYTHING, ANYTHING) { STMT_LIST }`. The bare scaffold pins nothing
+// rebuild-stable and matches any arity-2 function a rebuild adds, so the read-off
+// prefers a holed-down value anchor when it has one.
+minimizer_expectation_case!(
+    minimizes_robustness_value_over_scaffold,
+    fixture = "robustness_value_over_scaffold",
+    name = "scaffold-resolvable function still keeps a discriminating value anchor",
+    module = "app/only",
+    bindings = [("SelectedOnly", "selectedOnly")],
+    expected = "expected_match.js",
+);
+
 // A single-target var initialized by a call wrapping a function expression
 // (`registerHandler(function (event) {…})`) drills into the function body via the
 // `hole_expr` `Expr::Fn` arm: the params hole to `ANYTHING`, the body to
@@ -576,7 +591,7 @@ minimizer_expectation_case!(
 // here needs sibling-bearing fixtures; this reduction instead pins down the
 // degenerate-scaffold half of the gap. See plan item 2b.
 minimizer_expectation_case!(
-    #[ignore = "single-target class with no sibling emits a degenerate `class X { CLASS_REST }` scaffold instead of CLASS_REST + one anchored member"]
+    #[ignore = "discriminating value lives in a class method body, which the candidate index does not yet collect, so the read-off falls back to the degenerate scaffold; needs candidate-index anchor deepening on top of the robustness-anchor policy"]
     minimizes_single_target_class_whole_body,
     fixture = "single_target_class_whole_body",
     name = "single-target class keeps only one discriminating member, not the whole body",
