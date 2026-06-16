@@ -46,8 +46,8 @@ use swc_ecma_visit::VisitMutWith;
 
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
-    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_object_padded, holes_present,
-    named_pat,
+    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_object_padded, hole_stmt,
+    holes_present, named_pat,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -140,12 +140,19 @@ fn render_via_read_off(
     // anchor to keep). The scaffold is degenerate for `var`, so the var path skips
     // this entirely and returns `None` for the keep-shallow path to handle.
     let empty = BTreeSet::new();
-    if matched_body_indices(index, &target.export_name, &render_with(&empty)?)?
+    let scaffold = render_with(&empty)?;
+    if matched_body_indices(index, &target.export_name, &scaffold)?
         == BTreeSet::from([decl.body_idx])
     {
-        return finish_minimized_selector(index, decl, target, render_with(&empty)?);
+        return finish_minimized_selector(index, decl, target, scaffold);
     }
-    Ok(None)
+
+    // Enclosing-context anchoring (#2315): the target's own value anchors and the
+    // bare scaffold all fail to single it out among same-shape siblings. Fall to
+    // its stable neighbors — a 2-statement window pinning an adjacent declaration's
+    // unique anchor + the target scaffold. `None` here leaves the target as residual
+    // debt (never a full-AST pin).
+    render_via_neighbor_context(index, decl, target, &scaffold)
 }
 
 fn finish_minimized_selector(
@@ -163,6 +170,73 @@ fn finish_minimized_selector(
         match_source: source,
         rewritten_holes,
     }))
+}
+
+/// Enclosing-context anchoring (#2315). The last resort before residual debt:
+/// when a target's own value anchors cannot separate it from same-shape siblings
+/// — alpha-only constructs (`new ()` with no stable args) or near-duplicate
+/// emitted helpers (the `__decorate` family) — pin a **stable adjacent
+/// declaration** as context. Emit a 2-statement window selector pairing the
+/// target's holed `target_scaffold` with an immediate neighbor holed to a
+/// globally-unique value anchor, ordered by their chunk adjacency, with
+/// `target_binding` picking the target out of the window. The matcher's
+/// contiguous member-window path resolves it and the prove-gate confirms
+/// uniqueness.
+///
+/// Returns `None` when no adjacent declaration carries a unique value anchor, or
+/// none of the windows prove — the target then stays name-pinned as residual
+/// debt, never a full-AST pin.
+fn render_via_neighbor_context(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    target_scaffold: &str,
+) -> Result<Option<SpecializedSelector>> {
+    for candidate in index
+        .shape_index
+        .context_neighbor_anchor_candidates(decl.body_idx)
+    {
+        let Some(neighbor_item) = index.parsed.module.body.get(candidate.neighbor_body_idx) else {
+            continue;
+        };
+        let neighbor_kept = kept_spans_for_anchor_set(neighbor_item, &candidate.anchor_set);
+        if neighbor_kept.is_empty() {
+            continue;
+        }
+        let Some(neighbor_source) = render_context_neighbor(neighbor_item, &neighbor_kept)? else {
+            continue;
+        };
+        // Compose the window in chunk order so the matcher's contiguous member
+        // window aligns the neighbor and target to their real adjacency.
+        let (first, second) = if candidate.neighbor_body_idx < decl.body_idx {
+            (neighbor_source.as_str(), target_scaffold)
+        } else {
+            (target_scaffold, neighbor_source.as_str())
+        };
+        let window = format!("{}\n{}", first.trim_end(), second.trim_end());
+        if let Some(selector) = finish_minimized_selector(index, decl, target, window)? {
+            return Ok(Some(selector));
+        }
+    }
+    Ok(None)
+}
+
+/// Render an adjacent declaration as holed selector *context*: keep only the
+/// spans in `kept` (the neighbor's unique value anchor) and hole everything else,
+/// so the neighbor contributes a stable pin without dumping its full AST. Only
+/// plain statements are holed (the common adjacent-helper / config / call-site
+/// shape `hole_stmt` covers); a module declaration (import/export) yields `None`
+/// and the caller tries the other neighbor.
+fn render_context_neighbor(
+    item: &ModuleItem,
+    kept: &BTreeSet<AnchorSpan>,
+) -> Result<Option<String>> {
+    let ModuleItem::Stmt(stmt) = item else {
+        return Ok(None);
+    };
+    Ok(Some(emit_selector(ModuleItem::Stmt(hole_stmt(
+        stmt, kept,
+    )))?))
 }
 
 /// Per-slot initializer holing for the read-off var paths: an object init holes

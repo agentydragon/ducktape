@@ -429,7 +429,7 @@ fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
     out
 }
 
-fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
+pub(crate) fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
     match stmt {
         Stmt::Expr(expr_stmt) => {
             let mut holed = expr_stmt.clone();

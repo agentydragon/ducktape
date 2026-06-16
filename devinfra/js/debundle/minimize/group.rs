@@ -10,7 +10,7 @@ use swc_ecma_ast::*;
 
 use super::object::{object_anchor_ranking, try_object_read_off};
 use super::var::try_var_read_off;
-use super::{hole_var_init_padded, render_var_slots};
+use super::{hole_var_init_padded, render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{
     AnchorSpan, MAX_MINIMIZER_ANCHORS, hole_expr, holes_present, node_holds_anchor, span_key,
@@ -484,6 +484,17 @@ pub(crate) fn minimize_var_group_selector(
             }
         }
         if !resolves(&kept)? {
+            // Enclosing-context anchoring (#2315): the var's own anchors (read-off
+            // + keep-shallow) cannot single it out among same-shape siblings —
+            // an alpha-only initializer (`new ()`) or a near-duplicate emitted
+            // helper. For the single-target case, pin a stable adjacent declaration
+            // as context; the degenerate `const X = ANYTHING` scaffold is acceptable
+            // here because the neighbor carries the uniqueness. Multi-target group
+            // residuals stay as debt (tuple-aware context anchoring is future work).
+            if let [target] = targets {
+                let scaffold = render_with(&BTreeSet::new(), &no_regex)?;
+                return render_via_neighbor_context(index, decl, target, &scaffold);
+            }
             return Ok(None);
         }
     }

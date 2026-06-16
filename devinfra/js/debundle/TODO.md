@@ -35,10 +35,10 @@ One-line status for each `plans/` design doc; this is the discovery index.
   key-set minimization, (adjacent-function + general) co-occurrence grouping,
   multi-target var binding-group read-off, whole-body interior holing (incl. the
   multi-feature value-anchor cover), wide destructure, callee/arg holing,
-  prove-gate-via-index, whole-spec perf validation (W4), and the branch-and-bound
-  cover deletion landed; keep-shallow group-cover retirement, by-form split,
-  language simplification, and the enclosing-context residual open. Holds its own
-  current-state + backlog.
+  enclosing-context residual anchoring, prove-gate-via-index, whole-spec perf
+  validation (W4), and the branch-and-bound cover deletion landed; keep-shallow
+  group-cover retirement, by-form split, and language simplification open. Holds
+  its own current-state + backlog.
 - <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
   (complete).** Literature spike that gates the read-off design; durable, not a
   TODO.
@@ -64,11 +64,11 @@ propose`.
    function/object/class/var read-off, literal/regex anchors, hole-based
    minimization, multi-target var binding-group read-off, co-occurrence grouping,
    whole-body interior holing (incl. the multi-feature value-anchor cover), wide
-   destructure, callee/arg holing, the prove-gate perf fix, whole-spec validation,
-   and the branch-and-bound cover deletion have landed; keep-shallow group-cover
-   retirement, `selector_codemod.rs` by-form split, language simplification, and
-   the enclosing-context residual are in that plan's backlog. Don't duplicate its
-   design or status here.
+   destructure, callee/arg holing, enclosing-context residual anchoring, the
+   prove-gate perf fix, whole-spec validation, and the branch-and-bound cover
+   deletion have landed; keep-shallow group-cover retirement,
+   `selector_codemod.rs` by-form split, and language simplification are in that
+   plan's backlog. Don't duplicate its design or status here.
 2. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    apply with filters, and explain every skipped candidate. (Selector
@@ -266,14 +266,18 @@ Detailed workflow priorities live above and in
 implemented only when they unlock synthesis, stabilization, repair, or porting
 workflows, and must use generic synthetic fixtures.
 
-- **Contextual selectors.** Add readable `before` / `after` / `near`
-  anchors for cases where the selected statement or declaration is
-  helper-boilerplate that appears multiple times. This should replace
-  copied overlapping selector bodies and still reject ambiguous windows.
-  Decorator-helper neighborhoods are the motivating generic shape: a
-  helper declaration may be syntactically identical across many classes,
-  but it becomes unambiguous when selected near the class or decorator
-  calls whose property strings identify the target.
+- **Contextual selectors.** The disambiguation _capability_ for
+  helper-boilerplate that appears multiple times has landed (#2315): the
+  minimizer reads off a stable immediate neighbor's unique anchor and
+  emits a 2-statement-window `source_match` + `target_binding` rather than
+  a copied overlapping selector body (the matcher already rejects ambiguous
+  windows via the prove-gate). Decorator-helper neighborhoods — a helper
+  declaration syntactically identical across many classes, disambiguated by
+  an adjacent decorator call whose property strings identify the target —
+  are the motivating shape. Remaining: (a) readable `before` / `after` /
+  `near` _sugar_ so a hand-authored selector can express the same window
+  without spelling out both statements; (b) non-adjacent / enclosing-call-site
+  context (synthesis reads only the immediate ±1 neighbors today).
 - **Constrained hole matching.** Multi-hole selectors need cheap local
   constraints so authors can say that a hole appears only as a specific
   argument, callback body, object property value, or statement-list slot. This

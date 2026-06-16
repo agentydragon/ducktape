@@ -813,3 +813,46 @@ fn minimizes_sibling_class_declaration_group() {
         }],
     });
 }
+
+// Enclosing-context anchoring (#2315): an **alpha-only construct** — a target
+// `const selectedHelper = new Factory()` among same-shape `const X = new IDENT()`
+// siblings — has no value anchor of its own (the `new` callee alpha-canonicalizes,
+// the call has no stable args), so the target's read-off and keep-shallow paths
+// both fail. Rather than leaving it name-pinned, the var residual path pins a
+// **stable adjacent declaration** as context: a 2-statement window pairing the
+// immediately-preceding `defineSelected("gamma-unique-token")` call (holed to
+// `ANYTHING("gamma-unique-token")` — its minified callee dropped per #2318, only
+// the globally-unique string pinned) with the target's degenerate
+// `const SelectedHelper = ANYTHING` scaffold, `target_binding` picking the target
+// out. Exercises the
+// neighbor-*before*-target window (`target_binding` at needle index 1, routed
+// through the single-declarator-target matcher). Real-spec analogue: the alpha-only
+// `new ()` factories the read-off otherwise reports as residual debt.
+minimizer_expectation_case!(
+    anchors_alpha_only_construct_to_a_stable_neighbor,
+    fixture = "neighbor_context_alpha_construct",
+    name = "alpha-only `new` construct is anchored to its stable adjacent call",
+    module = "app/helpers",
+    bindings = [("SelectedHelper", "selectedHelper")],
+    expected = "expected_match.js",
+);
+
+// Enclosing-context anchoring (#2315): a **near-duplicate emitted helper** — a
+// target `function selectedHelper() { return wrap(); }` among byte-identical
+// `function X() { return wrap(); }` siblings (the `__decorate`-family shape) — has
+// no discriminating feature inside its own declaration, so even the bare
+// `function SelectedHelper() { STMT_LIST }` scaffold matches every sibling. The
+// function read-off (`render_via_read_off`) falls to the target's stable
+// neighbors: a 2-statement window pairing the holed scaffold with the
+// immediately-following `registerSelected("delta-unique-token")` call holed to
+// `ANYTHING("delta-unique-token")` (minified callee dropped per #2318, unique
+// string pinned), `target_binding` selecting the function. Closes the residual the
+// in-body value cover (#2289) explicitly left open.
+minimizer_expectation_case!(
+    anchors_duplicate_helper_to_a_stable_neighbor,
+    fixture = "neighbor_context_duplicate_helper",
+    name = "near-duplicate helper function is anchored to its stable adjacent call",
+    module = "app/helpers",
+    bindings = [("SelectedHelper", "selectedHelper")],
+    expected = "expected_match.js",
+);

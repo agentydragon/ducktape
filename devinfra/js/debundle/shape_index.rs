@@ -562,6 +562,17 @@ pub struct AnchorSet {
     pub opt_one: bool,
 }
 
+/// A stable anchor on a top-level *neighbor* of a residual target — the handle
+/// for enclosing-context anchoring (#2315). The `anchor_set` is one of the
+/// neighbor's individually-unique value anchors; pairing the neighbor (holed to
+/// that anchor) with the target's holed scaffold in a 2-statement window singles
+/// the target out even when its own features cannot.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ContextNeighborAnchor {
+    pub neighbor_body_idx: usize,
+    pub anchor_set: AnchorSet,
+}
+
 /// Per-item entry: the existing prefilter candidate plus this item's shape
 /// skeleton features.
 #[derive(Debug, Clone)]
@@ -889,6 +900,41 @@ impl ShapeIndex {
             },
         )
     }
+
+    /// Enclosing-context read-off (#2315): the disambiguating handles on a
+    /// target's **stable neighbors** when its own value features cannot separate
+    /// it from same-shape siblings (alpha-only constructs, near-duplicate emitted
+    /// helpers). For each immediate top-level neighbor (the declaration just
+    /// before and just after `body_idx`) it yields that neighbor's
+    /// individually-unique value anchors, best-first, as [`ContextNeighborAnchor`]s.
+    ///
+    /// A neighbor anchor whose posting list is the singleton `{neighbor}` pins a
+    /// token occurring in exactly one top-level item, so a 2-statement window
+    /// pairing the neighbor (holed to that anchor) with the target's holed
+    /// scaffold matches only where that unique neighbor sits adjacent to a
+    /// target-shaped statement — i.e. uniquely at the target. The renderer
+    /// composes and prove-gates the window; this method only reads the candidate
+    /// anchors off the index. Neighbors are bounded to the immediate ±1
+    /// declarations, so this stays a bounded read-off, never a chunk-wide search.
+    pub fn context_neighbor_anchor_candidates(
+        &self,
+        body_idx: usize,
+    ) -> Vec<ContextNeighborAnchor> {
+        let prev = body_idx.checked_sub(1);
+        let next = (body_idx + 1 < self.items.len()).then_some(body_idx + 1);
+        [prev, next]
+            .into_iter()
+            .flatten()
+            .flat_map(|neighbor_body_idx| {
+                self.unique_value_anchor_candidates(neighbor_body_idx)
+                    .into_iter()
+                    .map(move |anchor_set| ContextNeighborAnchor {
+                        neighbor_body_idx,
+                        anchor_set,
+                    })
+            })
+            .collect()
+    }
 }
 
 /// Whether a feature maps to a concrete kept token the renderer can pin (a
@@ -1211,6 +1257,56 @@ const c = emit("delta", "beta");"#,
             assert!(anchor_renders_a_value(&scored.feature), "{scored:?}");
         }
         assert!(index.read_off_resolves_uniquely(0, &cover));
+    }
+
+    #[test]
+    fn context_neighbor_anchor_candidates_offer_adjacent_unique_value_anchors() {
+        // Three alpha-identical `const X = new IDENT()` helpers (bodies 0, 2, 3):
+        // none has a value anchor of its own (the `new` callee alpha-canonicalizes),
+        // so the middle one is a genuine residual — `minimal_anchor_set` cannot
+        // separate it. Its immediate neighbor (body 1) carries a globally-unique
+        // string, which the enclosing-context read-off offers as a disambiguating
+        // anchor on the neighbor.
+        let module = parse(
+            r#"const a = new Factory();
+mountSelected("beta-unique-token");
+const b = new Factory();
+const c = new Factory();"#,
+        );
+        let index = ShapeIndex::new(&module);
+        assert!(
+            index.minimal_anchor_set(2).is_none(),
+            "the middle helper must be a genuine residual (no own discriminator)"
+        );
+        let candidates = index.context_neighbor_anchor_candidates(2);
+        let unique_string =
+            ShapeFeature::Selector(SelectorFeature::StringLiteral("beta-unique-token".into()));
+        assert!(
+            candidates.iter().any(|candidate| {
+                candidate.neighbor_body_idx == 1
+                    && candidate
+                        .anchor_set
+                        .anchors
+                        .iter()
+                        .any(|scored| scored.feature == unique_string)
+            }),
+            "expected the adjacent unique string as a neighbor anchor, got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn context_neighbor_anchor_candidates_are_empty_without_a_stable_neighbor() {
+        // All four statements are alpha-identical residual helpers with no value
+        // anchor anywhere, so no neighbor can disambiguate: the read-off yields no
+        // context candidates and the caller leaves the target as name-pinned debt.
+        let module = parse(
+            r#"const a = new Factory();
+const b = new Factory();
+const c = new Factory();
+const d = new Factory();"#,
+        );
+        let index = ShapeIndex::new(&module);
+        assert!(index.context_neighbor_anchor_candidates(1).is_empty());
     }
 
     #[test]

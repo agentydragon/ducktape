@@ -179,9 +179,13 @@ alpha-renameable binding, so it discriminates. Regex-over-string-literal anchors
 (`minimize_via_retention`, `cover_competitors`, `min_set_cover`, and the
 function/class anchor collectors) is **deleted**: single-target function, class,
 object, and var all route through the read-off, which subsumes it once W3 added
-number/bool features (its last reason to exist). A target the read-off cannot
-single out is reported as debt, never full-AST-pinned. Multi-target var binding
-groups also read off now (`try_var_group_read_off`, backlog item 2): each target
+number/bool features (its last reason to exist). A target whose own features
+cannot single it out falls last to **enclosing-context anchoring** (#2315,
+`render_via_neighbor_context`): a 2-statement window pinning a stable immediate
+neighbor's unique anchor alongside the target's holed scaffold, `target_binding`
+picking the target out. Only a target with no usable neighbor stays name-pinned
+as debt — never full-AST-pinned. Multi-target var binding
+groups also read off now (`try_var_group_read_off`, backlog item 1): each target
 declarator slot reads its minimal anchor off the shape index plus a slot-aware
 greedy (`slot_minimal_anchors`), the per-slot kept spans union, and the
 binding-group matcher proves the tuple. The **keep-shallow path**
@@ -189,7 +193,7 @@ binding-group matcher proves the tuple. The **keep-shallow path**
 `AnchorCandidates::{shallow_literals,deep_cover_tiers}`) remains only as the
 **fallback** for groups whose per-slot single-binding view cannot single a slot
 out (a value shared across sibling statements that resolves only as a tuple);
-retiring it is gated as backlog item 2.
+retiring it is gated as backlog item 1.
 
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
@@ -205,18 +209,20 @@ the current (smaller, partly dogfood-applied) spec the whole chunk minimizes in
 `binding_group_declarators`, `nested_async_try`, `class_body`, `switch_case_run`,
 `object_keys_over_pinned`, `long_literal_value_anchor`, `binding_group_partition`,
 `class_among_many_siblings`, `sibling_subclass_hierarchy`, `adjacent_accessor_group`,
-`binding_group_key_set_readoff` (multi-target group per-slot key read-off, item 2),
+`binding_group_key_set_readoff` (multi-target group per-slot key read-off, item 1),
 `interior_object_arg_holing` (unignored once the `Expr::Array` interior holing
 landed, #2289), `sequential_assignment_block` (`hole_expr` `Expr::Assign` arm),
 `sibling_class_declaration_group` (the general non-function co-occurrence group),
 `single_target_class_whole_body`, `component_wide_destructure_whole_body`
 (unignored once the robustness-anchor candidate-walk landed, #2289 item 1),
-`object_nested_value_dict`, and (unignored once the object key-set cover landed)
+`object_nested_value_dict`, (unignored once the object key-set cover landed)
 `grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`,
 (unignored once `hole_callee`/`hole_args` holed bare-function callees and
-non-anchor argument runs) `deeply_nested_call_args`, and (destructure-pattern-key
-`ObjectKey` anchors + `ObjectPat` holing, #2310) `wide_destructure_block`. Every
-catalogued expectation case is now active.
+non-anchor argument runs) `deeply_nested_call_args`, (destructure-pattern-key
+`ObjectKey` anchors + `ObjectPat` holing, #2310) `wide_destructure_block`, and
+(enclosing-context anchoring, #2315) `neighbor_context_alpha_construct`,
+`neighbor_context_duplicate_helper`. Every catalogued expectation case is now
+active.
 
 ## Acceptance criteria
 
@@ -256,9 +262,9 @@ serde); embedded/non-trailing volatility in regex anchors (future).
   the member is left as a name pin. These are **whole-body-only** members
   (uniqueness needs ~the entire body). Concentrated in `features` (955),
   `domains` (462), `app` (425). Recovering them is the hard, high-count tail:
-  needs **interior holing of whole bodies** (backlog item 1 — keep the body but
-  hole non-identifying subtrees so a fuller pin is at least less fragile / can be
-  emitted) and/or deeper anchoring. Biggest number, hardest; do not expect a
+  needs **interior holing of whole bodies** (landed — keeps the body but
+  holes non-identifying subtrees so a fuller pin is at least less fragile / can be
+  emitted) and/or deeper anchoring (enclosing-context, #2315). Biggest number, hardest; do not expect a
   clean compact selector for most.
 - **~200 (~9%) — convertible but >30 lines (filtered out of #360).** The minimizer
   _does_ synthesize a selector; it's just over the compact threshold. Shape mix:
@@ -266,9 +272,9 @@ serde); embedded/non-trailing volatility in regex anchors (future).
   These are the **achievable near-term wins**: the over-pin-reduction waves shrink
   them under the threshold so they ship as compact selectors —
   - var/object (the plurality) → wide object-destructure patterns now hole to
-    the discriminating key (landed, #2310); residual object-dict over-pin folds
-    into item 1's interior holing;
-  - function → **interior holing** within kept bodies (backlog item 1);
+    the discriminating key (landed, #2310); the remaining object-dict over-pin
+    folds into the landed interior holing;
+  - function → **interior holing** within kept bodies (landed);
   - a re-apply after each wave reconverts whatever now fits ≤30 lines.
 - 1 — `async` parse edge case (single; ignore).
 
@@ -283,17 +289,7 @@ real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
 and is encoded as disabled E2E cases. Completed items are removed, not annotated;
 the landed architecture is in "Current state" above.
 
-1. **Enclosing-context anchoring for the read-off residual (GitHub #2315).**
-   Interior holing of no-sparse-anchor bodies is complete (single-target
-   whole-body via the robustness-anchor candidate walk, and the multi-feature
-   `unique_value_anchor_cover` for same-shape-sibling bodies — see "Current state").
-   The genuine residual remains: bodies the read-off cannot separate from
-   same-shape siblings by any combination of their own value anchors (alpha-only
-   constructs like `new <minified>()`, near-duplicate emitted helpers like the
-   `__decorate` family). These have no discriminating feature _inside_ the
-   declaration, so they need **enclosing-context anchoring** (`before`/`after`/`near`
-   a stable neighbor) or stay name-pinned as accepted debt.
-2. **Retire the keep-shallow group cover.** The multi-target var binding-group
+1. **Retire the keep-shallow group cover.** The multi-target var binding-group
    read-off (`try_var_group_read_off`) landed, but the keep-shallow path
    (`minimize_var_group_selector`'s escalation over `collect_expr_anchors` +
    `AnchorCandidates`) stays as the fallback for groups whose per-slot
@@ -302,11 +298,11 @@ the landed architecture is in "Current state" above.
    Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
    and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
    tuple-aware read-off for those residual groups (or accepting them as debt).
-3. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+2. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-4. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+3. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
    beneficial minimized selectors. Operational PR rule: **revert any converted
    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
