@@ -145,13 +145,16 @@ exist in `source_match_holes.rs` and the matcher (`match_list_with_holes`):
 Regex-over-string-literal anchors (`STR_LITERAL_MATCHING_RE`) fire for
 stable-prefix/volatile-tail strings (trailing hex/digit runs).
 
-**Strangler-fig boundary.** The cover search (`minimize_via_retention`,
-`cover_competitors`, the B&B `min_set_cover`, `collect_*_anchors`) is **not
-deleted**; it backs single-target var (non-object) and the binding-group /
-multi-declarator paths, plus any tail a read-off cannot yet single out (including
-single-target classes whose own value features don't discriminate).
-`selector_codemod.rs` is ~3.7k lines and shrinks substantially once the cover is
-removed.
+**Strangler-fig boundary.** The matcher-driven branch-and-bound cover search
+(`minimize_via_retention`, `cover_competitors`, `min_set_cover`, and the
+function/class anchor collectors) is **deleted**: single-target function, class,
+object, and var all route through the read-off, which subsumes it once W3 added
+number/bool features (its last reason to exist). A target the read-off cannot
+single out is reported as debt, never full-AST-pinned. The one cover that
+remains is the **multi-target var binding-group keep-shallow path**
+(`minimize_var_group_selector` + `collect_expr_anchors` +
+`AnchorCandidates::{shallow_literals,deep_cover_tiers}`), which does the per-slot
+tuple resolution the chunk-wide read-off cannot express.
 
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
@@ -333,8 +336,14 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
      Still open: the `ee({ coreMessage: …, type: …, … })` schema-object form is a
      **call** kept whole (the no-sparse-anchor body family, item 2b), not the
      object-literal-valued var this covers.
-6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
-   and **var** migration (needs binding-group/declarator-slot tuple resolution).
+6. **Var migration.** Single-target `var`/`let`/`const` now reads off the shape
+   index (`try_var_read_off`, objects via `try_object_read_off`), mirroring
+   function/class. **Landed.** This drilled `deeply_nested_call_args` down to the
+   discriminating leaf (still ignored: bare-function callees stay pinned and
+   dropped args hole to arity-exact `ANYTHING`, not `ARGS` — cross-cutting
+   `hole_callee`/`hole_args` policy). Still open: **multi-target binding groups**
+   (per-slot declarator-tuple resolution; they keep the keep-shallow path) and
+   **statement runs** (`sequential_assignment_block`).
 7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
    minimal-selector overlap threshold) → `binding_group`. The shared-declaration
    trigger (multi-declarator var) and the adjacent-function sub-item below have
@@ -355,11 +364,14 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
      through the matcher gate; on proof failure the run is emitted individually.
      E2E: `adjacent_accessor_group`. Real-spec analogue: `app/state/accessors.yaml`
      `use{AppUser,NodeSpace,FocusService,CoreServices}`.
-8. **Delete the cover search** once all forms route through read-off
-   (`minimize_via_retention`, `cover_competitors`, `min_set_cover`,
-   `collect_*_anchors`) — shrinks `selector_codemod.rs` substantially.
-9. **`selector_codemod.rs` refactor** — after cover deletion (deletion reshapes
-   the file; splitting by form earlier also enables parallel per-form fan-out).
+8. **Delete the cover search.** The branch-and-bound cover (`minimize_via_retention`,
+   `cover_competitors`, `min_set_cover`, the function/class anchor collectors,
+   `AnchorCandidates::tiers`) is **deleted** — read-off subsumed it once W3 added
+   number/bool features (−305 lines). Remaining cover: the multi-target var
+   binding-group keep-shallow path, retired only once group read-off (item 6) lands.
+9. **`selector_codemod.rs` refactor** — the cover deletion reshaped the file
+   (~4.2k lines); a by-form split is still open and enables parallel per-form
+   fan-out.
 10. **Language simplification** (see below).
 11. **W4 — whole-spec validation:** **hard budget met** — whole chunk ~13s after
     #2280 (was ~110s), every sub-scope ≤8s; ≤10s ideal narrowly missed. Measured
