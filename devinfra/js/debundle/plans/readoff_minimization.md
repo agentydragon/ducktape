@@ -204,6 +204,27 @@ non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
    validated — whole chunk ~110s → ~13s, see W4 below.)**
 2. **Function** whole-body anchoring (~1,455 full + ~1,743 holed; biggest count) —
    anchor a deep unique literal/member, hole the rest (`sparse_function_body`).
+   2b. **Interior holing — hole non-anchor subtrees within kept statements
+   (gaffer-dogfood feedback).** The read-off already prunes off-anchor _statements_,
+   _call-chain links_, and _callbacks_ when a sparse anchor exists: with a clean
+   discriminator a `svc.fetchToken().then(…).catch(e => {…})` chain correctly
+   minimizes to `ANYTHING.then((ANYTHING) => { <anchor> }).catch(ANYTHING)` (the
+   non-discriminating catch callback holes to `ANYTHING`). Two gaps remain:
+   - **Nested object / array literals inside a kept expression are pinned whole**
+     rather than holed to `OBJECT_PROPS` / `ARGS` around the discriminating
+     element. Demonstrated by `interior_object_arg_holing`: the move-options object
+     in a kept `engine.run([{…}])` keeps every property instead of
+     `[{ OBJECT_PROPS, mode: "…", OBJECT_PROPS }]`. (Real-spec analogues:
+     `moveProcessedInboxAudioNodeToTarget`, the `Se({…})` command objects.) Fix:
+     extend the kept-span prune to recurse into object/array literals, holing
+     maximal non-anchor property/element runs the same way the top-level object
+     form does.
+   - **No-sparse-anchor bodies are kept verbatim** (the single-target / weak-anchor
+     family — `single_target_class_whole_body`, `component_wide_destructure_whole_body`,
+     and function analogues like `redirectElectronAppWithCustomToken` keeping its
+     whole then+catch). Here uniqueness was proven by the full body, so nothing was
+     holed; the win is finding the minimal subtree set that still proves unique and
+     holing the rest (interior set-cover at subtree granularity).
 3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
    bodies) — `CLASS_REST` + discriminating member (`class_among_many_siblings`,
    `sibling_subclass_hierarchy`, `class_body`). **Landed.** `minimize_class_selector`

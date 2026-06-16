@@ -548,6 +548,26 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Interior holing: a nested object literal inside a kept call argument should
+// hole its non-anchor properties to `OBJECT_PROPS`, the same way the single-target
+// object form already does at top level. The discriminator is one property
+// (`mode: "uniqueDiscriminatorMode"`); the rest are shared across siblings. Today
+// the minimizer holes the off-anchor receiver (`ctx.engine` -> `ANYTHING`) but
+// keeps the whole nested object verbatim instead of holing it. (Real-spec
+// analogue: `moveProcessedInboxAudioNodeToTarget` pins its entire move-options
+// object.) The read-off prunes off-anchor statements / call-chains / callbacks
+// already; the gap is holing INTO nested object/array literals within a kept
+// expression.
+minimizer_expectation_case!(
+    #[ignore = "nested object literal in a kept call arg pins every property; non-anchor props should hole to OBJECT_PROPS"]
+    minimizes_interior_object_arg_holing,
+    fixture = "interior_object_arg_holing",
+    name = "nested object in a kept call arg keeps only the discriminating property, OBJECT_PROPS for the rest",
+    module = "app/nodes",
+    bindings = [("SelectedMover", "selectedMover")],
+    expected = "expected_match.js",
+);
+
 // Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
 // slot's direct shallow literals including object-property values. The group's
 // shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
