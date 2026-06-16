@@ -265,34 +265,16 @@ real-spec sample (5,556 selectors); the non-minimal pattern catalog drives this
 and is encoded as disabled E2E cases. Completed items are removed, not annotated;
 the landed architecture is in "Current state" above.
 
-1. **Interior set-cover at subtree granularity for no-sparse-anchor bodies (the
-   dominant lever; GitHub #2289).** The single-target whole-body half has landed:
-   `hole_expr` recurses into function/arrow-valued subexpressions (#2301), the
-   **robustness-anchor policy** prefers a holed-down value anchor over the
-   degenerate scaffold (#2303), and the **robustness-anchor candidate walk** (#2289
-   item 1) lands the deep value pin in practice — `ShapeIndex::unique_value_anchor_candidates`
-   yields the target's individually-discriminating value anchors best-first, and
-   `render_via_read_off` / `try_var_read_off` walk them, emitting the first whose
-   holed selector proves (recovering `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`
-   instead of `class X { CLASS_REST }` when the _minimal_ anchor renders to a
-   verbatim-kept statement that fails to prove). Closed fixtures:
-   `single_target_class_whole_body`, `component_wide_destructure_whole_body`. The
-   **multi-feature interior cover** has now landed too:
-   `ShapeIndex::unique_value_anchor_cover` runs the same greedy set-cover as
-   `minimal_anchor_set` but restricted to _value-bearing_ features, so when no
-   _single_ value anchor singles the target out among same-shape SIBLINGS — each
-   value anchor individually shared with a different sibling — a greedy combination
-   of value anchors (each rendering a kept leaf) jointly resolves it. The renderer
-   walks it after the single-anchor candidates and before the degenerate scaffold,
-   so a body whose discriminator is a _set_ of deep leaves drills to those leaves
-   instead of dumping `class X { CLASS_REST }` / `const X = ANYTHING`. Unlike
-   `minimal_anchor_set` (which takes the globally most-excluding feature, possibly a
-   structural skeleton that renders nothing or a value whose only home is a verbatim
-   statement), every step of the value cover drills to a renderable token. Still
-   open: the genuine residual where even value combos cannot separate same-shape
-   siblings (alpha-only constructs, near-duplicate emitted helpers) — those need
-   enclosing-context anchoring or stay name-pinned. Reclaims a further share of the
-   ~2,024 "no sparse selector" tail.
+1. **Enclosing-context anchoring for the read-off residual (GitHub #2315).**
+   Interior holing of no-sparse-anchor bodies is complete (single-target
+   whole-body via the robustness-anchor candidate walk, and the multi-feature
+   `unique_value_anchor_cover` for same-shape-sibling bodies — see "Current state").
+   The genuine residual remains: bodies the read-off cannot separate from
+   same-shape siblings by any combination of their own value anchors (alpha-only
+   constructs like `new <minified>()`, near-duplicate emitted helpers like the
+   `__decorate` family). These have no discriminating feature _inside_ the
+   declaration, so they need **enclosing-context anchoring** (`before`/`after`/`near`
+   a stable neighbor) or stay name-pinned as accepted debt.
 2. **Wide destructure (`wide_destructure_block`).** A `const { …, x } = props`
    whose discriminator is a destructured property key (`x`) bails with "no sparse
    selector": the candidate index does not collect destructure-pattern property
