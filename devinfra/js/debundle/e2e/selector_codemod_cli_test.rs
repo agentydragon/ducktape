@@ -888,12 +888,16 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     );
 }
 
-// Re-baselined for the unified keep-shallow policy: single-target vars now route
-// through the group path, whose structural-tier escalation keeps the whole
-// object-key tier rather than running the exact-minimum set-cover B&B. The
-// min-cover guarantee still holds for function bodies (via `minimize_via_retention`
-// → `cover_competitors` → `min_set_cover`); this var case keeps all keys and
-// still resolves uniquely to the intended binding.
+// After the var read-off migration, a single-target var initialized by an
+// object-bearing call (`makeConfig({…})`) reads its minimal anchor off the shape
+// index. Each entry's value (`computeValue("selected-beta")`) carries a globally
+// unique string, so the read-off pins ONE discriminating `key: value` and holes
+// every sibling key to `OBJECT_PROPS` — sparser than the keep-shallow "keep all
+// keys" output and sparser than the {betaKey, gammaKey} key-set the B&B set-cover
+// would compute (a unique value beats a multi-key presence cover). It still
+// resolves uniquely to the intended binding. The min-cover guarantee still backs
+// function bodies via `minimize_via_retention` → `cover_competitors` →
+// `min_set_cover`.
 #[test]
 fn synthesize_selectors_var_object_keys_resolve_uniquely() {
     let dir = tempfile::tempdir().unwrap();
@@ -920,9 +924,11 @@ fn synthesize_selectors_var_object_keys_resolve_uniquely() {
     let match_source = doc["members"][0]["selector"]["source_match"]["match"]
         .as_str()
         .unwrap();
+    // One discriminating `key: value` with a globally-unique string value is the
+    // minimal read-off anchor; the rest collapse to `OBJECT_PROPS`.
     assert!(
-        match_source.contains("betaKey:") && match_source.contains("gammaKey:"),
-        "the discriminating keys should remain:\n{match_source}"
+        match_source.contains("selected-") && match_source.matches("OBJECT_PROPS").count() >= 1,
+        "a single discriminating value anchor should remain, rest holed:\n{match_source}"
     );
 }
 

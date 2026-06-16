@@ -1,5 +1,4 @@
-const SelectedStandalone = registerRoute("settings", {
+const SelectedStandalone = registerRoute(ANYTHING, {
   kind: "panel",
   OBJECT_PROPS,
-  title: "Settings",
 });

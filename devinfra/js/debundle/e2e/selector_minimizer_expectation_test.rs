@@ -295,10 +295,15 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// A single-target var initialized by an object-bearing call (`buildWidget({…})`)
+// routes through the var read-off path (`try_var_read_off` → `hole_expr` →
+// `hole_object`). The read-off picks the uniquely-present `onClick` key (held to
+// `ANYTHING`) as the sole minimal discriminator — sparser than keeping the
+// `kind`/`mode` value pair the siblings also carry.
 minimizer_expectation_case!(
     minimizes_object_property_literals,
     fixture = "object_property_literals",
-    name = "object literal keeps minimal key value anchors",
+    name = "object-in-call var keeps only the uniquely-present key",
     module = "app/config",
     bindings = [("SelectedConfig", "selectedConfig")],
     expected = "expected_match.js",
@@ -414,11 +419,15 @@ minimizer_expectation_case!(
 // Aspirational: a binding initialized by a deeply nested call tree should
 // minimize to ANYTHING-holed outer callees and ARGS holes for their sibling
 // arguments, drilling only to the one deep object literal that carries the
-// discriminating key. Today the minimizer keeps the entire nested call/object
-// tree whole, over-pinning every wrapper call and every transient argument
-// instead of holing the path down to the single discriminating leaf.
+// discriminating key. The var read-off path now drills correctly to the leaf
+// (`buildInner({ mode: "…", OBJECT_PROPS })`), closing the old "keeps the whole
+// tree" gap. Two gaps remain vs the aspirational shape: the bare-function callees
+// (`wrapOuter`/`decorate`/`buildInner`) stay pinned rather than holing to ANYTHING
+// (the `hole_callee` policy keeps a bare function reference as a stable pin), and a
+// dropped sibling arg holes to a single arity-exact `ANYTHING` rather than a
+// variadic `ARGS` run-hole. Both are cross-cutting hole-policy changes.
 minimizer_expectation_case!(
-    #[ignore = "nested-call minimizer keeps whole tree instead of holing wrappers down to the leaf"]
+    #[ignore = "var read-off drills to the leaf but keeps bare-function callees (hole_callee policy) and holes dropped args to arity-exact ANYTHING, not ARGS"]
     minimizes_deeply_nested_call_args,
     fixture = "deeply_nested_call_args",
     name = "deeply nested call tree keeps only the discriminating leaf literal",
@@ -606,12 +615,15 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
-// slot's direct shallow literals including object-property values. The group's
-// shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
-// / call arg `"settings"` are over-pinned versus the old `ANYTHING` holes. The
-// design note accepts this occasional over-pin as the price of one policy across
-// single (N=1 group) and multi-target group paths.
+// Single vs group split after the var read-off migration: the multi-target group
+// (`SelectedPrimary`/`SelectedSecondary`) still uses the keep-shallow anchor policy
+// — both slots keep their direct shallow literals, including the shared
+// `enabled: true` over-pin (per-slot tuple resolution remains the cover's job). The
+// single-target `SelectedStandalone` now reads its minimal anchor off the shape
+// index: `kind: "panel"` alone discriminates it from `sameRouteDifferentKind`, so
+// the shared non-discriminating call arg `"settings"` holes to `ANYTHING` and the
+// redundant `title: "Settings"` collapses into `OBJECT_PROPS` — sparser and more
+// rebuild-robust than the keep-shallow over-pin.
 #[test]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {

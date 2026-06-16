@@ -2416,6 +2416,37 @@ fn collect_regex_anchor_candidates(init: &Expr) -> BTreeMap<AnchorSpan, String> 
     collector.candidates
 }
 
+/// Among kept string literals (`candidates` = span → derivable volatile-tail
+/// pattern), accept each `STR_LITERAL_MATCHING_RE` upgrade iff the upgraded
+/// selector *still* resolves uniquely (gate 1). The exact-literal form is the
+/// default; regex is opt-in by merit. Upgrades are applied one literal at a time
+/// so a too-broad pattern on one literal never blocks a sound upgrade on another.
+/// Shared by the read-off single-target var path and the keep-shallow group path.
+fn accepted_regex_anchors(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    candidates: &BTreeMap<AnchorSpan, String>,
+    kept: &BTreeSet<AnchorSpan>,
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>, &BTreeMap<AnchorSpan, String>) -> Result<String>,
+) -> Result<BTreeMap<AnchorSpan, String>> {
+    let mut regex_anchors: BTreeMap<AnchorSpan, String> = BTreeMap::new();
+    for (&span, pattern) in candidates {
+        if !kept.contains(&span) {
+            continue;
+        }
+        regex_anchors.insert(span, pattern.clone());
+        if prove_synthesized_selector(index, decl, targets, &render_with(kept, &regex_anchors)?)
+            .is_err()
+        {
+            // The regex anchor broke uniqueness (over-broad among siblings), so
+            // back it out and keep the exact literal.
+            regex_anchors.remove(&span);
+        }
+    }
+    Ok(regex_anchors)
+}
+
 /// A `DECLARATORS_<pos> = null` declarator hole absorbing a run of non-target
 /// declarators in a binding-group selector.
 fn declarator_hole(name: &str) -> VarDeclarator {
@@ -2616,6 +2647,120 @@ fn try_object_read_off(
     )
 }
 
+/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
+/// target declarator value is **not** an object literal (objects route through
+/// [`try_object_read_off`]). Mirrors [`render_via_read_off`] (function/class) but
+/// slot-aware: holes non-target declarators to `DECLARATORS_*`, holes the target
+/// init with [`hole_expr`] around the read-off anchors, and restricts the kept
+/// spans to the target declarator so a group's chunk-wide anchor set never pins a
+/// span carried only by a sibling this selector holes away.
+///
+/// Deviation from the function/class read-off: there is no empty-kept structural
+/// fast path. A var's maximally-holed scaffold is the *degenerate* `const X =
+/// ANYTHING`, which pins nothing meaningful and would match any wrapped-const a
+/// rebuild adds (criterion 2). A var selector must keep a discriminating value
+/// anchor, so an empty anchor set yields `None` and the caller falls back to the
+/// keep-shallow group path.
+///
+/// Returns `None` — caller falls back — when the target is an object declarator,
+/// the read-off has no anchor set, every anchor lies outside the target slot, or
+/// the rendered selector fails the matcher gate.
+fn try_var_read_off(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    target_slot: usize,
+) -> Result<Option<SpecializedSelector>> {
+    let declarator = &var.decls[target_slot];
+    let Some(init) = declarator.init.as_deref() else {
+        return Ok(None);
+    };
+    // Objects are `try_object_read_off`'s domain (padded `OBJECT_PROPS` + the
+    // slot-aware key-set cover); this owns every other initializer shape.
+    if matches!(init, Expr::Object(_)) {
+        return Ok(None);
+    }
+    let target_decl_span = declarator.span();
+    let targets = std::slice::from_ref(target);
+
+    let render_with = |kept: &BTreeSet<AnchorSpan>,
+                       regex_anchors: &BTreeMap<AnchorSpan, String>|
+     -> Result<String> {
+        let mut decls: Vec<VarDeclarator> = Vec::new();
+        let mut skipped_run = false;
+        let mut target_seen = 0usize;
+        for (idx, other) in var.decls.iter().enumerate() {
+            if idx != target_slot {
+                skipped_run = true;
+                continue;
+            }
+            if skipped_run {
+                decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
+                skipped_run = false;
+            }
+            let mut holed = other.clone();
+            holed.name = named_pat(&target.export_name);
+            let mut holed_init = hole_expr(init, kept);
+            if !regex_anchors.is_empty() {
+                holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
+                    patterns: regex_anchors,
+                });
+            }
+            holed.init = Some(Box::new(holed_init));
+            decls.push(holed);
+            target_seen += 1;
+        }
+        if skipped_run {
+            decls.push(declarator_hole(declarator_hole_name(target_seen, 1)));
+        }
+        let mut holed_var = var.clone();
+        holed_var.declare = false;
+        holed_var.decls = decls;
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+    };
+
+    let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) else {
+        return Ok(None);
+    };
+    let item = index
+        .parsed
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")?;
+    let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
+        .into_iter()
+        .filter(|span| node_holds_anchor(target_decl_span, *span))
+        .collect();
+    if kept.is_empty() {
+        return Ok(None);
+    }
+    let no_regex = BTreeMap::new();
+    // Prove the read-off resolves uniquely before offering the regex upgrade; on
+    // failure the caller falls back to the keep-shallow group path.
+    if prove_synthesized_selector(index, decl, targets, &render_with(&kept, &no_regex)?).is_err() {
+        return Ok(None);
+    }
+    // Preserve the keep-shallow path's regex-literal upgrade: among kept string
+    // literals, swap a volatile-suffix value for a `STR_LITERAL_MATCHING_RE`
+    // anchor when the upgraded selector still resolves uniquely.
+    let regex_anchors = accepted_regex_anchors(
+        index,
+        decl,
+        targets,
+        &collect_regex_anchor_candidates(init),
+        &kept,
+        &render_with,
+    )?;
+    let source = render_with(&kept, &regex_anchors)?;
+    let rewritten_holes = holes_present(&source);
+    Ok(Some(SpecializedSelector {
+        match_source: source,
+        rewritten_holes,
+    }))
+}
+
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
 /// shared declaration keeping the target declarators (each `export = <holed
 /// init>`) with `DECLARATORS_*` holes for non-target runs, and pin just enough
@@ -2661,6 +2806,26 @@ fn minimize_var_group_selector(
     // proves it (gate 1); on `None` we fall through to the keep-shallow group path
     // below, so a target neither pass can single out is handled exactly as before.
     if let Some(selector) = try_object_read_off(index, var, decl, targets, &target_slots)? {
+        return Ok(Some(selector));
+    }
+
+    // W2 read-off for the single-target non-object var (mirroring function/class):
+    // read the sparse `selective × stable` anchor off the shape index and hole the
+    // initializer down to it, instead of the keep-shallow path's "keep every
+    // shallow literal" over-pin. On `None` (no anchor set, anchors outside the
+    // target slot, or not uniquely resolved) we fall through to the keep-shallow
+    // group path below; multi-target groups always use that path — the read-off is
+    // single-target (per-slot tuple resolution is still the cover's job).
+    if let [target] = targets
+        && target_slots.len() == 1
+        && let Some(selector) = try_var_read_off(
+            index,
+            var,
+            decl,
+            target,
+            *target_slots.iter().next().expect("one target slot"),
+        )?
+    {
         return Ok(Some(selector));
     }
 
@@ -2744,34 +2909,19 @@ fn minimize_var_group_selector(
         }
     }
 
-    // Regex-literal upgrade: among kept string literals, offer a robust
-    // `STR_LITERAL_MATCHING_RE` anchor for each that has a derivable
-    // stable-prefix/volatile-tail pattern, but only accept the upgrade when the
-    // resulting selector *still* resolves uniquely (gate 1). The exact-literal
-    // form is the default; regex is opt-in by merit. Upgrades are applied one
-    // literal at a time so a too-broad pattern on one literal never blocks a
-    // sound upgrade on another.
-    let mut regex_anchors: BTreeMap<AnchorSpan, String> = BTreeMap::new();
+    // Regex-literal upgrade over the kept string literals of every target slot
+    // (shared with the read-off path).
+    let mut regex_candidates: BTreeMap<AnchorSpan, String> = BTreeMap::new();
     for (idx, declarator) in var.decls.iter().enumerate() {
         if !target_slots.contains(&idx) {
             continue;
         }
-        let Some(init) = &declarator.init else {
-            continue;
-        };
-        for (span, pattern) in collect_regex_anchor_candidates(init) {
-            if !kept.contains(&span) || regex_anchors.contains_key(&span) {
-                continue;
-            }
-            regex_anchors.insert(span, pattern);
-            let trial = render_with(&kept, &regex_anchors)?;
-            if prove_synthesized_selector(index, decl, targets, &trial).is_err() {
-                // The regex anchor broke uniqueness (over-broad among siblings),
-                // so back it out and keep the exact literal.
-                regex_anchors.remove(&span);
-            }
+        if let Some(init) = &declarator.init {
+            regex_candidates.extend(collect_regex_anchor_candidates(init));
         }
     }
+    let regex_anchors =
+        accepted_regex_anchors(index, decl, targets, &regex_candidates, &kept, &render_with)?;
 
     let source = render_with(&kept, &regex_anchors)?;
     let rewritten_holes = holes_present(&source);
