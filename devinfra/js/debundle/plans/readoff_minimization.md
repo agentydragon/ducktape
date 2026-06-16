@@ -302,18 +302,11 @@ the landed architecture is in "Current state" above.
    Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
    and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
    tuple-aware read-off for those residual groups (or accepting them as debt).
-3. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
-   splitting by form enables parallel per-form fan-out (do after item 2 reshapes
-   the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
-   and `minimize_var_group_selector` each build a near-identical var `render_with`
-   closure (iterate `var.decls`, `DECLARATORS_*` holes for non-target slots, holed
-   target init); factor one shared slot-render helper parameterized by the
-   per-slot init holing.
-4. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+3. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-5. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+4. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
    beneficial minimized selectors. Operational PR rule: **revert any converted
    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
