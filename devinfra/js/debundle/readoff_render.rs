@@ -56,6 +56,8 @@ pub type AnchorSpan = (u32, u32);
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum ValueAnchor {
     StringLiteral(String),
+    NumberLiteral(String),
+    BoolLiteral(bool),
     ObjectKey(String),
     ClassMember(String),
     MemberProperty(String),
@@ -81,6 +83,8 @@ impl ValueAnchor {
     fn from_selector_feature(feature: &SelectorFeature) -> Option<Self> {
         match feature {
             SelectorFeature::StringLiteral(value) => Some(Self::StringLiteral(value.clone())),
+            SelectorFeature::NumberLiteral(value) => Some(Self::NumberLiteral(value.clone())),
+            SelectorFeature::BoolLiteral(value) => Some(Self::BoolLiteral(*value)),
             SelectorFeature::ObjectKey(label) => Some(Self::ObjectKey(label.clone())),
             SelectorFeature::ClassMember(label) => Some(Self::ClassMember(label.clone())),
             SelectorFeature::MemberProperty(label) => Some(Self::MemberProperty(label.clone())),
@@ -89,6 +93,22 @@ impl ValueAnchor {
             | SelectorFeature::VarKind(_)
             | SelectorFeature::FunctionArity(_)
             | SelectorFeature::ImportSource(_) => None,
+        }
+    }
+
+    /// Whether `lit` exhibits one of the value anchors, mapping each concrete
+    /// literal kind to the feature taxonomy the read-off scored.
+    fn matches_lit(anchors: &BTreeSet<ValueAnchor>, lit: &Lit) -> bool {
+        match lit {
+            Lit::Str(str_) => anchors.contains(&ValueAnchor::StringLiteral(
+                str_.value.to_string_lossy().into(),
+            )),
+            Lit::Num(num) => anchors.contains(&ValueAnchor::NumberLiteral(num.value.to_string())),
+            Lit::BigInt(bigint) => {
+                anchors.contains(&ValueAnchor::NumberLiteral(bigint.value.to_string()))
+            }
+            Lit::Bool(bool_) => anchors.contains(&ValueAnchor::BoolLiteral(bool_.value)),
+            Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_) => false,
         }
     }
 }
@@ -128,11 +148,10 @@ impl SpanCollector<'_> {
 
 impl Visit for SpanCollector<'_> {
     fn visit_expr(&mut self, expr: &Expr) {
-        if let Expr::Lit(Lit::Str(str_)) = expr {
-            let value = str_.value.to_string_lossy().to_string();
-            if self.anchors.contains(&ValueAnchor::StringLiteral(value)) {
+        if let Expr::Lit(lit) = expr {
+            if ValueAnchor::matches_lit(self.anchors, lit) {
                 // Pin the literal node; the prune keeps it verbatim.
-                self.keep(str_.span);
+                self.keep(lit.span());
             }
             return;
         }
@@ -266,6 +285,25 @@ mod tests {
     fn span_text<'a>(source: &'a str, span: &AnchorSpan) -> &'a str {
         // swc byte positions are 1-based (BytePos 0 is the dummy sentinel).
         &source[(span.0 - 1) as usize..(span.1 - 1) as usize]
+    }
+
+    #[test]
+    fn number_literal_anchor_maps_to_the_token_span() {
+        // The numeric argument is item 0's only discriminator; the read-off pins
+        // it and the kept span covers exactly that number literal.
+        let source = r#"const a = make(call(), 123);
+const b = make(call(), 456);"#;
+        let module = parse(source);
+        let index = ShapeIndex::new(&module);
+        let anchor_set = index.minimal_anchor_set(0).unwrap();
+        let kept = kept_spans_for_anchor_set(&module.body[0], &anchor_set);
+        assert!(
+            kept.iter().any(|s| span_text(source, s) == "123"),
+            "expected a kept span covering `123`, got {:?}",
+            kept.iter()
+                .map(|s| span_text(source, s))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

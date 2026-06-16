@@ -209,3 +209,29 @@ each merge, and unignores E2E cases progressively. Build/test recipe: `bazelisk`
   `trace` object key, both 1 anchor); both gate-proven unique. W3 should extend
   the feature taxonomy to number/bool literals (drops the function cover
   fallback) and migrate var / class / object / group.
+- 2026-06-16: W3 built on `claude/debundle-readoff-object`. (a) **Feature
+  taxonomy extended to number/bool literals.** `SelectorFeature` gains
+  `NumberLiteral(String)` (canonical `f64`/BigInt decimal) and `BoolLiteral(bool)`;
+  `AstFeatureCollector` indexes them (never wildcarded, matcher discriminates by
+  `eq_ignore_span`, so the candidate set stays a sound match superset), scored
+  `Semantic`, rendered as kept literal spans by `readoff_render`. Soundness test
+  `number_and_bool_literal_features_keep_candidate_set_a_match_superset` asserts
+  the #2254 superset property still holds; matcher-backed read-off tests for
+  number and bool discriminators added. `call_argument_literal` (discriminator
+  `.bar` + `123`) now migrates to the function read-off (its fixture output is
+  unchanged — read-off renders the identical selector the cover did). (b)
+  **Single-target object migrated to read-off.** `try_single_object_read_off`
+  (single target binding, single declarator, object-literal init) reads the
+  minimal anchor set off the shape index and renders via `hole_object_padded`,
+  which always leads+trails with `OBJECT_PROPS` so the discriminating key:value
+  matches as an interior subsequence element (survives key reorder) rather than
+  anchoring to the object's right edge. Structural-only read-offs (empty kept
+  set) defer to the group path. Unignored `object_keys_over_pinned` (now
+  `OBJECT_PROPS, 10: "uniqueDiscriminatorLabel", OBJECT_PROPS`). `grouped_enum_objects`
+  stays ignored — it is a multi-declarator group, out of the single-target object
+  scope (W4/group wave). (c) W2 note #3: skeleton stability now demotes
+  high-multiplicity shapes (interned > 4×) to `Structural` so value anchors win
+  stability ties. Strangler-fig intact: var (single non-object + group), class,
+  group stay on the cover; the cover search is not deleted. All 116 debundle
+  tests green on RBE. Next wave: migrate var (non-object single) / class /
+  subclass / grouped-object forms, then delete the cover search.

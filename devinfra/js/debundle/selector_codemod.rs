@@ -1439,6 +1439,29 @@ fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     holed
 }
 
+/// Hole an object literal for the read-off object form: keep only props
+/// carrying a kept anchor and **always** lead and trail with an `OBJECT_PROPS`
+/// hole, regardless of whether the kept prop sits at a source edge.
+///
+/// Unlike [`hole_object`] (which only emits a list hole where a run of props was
+/// actually dropped), this pads both edges unconditionally. Object properties
+/// are unordered enum/lookup entries: a key that is genuinely last in this build
+/// can move on a rebuild, so anchoring it to the object's right edge
+/// (`anchored_right` in the matcher) is fragile. Padding both sides matches the
+/// discriminating key as an interior subsequence element, surviving reorder.
+fn hole_object_padded(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
+    let mut props = vec![object_props_prop()];
+    for prop in &object.props {
+        if node_retains_any(prop.span(), kept) {
+            props.push(hole_prop(prop, kept));
+        }
+    }
+    props.push(object_props_prop());
+    let mut holed = object.clone();
+    holed.props = props;
+    holed
+}
+
 fn hole_prop(prop: &PropOrSpread, kept: &BTreeSet<AnchorSpan>) -> PropOrSpread {
     let PropOrSpread::Prop(inner) = prop else {
         return prop.clone();
@@ -2128,6 +2151,71 @@ fn declarator_hole(name: &str) -> VarDeclarator {
     }
 }
 
+/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
+/// declarator value is an object literal (W3).
+///
+/// Applies only to the single-target, single-declarator-target object case (the
+/// general group path stays unmigrated). Reads the minimal [`AnchorSet`] off the
+/// shape index, maps its value anchors to kept byte spans over the object, and
+/// renders the object with [`hole_object_padded`] (both-edge `OBJECT_PROPS`) so
+/// the discriminating key:value survives key reordering. Returns `None` — so the
+/// caller falls back to the keep-shallow group path — when the target is not a
+/// single object declarator, the structural scaffold already resolves (let the
+/// group path keep its leaner all-holed form), the read-off cannot single out
+/// the target, or the rendered selector fails the matcher gate.
+fn try_single_object_read_off(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    target_slots: &BTreeSet<usize>,
+) -> Result<Option<SpecializedSelector>> {
+    // Only the genuine single-declarator case: one target binding and one
+    // declarator in the whole var. A multi-declarator group (even with a single
+    // target slot) needs the `DECLARATORS_*` holes the group path renders, so it
+    // stays unmigrated (later wave).
+    let [target] = targets else {
+        return Ok(None);
+    };
+    if var.decls.len() != 1 || target_slots.len() != 1 {
+        return Ok(None);
+    }
+    let declarator = &var.decls[0];
+    let Some(Expr::Object(object)) = declarator.init.as_deref() else {
+        return Ok(None);
+    };
+
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed = declarator.clone();
+        holed.name = named_pat(&target.export_name);
+        holed.init = Some(Box::new(Expr::Object(hole_object_padded(object, kept))));
+        let mut holed_var = var.clone();
+        holed_var.declare = false;
+        holed_var.decls = vec![holed];
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+    };
+
+    let anchor_set = index.shape_index.minimal_anchor_set(decl.body_idx);
+    let Some(anchor_set) = anchor_set else {
+        return Ok(None);
+    };
+    let item = index
+        .parsed
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")?;
+    let kept = kept_spans_for_anchor_set(item, &anchor_set);
+    // A structural / skeleton-only read-off keeps no concrete object token: the
+    // padded scaffold would be `{ OBJECT_PROPS, OBJECT_PROPS }`, which pins
+    // nothing about the object and is no leaner than the group path's form.
+    // Defer to the group path so the migration only owns the value-anchored case.
+    if kept.is_empty() {
+        return Ok(None);
+    }
+    finish_minimized_selector(index, decl, target, render_with(&kept)?)
+}
+
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
 /// shared declaration keeping the target declarators (each `export = <holed
 /// init>`) with `DECLARATORS_*` holes for non-target runs, and pin just enough
@@ -2162,6 +2250,16 @@ fn minimize_var_group_selector(
         .collect();
     if target_slots.len() != targets.len() {
         return Ok(None);
+    }
+
+    // W3: single-target var whose value is an object literal reads its minimal
+    // selector off the shape index — `OBJECT_PROPS` holes around the
+    // discriminating key(s) instead of keeping every key (the
+    // `object_keys_over_pinned` over-pin). The matcher proves it (gate 1); on
+    // `None` we fall through to the keep-shallow group path below, so a target
+    // the read-off cannot single out is handled exactly as before.
+    if let Some(selector) = try_single_object_read_off(index, var, decl, targets, &target_slots)? {
+        return Ok(Some(selector));
     }
 
     let render_with = |kept: &BTreeSet<AnchorSpan>,

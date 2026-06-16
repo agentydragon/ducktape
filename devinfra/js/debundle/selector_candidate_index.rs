@@ -46,6 +46,12 @@ pub enum SelectorFeature {
     VarKind(VarKind),
     FunctionArity(usize),
     StringLiteral(String),
+    /// A numeric literal, keyed by its canonical `f64::to_string` form so the
+    /// index and matcher agree on identity (the matcher compares via
+    /// `eq_ignore_span`, which is value equality). BigInt literals reuse this
+    /// variant keyed by their decimal string.
+    NumberLiteral(String),
+    BoolLiteral(bool),
     ObjectKey(String),
     ClassMember(String),
     MemberProperty(String),
@@ -515,10 +521,32 @@ impl Visit for AstFeatureCollector<'_, '_> {
         if expr_hole_name(expr).is_some() {
             return;
         }
-        if let Expr::Lit(Lit::Str(str_)) = expr {
-            let value = str_.value.to_string_lossy().to_string();
-            if !self.string_literal_is_wildcard(&value) {
-                self.features.insert(SelectorFeature::StringLiteral(value));
+        if let Expr::Lit(lit) = expr {
+            match lit {
+                Lit::Str(str_) => {
+                    let value = str_.value.to_string_lossy().to_string();
+                    if !self.string_literal_is_wildcard(&value) {
+                        self.features.insert(SelectorFeature::StringLiteral(value));
+                    }
+                }
+                // Number / bool literals are never wildcarded or holed in place
+                // (only an `EXPR`/`ANYTHING` hole erases them, handled above),
+                // and the matcher discriminates them by value (`eq_ignore_span`),
+                // so indexing them keeps the candidate set a sound match superset
+                // while letting a numeric/bool discriminator narrow it.
+                Lit::Num(num) => {
+                    self.features
+                        .insert(SelectorFeature::NumberLiteral(num.value.to_string()));
+                }
+                Lit::BigInt(bigint) => {
+                    self.features
+                        .insert(SelectorFeature::NumberLiteral(bigint.value.to_string()));
+                }
+                Lit::Bool(bool_) => {
+                    self.features
+                        .insert(SelectorFeature::BoolLiteral(bool_.value));
+                }
+                Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_) => {}
             }
             return;
         }
@@ -991,6 +1019,56 @@ function unrelated() { return 1; }"#,
 
         assert_eq!(exact, vec![0]);
         assert!(exact.into_iter().all(|idx| candidate_set.contains(idx)));
+    }
+
+    #[test]
+    fn number_and_bool_literal_features_keep_candidate_set_a_match_superset() {
+        // The number/bool literal taxonomy extension must stay a sound prefilter:
+        // for every selector pinning a numeric or boolean discriminator, the
+        // candidate set must contain every body index the production matcher
+        // returns (it may contain extras, never miss a true match).
+        let runtime = parse_module(
+            r#"const alpha = make(123, { enabled: true });
+const beta = make(456, { enabled: true });
+const gamma = make(123, { enabled: false });
+const delta = make(123);"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+
+        for selector_source in [
+            r#"const readable = make(123, ANYTHING);"#,
+            r#"const readable = make(456, ANYTHING);"#,
+            r#"const readable = make(ANYTHING, { enabled: true });"#,
+            r#"const readable = make(ANYTHING, { enabled: false });"#,
+            r#"const readable = make(123, { enabled: false });"#,
+        ] {
+            let selector = selector(selector_source);
+            let matched = js_ast::with_swc_globals(|| {
+                source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
+                    .unwrap()
+            });
+            let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
+            assert!(
+                matched.iter().all(|idx| candidate_set.contains(*idx)),
+                "candidate set must be a match superset for {selector_source:?}: \
+                 matched={matched:?} candidates={:?}",
+                body_indices(candidate_set.clone())
+            );
+        }
+    }
+
+    #[test]
+    fn number_literal_feature_narrows_to_the_discriminating_item() {
+        // The numeric argument is the sole discriminator; indexing it lets the
+        // prefilter narrow to the single item carrying that value.
+        let runtime = parse_module(
+            r#"const alpha = make(call(), 123);
+const beta = make(call(), 456);"#,
+        );
+        let index = SelectorCandidateIndex::new(&runtime);
+        let only_123 =
+            index.candidate_set_for_feature(&SelectorFeature::NumberLiteral(123.0_f64.to_string()));
+        assert_eq!(body_indices(only_123), vec![0]);
     }
 
     #[test]

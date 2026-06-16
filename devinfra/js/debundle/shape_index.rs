@@ -666,11 +666,20 @@ impl ShapeIndex {
         }
         for &shape in &item.skeletons {
             let f = ShapeFeature::Skeleton(shape);
+            // W2 note #3: a shape skeleton interned many times across the chunk
+            // is structural noise (a common scaffold), not a stable anchor; one
+            // interned rarely is a distinctive shape worth pinning. Demote the
+            // common ones to `Structural` so a value-bearing semantic anchor
+            // (literal, key, member) wins the stability tiebreak when their
+            // selectivities are equal. Selectivity stays the primary key.
+            let stability = if self.interner.multiplicity(shape) > SKELETON_NOISE_MULTIPLICITY {
+                Stability::Structural
+            } else {
+                Stability::Semantic
+            };
             scored.push(ScoredFeature {
                 selectivity: self.posting(&f).len(),
-                // A shape skeleton seen on many items is structural noise; one
-                // seen rarely is a semantic shape worth pinning.
-                stability: Stability::Semantic,
+                stability,
                 feature: f,
             });
         }
@@ -755,6 +764,12 @@ impl ShapeIndex {
     }
 }
 
+/// Multiplicity above which a shape skeleton reads as structural noise rather
+/// than a distinctive anchor (W2 note #3). A shape interned more than this many
+/// times across the chunk is a common scaffold; one interned at most this often
+/// is distinctive enough to rank as a semantic anchor on stability ties.
+const SKELETON_NOISE_MULTIPLICITY: u32 = 4;
+
 /// Ranking key: most selective first (smallest posting list), then most stable.
 /// Wrapped in a comparable tuple; smaller sorts first.
 fn rank_key(f: &ScoredFeature) -> (usize, std::cmp::Reverse<Stability>) {
@@ -791,6 +806,10 @@ fn selector_feature_stability(feature: &SelectorFeature) -> Stability {
                 Stability::Semantic
             }
         }
+        // Number / bool literals are concrete semantic values (enum tags,
+        // discriminant codes, config flags); they survive rebuilds and
+        // discriminate well, so they rank as preferred anchors.
+        SelectorFeature::NumberLiteral(_) | SelectorFeature::BoolLiteral(_) => Stability::Semantic,
         SelectorFeature::ObjectKey(_)
         | SelectorFeature::ClassMember(_)
         | SelectorFeature::MemberProperty(_)

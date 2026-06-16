@@ -363,15 +363,12 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a large object literal that shares most keys with sibling
-// objects should minimize to OBJECT_PROPS holes on both sides of the single
-// discriminating key, so the selector survives key reordering. Today the
-// minimizer keeps the discriminating key but omits the trailing OBJECT_PROPS
-// hole, anchoring the key to the object's right edge. On the real
-// `infra/feature_flags.yaml` conversion the same retention path kept all ~50
-// keys (each held to ANYTHING) instead of holing the non-discriminating ones.
+// A large object literal that shares most keys with sibling objects minimizes
+// to OBJECT_PROPS holes on both sides of the single discriminating key, so the
+// selector survives key reordering. W3 routed the single-target object form
+// through the read-off shape index + padded-OBJECT_PROPS renderer, replacing the
+// old retention path that kept all ~50 keys (each held to ANYTHING).
 minimizer_expectation_case!(
-    #[ignore = "object minimizer retains all keys instead of OBJECT_PROPS + discriminator"]
     minimizes_object_keys_over_pinned,
     fixture = "object_keys_over_pinned",
     name = "large object keeps only the discriminating key value",

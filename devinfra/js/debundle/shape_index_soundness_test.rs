@@ -38,6 +38,17 @@ fn render_selector(module: &Module, anchor: &AnchorSet) -> AnonymousStatementSel
             _ => None,
         })
         .collect();
+    // Number / bool literal anchors render verbatim (the matcher discriminates
+    // them by value), keyed by their canonical feature string.
+    let kept_numbers: BTreeSet<String> = anchor
+        .anchors
+        .iter()
+        .filter_map(|scored| match &scored.feature {
+            ShapeFeature::Selector(SelectorFeature::NumberLiteral(value)) => Some(value.clone()),
+            ShapeFeature::Selector(SelectorFeature::BoolLiteral(value)) => Some(value.to_string()),
+            _ => None,
+        })
+        .collect();
     let kept_keys: BTreeSet<String> = anchor
         .anchors
         .iter()
@@ -52,7 +63,7 @@ fn render_selector(module: &Module, anchor: &AnchorSet) -> AnonymousStatementSel
         })
         .collect();
 
-    let match_source = render_item(item, &kept_strings, &kept_keys);
+    let match_source = render_item(item, &kept_strings, &kept_numbers, &kept_keys);
     AnonymousStatementSelector {
         match_source,
         identifiers: SourceMatchIdentifierMode::AlphaAll,
@@ -66,6 +77,7 @@ fn render_selector(module: &Module, anchor: &AnchorSet) -> AnonymousStatementSel
 fn render_item(
     item: &ModuleItem,
     kept_strings: &BTreeSet<String>,
+    kept_numbers: &BTreeSet<String>,
     kept_keys: &BTreeSet<String>,
 ) -> String {
     match item {
@@ -78,7 +90,7 @@ fn render_item(
             let init = var.decls[0]
                 .init
                 .as_ref()
-                .map(|e| render_expr(e, kept_strings, kept_keys))
+                .map(|e| render_expr(e, kept_strings, kept_numbers, kept_keys))
                 .unwrap_or_else(|| "EXPR".to_string());
             format!("{kind} readable = {init};")
         }
@@ -115,6 +127,7 @@ fn render_item(
 fn render_expr(
     expr: &Expr,
     kept_strings: &BTreeSet<String>,
+    kept_numbers: &BTreeSet<String>,
     kept_keys: &BTreeSet<String>,
 ) -> String {
     match expr {
@@ -126,34 +139,45 @@ fn render_expr(
                 "EXPR".to_string()
             }
         }
+        Expr::Lit(Lit::Num(num)) if kept_numbers.contains(&num.value.to_string()) => {
+            num.value.to_string()
+        }
+        Expr::Lit(Lit::Bool(bool_)) if kept_numbers.contains(&bool_.value.to_string()) => {
+            bool_.value.to_string()
+        }
         Expr::Call(call) => {
             let callee = match &call.callee {
-                Callee::Expr(e) => render_expr(e, kept_strings, kept_keys),
+                Callee::Expr(e) => render_expr(e, kept_strings, kept_numbers, kept_keys),
                 _ => "EXPR".to_string(),
             };
             let args: Vec<String> = call
                 .args
                 .iter()
-                .map(|a| render_expr(&a.expr, kept_strings, kept_keys))
+                .map(|a| render_expr(&a.expr, kept_strings, kept_numbers, kept_keys))
                 .collect();
             format!("{callee}({})", args.join(", "))
         }
         Expr::Ident(_) => "EXPR".to_string(),
         Expr::Object(object) => {
-            // Keep a property when its key is an anchor, or when its value is a
-            // kept (anchored) string literal — pin the key:value so the kept
-            // literal survives into the selector.
+            // Keep a property when its key is an anchor, or when its value
+            // renders to a kept (anchored) scalar literal — pin the key:value so
+            // the kept literal survives into the selector.
             let props: Vec<String> = object
                 .props
                 .iter()
                 .filter_map(object_prop_kv)
-                .filter(|(key, value)| {
-                    kept_keys.contains(key)
-                        || value.as_ref().is_some_and(|v| kept_strings.contains(v))
-                })
-                .map(|(key, value)| match value {
-                    Some(v) if kept_strings.contains(&v) => format!("{key}: {v:?}"),
-                    _ => format!("{key}: EXPR"),
+                .filter_map(|(key, value)| {
+                    let rendered_value = value
+                        .as_ref()
+                        .map(|v| render_expr(v, kept_strings, kept_numbers, kept_keys));
+                    let value_anchored = rendered_value.as_deref().is_some_and(|v| v != "EXPR");
+                    if !kept_keys.contains(&key) && !value_anchored {
+                        return None;
+                    }
+                    Some(format!(
+                        "{key}: {}",
+                        rendered_value.unwrap_or_else(|| "EXPR".to_string())
+                    ))
                 })
                 .collect();
             // Lead and trail with list holes so kept props match as an ordered
@@ -178,20 +202,13 @@ fn class_member_name(member: &ClassMember) -> Option<String> {
     }
 }
 
-/// Key name plus, when the value is a string literal, its value.
-fn object_prop_kv(prop: &PropOrSpread) -> Option<(String, Option<String>)> {
+/// Key name plus the value expression (rendered by the caller).
+fn object_prop_kv(prop: &PropOrSpread) -> Option<(String, Option<&Expr>)> {
     let PropOrSpread::Prop(prop) = prop else {
         return None;
     };
     match prop.as_ref() {
-        Prop::KeyValue(kv) => {
-            let key = prop_name(&kv.key)?;
-            let value = match kv.value.as_ref() {
-                Expr::Lit(Lit::Str(str_)) => Some(str_.value.to_string_lossy().to_string()),
-                _ => None,
-            };
-            Some((key, value))
-        }
+        Prop::KeyValue(kv) => Some((prop_name(&kv.key)?, Some(kv.value.as_ref()))),
         Prop::Shorthand(ident) => Some((ident.sym.to_string(), None)),
         _ => None,
     }
@@ -320,6 +337,31 @@ const b = make("shared", "beta");"#,
             .all(|scored| scored.stability != Stability::Volatile),
         "read-off must prefer stable anchors when available"
     );
+}
+
+#[test]
+fn number_literal_discriminator_read_off_resolves_uniquely() {
+    // The only difference between the items is the numeric argument; with
+    // number-literal features the read-off pins it and resolves uniquely.
+    let module = parse(
+        r#"const a = make(call(), 123);
+const b = make(call(), 456);
+const c = make(call(), 789);"#,
+    );
+    for idx in 0..3 {
+        assert_read_off_resolves_uniquely(&module, idx);
+    }
+}
+
+#[test]
+fn bool_literal_discriminator_read_off_resolves_uniquely() {
+    // Items differ only in a boolean object-value; the bool literal anchor
+    // discriminates the `true` one from its `false` sibling.
+    let module = parse(
+        r#"const a = cfg({ flag: true });
+const b = cfg({ flag: false });"#,
+    );
+    assert_read_off_resolves_uniquely(&module, 0);
 }
 
 #[test]
