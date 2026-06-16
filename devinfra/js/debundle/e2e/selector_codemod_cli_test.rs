@@ -1104,12 +1104,14 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
         match_source.contains("DECLARATORS_BEFORE"),
         "{match_source}"
     );
+    // The bare `buildConfig` callee holes to ANYTHING (a minified name the matcher
+    // alpha-wildcards); each slot is still kept as its own named declarator.
     assert!(
-        match_source.contains("PrimaryConfig = buildConfig"),
+        match_source.contains("PrimaryConfig = ANYTHING("),
         "{match_source}"
     );
     assert!(
-        match_source.contains("SecondaryConfig = buildConfig"),
+        match_source.contains("SecondaryConfig = ANYTHING("),
         "{match_source}"
     );
     assert_eq!(group["exports"]["PrimaryConfig"], "PrimaryConfig");

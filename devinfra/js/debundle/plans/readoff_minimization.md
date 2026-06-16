@@ -149,7 +149,11 @@ Migrated to read-off as their primary path:
 - **Single-target var (non-object)** (`try_var_read_off`): holes the initializer
   with `hole_expr` around the read-off anchors, restricting kept spans to the
   target declarator; drills into nested call/object/array trees down to the
-  discriminating leaf. No empty-kept fast path — a var's holed scaffold
+  discriminating leaf. In a call tree (`hole_callee` / `hole_args`) a bare-function
+  callee holes to `ANYTHING` (a minified name the matcher alpha-wildcards anyway,
+  never a chosen anchor) while a member-method name stays, and a run of non-anchor
+  arguments collapses to an `ARGS` run-hole so a rebuild that adds or drops a
+  sibling argument still resolves. No empty-kept fast path — a var's holed scaffold
   (`const X = ANYTHING`) is degenerate, so an empty anchor set defers to the
   keep-shallow group path. The `STR_LITERAL_MATCHING_RE` upgrade is shared with
   the group path via `accepted_regex_anchors`.
@@ -175,7 +179,7 @@ binding-group matcher proves the tuple. The **keep-shallow path**
 `AnchorCandidates::{shallow_literals,deep_cover_tiers}`) remains only as the
 **fallback** for groups whose per-slot single-binding view cannot single a slot
 out (a value shared across sibling statements that resolves only as a tuple);
-retiring it is gated as backlog item 6.
+retiring it is gated as backlog item 3.
 
 **Measured perf.** Whole ~7 MB / ~4.5k-member chunk minimizes in **~13 s** with
 the prove-gate-via-index fast-path (#2280), down from ~110 s — **meets the ≤30 s
@@ -198,9 +202,10 @@ landed, #2289), `sequential_assignment_block` (`hole_expr` `Expr::Assign` arm),
 `single_target_class_whole_body`, `component_wide_destructure_whole_body`
 (unignored once the robustness-anchor candidate-walk landed, #2289 item 1),
 `object_nested_value_dict`, and (unignored once the object key-set cover landed)
-`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`. Ignored
-as aspirational (the named form not yet read-off-expressible):
-`deeply_nested_call_args`, `wide_destructure_block`.
+`grouped_enum_objects`, `object_key_set_group`, `object_key_set_subset`, and
+(unignored once `hole_callee`/`hole_args` holed bare-function callees and
+non-anchor argument runs) `deeply_nested_call_args`. Ignored as aspirational (the
+named form not yet read-off-expressible): `wide_destructure_block`.
 
 ## Acceptance criteria
 
@@ -322,13 +327,7 @@ the landed architecture is in "Current state" above.
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-6. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
-   the leaf but keeps bare-function callees pinned (`hole_callee` keeps a bare
-   function reference) and holes dropped args to arity-exact `ANYTHING` rather than
-   a variadic `ARGS` run-hole. Closing both is a cross-cutting `hole_callee` /
-   `hole_args` policy change affecting all read-off paths; weigh against existing
-   fixtures.
-7. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+6. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
    beneficial minimized selectors. Operational PR rule: **revert any converted
    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.

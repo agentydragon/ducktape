@@ -468,18 +468,16 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// Aspirational: a binding initialized by a deeply nested call tree should
-// minimize to ANYTHING-holed outer callees and ARGS holes for their sibling
-// arguments, drilling only to the one deep object literal that carries the
-// discriminating key. The var read-off path now drills correctly to the leaf
-// (`buildInner({ mode: "…", OBJECT_PROPS })`), closing the old "keeps the whole
-// tree" gap. Two gaps remain vs the aspirational shape: the bare-function callees
-// (`wrapOuter`/`decorate`/`buildInner`) stay pinned rather than holing to ANYTHING
-// (the `hole_callee` policy keeps a bare function reference as a stable pin), and a
-// dropped sibling arg holes to a single arity-exact `ANYTHING` rather than a
-// variadic `ARGS` run-hole. Both are cross-cutting hole-policy changes.
+// A binding initialized by a deeply nested call tree minimizes to ANYTHING-holed
+// outer callees and an `ARGS` run-hole for their non-anchor sibling arguments,
+// drilling only to the one deep object literal that carries the discriminating
+// key. The var read-off drills into the nested call tree (`hole_expr` →
+// `hole_callee` / `hole_args`), holes every bare-function callee
+// (`wrapOuter`/`decorate`/`buildInner`) to `ANYTHING` — a minified name the matcher
+// alpha-wildcards anyway, never a chosen anchor — and collapses the dropped
+// `{ theme: … }` sibling argument into a variadic `ARGS` run-hole, so a rebuild
+// that adds or drops a sibling argument still resolves.
 minimizer_expectation_case!(
-    #[ignore = "var read-off drills to the leaf but keeps bare-function callees (hole_callee policy) and holes dropped args to arity-exact ANYTHING, not ARGS"]
     minimizes_deeply_nested_call_args,
     fixture = "deeply_nested_call_args",
     name = "deeply nested call tree keeps only the discriminating leaf literal",
@@ -627,11 +625,11 @@ minimizer_expectation_case!(
 // the discriminating returned-element literal, rather than the degenerate
 // `const SelectedComponent = ANYTHING`. The var read-off iterates the target's
 // individually-discriminating value anchors best-first (issue #2289 item 1) and
-// keeps `jsx("div", ANYTHING)` — anchoring on the unique `"div"` tag literal — with
+// keeps `ANYTHING("div", ARGS)` — anchoring on the unique `"div"` tag literal — with
 // the prop destructure and hooks absorbed into `STMT_LIST`. The bare callees
-// `wrap`/`jsx` stay pinned (the documented `hole_callee` policy keeps a bare
-// function reference as a stable pin); holing them to `ANYTHING` is the
-// cross-cutting `hole_callee` change tracked by `deeply_nested_call_args`. The real
+// `wrap`/`jsx` hole to `ANYTHING` (the `hole_callee` policy holes a minified
+// bare-function reference the matcher alpha-wildcards anyway), and the dropped
+// props object after the `"div"` tag collapses into an `ARGS` run-hole. The real
 // whole-body over-pin (cf. `features/nodes/cardView.yaml` `NodeAsCard`, ~1340 lines
 // kept whole with only the outer declarator/wrapper holed) needs sibling-bearing
 // fixtures to reproduce; this reduction pins the single-target degenerate-scaffold
@@ -668,14 +666,16 @@ minimizer_expectation_case!(
 // (`SelectedPrimary`/`SelectedSecondary`) now reads off per-slot minimal anchors
 // (binding-group read-off, plan item 3). Each slot pins only what singles its own
 // declarator out within the statement: slot 0's `enabled: true` (vs
-// `unrelatedPrimary`'s `enabled: false`) is enough, so its `makeEntry` argument
-// holes to `ANYTHING`; slot 1 still needs `"secondary"` because `{ enabled: true }`
+// `unrelatedPrimary`'s `enabled: false`) is enough, so its leading `makeEntry`
+// argument drops into an `ARGS` run-hole (and the minified `makeEntry` callee holes
+// to `ANYTHING`); slot 1 still needs `"secondary"` because `{ enabled: true }`
 // alone would also fit slot 0. The per-slot kept spans union and the binding-group
 // matcher proves the tuple — sparser than the keep-shallow path's "keep every
 // slot's shallow literals" (which pinned both `"primary"` and `"secondary"`). The
 // single-target `SelectedStandalone` reads its minimal anchor off the shape index:
 // `kind: "panel"` alone discriminates it from `sameRouteDifferentKind`, so the
-// shared non-discriminating call arg `"settings"` holes to `ANYTHING` and the
+// shared non-discriminating leading call arg `"settings"` drops into an `ARGS`
+// run-hole (the minified `registerRoute` callee holes to `ANYTHING`) and the
 // redundant `title: "Settings"` collapses into `OBJECT_PROPS`.
 #[test]
 fn minimizes_binding_group_partition() {

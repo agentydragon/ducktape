@@ -1,4 +1,4 @@
 function SelectedWorker(ANYTHING, ANYTHING, ANYTHING) {
-  const transient = makeTransient(ANYTHING, ANYTHING.now());
+  const transient = ANYTHING(ARGS, ANYTHING.now());
   STMT_LIST;
 }

@@ -1,5 +1,5 @@
-const SelectedHandler = registerHandler(function (ANYTHING) {
+const SelectedHandler = ANYTHING(function (ANYTHING) {
   STMT_LIST;
-  dispatch("uniqueDiscriminatorAction");
+  ANYTHING("uniqueDiscriminatorAction");
   STMT_LIST;
 });

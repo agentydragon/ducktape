@@ -1565,6 +1565,15 @@ fn object_props_prop() -> PropOrSpread {
     ))))
 }
 
+/// An `ARGS` argument-list hole that absorbs a run of dropped (non-anchor)
+/// call/`new` arguments (the argument analog of `OBJECT_PROPS`).
+fn args_hole() -> ExprOrSpread {
+    ExprOrSpread {
+        spread: None,
+        expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),
+    }
+}
+
 /// A `case CASE_REST:` switch-case hole that absorbs a run of dropped
 /// `case`/`default` clauses (the switch analog of `CLASS_REST;`).
 fn case_rest_case() -> SwitchCase {
@@ -1705,9 +1714,12 @@ fn hole_assign_target(target: &AssignTarget, kept: &BTreeSet<AnchorSpan>) -> Ass
     }
 }
 
-/// Hole a call's callee while keeping the invoked identity — a method name or a
-/// bare function reference is a meaningful, stable pin; only a member receiver
-/// is holed.
+/// Hole a call's callee, keeping only an alpha-stable invoked identity. A
+/// member-method name (`.then`, `.bar`) is a stable pin and stays; a
+/// bare-function reference (`make`, `wrapOuter`) is a minified name that churns
+/// every rebuild — the matcher alpha-wildcards it, so it discriminates nothing
+/// and the shape index never proposes it as an anchor — so it holes to
+/// `ANYTHING`.
 fn hole_callee(callee: &Callee, kept: &BTreeSet<AnchorSpan>) -> Callee {
     match callee {
         Callee::Expr(expr) => Callee::Expr(Box::new(hole_callee_expr(expr, kept))),
@@ -1717,34 +1729,62 @@ fn hole_callee(callee: &Callee, kept: &BTreeSet<AnchorSpan>) -> Callee {
 
 fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     match expr {
+        // Member-method callee (`a.then(...)`): keep the stable property name even
+        // when no anchor lands on it, holing only the receiver. Routing through
+        // `hole_expr` would instead collapse the whole member to `ANYTHING` when its
+        // subtree carries no kept anchor, dropping the discriminating method name.
         Expr::Member(member) => {
             let mut holed = member.clone();
             holed.obj = Box::new(hole_expr(&member.obj, kept));
             Expr::Member(holed)
         }
-        Expr::Ident(_) => expr.clone(),
         Expr::Paren(paren) => hole_callee_expr(&paren.expr, kept),
+        // Bare-identifier callee (and any other callee expression): hole through the
+        // normal path. A bare-function name is alpha-wildcarded by the matcher and is
+        // never a chosen anchor, so `hole_expr` holes it to `ANYTHING`.
         _ => hole_expr(expr, kept),
     }
 }
 
+/// Hole a call/`new` argument list for selector form: a run of dropped
+/// (no-anchor) arguments collapses to a single `ARGS` run hole, while each
+/// argument carrying an anchor is kept and recursively holed.
+///
+/// The `ARGS` hole matches as an ordered subsequence with gaps
+/// (`match_expr_or_spread_slice`), so the selector survives a rebuild that adds
+/// or removes a non-anchor argument — unlike a per-argument `ANYTHING`, which is
+/// an arity-exact single-node hole. Mirrors [`hole_object`]'s `OBJECT_PROPS`
+/// run-collapsing. An anchored spread is kept verbatim (its expr left intact);
+/// a non-anchor spread is absorbed into the run like any other dropped argument.
 fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
-    args.iter()
-        .map(|arg| {
-            let mut holed = arg.clone();
-            if arg.spread.is_none() {
-                holed.expr = Box::new(hole_expr(&arg.expr, kept));
+    let mut holed = Vec::new();
+    let mut dropped_run = false;
+    for arg in args {
+        if node_retains_any(arg.expr.span(), kept) {
+            if dropped_run {
+                holed.push(args_hole());
+                dropped_run = false;
             }
-            holed
-        })
-        .collect()
+            let mut kept_arg = arg.clone();
+            if arg.spread.is_none() {
+                kept_arg.expr = Box::new(hole_expr(&arg.expr, kept));
+            }
+            holed.push(kept_arg);
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run {
+        holed.push(args_hole());
+    }
+    holed
 }
 
 /// Prune the elements of an array literal, holing each non-anchor element to
 /// `ANYTHING` (an arity-exact `EXPR` hole) and recursing into the ones that
-/// carry an anchor. The matcher matches array elements element-wise (no list
-/// hole for arrays), so the holed array keeps the same length; elisions and
-/// spreads are preserved verbatim, mirroring [`hole_args`].
+/// carry an anchor. The matcher matches array elements element-wise (there is no
+/// array list hole, unlike `ARGS` for call arguments), so the holed array keeps
+/// the same length; elisions and spreads are preserved verbatim.
 fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
     let mut holed = array.clone();
     holed.elems = array
@@ -4600,14 +4640,16 @@ mod interior_holing_tests {
         // Array elements carrying no anchor hole to ANYTHING (arity-exact, since
         // the matcher matches array elements element-wise); only the element
         // holding the anchor is recursed into. The lone-prop object keeps its one
-        // anchor prop with no OBJECT_PROPS padding (nothing was dropped).
+        // anchor prop with no OBJECT_PROPS padding (nothing was dropped). The bare
+        // `render` callee holes to ANYTHING (a minified name the matcher
+        // alpha-wildcards), unlike the member-method `.run` in the sibling case.
         let holed = hole_statement_expr(
             r#"render([first(), { mode: "keepMe" }, third()]);"#,
             "keepMe",
         );
         assert_eq!(
             normalize(&holed),
-            normalize(r#"render([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
+            normalize(r#"ANYTHING([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
         );
     }
 }

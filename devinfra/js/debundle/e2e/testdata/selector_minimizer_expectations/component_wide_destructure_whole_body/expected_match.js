@@ -1,4 +1,4 @@
-const SelectedComponent = wrap(function (ANYTHING) {
+const SelectedComponent = ANYTHING(function (ANYTHING) {
   STMT_LIST;
-  return jsx("div", ANYTHING);
+  return ANYTHING("div", ARGS);
 });
