@@ -821,6 +821,74 @@ impl ShapeIndex {
             })
             .collect()
     }
+
+    /// A greedy **multi**-anchor cover restricted to *value-bearing* features —
+    /// the multi-feature analogue of [`unique_value_anchor_candidates`]. When no
+    /// single value anchor is individually unique (every value anchor's posting
+    /// list still holds same-shape siblings), the target may still be singled out
+    /// by a *combination* of value anchors, each individually shared with a
+    /// different sibling. This runs the same greedy set-cover as
+    /// [`minimal_anchor_set`], but over value-bearing features only, so every
+    /// chosen anchor renders a concrete kept token and the result is a genuinely
+    /// sparse multi-leaf pin rather than the degenerate scaffold.
+    ///
+    /// It differs from [`minimal_anchor_set`] in exactly the way the renderer
+    /// needs: that method takes the globally most-excluding feature at each step
+    /// *regardless of whether it renders a kept span*, so its cover can include a
+    /// structural skeleton (kept nothing) or land on a value whose only home is a
+    /// statement the holer keeps verbatim, leaving raw subtrees the matcher
+    /// rejects. Restricting the cover to value anchors guarantees every step
+    /// drills to a renderable leaf, so the holed selector keeps only the
+    /// discriminating tokens.
+    ///
+    /// Returns `None` when value anchors alone cannot reach the singleton
+    /// `{body_idx}`, and (deliberately) for the single-anchor case — a lone unique
+    /// value anchor is [`unique_value_anchor_candidates`]'s domain, which the
+    /// renderer walks first; this method only contributes the genuinely
+    /// multi-anchor covers that walk cannot produce.
+    pub fn unique_value_anchor_cover(&self, body_idx: usize) -> Option<AnchorSet> {
+        if body_idx >= self.items.len() {
+            return None;
+        }
+        let mut remaining: Vec<ScoredFeature> = self
+            .scored_features(body_idx)
+            .into_iter()
+            .filter(|scored| anchor_renders_a_value(&scored.feature))
+            .collect();
+        let seed = remaining.first()?;
+        let mut covered = self.posting(&seed.feature).clone();
+        let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
+        let mut scratch = CandidateSet::empty();
+
+        while covered.len() > 1 {
+            // The value feature that shrinks the candidate set the most; ranked by
+            // intersection size only, ties broken toward the better-ranked feature.
+            let (best_i, best_len) = remaining
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (i, covered.intersection_len(self.posting(&f.feature))))
+                .min_by(|(ai, a), (bi, b)| a.cmp(b).then(ai.cmp(bi)))?;
+            // No remaining value anchor makes progress: value anchors alone cannot
+            // single the target out. Leave the residual to structural paths.
+            if best_len == covered.len() {
+                return None;
+            }
+            covered.intersect_into(self.posting(&remaining[best_i].feature), &mut scratch);
+            std::mem::swap(&mut covered, &mut scratch);
+            chosen.push(remaining.remove(best_i));
+        }
+
+        // A single-anchor cover means the seed value anchor was already unique —
+        // that is the single-anchor candidates' job, walked first by the renderer.
+        // Yield only the genuinely multi-anchor covers.
+        (chosen.len() >= 2 && covered.len() == 1 && covered.contains(body_idx)).then_some(
+            AnchorSet {
+                body_idx,
+                opt_one: false,
+                anchors: chosen,
+            },
+        )
+    }
 }
 
 /// Whether a feature maps to a concrete kept token the renderer can pin (a
@@ -1115,5 +1183,51 @@ export { runner };"#,
         let running = ShapeFeature::Selector(SelectorFeature::StringLiteral("running".into()));
         let member = ShapeFeature::Selector(SelectorFeature::ClassMember("applyChange".into()));
         assert!(position(&running) < position(&member));
+    }
+
+    #[test]
+    fn unique_value_anchor_cover_combines_value_anchors_when_no_single_one_is_unique() {
+        // Three same-shape const-bound calls. No single string literal singles the
+        // target (item 0) out: `"alpha"` is shared with item 1, `"beta"` with
+        // item 2. Only the *combination* {alpha, beta} resolves to item 0 — and
+        // both anchors are value-bearing, so the cover is renderable end to end.
+        let module = parse(
+            r#"const a = emit("alpha", "beta");
+const b = emit("alpha", "gamma");
+const c = emit("delta", "beta");"#,
+        );
+        let index = ShapeIndex::new(&module);
+
+        // Precondition: no single value anchor is individually unique, so the
+        // single-anchor candidates walk yields nothing.
+        assert!(index.unique_value_anchor_candidates(0).is_empty());
+
+        let cover = index
+            .unique_value_anchor_cover(0)
+            .expect("a multi-value-anchor cover resolves item 0");
+        assert!(cover.anchors.len() >= 2, "{cover:?}");
+        assert!(!cover.opt_one);
+        for scored in &cover.anchors {
+            assert!(anchor_renders_a_value(&scored.feature), "{scored:?}");
+        }
+        assert!(index.read_off_resolves_uniquely(0, &cover));
+    }
+
+    #[test]
+    fn unique_value_anchor_cover_declines_the_single_anchor_case() {
+        // The lone class has a unique value anchor (`"running"`); a single-anchor
+        // cover is the candidates walk's domain, so this method declines it rather
+        // than duplicate that path.
+        let module = parse(
+            r#"class runner {
+  applyChange(c) {
+    this.boxed.set("running");
+  }
+}
+export { runner };"#,
+        );
+        let index = ShapeIndex::new(&module);
+        assert!(!index.unique_value_anchor_candidates(0).is_empty());
+        assert!(index.unique_value_anchor_cover(0).is_none());
     }
 }

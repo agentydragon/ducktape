@@ -2220,6 +2220,23 @@ fn render_via_read_off(
         }
     }
 
+    // Multi-feature interior cover (#2289): no single value anchor singled the
+    // target out (every value anchor still shares same-shape siblings), but a
+    // *combination* of value anchors may — each individually shared with a
+    // different sibling. Greedy-cover over value-bearing features only, so each
+    // chosen anchor still renders a kept span, and emit the holed selector if it
+    // proves uniquely. This drills bodies whose discriminator is a *set* of deep
+    // leaves rather than one.
+    if let Some(anchor_set) = index.shape_index.unique_value_anchor_cover(decl.body_idx) {
+        let kept = kept_spans_for_anchor_set(item, &anchor_set);
+        if !kept.is_empty()
+            && let Some(selector) =
+                finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+        {
+            return Ok(Some(selector));
+        }
+    }
+
     // Last resort: the bare structural scaffold, used only when it resolves
     // uniquely (a purely structural discriminator — arity/shape — with no value
     // anchor to keep). The scaffold is degenerate for `var`, so the var path skips
@@ -2704,6 +2721,9 @@ fn try_var_read_off(
     // holer keeps verbatim, leaving raw subtrees the matcher rejects) is recovered
     // here instead of collapsing to the degenerate `const X = ANYTHING` scaffold;
     // this drills a whole-body component initializer down to one anchored leaf.
+    // Finally the multi-feature interior cover (#2289): when no single value anchor
+    // is unique, a greedy cover over value-bearing features keeps the *set* of deep
+    // leaves that jointly single the slot out.
     let anchor_sets = index
         .shape_index
         .minimal_anchor_set(decl.body_idx)
@@ -2712,7 +2732,8 @@ fn try_var_read_off(
             index
                 .shape_index
                 .unique_value_anchor_candidates(decl.body_idx),
-        );
+        )
+        .chain(index.shape_index.unique_value_anchor_cover(decl.body_idx));
     for anchor_set in anchor_sets {
         let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
             .into_iter()

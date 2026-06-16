@@ -98,7 +98,10 @@ keep-shallow path.
 **Layer 1 — shape index.** `shape_index.rs` builds the hash-consed Merkle DAG with
 alpha-leaf canonicalization, multi-granularity shape features, inverted posting
 lists, and `selective × stable` scoring; `minimal_anchor_set(item) -> AnchorSet`
-is the read-off API. Built on `selector_candidate_index.rs` (the prefilter
+is the read-off API, with `unique_value_anchor_candidates` (single discriminating
+value anchors, best-first) and `unique_value_anchor_cover` (a greedy multi-anchor
+cover over value-bearing features only) backing the renderer's robustness-anchor
+fallbacks. Built on `selector_candidate_index.rs` (the prefilter
 `SelectorCandidateIndex`), which it supersets, not forks. Soundness is gated by
 `shape_index_soundness_test.rs` (matcher-backed: the indexed candidate set is
 always a sound match superset) and a synthetic size-sweep + OPT-distribution
@@ -273,12 +276,22 @@ the landed architecture is in "Current state" above.
    holed selector proves (recovering `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`
    instead of `class X { CLASS_REST }` when the _minimal_ anchor renders to a
    verbatim-kept statement that fails to prove). Closed fixtures:
-   `single_target_class_whole_body`, `component_wide_destructure_whole_body`. Still
-   open: the **multi-feature interior cover** for bodies where no _single_ value
-   anchor singles the target out among same-shape SIBLINGS (the candidate walk only
-   tries single-anchor sets); the real-spec deep multi-anchor cases bucketed "no
-   sparse selector" need a greedy subtree-granularity cover over the in-body anchor
-   set, not just the best-first single-anchor walk. Reclaims a further share of the
+   `single_target_class_whole_body`, `component_wide_destructure_whole_body`. The
+   **multi-feature interior cover** has now landed too:
+   `ShapeIndex::unique_value_anchor_cover` runs the same greedy set-cover as
+   `minimal_anchor_set` but restricted to _value-bearing_ features, so when no
+   _single_ value anchor singles the target out among same-shape SIBLINGS — each
+   value anchor individually shared with a different sibling — a greedy combination
+   of value anchors (each rendering a kept leaf) jointly resolves it. The renderer
+   walks it after the single-anchor candidates and before the degenerate scaffold,
+   so a body whose discriminator is a _set_ of deep leaves drills to those leaves
+   instead of dumping `class X { CLASS_REST }` / `const X = ANYTHING`. Unlike
+   `minimal_anchor_set` (which takes the globally most-excluding feature, possibly a
+   structural skeleton that renders nothing or a value whose only home is a verbatim
+   statement), every step of the value cover drills to a renderable token. Still
+   open: the genuine residual where even value combos cannot separate same-shape
+   siblings (alpha-only constructs, near-duplicate emitted helpers) — those need
+   enclosing-context anchoring or stay name-pinned. Reclaims a further share of the
    ~2,024 "no sparse selector" tail.
 2. **Wide destructure (`wide_destructure_block`).** A `const { …, x } = props`
    whose discriminator is a destructured property key (`x`) bails with "no sparse
