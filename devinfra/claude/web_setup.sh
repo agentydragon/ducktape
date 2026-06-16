@@ -15,10 +15,12 @@
 #   profile       (default) — `nix profile install .#devtools`, then manually
 #                  symlink skills into ~/.claude/skills/ (steps 2 + 4 above).
 #   home-manager  — `home-manager switch --flake .#claude-web`. Home Manager
-#                  installs the same devtools and deploys Claude Code settings +
-#                  skills through the shared HM skills module (nix/home/skills.nix),
-#                  so step 4 is owned by HM. See homeConfigurations.claude-web in
-#                  flake.nix and <nix/home/hosts/claude-web.nix>.
+#                  installs the same devtools and deploys skills through the
+#                  shared HM skills module (nix/home/skills.nix), so step 4 is
+#                  owned by HM. claude-web is standalone/minimal: it does NOT
+#                  deploy Claude Code settings, plugins, or MCP servers. See
+#                  homeConfigurations.claude-web in flake.nix and
+#                  <nix/home/hosts/claude-web.nix>.
 #
 # Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
 # only available to Claude Code and its subprocesses — not to this setup script.
@@ -206,8 +208,10 @@ ls -la
 log "Install mode: $MODE"
 if [ "$MODE" = "home-manager" ]; then
   # Home Manager installs the same devtools (homeConfigurations.claude-web reuses
-  # the flake's devToolPackages list) and deploys skills + Claude Code settings
-  # itself, so the standalone skill symlink in step 4 is skipped below.
+  # the flake's devToolPackages list) and deploys skills itself, so the
+  # standalone skill symlink in step 4 is skipped below. claude-web is
+  # standalone/minimal — it deploys no Claude Code settings, plugins, or MCP
+  # servers.
   #
   # --impure: claude-web reads home.username/homeDirectory from $USER/$HOME.
   # -b hm-backup: back up any pre-existing dotfiles (Anthropic-landed
