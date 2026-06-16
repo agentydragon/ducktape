@@ -289,50 +289,33 @@ the landed architecture is in "Current state" above.
    dicts — `object_nested_value_dict` — already minimize via the nested
    object/array holing recursion; the `ee({ coreMessage: …, type: … })`
    schema-object-call form folds into item 1.)
-3. **Multi-target var binding-group read-off — LANDED (keep-shallow retirement
-   still open, item 4).** `try_var_group_read_off` (in `selector_codemod.rs`) now
-   reads each target declarator slot's minimal anchor off the shape index
-   (restricted to the slot), extends it with a slot-aware greedy
-   (`slot_minimal_anchors`, reusing `cover_object_slot`'s `(target slot not yet
-resolved, total matches)` scoring via the single-binding matcher), UNIONs the
-   per-slot kept spans, renders through `render_var_group_readoff` (object slots →
-   padded `OBJECT_PROPS`, others → `hole_expr`), and proves the tuple through the
-   binding-group matcher (`prove_synthesized_selector`); the regex upgrade applies
-   across slots. The keep-shallow path (`minimize_var_group_selector`'s escalation
-   over `collect_expr_anchors` + `AnchorCandidates`) is **kept as the fallback**
-   for groups whose per-slot anchors cannot single a slot out (e.g.
-   `binding_group_declarators`, where a value shared with a sibling statement
-   resolves only as a tuple). E2E: `binding_group_key_set_readoff` (sparse
-   per-slot key read-off); `binding_group_partition`'s group output re-baselined
-   sparser. **Retiring the keep-shallow cover is still open as item 4** — gated on
-   migrating the remaining fallback-only groups (the value-shared-across-statements
-   tuples the per-slot single-binding view cannot resolve alone) onto a
-   tuple-aware read-off, or accepting them as debt.
-4. **Retire the keep-shallow group cover.** Item 3 landed the binding-group
-   read-off, but the keep-shallow path stays as the fallback for groups whose
-   per-slot single-binding view cannot single a slot out (a value shared across
-   sibling _statements_ resolves only as a tuple). Removing
-   `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`, and
-   `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
+3. **Retire the keep-shallow group cover.** The multi-target var binding-group
+   read-off (`try_var_group_read_off`) landed, but the keep-shallow path
+   (`minimize_var_group_selector`'s escalation over `collect_expr_anchors` +
+   `AnchorCandidates`) stays as the fallback for groups whose per-slot
+   single-binding view cannot single a slot out (a value shared across sibling
+   _statements_ resolves only as a tuple, e.g. `binding_group_declarators`).
+   Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
+   and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
    tuple-aware read-off for those residual groups (or accepting them as debt).
-5. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
-   splitting by form enables parallel per-form fan-out (do after item 4 reshapes
+4. **`selector_codemod.rs` by-form split + dedup** — the file is ~4.2k lines;
+   splitting by form enables parallel per-form fan-out (do after item 3 reshapes
    the var path). Concrete dedup target: `try_object_read_off`, `try_var_read_off`,
    and `minimize_var_group_selector` each build a near-identical var `render_with`
    closure (iterate `var.decls`, `DECLARATORS_*` holes for non-target slots, holed
    target init); factor one shared slot-render helper parameterized by the
    per-slot init holing.
-6. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
+5. **Language simplification** (see below) — emit anonymous `OBJECT_PROPS` /
    `DECLARATORS` / `CLASS_REST` / `EXPR` / `STMT` as `ANYTHING`. Deferred until
    emission stabilizes (after the cover/keep-shallow paths fully retire), since it
    rewrites emitted selectors and touches many fixtures.
-7. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
+6. **`deeply_nested_call_args` — callee/arg holing.** The var read-off drills to
    the leaf but keeps bare-function callees pinned (`hole_callee` keeps a bare
    function reference) and holes dropped args to arity-exact `ANYTHING` rather than
    a variadic `ARGS` run-hole. Closing both is a cross-cutting `hole_callee` /
    `hole_args` policy change affecting all read-off paths; weigh against existing
    fixtures.
-8. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
+7. **Dogfood-apply on gaffer-private (ongoing).** Run `synthesize-selectors
 --apply` on the real spec after each wave, review for over-pin, and PR the
    beneficial minimized selectors. Operational PR rule: **revert any converted
    selector whose `match` block is >40 lines AND has ≤2 holes** back to a name pin.
