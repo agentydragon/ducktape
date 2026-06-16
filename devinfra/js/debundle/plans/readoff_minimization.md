@@ -182,26 +182,74 @@ serde); embedded/non-trailing volatility in regex anchors (future).
 
 ## Backlog (open only)
 
-Prioritized, next-up first:
+Agreed order (interleave perf-first, then severity-ordered minimality). Counts
+are members in a representative real-spec sample (5,556 selectors); the
+non-minimal pattern catalog drives this and is encoded as disabled E2E cases.
 
-1. **Incremental gaffer-private apply** (ongoing) — as each capability lands,
-   re-minimize real scopes and open gaffer PRs (review diffs for over-pin).
-2. **Migrate remaining forms to read-off:** single-target var (needs read-off to
-   model binding-group/declarator-slot tuple resolution), class/subclass
-   (`class_among_many_siblings`, `sibling_subclass_hierarchy`), statement runs
-   (`sequential_assignment_block`, `deeply_nested_call_args`), grouped objects
-   (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`). Unignore each
-   E2E case as it lands.
-3. **Anti-unification grouping** from posting co-occurrence (shared declaration
-   OR minimal-selector overlap threshold) → `binding_group`.
-4. **Delete the cover search** once all forms route through read-off
+1. **Perf — prove-gate via index.** Whole-chunk minimize is ~110s, almost all of
+   it the per-member full-matcher proof (`prove_synthesized_selector` →
+   `resolve_member_binding`) — read-off made synthesis cheap but the prove-gate is
+   the bottleneck, unchanged from the 113s search baseline. Fix: the index is a
+   **sound superset**, so when the selector's anchor-feature posting-list
+   intersection is the singleton `{target}` that _is_ a uniqueness proof — skip
+   the matcher; full matcher only for non-singleton cases. Collapses per-member
+   cost for the `OPT=1` majority toward the ≤10s target.
+2. **Function** whole-body anchoring (~1,455 full + ~1,743 holed; biggest count) —
+   anchor a deep unique literal/member, hole the rest (`sparse_function_body`).
+3. **Class** body among siblings (91 full + 268 holed; worst severity, ~1,151-line
+   bodies) — `CLASS_REST` + discriminating member (`class_among_many_siblings`,
+   `sibling_subclass_hierarchy`).
+4. **Long-literal-value anchor** (~25; extreme severity, clean fix) — prefer a
+   short discriminating key over the largest node (`long_literal_value_anchor`).
+5. **Object-dict family** — over-pinned keys (`object_keys_over_pinned`, done for
+   single scalar), nested-value dicts (`object_nested_value_dict`), grouped
+   objects (`grouped_enum_objects`: `DECLARATORS` + padded `OBJECT_PROPS`), wide
+   destructure (`wide_destructure_block`).
+6. **Statement runs** (`sequential_assignment_block`, `deeply_nested_call_args`)
+   and **var** migration (needs binding-group/declarator-slot tuple resolution).
+7. **Anti-unification grouping** from posting co-occurrence (shared declaration OR
+   minimal-selector overlap threshold) → `binding_group`.
+8. **Delete the cover search** once all forms route through read-off
    (`minimize_via_retention`, `cover_competitors`, `min_set_cover`,
    `collect_*_anchors`) — shrinks `selector_codemod.rs` substantially.
-5. **`selector_codemod.rs` refactor** — do AFTER the cover deletion (deletion
-   reshapes the file; refactoring before it would conflict).
-6. **Language simplification** (see below).
-7. **W4 — whole-spec validation:** ≤10/30 s + real-chunk size-sweep; refresh the
-   dogfood note.
+9. **`selector_codemod.rs` refactor** — after cover deletion (deletion reshapes
+   the file; splitting by form earlier also enables parallel per-form fan-out).
+10. **Language simplification** (see below).
+11. **W4 — whole-spec validation:** ≤10/30 s + real-chunk size-sweep; refresh the
+    dogfood note (current real-chunk baseline ~110s recorded there).
+
+Each capability re-applies to gaffer-private as it lands (review diffs for
+over-pin; gaffer validates with a _pinned_ debundle release, so spec PRs must
+regen the pipeline goldens and stay pin-compatible).
+
+## Orchestration & process notes
+
+Same-file overlap across waves is a merge cost, not a serialization constraint:
+run each in its own `git worktree` off `devel` and integrate via a **train** —
+land the deepest first (the function/sparse-anchor wave reshapes read-off depth +
+renderer holing the others build on), rebase the rest onto it, resolve the
+localized per-form conflicts, verify gate-1 and equivalent-or-better through swc,
+unignore each E2E case as its fix lands. Off-path big-file refactors
+(`purity`/`graph`/`facts`/`peel`) parallelize freely (disjoint files).
+
+Hard-won rules for this environment:
+
+- **Build/test with `bazelisk` + the session bazelrc + system Java + RBE, never
+  `bbr`** (its git-state mirroring is broken here). One worktree + one unique
+  `--output_base` per agent.
+- **Agents must not spawn their own background sub-agents.** Nested background
+  fan-out has stranded work repeatedly: the parent idles at the integration step
+  (no BUILD wiring / no test / no push). An agent does its own work and completes
+  build+push itself.
+- **Background agents do not survive a session suspend/resume** — they die
+  silently (no worktree, branch, or process) before pushing. Verify liveness by
+  checking for worktrees/branches/processes, not "no notification = alive".
+  Durable progress needs foreground work that commits+pushes incrementally, or a
+  session kept warm long enough for a background run (~45 min) to finish.
+- **gaffer ↔ ducktape:** gaffer validates specs by regenerating pipeline goldens
+  with a pinned debundle _release_; a spec change must regen+commit those goldens
+  and use only selectors the pinned release accepts (else bump the pin). Never let
+  real Tana data into ducktape — anonymize reductions for E2E fixtures.
 
 Lower priority / opportunistic:
 
