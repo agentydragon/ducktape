@@ -79,13 +79,19 @@ export { a, b, c };
         &[" as cx", "const b = cx("],
     );
 
-    // The residual entry is unaffected by this test's contract,
-    // but pin that it also picked up the rename for parity with
-    // `chunk_renames_test`.
+    // The residual entry no longer references the vendor binding at all:
+    // its only use (`const b = cx()`) peeled into b_module, so the dead
+    // `import { f as getMobxGlobalState } from "./vendor.js"` is trimmed by
+    // `prune_dead_import_specifiers`. The rename still propagates to the live
+    // use (the b_module assertion above); the entry just no longer carries the
+    // now-unused vendor alias under either name.
     assert_module_source(
         &fixture.out_root,
         "static/app/entry.js",
-        &["getMobxGlobalState"],
-        &[" as cx", "cx()"],
+        &[
+            "import { b } from \"./modules/b_module.js\"",
+            "export { a, b, c }",
+        ],
+        &[" as cx", "cx()", "getMobxGlobalState", "vendor.js"],
     );
 }
