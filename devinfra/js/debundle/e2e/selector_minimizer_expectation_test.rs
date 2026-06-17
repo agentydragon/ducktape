@@ -9,11 +9,8 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use serde_json::Value;
-
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{parse_stdout_json, run_synthesize_selectors, write_text_file};
 
 struct MinimizedSelectorCase {
     name: &'static str,
@@ -37,37 +34,6 @@ struct SelectorOutputExpectation {
 struct SelectorOutput {
     exports: BTreeSet<String>,
     match_source: String,
-}
-
-fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
-    let mut args = vec![
-        "spec",
-        "synthesize-selectors",
-        "--modules",
-        modules.to_str().unwrap(),
-    ];
-    args.extend_from_slice(extra);
-    let out = Command::new(debundler_path())
-        .args(&args)
-        .output()
-        .expect("spawn debundle");
-    assert!(
-        out.status.success(),
-        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out
-}
-
-fn parse_stdout_json(out: &std::process::Output) -> Value {
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "stdout is not JSON ({err})\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        )
-    })
 }
 
 fn write_case(root: &Path, case: &MinimizedSelectorCase) -> (PathBuf, PathBuf) {

@@ -10,19 +10,7 @@
 //! `obj.readable` instead.
 
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
 use std::fs;
-
-fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
-    json!({
-        "members": [
-            {
-                "name": rename_to,
-                "selector": { "binding": { "name": from_binding } },
-            },
-        ],
-    })
-}
 
 /// Both shorthand positions in one source: the destructure pattern
 /// declaring `a` and an object-literal shorthand read of `a`. A

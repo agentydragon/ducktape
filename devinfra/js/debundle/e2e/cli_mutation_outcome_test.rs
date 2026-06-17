@@ -22,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{debundler_path, parse_stdout_json, write_text_file};
 use serde_json::Value;
 
 fn run_debundle(args: &[&str]) -> std::process::Output {
@@ -30,16 +30,6 @@ fn run_debundle(args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .expect("spawn debundle")
-}
-
-fn parse_stdout_json(out: &std::process::Output) -> Value {
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "stdout is not JSON ({err})\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        )
-    })
 }
 
 fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) -> Value {

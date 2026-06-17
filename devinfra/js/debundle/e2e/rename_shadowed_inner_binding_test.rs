@@ -13,18 +13,6 @@
 //! purity classifier (#1714).
 
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
-
-fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
-    json!({
-        "members": [
-            {
-                "name": rename_to,
-                "selector": { "binding": { "name": from_binding } },
-            },
-        ],
-    })
-}
 
 /// Renaming top-level `a` -> `b` must leave the inner function's own `var a`
 /// (which shadows the top-level `a`) untouched. The rename target `b` already

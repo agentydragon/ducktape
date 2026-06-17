@@ -7,17 +7,9 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_cli::module::merge_modules;
-use debundle_e2e_support::debundler_path;
+use debundle_e2e_support::{debundler_path, write_file};
 use serde_yaml::Value;
 use tempfile::TempDir;
-
-fn write(root: &Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 fn member_names(doc: &Value) -> Vec<String> {
     doc["members"]
@@ -38,17 +30,17 @@ fn merges_two_sources_into_target_and_deletes_sources() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    write(
+    write_file(
         root,
         "ui/target.yaml",
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_file(
         root,
         "ui/src1.yaml",
         "members:\n  - selector: { binding: { name: bravo } }\n",
     );
-    write(
+    write_file(
         root,
         "ui/src2.yaml",
         "members:\n  - selector: { binding: { name: charlie } }\n",
@@ -84,17 +76,17 @@ fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    write(
+    write_file(
         root,
         "target.yaml",
         "members:\n  - selector: { binding: { name: keep } }\n",
     );
-    write(
+    write_file(
         root,
         "a.yaml",
         "members:\n  - selector: { binding: { name: collide } }\n",
     );
-    write(
+    write_file(
         root,
         "b.yaml",
         "members:\n  - selector: { binding: { name: collide } }\n",
@@ -122,12 +114,12 @@ fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
 fn modules_merge_new_subcommand_path_works_through_binary() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "target.yaml",
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write(
+    write_file(
         root,
         "src.yaml",
         "members:\n  - selector: { binding: { name: b } }\n",
@@ -164,7 +156,7 @@ fn modules_merge_can_create_missing_target_through_binary() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let src_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write(root, "src.yaml", src_body);
+    write_file(root, "src.yaml", src_body);
 
     let dry_run = Command::new(debundler_path())
         .args([
@@ -223,8 +215,8 @@ fn modules_merge_dry_run_does_not_modify_files() {
     let root = dir.path();
     let src_body = "members:\n  - selector: { binding: { name: b } }\n";
     let target_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write(root, "target.yaml", target_body);
-    write(root, "src.yaml", src_body);
+    write_file(root, "target.yaml", target_body);
+    write_file(root, "src.yaml", src_body);
 
     let out = Command::new(debundler_path())
         .args([
@@ -260,12 +252,12 @@ fn modules_merge_dry_run_does_not_modify_files() {
 fn deprecated_module_merge_alias_still_works_with_warning() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "target.yaml",
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write(
+    write_file(
         root,
         "src.yaml",
         "members:\n  - selector: { binding: { name: b } }\n",
@@ -301,12 +293,12 @@ fn merge_carries_binding_groups_into_target() {
     // owners on the next `debundle run`.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "target.yaml",
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write(
+    write_file(
         root,
         "src.yaml",
         "binding_groups:\n  - source_match:\n      match: 'const x = 1;'\n    exports: { x: ExportedX }\nmembers: []\n",
@@ -334,17 +326,17 @@ fn merge_concatenates_module_comments_with_divider() {
     // `--- from <source>:` divider.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "target.yaml",
         "comment: target overview\nmembers:\n  - selector: { binding: { name: a } }\n",
     );
-    write(
+    write_file(
         root,
         "src1.yaml",
         "comment: src1 notes\nmembers:\n  - selector: { binding: { name: b } }\n",
     );
-    write(
+    write_file(
         root,
         "src2.yaml",
         "members:\n  - selector: { binding: { name: c } }\n",
@@ -373,12 +365,12 @@ fn merge_concatenates_module_comments_with_divider() {
 fn merge_into_uncommented_target_adopts_source_comment_with_divider() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "target.yaml",
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write(
+    write_file(
         root,
         "src.yaml",
         "comment: src notes\nmembers:\n  - selector: { binding: { name: b } }\n",

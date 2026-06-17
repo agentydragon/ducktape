@@ -1395,6 +1395,61 @@ pub fn write_text_file(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
+/// Write `body` to `root`-relative path `rel`, creating parent dirs. The
+/// root-relative convenience over [`write_text_file`] for CLI tests that
+/// scatter several fixture files under one temp root.
+pub fn write_file(root: &Path, rel: &str, body: &str) {
+    write_text_file(&root.join(rel), body);
+}
+
+/// Parse a CLI invocation's stdout as JSON, panicking with both stdio streams
+/// on failure so a non-JSON (e.g. error) stdout is legible in the test log.
+pub fn parse_stdout_json(out: &std::process::Output) -> Value {
+    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
+        panic!(
+            "stdout is not JSON ({err})\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    })
+}
+
+/// Run `debundle spec synthesize-selectors --modules <dir> [extra...]`, asserting
+/// success and returning the raw output for the caller to parse.
+pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
+    let mut args = vec![
+        "spec",
+        "synthesize-selectors",
+        "--modules",
+        modules.to_str().unwrap(),
+    ];
+    args.extend_from_slice(extra);
+    let out = Command::new(debundler_path())
+        .args(&args)
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out
+}
+
+/// A single-member chunk-renames spec mapping the binding `from_binding` to the
+/// exported name `rename_to`.
+pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
+    serde_json::json!({
+        "members": [
+            {
+                "name": rename_to,
+                "selector": { "binding": { "name": from_binding } },
+            },
+        ],
+    })
+}
+
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     fs::write(path, format!("{}\n", serde_yaml::to_string(value).unwrap())).unwrap();
 }

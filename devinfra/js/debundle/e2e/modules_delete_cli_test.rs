@@ -6,26 +6,17 @@
 //! clap wiring and the env-var plumbing are covered too.
 
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 
 use debundle_cli::module::delete_modules;
-use debundle_e2e_support::debundler_path;
+use debundle_e2e_support::{debundler_path, write_file};
 use tempfile::TempDir;
-
-fn write(root: &Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
 
 #[test]
 fn delete_empty_module_succeeds() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(root, "ui/empty.yaml", "members: []\n");
+    write_file(root, "ui/empty.yaml", "members: []\n");
 
     let out = Command::new(debundler_path())
         .args([
@@ -59,7 +50,7 @@ fn delete_non_empty_module_without_force_refuses() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let body = "members:\n  - selector: { binding: { name: a } }\n";
-    write(root, "ui/full.yaml", body);
+    write_file(root, "ui/full.yaml", body);
 
     let out = Command::new(debundler_path())
         .args([
@@ -86,7 +77,7 @@ fn delete_non_empty_module_without_force_refuses() {
 fn delete_non_empty_module_with_force_succeeds() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(
+    write_file(
         root,
         "ui/full.yaml",
         "members:\n  - selector: { binding: { name: a } }\n",
@@ -118,9 +109,9 @@ fn delete_non_empty_module_with_force_succeeds() {
 fn delete_multiple_atomic_all_succeed() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(root, "a.yaml", "members: []\n");
-    write(root, "b.yaml", "members: []\n");
-    write(root, "c.yaml", "members: []\n");
+    write_file(root, "a.yaml", "members: []\n");
+    write_file(root, "b.yaml", "members: []\n");
+    write_file(root, "c.yaml", "members: []\n");
 
     let out = Command::new(debundler_path())
         .args([
@@ -156,7 +147,7 @@ fn dry_run_prints_verdict_without_deleting() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let body = "members: []\n";
-    write(root, "ui/empty.yaml", body);
+    write_file(root, "ui/empty.yaml", body);
 
     let out = Command::new(debundler_path())
         .args([
@@ -222,9 +213,9 @@ fn batch_with_one_non_empty_refuses_atomically() {
     let root = dir.path();
     let empty_body = "members: []\n";
     let full_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write(root, "x.yaml", empty_body);
-    write(root, "y.yaml", full_body);
-    write(root, "z.yaml", empty_body);
+    write_file(root, "x.yaml", empty_body);
+    write_file(root, "y.yaml", full_body);
+    write_file(root, "z.yaml", empty_body);
 
     let out = Command::new(debundler_path())
         .args([
@@ -251,8 +242,8 @@ fn batch_with_one_non_empty_refuses_atomically() {
 fn delete_modules_library_call_deletes_then_reports() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(root, "a.yaml", "members: []\n");
-    write(root, "b.yaml", "members: []\n");
+    write_file(root, "a.yaml", "members: []\n");
+    write_file(root, "b.yaml", "members: []\n");
     let abs = [root.join("a.yaml"), root.join("b.yaml")];
 
     let summary = delete_modules(&abs, false).unwrap();
@@ -267,7 +258,7 @@ fn delete_modules_library_call_deletes_then_reports() {
 fn delete_modules_library_dry_run_leaves_files_in_place() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write(root, "a.yaml", "members: []\n");
+    write_file(root, "a.yaml", "members: []\n");
     let abs = [root.join("a.yaml")];
 
     let summary = delete_modules(&abs, true).unwrap();

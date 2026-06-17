@@ -6,18 +6,6 @@
 //! instead of emitting a miscompiled body.
 
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
-
-fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
-    json!({
-        "members": [
-            {
-                "name": rename_to,
-                "selector": { "binding": { "name": from_binding } },
-            },
-        ],
-    })
-}
 
 /// `chunk_renames` path: the rename applies to entry's body, where a
 /// nested function binds the target name and reads the source binding.

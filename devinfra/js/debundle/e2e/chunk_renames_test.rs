@@ -32,22 +32,11 @@
 //! unowned decls share `ResidualEntry` ownership; no cycle.
 
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 /// Build a `chunk_renames` spec entry that renames a single residual
 /// binding to a new export name. All tests in this file rename a
 /// single binding; the helper hides the wire shape.
-fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
-    json!({
-        "members": [
-            {
-                "name": rename_to,
-                "selector": { "binding": { "name": from_binding } },
-            },
-        ],
-    })
-}
-
 #[test]
 fn chunk_renames_renames_residual_bindings_in_entry() {
     // S1 (orphan-S):       console.log("before")
