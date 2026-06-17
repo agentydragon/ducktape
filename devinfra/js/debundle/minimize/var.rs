@@ -40,14 +40,34 @@ pub(crate) fn try_var_read_off(
     target: &SynthesizedTargetBinding,
     target_slot: usize,
 ) -> Result<Option<SpecializedSelector>> {
+    Ok(
+        try_var_read_off_candidates(index, var, decl, target, target_slot, 1)?
+            .into_iter()
+            .next(),
+    )
+}
+
+/// Up to `limit` ranked read-off selectors for a single-target non-object var, in
+/// the same priority order [`try_var_read_off`] picks from (minimal anchor →
+/// individually-discriminating value anchors → multi-feature cover), each proven
+/// uniquely and deduped by source. `limit == 1` reproduces [`try_var_read_off`]
+/// exactly; `limit > 1` powers the `synthesize-selectors --candidates N` menu.
+pub(crate) fn try_var_read_off_candidates(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    target_slot: usize,
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
     let declarator = &var.decls[target_slot];
     let Some(init) = declarator.init.as_deref() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     // Objects are `try_object_read_off`'s domain (padded `OBJECT_PROPS` + the
     // slot-aware key-set cover); this owns every other initializer shape.
     if matches!(init, Expr::Object(_)) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let target_decl_span = declarator.span();
     let targets = std::slice::from_ref(target);
@@ -98,6 +118,7 @@ pub(crate) fn try_var_read_off(
                 .unique_value_anchor_candidates(decl.body_idx),
         )
         .chain(index.shape_index.unique_value_anchor_cover(decl.body_idx));
+    let mut out: Vec<SpecializedSelector> = Vec::new();
     for anchor_set in anchor_sets {
         let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
             .into_iter()
@@ -124,11 +145,17 @@ pub(crate) fn try_var_read_off(
             &render_with,
         )?;
         let source = render_with(&kept, &regex_anchors)?;
+        if out.iter().any(|kept| kept.match_source == source) {
+            continue;
+        }
         let rewritten_holes = holes_present(&source);
-        return Ok(Some(SpecializedSelector {
+        out.push(SpecializedSelector {
             match_source: source,
             rewritten_holes,
-        }));
+        });
+        if out.len() >= limit {
+            break;
+        }
     }
-    Ok(None)
+    Ok(out)
 }

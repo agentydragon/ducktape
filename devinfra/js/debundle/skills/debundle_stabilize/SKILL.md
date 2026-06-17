@@ -87,7 +87,9 @@ prioritizes; it never decides.
    Read it as a _suggestion_. If it anchored on something incidental (a bare
    number, a generic key with the value holed, pure positional/structural shape),
    discard the anchor and keep looking — the proof that it is unique today says
-   nothing about tomorrow.
+   nothing about tomorrow. Add `--candidates N` to get a ranked **menu** of
+   alternative anchor choices (in `alternatives`) instead of the single pick, then
+   choose the most purpose-bearing one.
 
 3. **Choose a purpose anchor** (rubric below) and write the `source_match` into the
    member YAML — by hand, or by taking `synthesize-selectors --apply` output and

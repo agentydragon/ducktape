@@ -1396,3 +1396,94 @@ fn synthesize_selectors_default_reports_no_alternatives() {
         .unwrap_or_else(|| panic!("no ReadSettings candidate: {parsed}"));
     assert!(candidate.get("alternatives").is_none(), "{parsed}");
 }
+
+#[test]
+fn synthesize_selectors_var_object_candidates_reports_value_anchor_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunks/app.js");
+    // Two sibling object consts share the `{accent, surface}` key shape, so the
+    // keys never discriminate — only the globally-unique string values do. Each of
+    // `paletteConfig`'s two values singles its declarator out, so the var/object
+    // read-off menu has more than one proving value-anchor choice.
+    write_text_file(
+        &source,
+        concat!(
+            "const paletteConfig = {\n",
+            "  accent: \"palette-accent-7c1\",\n",
+            "  surface: \"palette-surface-3a9\",\n",
+            "};\n",
+            "const layoutConfig = {\n",
+            "  accent: \"layout-accent-002\",\n",
+            "  surface: \"layout-surface-118\",\n",
+            "};\n",
+            "export { paletteConfig, layoutConfig };\n",
+        ),
+    );
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/theme.yaml"),
+        r#"members:
+  - name: PaletteConfig
+    selector:
+      binding:
+        name: paletteConfig
+"#,
+    );
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/theme:PaletteConfig",
+            "--candidates",
+            "3",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let candidate = parsed["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["export_name"] == "PaletteConfig")
+        .unwrap_or_else(|| panic!("no PaletteConfig candidate: {parsed}"));
+    assert_eq!(candidate["candidate_count"], 1, "{parsed}");
+
+    // The primary pins one unique value; the menu surfaces the slot's *other*
+    // discriminating value anchor, so the two together cover both `palette-…`
+    // strings — exercising the object read-off candidates path end-to-end.
+    let primary = candidate["match_source"].as_str().unwrap();
+    let alternatives = candidate["alternatives"].as_array().unwrap();
+    assert!(
+        !alternatives.is_empty(),
+        "expected an object-slot candidate menu: {parsed}"
+    );
+    let all_sources: Vec<&str> = std::iter::once(primary)
+        .chain(
+            alternatives
+                .iter()
+                .map(|alternative| alternative["match_source"].as_str().unwrap()),
+        )
+        .collect();
+    for source in &all_sources {
+        assert!(
+            source.contains("palette-"),
+            "each candidate pins a unique palette value: {source}"
+        );
+    }
+    assert!(
+        all_sources
+            .iter()
+            .any(|source| source.contains("palette-accent-7c1")),
+        "the menu surfaces the accent value anchor: {parsed}"
+    );
+    assert!(
+        all_sources
+            .iter()
+            .any(|source| source.contains("palette-surface-3a9")),
+        "the menu surfaces the surface value anchor: {parsed}"
+    );
+}

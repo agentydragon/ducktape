@@ -1,9 +1,10 @@
 # Plan: agent-authored forward-compatible selectors
 
 Status: **in progress**. The plan and the `debundle_stabilize` skill (M2) landed in
-#2332; the `match-selector` query + over-pin slack primitive (M1) landed in #2335.
-Remaining: `synthesize-selectors --candidates N` (M1) and port-based evaluation (M3).
-Reframes the selector-choice half of
+#2332; **M1 (read-only primitives) is complete** — `match-selector` (query + over-pin
+slack) in #2335, `synthesize-selectors --candidates N` (ranked menu) in #2339.
+Remaining: grounding the skill's playbook with tested fixtures (M2) and port-based
+evaluation (M3). Reframes the selector-choice half of
 [automated spec workflows](automated_spec_workflows.md). That doc's mechanical
 `selective × stable × cost` ranker
 ([read-off minimization](readoff_minimization.md)) stays — but demoted from
@@ -168,14 +169,15 @@ through `match-selector`. _(This subsumes the separately-planned `selector-slack
 command — query and slack are the same authoring question.)_ Not yet covered:
 top-level context-statement drops and destructure-pattern property drops.
 
-### Planned: `synthesize-selectors --candidates N`
+### Landed: `synthesize-selectors --candidates N` — #2339
 
-Emit the top-N ranked candidates per item (each with its uniqueness proof, cost, and
-the concrete anchors it pins), not just the one minimal pick. The agent reads them as
-a menu — accept one, or use them to locate a better semantic anchor the ranker
-undervalued. The remaining M1 piece: it needs the read-off walk to collect rather than
-short-circuit at the first proving anchor set, plus a multi-selector-per-item report
-shape.
+Emit the top-N ranked candidates per item, not just the one minimal pick — the agent
+reads them as a menu to override an incidental anchor with a purpose-bearing one. The
+read-off walk now collects the top-N proving anchor sets (`read_off_candidates`, with
+`limit == 1` reproducing the single pick); the extras beyond the primary surface as
+`alternatives` on each report candidate, and the primary's own `match_source` is now in
+the report too. Covers the function/class and single-target var/object read-off forms;
+the multi-declarator binding-group menu is still single-pick (tracked in `TODO.md`).
 
 Both commands follow the
 [automated spec workflows](automated_spec_workflows.md) contract: `--format
@@ -287,9 +289,11 @@ way it dispatches naming/extraction lanes.
 
 ## Open questions / milestones
 
-- **M1 — read-only primitives.** `match-selector` (hypothesis-test probe + over-pin
-  slack, value + structural) **landed** (#2335). Remaining: `synthesize-selectors
---candidates N` (the ranked-candidate menu).
+- **M1 — read-only primitives — complete.** `match-selector` (hypothesis-test probe +
+  over-pin slack, value + structural) **landed** (#2335); `synthesize-selectors
+--candidates N` (the ranked-candidate menu) **landed** (#2339). Residue tracked in
+  `TODO.md`: the candidates menu for multi-declarator var groups, and slack for
+  top-level context statements / destructure-pattern properties.
 - **M2 — the skill.** Loop + playbook + anonymized fixtures. The `debundle_stabilize`
   skill **landed** (#2332); grounding its playbook entries with tested fixtures is
   still open.

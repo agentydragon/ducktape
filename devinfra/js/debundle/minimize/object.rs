@@ -130,18 +130,39 @@ pub(crate) fn try_object_read_off(
     targets: &[SynthesizedTargetBinding],
     target_slots: &BTreeSet<usize>,
 ) -> Result<Option<SpecializedSelector>> {
+    Ok(
+        try_object_read_off_candidates(index, var, decl, targets, target_slots, 1)?
+            .into_iter()
+            .next(),
+    )
+}
+
+/// Up to `limit` ranked read-off selectors for a single-target object declarator —
+/// the `synthesize-selectors --candidates N` menu. `limit == 1` reproduces
+/// [`try_object_read_off`] exactly (minimal anchor set, else the slot key-set
+/// cover). For `limit > 1`, once a primary read-off exists the menu is extended
+/// with the slot's individually-discriminating value anchors; an object that has
+/// no minimal/cover read-off offers no menu (matching the single-pick `None`).
+pub(crate) fn try_object_read_off_candidates(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    target_slots: &BTreeSet<usize>,
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
     // Only the single-target case (one binding). A multi-target group needs the
     // tuple-resolving binding-group path; this owns the single object slot.
     let [target] = targets else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     if target_slots.len() != 1 {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let target_slot = *target_slots.iter().next().expect("one target slot");
     let declarator = &var.decls[target_slot];
     let Some(Expr::Object(object)) = declarator.init.as_deref() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let target_decl_span = declarator.span();
 
@@ -165,30 +186,70 @@ pub(crate) fn try_object_read_off(
         )
     };
 
-    if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
-        let item = index
-            .parsed
-            .module
-            .body
-            .get(decl.body_idx)
-            .context("read-off body index no longer in module")?;
-        let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
+    let item = index
+        .parsed
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")?;
+    let kept_in_slot = |anchor_set: &shape_index::AnchorSet| -> BTreeSet<AnchorSpan> {
+        kept_spans_for_anchor_set(item, anchor_set)
             .into_iter()
             .filter(|span| node_holds_anchor(target_decl_span, *span))
-            .collect();
+            .collect()
+    };
+    let collect = |selector: SpecializedSelector, out: &mut Vec<SpecializedSelector>| -> bool {
+        if !out
+            .iter()
+            .any(|kept| kept.match_source == selector.match_source)
+        {
+            out.push(selector);
+        }
+        out.len() >= limit
+    };
+    let mut out: Vec<SpecializedSelector> = Vec::new();
+
+    // Single pick (limit == 1): the minimal anchor set, else the slot key-set cover.
+    if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
+        let kept = kept_in_slot(&anchor_set);
         if !kept.is_empty()
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+            && collect(selector, &mut out)
         {
-            return Ok(Some(selector));
+            return Ok(out);
         }
     }
-
-    cover_object_slot(
+    if let Some(selector) = cover_object_slot(
         index,
         decl,
         target,
         &object_anchor_ranking(object),
         &render_with,
-    )
+    )? && collect(selector, &mut out)
+    {
+        return Ok(out);
+    }
+
+    // No minimal/cover read-off ⇒ no menu (the single pick is `None`).
+    if out.is_empty() {
+        return Ok(out);
+    }
+
+    // Menu extras: the slot's individually-discriminating value anchors.
+    for anchor_set in index
+        .shape_index
+        .unique_value_anchor_candidates(decl.body_idx)
+    {
+        let kept = kept_in_slot(&anchor_set);
+        if kept.is_empty() {
+            continue;
+        }
+        if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+            && collect(selector, &mut out)
+        {
+            return Ok(out);
+        }
+    }
+    Ok(out)
 }

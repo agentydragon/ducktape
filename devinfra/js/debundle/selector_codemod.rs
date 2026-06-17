@@ -47,6 +47,7 @@ pub mod match_selector;
 use crate::minimize::{
     minimize_class_selector, minimize_class_selector_candidates, minimize_function_selector,
     minimize_function_selector_candidates, minimize_var_group_selector,
+    minimize_var_group_selector_candidates,
 };
 use crate::render::holes_present;
 
@@ -125,6 +126,12 @@ pub struct SelectorCodemodCandidate {
     pub matched_body_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_count: Option<usize>,
+    /// The synthesized primary selector's `match` source (synthesize-selectors
+    /// only); `None` for non-synthesizing rewrites and skips. Makes the proposed
+    /// selector visible in dry-run, and completes the `--candidates` menu (the
+    /// primary here, the rest in `alternatives`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_source: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rewritten_holes: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -341,6 +348,7 @@ fn rewrite_single_target_binding(
             group_id: None,
             matched_body_index: None,
             candidate_count: None,
+            match_source: None,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
             alternatives: Vec::new(),
@@ -362,6 +370,7 @@ fn rewrite_single_target_binding(
                 group_id: None,
                 matched_body_index: None,
                 candidate_count: None,
+                match_source: None,
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
                 alternatives: Vec::new(),
@@ -386,6 +395,7 @@ fn rewrite_single_target_binding(
             group_id: None,
             matched_body_index: None,
             candidate_count: None,
+            match_source: None,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
             alternatives: Vec::new(),
@@ -424,6 +434,7 @@ fn rewrite_single_target_binding(
         group_id: None,
         matched_body_index: None,
         candidate_count: None,
+        match_source: None,
         rewritten_holes: Vec::new(),
         replacement_count: 0,
         alternatives: Vec::new(),
@@ -484,6 +495,7 @@ fn rewrite_anything_holes(
                 group_id: None,
                 matched_body_index: None,
                 candidate_count: None,
+                match_source: None,
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
                 alternatives: Vec::new(),
@@ -527,6 +539,7 @@ fn rewrite_anything_holes(
         group_id: None,
         matched_body_index: None,
         candidate_count: None,
+        match_source: None,
         rewritten_holes,
         replacement_count,
         alternatives: Vec::new(),
@@ -1543,7 +1556,12 @@ fn synthesize_specialized_selector_candidates(
             };
             minimize_class_selector_candidates(index, &class_decl.class, decl, target, limit)
         }
-        IndexedDeclarationKind::Var | IndexedDeclarationKind::Other => {
+        IndexedDeclarationKind::Var => {
+            let var =
+                item_var_decl(item).context("indexed var declaration no longer has var AST")?;
+            minimize_var_group_selector_candidates(index, var, decl, targets, limit)
+        }
+        IndexedDeclarationKind::Other => {
             Ok(synthesize_specialized_selector(index, item, decl, targets)?
                 .into_iter()
                 .collect())
@@ -1883,6 +1901,7 @@ fn synthesized_candidate(input: SynthesizedCandidateInput<'_>) -> SelectorCodemo
         group_id: Some(input.group_id),
         matched_body_index: Some(input.synthesized.body_idx),
         candidate_count: Some(input.synthesized.candidate_count),
+        match_source: Some(input.synthesized.match_source.clone()),
         rewritten_holes: input.synthesized.rewritten_holes.clone(),
         replacement_count: input.synthesized.rewritten_holes.len(),
         alternatives: input.synthesized.alternatives.clone(),
@@ -1980,6 +1999,7 @@ fn skipped_candidate(
         group_id: None,
         matched_body_index: None,
         candidate_count: None,
+        match_source: None,
         rewritten_holes: Vec::new(),
         replacement_count: 0,
         alternatives: Vec::new(),

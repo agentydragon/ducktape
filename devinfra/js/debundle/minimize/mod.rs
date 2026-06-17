@@ -38,7 +38,7 @@ mod var;
 
 pub(crate) use class::{minimize_class_selector, minimize_class_selector_candidates};
 pub(crate) use function::{minimize_function_selector, minimize_function_selector_candidates};
-pub(crate) use group::minimize_var_group_selector;
+pub(crate) use group::{minimize_var_group_selector, minimize_var_group_selector_candidates};
 
 use std::collections::{BTreeMap, BTreeSet};
 

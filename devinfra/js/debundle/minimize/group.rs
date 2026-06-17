@@ -8,8 +8,8 @@ use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::object::{object_anchor_ranking, try_object_read_off};
-use super::var::try_var_read_off;
+use super::object::{object_anchor_ranking, try_object_read_off, try_object_read_off_candidates};
+use super::var::{try_var_read_off, try_var_read_off_candidates};
 use super::{hole_var_init_padded, render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{
@@ -358,6 +358,56 @@ fn try_var_group_read_off(
         match_source: source,
         rewritten_holes,
     }))
+}
+
+/// Up to `limit` ranked candidate selectors for a `var` declaration — the
+/// `synthesize-selectors --candidates N` menu. A single-target object or non-object
+/// var slot returns its read-off menu; the multi-declarator binding-group and
+/// keep-shallow paths are not yet menu-aware and yield only the single pick
+/// (tracked in `TODO.md`). `limit == 1` reproduces [`minimize_var_group_selector`].
+pub(crate) fn minimize_var_group_selector_candidates(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
+    let export_for = |runtime: &str| {
+        targets
+            .iter()
+            .find(|target| target.runtime_binding == runtime)
+            .map(|target| target.export_name.clone())
+    };
+    let target_slots: BTreeSet<usize> = var
+        .decls
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, declarator)| {
+            let name = single_ident_pat_name(&declarator.name)?;
+            export_for(name).map(|_| idx)
+        })
+        .collect();
+    if target_slots.len() != targets.len() {
+        return Ok(Vec::new());
+    }
+
+    let object = try_object_read_off_candidates(index, var, decl, targets, &target_slots, limit)?;
+    if !object.is_empty() {
+        return Ok(object);
+    }
+    if let [target] = targets
+        && target_slots.len() == 1
+    {
+        let slot = *target_slots.iter().next().expect("one target slot");
+        let var_candidates = try_var_read_off_candidates(index, var, decl, target, slot, limit)?;
+        if !var_candidates.is_empty() {
+            return Ok(var_candidates);
+        }
+    }
+    // Multi-target binding-group / keep-shallow: menu not yet wired — single pick.
+    Ok(minimize_var_group_selector(index, var, decl, targets)?
+        .into_iter()
+        .collect())
 }
 
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
