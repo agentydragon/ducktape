@@ -7,7 +7,7 @@ use source_match_holes::ANYTHING_HOLE_KEYWORD;
 use swc_common::{DUMMY_SP, Spanned};
 use swc_ecma_ast::*;
 
-use super::{read_off_candidates, render_via_read_off};
+use super::read_off_candidates;
 use crate::render::{
     AnchorSpan, anything_expr, anything_param, emit_selector, holed_block, ident_node,
     node_retains_any,
@@ -42,28 +42,17 @@ fn class_render_with<'a>(
     }
 }
 
-/// Minimal anchor cover for a single-target class: render the class keeping
-/// only members (and member-body statements) that carry a chosen anchor, with an
-/// `ANYTHING` class-member run hole for dropped member runs, and cover sibling
-/// classes.
-pub(crate) fn minimize_class_selector(
-    index: &ChunkSelectorIndex,
-    class: &Class,
-    decl: &IndexedDeclaration,
-    target: &SynthesizedTargetBinding,
-) -> Result<Option<SpecializedSelector>> {
-    // Single-target classes read off their minimal anchor set the same way
-    // functions and objects do: the holed scaffold pins the class kind plus
-    // `extends ANYTHING`, and value anchors (a member name, a literal or callee
-    // inside a member body) map to their token spans so only the member runs
-    // carrying them survive between `ANYTHING` class-member run holes. A class the read-off
-    // cannot single out through its own value features returns `None` and is
-    // reported as debt (never a full-AST pin).
-    render_via_read_off(index, decl, target, &class_render_with(class, target))
-}
-
 /// Up to `limit` ranked candidate selectors for the class — the
-/// `synthesize-selectors --candidates N` menu. `limit == 1` is the single pick.
+/// `synthesize-selectors --candidates N` menu. `limit == 1` is the single pick
+/// (the dispatcher's single-selector path is this at `limit 1`).
+///
+/// Single-target classes read off their minimal anchor set the same way
+/// functions and objects do: the holed scaffold pins the class kind plus
+/// `extends ANYTHING`, and value anchors (a member name, a literal or callee
+/// inside a member body) map to their token spans so only the member runs
+/// carrying them survive between `ANYTHING` class-member run holes. A class the
+/// read-off cannot single out through its own value features yields no candidate
+/// and is reported as debt (never a full-AST pin).
 pub(crate) fn minimize_class_selector_candidates(
     index: &ChunkSelectorIndex,
     class: &Class,

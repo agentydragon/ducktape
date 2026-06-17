@@ -17,7 +17,7 @@ use crate::{
 
 /// Read off a minimal selector for a single-target `var`/`let`/`const` whose
 /// target declarator value is **not** an object literal (objects route through
-/// [`try_object_read_off`]). Mirrors [`render_via_read_off`] (function/class) but
+/// [`try_object_read_off`]). Mirrors `read_off_candidates` (function/class) but
 /// slot-aware: holes non-target declarators to `DECLARATORS_*`, holes the target
 /// init with [`hole_expr`] around the read-off anchors, and restricts the kept
 /// spans to the target declarator so a group's chunk-wide anchor set never pins a

@@ -5,11 +5,11 @@
 //! `swc_ecma_ast` nodes — covering all the declaration shapes the retention
 //! renderer branches on:
 //!
-//! - same-arity function declarations (exercises `minimize_function_selector`);
+//! - same-arity function declarations (exercises `minimize_function_selector_candidates`);
 //! - single `const` declarations with call / object / literal initializers
 //!   (exercises `minimize_var_selector`);
 //! - class declarations whose methods contain calls / literals (exercises
-//!   `minimize_class_selector`);
+//!   `minimize_class_selector_candidates`);
 //! - multi-declarator `const`s, where 2+ declarators in one statement are
 //!   selected as a binding group (exercises `minimize_var_group_selector` via
 //!   `synthesize_simplest_selector_for_group` with multiple `NameBindingMember`s).

@@ -45,9 +45,8 @@ mod render;
 pub mod match_selector;
 
 use crate::minimize::{
-    minimize_class_selector, minimize_class_selector_candidates, minimize_function_selector,
-    minimize_function_selector_candidates, minimize_var_group_selector,
-    minimize_var_group_selector_candidates,
+    minimize_class_selector_candidates, minimize_function_selector_candidates,
+    minimize_var_group_selector, minimize_var_group_selector_candidates,
 };
 use crate::render::holes_present;
 
@@ -1513,12 +1512,14 @@ fn synthesize_specialized_selector(
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<SpecializedSelector>> {
     match decl.kind {
-        IndexedDeclarationKind::Function => {
-            synthesize_specialized_function_selector(index, item, decl, targets)
-        }
-        IndexedDeclarationKind::Class => {
-            synthesize_specialized_class_selector(index, item, decl, targets)
-        }
+        // Function and class single-pick is the candidates read-off at limit 1
+        // (`read_off_candidates` stops at the first proving selector). On an empty
+        // result the caller falls back to the exact selector.
+        IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => Ok(
+            synthesize_specialized_selector_candidates(index, item, decl, targets, 1)?
+                .into_iter()
+                .next(),
+        ),
         IndexedDeclarationKind::Var => {
             synthesize_specialized_var_selector(index, item, decl, targets)
         }
@@ -1567,38 +1568,6 @@ fn synthesize_specialized_selector_candidates(
                 .collect())
         }
     }
-}
-
-fn synthesize_specialized_function_selector(
-    index: &ChunkSelectorIndex,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<Option<SpecializedSelector>> {
-    let [target] = targets else {
-        return Ok(None);
-    };
-    let Some(Decl::Fn(function)) = item_decl(item) else {
-        return Ok(None);
-    };
-    // On `None`, the caller falls back to the exact selector.
-    minimize_function_selector(index, &function.function, decl, target)
-}
-
-fn synthesize_specialized_class_selector(
-    index: &ChunkSelectorIndex,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<Option<SpecializedSelector>> {
-    let [target] = targets else {
-        return Ok(None);
-    };
-    let Some(Decl::Class(class_decl)) = item_decl(item) else {
-        return Ok(None);
-    };
-    // On `None`, the caller falls back to the exact selector.
-    minimize_class_selector(index, &class_decl.class, decl, target)
 }
 
 fn synthesize_specialized_var_selector(
@@ -1653,7 +1622,7 @@ fn matched_binding_candidates(
 
 /// Distinct body indices the selector resolves to (slot alignments within one
 /// body collapse). Used by the read-off structural fast path
-/// ([`render_via_read_off`]).
+/// (the bare-scaffold branch of `read_off_candidates`).
 fn matched_body_indices(
     index: &ChunkSelectorIndex,
     export_name: &str,

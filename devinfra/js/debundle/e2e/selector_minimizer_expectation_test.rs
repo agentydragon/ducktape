@@ -797,7 +797,7 @@ minimizer_expectation_case!(
 // `function X() { return wrap(); }` siblings (the `__decorate`-family shape) — has
 // no discriminating feature inside its own declaration, so even the bare
 // `function SelectedHelper() { STMT_LIST }` scaffold matches every sibling. The
-// function read-off (`render_via_read_off`) falls to the target's stable
+// function read-off (`read_off_candidates`) falls to the target's stable
 // neighbors: a 2-statement window pairing the holed scaffold with the
 // immediately-following `registerSelected("delta-unique-token")` call holed to
 // `ANYTHING("delta-unique-token")` (minified callee dropped per #2318, unique
@@ -847,7 +847,7 @@ minimizer_expectation_case!(
 // The equivalent class DECLARATION minimizes correctly today — control:
 // `class selectedStore { status = "idle"; run(){…} describe(){…} }` emits
 // `class SelectedStore { status = "idle"; ANYTHING; }` — so the gap is purely the
-// expression form failing to reach `minimize_class_selector`'s read-off. The
+// expression form failing to reach `minimize_class_selector_candidates`'s read-off. The
 // target shape wraps that same class read-off output back in the `const … = class`
 // initializer. Real-spec analogue: the 0-hole whole-body giants
 // `integrations/google/api/client.yaml::GoogleApiClient` (314 lines) and

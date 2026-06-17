@@ -157,6 +157,51 @@ propose`.
 6. Move `split_entry_body` to a draining/move-based implementation if fresh
    profiles show retained-statement cloning hot.
 
+## Code refactor / dedup opportunities (2026-06-17 survey)
+
+Production-code (non-test) dedup/cleanup options surfaced by a codebase survey.
+Calibrated LOC estimates and risk; pick by (LOC saved × safety). The
+`minimize/` single-pick-layer collapse (function/class single-pick is the
+candidates read-off at limit 1) is already done.
+
+**Safe, internal, no behavior change:**
+
+1. CLI common args via clap `#[command(flatten)]`. The `--modules` /
+   `--source-root` / `--format` fields repeat across 5+ `Args` structs in
+   <cli/mod.rs> (`SpecStatsArgs`, `SelectorDebtArgs`, `MatchSelectorArgs`,
+   `Bindings{Assign,Unassign}Args`, …). Factor a shared flattened struct.
+   ~80–120 LOC, low risk.
+2. CLI report dispatch helper. ~18 sites in <cli/mod.rs> repeat
+   `let format = OutputFormat::resolve(..); let report = run_*(..)?;
+print_report(&report, format, render_*)`. A `run_report_and_format`
+   helper collapses the triple. ~40–60 LOC (not the 200–300 an earlier
+   estimate claimed), low risk.
+3. `PurityReason { rule, span, source_location: None, detail: None }` literal
+   appears at 7 sites in <facts/purity_classification.rs> and
+   <purity/classifier.rs>; add a `Purity::not_pure(rule, span)` constructor.
+   ~20 LOC, trivial.
+4. `vendor/mod.rs` `validate_boundary_mapping_collisions` +
+   `collect_boundary_mapping` both walk `module.body` export specifiers; merge
+   into one pass. ~30 LOC, low risk.
+
+**Real value but needs design work / behavior-risk:**
+
+5. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
+   `hole_stmt`, `minimize/class.rs` `hole_class_member`, etc.) behind a `Holer`
+   trait or table to collapse repeated per-variant match clusters. ~150 LOC,
+   medium risk (over-abstraction hazard; the per-form holing strategies differ
+   for good reasons).
+
+**Organization only (≈0 LOC removed, navigability win):** split the giant
+files by responsibility — <selector_codemod.rs> (2.8k), <peel/quotient.rs>
+(2.5k), <lowering/rename_ledger.rs> (1.7k).
+
+**Defer (high risk):** unifying the union-find / Tarjan-SCC / incremental
+cycle-detection between <peel/quotient.rs> and
+<realizability/condensation_order.rs>. They look parallel but encode different
+correctness invariants for the realizability gate; a shared impl risks hiding
+drift. Audit before attempting.
+
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against

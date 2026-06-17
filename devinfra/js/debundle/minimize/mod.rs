@@ -11,7 +11,7 @@
 //! an arity-exact single-node hole).
 //!
 //! Single targets (function, class, object, and non-object var) read their
-//! minimal anchor set off the chunk-wide shape index (`render_via_read_off` /
+//! minimal anchor set off the chunk-wide shape index (`read_off_candidates` /
 //! `try_object_read_off` / `try_var_read_off`): the index ranks each candidate
 //! feature by selective × stable, so the chosen anchors are sparse and
 //! rebuild-robust, and the production matcher proves the rendered selector
@@ -36,8 +36,8 @@ mod group;
 mod object;
 mod var;
 
-pub(crate) use class::{minimize_class_selector, minimize_class_selector_candidates};
-pub(crate) use function::{minimize_function_selector, minimize_function_selector_candidates};
+pub(crate) use class::minimize_class_selector_candidates;
+pub(crate) use function::minimize_function_selector_candidates;
 pub(crate) use group::{minimize_var_group_selector, minimize_var_group_selector_candidates};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -57,11 +57,15 @@ use crate::{
     declarator_hole_name, matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
 };
 
-/// Render a single-target selector via the read-off API.
-///
-/// Reads the minimal [`AnchorSet`] off the shape index, maps its value anchors
-/// to kept byte spans over the target item, and renders + proves through the
-/// supplied `render_with` (the same prune + codegen — no second serializer).
+/// Collect up to `limit` read-off selectors for the target, best-first — minimal
+/// anchor set → individually-discriminating value anchors → multi-feature value
+/// cover → bare scaffold → enclosing-context neighbor — each rendered + proven
+/// uniquely through the supplied `render_with` (the same prune + codegen — no
+/// second serializer) and deduped by source. `limit == 1` is the single pick
+/// (stops at the first proving selector — the form dispatchers' single-selector
+/// path); `limit > 1` powers `synthesize-selectors --candidates N`, the ranked
+/// menu. Returns fewer than `limit` (or empty) when the target has no more
+/// proving anchors.
 ///
 /// **Robustness-anchor policy.** A holed-down *value* anchor is preferred over
 /// the bare structural scaffold even when the scaffold alone would resolve. A
@@ -72,27 +76,8 @@ use crate::{
 /// and falls back to the bare scaffold only when the target has no renderable
 /// value anchor — `minimal_anchor_set` chose a purely structural skeleton (empty
 /// kept spans) because nothing but shape discriminates — or the value anchor
-/// fails to prove. Returns `None` when neither route singles the target out (a
+/// fails to prove. Yields nothing when neither route singles the target out (a
 /// genuine alpha-duplicate); the caller reports it as debt, never a full-AST pin.
-fn render_via_read_off(
-    index: &ChunkSelectorIndex,
-    decl: &IndexedDeclaration,
-    target: &SynthesizedTargetBinding,
-    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
-) -> Result<Option<SpecializedSelector>> {
-    Ok(read_off_candidates(index, decl, target, render_with, 1)?
-        .into_iter()
-        .next())
-}
-
-/// Collect up to `limit` read-off selectors for the target, in the priority order
-/// [`render_via_read_off`] picks from — minimal anchor set → individually-
-/// discriminating value anchors → multi-feature value cover → bare scaffold →
-/// enclosing-context neighbor — each proven uniquely by the matcher (gate 1) and
-/// deduped by source. `limit == 1` reproduces [`render_via_read_off`] exactly (it
-/// stops at the first proving selector); `limit > 1` powers `synthesize-selectors
-/// --candidates N`, the ranked-candidate menu. Returns fewer than `limit` (or
-/// empty) when the target has no more proving anchors.
 fn read_off_candidates(
     index: &ChunkSelectorIndex,
     decl: &IndexedDeclaration,
