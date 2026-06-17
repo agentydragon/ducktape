@@ -13,6 +13,8 @@ use std::process::Command;
 
 use serde_json::Value;
 
+use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+
 struct MinimizedSelectorCase {
     name: &'static str,
     source: &'static str,
@@ -35,26 +37,6 @@ struct SelectorOutputExpectation {
 struct SelectorOutput {
     exports: BTreeSet<String>,
     match_source: String,
-}
-
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    let candidate = Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle");
-    assert!(
-        candidate.exists(),
-        "debundle binary not at {}",
-        candidate.display()
-    );
-    candidate
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
 }
 
 fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
