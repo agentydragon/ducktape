@@ -339,9 +339,12 @@ rec {
   };
 
   # Skills data: $out/share/claude-hooks/skills/
-  skills = pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.unzip ]; } ''
+  # bsdtar auto-detects the archive format, so this works both with the current
+  # `all_skills_tar.tar` pin and the `.skill` zip once a release publishes it
+  # and sync-pins updates artifact-pins.json.
+  skills = pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.libarchive ]; } ''
     mkdir -p $out/share/claude-hooks/skills
-    unzip -q ${artifacts.skills} -d $out/share/claude-hooks/skills
+    bsdtar -xf ${artifacts.skills} -C $out/share/claude-hooks/skills
   '';
 }
 // lib.optionalAttrs (artifacts ? debundle) {
