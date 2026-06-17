@@ -400,6 +400,20 @@ rust_test(
     ],
 )
 
+# `debundle spec match-selector`: the prove-gate probe resolving a candidate
+# source_match against a chunk and reporting matches + uniqueness verdict.
+rust_test(
+    name = "match_selector_cli_test",
+    srcs = ["match_selector_cli_test.rs"],
+    crate_root = "match_selector_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
 # Ignored target-behavior examples for recursive selector minimization.
 # Each case can be unignored independently as that selector shape lands.
 rust_test(

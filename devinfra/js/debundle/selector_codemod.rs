@@ -40,6 +40,10 @@ mod minimize;
 mod regex_anchor;
 mod render;
 
+// Read-only agent-facing selector query primitives (M1 of the
+// selector-authoring plan), sharing this crate's source loading + prove-gate.
+pub mod match_selector;
+
 use crate::minimize::{
     minimize_class_selector, minimize_function_selector, minimize_var_group_selector,
 };

@@ -33,6 +33,9 @@ use peel::{
     run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use selector_codemod::match_selector::{
+    MatchSelectorConfig, render_match_selector_text, run_match_selector,
+};
 use selector_codemod::{
     SelectorCodemodConfig, SelectorCodemodRewrite, render_selector_codemod_text,
     run_selector_codemod,
@@ -41,6 +44,7 @@ use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     populate_name_only_module_groups, render_selector_debt_text,
 };
+use spec::SourceMatchIdentifierMode;
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
@@ -125,6 +129,11 @@ enum SpecNsCommand {
     /// Synthesize structural selectors for selected name-only members.
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
+    /// Resolve a candidate `source_match` against a chunk and report what it
+    /// binds: the matching items, and whether it pins a unique target. The
+    /// interactive prove-gate probe for authoring forward-compatible selectors.
+    #[command(name = "match-selector")]
+    MatchSelector(MatchSelectorArgs),
     /// Keep-going selector validation: report every selector problem
     /// (no-match, ambiguous, duplicate-claim, resolution error) in one
     /// machine-readable pass.
@@ -274,6 +283,58 @@ pub struct SelectorCodemodArgs {
     /// Restrict source-aware rewrites to module:export items.
     #[arg(long = "item")]
     pub items: Vec<String>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum SourceMatchIdentifierModeArg {
+    /// Match identifiers literally (the selector's spelling must match).
+    Exact,
+    /// Treat binding/value identifiers as alpha-renamable placeholders — the
+    /// authoring norm for selectors that survive minifier renames.
+    AlphaAll,
+}
+
+impl From<SourceMatchIdentifierModeArg> for SourceMatchIdentifierMode {
+    fn from(value: SourceMatchIdentifierModeArg) -> Self {
+        match value {
+            SourceMatchIdentifierModeArg::Exact => Self::Exact,
+            SourceMatchIdentifierModeArg::AlphaAll => Self::AlphaAll,
+        }
+    }
+}
+
+/// Args for `debundle spec match-selector`.
+#[derive(Debug, ClapArgs)]
+pub struct MatchSelectorArgs {
+    /// Direct source JS file to resolve the selector against.
+    #[arg(long = "source-file")]
+    pub source_file: Option<PathBuf>,
+
+    /// Source root used with `--chunk`.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
+    /// Chunk path relative to `--source-root`, e.g. `static/index.js`.
+    #[arg(long = "chunk")]
+    pub chunk: Option<PathBuf>,
+
+    /// The candidate `source_match` `match` text to test.
+    #[arg(long = "match")]
+    pub match_source: String,
+
+    /// Identifier policy for the candidate selector.
+    #[arg(long = "identifiers", value_enum, default_value_t = SourceMatchIdentifierModeArg::AlphaAll)]
+    pub identifiers: SourceMatchIdentifierModeArg,
+
+    /// Selector-local binding to claim (sets `target_binding`) when the match
+    /// declares more than one binding.
+    #[arg(long = "target-binding")]
+    pub target_binding: Option<String>,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -612,6 +673,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
                 s.rewrite = SelectorCodemodRewriteArg::NameBindingToSourceMatch;
                 run_selector_codemod_cmd(s)
             }
+            SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
             SpecNsCommand::Validate(v) => {
                 run_validate_cmd(v).context("running keep-going selector validation")
             }
@@ -697,6 +759,20 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
     })?;
     print_report(&report, format, render_selector_codemod_text)
         .context("writing selector-codemod output")
+}
+
+fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
+    let format = OutputFormat::resolve(args.format);
+    let report = run_match_selector(&MatchSelectorConfig {
+        source_file: args.source_file,
+        source_root: args.source_root,
+        chunk: args.chunk,
+        match_source: args.match_source,
+        identifiers: args.identifiers.into(),
+        target_binding: args.target_binding,
+    })?;
+    print_report(&report, format, render_match_selector_text)
+        .context("writing match-selector output")
 }
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
