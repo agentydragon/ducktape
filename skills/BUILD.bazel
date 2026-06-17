@@ -20,6 +20,7 @@ pkg_tar(
         "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_tar",
         "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_tar",
         "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_tar",
+        "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_tar",
         "//skills/backtrace:backtrace_tar",
         "//skills/branch_splitter:branch_splitter_tar",
         "//skills/buildbuddy_api:buildbuddy_api_tar",
