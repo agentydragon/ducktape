@@ -401,7 +401,8 @@ rust_test(
 )
 
 # `debundle spec match-selector`: the prove-gate probe resolving a candidate
-# source_match against a chunk and reporting matches + uniqueness verdict.
+# source_match against a chunk and reporting matches, uniqueness verdict, and
+# holing slack (which kept values could be holed further).
 rust_test(
     name = "match_selector_cli_test",
     srcs = ["match_selector_cli_test.rs"],

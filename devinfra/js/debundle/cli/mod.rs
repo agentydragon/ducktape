@@ -130,8 +130,9 @@ enum SpecNsCommand {
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
     /// Resolve a candidate `source_match` against a chunk and report what it
-    /// binds: the matching items, and whether it pins a unique target. The
-    /// interactive prove-gate probe for authoring forward-compatible selectors.
+    /// binds: the matching items, whether it pins a unique target, and (unless
+    /// `--no-slack`) which kept values could be holed further without losing
+    /// uniqueness. The interactive prove-gate probe for selector authoring.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
     /// Keep-going selector validation: report every selector problem
@@ -335,6 +336,11 @@ pub struct MatchSelectorArgs {
     /// declares more than one binding.
     #[arg(long = "target-binding")]
     pub target_binding: Option<String>,
+
+    /// Skip holing-slack analysis (report matches only). Slack is computed by
+    /// default when the selector pins a unique target.
+    #[arg(long = "no-slack")]
+    pub no_slack: bool,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -770,6 +776,7 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
         match_source: args.match_source,
         identifiers: args.identifiers.into(),
         target_binding: args.target_binding,
+        check_slack: !args.no_slack,
     })?;
     print_report(&report, format, render_match_selector_text)
         .context("writing match-selector output")
