@@ -16,6 +16,7 @@ use lowering::{
     materialize_logical_modules,
 };
 use prepare_chunks::prepare_js_chunks;
+use prune_module_exports::prune_unimported_module_exports;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
@@ -333,7 +334,7 @@ pub fn run_transform_cli_with_options(
     }
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
-    let artifact = indexed.into_artifact();
+    let mut artifact = indexed.into_artifact();
 
     // Vendor emission outputs: full-swap wrappers and bundled bundle
     // copies / facades, plus the combined manifest — all write-gated
@@ -346,6 +347,16 @@ pub fn run_transform_cli_with_options(
         spec.swap_vendor_chunks.output_manifest_path.as_deref(),
         &vendor_report,
     )?;
+
+    // Drop dead named exports from emitted logical-module files: a
+    // module-owned binding referenced nowhere outside its own module
+    // (the esbuild decorator scaffolding is the dominant case) is
+    // module-internal, so it should not appear in the module's
+    // `export { ... }`. Runs over the final bundle so it sees every
+    // import/re-export; entry files (the chunk public surface) are
+    // never touched. See prune_module_exports.rs for the soundness
+    // argument.
+    prune_unimported_module_exports(&mut artifact);
 
     // Final emit-shape check: every JS file that came out of the
     // materialize / strip pipeline must have unique public export

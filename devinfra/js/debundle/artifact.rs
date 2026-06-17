@@ -131,6 +131,13 @@ impl JsFile {
         }
     }
 
+    pub fn ast_mut(&mut self) -> Option<&mut ParsedJsModule> {
+        match &mut self.body {
+            JsFileBody::Source(_) => None,
+            JsFileBody::Ast(ast) => Some(ast),
+        }
+    }
+
     pub fn into_ast_parts(self) -> Option<(JsFileAstParts, ParsedJsModule)> {
         match self.body {
             JsFileBody::Ast(ast) => Some((
