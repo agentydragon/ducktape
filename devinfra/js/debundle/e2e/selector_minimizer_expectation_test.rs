@@ -907,3 +907,32 @@ minimizer_expectation_case!(
     bindings = [("SelectedStore", "selectedStore")],
     expected = "expected_match.js",
 );
+
+// IGNORED (dogfood over-pin, 2026-06-17): a class whose only discriminating
+// content lives inside its constructor's **sequence-expression** body
+// (`constructor(...) { (super(a), this.x = b, this.name = "token"); }`) over-pins
+// to enclosing-context anchoring instead of pinning that own anchor. `hole_expr`
+// (render.rs) has no `Expr::Seq` arm, so a comma-sequence falls to its
+// `_ => expr.clone()` "unmodeled shape" fallback: the read-off cannot hole the
+// sequence down to the discriminating `this.name = "selected-error-token"`
+// assignment, so every value-anchor candidate keeps the sequence verbatim (raw
+// sibling subtrees the prove-gate rejects), the bare scaffold is ambiguous among
+// same-shape sibling error classes, and the class falls to
+// `render_via_neighbor_context` — which pins the unrelated preceding
+// `serializeState` neighbor whole and holes the whole class body to `ANYTHING`.
+// Control: the identical class written with plain statement assignments (no
+// sequence) already minimizes to
+// `constructor(ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; ANYTHING.name = "selected-error-token"; }`
+// with no neighbor, so the gap is purely the sequence-expression form never
+// reaching a holer. Fix: an `Expr::Seq` arm in `hole_expr` (hole each non-anchor
+// element to `ANYTHING`, recurse into the anchored one), exactly parallel to the
+// missing `Expr::Class` arm behind `class_expression_const_whole_body`.
+minimizer_expectation_case!(
+    #[ignore = "class anchor inside a constructor sequence-expression body over-pins to neighbor context; hole_expr has no Expr::Seq arm"]
+    minimizes_class_sequence_constructor_body,
+    fixture = "class_sequence_constructor_body",
+    name = "class anchor inside a constructor sequence expression is holed in place, not pinned via a neighbor",
+    module = "app/errors",
+    bindings = [("SelectedError", "selectedError")],
+    expected = "expected_match.js",
+);
