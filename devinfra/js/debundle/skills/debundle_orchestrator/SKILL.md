@@ -11,7 +11,8 @@ routes work between specialist roles and owns project-adapter details.
 Shared CLI workflows land here so planner, intake, and worker routing use the
 same command semantics:
 
-@references/guide.md
+@references/cli_basics.md
+@references/spec_editing.md
 
 Read other bundled references as needed:
 

@@ -9,7 +9,9 @@ skill_package(
         ),
         skill_mapping(
             srcs = [
-                "//devinfra/js/debundle/docs:guide.md",
+                "//devinfra/js/debundle/docs:cli_basics.md",
+                "//devinfra/js/debundle/docs:selectors.md",
+                "//devinfra/js/debundle/docs:spec_editing.md",
             ],
             prefix = "references",
         ),

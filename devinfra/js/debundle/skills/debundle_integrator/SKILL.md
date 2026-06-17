@@ -10,7 +10,8 @@ base branch.
 
 Shared CLI workflows land here for gate and `--dry-run` behavior:
 
-@references/guide.md
+@references/cli_basics.md
+@references/spec_editing.md
 
 Read other bundled references as needed:
 

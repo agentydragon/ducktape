@@ -2,6 +2,9 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "cli.md",
+    "cli_basics.md",
     "guide.md",
     "peel_proposer.md",
+    "selectors.md",
+    "spec_editing.md",
 ])

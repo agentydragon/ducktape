@@ -10,7 +10,8 @@ translates certified structural proposals into work packets for lane workers.
 
 Shared CLI workflows land here so proposal/batch semantics stay in one place:
 
-@references/guide.md
+@references/cli_basics.md
+@references/spec_editing.md
 
 Read other bundled references as needed:
 

@@ -36,13 +36,16 @@ because those are cheap and unique _today_. Your job is to override those with a
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
+The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `binding_groups`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+
 ## Shared CLI workflows
 
-@references/guide.md
+@references/cli_basics.md
+@references/selectors.md
 
 ## Setup
 
-Build the debundler and export the standard env vars (see the shared guide for
+Build the debundler and export the standard env vars (see `cli_basics.md` above for
 `DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` / `DEBUNDLE_OUT`). Use a per-agent
 Bazel output base under `/tmp` to avoid lock contention, exactly as the other
 debundle skills do. In a consuming repo the CLI label is `@ducktape//...`; inside

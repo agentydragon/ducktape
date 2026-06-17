@@ -11,7 +11,8 @@ skill_package(
             srcs = [
                 "//devinfra/js/debundle:README.md",
                 "//devinfra/js/debundle/docs:cli.md",
-                "//devinfra/js/debundle/docs:guide.md",
+                "//devinfra/js/debundle/docs:cli_basics.md",
+                "//devinfra/js/debundle/docs:spec_editing.md",
                 "//devinfra/js/debundle/skills/shared:workflow.md",
             ],
             prefix = "references",
