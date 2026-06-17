@@ -14,7 +14,7 @@
 //! gate's reconstruction joins YAML members → owners by binding
 //! name, matching `gate_post_edit_partition`'s wire contract.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -128,10 +128,10 @@ fn graph_with_acyclic_cross_module_read() -> String {
 fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_atomic_unit());
+    write_text_file(&graph, &graph_with_atomic_unit());
     // Pre-edit: alpha + beta co-located in one module — atom
     // respected, realizable.
-    write(
+    write_text_file(
         &modules.join("home/atom.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n",
     );
@@ -145,7 +145,7 @@ fn bindings_assign_rejects_split_of_known_atomic_unit() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",
@@ -187,7 +187,7 @@ fn bindings_assign_rejects_split_under_dry_run_too() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",
@@ -219,7 +219,7 @@ fn bindings_assign_dry_run_and_apply_share_exit_code() {
     // clean way to assert this — both should bail with exit 1.
     let dir_dry = tempfile::tempdir().unwrap();
     let (modules_dry, graph_dry) = write_atomic_unit_fixture(dir_dry.path());
-    let dry = Command::new(debundle_binary())
+    let dry = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",
@@ -235,7 +235,7 @@ fn bindings_assign_dry_run_and_apply_share_exit_code() {
 
     let dir_apply = tempfile::tempdir().unwrap();
     let (modules_apply, graph_apply) = write_atomic_unit_fixture(dir_apply.path());
-    let apply = Command::new(debundle_binary())
+    let apply = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",
@@ -267,19 +267,19 @@ fn bindings_assign_accepts_acyclic_cross_module_move() {
     let root = dir.path();
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_acyclic_cross_module_read());
-    write(
+    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
     // Move beta into module `c`. The post-edit partition is
     // `a → c` (DAG) — no cycle, no atomic-unit conflict.
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",
@@ -311,12 +311,12 @@ fn bindings_assign_requires_graph_or_no_verify() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "bindings",
             "assign",

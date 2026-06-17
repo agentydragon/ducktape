@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 
 fn assert_no_trailing_whitespace(text: &str) {
     assert!(
@@ -24,7 +24,7 @@ fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
         modules.to_str().unwrap(),
     ];
     args.extend_from_slice(extra);
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args(&args)
         .output()
         .expect("spawn debundle");
@@ -45,7 +45,7 @@ fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Out
         modules.to_str().unwrap(),
     ];
     args.extend_from_slice(extra);
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args(&args)
         .output()
         .expect("spawn debundle");
@@ -71,7 +71,7 @@ fn parse_stdout_json(out: &std::process::Output) -> Value {
 fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
     let target = modules.join("ui/widgets.yaml");
     let other = modules.join("other/untouched.yaml");
-    write(
+    write_text_file(
         &target,
         r#"members:
   - name: WidgetFactory
@@ -92,7 +92,7 @@ fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
           const alreadyDone = initAlreadyDone();
 "#,
     );
-    write(
+    write_text_file(
         &other,
         r#"members:
   - name: OutsideFilter
@@ -107,7 +107,7 @@ fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
 
 fn anything_holes_fixture(modules: &Path) -> PathBuf {
     let target = modules.join("ui/selector_holes.yaml");
-    write(
+    write_text_file(
         &target,
         r#"members:
   - name: WidgetConfig
@@ -135,7 +135,7 @@ fn anything_holes_fixture(modules: &Path) -> PathBuf {
 
 fn commented_single_target_fixture(modules: &Path) -> PathBuf {
     let target = modules.join("app/bootstrap.yaml");
-    write(
+    write_text_file(
         &target,
         r#"# module-level note must survive
 # another note that used to be lost by serde rewrites
@@ -170,7 +170,7 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
     // Keep `concat!` with explicit `\n`: lines carry intentional trailing
     // whitespace/tabs (exercising selector whitespace normalization) that a raw
     // string or `.js` include would lose to the trim-trailing-whitespace hook.
-    write(
+    write_text_file(
         &source,
         concat!(
             "const beforeConfig = helper(\"before\"),\n",
@@ -193,7 +193,7 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
     );
     let modules = root.join("modules");
     let module = modules.join("app/config.yaml");
-    write(
+    write_text_file(
         &module,
         r#"members:
   - name: PrimaryConfig
@@ -212,7 +212,7 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
         name: runtimeFormatter
 "#,
     );
-    write(
+    write_text_file(
         &modules.join("ignored/noisy.yaml"),
         r#"members:
   - name: NoisyOne
@@ -233,7 +233,7 @@ fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     // Keep `concat!` with explicit `\n`: the body lines carry intentional
     // trailing whitespace/tabs that a raw string or `.js` include would lose to
     // the trim-trailing-whitespace hook.
-    write(
+    write_text_file(
         &source,
         concat!(
             "function runtimeFormatter(value) {\n",
@@ -249,7 +249,7 @@ fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     );
     let modules = root.join("modules");
     let module = modules.join("app/bootstrap.yaml");
-    write(
+    write_text_file(
         &module,
         r#"# merged from: legacy/bootstrap.yaml
 comment: |
@@ -277,7 +277,7 @@ anonymous_statements:
 
 fn synthesis_function_minimization_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
-    write(
+    write_text_file(
         &source,
         r#"function runtimeFormatter(value) {
   const normalized = value.trim().toUpperCase();
@@ -292,7 +292,7 @@ export { runtimeFormatter };
 "#,
     );
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("app/format.yaml"),
         r#"members:
   - name: FormatValue
@@ -306,7 +306,7 @@ export { runtimeFormatter };
 
 fn synthesis_object_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
-    write(
+    write_text_file(
         &source,
         r#"const selectedConfig = buildConfig({
   stableKey: expensiveValue("selected", { noisy: [1, 2, 3] }),
@@ -327,7 +327,7 @@ export { selectedConfig };
 "#,
     );
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("app/config.yaml"),
         r#"members:
   - name: SelectedConfig
@@ -341,7 +341,7 @@ export { selectedConfig };
 
 fn synthesis_group_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
-    write(
+    write_text_file(
         &source,
         r#"const selectedA = makeThing({
   stableA: computeValue("a", { noisy: [1, 2, 3] }),
@@ -362,7 +362,7 @@ export { selectedA, selectedB };
 "#,
     );
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("app/group.yaml"),
         r#"members:
   - name: SelectedA
@@ -380,7 +380,7 @@ export { selectedA, selectedB };
 
 fn synthesis_branch_and_bound_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
-    write(
+    write_text_file(
         &source,
         r#"const selectedConfig = makeConfig({
   alphaKey: computeValue("selected-alpha"),
@@ -421,7 +421,7 @@ export { selectedConfig };
 "#,
     );
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("app/search.yaml"),
         r#"members:
   - name: SelectedConfig
@@ -440,7 +440,7 @@ fn synthesis_regex_literal_fixture(root: &Path) -> (PathBuf, PathBuf) {
     // stable prefix (`primary-chunk-`) already discriminates it from the
     // siblings (`secondary-chunk-`, `vendor-chunk-`), so the minimizer can pin
     // the stable structure with a regex and wildcard the volatile hash.
-    write(
+    write_text_file(
         &source,
         r#"const selectedAsset = loadChunk("primary-chunk-a1b2c3d4");
 const secondaryAsset = loadChunk("secondary-chunk-99887766");
@@ -451,7 +451,7 @@ export { selectedAsset };
 "#,
     );
     let modules = root.join("modules");
-    write(
+    write_text_file(
         &modules.join("app/assets.yaml"),
         r#"members:
   - name: SelectedAsset

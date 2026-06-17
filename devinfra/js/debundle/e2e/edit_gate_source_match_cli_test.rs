@@ -13,7 +13,7 @@
 //! `owner_graph.json` + source-file fixtures, mirroring
 //! `bindings_unassign_gate_cli_test.rs`.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,15 +126,15 @@ const GAMMA_YAML: &str = "members:\n  - selector: { binding: { name: gamma } }\n
 fn write_fixture(root: &Path, atom_yaml: &str) -> (PathBuf, PathBuf) {
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_atomic_unit_and_sources());
-    write(&root.join("static/chunk.js"), CHUNK_SOURCE);
-    write(&modules.join("home/atom.yaml"), atom_yaml);
-    write(&modules.join("solo/gamma.yaml"), GAMMA_YAML);
+    write_text_file(&graph, &graph_with_atomic_unit_and_sources());
+    write_text_file(&root.join("static/chunk.js"), CHUNK_SOURCE);
+    write_text_file(&modules.join("home/atom.yaml"), atom_yaml);
+    write_text_file(&modules.join("solo/gamma.yaml"), GAMMA_YAML);
     (modules, graph)
 }
 
 fn run_unassign(root: &Path, modules: &Path, graph: &Path, sym: &str) -> std::process::Output {
-    Command::new(debundle_binary())
+    Command::new(debundler_path())
         .args([
             "bindings",
             "unassign",

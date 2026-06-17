@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_cli::module::delete_modules;
-use debundle_e2e_support::debundler_path as debundle_binary;
+use debundle_e2e_support::debundler_path;
 use tempfile::TempDir;
 
 fn write(root: &Path, rel: &str, body: &str) {
@@ -27,7 +27,7 @@ fn delete_empty_module_succeeds() {
     let root = dir.path();
     write(root, "ui/empty.yaml", "members: []\n");
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -61,7 +61,7 @@ fn delete_non_empty_module_without_force_refuses() {
     let body = "members:\n  - selector: { binding: { name: a } }\n";
     write(root, "ui/full.yaml", body);
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -92,7 +92,7 @@ fn delete_non_empty_module_with_force_succeeds() {
         "members:\n  - selector: { binding: { name: a } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -122,7 +122,7 @@ fn delete_multiple_atomic_all_succeed() {
     write(root, "b.yaml", "members: []\n");
     write(root, "c.yaml", "members: []\n");
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -158,7 +158,7 @@ fn dry_run_prints_verdict_without_deleting() {
     let body = "members: []\n";
     write(root, "ui/empty.yaml", body);
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -196,7 +196,7 @@ fn delete_nonexistent_module_clear_error() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -226,7 +226,7 @@ fn batch_with_one_non_empty_refuses_atomically() {
     write(root, "y.yaml", full_body);
     write(root, "z.yaml", empty_body);
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",

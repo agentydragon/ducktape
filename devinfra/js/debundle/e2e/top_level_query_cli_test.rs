@@ -10,7 +10,7 @@ use analysis::{
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientSccReport,
     SourceLocation, StatementKind, StatementOrdinal,
 };
-use debundle_e2e_support::write_text_file as write;
+use debundle_e2e_support::write_text_file;
 use peel::plan::PatchPlanStatus;
 use peel::{
     CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionArgs,
@@ -117,9 +117,9 @@ fn fixture() -> (TempDir, CommonArgs) {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(&modules_root.join(".keep"), "");
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(&modules_root.join(".keep"), "");
+    write_text_file(
         &dir.path().join("static/index.js"),
         "const first = 1;\nconst ZZ = class PaymentError {};\nconst aa = ZZ;\n",
     );
@@ -171,8 +171,8 @@ fn fixture_with_anonymous_statement_claim() -> (TempDir, CommonArgs) {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(
         &modules_root.join("features/search/popover_state.yaml"),
         r#"members:
   - name: SearchPopoverState
@@ -185,7 +185,7 @@ anonymous_statements:
     note: "@observable visible on Co."
 "#,
     );
-    write(
+    write_text_file(
         &dir.path().join("static/index.js"),
         "const ignored = 0;\nclass Co {}\nRo([Z], Co.prototype, \"visible\", 2);\n",
     );
@@ -228,12 +228,12 @@ fn fixture_with_structural_member_claim(module_yaml: &str) -> (TempDir, CommonAr
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(
         &modules_root.join("features/structural_member.yaml"),
         module_yaml,
     );
-    write(
+    write_text_file(
         &dir.path().join("static/index.js"),
         "const alpha = 1;\nconst beta = alpha + 1;\n",
     );
@@ -275,14 +275,14 @@ fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(
         &modules_root.join("auto_partition/auto_partition_0187.yaml"),
         r#"anonymous_statements:
   - match: 'registerSchema("task");'
 "#,
     );
-    write(
+    write_text_file(
         &dir.path().join("static/index.js"),
         "registerSchema(\"task\");\n",
     );
@@ -391,9 +391,9 @@ fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(&modules_root.join(".keep"), "");
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(&modules_root.join(".keep"), "");
+    write_text_file(
         &dir.path().join("static/index.js"),
         "registerSchema(\"task\");\nregisterSchema(\"task\");\n",
     );

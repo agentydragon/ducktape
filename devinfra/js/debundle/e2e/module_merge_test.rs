@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_cli::module::merge_modules;
-use debundle_e2e_support::debundler_path as debundle_binary;
+use debundle_e2e_support::debundler_path;
 use serde_yaml::Value;
 use tempfile::TempDir;
 
@@ -133,7 +133,7 @@ fn modules_merge_new_subcommand_path_works_through_binary() {
         "members:\n  - selector: { binding: { name: b } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -166,7 +166,7 @@ fn modules_merge_can_create_missing_target_through_binary() {
     let src_body = "members:\n  - selector: { binding: { name: a } }\n";
     write(root, "src.yaml", src_body);
 
-    let dry_run = Command::new(debundle_binary())
+    let dry_run = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -193,7 +193,7 @@ fn modules_merge_can_create_missing_target_through_binary() {
     assert!(!root.join("new/group.yaml").exists());
     assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -226,7 +226,7 @@ fn modules_merge_dry_run_does_not_modify_files() {
     write(root, "target.yaml", target_body);
     write(root, "src.yaml", src_body);
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -271,7 +271,7 @@ fn deprecated_module_merge_alias_still_works_with_warning() {
         "members:\n  - selector: { binding: { name: b } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "module",
             "merge",

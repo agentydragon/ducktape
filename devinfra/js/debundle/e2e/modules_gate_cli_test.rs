@@ -11,7 +11,7 @@
 //! the same `render_cycle_summary` text the pipeline prints when
 //! the materializer's gate rejects.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::process::Command;
 
 /// Synthetic owner graph with three owners (alpha, beta, gamma)
@@ -200,21 +200,21 @@ fn modules_merge_rejects_when_merge_creates_cycle() {
     let root = dir.path();
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_merge_cycle_potential());
-    write(
+    write_text_file(&graph, &graph_with_merge_cycle_potential());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("c.yaml"),
         "members:\n  - selector: { binding: { name: gamma } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -245,17 +245,17 @@ fn modules_merge_accepts_clean_merge() {
     let root = dir.path();
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_acyclic_cross_module_read());
-    write(
+    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -285,17 +285,17 @@ fn modules_merge_gate_accepts_missing_target() {
     let root = dir.path();
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_acyclic_cross_module_read());
-    write(
+    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "merge",
@@ -329,17 +329,17 @@ fn modules_delete_force_rejects_when_post_state_unrealizable() {
     // Pre-delete state already mutually-references — deleting either
     // module leaves the surviving one in a cycle with residual
     // (the orphaned binding's effective destination).
-    write(&graph, &graph_with_mutual_cross_module_reads());
-    write(
+    write_text_file(&graph, &graph_with_mutual_cross_module_reads());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",
@@ -372,12 +372,12 @@ fn modules_delete_force_accepts_clean_deletion() {
     let root = dir.path();
     let modules = root.join("modules");
     let graph = root.join("owner_graph.json");
-    write(&graph, &graph_with_acyclic_cross_module_read());
-    write(
+    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("b.yaml"),
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
@@ -385,7 +385,7 @@ fn modules_delete_force_accepts_clean_deletion() {
     // Delete `b.yaml`: beta becomes unclaimed → residual. The
     // post-delete quotient is `a → residual`, still a DAG, so the
     // gate accepts.
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "modules",
             "delete",

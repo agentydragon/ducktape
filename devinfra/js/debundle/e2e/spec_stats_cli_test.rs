@@ -1,14 +1,14 @@
 //! End-to-end exercise of `debundle spec stats` by shelling out to the
 //! built binary against tiny modules-tree fixtures.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::path::Path;
 use std::process::Command;
 
 fn run_stats(modules: &Path, extra: &[&str]) -> std::process::Output {
     let mut args = vec!["spec", "stats", "--modules", modules.to_str().unwrap()];
     args.extend_from_slice(extra);
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args(&args)
         .output()
         .expect("spawn debundle");
@@ -24,7 +24,7 @@ fn run_stats(modules: &Path, extra: &[&str]) -> std::process::Output {
 fn one_module_one_binding_emits_expected_totals() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join("solo.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
@@ -53,12 +53,12 @@ fn singleton_plus_multi_member_bucket_counts() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     // singleton with a readable name -> renamed + orphan
-    write(
+    write_text_file(
         &modules.join("solo.yaml"),
         "members:\n  - name: Solo\n    selector: { binding: { name: a } }\n",
     );
     // multi-member (3 members, falls in tiny_2_to_5)
-    write(
+    write_text_file(
         &modules.join("group.yaml"),
         "members:\n\
          \x20\x20- selector: { binding: { name: b } }\n\
@@ -84,15 +84,15 @@ fn singleton_plus_multi_member_bucket_counts() {
 fn output_is_deterministic_across_runs() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("nested/c.yaml"),
         "members:\n  - selector: { binding: { name: c } }\n",
     );
-    write(&modules.join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(&modules.join("residual/unhandled.yaml"), "members: []\n");
 
     let out1 = run_stats(&modules, &["--format", "json"]);
     let out2 = run_stats(&modules, &["--format", "json"]);
@@ -103,7 +103,7 @@ fn output_is_deterministic_across_runs() {
 fn text_format_emits_non_empty_human_output() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join("solo.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
@@ -128,7 +128,7 @@ fn text_format_emits_non_empty_human_output() {
 fn ndjson_emits_one_line_per_section() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join("a.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
@@ -149,11 +149,11 @@ fn ndjson_emits_one_line_per_section() {
 fn residual_module_counted_under_modules_residual() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join("ui/sidebar.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write(&modules.join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(&modules.join("residual/unhandled.yaml"), "members: []\n");
 
     let out = run_stats(&modules, &["--format", "json"]);
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

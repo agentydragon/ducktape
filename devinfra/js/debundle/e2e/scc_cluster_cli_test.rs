@@ -1,7 +1,7 @@
 //! E2e for `debundle scc` and `debundle cluster` against a synthetic
 //! owner-graph fixture.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::fs;
 use std::process::Command;
 
@@ -86,9 +86,9 @@ fn scc_lists_every_scc_in_quotient() {
     let graph_path = dir.path().join("owner_graph.json");
     let modules = dir.path().join("modules");
     fs::create_dir_all(&modules).unwrap();
-    write(&graph_path, &synthetic_graph_json());
+    write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "scc",
             "--graph",
@@ -115,9 +115,9 @@ fn scc_cycles_only_filter() {
     let graph_path = dir.path().join("owner_graph.json");
     let modules = dir.path().join("modules");
     fs::create_dir_all(&modules).unwrap();
-    write(&graph_path, &synthetic_graph_json());
+    write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "scc",
             "--graph",
@@ -143,9 +143,9 @@ fn scc_binding_filter() {
     let graph_path = dir.path().join("owner_graph.json");
     let modules = dir.path().join("modules");
     fs::create_dir_all(&modules).unwrap();
-    write(&graph_path, &synthetic_graph_json());
+    write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "scc",
             "--graph",
@@ -171,9 +171,9 @@ fn cluster_emits_quotient_neighbors() {
     let graph_path = dir.path().join("owner_graph.json");
     let modules = dir.path().join("modules");
     fs::create_dir_all(&modules).unwrap();
-    write(&graph_path, &synthetic_graph_json());
+    write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "cluster",
             "XOe",
@@ -211,9 +211,9 @@ fn cluster_accepts_binding_flag_alias() {
     let graph_path = dir.path().join("owner_graph.json");
     let modules = dir.path().join("modules");
     fs::create_dir_all(&modules).unwrap();
-    write(&graph_path, &synthetic_graph_json());
+    write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args([
             "cluster",
             "--binding",

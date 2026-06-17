@@ -22,11 +22,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use serde_json::Value;
 
 fn run_debundle(args: &[&str]) -> std::process::Output {
-    Command::new(debundle_binary())
+    Command::new(debundler_path())
         .args(args)
         .output()
         .expect("spawn debundle")
@@ -148,9 +148,9 @@ fn one_member_module(binding: &str) -> String {
 fn write_acyclic_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let modules = root.join("modules");
     let graph_path = root.join("owner_graph.json");
-    write(&graph_path, &acyclic_graph());
-    write(&modules.join("a.yaml"), &one_member_module("alpha"));
-    write(&modules.join("b.yaml"), &one_member_module("beta"));
+    write_text_file(&graph_path, &acyclic_graph());
+    write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
+    write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
     (modules, graph_path)
 }
 
@@ -236,7 +236,7 @@ fn unassign_json_outcome_carries_shared_core() {
 fn rename_json_outcome_carries_shared_core() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(&modules.join("m.yaml"), &one_member_module("alpha"));
+    write_text_file(&modules.join("m.yaml"), &one_member_module("alpha"));
 
     let out = run_debundle(&[
         "bindings",
@@ -335,7 +335,7 @@ fn merge_dry_run_json_outcome_reports_dry_run_action() {
 fn delete_json_outcome_carries_shared_core() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
-    write(&modules.join("ui/empty.yaml"), "members: []\n");
+    write_text_file(&modules.join("ui/empty.yaml"), "members: []\n");
 
     let out = run_debundle(&[
         "modules",
@@ -375,8 +375,8 @@ fn assign_atom_split_rejection_emits_structured_json_and_artifact() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write(&graph_path, &atomic_unit_graph());
-    write(
+    write_text_file(&graph_path, &atomic_unit_graph());
+    write_text_file(
         &modules.join("home/atom.yaml"),
         &format!(
             "{}{}",
@@ -432,10 +432,10 @@ fn merge_cycle_rejection_emits_structured_json_and_gate_list_works() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write(&graph_path, &merge_cycle_graph());
-    write(&modules.join("a.yaml"), &one_member_module("alpha"));
-    write(&modules.join("b.yaml"), &one_member_module("beta"));
-    write(&modules.join("c.yaml"), &one_member_module("gamma"));
+    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
+    write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
+    write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));
 
     let out = run_debundle(&[
         "modules",
@@ -505,10 +505,10 @@ fn passing_edit_gate_clears_stale_rejection_artifacts() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write(&graph_path, &merge_cycle_graph());
-    write(&modules.join("a.yaml"), &one_member_module("alpha"));
-    write(&modules.join("b.yaml"), &one_member_module("beta"));
-    write(&modules.join("c.yaml"), &one_member_module("gamma"));
+    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
+    write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
+    write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));
 
     let rejected = run_debundle(&[
         "modules",
@@ -554,10 +554,10 @@ fn rejection_without_json_format_keeps_stdout_text_free_of_json() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write(&graph_path, &merge_cycle_graph());
-    write(&modules.join("a.yaml"), &one_member_module("alpha"));
-    write(&modules.join("b.yaml"), &one_member_module("beta"));
-    write(&modules.join("c.yaml"), &one_member_module("gamma"));
+    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
+    write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
+    write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));
 
     let out = run_debundle(&[
         "modules",

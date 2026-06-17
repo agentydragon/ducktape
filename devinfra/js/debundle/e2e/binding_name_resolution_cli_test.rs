@@ -18,7 +18,7 @@ use analysis::{
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientEdgeReport,
     QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
-use debundle_e2e_support::write_text_file as write;
+use debundle_e2e_support::write_text_file;
 use peel::{
     CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
     run_explain_report, run_source_slice_report,
@@ -128,9 +128,9 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(&modules_root.join(".keep"), "");
-    write(
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(&modules_root.join(".keep"), "");
+    write_text_file(
         &dir.path().join("static/index.js"),
         "const first = 1;\n\
          const XOe = class PluginSettingsAccessor {};\n\
@@ -283,8 +283,8 @@ fn resolve_binding_owners_prefers_minified_on_name_collision() {
             edges: Vec::new(),
         },
     };
-    write(&graph_path, &serde_json::to_string(&report).unwrap());
-    write(&modules_root.join(".keep"), "");
+    write_text_file(&graph_path, &serde_json::to_string(&report).unwrap());
+    write_text_file(&modules_root.join(".keep"), "");
 
     let owners = resolve_binding_owners(&report, "Collide");
     assert_eq!(owners.len(), 2, "both collide entries should appear");

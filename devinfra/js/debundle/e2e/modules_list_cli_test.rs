@@ -1,21 +1,21 @@
 //! End-to-end exercise of `debundle modules list`'s filters by
 //! shelling out to the built binary against a tiny modules fixture.
 
-use debundle_e2e_support::{debundler_path as debundle_binary, write_text_file as write};
+use debundle_e2e_support::{debundler_path, write_text_file};
 use std::path::Path;
 use std::process::Command;
 
 fn setup_modules_fixture(root: &Path) {
-    write(
+    write_text_file(
         &root.join("runtime/plugins.yaml"),
         "comment: plugin glue layer\nmembers:\n  - selector: { binding: { name: XOe } }\n",
     );
-    write(
+    write_text_file(
         &root.join("ui/sidebar.yaml"),
         "members:\n  - selector: { binding: { name: YOe } }\n  - selector: { binding: { name: ZOe } }\n",
     );
-    write(&root.join("residual/unhandled.yaml"), "members: []\n");
-    write(&root.join("ui/empty.yaml"), "members: []\n");
+    write_text_file(&root.join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(&root.join("ui/empty.yaml"), "members: []\n");
 }
 
 #[test]
@@ -24,7 +24,7 @@ fn modules_list_emits_every_module_with_counts() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundle_binary())
+    let output = Command::new(debundler_path())
         .args([
             "modules",
             "list",
@@ -58,7 +58,7 @@ fn modules_list_residual_filter() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundle_binary())
+    let output = Command::new(debundler_path())
         .args([
             "modules",
             "list",
@@ -83,7 +83,7 @@ fn modules_list_empty_filter() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundle_binary())
+    let output = Command::new(debundler_path())
         .args([
             "modules",
             "list",
@@ -110,7 +110,7 @@ fn modules_list_picks_up_modules_env_var() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundle_binary())
+    let output = Command::new(debundler_path())
         .args(["modules", "list", "--format", "json"])
         .env("DEBUNDLE_MODULES", &modules)
         .output()
