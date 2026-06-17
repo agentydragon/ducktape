@@ -17,10 +17,13 @@
 //! the surviving anchors are the right ones.
 //!
 //! Slack tries one relaxation at a time, of these kinds: hole a value expression
-//! (literal / argument / property value) to `ANYTHING`; drop an object property,
-//! a class member, a block statement, or a call/`new` argument via the matching
-//! run-hole. Not yet covered: dropping top-level context statements and
-//! destructure-pattern properties.
+//! (literal / argument / property value) to `ANYTHING`; drop an object-literal
+//! property, an object-pattern (destructure) property, a class member, a block
+//! statement, or a call/`new` argument via the matching run-hole; or remove a
+//! top-level context statement outright (a module-level `STMT_LIST` is not
+//! honored on the member-binding resolution path). A relaxation that would delete
+//! the `target_binding`'s own declaration is never tried — the matcher rejects a
+//! selector that no longer declares its target.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -35,8 +38,9 @@ use source_match_holes::{
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    BlockStmt, CallExpr, Class, ClassMember, ClassProp, Expr, ExprOrSpread, ExprStmt, IdentName,
-    Module, NewExpr, ObjectLit, Prop, PropName, PropOrSpread, Stmt,
+    AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class, ClassMember, ClassProp, Decl, Expr,
+    ExprOrSpread, ExprStmt, IdentName, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
+    ObjectPatProp, Pat, Prop, PropName, PropOrSpread, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -146,6 +150,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             &config.match_source,
             baseline[0].body_idx,
             &baseline[0].binding.binding_name,
+            config.target_binding.as_deref(),
             &resolve,
         )?),
         _ => None,
@@ -164,6 +169,7 @@ fn compute_slack(
     match_source: &str,
     target_body_idx: usize,
     target_binding_name: &str,
+    selector_target_binding: Option<&str>,
     resolve: &impl Fn(String) -> Result<Vec<source_match::MemberBindingMatch>>,
 ) -> Result<Vec<SlackRelaxation>> {
     let mut selector_module =
@@ -175,7 +181,7 @@ fn compute_slack(
 
     let mut seen = BTreeSet::new();
     let mut slack = Vec::new();
-    for relaxed in enumerate_relaxations(&selector_module) {
+    for relaxed in enumerate_relaxations(&selector_module, selector_target_binding) {
         let relaxed_match = js_ast::emit_module_source(&relaxed)?;
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             continue;
@@ -198,32 +204,43 @@ enum Relaxation {
     HoleExpr,
     /// Drop an object-literal property (absorbed by an `ANYTHING` run-hole).
     DropObjectProp,
+    /// Drop an object-**pattern** (destructure) property, absorbed by the
+    /// `ANYTHING`/`OBJECT_PROPS` pattern run-hole — the destructure analogue of
+    /// [`Relaxation::DropObjectProp`].
+    DropPatternProp,
     /// Drop a class member (absorbed by a `CLASS_REST` field).
     DropClassMember,
     /// Drop a statement inside a block body (absorbed by `STMT_LIST`).
     DropStatement,
+    /// Drop a top-level context statement outright — a member selector's
+    /// surrounding-window pins. Unlike a block statement, a module-level
+    /// `STMT_LIST` is not honored on the member-binding resolution path (it
+    /// matches a contiguous window), so the statement is removed, not holed.
+    DropContextStatement,
     /// Drop a call/`new` argument (absorbed by `ARGS`).
     DropCallArg,
 }
 
-const RELAXATIONS: [Relaxation; 5] = [
+const RELAXATIONS: [Relaxation; 7] = [
     Relaxation::HoleExpr,
     Relaxation::DropObjectProp,
+    Relaxation::DropPatternProp,
     Relaxation::DropClassMember,
     Relaxation::DropStatement,
+    Relaxation::DropContextStatement,
     Relaxation::DropCallArg,
 ];
 
 /// Produce every selector with exactly one element holed, across all relaxation
 /// kinds. Each kind is counted (a dry run with an out-of-range target) and then
 /// applied once per index.
-fn enumerate_relaxations(selector: &Module) -> Vec<Module> {
+fn enumerate_relaxations(selector: &Module, target_binding: Option<&str>) -> Vec<Module> {
     let mut out = Vec::new();
     for kind in RELAXATIONS {
-        let total = apply_relaxation(&mut selector.clone(), kind, usize::MAX);
+        let total = apply_relaxation(&mut selector.clone(), kind, usize::MAX, target_binding);
         for index in 0..total {
             let mut relaxed = selector.clone();
-            apply_relaxation(&mut relaxed, kind, index);
+            apply_relaxation(&mut relaxed, kind, index, target_binding);
             out.push(relaxed);
         }
     }
@@ -232,11 +249,18 @@ fn enumerate_relaxations(selector: &Module) -> Vec<Module> {
 
 /// Apply the `target`-th relaxation of `kind` (pre-order) to `module`, returning
 /// the number of relaxation sites of that kind. With `target == usize::MAX` it
-/// edits nothing and just counts.
-fn apply_relaxation(module: &mut Module, kind: Relaxation, target: usize) -> usize {
+/// edits nothing and just counts. `target_binding` (the selector-local target
+/// name) is the one declaration the binding-dropping kinds must never delete.
+fn apply_relaxation(
+    module: &mut Module,
+    kind: Relaxation,
+    target: usize,
+    target_binding: Option<&str>,
+) -> usize {
     let mut relaxer = Relaxer {
         kind,
         target,
+        target_binding,
         seen: 0,
         done: false,
     };
@@ -244,14 +268,15 @@ fn apply_relaxation(module: &mut Module, kind: Relaxation, target: usize) -> usi
     relaxer.seen
 }
 
-struct Relaxer {
+struct Relaxer<'a> {
     kind: Relaxation,
     target: usize,
+    target_binding: Option<&'a str>,
     seen: usize,
     done: bool,
 }
 
-impl Relaxer {
+impl Relaxer<'_> {
     /// Count this site; replace it (returning true) when it is the target index.
     fn take(&mut self, droppable: bool) -> bool {
         if self.done || !droppable {
@@ -266,7 +291,25 @@ impl Relaxer {
     }
 }
 
-impl VisitMut for Relaxer {
+impl VisitMut for Relaxer<'_> {
+    fn visit_mut_module(&mut self, module: &mut Module) {
+        if self.kind == Relaxation::DropContextStatement {
+            // Remove (don't hole) the context statement: a top-level `STMT_LIST`
+            // is not honored on the member-binding resolution path (it matches a
+            // contiguous window of fixed statements), so dropping the statement
+            // outright is the strictly-looser sub-window the matcher supports.
+            let protect = self.target_binding;
+            let drop_at = module
+                .body
+                .iter()
+                .position(|item| self.take(module_item_droppable(item, protect)));
+            if let Some(idx) = drop_at {
+                module.body.remove(idx);
+            }
+        }
+        module.visit_mut_children_with(self);
+    }
+
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
         if self.kind == Relaxation::HoleExpr && self.take(is_holeable_expr(expr)) {
             *expr = anything_expr();
@@ -285,6 +328,18 @@ impl VisitMut for Relaxer {
             }
         }
         object.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_object_pat(&mut self, pat: &mut ObjectPat) {
+        if self.kind == Relaxation::DropPatternProp {
+            for prop in pat.props.iter_mut() {
+                if self.take(pat_prop_droppable(prop, self.target_binding)) {
+                    *prop = object_pat_props_hole();
+                    break;
+                }
+            }
+        }
+        pat.visit_mut_children_with(self);
     }
 
     fn visit_mut_class(&mut self, class: &mut Class) {
@@ -365,6 +420,74 @@ fn is_droppable_arg(arg: &ExprOrSpread) -> bool {
     !matches!(arg.expr.as_ref(), Expr::Ident(ident) if is_hole_keyword(&ident.sym))
 }
 
+/// A top-level module item droppable by `DropContextStatement`: a statement
+/// (module declarations cannot be holed — the hole syntax is an expression
+/// statement) that is not already a statement hole, and whose deletion would not
+/// remove `protect` — the selector's `target_binding`, whose own declaration the
+/// matcher requires to be present.
+fn module_item_droppable(item: &ModuleItem, protect: Option<&str>) -> bool {
+    let ModuleItem::Stmt(stmt) = item else {
+        return false;
+    };
+    is_droppable_stmt(stmt) && !protect.is_some_and(|name| module_item_declares(item, name))
+}
+
+/// A destructure-pattern property droppable by `DropPatternProp`: not already a
+/// pattern run-hole, and not the property binding `protect` (the
+/// `target_binding`, which must stay declared).
+fn pat_prop_droppable(prop: &ObjectPatProp, protect: Option<&str>) -> bool {
+    is_droppable_pat_prop(prop)
+        && !protect.is_some_and(|name| object_pat_prop_binds_name(prop, name))
+}
+
+fn is_droppable_pat_prop(prop: &ObjectPatProp) -> bool {
+    !matches!(prop, ObjectPatProp::Assign(assign)
+        if assign.value.is_none() && is_hole_keyword(&assign.key.id.sym))
+}
+
+/// Whether a top-level statement declares `name` (a `var`/`function`/`class`
+/// binding), so `DropContextStatement` can leave the target's own declaration in
+/// place.
+fn module_item_declares(item: &ModuleItem, name: &str) -> bool {
+    let ModuleItem::Stmt(Stmt::Decl(decl)) = item else {
+        return false;
+    };
+    match decl {
+        Decl::Var(var) => var.decls.iter().any(|d| pat_binds_name(&d.name, name)),
+        Decl::Fn(fn_decl) => fn_decl.ident.sym == *name,
+        Decl::Class(class_decl) => class_decl.ident.sym == *name,
+        _ => false,
+    }
+}
+
+/// Whether a binding pattern introduces `name` anywhere, descending through
+/// array/object destructuring, rest, and default-value patterns.
+fn pat_binds_name(pat: &Pat, name: &str) -> bool {
+    match pat {
+        Pat::Ident(ident) => ident.id.sym == *name,
+        Pat::Array(array) => array
+            .elems
+            .iter()
+            .flatten()
+            .any(|elem| pat_binds_name(elem, name)),
+        Pat::Object(object) => object
+            .props
+            .iter()
+            .any(|prop| object_pat_prop_binds_name(prop, name)),
+        Pat::Rest(rest) => pat_binds_name(&rest.arg, name),
+        Pat::Assign(assign) => pat_binds_name(&assign.left, name),
+        Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
+}
+
+fn object_pat_prop_binds_name(prop: &ObjectPatProp, name: &str) -> bool {
+    match prop {
+        ObjectPatProp::KeyValue(key_value) => pat_binds_name(&key_value.value, name),
+        ObjectPatProp::Assign(assign) => assign.key.id.sym == *name,
+        ObjectPatProp::Rest(rest) => pat_binds_name(&rest.arg, name),
+    }
+}
+
 /// Whether an identifier name is one of the selector hole keywords, so we never
 /// "drop" a hole the relaxer (or the input) already wrote.
 fn is_hole_keyword(name: &str) -> bool {
@@ -381,6 +504,20 @@ fn is_hole_keyword(name: &str) -> bool {
 
 fn object_props_hole() -> PropOrSpread {
     PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
+}
+
+/// The destructure-pattern analogue of [`object_props_hole`]: a shorthand
+/// binding named `ANYTHING` (the sugar form `object_pat_prop_list_hole_name`
+/// also accepts for `OBJECT_PROPS`) absorbing a run of dropped pattern props.
+fn object_pat_props_hole() -> ObjectPatProp {
+    ObjectPatProp::Assign(AssignPatProp {
+        span: DUMMY_SP,
+        key: BindingIdent {
+            id: ident_node(ANYTHING_HOLE_KEYWORD),
+            type_ann: None,
+        },
+        value: None,
+    })
 }
 
 fn args_hole() -> ExprOrSpread {

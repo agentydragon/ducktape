@@ -226,3 +226,62 @@ fn slack_drops_a_statement_from_an_over_pinned_body() {
         "expected a relaxation that drops a body statement: {report}"
     );
 }
+
+#[test]
+fn slack_drops_a_destructure_pattern_property() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    // One object-destructuring statement; the `loadConfig` initializer plus any
+    // one destructured key already pin it, so the sibling pattern props are
+    // droppable (the destructure analogue of an object-literal property drop).
+    write(
+        &source,
+        "const lone = initLone();\nconst { primary, secondary, tertiary } = loadConfig();\n",
+    );
+    let report = match_selector(
+        &source,
+        "const { primary, secondary, tertiary } = loadConfig();",
+        &["--target-binding", "primary"],
+    );
+    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(report["matches"][0]["binding_name"], "primary");
+    let slack = report["slack"].as_array().unwrap();
+    // A pattern-prop drop removes the `secondary` binding from the destructure
+    // entirely (not just holing a value), while the target `primary` stays
+    // declared — the guard never drops the target's own binding.
+    assert!(
+        slack.iter().any(|relaxation| {
+            let relaxed = relaxation["relaxed_match"].as_str().unwrap();
+            relaxed.contains("primary") && !relaxed.contains("secondary")
+        }),
+        "expected a relaxation that drops a destructure property: {report}"
+    );
+}
+
+#[test]
+fn slack_drops_a_top_level_context_statement() {
+    let (_dir, source) = fixture();
+    // The `makeWidget` call alone pins widgetConfig, so the trailing `rightPanel`
+    // context statement is unnecessary precision and is dropped outright (a
+    // top-level STMT_LIST is not honored on the member-resolution path). No error:
+    // the guard keeps the target's own declaration, which the matcher requires
+    // `target_binding` to name.
+    let report = match_selector(
+        &source,
+        "const widgetConfig = makeWidget(\"widget\", 3, theme);\nconst rightPanel = renderPanel(\"right\");",
+        &["--target-binding", "widgetConfig"],
+    );
+    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(report["matches"][0]["binding_name"], "widgetConfig");
+    let slack = report["slack"].as_array().unwrap();
+    // The context-statement drop removes the whole `rightPanel` statement (binding
+    // and all) while keeping the `makeWidget` target — distinct from value-holing,
+    // which would keep the `rightPanel` binding with its init holed.
+    assert!(
+        slack.iter().any(|relaxation| {
+            let relaxed = relaxation["relaxed_match"].as_str().unwrap();
+            relaxed.contains("makeWidget") && !relaxed.contains("rightPanel")
+        }),
+        "expected a top-level context-statement drop: {report}"
+    );
+}

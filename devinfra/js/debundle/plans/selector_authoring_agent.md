@@ -157,17 +157,19 @@ as a probe that returns handles instead of a boolean.
 **Slack** is the mechanical half of "report over-narrow selectors as debt even when
 they match" (the [automated spec workflows](automated_spec_workflows.md) goal). It
 walks the selector AST and, for each pinned place, tries replacing it with the matching
-wildcard / run-hole — value-holing (`ANYTHING`) plus structural drops of an object
-property, class member, block statement, or call/`new` argument — keeping the
-relaxation iff the same unique target still resolves. Matching and slack share the
-parse + baseline resolve, so they are answered together (`--no-slack` skips slack for a
-fast match-only check). A non-empty slack list is a **where to look next** heuristic,
-never a verdict: high slack flags a likely over-pin, but the agent still judges whether
-the surviving anchors are right (a zero-slack selector can still be pinned on an
-incidental key). It reports only; relaxing a pin is an authoring decision, run back
-through `match-selector`. _(This subsumes the separately-planned `selector-slack`
-command — query and slack are the same authoring question.)_ Not yet covered:
-top-level context-statement drops and destructure-pattern property drops.
+wildcard / run-hole — value-holing (`ANYTHING`) plus structural drops of an
+object-literal property, object-pattern (destructure) property, class member, block
+statement, top-level context statement, or call/`new` argument — keeping the relaxation
+iff the same unique target still resolves. A drop that would delete the
+`target_binding`'s own declaration is never tried (the matcher rejects a selector that
+no longer declares its target). Matching and slack share the parse + baseline resolve,
+so they are answered together (`--no-slack` skips slack for a fast match-only check). A
+non-empty slack list is a **where to look next** heuristic, never a verdict: high slack
+flags a likely over-pin, but the agent still judges whether the surviving anchors are
+right (a zero-slack selector can still be pinned on an incidental key). It reports only;
+relaxing a pin is an authoring decision, run back through `match-selector`. _(This
+subsumes the separately-planned `selector-slack` command — query and slack are the same
+authoring question.)_
 
 ### Landed: `synthesize-selectors --candidates N` — #2339
 
@@ -290,10 +292,10 @@ way it dispatches naming/extraction lanes.
 ## Open questions / milestones
 
 - **M1 — read-only primitives — complete.** `match-selector` (hypothesis-test probe +
-  over-pin slack, value + structural) **landed** (#2335); `synthesize-selectors
+  over-pin slack, value + structural, now incl. top-level context-statement and
+  destructure-pattern-property drops) **landed** (#2335); `synthesize-selectors
 --candidates N` (the ranked-candidate menu) **landed** (#2339). Residue tracked in
-  `TODO.md`: the candidates menu for multi-declarator var groups, and slack for
-  top-level context statements / destructure-pattern properties.
+  `TODO.md`: the candidates menu for multi-declarator var groups.
 - **M2 — the skill.** Loop + playbook + anonymized fixtures. The `debundle_stabilize`
   skill **landed** (#2332); grounding its playbook entries with tested fixtures is
   still open.

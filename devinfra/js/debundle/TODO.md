@@ -284,14 +284,6 @@ The read-only authoring primitives landed (`match-selector` #2335,
   fallback) is tuple-shaped and still returns only the single pick;
   `synthesize_specialized_selector_candidates` falls back to single for it.
   Collecting a ranked tuple menu there is the remaining wiring.
-- **`match-selector` slack — structural run-holes not yet covered.** Slack drops
-  object properties, class members, block statements, and call/`new` args, and
-  holes value expressions. Still not attempted: **top-level context-statement**
-  drops (a member selector's context window — `STMT_LIST` at module top-level for
-  member-form selectors is unproven and was deliberately skipped) and
-  **destructure-pattern property** drops (object-pattern props in
-  `const { a, b } = …` selectors, the `ObjectPat` analogue of the object-literal
-  prop drop).
 
 ## Structural selector language
 
