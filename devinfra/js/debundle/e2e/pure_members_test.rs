@@ -14,35 +14,15 @@
 //! not re-verify; soundness shifts to the spec author. See
 //! AGENTS.md "Declared purity".
 
+use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 const VENDOR_FILE: &[(&str, &str)] = &[(
     "static/app/vendor.js",
     "export function makePure(arg) { return arg; }\n\
      export function forwardRef(render) { return { render }; }\n",
 )];
-
-fn owner_for_binding(graph: &Value, binding: &str) -> String {
-    graph
-        .get("nodes")
-        .and_then(Value::as_array)
-        .and_then(|nodes| {
-            nodes.iter().find(|node| {
-                node.get("declared_bindings")
-                    .and_then(Value::as_array)
-                    .is_some_and(|bindings| {
-                        bindings
-                            .iter()
-                            .any(|b| b.get("binding").and_then(Value::as_str) == Some(binding))
-                    })
-            })
-        })
-        .and_then(|node| node.get("id"))
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("no owner-graph node declares binding `{binding}`"))
-        .to_string()
-}
 
 /// Cycle-forcing fixture body parameterized by the per-case knobs.
 ///
@@ -200,23 +180,18 @@ export { component, later };
         .with_extra_files(VENDOR_FILE),
     );
 
-    let graph: Value = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let component_owner = owner_for_binding(&graph, "component");
     let later_owner = owner_for_binding(&graph, "later");
     let promoted: Vec<_> = graph
-        .get("edges")
-        .and_then(Value::as_array)
-        .expect("owner graph edges array")
+        .edges
         .iter()
         .filter(|edge| {
-            edge.get("source").and_then(Value::as_str) == Some(component_owner.as_str())
-                && edge.get("target").and_then(Value::as_str) == Some(later_owner.as_str())
-                && edge.get("edge_kind").and_then(Value::as_str) == Some("eager_use")
-                && edge
-                    .get("role")
-                    .and_then(|role| role.get("kind"))
-                    .and_then(Value::as_str)
-                    == Some("promoted_at_init")
+            edge.source == component_owner
+                && edge.target == later_owner
+                && edge.edge_kind == DepKind::EagerUse
+                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
         .collect();
 

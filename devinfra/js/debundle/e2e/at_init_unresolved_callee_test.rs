@@ -18,29 +18,8 @@
 //! gate-accepted-but-TDZ shapes below now close a constraining cycle
 //! and are rejected.
 
+use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
 use debundle_e2e_support::*;
-use serde_json::Value;
-
-fn owner_for_binding(graph: &Value, binding: &str) -> String {
-    graph
-        .get("nodes")
-        .and_then(Value::as_array)
-        .and_then(|nodes| {
-            nodes.iter().find(|node| {
-                node.get("declared_bindings")
-                    .and_then(Value::as_array)
-                    .is_some_and(|bindings| {
-                        bindings
-                            .iter()
-                            .any(|b| b.get("binding").and_then(Value::as_str) == Some(binding))
-                    })
-            })
-        })
-        .and_then(|node| node.get("id"))
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("no owner-graph node declares binding `{binding}`"))
-        .to_string()
-}
 
 /// `const g = readB; const r = g();` — the alias `g` is a VarDecl,
 /// not a function declaration, so the old promotion pass skipped the
@@ -157,21 +136,16 @@ export { later, tools, toolCopies, byName, ids, copiedIds, byId };
         )],
     ));
 
-    let graph: Value = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
-        .get("edges")
-        .and_then(Value::as_array)
-        .expect("owner graph edges array")
+        .edges
         .iter()
         .filter(|edge| {
-            edge.get("target").and_then(Value::as_str) == Some(later_owner.as_str())
-                && edge.get("edge_kind").and_then(Value::as_str) == Some("eager_use")
-                && edge
-                    .get("role")
-                    .and_then(|role| role.get("kind"))
-                    .and_then(Value::as_str)
-                    == Some("promoted_at_init")
+            edge.target == later_owner
+                && edge.edge_kind == DepKind::EagerUse
+                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
         .collect();
     assert!(
@@ -196,21 +170,16 @@ export { later };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: Value = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
-        .get("edges")
-        .and_then(Value::as_array)
-        .expect("owner graph edges array")
+        .edges
         .iter()
         .filter(|edge| {
-            edge.get("target").and_then(Value::as_str) == Some(later_owner.as_str())
-                && edge.get("edge_kind").and_then(Value::as_str) == Some("eager_use")
-                && edge
-                    .get("role")
-                    .and_then(|role| role.get("kind"))
-                    .and_then(Value::as_str)
-                    == Some("promoted_at_init")
+            edge.target == later_owner
+                && edge.edge_kind == DepKind::EagerUse
+                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
         .collect();
     assert!(
@@ -237,21 +206,16 @@ export { later, document, button };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: Value = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
-        .get("edges")
-        .and_then(Value::as_array)
-        .expect("owner graph edges array")
+        .edges
         .iter()
         .filter(|edge| {
-            edge.get("target").and_then(Value::as_str) == Some(later_owner.as_str())
-                && edge.get("edge_kind").and_then(Value::as_str) == Some("eager_use")
-                && edge
-                    .get("role")
-                    .and_then(|role| role.get("kind"))
-                    .and_then(Value::as_str)
-                    == Some("promoted_at_init")
+            edge.target == later_owner
+                && edge.edge_kind == DepKind::EagerUse
+                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
         })
         .collect();
     assert!(

@@ -64,7 +64,6 @@ _STANDARD_E2E_DEPS = [
         "naturalization_test",
         "naturalize_cross_scope_params_test",
         "object_plain_data_calls_test",
-        "pure_members_test",
         "url_rebase_test",
         "vendor_swap_test",
         "identifier_rename_queue_test",
@@ -88,7 +87,6 @@ _STANDARD_E2E_DEPS = [
         "duplicate_top_level_declaration_test",
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
-        "at_init_unresolved_callee_test",
         "hoisted_var_declaration_test",
         "export_default_purity_test",
         "auto_grown_export_alias_collision_test",
@@ -133,6 +131,8 @@ _STANDARD_E2E_DEPS = [
         "at_init_promotion_fndecl_direct_read_test",
         "at_init_cross_module_call_body_reads_test",
         "at_init_s_chain_dataflow_test",
+        "at_init_unresolved_callee_test",
+        "pure_members_test",
         "s_chain_dataflow_soundness_test",
     ]
 ]
