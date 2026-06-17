@@ -160,33 +160,20 @@ propose`.
 ## Code refactor / dedup opportunities (2026-06-17 survey)
 
 Production-code (non-test) dedup/cleanup options surfaced by a codebase survey.
-Calibrated LOC estimates and risk; pick by (LOC saved × safety). The
-`minimize/` single-pick-layer collapse (function/class single-pick is the
-candidates read-off at limit 1) is already done.
+Calibrated by (LOC saved × safety). Done so far: the `minimize/` single-pick
+collapse (#2346), the CLI report-dispatch helper (`cli::emit_report`), and the
+`PurityReason` construction centralization (`PurityReason::new` +
+`Purity::from_reason_opt_detail`).
 
 **Safe, internal, no behavior change:**
 
-1. CLI common args via clap `#[command(flatten)]`. The `--modules` /
-   `--source-root` / `--format` fields repeat across 5+ `Args` structs in
-   <cli/mod.rs> (`SpecStatsArgs`, `SelectorDebtArgs`, `MatchSelectorArgs`,
-   `Bindings{Assign,Unassign}Args`, …). Factor a shared flattened struct.
-   ~80–120 LOC, low risk.
-2. CLI report dispatch helper. ~18 sites in <cli/mod.rs> repeat
-   `let format = OutputFormat::resolve(..); let report = run_*(..)?;
-print_report(&report, format, render_*)`. A `run_report_and_format`
-   helper collapses the triple. ~40–60 LOC (not the 200–300 an earlier
-   estimate claimed), low risk.
-3. `PurityReason { rule, span, source_location: None, detail: None }` literal
-   appears at 7 sites in <facts/purity_classification.rs> and
-   <purity/classifier.rs>; add a `Purity::not_pure(rule, span)` constructor.
-   ~20 LOC, trivial.
-4. `vendor/mod.rs` `validate_boundary_mapping_collisions` +
+1. `vendor/mod.rs` `validate_boundary_mapping_collisions` +
    `collect_boundary_mapping` both walk `module.body` export specifiers; merge
    into one pass. ~30 LOC, low risk.
 
 **Real value but needs design work / behavior-risk:**
 
-5. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
+2. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
    `hole_stmt`, `minimize/class.rs` `hole_class_member`, etc.) behind a `Holer`
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ
@@ -195,6 +182,16 @@ print_report(&report, format, render_*)`. A `run_report_and_format`
 **Organization only (≈0 LOC removed, navigability win):** split the giant
 files by responsibility — <selector_codemod.rs> (2.8k), <peel/quotient.rs>
 (2.5k), <lowering/rename_ledger.rs> (1.7k).
+
+**Evaluated and declined:** CLI common args via clap `#[command(flatten)]`. The
+recurring flags (`--modules` / `--source-root` / `--format`) occur in
+incompatible combinations across the `Args` structs with inconsistent attrs
+(`source-root` carries `env` on some structs, not others; `MatchSelector` /
+`Describe` / `ShowSource` have no `--modules`), so there is no cohesive group to
+extract. Flattening `{modules, format}` would add `args.common.*` indirection
+for a semantically-incohesive bundle (input locator + output format) without a
+real clarity or LOC win. `peel`'s `CommonArgs` (`{graph, modules}`) stays as the
+one cohesive case.
 
 **Defer (high risk):** unifying the union-find / Tarjan-SCC / incremental
 cycle-detection between <peel/quotient.rs> and
