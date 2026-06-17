@@ -1314,3 +1314,116 @@ fn apply_rewrites_anonymous_typed_holes_to_anything() {
         "named object-property holes should stay readable:\n{rewritten}"
     );
 }
+
+#[test]
+fn synthesize_selectors_candidates_reports_ranked_alternatives() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunks/app.js");
+    // `readSettings` is the only function, and both the `"settings-loaded"` string
+    // and the `424242` number each single it out — so the read-off menu has more
+    // than one proving anchor choice.
+    write_text_file(
+        &source,
+        concat!(
+            "function readSettings(store) {\n",
+            "  log(\"settings-loaded\");\n",
+            "  return store.get(424242);\n",
+            "}\n",
+            "export { readSettings };\n",
+        ),
+    );
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/settings.yaml"),
+        r#"members:
+  - name: ReadSettings
+    selector:
+      binding:
+        name: readSettings
+"#,
+    );
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/settings:ReadSettings",
+            "--candidates",
+            "3",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let candidate = parsed["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["export_name"] == "ReadSettings")
+        .unwrap_or_else(|| panic!("no ReadSettings candidate: {parsed}"));
+    assert_eq!(candidate["candidate_count"], 1, "{parsed}");
+
+    // The menu surfaces alternative anchor choices beyond the minimizer's pick,
+    // each a distinct proving selector.
+    let alternatives = candidate["alternatives"].as_array().unwrap();
+    assert!(
+        !alternatives.is_empty(),
+        "expected a candidate menu: {parsed}"
+    );
+    for alternative in alternatives {
+        let match_source = alternative["match_source"].as_str().unwrap();
+        assert!(
+            match_source.contains("function ReadSettings"),
+            "each alternative is a function selector for the target: {match_source}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_selectors_default_reports_no_alternatives() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunks/app.js");
+    write_text_file(
+        &source,
+        concat!(
+            "function readSettings(store) {\n",
+            "  log(\"settings-loaded\");\n",
+            "  return store.get(424242);\n",
+            "}\n",
+            "export { readSettings };\n",
+        ),
+    );
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/settings.yaml"),
+        r#"members:
+  - name: ReadSettings
+    selector:
+      binding:
+        name: readSettings
+"#,
+    );
+
+    // Without --candidates the report carries no `alternatives` (default = 1).
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/settings:ReadSettings",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let candidate = parsed["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["export_name"] == "ReadSettings")
+        .unwrap_or_else(|| panic!("no ReadSettings candidate: {parsed}"));
+    assert!(candidate.get("alternatives").is_none(), "{parsed}");
+}

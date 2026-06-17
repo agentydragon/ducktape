@@ -7,7 +7,7 @@ use source_match_holes::ANYTHING_HOLE_KEYWORD;
 use swc_common::{DUMMY_SP, Spanned};
 use swc_ecma_ast::*;
 
-use super::render_via_read_off;
+use super::{read_off_candidates, render_via_read_off};
 use crate::render::{
     AnchorSpan, anything_expr, anything_param, emit_selector, holed_block, ident_node,
     node_retains_any,
@@ -15,6 +15,32 @@ use crate::render::{
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
 };
+
+/// The form-specific prune + codegen for a class-declaration selector: render the
+/// class holed down to the spans in `kept` (`extends` always holed to `ANYTHING`,
+/// member runs absorbed by `ANYTHING` class-member holes), named for the target
+/// export. Shared by the single-pick and `--candidates N` paths.
+fn class_render_with<'a>(
+    class: &'a Class,
+    target: &'a SynthesizedTargetBinding,
+) -> impl Fn(&BTreeSet<AnchorSpan>) -> Result<String> + 'a {
+    move |kept: &BTreeSet<AnchorSpan>| {
+        let mut holed_class = class.clone();
+        // A minified superclass identifier is alpha-wildcarded, so always hole
+        // `extends` to ANYTHING — it still discriminates "has a superclass" from a
+        // bare class without pinning the volatile name.
+        holed_class.super_class = class
+            .super_class
+            .as_ref()
+            .map(|_| Box::new(anything_expr()));
+        holed_class.body = hole_class_members(&class.body, kept);
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
+            ident: ident_node(&target.export_name),
+            declare: false,
+            class: Box::new(holed_class),
+        }))))
+    }
+}
 
 /// Minimal anchor cover for a single-target class: render the class keeping
 /// only members (and member-body statements) that carry a chosen anchor, with an
@@ -26,23 +52,6 @@ pub(crate) fn minimize_class_selector(
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
 ) -> Result<Option<SpecializedSelector>> {
-    let export = target.export_name.clone();
-    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        let mut holed_class = class.clone();
-        // A minified superclass identifier is alpha-wildcarded, so always hole
-        // `extends` to ANYTHING — it still discriminates "has a superclass" from a
-        // bare class without pinning the volatile name.
-        holed_class.super_class = class
-            .super_class
-            .as_ref()
-            .map(|_| Box::new(anything_expr()));
-        holed_class.body = hole_class_members(&class.body, kept);
-        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
-            ident: ident_node(&export),
-            declare: false,
-            class: Box::new(holed_class),
-        }))))
-    };
     // Single-target classes read off their minimal anchor set the same way
     // functions and objects do: the holed scaffold pins the class kind plus
     // `extends ANYTHING`, and value anchors (a member name, a literal or callee
@@ -50,7 +59,25 @@ pub(crate) fn minimize_class_selector(
     // carrying them survive between `ANYTHING` class-member run holes. A class the read-off
     // cannot single out through its own value features returns `None` and is
     // reported as debt (never a full-AST pin).
-    render_via_read_off(index, decl, target, &render_with)
+    render_via_read_off(index, decl, target, &class_render_with(class, target))
+}
+
+/// Up to `limit` ranked candidate selectors for the class — the
+/// `synthesize-selectors --candidates N` menu. `limit == 1` is the single pick.
+pub(crate) fn minimize_class_selector_candidates(
+    index: &ChunkSelectorIndex,
+    class: &Class,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
+    read_off_candidates(
+        index,
+        decl,
+        target,
+        &class_render_with(class, target),
+        limit,
+    )
 }
 
 /// A class-member run-absorber hole, emitted as an `ANYTHING;` no-init field. In

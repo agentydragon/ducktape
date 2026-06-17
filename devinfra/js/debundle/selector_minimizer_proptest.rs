@@ -464,7 +464,7 @@ proptest! {
             // there is nothing to assert. `full_ast_fallback = true` keeps the
             // exact selector when minimization finds nothing sparse.
             let Ok(GroupSelectorOutcome::Synthesized(group)) =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true, 1)
             else {
                 return Ok(());
             };

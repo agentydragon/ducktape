@@ -285,6 +285,12 @@ pub struct SelectorCodemodArgs {
     #[arg(long = "item")]
     pub items: Vec<String>,
 
+    /// Emit up to N ranked candidate selectors per item (a menu of alternative
+    /// anchors), not just the minimizer's single pick. Only affects
+    /// `synthesize-selectors`; the extras are reported as `alternatives`. Default 1.
+    #[arg(long = "candidates", default_value_t = 1)]
+    pub candidates: usize,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -762,6 +768,7 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         chunk: args.chunk,
         source_file: args.source_file,
         items: args.items,
+        candidates: args.candidates,
     })?;
     print_report(&report, format, render_selector_codemod_text)
         .context("writing selector-codemod output")

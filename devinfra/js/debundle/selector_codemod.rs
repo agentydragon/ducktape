@@ -45,7 +45,8 @@ mod render;
 pub mod match_selector;
 
 use crate::minimize::{
-    minimize_class_selector, minimize_function_selector, minimize_var_group_selector,
+    minimize_class_selector, minimize_class_selector_candidates, minimize_function_selector,
+    minimize_function_selector_candidates, minimize_var_group_selector,
 };
 use crate::render::holes_present;
 
@@ -84,6 +85,10 @@ pub struct SelectorCodemodConfig {
     pub chunk: Option<PathBuf>,
     pub source_file: Option<PathBuf>,
     pub items: Vec<String>,
+    /// Emit up to N ranked candidate selectors per synthesized item (a menu); the
+    /// extras beyond the primary pick are reported as `alternatives`. 1 = today's
+    /// single-pick behavior.
+    pub candidates: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -92,6 +97,17 @@ pub enum SelectorCodemodAction {
     WouldChange,
     Changed,
     Skipped,
+}
+
+/// One alternative candidate selector for an item, beyond the minimizer's primary
+/// pick — the `synthesize-selectors --candidates N` menu. Each proves uniquely (it
+/// is a read-off candidate the matcher accepted), pinning a different anchor than
+/// the primary; the agent reads them as a menu to override an incidental pick.
+#[derive(Debug, Clone, Serialize)]
+pub struct SelectorAlternative {
+    pub match_source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rewritten_holes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,6 +129,9 @@ pub struct SelectorCodemodCandidate {
     pub rewritten_holes: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub replacement_count: usize,
+    /// Extra ranked candidates beyond the primary, when `--candidates N > 1`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<SelectorAlternative>,
     pub reason: Option<String>,
 }
 
@@ -215,6 +234,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     minimize_synthesized_selectors: config.minimize_synthesized_selectors,
                     full_ast_fallback: config.full_ast_fallback,
                     apply: config.apply,
+                    candidates: config.candidates,
                 },
             )?;
             summary.members_scanned += outcomes.members_scanned;
@@ -323,6 +343,7 @@ fn rewrite_single_target_binding(
             candidate_count: None,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
+            alternatives: Vec::new(),
             reason: Some("target_binding already present".to_string()),
         }));
     }
@@ -343,6 +364,7 @@ fn rewrite_single_target_binding(
                 candidate_count: None,
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
+                alternatives: Vec::new(),
                 reason: Some(format!("source_match did not parse: {err:#}")),
             }));
         }
@@ -366,6 +388,7 @@ fn rewrite_single_target_binding(
             candidate_count: None,
             rewritten_holes: Vec::new(),
             replacement_count: 0,
+            alternatives: Vec::new(),
             reason: Some(reason),
         }));
     };
@@ -403,6 +426,7 @@ fn rewrite_single_target_binding(
         candidate_count: None,
         rewritten_holes: Vec::new(),
         replacement_count: 0,
+        alternatives: Vec::new(),
         reason: None,
     }))
 }
@@ -462,6 +486,7 @@ fn rewrite_anything_holes(
                 candidate_count: None,
                 rewritten_holes: Vec::new(),
                 replacement_count: 0,
+                alternatives: Vec::new(),
                 reason: Some(format!("source_match did not parse: {err:#}")),
             }));
         }
@@ -504,6 +529,7 @@ fn rewrite_anything_holes(
         candidate_count: None,
         rewritten_holes,
         replacement_count,
+        alternatives: Vec::new(),
         reason: None,
     }))
 }
@@ -535,6 +561,7 @@ struct NameBindingRewriteOptions {
     minimize_synthesized_selectors: bool,
     full_ast_fallback: bool,
     apply: bool,
+    candidates: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -544,6 +571,7 @@ pub struct SynthesizedSelectorGroup {
     match_source: String,
     rewritten_holes: Vec<String>,
     candidate_count: usize,
+    alternatives: Vec<SelectorAlternative>,
 }
 
 #[derive(Debug, Clone)]
@@ -696,6 +724,7 @@ fn rewrite_name_bindings_to_source_match(
             &group_members,
             options.minimize_synthesized_selectors,
             options.full_ast_fallback,
+            options.candidates,
         ) {
             Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
                 synthesized_groups.push(SynthesizedDeclGroup {
@@ -1024,6 +1053,7 @@ fn synthesize_simplest_selector_for_group(
     members: &[NameBindingMember],
     minimize_synthesized_selectors: bool,
     full_ast_fallback: bool,
+    candidates_limit: usize,
 ) -> Result<GroupSelectorOutcome> {
     let decl = index
         .decls
@@ -1087,6 +1117,22 @@ fn synthesize_simplest_selector_for_group(
         ));
     };
 
+    // `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
+    // primary pick (deduped against it). Only meaningful for the minimized forms;
+    // the exact-fallback and the not-yet-covered object/var menus yield none.
+    let alternatives = if candidates_limit > 1 && minimize_synthesized_selectors {
+        synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
+            .into_iter()
+            .map(|candidate| SelectorAlternative {
+                match_source: trim_selector_source_line_suffixes(&candidate.match_source),
+                rewritten_holes: candidate.rewritten_holes.into_iter().collect(),
+            })
+            .filter(|alternative| alternative.match_source != match_source)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     Ok(GroupSelectorOutcome::Synthesized(
         SynthesizedSelectorGroup {
             body_idx: decl.body_idx,
@@ -1094,6 +1140,7 @@ fn synthesize_simplest_selector_for_group(
             match_source,
             rewritten_holes: rewritten_holes.into_iter().collect(),
             candidate_count,
+            alternatives,
         },
     ))
 }
@@ -1230,6 +1277,7 @@ fn merge_same_shape_run(
             rewritten_holes: holes_present(&match_source).into_iter().collect(),
             match_source,
             candidate_count,
+            alternatives: Vec::new(),
         },
     })
 }
@@ -1462,6 +1510,44 @@ fn synthesize_specialized_selector(
             synthesize_specialized_var_selector(index, item, decl, targets)
         }
         IndexedDeclarationKind::Other => Ok(None),
+    }
+}
+
+/// Up to `limit` ranked candidate selectors for the item — the
+/// `synthesize-selectors --candidates N` menu. The function/class read-off forms
+/// return their full ranked walk; object/multi-declarator-var emit only the single
+/// pick for now (their menus are not yet wired through the var/object read-off).
+fn synthesize_specialized_selector_candidates(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
+    match decl.kind {
+        IndexedDeclarationKind::Function => {
+            let [target] = targets else {
+                return Ok(Vec::new());
+            };
+            let Some(Decl::Fn(function)) = item_decl(item) else {
+                return Ok(Vec::new());
+            };
+            minimize_function_selector_candidates(index, &function.function, decl, target, limit)
+        }
+        IndexedDeclarationKind::Class => {
+            let [target] = targets else {
+                return Ok(Vec::new());
+            };
+            let Some(Decl::Class(class_decl)) = item_decl(item) else {
+                return Ok(Vec::new());
+            };
+            minimize_class_selector_candidates(index, &class_decl.class, decl, target, limit)
+        }
+        IndexedDeclarationKind::Var | IndexedDeclarationKind::Other => {
+            Ok(synthesize_specialized_selector(index, item, decl, targets)?
+                .into_iter()
+                .collect())
+        }
     }
 }
 
@@ -1799,6 +1885,7 @@ fn synthesized_candidate(input: SynthesizedCandidateInput<'_>) -> SelectorCodemo
         candidate_count: Some(input.synthesized.candidate_count),
         rewritten_holes: input.synthesized.rewritten_holes.clone(),
         replacement_count: input.synthesized.rewritten_holes.len(),
+        alternatives: input.synthesized.alternatives.clone(),
         reason: None,
     }
 }
@@ -1895,6 +1982,7 @@ fn skipped_candidate(
         candidate_count: None,
         rewritten_holes: Vec::new(),
         replacement_count: 0,
+        alternatives: Vec::new(),
         reason: Some(reason.into()),
     }
 }
@@ -2362,6 +2450,7 @@ mod full_ast_fallback_tests {
                 &members,
                 minimize,
                 full_ast_fallback,
+                1,
             )
             .unwrap()
         })
@@ -2410,13 +2499,14 @@ export { target };\n";
                 comment: None,
             }];
             let off =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false)
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false, 1)
                     .unwrap();
             if let GroupSelectorOutcome::Skipped(reason) = &off {
                 assert!(reason.contains("no sparse selector"), "{reason}");
-                let on =
-                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
-                        .unwrap();
+                let on = synthesize_simplest_selector_for_group(
+                    &index, decl_idx, &members, true, true, 1,
+                )
+                .unwrap();
                 assert!(
                     matches!(on, GroupSelectorOutcome::Synthesized(_)),
                     "fallback on must emit where the default skipped"
@@ -2447,7 +2537,7 @@ export { target };\n";
                 comment: None,
             }];
             let GroupSelectorOutcome::Synthesized(group) =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true)
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true, 1)
                     .unwrap()
             else {
                 panic!("full_ast_fallback=true must not skip");
@@ -2620,8 +2710,10 @@ mod prefilter_soundness_tests {
                     comment: None,
                 }];
                 let GroupSelectorOutcome::Synthesized(group) =
-                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false)
-                        .unwrap()
+                    synthesize_simplest_selector_for_group(
+                        &index, decl_idx, &members, true, false, 1,
+                    )
+                    .unwrap()
                 else {
                     panic!("each distinct-token sibling must synthesize a selector");
                 };

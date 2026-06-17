@@ -36,8 +36,8 @@ mod group;
 mod object;
 mod var;
 
-pub(crate) use class::minimize_class_selector;
-pub(crate) use function::minimize_function_selector;
+pub(crate) use class::{minimize_class_selector, minimize_class_selector_candidates};
+pub(crate) use function::{minimize_function_selector, minimize_function_selector_candidates};
 pub(crate) use group::minimize_var_group_selector;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -80,12 +80,45 @@ fn render_via_read_off(
     target: &SynthesizedTargetBinding,
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
 ) -> Result<Option<SpecializedSelector>> {
+    Ok(read_off_candidates(index, decl, target, render_with, 1)?
+        .into_iter()
+        .next())
+}
+
+/// Collect up to `limit` read-off selectors for the target, in the priority order
+/// [`render_via_read_off`] picks from — minimal anchor set → individually-
+/// discriminating value anchors → multi-feature value cover → bare scaffold →
+/// enclosing-context neighbor — each proven uniquely by the matcher (gate 1) and
+/// deduped by source. `limit == 1` reproduces [`render_via_read_off`] exactly (it
+/// stops at the first proving selector); `limit > 1` powers `synthesize-selectors
+/// --candidates N`, the ranked-candidate menu. Returns fewer than `limit` (or
+/// empty) when the target has no more proving anchors.
+fn read_off_candidates(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
     let item = index
         .parsed
         .module
         .body
         .get(decl.body_idx)
         .context("read-off body index no longer in module")?;
+
+    // Push a proven candidate unless its source duplicates one already kept;
+    // return true once `limit` is reached so the caller stops walking.
+    let collect = |selector: SpecializedSelector, out: &mut Vec<SpecializedSelector>| -> bool {
+        if !out
+            .iter()
+            .any(|kept| kept.match_source == selector.match_source)
+        {
+            out.push(selector);
+        }
+        out.len() >= limit
+    };
+    let mut out: Vec<SpecializedSelector> = Vec::new();
 
     // Primary read-off: the minimal anchor set. Keep it when its holed selector
     // proves uniquely — except the degenerate case of a single (OPT=1) feature that
@@ -100,8 +133,9 @@ fn render_via_read_off(
             && (!anchor_set.opt_one || kept.len() == 1)
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+            && collect(selector, &mut out)
         {
-            return Ok(Some(selector));
+            return Ok(out);
         }
     }
 
@@ -125,8 +159,9 @@ fn render_via_read_off(
     value_kept.sort_by_key(BTreeSet::len);
     for kept in value_kept {
         if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+            && collect(selector, &mut out)
         {
-            return Ok(Some(selector));
+            return Ok(out);
         }
     }
 
@@ -142,21 +177,28 @@ fn render_via_read_off(
         if !kept.is_empty()
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+            && collect(selector, &mut out)
         {
-            return Ok(Some(selector));
+            return Ok(out);
         }
     }
 
-    // Last resort: the bare structural scaffold, used only when it resolves
-    // uniquely (a purely structural discriminator — arity/shape — with no value
-    // anchor to keep). The scaffold is degenerate for `var`, so the var path skips
-    // this entirely and returns `None` for the keep-shallow path to handle.
+    // Bare structural scaffold, used only when it resolves uniquely (a purely
+    // structural discriminator — arity/shape — with no value anchor to keep). The
+    // scaffold is degenerate for `var`, so the var path skips this entirely and
+    // returns `None` for the keep-shallow path to handle. When the scaffold
+    // uniquely matches the read-off is done — it never falls through to neighbor
+    // context (mirroring the original early return), so stop here regardless of
+    // `limit`.
     let empty = BTreeSet::new();
     let scaffold = render_with(&empty)?;
     if matched_body_indices(index, &target.export_name, &scaffold)?
         == BTreeSet::from([decl.body_idx])
     {
-        return finish_minimized_selector(index, decl, target, scaffold);
+        if let Some(selector) = finish_minimized_selector(index, decl, target, scaffold)? {
+            collect(selector, &mut out);
+        }
+        return Ok(out);
     }
 
     // Enclosing-context anchoring (#2315): the target's own value anchors and the
@@ -164,7 +206,10 @@ fn render_via_read_off(
     // its stable neighbors — a 2-statement window pinning an adjacent declaration's
     // unique anchor + the target scaffold. `None` here leaves the target as residual
     // debt (never a full-AST pin).
-    render_via_neighbor_context(index, decl, target, &scaffold)
+    if let Some(selector) = render_via_neighbor_context(index, decl, target, &scaffold)? {
+        collect(selector, &mut out);
+    }
+    Ok(out)
 }
 
 fn finish_minimized_selector(
