@@ -60,10 +60,17 @@ fn match_selector(source: &Path, match_source: &str, extra: &[&str]) -> Value {
 }
 
 // leftPanel and rightPanel differ only by their string argument; widgetConfig is
-// the lone `makeWidget` call.
+// the lone `makeWidget` call; errorState is the lone object literal; computeTotal
+// is the lone function declaration.
 const CHUNK: &str = r#"const leftPanel = renderPanel("left");
 const widgetConfig = makeWidget("widget", 3, theme);
 const rightPanel = renderPanel("right");
+const errorState = { kind: "error", code: 500, retry: false };
+function computeTotal(items) {
+  const base = items.length;
+  const tax = base * 2;
+  return base + tax;
+}
 "#;
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
@@ -135,9 +142,12 @@ fn over_pinned_selector_reports_holeable_slack() {
     assert!(!slack.is_empty(), "expected over-pin slack, got {report}");
     for relaxation in slack {
         let relaxed = relaxation["relaxed_match"].as_str().unwrap();
+        // Every slack variant keeps the discriminating `makeWidget` callee; the
+        // arguments were the unnecessary precision (holed to ANYTHING or dropped
+        // via ARGS).
         assert!(
-            relaxed.contains("makeWidget") && relaxed.contains("ANYTHING"),
-            "relaxed selector should keep the makeWidget anchor and add a hole: {relaxed}"
+            relaxed.contains("makeWidget"),
+            "relaxed selector should keep the makeWidget anchor: {relaxed}"
         );
     }
 }
@@ -169,4 +179,50 @@ fn no_slack_flag_skips_slack_analysis() {
     assert_eq!(report["unique"], Value::Bool(true));
     // With --no-slack the field is omitted even though the selector is unique.
     assert!(report.get("slack").is_none());
+}
+
+#[test]
+fn slack_drops_an_unneeded_object_property() {
+    let (_dir, source) = fixture();
+    // errorState is the only object literal, so any one of its keys alone pins
+    // it — the others are droppable kvps, not just holeable values.
+    let report = match_selector(
+        &source,
+        "const e = { kind: \"error\", code: 500, retry: false };",
+        &["--target-binding", "e"],
+    );
+    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(report["matches"][0]["binding_name"], "errorState");
+    let slack = report["slack"].as_array().unwrap();
+    // A property-drop relaxation removes the `code` kvp entirely (key and value),
+    // which value-holing alone could never do.
+    assert!(
+        slack.iter().any(|relaxation| !relaxation["relaxed_match"]
+            .as_str()
+            .unwrap()
+            .contains("code")),
+        "expected a relaxation that drops the `code` property: {report}"
+    );
+}
+
+#[test]
+fn slack_drops_a_statement_from_an_over_pinned_body() {
+    let (_dir, source) = fixture();
+    // computeTotal is the only function, so its body statements are not needed
+    // for uniqueness and collapse to STMT_LIST runs.
+    let report = match_selector(
+        &source,
+        "function f(items) { const base = items.length; const tax = base * 2; return base + tax; }",
+        &["--target-binding", "f"],
+    );
+    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(report["matches"][0]["binding_name"], "computeTotal");
+    let slack = report["slack"].as_array().unwrap();
+    assert!(
+        slack.iter().any(|relaxation| relaxation["relaxed_match"]
+            .as_str()
+            .unwrap()
+            .contains("STMT_LIST")),
+        "expected a relaxation that drops a body statement: {report}"
+    );
 }
