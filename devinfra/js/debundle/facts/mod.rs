@@ -37,7 +37,7 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
 pub(crate) use crate::analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 pub(crate) use crate::purity::{
-    ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
+    ChunkCodeGraph, Purity, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
     SHADOW_TRACKED_GLOBALS, class_has_static_observable, classify_expr_purity,
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };

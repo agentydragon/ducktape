@@ -463,14 +463,7 @@ fn classify_member_purity(
         (Expr::Ident(o), MemberProp::Ident(p)) => Some(format!("{}.{}", o.sym, p.sym)),
         _ => None,
     };
-    Purity::NotPure {
-        reasons: vec![PurityReason {
-            rule: PurityRule::UnknownMember,
-            span: member.span,
-            source_location: None,
-            detail,
-        }],
-    }
+    Purity::from_reason_opt_detail(PurityRule::UnknownMember, member.span, detail)
 }
 
 pub(crate) fn classify_call_purity(
@@ -775,14 +768,7 @@ fn classify_callee_call(
         return Purity::Pure;
     }
     let detail = callee_summary(callee_expr);
-    Purity::NotPure {
-        reasons: vec![PurityReason {
-            rule: PurityRule::UnknownCall,
-            span: call_span,
-            source_location: None,
-            detail,
-        }],
-    }
+    Purity::from_reason_opt_detail(PurityRule::UnknownCall, call_span, detail)
 }
 
 fn callee_summary(callee_expr: &Expr) -> Option<String> {

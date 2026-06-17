@@ -99,24 +99,33 @@ impl Purity {
     }
 
     pub(crate) fn from_reason(rule: PurityRule, span: Span) -> Self {
-        Purity::NotPure {
-            reasons: vec![PurityReason {
-                rule,
-                span,
-                source_location: None,
-                detail: None,
-            }],
-        }
+        Self::from_reason_opt_detail(rule, span, None)
     }
 
     pub(crate) fn from_reason_with_detail(rule: PurityRule, span: Span, detail: String) -> Self {
+        Self::from_reason_opt_detail(rule, span, Some(detail))
+    }
+
+    pub(crate) fn from_reason_opt_detail(
+        rule: PurityRule,
+        span: Span,
+        detail: Option<String>,
+    ) -> Self {
         Purity::NotPure {
-            reasons: vec![PurityReason {
-                rule,
-                span,
-                source_location: None,
-                detail: Some(detail),
-            }],
+            reasons: vec![PurityReason::new(rule, span, detail)],
+        }
+    }
+}
+
+impl PurityReason {
+    /// A reason with `source_location` left unresolved: the classifier fills only
+    /// `span`; `resolve_reason_locations` populates `source_location` later.
+    pub(crate) fn new(rule: PurityRule, span: Span, detail: Option<String>) -> Self {
+        Self {
+            rule,
+            span,
+            source_location: None,
+            detail,
         }
     }
 }

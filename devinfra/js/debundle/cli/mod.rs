@@ -650,28 +650,42 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             ModulesNsCommand::Merge(m) => run_merge(m),
             ModulesNsCommand::Delete(d) => run_delete(d),
             ModulesNsCommand::Propose(p) => {
-                let format = OutputFormat::resolve(p.format);
                 let report = run_plan_work_report(&p)?;
-                print_report(&report, format, render_plan_work_text)
-                    .context("writing propose output")
+                emit_report(
+                    p.format,
+                    &report,
+                    render_plan_work_text,
+                    "writing propose output",
+                )
             }
             ModulesNsCommand::List(args) => run_modules_list(args),
         },
         DebundleCommand::Atoms(args) => {
-            let format = OutputFormat::resolve(args.format);
             let report = run_units_report(&args)?;
-            print_report(&report, format, render_units_text).context("writing atoms output")
+            emit_report(
+                args.format,
+                &report,
+                render_units_text,
+                "writing atoms output",
+            )
         }
         DebundleCommand::Coverage(args) => {
-            let format = OutputFormat::resolve(args.format);
             let report = run_patch_plan_report(&args)?;
-            print_report(&report, format, render_patch_plan_text).context("writing coverage output")
+            emit_report(
+                args.format,
+                &report,
+                render_patch_plan_text,
+                "writing coverage output",
+            )
         }
         DebundleCommand::GraphSummary(args) => {
-            let format = OutputFormat::resolve(args.format);
             let report = run_graph_summary_report(&args)?;
-            print_report(&report, format, render_graph_summary_text)
-                .context("writing graph-summary output")
+            emit_report(
+                args.format,
+                &report,
+                render_graph_summary_text,
+                "writing graph-summary output",
+            )
         }
         DebundleCommand::Describe(args) => run_describe(args),
         DebundleCommand::ShowSource(args) => run_show_source(args),
@@ -706,42 +720,63 @@ fn run_peel(args: PeelArgs) -> Result<()> {
     match args.command {
         PeelCommand::PlanWork(args) => {
             deprecation_notice("peel plan-work", "modules propose");
-            let format = OutputFormat::resolve(args.format);
             let report = run_plan_work_report(&args)?;
-            print_report(&report, format, render_plan_work_text).context("writing plan-work output")
+            emit_report(
+                args.format,
+                &report,
+                render_plan_work_text,
+                "writing plan-work output",
+            )
         }
         PeelCommand::Units(args) => {
             deprecation_notice("peel units", "atoms");
-            let format = OutputFormat::resolve(args.format);
             let report = run_units_report(&args)?;
-            print_report(&report, format, render_units_text).context("writing units output")
+            emit_report(
+                args.format,
+                &report,
+                render_units_text,
+                "writing units output",
+            )
         }
         PeelCommand::PatchPlan(args) => {
             deprecation_notice("peel patch-plan", "coverage");
-            let format = OutputFormat::resolve(args.format);
             let report = run_patch_plan_report(&args)?;
-            print_report(&report, format, render_patch_plan_text)
-                .context("writing patch-plan output")
+            emit_report(
+                args.format,
+                &report,
+                render_patch_plan_text,
+                "writing patch-plan output",
+            )
         }
         PeelCommand::Explain(args) => {
             deprecation_notice("peel explain", "describe <id>");
-            let format = OutputFormat::resolve(args.format);
             let report = run_explain_report(&args)?;
-            print_report(&report, format, render_explain_text).context("writing explain output")
+            emit_report(
+                args.format,
+                &report,
+                render_explain_text,
+                "writing explain output",
+            )
         }
         PeelCommand::SourceSlice(args) => {
             deprecation_notice("peel source-slice", "show-source <id>");
-            let format = OutputFormat::resolve(args.format);
             let report = run_source_slice_report(&args)?;
-            print_report(&report, format, render_source_slice_text)
-                .context("writing source-slice output")
+            emit_report(
+                args.format,
+                &report,
+                render_source_slice_text,
+                "writing source-slice output",
+            )
         }
         PeelCommand::GraphSummary(args) => {
             deprecation_notice("peel graph-summary", "graph-summary");
-            let format = OutputFormat::resolve(args.format);
             let report = run_graph_summary_report(&args)?;
-            print_report(&report, format, render_graph_summary_text)
-                .context("writing graph-summary output")
+            emit_report(
+                args.format,
+                &report,
+                render_graph_summary_text,
+                "writing graph-summary output",
+            )
         }
     }
 }
@@ -753,8 +788,22 @@ fn deprecation_notice(old: &str, new: &str) {
     );
 }
 
+/// Shared tail of every report subcommand: resolve `format` (tty-aware default),
+/// render `report`, and tag IO errors with `context`.
+fn emit_report<T, F>(
+    format: Option<OutputFormat>,
+    report: &T,
+    text_render: F,
+    context: &'static str,
+) -> Result<()>
+where
+    T: serde::Serialize,
+    F: FnOnce(&T, &mut String),
+{
+    print_report(report, OutputFormat::resolve(format), text_render).context(context)
+}
+
 fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
-    let format = OutputFormat::resolve(args.format);
     let report = run_selector_codemod(&SelectorCodemodConfig {
         modules_root: args.modules_root,
         apply: args.apply,
@@ -770,12 +819,15 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         items: args.items,
         candidates: args.candidates,
     })?;
-    print_report(&report, format, render_selector_codemod_text)
-        .context("writing selector-codemod output")
+    emit_report(
+        args.format,
+        &report,
+        render_selector_codemod_text,
+        "writing selector-codemod output",
+    )
 }
 
 fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
-    let format = OutputFormat::resolve(args.format);
     let report = run_match_selector(&MatchSelectorConfig {
         source_file: args.source_file,
         source_root: args.source_root,
@@ -785,8 +837,12 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
         target_binding: args.target_binding,
         check_slack: !args.no_slack,
     })?;
-    print_report(&report, format, render_match_selector_text)
-        .context("writing match-selector output")
+    emit_report(
+        args.format,
+        &report,
+        render_match_selector_text,
+        "writing match-selector output",
+    )
 }
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
@@ -872,7 +928,6 @@ fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result
 }
 
 fn run_describe(args: DescribeArgs) -> Result<()> {
-    let format = OutputFormat::resolve(args.format);
     let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
     let inner = ExplainArgs {
         common: args.common,
@@ -884,11 +939,15 @@ fn run_describe(args: DescribeArgs) -> Result<()> {
         format: None,
     };
     let report = run_explain_report(&inner)?;
-    print_report(&report, format, render_explain_text).context("writing describe output")
+    emit_report(
+        args.format,
+        &report,
+        render_explain_text,
+        "writing describe output",
+    )
 }
 
 fn run_show_source(args: ShowSourceArgs) -> Result<()> {
-    let format = OutputFormat::resolve(args.format);
     let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
     let inner = SourceSliceArgs {
         common: args.common,
@@ -899,7 +958,12 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
         format: None,
     };
     let report = run_source_slice_report(&inner)?;
-    print_report(&report, format, render_source_slice_text).context("writing show-source output")
+    emit_report(
+        args.format,
+        &report,
+        render_source_slice_text,
+        "writing show-source output",
+    )
 }
 
 fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
@@ -909,8 +973,12 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
         orphan: args.orphan,
     };
     let report = run_bindings_list(&args.modules_root, &filters)?;
-    let format = OutputFormat::resolve(args.format);
-    print_report(&report, format, render_bindings_list_text).context("writing bindings list output")
+    emit_report(
+        args.format,
+        &report,
+        render_bindings_list_text,
+        "writing bindings list output",
+    )
 }
 
 fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &mut String) {
@@ -1081,12 +1149,13 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     let report = ModulesListReport { modules: entries };
-    let format = OutputFormat::resolve(args.format);
     let with_anonymous = args.with_anonymous;
-    print_report(&report, format, |report, out| {
-        render_modules_list_text(report, out, with_anonymous)
-    })
-    .context("writing modules list output")
+    emit_report(
+        args.format,
+        &report,
+        |report, out| render_modules_list_text(report, out, with_anonymous),
+        "writing modules list output",
+    )
 }
 
 fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {

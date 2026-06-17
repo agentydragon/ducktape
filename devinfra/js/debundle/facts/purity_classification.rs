@@ -35,14 +35,7 @@ pub(crate) fn item_purity(
                         graph,
                     ) =>
                 {
-                    Purity::NotPure {
-                        reasons: vec![PurityReason {
-                            rule: PurityRule::ClassStaticObservable,
-                            span: c.span,
-                            source_location: None,
-                            detail: None,
-                        }],
-                    }
+                    Purity::from_reason(PurityRule::ClassStaticObservable, c.span)
                 }
                 _ => Purity::Pure,
             },
@@ -73,14 +66,7 @@ pub(crate) fn item_purity(
                     graph,
                 ) =>
             {
-                Purity::NotPure {
-                    reasons: vec![PurityReason {
-                        rule: PurityRule::ClassStaticObservable,
-                        span: c.span,
-                        source_location: None,
-                        detail: None,
-                    }],
-                }
+                Purity::from_reason(PurityRule::ClassStaticObservable, c.span)
             }
             _ => Purity::Pure,
         },
@@ -94,14 +80,7 @@ pub(crate) fn item_purity(
                 graph,
             ),
             // Bare blocks, control flow, loops, etc. — soundness-first.
-            _ => Purity::NotPure {
-                reasons: vec![PurityReason {
-                    rule: PurityRule::BareControlFlow,
-                    span: item.span(),
-                    source_location: None,
-                    detail: None,
-                }],
-            },
+            _ => Purity::from_reason(PurityRule::BareControlFlow, item.span()),
         },
     }
 }
