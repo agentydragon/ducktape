@@ -28,6 +28,7 @@ pkg_tar(
         "//skills/followups:followups_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
         "//skills/freecad:freecad_tar",
+        "//skills/google_photos_link:google_photos_link_tar",
         "//skills/ground_skill:ground_skill_tar",
         "//skills/info_gathering:info_gathering_tar",
         "//skills/knowledge_hygiene:knowledge_hygiene_tar",

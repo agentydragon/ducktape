@@ -1,0 +1,9 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "google_photos_link",
+    srcs = [
+        "SKILL.md",
+        "scripts/fetch_google_photos.py",
+    ],
+)
