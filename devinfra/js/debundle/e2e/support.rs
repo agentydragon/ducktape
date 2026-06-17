@@ -1450,6 +1450,120 @@ pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
     })
 }
 
+/// Owner graph for a two-statement atomic unit: `alpha` and `beta` mutually
+/// `eager_rebind` each other and share destination `home/atom`, so the
+/// realizability gate must keep them co-located.
+pub fn graph_with_atomic_unit() -> String {
+    serde_json::json!({
+        "chunk_id": "test/chunk",
+        "nodes": [
+            {
+                "id": "owner:0",
+                "statement_ordinal": 0,
+                "declared_bindings": [
+                    { "binding": "alpha", "export_name": "alpha" }
+                ],
+                "statement_kind": "var_decl",
+                "purity": { "kind": "pure" },
+                "destination": "home/atom"
+            },
+            {
+                "id": "owner:1",
+                "statement_ordinal": 1,
+                "declared_bindings": [
+                    { "binding": "beta", "export_name": "beta" }
+                ],
+                "statement_kind": "var_decl",
+                "purity": { "kind": "pure" },
+                "destination": "home/atom"
+            }
+        ],
+        "edges": [
+            {
+                "id": "owner_edge:0",
+                "source": "owner:0",
+                "target": "owner:1",
+                "edge_kind": "eager_rebind",
+                "binding": "beta",
+                "statement_ordinal": 0,
+                "constrains_init_order": true
+            },
+            {
+                "id": "owner_edge:1",
+                "source": "owner:1",
+                "target": "owner:0",
+                "edge_kind": "eager_rebind",
+                "binding": "alpha",
+                "statement_ordinal": 1,
+                "constrains_init_order": true
+            }
+        ],
+        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
+        "atomic_graph": { "nodes": [], "edges": [] }
+    })
+    .to_string()
+}
+
+/// Owner graph for an acyclic cross-module read: `alpha` (module `a`)
+/// `eager_use`s `beta` (module `b`) with no back edge, so the split is
+/// realizable.
+pub fn graph_with_acyclic_cross_module_read() -> String {
+    serde_json::json!({
+        "chunk_id": "test/chunk",
+        "nodes": [
+            {
+                "id": "owner:0",
+                "statement_ordinal": 0,
+                "declared_bindings": [
+                    { "binding": "alpha", "export_name": "alpha" }
+                ],
+                "statement_kind": "var_decl",
+                "purity": { "kind": "pure" },
+                "destination": "a"
+            },
+            {
+                "id": "owner:1",
+                "statement_ordinal": 1,
+                "declared_bindings": [
+                    { "binding": "beta", "export_name": "beta" }
+                ],
+                "statement_kind": "var_decl",
+                "purity": { "kind": "pure" },
+                "destination": "b"
+            }
+        ],
+        "edges": [
+            {
+                "id": "owner_edge:0",
+                "source": "owner:0",
+                "target": "owner:1",
+                "edge_kind": "eager_use",
+                "binding": "beta",
+                "statement_ordinal": 0,
+                "constrains_init_order": true
+            }
+        ],
+        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
+        "atomic_graph": { "nodes": [], "edges": [] }
+    })
+    .to_string()
+}
+
+/// Write [`graph_with_atomic_unit`] plus a single module co-locating `alpha`
+/// and `beta`, returning `(modules_dir, owner_graph_path)`.
+pub fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let modules = root.join("modules");
+    let graph = root.join("owner_graph.json");
+    write_text_file(&graph, &graph_with_atomic_unit());
+    // Pre-edit: alpha + beta co-located in one module — atom
+    // respected, realizable.
+    write_text_file(
+        &modules.join("home/atom.yaml"),
+        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n",
+    );
+    (modules, graph)
+}
+
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     fs::write(path, format!("{}\n", serde_yaml::to_string(value).unwrap())).unwrap();
 }

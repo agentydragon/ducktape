@@ -14,9 +14,11 @@
 //! gate's reconstruction joins YAML members → owners by binding
 //! name, matching `gate_post_edit_partition`'s wire contract.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{
+    debundler_path, graph_with_acyclic_cross_module_read, write_atomic_unit_fixture,
+    write_text_file,
+};
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
@@ -29,115 +31,9 @@ use std::process::Command;
 /// atom respected, realizable. A `bindings assign` that moves only
 /// `alpha` to a different module would split the atom; the gate
 /// must reject before any YAML is written.
-fn graph_with_atomic_unit() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
 /// Synthetic owner graph with one acyclic cross-module read so a
 /// `bindings assign` between two existing modules is realizable.
 /// Used as the positive control.
-fn graph_with_acyclic_cross_module_read() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
-fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, &graph_with_atomic_unit());
-    // Pre-edit: alpha + beta co-located in one module — atom
-    // respected, realizable.
-    write_text_file(
-        &modules.join("home/atom.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n",
-    );
-    (modules, graph)
-}
-
 #[test]
 fn bindings_assign_rejects_split_of_known_atomic_unit() {
     let dir = tempfile::tempdir().unwrap();

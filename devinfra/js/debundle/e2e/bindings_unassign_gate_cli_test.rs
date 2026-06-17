@@ -8,9 +8,8 @@
 //! `--modules` carry the same module-vs-binding assignments and the
 //! gate's reconstruction is unambiguous.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{debundler_path, write_atomic_unit_fixture, write_text_file};
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
@@ -19,70 +18,6 @@ use std::process::Command;
 /// co-locate: any partition that places one in a different module
 /// (including "this one's home is residual, the other one isn't")
 /// splits the unit.
-fn graph_with_atomic_unit() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
-fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, &graph_with_atomic_unit());
-    // Pre-edit: alpha + beta co-located in one module — atom
-    // respected, realizable.
-    write_text_file(
-        &modules.join("home/atom.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n",
-    );
-    (modules, graph)
-}
-
 #[test]
 fn bindings_unassign_rejects_atom_split_when_other_members_stay() {
     // Atomic unit {alpha, beta} co-located in `home/atom.yaml`.

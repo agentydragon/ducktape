@@ -11,7 +11,7 @@
 //! the same `render_cycle_summary` text the pipeline prints when
 //! the materializer's gate rejects.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{debundler_path, graph_with_acyclic_cross_module_read, write_text_file};
 use std::process::Command;
 
 /// Synthetic owner graph with three owners (alpha, beta, gamma)
@@ -152,48 +152,6 @@ fn graph_with_mutual_cross_module_reads() -> String {
 /// the DAG `a → b`, realizable. Merging a + b drops the cross-module
 /// edge entirely (same-module). Deleting either one leaves a clean
 /// residual fallback with no cycle.
-fn graph_with_acyclic_cross_module_read() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
 #[test]
 fn modules_merge_rejects_when_merge_creates_cycle() {
     let dir = tempfile::tempdir().unwrap();
