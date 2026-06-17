@@ -43,6 +43,7 @@
     defaultCollapsed = false,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let collapsed = $state(defaultCollapsed);
 
   const lines = $derived.by(() => {

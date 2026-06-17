@@ -42,17 +42,22 @@
   const { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
   // State
+  // svelte-ignore state_referenced_locally
   let run: AgentRunDetail | null = $state(initialRun ?? null);
+  // svelte-ignore state_referenced_locally
   let loading = $state(!initialRun);
 
   // Critique viewer state
+  // svelte-ignore state_referenced_locally
   let snapshotDetail: SnapshotDetailResponse | null = $state(initialSnapshotDetail ?? null);
+  // svelte-ignore state_referenced_locally
   let fileContents = $state(
     initialFileContents ? new SvelteMap(initialFileContents) : new SvelteMap<string, FileContentResponse>()
   );
   let loadingSnapshot = $state(false);
 
   // LLM requests state
+  // svelte-ignore state_referenced_locally
   let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 

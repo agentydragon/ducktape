@@ -9,9 +9,11 @@
   }
   const { responseBody }: Props = $props();
 
-  const outputItems = Array.isArray(responseBody.output) ? (responseBody.output as Record<string, unknown>[]) : null;
-  const usage = responseBody.usage as Record<string, unknown> | null | undefined;
-  const detailKeys = Object.keys(responseBody).filter((k) => k !== "output" && k !== "usage");
+  const outputItems = $derived(
+    Array.isArray(responseBody.output) ? (responseBody.output as Record<string, unknown>[]) : null
+  );
+  const usage = $derived(responseBody.usage as Record<string, unknown> | null | undefined);
+  const detailKeys = $derived(Object.keys(responseBody).filter((k) => k !== "output" && k !== "usage"));
 </script>
 
 <div class="p-4 space-y-2">

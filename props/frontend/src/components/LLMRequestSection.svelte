@@ -9,10 +9,12 @@
   }
   const { requestBody }: Props = $props();
 
-  const inputItems = Array.isArray(requestBody.input) ? (requestBody.input as Record<string, unknown>[]) : null;
-  const inputStr = typeof requestBody.input === "string" ? requestBody.input : null;
-  const instructions = typeof requestBody.instructions === "string" ? requestBody.instructions : null;
-  const paramKeys = Object.keys(requestBody).filter((k) => k !== "input" && k !== "instructions");
+  const inputItems = $derived(
+    Array.isArray(requestBody.input) ? (requestBody.input as Record<string, unknown>[]) : null
+  );
+  const inputStr = $derived(typeof requestBody.input === "string" ? requestBody.input : null);
+  const instructions = $derived(typeof requestBody.instructions === "string" ? requestBody.instructions : null);
+  const paramKeys = $derived(Object.keys(requestBody).filter((k) => k !== "input" && k !== "instructions"));
 </script>
 
 <div class="p-4 space-y-2">
