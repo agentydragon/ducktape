@@ -3,13 +3,13 @@ function serializeState(input) {
   return emit("state-serializer-token", collected);
 }
 class selectedError extends Error {
-  constructor(message, statusCode, extras) {
-    (super(message), (this.statusCode = statusCode), (this.extras = extras), (this.name = "selected-error-token"));
+  constructor(message, detail, payload) {
+    (super(message), (this.detail = detail), (this.payload = payload), (this.label = "selected-error-token"));
   }
 }
 class siblingError extends Error {
-  constructor(message, statusCode, extras) {
-    (super(message), (this.statusCode = statusCode), (this.extras = extras), (this.name = "sibling-error-token"));
+  constructor(message, detail, payload) {
+    (super(message), (this.detail = detail), (this.payload = payload), (this.label = "sibling-error-token"));
   }
 }
 export { selectedError };
