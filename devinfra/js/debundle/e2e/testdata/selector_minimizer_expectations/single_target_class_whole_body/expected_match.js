@@ -1,8 +1,14 @@
 class SelectedRunner {
-  ANYTHING;
-  applyChange(ANYTHING) {
-    STMT_LIST;
-    ANYTHING.set("running");
+  constructor(ANYTHING, ANYTHING, ANYTHING, ANYTHING) {
+    (ANYTHING,
+      ANYTHING,
+      ANYTHING,
+      ANYTHING,
+      ANYTHING,
+      (ANYTHING.boxedStatus = ANYTHING(ARGS, { name: ANYTHING })),
+      ANYTHING,
+      ANYTHING,
+      ANYTHING);
   }
   ANYTHING;
 }

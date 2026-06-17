@@ -215,10 +215,14 @@ fn mapping_string_keys(value: &serde_yaml::Value) -> BTreeSet<String> {
 /// (indentation, line breaks, trailing commas).
 fn normalize_selector(source: &str) -> String {
     js_ast::with_swc_globals(|| {
-        let module =
-            js_ast::parse_js_module_ast("<selector expectation>", source).unwrap_or_else(|err| {
+        let mut module = js_ast::parse_js_module_ast("<selector expectation>", source)
+            .unwrap_or_else(|err| {
                 panic!("selector is not parseable JavaScript ({err}):\n{source}")
             });
+        // Compare paren-insensitively: the renderer drops redundant parens, prettier
+        // re-adds them to the expected fixture, and the matcher itself sees through
+        // parens — so canonicalize both sides before comparing.
+        js_ast::strip_parens(&mut module);
         js_ast::emit_module_source(&module).expect("emit normalized selector")
     })
 }
@@ -593,17 +597,20 @@ minimizer_expectation_case!(
 );
 
 // A SINGLE-target class with no same-shape sibling holes its body down to one
-// stable value anchor, absorbing every other member and the constructor with
-// CLASS_REST and holing the kept member's body with STMT_LIST. The empty scaffold
-// `class SelectedRunner { CLASS_REST; }` resolves uniquely (it is the only class)
-// but pins nothing rebuild-stable (criterion 5); the robustness-anchor policy
-// instead drills to a value anchor. The candidate index already collects literals
-// inside method bodies, but the *minimal* anchor (`NumberLiteral("0")`, in class
-// fields / a `void 0`) renders to a constructor the holer keeps verbatim, which
-// fails to prove. The renderer then walks the target's individually-discriminating
-// value anchors best-first (issue #2289 item 1) and lands on `"running"` inside
-// `applyChange`, holing the receiver chain to `ANYTHING.set("running")` — sparser
-// and more rebuild-robust than pinning the minified `this.boxedStatus` receiver.
+// stable value anchor, absorbing the other members with CLASS_REST. The empty
+// scaffold `class SelectedRunner { CLASS_REST; }` resolves uniquely (it is the only
+// class) but pins nothing rebuild-stable (criterion 5); the robustness-anchor
+// policy instead drills to a value anchor. The *minimal* anchor is
+// `NumberLiteral("0")` — but `0` occurs three times in the body (the two `= 0`
+// fields and the `void 0` inside the constructor's sequence), so pinning it keeps
+// all three sites and drags in unrelated members. The read-off's span preference
+// therefore defers that multi-occurrence anchor and walks the single-occurrence
+// value anchors best-first, landing on the cheapest one — the `name` object key in
+// the constructor's `boxedStatus = box(…, { name: … })` — holing the receiver, the
+// `box` callee, the `"stopped"` argument, the value, and every other sequence
+// element. The constructor body holes through the `hole_expr` sequence/ternary arms
+// (the same arms that fix `class_sequence_constructor_body`); before they landed
+// `0` rendered to a verbatim constructor the matcher rejected, masking this choice.
 // The real-survey whole-body over-pin
 // (`domains/search/live_search/ComputedViewRunner.yaml`, ~900 lines kept whole;
 // ~360 other fully-verbatim conversions) only manifests when same-shape SIBLING
@@ -908,27 +915,19 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// IGNORED (dogfood over-pin, 2026-06-17): a class whose only discriminating
-// content lives inside its constructor's **sequence-expression** body
-// (`constructor(...) { (super(a), this.x = b, this.label = "token"); }`) over-pins
-// to enclosing-context anchoring instead of pinning that own anchor. `hole_expr`
-// (render.rs) has no `Expr::Seq` arm, so a comma-sequence falls to its
-// `_ => expr.clone()` "unmodeled shape" fallback: the read-off cannot hole the
-// sequence down to the discriminating `this.label = "selected-error-token"`
-// assignment, so every value-anchor candidate keeps the sequence verbatim (raw
-// sibling subtrees the prove-gate rejects), the bare scaffold is ambiguous among
-// same-shape sibling error classes, and the class falls to
-// `render_via_neighbor_context` — which pins the unrelated preceding
-// `serializeState` neighbor whole and holes the whole class body to `ANYTHING`.
-// Control: the identical class written with plain statement assignments (no
-// sequence) already minimizes to
-// `constructor(ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; ANYTHING.label = "selected-error-token"; }`
-// with no neighbor, so the gap is purely the sequence-expression form never
-// reaching a holer. Fix: an `Expr::Seq` arm in `hole_expr` (hole each non-anchor
-// element to `ANYTHING`, recurse into the anchored one), exactly parallel to the
-// missing `Expr::Class` arm behind `class_expression_const_whole_body`.
+// A class whose only discriminating content sits inside its constructor's
+// **sequence (comma) expression** body
+// (`constructor(...) { (super(a), this.x = b, this.label = "token"); }`) pins by
+// that own anchor, not via a neighbor. `hole_expr`'s `Expr::Seq` arm holes each
+// non-anchor element to `ANYTHING` and recurses into the anchored one, and the
+// matcher sees through the source's `(a, b, c)` parens, so the read-off keeps the
+// discriminating `this.label = "selected-error-token"` (holed to
+// `ANYTHING.label = "selected-error-token"`). Without those two pieces the
+// sequence stayed verbatim (raw sibling subtrees the prove-gate rejects), the bare
+// scaffold was ambiguous among same-shape sibling error classes, and the class
+// fell to `render_via_neighbor_context`, pinning the unrelated preceding
+// `serializeState` neighbor whole — the over-pin this case originally captured.
 minimizer_expectation_case!(
-    #[ignore = "class anchor inside a constructor sequence-expression body over-pins to neighbor context; hole_expr has no Expr::Seq arm"]
     minimizes_class_sequence_constructor_body,
     fixture = "class_sequence_constructor_body",
     name = "class anchor inside a constructor sequence expression is holed in place, not pinned via a neighbor",

@@ -510,6 +510,19 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn match_expr(&mut self, needle: &Expr, candidate: &Expr) -> bool {
+        // Parentheses are syntactically insignificant grouping; see through them on
+        // either side. The renderer drops redundant parens when holing (`hole_expr`'s
+        // `Expr::Paren` arm), so a holed needle — e.g. a holed comma sequence, whose
+        // source form is the parenthesized `(a, b, c)` — must still match the
+        // parenthesized source expression; hand-written selectors may likewise include
+        // or omit them. Strict superset of the former paren-vs-paren-only arm, and it
+        // keeps selectors robust to a rebuild adding or dropping redundant parens.
+        if let Expr::Paren(needle) = needle {
+            return self.match_expr(&needle.expr, candidate);
+        }
+        if let Expr::Paren(candidate) = candidate {
+            return self.match_expr(needle, &candidate.expr);
+        }
         if let Some(pattern) = string_literal_regex_pattern(needle) {
             return match candidate {
                 Expr::Lit(Lit::Str(candidate)) => self.string_literal_regexes.map_or_else(
@@ -612,9 +625,6 @@ impl<'a> AstWildcardMatcher<'a> {
             }
             (Expr::Await(needle), Expr::Await(candidate)) => {
                 self.match_expr(&needle.arg, &candidate.arg)
-            }
-            (Expr::Paren(needle), Expr::Paren(candidate)) => {
-                self.match_expr(&needle.expr, &candidate.expr)
             }
             (Expr::JSXElement(needle), Expr::JSXElement(candidate)) => {
                 self.match_jsx_element(needle, candidate)

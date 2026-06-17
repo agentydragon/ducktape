@@ -138,6 +138,24 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         }
         Expr::Object(object) => Expr::Object(hole_object(object, kept)),
         Expr::Array(array) => Expr::Array(hole_array(array, kept)),
+        // Sequence (comma) expression (`(super(a), this.x = b, this.label = "tok")`):
+        // hole each element the way [`hole_array`] holes array elements — a non-anchor
+        // element collapses to `ANYTHING` through the leading guard, the anchored one
+        // recurses. A discriminating leaf buried in a comma-sequence (e.g. an error
+        // subclass whose entire constructor body is one sequence statement) is holed in
+        // place rather than kept verbatim; keeping it verbatim leaves raw sibling
+        // subtrees the matcher rejects, forcing the read-off all the way to
+        // enclosing-context anchoring. Arity-exact (no run hole), mirroring the array
+        // path.
+        Expr::Seq(seq) => {
+            let mut holed = seq.clone();
+            holed.exprs = seq
+                .exprs
+                .iter()
+                .map(|element| Box::new(hole_expr(element, kept)))
+                .collect();
+            Expr::Seq(holed)
+        }
         Expr::Await(await_expr) => {
             let mut holed = await_expr.clone();
             holed.arg = Box::new(hole_expr(&await_expr.arg, kept));
@@ -153,6 +171,18 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.left = Box::new(hole_expr(&bin.left, kept));
             holed.right = Box::new(hole_expr(&bin.right, kept));
             Expr::Bin(holed)
+        }
+        // Conditional (ternary) `test ? cons : alt`: hole each branch so a
+        // discriminating leaf in one branch is kept and the rest collapses to
+        // `ANYTHING`, instead of pinning the whole ternary verbatim (which keeps raw
+        // sibling subtrees). Reached e.g. when a kept anchor sits inside a
+        // `x ? new Y(x) : void 0` initializer in a holed sequence element.
+        Expr::Cond(cond) => {
+            let mut holed = cond.clone();
+            holed.test = Box::new(hole_expr(&cond.test, kept));
+            holed.cons = Box::new(hole_expr(&cond.cons, kept));
+            holed.alt = Box::new(hole_expr(&cond.alt, kept));
+            Expr::Cond(holed)
         }
         // Assignment expression (`state.delta = "value"`): the dominant statement
         // shape in sequential write-block bodies. Hole the LHS target's receiver

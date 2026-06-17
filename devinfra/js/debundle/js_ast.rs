@@ -5,7 +5,7 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
-use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
+use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
@@ -270,6 +270,24 @@ pub fn emit_module_source(module: &Module) -> Result<String> {
         emitter.emit_module(module)?;
     }
     Ok(String::from_utf8(buf)?.trim_end().to_string())
+}
+
+/// Strip every `(expr)` parenthesization, replacing it with its inner expression.
+/// Parens are syntactically insignificant grouping, so removing them canonicalizes
+/// an AST: two expressions that differ only in redundant parens emit identically
+/// after this pass. Mirrors the source-match matcher, which sees through parens on
+/// both sides — use it to compare selector shapes paren-insensitively.
+pub fn strip_parens(module: &mut Module) {
+    struct ParenStripper;
+    impl swc_ecma_visit::VisitMut for ParenStripper {
+        fn visit_mut_expr(&mut self, expr: &mut Expr) {
+            expr.visit_mut_children_with(self);
+            if let Expr::Paren(paren) = expr {
+                *expr = (*paren.expr).clone();
+            }
+        }
+    }
+    module.visit_mut_with(&mut ParenStripper);
 }
 
 /// Number of post-comma-list-split positions a top-level body item

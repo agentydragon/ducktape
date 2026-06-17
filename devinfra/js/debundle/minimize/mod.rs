@@ -87,11 +87,17 @@ fn render_via_read_off(
         .get(decl.body_idx)
         .context("read-off body index no longer in module")?;
 
-    // Primary read-off: the single minimal anchor set. When its value anchor
-    // renders to a holed selector that proves uniquely, keep it.
+    // Primary read-off: the minimal anchor set. Keep it when its holed selector
+    // proves uniquely — except the degenerate case of a single (OPT=1) feature that
+    // occurs *several times* in the target (e.g. the literal `0`, which also hides
+    // inside `void 0`): pinning it keeps every occurrence and drags in unrelated
+    // members, so a multi-occurrence single anchor defers to the value-anchor walk
+    // below, which prefers a single-occurrence leaf. A genuine multi-feature cover
+    // (`!opt_one`) legitimately keeps several spans and is taken here.
     if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
         let kept = kept_spans_for_anchor_set(item, &anchor_set);
         if !kept.is_empty()
+            && (!anchor_set.opt_one || kept.len() == 1)
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
         {
@@ -99,23 +105,26 @@ fn render_via_read_off(
         }
     }
 
-    // Robustness-anchor fallback: the minimal anchor's *value* may not survive
-    // holing — a deep literal whose only occurrence sits inside a large statement
-    // the holer keeps verbatim leaves raw subtrees the matcher rejects, and a
-    // structural-only minimal set keeps nothing at all. Rather than collapse to
-    // the degenerate scaffold, walk the target's individually-discriminating value
-    // anchors best-first and emit the first whose holed selector proves uniquely.
-    // This is what drills a whole-body class/component down to one anchored member
-    // (e.g. `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`,
-    // anchoring on the `"running"` literal) instead of `class X { CLASS_REST }`.
-    for anchor_set in index
+    // Robustness-anchor fallback: walk the target's individually-discriminating
+    // value anchors, preferring those that pin the *fewest* source spans (a
+    // single-occurrence leaf over a literal repeated across the body), then by the
+    // shape index's rank (stable sort keeps the rank order within a span count).
+    // Emit the first whose holed selector proves uniquely. The minimal anchor's
+    // value may not survive holing (a deep literal whose only home is a large
+    // statement the holer keeps verbatim leaves raw subtrees the matcher rejects),
+    // so this is also where a whole-body class/component drills down to one anchored
+    // member (e.g. `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`)
+    // instead of `class X { CLASS_REST }`.
+    let mut value_kept: Vec<BTreeSet<AnchorSpan>> = index
         .shape_index
         .unique_value_anchor_candidates(decl.body_idx)
-    {
-        let kept = kept_spans_for_anchor_set(item, &anchor_set);
-        if !kept.is_empty()
-            && let Some(selector) =
-                finish_minimized_selector(index, decl, target, render_with(&kept)?)?
+        .into_iter()
+        .map(|anchor_set| kept_spans_for_anchor_set(item, &anchor_set))
+        .filter(|kept| !kept.is_empty())
+        .collect();
+    value_kept.sort_by_key(BTreeSet::len);
+    for kept in value_kept {
+        if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
         {
             return Ok(Some(selector));
         }
