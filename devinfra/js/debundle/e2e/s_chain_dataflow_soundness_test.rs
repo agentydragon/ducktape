@@ -29,15 +29,6 @@ fn dataflow_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) 
     FixtureOpts::new(source, logical_modules).with_dataflow_aware_s_chain()
 }
 
-fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
-        .unwrap_or_else(|| panic!("no owner-graph node declares binding `{binding}`"));
-    node.id.as_str()
-}
-
 fn owner_for_ordinal(graph: &OwnerGraphReport, ordinal: usize) -> &str {
     let node = graph
         .nodes

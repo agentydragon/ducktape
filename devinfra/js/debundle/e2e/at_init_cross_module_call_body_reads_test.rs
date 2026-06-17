@@ -59,21 +59,6 @@ console.log(triggerInit);
 export { iA, triggerInit, gR, crossModBinding };
 "#;
 
-fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
-        .unwrap_or_else(|| {
-            panic!(
-                "no owner-graph node declares binding `{binding}`; \
-                 nodes: {:#?}",
-                graph.nodes,
-            )
-        });
-    node.id.as_str()
-}
-
 fn module_id_for<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
     let owner_id = owner_for_binding(graph, binding);
     let node = graph

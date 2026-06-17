@@ -103,21 +103,6 @@ fn trusted_dataflow_opts<'a>(
     dataflow_opts(source, logical_modules).with_trusted_dataflow_summaries()
 }
 
-fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
-        .unwrap_or_else(|| {
-            panic!(
-                "no owner-graph node declares binding `{binding}`; \
-                 nodes: {:#?}",
-                graph.nodes,
-            )
-        });
-    node.id.as_str()
-}
-
 fn sequenced_edges_between<'a>(
     graph: &'a OwnerGraphReport,
     a: &str,

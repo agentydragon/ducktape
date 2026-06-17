@@ -3,6 +3,7 @@
 //! Drives the CLI through a YAML spec and asserts on the emitted file
 //! tree by reading files and re-running them under `node`.
 
+use analysis::OwnerGraphReport;
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -1448,6 +1449,23 @@ pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
             },
         ],
     })
+}
+
+/// Owner-graph node id that declares `binding`, panicking (with the node dump)
+/// if none does.
+pub fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
+        .unwrap_or_else(|| {
+            panic!(
+                "no owner-graph node declares binding `{binding}`; \
+                 nodes: {:#?}",
+                graph.nodes,
+            )
+        });
+    node.id.as_str()
 }
 
 /// Owner graph for a two-statement atomic unit: `alpha` and `beta` mutually

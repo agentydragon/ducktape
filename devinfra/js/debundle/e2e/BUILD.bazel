@@ -13,6 +13,7 @@ rust_library(
     ],
     edition = "2024",
     deps = [
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -25,9 +26,10 @@ rust_library(
 )
 
 # Standard e2e tests: shell out to the built debundler binary against
-# a fixture spec and assert on the emitted artifact tree. They do not
-# call into the `:analysis` Rust library — splitting that dep off
-# avoids dragging the library through every test's compile graph.
+# a fixture spec and assert on the emitted artifact tree. `:support`
+# depends on `:analysis` (for typed owner-graph helpers like
+# `owner_for_binding`), so it reaches every test transitively; tests that
+# name `analysis::` types directly still list `:analysis` themselves.
 _STANDARD_E2E_DEPS = [
     ":support",
     "@crates//:serde",
