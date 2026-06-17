@@ -3,4 +3,4 @@ const ErrorPanelStyles = {
     logViewer: ANYTHING,
     ANYTHING,
   },
-  DECLARATORS_AFTER = null;
+  DECLARATORS = null;

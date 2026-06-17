@@ -1588,14 +1588,13 @@ fn render_var_group_selector(
     let mut parts = Vec::new();
     let mut holes = Vec::new();
     let mut skipped_run = 0usize;
-    let mut target_seen = 0usize;
     for (idx, declarator) in var.decls.iter().enumerate() {
         if !target_decl_indices.contains(&idx) {
             skipped_run += 1;
             continue;
         }
         if skipped_run > 0 {
-            let hole = declarator_hole_name(target_seen, target_decl_indices.len());
+            let hole = declarator_hole_name();
             parts.push(format!("{hole} = null"));
             holes.push(hole.to_string());
             skipped_run = 0;
@@ -1612,10 +1611,9 @@ fn render_var_group_selector(
             runtime_name,
             export_name,
         )?);
-        target_seen += 1;
     }
     if skipped_run > 0 {
-        let hole = declarator_hole_name(target_seen, target_decl_indices.len());
+        let hole = declarator_hole_name();
         parts.push(format!("{hole} = null"));
         holes.push(hole.to_string());
     }
@@ -1628,12 +1626,12 @@ fn render_var_group_selector(
     ))
 }
 
-fn declarator_hole_name(target_seen: usize, target_count: usize) -> &'static str {
-    match (target_seen, target_count) {
-        (0, _) => "DECLARATORS_BEFORE",
-        (seen, total) if seen == total => "DECLARATORS_AFTER",
-        _ => "DECLARATORS_BETWEEN",
-    }
+/// The declarator-run hole for a binding-group selector. The matcher treats every
+/// `DECLARATORS` / `DECLARATORS_*` run hole identically — the positional suffix is
+/// not equality-binding (only used in human-facing hint text) — so the renderer
+/// always emits the plain keyword. (Suffixed forms remain accepted on input.)
+fn declarator_hole_name() -> &'static str {
+    DECLARATORS_HOLE_KEYWORD
 }
 
 fn render_var_declarator_selector(

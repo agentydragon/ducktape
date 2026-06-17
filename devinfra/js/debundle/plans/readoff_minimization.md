@@ -192,14 +192,22 @@ keyword to read. Anonymous `EXPR` / `STMT` were already emitted as bare `ANYTHIN
 `ARGS`, `STMT_LIST`, and `CASE_REST` stay load-bearing keywords — a bare `ANYTHING`
 in those positions collapses to an arity-exact single-node `EXPR`/`STMT` hole (or,
 for `CASE_REST`, has no spelling), so emitting `ANYTHING` there would be a
-correctness regression. `OBJECT_PROPS` / `CLASS_REST` / suffixed `DECLARATORS_*`
-remain accepted-but-not-emitted sugar: the matcher and `holes_present` still
-recognize them, so hand-written input selectors keep working, and the renderer
-never emits an anonymous `DECLARATORS` (it always carries a positional
-`_BEFORE`/`_BETWEEN`/`_AFTER` suffix). Equivalence is pinned by the matcher
-interchangeability tests in `syntactic_holes_test.rs`
+correctness regression. Declarator-run gaps now render as **plain `DECLARATORS`**
+(the positional `_BEFORE`/`_BETWEEN`/`_AFTER` suffix was readability-only — the
+matcher checks `declarator_list_hole_name(..).is_some()` and never reads the
+suffix — so it was dropped; the parser tolerates duplicate-named declarator holes,
+so a both-sides gap renders `const DECLARATORS = null, …, DECLARATORS = null`).
+`OBJECT_PROPS` / `CLASS_REST` / suffixed `DECLARATORS_*` remain
+accepted-but-not-emitted sugar: the matcher and `holes_present` still recognize
+them, so hand-written input selectors keep working. Equivalence is pinned by the
+matcher interchangeability tests in `syntactic_holes_test.rs`
 (`{object_props,declarators,class_rest}_and_anything_are_interchangeable_run_absorbers`)
-and the re-baselined `selector_minimizer_expectations` fixtures.
+and the re-baselined `selector_minimizer_expectations` fixtures. **Follow-up
+(GitHub #2327, gated on the dogfood re-apply):** drop these redundant keywords
+from the _accepted_ set too — a breaking change requiring every downstream
+selector (gaffer-private, pinned release) to be migrated first, then the keywords
+
+- matcher branches + interchangeability tests removed and the pin bumped.
 
 **Strangler-fig boundary.** The matcher-driven branch-and-bound cover search
 (`minimize_via_retention`, `cover_competitors`, `min_set_cover`, and the
@@ -442,9 +450,10 @@ Mechanical and unambiguous given the table — the renderer (`render.rs` /
   single-node hole (a correctness regression), and `CASE_REST` has no `ANYTHING`
   form. These keywords stay load-bearing.
 
-`OBJECT_PROPS` / `DECLARATORS` / `CLASS_REST` remain accepted-but-not-emitted
-sugar (matcher + `holes_present` still recognize them); a separate sweep could
-deprecate them later, but that is out of scope here.
+`OBJECT_PROPS` / `CLASS_REST` / suffixed `DECLARATORS_*` remain
+accepted-but-not-emitted sugar (matcher + `holes_present` still recognize them;
+the minimizer emits `ANYTHING` and plain `DECLARATORS`). Dropping them from the
+accepted set is tracked as #2327, gated on the dogfood migration.
 
 ### Matcher gap note
 

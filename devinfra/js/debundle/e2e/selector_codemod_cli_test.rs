@@ -853,7 +853,7 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
         );
         // Re-baselined: the unified group path reports holes via the canonical
         // `holes_present` extractor, which records the bare `DECLARATORS` keyword
-        // (the match source below still emits the specific `DECLARATORS_BETWEEN`).
+        // (the match source below still emits a `DECLARATORS` gap declarator).
         assert!(
             candidate["rewritten_holes"]
                 .as_array()
@@ -874,7 +874,7 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     // literal in either target slot, the group escalates to the whole structural
     // (object-key) tier, so both slots keep their `stableX`/`volatileX` keys
     // rather than the exact-minimum `stableX` alone. The skipped middle
-    // declarator still collapses to a `DECLARATORS_BETWEEN` gap and each slot
+    // declarator still collapses to a `DECLARATORS` gap and each slot
     // keeps its discriminating stable key.
     assert!(
         match_source.contains("stableA:"),
@@ -885,7 +885,7 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
         "slot B stable key should remain to distinguish it from the skipped declarator:\n{match_source}"
     );
     assert!(
-        match_source.contains("DECLARATORS_BETWEEN"),
+        match_source.contains("DECLARATORS"),
         "irrelevant middle declarator should become a gap:\n{match_source}"
     );
     assert!(
@@ -982,7 +982,7 @@ fn synthesize_selectors_dry_run_reports_grouped_unique_evidence() {
         assert_eq!(candidate["candidate_count"], 1, "{candidate}");
         // Re-baselined: the unified group path reports holes via the canonical
         // `holes_present` extractor, which records the bare `DECLARATORS` keyword
-        // (the match source still emits the specific `DECLARATORS_BEFORE` gap).
+        // (the match source still emits a leading `DECLARATORS` gap declarator).
         assert!(
             candidate["rewritten_holes"]
                 .as_array()
@@ -1103,10 +1103,7 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
     assert_eq!(groups.len(), 1, "{doc:?}");
     let group = &groups[0];
     let match_source = group["source_match"]["match"].as_str().unwrap();
-    assert!(
-        match_source.contains("DECLARATORS_BEFORE"),
-        "{match_source}"
-    );
+    assert!(match_source.contains("DECLARATORS"), "{match_source}");
     // The bare `buildConfig` callee holes to ANYTHING (a minified name the matcher
     // alpha-wildcards); each slot is still kept as its own named declarator.
     assert!(

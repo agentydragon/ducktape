@@ -1,7 +1,7 @@
-const DECLARATORS_BEFORE = null,
+const DECLARATORS = null,
   SelectedPalette = {
     ANYTHING,
     accent: "uniqueDiscriminatorAccent",
     ANYTHING,
   },
-  DECLARATORS_AFTER = null;
+  DECLARATORS = null;

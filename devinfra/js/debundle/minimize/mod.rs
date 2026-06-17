@@ -275,17 +275,13 @@ fn render_var_slots(
 ) -> Result<String> {
     let mut decls: Vec<VarDeclarator> = Vec::new();
     let mut skipped_run = false;
-    let mut target_seen = 0usize;
     for (idx, declarator) in var.decls.iter().enumerate() {
         if !target_slots.contains(&idx) {
             skipped_run = true;
             continue;
         }
         if skipped_run {
-            decls.push(declarator_hole(declarator_hole_name(
-                target_seen,
-                target_slots.len(),
-            )));
+            decls.push(declarator_hole(declarator_hole_name()));
             skipped_run = false;
         }
         let name = single_ident_pat_name(&declarator.name)
@@ -302,13 +298,9 @@ fn render_var_slots(
             Box::new(holed_init)
         });
         decls.push(holed);
-        target_seen += 1;
     }
     if skipped_run {
-        decls.push(declarator_hole(declarator_hole_name(
-            target_seen,
-            target_slots.len(),
-        )));
+        decls.push(declarator_hole(declarator_hole_name()));
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

@@ -357,7 +357,7 @@ minimizer_expectation_case!(
 // target declarator slot's minimal anchor off the shape index + a slot-aware
 // greedy, restricts the kept spans to that slot, UNIONs them, and proves the
 // tuple through the binding-group matcher — so each slot pins only its
-// discriminating key with `OBJECT_PROPS` for the gaps and `DECLARATORS_AFTER` for
+// discriminating key with `OBJECT_PROPS` for the gaps and a `DECLARATORS` gap for
 // the non-target third declarator, instead of the keep-shallow path's over-pin
 // (which, with every value already a non-literal member access, would escalate to
 // keeping *every* key of both target objects). The per-slot declarator-tuple
@@ -509,7 +509,7 @@ minimizer_expectation_case!(
 // with OBJECT_PROPS holes for the rest, and DECLARATORS holes for the sibling
 // declarators, instead of keeping every key of the target object. Mirrors the
 // real gaffer CSS-styles dicts (`{ diagnosticsSection: …, detailsToggle: …, … }`)
-// kept whole inside `DECLARATORS_BEFORE`/`_AFTER` groups.
+// kept whole inside `DECLARATORS`-bracketed groups.
 minimizer_expectation_case!(
     minimizes_object_key_set_group,
     fixture = "object_key_set_group",
