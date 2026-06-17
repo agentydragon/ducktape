@@ -362,9 +362,10 @@ fn try_var_group_read_off(
 
 /// Up to `limit` ranked candidate selectors for a `var` declaration — the
 /// `synthesize-selectors --candidates N` menu. A single-target object or non-object
-/// var slot returns its read-off menu; the multi-declarator binding-group and
-/// keep-shallow paths are not yet menu-aware and yield only the single pick
-/// (tracked in `TODO.md`). `limit == 1` reproduces [`minimize_var_group_selector`].
+/// var slot returns its read-off menu; a multi-declarator binding group returns the
+/// sparse union-minimal tuple plus the keep-shallow tuple as a robustness
+/// alternative ([`group_read_off_candidates`]). `limit == 1` reproduces
+/// [`minimize_var_group_selector`].
 pub(crate) fn minimize_var_group_selector_candidates(
     index: &ChunkSelectorIndex,
     var: &VarDecl,
@@ -404,10 +405,39 @@ pub(crate) fn minimize_var_group_selector_candidates(
             return Ok(var_candidates);
         }
     }
-    // Multi-target binding-group / keep-shallow: menu not yet wired — single pick.
-    Ok(minimize_var_group_selector(index, var, decl, targets)?
-        .into_iter()
-        .collect())
+    // Multi-target binding-group (and the single-target case that fell through the
+    // object / non-object read-off menus): the sparse union-minimal tuple, then the
+    // keep-shallow tuple as a robustness alternative.
+    group_read_off_candidates(index, var, decl, targets, &target_slots, limit)
+}
+
+/// Up to `limit` ranked binding-group selectors: the sparse union-minimal tuple
+/// ([`try_var_group_read_off`]) first, then the keep-shallow tuple
+/// ([`keep_shallow_group_selector`]) as a robustness alternative, deduped by
+/// source. `limit == 1` reproduces the single pick [`minimize_var_group_selector`]
+/// returns for the group / fell-through path (group read-off, else keep-shallow).
+fn group_read_off_candidates(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    target_slots: &BTreeSet<usize>,
+    limit: usize,
+) -> Result<Vec<SpecializedSelector>> {
+    let mut out: Vec<SpecializedSelector> = Vec::new();
+    if let Some(selector) = try_var_group_read_off(index, var, decl, targets, target_slots)? {
+        out.push(selector);
+    }
+    if out.len() < limit
+        && let Some(selector) =
+            keep_shallow_group_selector(index, var, decl, targets, target_slots)?
+        && !out
+            .iter()
+            .any(|kept| kept.match_source == selector.match_source)
+    {
+        out.push(selector);
+    }
+    Ok(out)
 }
 
 /// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
@@ -489,16 +519,39 @@ pub(crate) fn minimize_var_group_selector(
         return Ok(Some(selector));
     }
 
-    // Keep-shallow render via the shared var-slot renderer. Unlike the read-off
-    // paths, the keep-shallow path holes every init (objects included) through
-    // plain [`hole_expr`] — an object init holes via [`hole_object`] (list hole
-    // only where a run dropped), not the padded key-set form.
+    // Keep-shallow cover (with enclosing-context fallback): the robustness path
+    // when no read-off form singled the group out.
+    keep_shallow_group_selector(index, var, decl, targets, &target_slots)
+}
+
+/// Keep-shallow cover for a binding group: keep each target slot's shallow
+/// literal anchors, escalating to structural / deeper tiers only if the group
+/// does not yet resolve uniquely to the right bindings. Unlike the read-off
+/// paths, it holes every init (objects included) through plain [`hole_expr`] (an
+/// object init holes via `hole_object` — list hole only where a run dropped — not
+/// the padded key-set form). The robustness-favoring counterpart to the sparse
+/// [`try_var_group_read_off`]; for a single target that no anchor set singles out,
+/// falls back to enclosing-context anchoring. Returns `None` for a multi-target
+/// residual no cover resolves.
+fn keep_shallow_group_selector(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    target_slots: &BTreeSet<usize>,
+) -> Result<Option<SpecializedSelector>> {
+    let export_for = |runtime: &str| {
+        targets
+            .iter()
+            .find(|target| target.runtime_binding == runtime)
+            .map(|target| target.export_name.clone())
+    };
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
         render_var_slots(
             var,
-            &target_slots,
+            target_slots,
             &export_for,
             kept,
             regex_anchors,

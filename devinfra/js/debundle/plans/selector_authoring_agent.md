@@ -178,8 +178,9 @@ reads them as a menu to override an incidental anchor with a purpose-bearing one
 read-off walk now collects the top-N proving anchor sets (`read_off_candidates`, with
 `limit == 1` reproducing the single pick); the extras beyond the primary surface as
 `alternatives` on each report candidate, and the primary's own `match_source` is now in
-the report too. Covers the function/class and single-target var/object read-off forms;
-the multi-declarator binding-group menu is still single-pick (tracked in `TODO.md`).
+the report too. Covers every read-off form: function/class, single-target var/object
+(each with its value-anchor extras), and the multi-declarator binding group (the sparse
+union-minimal tuple plus the keep-shallow tuple as a robustness alternative).
 
 Both commands follow the
 [automated spec workflows](automated_spec_workflows.md) contract: `--format
@@ -292,10 +293,10 @@ way it dispatches naming/extraction lanes.
 ## Open questions / milestones
 
 - **M1 — read-only primitives — complete.** `match-selector` (hypothesis-test probe +
-  over-pin slack, value + structural, now incl. top-level context-statement and
-  destructure-pattern-property drops) **landed** (#2335); `synthesize-selectors
---candidates N` (the ranked-candidate menu) **landed** (#2339). Residue tracked in
-  `TODO.md`: the candidates menu for multi-declarator var groups.
+  over-pin slack, value + structural incl. top-level context-statement and
+  destructure-pattern-property drops) **landed** (#2335/#2345); `synthesize-selectors
+--candidates N` (the ranked-candidate menu, across every read-off form incl. the
+  binding-group tuple) **landed** (#2339 + binding-group menu). No residue.
 - **M2 — the skill.** Loop + playbook + anonymized fixtures. The `debundle_stabilize`
   skill **landed** (#2332); grounding its playbook entries with tested fixtures is
   still open.

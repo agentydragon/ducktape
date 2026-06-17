@@ -1487,3 +1487,79 @@ fn synthesize_selectors_var_object_candidates_reports_value_anchor_menu() {
         "the menu surfaces the surface value anchor: {parsed}"
     );
 }
+
+#[test]
+fn synthesize_selectors_binding_group_candidates_offers_keep_shallow_alternative() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunks/app.js");
+    // A two-declarator binding group (both targets in one `const`). Each slot's
+    // leading string is globally unique, so the sparse union-minimal tuple pins
+    // just those strings (holing the numeric args via ARGS), while the keep-shallow
+    // tuple keeps every shallow literal — two genuinely different group selectors.
+    write_text_file(
+        &source,
+        concat!(
+            "const widgetA = buildWidget(\"alpha-tag\", 11, 22),\n",
+            "  widgetB = buildWidget(\"beta-tag\", 33, 44);\n",
+            "export { widgetA, widgetB };\n",
+        ),
+    );
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/widgets.yaml"),
+        r#"members:
+  - name: WidgetA
+    selector:
+      binding:
+        name: widgetA
+  - name: WidgetB
+    selector:
+      binding:
+        name: widgetB
+"#,
+    );
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/widgets:WidgetA",
+            "--item",
+            "app/widgets:WidgetB",
+            "--candidates",
+            "2",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    // The two members share a declaration, so they synthesize as one binding group;
+    // its candidate carries the keep-shallow tuple as a ranked alternative.
+    let candidate = parsed["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| {
+            candidate
+                .get("alternatives")
+                .and_then(|alternatives| alternatives.as_array())
+                .is_some_and(|alternatives| !alternatives.is_empty())
+        })
+        .unwrap_or_else(|| panic!("no binding-group candidate with a menu: {parsed}"));
+    let primary = candidate["match_source"].as_str().unwrap();
+    // Each alternative is a distinct group selector binding both targets (the
+    // keep-shallow tuple keeps the numeric args the union-minimal primary holes).
+    for alternative in candidate["alternatives"].as_array().unwrap() {
+        let alt = alternative["match_source"].as_str().unwrap();
+        assert_ne!(
+            alt, primary,
+            "alternative must differ from the primary: {candidate}"
+        );
+        assert!(
+            alt.contains("WidgetA") && alt.contains("WidgetB"),
+            "each alternative is a group selector for both targets: {alt}"
+        );
+    }
+}

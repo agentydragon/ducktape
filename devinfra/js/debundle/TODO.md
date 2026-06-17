@@ -69,9 +69,9 @@ One-line status for each `plans/` design doc; this is the discovery index.
   agent task: the `debundle_stabilize` skill picks forward-compatible anchors; the
   minimizer is demoted to suggester + uniqueness oracle. Plan + skill landed (#2332);
   **M1 read-only primitives complete** — `match-selector` query + over-pin slack
-  (#2335) and `synthesize-selectors --candidates N` ranked menu (#2339). Open: ground
-  the skill playbook with tested fixtures (M2), port-based evaluation (M3), and the
-  selector-authoring tooling gaps below.
+  (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
+  menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
+  playbook with tested fixtures (M2) and port-based evaluation (M3).
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
@@ -271,19 +271,6 @@ reading source files. This is conditional on hitting that cost; not yet
 observed. (The `owner:<id>`-in-spec-notes framing that used to live here was
 stale — no such mechanism exists; `owner:N` ids are machine-generated graph
 keys and a `describe`/`show-source` input, not a spec authoring hint.)
-
-## Selector-authoring tooling gaps (M1 residue)
-
-The read-only authoring primitives landed (`match-selector` #2335,
-`synthesize-selectors --candidates N` #2339). Known gaps, each a follow-up:
-
-- **`--candidates N` menu for multi-declarator var binding groups.** The
-  ranked menu covers the function/class and single-target var/object read-off
-  forms (`read_off_candidates`, `try_var_read_off`, `try_object_read_off`). The
-  multi-target binding-group path (`try_var_group_read_off` + the keep-shallow
-  fallback) is tuple-shaped and still returns only the single pick;
-  `synthesize_specialized_selector_candidates` falls back to single for it.
-  Collecting a ranked tuple menu there is the remaining wiring.
 
 ## Structural selector language
 
