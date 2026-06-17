@@ -16,6 +16,7 @@ use lowering::{
     materialize_logical_modules,
 };
 use prepare_chunks::prepare_js_chunks;
+use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
@@ -347,6 +348,15 @@ pub fn run_transform_cli_with_options(
         spec.swap_vendor_chunks.output_manifest_path.as_deref(),
         &vendor_report,
     )?;
+
+    // Trim dead named import specifiers across the whole bundle (entry
+    // included): the lowerer over-imports residual/hub bindings the
+    // importing file never references. Runs immediately before the
+    // export prune so that dropping a dead import — which the
+    // name-based export prune would otherwise treat as a live consumer —
+    // cascades into dropping the now-unimported module exports. See
+    // prune_dead_imports.rs for the soundness argument.
+    prune_dead_import_specifiers(&mut artifact);
 
     // Drop dead named exports from emitted logical-module files: a
     // module-owned binding referenced nowhere outside its own module

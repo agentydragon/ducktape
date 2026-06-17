@@ -344,6 +344,26 @@ rust_test(
 )
 
 rust_library(
+    name = "prune_dead_imports",
+    srcs = ["prune_dead_imports.rs"],
+    crate_root = "prune_dead_imports.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        "@crates//:swc_atoms",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "prune_dead_imports_test",
+    crate = ":prune_dead_imports",
+    edition = "2024",
+    deps = [":js_ast"],
+)
+
+rust_library(
     name = "emit_harness",
     srcs = ["emit_harness.rs"],
     compile_data = ["//devinfra/js/debundle/live_proxy:harness_monitor.html"],
@@ -915,6 +935,7 @@ rust_library(
         ":lowering",
         ":output_layout",
         ":prepare_chunks",
+        ":prune_dead_imports",
         ":prune_module_exports",
         ":spec",
         ":spec_tree",
