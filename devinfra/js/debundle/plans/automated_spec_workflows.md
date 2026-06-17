@@ -144,6 +144,13 @@ use the same cost model, comparing one `binding_groups` selector against repeate
 member selectors and splitting when one huge selector would need long exact
 bodies or volatile initializers to be unique.
 
+**Reframe (see <selector_authoring_agent.md>).** The cost model ranks and _proves_
+candidates but does not _choose_ the anchor: picking a purpose-bearing,
+forward-compatible anchor over a merely-unique one (the `name`-key vs `"running"`
+problem) is an intelligence task delegated to an agent, with the minimizer demoted
+to a suggester and the prove-gate kept as the validity oracle. The over-pin backlog
+below is then about better _defaults_, not about spec quality.
+
 ### Patch Plans
 
 Bulk tools should produce a machine-readable plan before mutating YAML:
