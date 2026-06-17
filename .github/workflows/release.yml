@@ -64,8 +64,8 @@ jobs:
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
             tests: ""
           - pkg: skills
-            target: //skills:all_skills_tar
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills_tar.tar
+            target: //skills:all_skills
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills.skill
             tests: //skills/... //cluster/skills/...
           - pkg: bbapi
             target: //devinfra/buildbuddy_cli:bbapi

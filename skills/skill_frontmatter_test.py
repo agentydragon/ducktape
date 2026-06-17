@@ -1,5 +1,5 @@
 import os
-import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest_bazel
@@ -7,20 +7,18 @@ import pytest_bazel
 from skills.frontmatter_validation import validate_skill_frontmatter_text
 
 
-def test_frontmatter_tarballs() -> None:
-    tar_path = os.environ.get("SKILL_TAR")
-    assert tar_path, "expected SKILL_TAR env var"
+def test_frontmatter_archives() -> None:
+    archive_path = os.environ.get("SKILL_ARCHIVE")
+    assert archive_path, "expected SKILL_ARCHIVE env var"
 
-    tarball = Path(tar_path)
-    with tarfile.open(tarball) as archive:
-        skill_members = [member for member in archive.getmembers() if member.name.endswith("/SKILL.md")]
+    archive = Path(archive_path)
+    with zipfile.ZipFile(archive) as zf:
+        skill_members = [name for name in zf.namelist() if name.endswith("/SKILL.md")]
 
-        assert skill_members, f"{tarball}: expected at least one SKILL.md in packaged tar"
+        assert skill_members, f"{archive}: expected at least one SKILL.md in packaged archive"
 
-        for member in skill_members:
-            extracted = archive.extractfile(member)
-            assert extracted is not None, f"{tarball}: could not read {member.name}"
-            validate_skill_frontmatter_text(extracted.read().decode(), source=f"{tarball}:{member.name}")
+        for name in skill_members:
+            validate_skill_frontmatter_text(zf.read(name).decode(), source=f"{archive}:{name}")
 
 
 if __name__ == "__main__":

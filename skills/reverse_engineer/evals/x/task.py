@@ -48,15 +48,16 @@ from inspect_ai.tool import Tool, ToolDef, bash, tool
 from inspect_ai.util import SandboxEnvironmentSpec, sandbox
 from pydantic import TypeAdapter, ValidationError
 
+from skills.eval_infra.skill_staging import stage_skill
+from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as RE_SKILL_SPEC
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
-# Runfiles paths for the specimen artifacts and skill tar produced by the
-# Bazel macros (`garble_binary`, `skill_package`).
+# Runfiles paths for the specimen artifacts produced by the Bazel macros
+# (`garble_binary`); the skill archive comes from the generated
+# `RE_SKILL_SPEC` (`skill_package`).
 _TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
-_SKILL_TAR_RLOCATION = "_main/skills/reverse_engineer/reverse_engineer_tar.tar"
-_SKILL_PACKAGE_NAME = "reverse_engineer"
 _COMPOSE_RLOCATION = "_main/skills/reverse_engineer/evals/x/compose.yaml"
 _SPECIMEN_DIR_RLOCATION = "_main/skills/reverse_engineer/evals/tasks/go_crypto_server"
 _RUBRIC_RLOCATION = f"{_SPECIMEN_DIR_RLOCATION}/RUBRIC.yaml"
@@ -113,16 +114,13 @@ access; install whatever you need (`apt-get install -y ...`,
 
 
 def _stage_skill() -> Path:
-    """Extract the reverse_engineer skill tar to a temp dir and return the
+    """Extract the reverse_engineer skill to a temp dir and return the
     directory holding SKILL.md (i.e. `<tmp>/<package_name>`)."""
-    tar_path = get_required_path(_SKILL_TAR_RLOCATION)
     # Persistent temp dir — must outlive the task() call because Sample.files
     # paths are resolved at sample setup time (after task() returns). The
     # process exit cleans it up.
     dest = Path(tempfile.mkdtemp(prefix="re_eval_skill_"))
-    with tarfile.open(tar_path) as tf:
-        tf.extractall(dest, filter="data")
-    return dest / _SKILL_PACKAGE_NAME
+    return stage_skill(RE_SKILL_SPEC, dest).files_path
 
 
 def _stage_target_binary() -> Path:

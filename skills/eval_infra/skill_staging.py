@@ -1,13 +1,13 @@
 """Skill staging for skill-eval rollouts.
 
 Eval rollouts pick a generated ``SPEC: SkillSpec`` and call
-`stage_skill` to extract the packaged skill tar into a host directory
+`stage_skill` to extract the packaged `.skill` zip into a host directory
 ready to bind into the agent's scratch container (see
 `eval_sandbox.SKILL_PATH`). Extraction lives in this module — there is
 no per-skill staging code.
 """
 
-import tarfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,10 +31,10 @@ class StagedSkill:
 
 
 def stage_skill(spec: SkillSpec, dest_dir: Path) -> StagedSkill:
-    """Extract `spec`'s tar into `dest_dir` and return the staged skill."""
-    tar_path = get_required_path(spec.tar_rlocation)
-    with tarfile.open(tar_path) as tf:
-        tf.extractall(dest_dir, filter="data")
+    """Extract `spec`'s `.skill` zip into `dest_dir` and return the staged skill."""
+    archive_path = get_required_path(spec.archive_rlocation)
+    with zipfile.ZipFile(archive_path) as zf:
+        zf.extractall(dest_dir)
     files_path = dest_dir / spec.package_name
     md_text = (files_path / "SKILL.md").read_text()
     return StagedSkill(md_text=md_text, files_path=files_path)

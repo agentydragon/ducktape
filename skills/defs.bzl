@@ -2,8 +2,8 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
@@ -31,18 +31,19 @@ def _validated_skill_md(name, entry_idx, src_idx, src):
     )
     return ":" + target
 
-def skill_spec_library(name, tar_basename, package_name, visibility = None):
-    """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill tar.
+def skill_spec_library(name, archive_basename, package_name, visibility = None):
+    """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill archive.
 
     Eval rollouts import `<pkg>.<name>.SPEC` and pass it to `stage_skill(...)`
-    to mount the skill into a sandbox container. The tar at
-    `:{tar_basename}` is added as a runtime data dep.
+    to mount the skill into a sandbox container. The `.skill` zip produced by
+    `:{archive_basename}` is added as a runtime data dep.
 
     Args:
         name: py_library + module name (e.g. "info_gathering_skill_spec").
-        tar_basename: pkg_tar target name in the same package, without ":".
-        package_name: directory the tar's contents are prefixed with (the
-            `package_dir` passed to pkg_tar / skill_package's `name`).
+        archive_basename: pkg_zip target name in the same package, without ":".
+            Its output filename is `{archive_basename without "_skill"}.skill`.
+        package_name: directory the archive's contents are prefixed with (the
+            skill_package's `name`).
         visibility: visibility override (default //visibility:public).
     """
     spec_src = name + ".py"
@@ -55,7 +56,7 @@ def skill_spec_library(name, tar_basename, package_name, visibility = None):
             "from skills.skill_spec import SkillSpec",
             "",
             "SPEC = SkillSpec(",
-            '    tar_rlocation="_main/{}/{}.tar",'.format(native.package_name(), tar_basename),
+            '    archive_rlocation="_main/{}/{}.skill",'.format(native.package_name(), package_name),
             '    package_name="{}",'.format(package_name),
             ")",
             "",
@@ -64,7 +65,7 @@ def skill_spec_library(name, tar_basename, package_name, visibility = None):
     py_library(
         name = name,
         srcs = [spec_src],
-        data = [":" + tar_basename],
+        data = [":" + archive_basename],
         visibility = visibility or ["//visibility:public"],
         deps = [_SKILL_SPEC_LIB],
     )
@@ -137,19 +138,29 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
         )
         packaged_targets.append(":" + pkg_name)
 
-    pkg_tar(
-        name = name + "_tar",
+    # Re-root the packaged files under `name/` here (pkg_zip has no
+    # package_dir attr). The combined `//skills:all_skills` archive in another
+    # package consumes this filegroup directly — pkg_zip can't merge other zips
+    # the way pkg_tar merges tars via `deps` — so it must be public.
+    pkg_filegroup(
+        name = name + "_files",
         srcs = packaged_targets,
-        package_dir = name,
+        prefix = name,
+        visibility = visibility or ["//visibility:public"],
+    )
+    pkg_zip(
+        name = name + "_skill",
+        srcs = [":" + name + "_files"],
+        out = name + ".skill",
         visibility = visibility or ["//visibility:public"],
     )
     py_test(
         name = name + "_frontmatter_test",
         main_module = "skills.skill_frontmatter_test",
-        data = [":" + name + "_tar"],
+        data = [":" + name + "_skill"],
         deps = [_FRONTMATTER_TEST_LIB],
         env = {
-            "SKILL_TAR": "$(location :{})".format(name + "_tar"),
+            "SKILL_ARCHIVE": "$(location :{})".format(name + "_skill"),
         },
         visibility = visibility or ["//visibility:public"],
     )
@@ -161,7 +172,7 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
 
     skill_spec_library(
         name = name + "_skill_spec",
-        tar_basename = name + "_tar",
+        archive_basename = name + "_skill",
         package_name = name,
         visibility = visibility,
     )

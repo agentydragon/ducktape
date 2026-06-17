@@ -11,13 +11,14 @@ import dataclasses
 import json
 import logging
 import shutil
-import tarfile
 import time
 from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, UserMessage, query
 
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
+from skills.eval_infra.skill_staging import stage_skill
+from skills.freecad.freecad_skill_spec import SPEC as FREECAD_SKILL_SPEC
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 
@@ -26,7 +27,6 @@ logger = logging.getLogger(__name__)
 FREECAD_TEST = OciImage("_main/skills/freecad/eval/freecad_test.rloc", "freecad-test:pinned")
 TASK_MD = "_main/skills/freecad/eval/baseplate/TASK.md"
 DOCKER_LAUNCHER = "_main/mcp_infra/exec/docker_launcher"
-SKILL_TAR = "_main/skills/freecad/freecad_tar.tar"
 
 CONTAINER_WORKSPACE = Path("/workspace")
 CONTAINER_SKILL_DIR = Path("/skill")
@@ -59,23 +59,19 @@ async def run(output_dir: Path, model: str) -> None:
     workspace = output_dir / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
 
-    # Extract skill tarball into a host directory for bind-mounting.
-    # Uses the tar (not the raw filegroup) to get exactly the skill package
-    # contents without test/eval files that share the same runfiles subtree.
-    skill_tar_path = get_required_path(SKILL_TAR)
+    # Extract the skill into a host directory for bind-mounting. Uses the
+    # packaged `.skill` archive (via the generated SkillSpec) to get exactly
+    # the skill package contents without test/eval files that share the same
+    # runfiles subtree.
     skill_host_dir = output_dir / "skill"
     if skill_host_dir.exists():
         shutil.rmtree(skill_host_dir)
-    skill_host_dir.mkdir(parents=True)
-    with tarfile.open(skill_tar_path) as tf:
-        tf.extractall(skill_host_dir, filter="data")
-    logger.info("Skill files staged at %s", skill_host_dir)
+    staged = stage_skill(FREECAD_SKILL_SPEC, skill_host_dir)
+    skill_content_dir = staged.files_path
+    logger.info("Skill files staged at %s", skill_content_dir)
 
-    # The tar extracts under a "freecad/" prefix (package_dir in skill_package).
-    skill_content_dir = skill_host_dir / "freecad"
-    skill_md = (skill_content_dir / "SKILL.md").read_text()
     task_text = get_required_path(TASK_MD).read_text()
-    user_prompt = f"{skill_md}\n\n---\n\n{task_text}"
+    user_prompt = f"{staged.md_text}\n\n---\n\n{task_text}"
 
     launcher_binary = str(get_required_path(DOCKER_LAUNCHER))
     config_json = ContainerExecServerConfig(

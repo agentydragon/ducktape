@@ -2,7 +2,7 @@
 #
 # Returns a function: { prefix, mode ? "recursive" } -> home.file entries that deploy skills to
 # ~/{prefix}/skills/.
-# Skills are consumed from a CI-built tarball (skills-tar flake input).
+# Skills are consumed from a CI-built `.skill` archive (skills-tar flake input).
 # Skill contents are controlled by skill_package(srcs=...) in each skill's BUILD.bazel.
 #
 # Usage:
@@ -15,14 +15,14 @@
   skills-tar,
 }:
 let
-  # Unpack the CI-built skills tarball into the Nix store (once, shared across prefixes).
+  # The CI-built skills archive, already unpacked into the Nix store (once, shared across prefixes).
   skillsSrc = skills-tar;
   mkSiderolabsDir = pkgs.runCommand "siderolabs-skill" { } ''
     mkdir -p "$out"
     cp ${siderolabs-docs}/public/skill.md "$out/SKILL.md"
   '';
 
-  # Auto-discover skill directories from the unpacked tarball.
+  # Auto-discover skill directories from the unpacked archive.
   skillDirs = lib.filterAttrs (_: type: type == "directory") (builtins.readDir skillsSrc);
 in
 # Return a function that generates home.file entries for a given prefix.

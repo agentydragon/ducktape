@@ -339,9 +339,9 @@ rec {
   };
 
   # Skills data: $out/share/claude-hooks/skills/
-  skills = pkgs.runCommand "claude-hooks-skills" { } ''
+  skills = pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.unzip ]; } ''
     mkdir -p $out/share/claude-hooks/skills
-    tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
+    unzip -q ${artifacts.skills} -d $out/share/claude-hooks/skills
   '';
 }
 // lib.optionalAttrs (artifacts ? debundle) {

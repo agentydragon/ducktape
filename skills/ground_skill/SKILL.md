@@ -67,7 +67,7 @@ to say. Skipping it and writing the recipe from docs alone produces untested ass
   once in the skill doc.
 - **Deduplicated**: shared setup goes into a helper library, not copy-pasted.
 - **Referenced**: the skill doc says "see `examples/foo.py`" and that file is in the
-  deployed tarball.
+  deployed `.skill` archive.
 
 Recipes can be Python scripts, shell scripts, or any executable that runs in a container.
 The form follows the skill's domain.
@@ -128,45 +128,37 @@ if __name__ == "__main__":
     pytest_bazel.main()
 ```
 
-**Packaging recipes from a subpackage**: `skill_package` uses `strip_prefix.from_pkg()`,
-which drops subdirectory structure for cross-package sources — a recipe from
-`//skills/myskill/examples:my_recipe.py` would land at the skill root, not in
-`examples/`. Use explicit `pkg_files` targets with `prefix` instead (the freecad pattern):
+**Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form uses
+`strip_prefix.from_pkg()`, which drops subdirectory structure for cross-package
+sources — a recipe from `//skills/myskill/examples:my_recipe.py` would land at the
+skill root, not in `examples/`. Use `contents=` with `skill_mapping(prefix=...)`
+instead (the freecad pattern):
 
 ```starlark
 # myskill/BUILD.bazel — when recipes live in examples/
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
-pkg_files(
-    name = "myskill_local_files",
-    srcs = ["SKILL.md"],
-    strip_prefix = strip_prefix.from_pkg(),
-)
-
-pkg_files(
-    name = "myskill_example_files",
-    srcs = ["//skills/myskill/examples:my_recipe.py"],
-    prefix = "examples",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_tar(
-    name = "myskill_tar",
-    srcs = [":myskill_local_files", ":myskill_example_files"],
-    package_dir = "myskill",
-    visibility = ["//visibility:public"],
+skill_package(
+    name = "myskill",
+    contents = [
+        skill_mapping(srcs = ["SKILL.md"]),
+        skill_mapping(
+            srcs = ["//skills/myskill/examples:my_recipe.py"],
+            prefix = "examples",
+        ),
+    ],
 )
 ```
 
-For skills with only a `SKILL.md` and no subpackage recipes, `skill_package` is fine:
+For skills with only a `SKILL.md` and no subpackage recipes, the simple form is fine:
 
 ```starlark
 load("//skills:defs.bzl", "skill_package")
 skill_package(name = "myskill", srcs = ["SKILL.md"])
 ```
 
-Add `myskill_tar` to `skills/BUILD.bazel`'s `all_skills_tar` deps.
+`skill_package` emits the `:myskill_skill` (`.skill` zip) and `:myskill_files`
+targets. Add `myskill_files` to `skills/BUILD.bazel`'s `all_skills` srcs.
 
 ## Process: upgrading an existing skill
 

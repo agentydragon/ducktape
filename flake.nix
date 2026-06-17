@@ -84,8 +84,10 @@
           }
         ) data.pins;
 
-      # skills.tar unpacked into a flat directory of skill subdirs.
-      skillsUnpacked = pkgs.runCommand "skills" { } "mkdir $out && tar xf ${artifacts.skills} -C $out";
+      # all_skills.skill (a zip) unpacked into a flat directory of skill subdirs.
+      skillsUnpacked = pkgs.runCommand "skills" {
+        nativeBuildInputs = [ pkgs.unzip ];
+      } "mkdir $out && unzip -q ${artifacts.skills} -d $out";
 
       pkgsUnstable = import nixpkgs-unstable {
         inherit system;

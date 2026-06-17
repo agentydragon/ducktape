@@ -20,7 +20,7 @@ See <skills/docs/allowed-tools-internals.md> for how this works under the hood.
 
 ## Example scripts and testing
 
-Skills that include example scripts (referenced from `SKILL.md`) should package them into the skill tarball via `skill_package(srcs=...)`. Tests that verify these examples actually work live alongside but outside the skill package as `testonly` targets.
+Skills that include example scripts (referenced from `SKILL.md`) should package them into the skill's `.skill` archive via `skill_package(srcs=...)`. Tests that verify these examples actually work live alongside but outside the skill package as `testonly` targets.
 
 Pattern:
 

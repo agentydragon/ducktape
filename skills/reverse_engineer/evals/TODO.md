@@ -72,7 +72,7 @@ build-time scrambling and the language-specific recovery angles.
 Land after at least one specimen + rubric is checked in:
 
 - Sandbox shape — Microsoft Agent Framework + `scratch_exec_server` +
-  the **whole skill tar** (`//skills/reverse_engineer:reverse_engineer_tar`)
+  the **whole skill archive** (`//skills/reverse_engineer:reverse_engineer_skill`)
   mounted at `/work/.skill/`. Stock `python:3.13-slim` base; agent has
   internet (proxy already wired in
   <skills/eval_infra/docker_exec.py>) and installs `binutils`,
