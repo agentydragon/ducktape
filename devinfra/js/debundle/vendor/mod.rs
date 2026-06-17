@@ -34,24 +34,24 @@ pub use plan::{
 use spec::PartialSwapKind;
 pub use strip::ChunkStripStats;
 
-/// Bail when a boundary-mapping key (a vendor-LOCAL binding name) is
-/// itself a genuine export name of the vendor entry bound to a
-/// *different* local. The caller-side rewrite treats `import { k }` as
-/// "the caller spelled export `<mapping[k]>` by its vendor-local name" —
-/// but when the vendor really exports the name `k` (from another local),
-/// that import is legitimate and rewriting it would silently rebind the
-/// caller to the wrong value.
-fn validate_boundary_mapping_collisions(
+/// Collect the boundary-rename mapping (vendor-LOCAL binding name → the
+/// distinct, valid export name it is published under) and validate it against
+/// the entry's genuine exports — both in a single pass over `module.body`.
+///
+/// Validation bails when a mapping key (a vendor-LOCAL binding name) is itself a
+/// genuine export name of the vendor entry bound to a *different* local. The
+/// caller-side rewrite treats `import { k }` as "the caller spelled export
+/// `<mapping[k]>` by its vendor-local name" — but when the vendor really exports
+/// the name `k` (from another local), that import is legitimate and rewriting it
+/// would silently rebind the caller to the wrong value.
+fn collect_and_validate_boundary_mapping(
     module: &Module,
-    mapping: &BTreeMap<String, String>,
     chunk_path: &str,
-) -> Result<()> {
-    if mapping.is_empty() {
-        return Ok(());
-    }
-    // export name -> Some(local sym) when the export aliases a plain
-    // local binding; None when its local identity is not a local ident
-    // (forwarded `export … from`, string-literal orig).
+) -> Result<BTreeMap<String, String>> {
+    let mut mapping: BTreeMap<String, String> = BTreeMap::new();
+    // export name -> Some(local sym) when the export aliases a plain local
+    // binding; None when its local identity is not a local ident (forwarded
+    // `export … from`, string-literal orig).
     let mut export_locals: BTreeMap<String, Option<String>> = BTreeMap::new();
     for item in &module.body {
         match item {
@@ -69,6 +69,14 @@ fn validate_boundary_mapping_collisions(
                         (None, ModuleExportName::Ident(local)) => Some(local.sym.to_string()),
                         _ => None,
                     };
+                    // A boundary rename: a non-forwarded local binding published
+                    // under a different, valid identifier.
+                    if let Some(local_sym) = &local
+                        && exported != *local_sym
+                        && is_valid_identifier(&exported)
+                    {
+                        mapping.insert(local_sym.clone(), exported.clone());
+                    }
                     export_locals.insert(exported, local);
                 }
             }
@@ -94,37 +102,7 @@ fn validate_boundary_mapping_collisions(
             );
         }
     }
-    Ok(())
-}
-
-fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
-    let mut mapping = BTreeMap::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-            continue;
-        };
-        if named.src.is_some() || named.specifiers.is_empty() {
-            continue;
-        }
-        for specifier in &named.specifiers {
-            let ExportSpecifier::Named(named_specifier) = specifier else {
-                continue;
-            };
-            let ModuleExportName::Ident(local) = &named_specifier.orig else {
-                continue;
-            };
-            let exported_name = named_specifier
-                .exported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| local.sym.to_string());
-            if exported_name == local.sym.as_ref() || !is_valid_identifier(&exported_name) {
-                continue;
-            }
-            mapping.insert(local.sym.to_string(), exported_name);
-        }
-    }
-    mapping
+    Ok(mapping)
 }
 
 fn read_installed_package_metadata(

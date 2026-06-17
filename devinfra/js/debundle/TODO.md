@@ -161,19 +161,14 @@ propose`.
 
 Production-code (non-test) dedup/cleanup options surfaced by a codebase survey.
 Calibrated by (LOC saved × safety). Done so far: the `minimize/` single-pick
-collapse (#2346), the CLI report-dispatch helper (`cli::emit_report`), and the
+collapse (#2346), the CLI report-dispatch helper (`cli::emit_report`), the
 `PurityReason` construction centralization (`PurityReason::new` +
-`Purity::from_reason_opt_detail`).
-
-**Safe, internal, no behavior change:**
-
-1. `vendor/mod.rs` `validate_boundary_mapping_collisions` +
-   `collect_boundary_mapping` both walk `module.body` export specifiers; merge
-   into one pass. ~30 LOC, low risk.
+`Purity::from_reason_opt_detail`), and the `vendor/mod.rs` boundary-mapping
+collect+validate single-pass merge (`collect_and_validate_boundary_mapping`).
 
 **Real value but needs design work / behavior-risk:**
 
-2. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
+1. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
    `hole_stmt`, `minimize/class.rs` `hole_class_member`, etc.) behind a `Holer`
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ

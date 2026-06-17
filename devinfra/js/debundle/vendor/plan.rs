@@ -53,10 +53,10 @@ use crate::wrappers::{
     plan_bundled_partial_swap_assets, set_diff, wrapper_output_path,
 };
 use crate::{
-    MaterializedOutputChunkIndex, collect_boundary_mapping, collect_default_export_object_keys,
-    collect_exported_names, is_valid_identifier, module_has_export_star,
-    read_installed_package_metadata, resolve_package_subpath, resolve_partial_swap_import_target,
-    validate_boundary_mapping_collisions, verified_default_alias_export_names,
+    MaterializedOutputChunkIndex, collect_and_validate_boundary_mapping,
+    collect_default_export_object_keys, collect_exported_names, is_valid_identifier,
+    module_has_export_star, read_installed_package_metadata, resolve_package_subpath,
+    resolve_partial_swap_import_target, verified_default_alias_export_names,
 };
 
 #[derive(Debug, Clone)]
@@ -649,8 +649,7 @@ fn plan_boundary_renames(
     }) {
         let chunk = &resolved_chunks[chunk_path.as_str()];
         let vendor_ast = vendor_entry_ast(artifact, "boundary_rename", chunk)?;
-        let mapping = collect_boundary_mapping(&vendor_ast.module);
-        validate_boundary_mapping_collisions(&vendor_ast.module, &mapping, chunk_path)?;
+        let mapping = collect_and_validate_boundary_mapping(&vendor_ast.module, chunk_path)?;
         plans.push(BoundaryRenamePlan {
             chunk_id: chunk.chunk_id,
             entry_file: chunk.entry_file.clone(),
