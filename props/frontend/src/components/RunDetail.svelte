@@ -44,8 +44,10 @@
   // State
   // svelte-ignore state_referenced_locally
   let run: AgentRunDetail | null = $state(initialRun ?? null);
-  // svelte-ignore state_referenced_locally
-  let loading = $state(!initialRun);
+  let loadError: string | null = $state(null);
+  // `run` is null both before the initial fetch resolves and after a failed
+  // fetch; loadError disambiguates so this reflects only the in-flight case.
+  const loading = $derived(run === null && loadError === null);
 
   // Critique viewer state
   // svelte-ignore state_referenced_locally
@@ -137,10 +139,8 @@
       run = await fetchRun(runId);
       loadSnapshotDataInBackground(run);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to load run";
-      toast.error(message);
-    } finally {
-      loading = false;
+      loadError = e instanceof Error ? e.message : "Failed to load run";
+      toast.error(loadError);
     }
   }
 
@@ -546,7 +546,7 @@
     </div>
   {:else}
     <div class="p-4">
-      <p class="text-red-500 dark:text-red-400">Failed to load run</p>
+      <p class="text-red-500 dark:text-red-400">{loadError ?? "Failed to load run"}</p>
     </div>
   {/if}
 </div>
