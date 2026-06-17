@@ -309,6 +309,23 @@ Still to do:
 - Keep new analysis tooling on the existing owner graph and embedded atomic
   DAG side outputs; do not add parallel selected-owner cache formats.
 
+## Emit only cross-module-used exports
+
+`materialize_logical_modules` re-exports **every** top-level binding of an
+emitted module, including symbols referenced only inside their own module. The
+esbuild decorator scaffolding is the clearest case: each mobx-decorated module
+emits a `__defProp` / `__getOwnPropDesc` / `__decorateClass` trio used only by
+that module's own `__decorateClass(...)` calls, yet all three land in the
+module's `export {}` list — and so surface as rename-queue holdouts that have to
+be named for no downstream consumer.
+
+Detect bindings whose only references are within their own emitted module and
+omit them from that module's `export {}` (keep them module-private). This shrinks
+the public surface, drops dead exports, and removes a large boilerplate-only
+class from the rename queue. Evidence: in the gaffer `tana/re/web` spec, no
+module imports any `defineProperty` / `getOwnPropertyDescriptor` / `applyDecorators`
+helper, yet ~52 of them are exported.
+
 ## Performance
 
 Proposer-gate, `debundle run`, and materialize-stage performance work
