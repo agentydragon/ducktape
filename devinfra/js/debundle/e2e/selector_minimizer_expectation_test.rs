@@ -856,3 +856,54 @@ minimizer_expectation_case!(
     bindings = [("SelectedHelper", "selectedHelper")],
     expected = "expected_match.js",
 );
+
+// IGNORED (dogfood over-pin, 2026-06-17): enclosing-context anchoring (#2315)
+// picks the right stable neighbor but, when that neighbor is a **function
+// declaration** rather than a single call statement, pins the neighbor's body
+// VERBATIM instead of holing it down to its own discriminating anchor. Here the
+// near-duplicate target `selectedHelper` (bare scaffold matches `firstHelper`)
+// is correctly anchored to the following `neighborWithToken` declaration, but the
+// emitted selector keeps all three of the neighbor's body statements
+// (`const prepared = …`, the discriminating `emit("neighbor-unique-token")`, and
+// `cleanup(prepared)`) plus its parameter list. The target shape is the neighbor
+// minimized as if it were a standalone function read-off: hole the name/params,
+// `STMT_LIST` the non-discriminating statements, and keep only the unique
+// `ANYTHING("neighbor-unique-token")` anchor (callee dropped per #2318). The
+// neighbor branch of `render_via_neighbor_context` needs to run the neighbor
+// declaration back through the per-form read-off before pinning it. Dominant
+// dogfood over-pin shape: 46/62 of the gaffer `78d928dca7` >40-line, ≤2-hole
+// conversions are this "neighbor declaration kept whole" pattern (e.g. the real
+// `SubscriptionFlow`/`nodeDisplayName` wrappers whose preceding ~40-line component
+// function is pinned verbatim).
+minimizer_expectation_case!(
+    #[ignore = "neighbor-context anchoring pins the whole neighbor function declaration instead of holing it to its anchor"]
+    minimizes_neighbor_context_whole_function_neighbor,
+    fixture = "neighbor_context_whole_function_neighbor",
+    name = "neighbor function declaration is holed to its discriminating anchor, not pinned whole",
+    module = "app/helpers",
+    bindings = [("SelectedHelper", "selectedHelper")],
+    expected = "expected_match.js",
+);
+
+// IGNORED (dogfood over-pin, 2026-06-17): a class-EXPRESSION-valued `const`
+// (`const X = class { … }`) is pinned whole because the var read-off
+// (`try_var_read_off` → `hole_expr`) has no `Expr::Class` arm, so the class
+// initializer never routes through the class read-off (CLASS_REST member holing).
+// The equivalent class DECLARATION minimizes correctly today — control:
+// `class selectedStore { status = "idle"; run(){…} describe(){…} }` emits
+// `class SelectedStore { status = "idle"; ANYTHING; }` — so the gap is purely the
+// expression form failing to reach `minimize_class_selector`'s read-off. The
+// target shape wraps that same class read-off output back in the `const … = class`
+// initializer. Real-spec analogue: the 0-hole whole-body giants
+// `integrations/google/api/client.yaml::GoogleApiClient` (314 lines) and
+// `features/search/state.yaml::SearchState` (300 lines), both `const X = class {…}`
+// kept verbatim with zero holes.
+minimizer_expectation_case!(
+    #[ignore = "class-expression-valued const is pinned whole; not routed through the class read-off"]
+    minimizes_class_expression_const_whole_body,
+    fixture = "class_expression_const_whole_body",
+    name = "class-expression const keeps only one discriminating member, not the whole class body",
+    module = "app/stores",
+    bindings = [("SelectedStore", "selectedStore")],
+    expected = "expected_match.js",
+);

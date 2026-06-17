@@ -1,12 +1,82 @@
 # Dogfood: read-off minimizer on the real tana/re spec
 
 Real-chunk measurements of the read-off `synthesize-selectors` minimizer against
-the ~7 MB minified chunk / ~4.5k name-pin members. Earlier search-era and
-migration-phase findings (conversion rates, the apply-crash fix, the over-pin
-shapes) are superseded: the over-pin patterns are now tracked as the disabled E2E
-expectation cases, and next steps live in the plan backlog
+the ~7 MB minified chunk (`static/index-DI2GynTv.js`). Earlier search-era and
+migration-phase findings (the apply-crash fix, the original over-pin shapes) are
+superseded; next steps live in the plan backlog
 (<../plans/readoff_minimization.md>). What remains here is the load-bearing perf
-measurement that backs the W4 budget item.
+measurement that backs the W4 budget item, plus the current dogfood-apply survey
+(below) that drives the next over-pin-reduction wave.
+
+## Dogfood-apply survey (2026-06-17, post enclosing-context + interior-cover)
+
+Whole-spec `synthesize-selectors --apply` (`-c opt` binary, gaffer
+`tana/re/web/78d928dca7` spec, the unmodified name-pinned spec). Measures what the
+**current** minimizer — with the post-#2291 capabilities landed
+(#2310 wide-destructure, #2315 enclosing-context anchoring, #2318 callee/arg
+holing, #2289 interior cover, #2306 multi-target binding-group read-off) — does on
+the real spec, and where it still over-pins.
+
+| metric                                   | value           |
+| ---------------------------------------- | --------------- |
+| modules / members scanned                | 1745 / 5903     |
+| fragile `binding.name` members           | 2227            |
+| **converted** (`would_change`)           | **1104 (~50%)** |
+| selectors emitted (incl. binding groups) | 1013            |
+| skipped (no sparse selector)             | 1123            |
+| wall (`--apply`, whole spec, `-c opt`)   | **13.1 s**      |
+
+The **~50% conversion** is a large jump from the ~9%-convertible the plan recorded
+at gaffer `main` after #360 (then: ~91% "no sparse selector"). The
+enclosing-context anchoring (#2315) and interior cover (#2289) recover most of the
+previously-skipped whole-body-only tail — but they are also where the new over-pin
+debt comes from (below). The ~1123 still-skipped are the residual hard tail.
+
+### Converted-selector size distribution (1013 emitted)
+
+`match`-block line count: min 1, median 13, mean 27.4, max 904.
+
+| ≤10 | 11–20 | 21–40 | 41–100 | >100 |
+| --- | ----- | ----- | ------ | ---- |
+| 414 | 251   | 191   | 117    | 40   |
+
+Two-thirds (656/1013) land ≤20 lines — compact, robust selectors. The >40-line tail
+(157) is where the over-pin lives.
+
+### Over-pin survey (operational rule: `match` >40 lines AND ≤2 holes)
+
+**62 hard over-pins** (a further 95 are >40 lines but well-holed, kept). Classified
+by shape:
+
+| n   | shape                                                                    |
+| --- | ------------------------------------------------------------------------ |
+| 46  | **neighbor-context anchoring pins the whole neighbor declaration**       |
+| 11  | function / class whole-body (interior cover found no compact anchor)     |
+| 2   | **class-expression-valued `const X = class {…}` pinned whole (0 holes)** |
+| 2   | object-literal whole / async-generator parse edge                        |
+
+The two **bolded** shapes are clean, fixable gaps with no existing coverage, so
+each is captured as a new ignored expectation case in
+`e2e/selector_minimizer_expectation_test.rs` (anonymized minimal reproductions):
+
+- **`neighbor_context_whole_function_neighbor`** — #2315 picks the right stable
+  neighbor but, when it is a function _declaration_ (not a single call statement),
+  pins its body verbatim instead of running it back through the per-form read-off.
+  Dominant shape (46/62). Real analogues: the `SubscriptionFlow` /
+  `nodeDisplayName` wrappers whose preceding ~40-line component function is kept
+  whole; the largest is `features/search/popoverState.yaml::$rt` at **904 lines /
+  1 hole**.
+- **`class_expression_const_whole_body`** — `try_var_read_off`'s `hole_expr` has no
+  `Expr::Class` arm, so a class-expression initializer never reaches the class
+  read-off (CLASS*REST holing). The equivalent class \_declaration* minimizes
+  correctly (control verified). Real analogues:
+  `integrations/google/api/client.yaml::GoogleApiClient` (314 lines, 0 holes) and
+  `features/search/state.yaml::SearchState` (300 lines, 0 holes).
+
+The 11 function/class whole-body cases are the known structural tail the interior
+cover (#2289) explicitly leaves open (uniqueness genuinely needs ~the whole body);
+they are not new gaps. Per the operational rule, the 62 hard over-pins revert to
+name pins in the dogfood-apply PR; the well-holed >40-line conversions ship.
 
 ## Read-off minimizer real-chunk perf (2026-06-16, post prove-gate-via-index)
 

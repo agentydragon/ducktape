@@ -255,8 +255,11 @@ landed, #2289), `sequential_assignment_block` (`hole_expr` `Expr::Assign` arm),
 non-anchor argument runs) `deeply_nested_call_args`, (destructure-pattern-key
 `ObjectKey` anchors + `ObjectPat` holing, #2310) `wide_destructure_block`, and
 (enclosing-context anchoring, #2315) `neighbor_context_alpha_construct`,
-`neighbor_context_duplicate_helper`. Every catalogued expectation case is now
-active.
+`neighbor_context_duplicate_helper`. **Ignored** (over-pins the 2026-06-17 dogfood
+survey surfaced, no fix yet): `neighbor_context_whole_function_neighbor` (#2315
+pins a function-declaration neighbor whole instead of holing it) and
+`class_expression_const_whole_body` (`const X = class {…}` not routed through the
+class read-off). See backlog items 3–4.
 
 ## Acceptance criteria
 
@@ -284,37 +287,30 @@ active.
 adversarial tail cases (near-minimal is fine); preserving YAML comments (out via
 serde); embedded/non-trailing volatility in regex anchors (future).
 
-## Remaining minified-pin debt (measured, gaffer `main` after #360)
+## Remaining minified-pin debt (measured, gaffer `78d928dca7`, 2026-06-17)
 
-`spec selector-debt` on the converted spec: **5,108 robust `source_match`** vs
-**2,226 still-fragile name-only** pins (~70% converted). Re-running the minimizer
-(`synthesize-selectors`, dry) over the 2,226 splits the debt by _why_ it remains
-— the prioritization input for the waves below:
+`spec selector-debt`: **5,108 robust `source_match`** vs **2,226 still-fragile
+name-only** pins. A whole-spec `synthesize-selectors --apply` (current minimizer,
+all post-#2291 capabilities) now **converts 1,104 of the 2,227 name-pins (~50%)** —
+a large jump from the ~9%-convertible recorded at gaffer `main` after #360, because
+#2310/#2315/#2289/#2306 recover most of the previously skipped whole-body-only
+tail. Full survey + size distribution in <../debug/selector_minimizer_dogfood.md>.
+The split is now:
 
-- **~2,024 (~91%) — "no sparse selector" (minimizer skips).** No compact
-  discriminating anchor set resolves uniquely, so with `--full-ast-fallback` off
-  the member is left as a name pin. These are **whole-body-only** members
-  (uniqueness needs ~the entire body). Concentrated in `features` (955),
-  `domains` (462), `app` (425). Recovering them is the hard, high-count tail:
-  needs **interior holing of whole bodies** (landed — keeps the body but
-  holes non-identifying subtrees so a fuller pin is at least less fragile / can be
-  emitted) and/or deeper anchoring (enclosing-context, #2315). Biggest number, hardest; do not expect a
-  clean compact selector for most.
-- **~200 (~9%) — convertible but >30 lines (filtered out of #360).** The minimizer
-  _does_ synthesize a selector; it's just over the compact threshold. Shape mix:
-  **~55% var/object, ~42% function, ~3% class**; median ~35 lines, tail to ~700.
-  These are the **achievable near-term wins**: the over-pin-reduction waves shrink
-  them under the threshold so they ship as compact selectors —
-  - var/object (the plurality) → wide object-destructure patterns now hole to
-    the discriminating key (landed, #2310); the remaining object-dict over-pin
-    folds into the landed interior holing;
-  - function → **interior holing** within kept bodies (landed);
-  - a re-apply after each wave reconverts whatever now fits ≤30 lines.
-- 1 — `async` parse edge case (single; ignore).
+- **1,123 still skipped ("no sparse selector").** The residual structural tail —
+  uniqueness genuinely needs ~the whole body and the interior cover (#2289) finds
+  no compact anchor. The hardest, highest-count remainder.
+- **1,104 converted, of which 62 over-pin** (`match` >40 lines AND ≤2 holes;
+  another 95 are >40 lines but well-holed and ship). The 62 break down as **46
+  neighbor-context "neighbor declaration kept whole" (backlog 3), 11 function/class
+  whole-body (no compact anchor — the skip tail by another name), 2
+  class-expression `const X = class {…}` kept whole (backlog 4), 2 misc**. The two
+  named shapes are clean fixable gaps captured as ignored E2E cases.
 
-**Takeaway:** the ~200 bulky-convertible are the cheap recovery (over-pin waves,
-mostly object-shaped); the ~2,024 no-sparse are the structural long tail (whole-
-body interior holing + anchoring). Re-measure this split after each wave lands.
+**Takeaway:** the conversion rate is now high; the new debt is **over-pin**, not
+non-conversion. The 62 hard over-pins concentrate in two fixable shapes (backlog
+3–4); fixing those plus the matcher-perf item (backlog 5) is the next wave.
+Re-measure after each lands.
 
 ## Backlog (open only)
 
@@ -340,6 +336,36 @@ not annotated; the landed architecture is in "Current state" above.
    Removing `minimize_var_group_selector`'s escalation path, `collect_expr_anchors`,
    and `AnchorCandidates::{shallow_literals,deep_cover_tiers}` is gated on a
    tuple-aware read-off for those residual groups (or accepting them as debt).
+3. **Hole the neighbor declaration in enclosing-context anchoring** (#2315 follow-up;
+   dominant dogfood over-pin, 46/62). When `render_via_neighbor_context` anchors a
+   near-duplicate / empty-scaffold target to a stable neighbor that is itself a
+   **function or class declaration**, it pins the neighbor's body verbatim instead
+   of running the neighbor back through the per-form read-off (hole the
+   name/params, keep only its discriminating value anchor). The 2-statement-window
+   anchoring already works for call-statement neighbors
+   (`neighbor_context_duplicate_helper`); this extends the same holing to
+   declaration neighbors. Ignored E2E:
+   `neighbor_context_whole_function_neighbor`. Real analogues: the
+   `SubscriptionFlow` / `nodeDisplayName` wrappers (preceding component kept
+   whole); largest `features/search/popoverState.yaml::$rt` at 904 lines.
+4. **Route class-expression initializers through the class read-off.**
+   `try_var_read_off`'s `hole_expr` has no `Expr::Class` arm, so
+   `const X = class {…}` is pinned whole (0 holes) while the equivalent class
+   _declaration_ minimizes via `minimize_class_selector` (CLASS_REST holing). Add a
+   `hole_expr` `Expr::Class` arm (or detect a class-expression-valued declarator and
+   dispatch to the class read-off, wrapping its output back in the `const … = class`
+   initializer). Ignored E2E: `class_expression_const_whole_body`. Real analogues:
+   `GoogleApiClient` (314 lines), `SearchState` (300 lines), both 0-hole.
+5. **Journaled `AlphaMatchScope` + cheaper prove-gate fan-out** (perf). The whole-spec
+   apply regressed to ~13 s (from ~7 s) because the new conversion paths run the
+   prove-gate matcher far more (it is now **58% inclusive** of the run), and
+   `AstWildcardMatcher::{snapshot,restore,with_alpha_scope}` ≈ **17%** is the
+   `BTreeMap<Atom,Atom>` alpha-scope being cloned/dropped per backtrack — the same
+   pattern #2291 fixed for the shape index, one layer down. Replace clone-on-snapshot
+   with an undo-log (pop the keys added since the snapshot), switch `forward`/`backward`
+   to `FxHashMap`, and prune the neighbor/group prove-gate fan-out by the
+   candidate-index intersection. Full profile:
+   <../debug/selector_minimizer_perf.md>.
 
 ## Orchestration & process notes
 
