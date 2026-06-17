@@ -274,9 +274,10 @@ class read-off). See backlog items 3–4.
 4. **Coverage** — var (single + group), function, class, object, including the
    large-object / large-class cases that currently over-pin; the ignored E2E
    cases get unignored as capabilities land.
-5. **Forward-compat** — stable-anchor preference, validated by a
-   rebuild-perturbation test (perturb volatile fragments → selector still
-   resolves).
+5. **Forward-compat** — stable-anchor preference. No inline perturbation self-check:
+   a single-bundle perturbation only re-confirms today's match (already guaranteed by
+   the prove-gate). The real signal is the version-port flow (<selector_authoring_agent.md>),
+   measured when a v2 bundle ships.
 6. **Code health** — one unified minimization path; the cover search is deleted
    once everything routes through read-off. STYLE-clean.
 7. **gaffer-private** — apply across the whole spec, replacing fragile

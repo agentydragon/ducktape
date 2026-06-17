@@ -66,6 +66,13 @@ re-pin — those are proven unstable, so they are the highest-value to re-expres
 structurally. Group with `--group-module-depth N` to take coherent module-family
 batches.
 
+This census is complete for name pins but blind to the other failure mode: a
+selector that is _already_ `source_match` yet pinned on an incidental anchor (the
+`{ name: ANYTHING }` shape). No command enumerates those — judging whether a pin is
+forward-stable is the same intelligence as authoring it, so you find them by reading
+source. The planned `selector-slack` probe (see Background) will at least flag
+over-specified selectors as a starting heuristic.
+
 ## The loop (per member, or per cohesive cluster)
 
 1. **Read what it is.** `debundle show-source` for the binding (and the emitted JS
@@ -114,9 +121,9 @@ Avoid — incidental or actively unstable, churned by unrelated rebuilds:
 - a generic object key with its value holed (`{ name: ANYTHING }`);
 - positional / structural shape with no kept value (arity, declaration order);
 - minified identifiers (the matcher already wildcards them) and their neighbors;
-- **content hashes and generated ids** — hashed CSS class/module names
-  (`Button_a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id query
-  params, cache-busting suffixes. The hashed segment is the _most_ volatile thing
+- **content hashes and generated ids** — hashed CSS-module class names
+  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id
+  query params, cache-busting suffixes. The hashed segment is the _most_ volatile thing
   in the bundle. Pin the stable prefix and hole / regex-anchor the volatile tail;
   **never pin the hash.**
 
@@ -124,8 +131,14 @@ Avoid — incidental or actively unstable, churned by unrelated rebuilds:
 
 - **literal / enum tables** (i18n, routes, MIME, error codes): anchor on the
   distinctive key/value pair; group siblings into one selector.
-- **CSS / style maps**: regex-prefix anchor for generated class names; hole the
-  hash suffix.
+- **CSS Modules / style maps**: the dogfood app is built with CSS Modules, so class
+  literals are shaped `<Component>-module_<local>__<hash>`. Never pin the `<hash>` (it
+  is regenerated every build) — anchor each className constant with
+  `STR_LITERAL_MATCHING_RE("^<Component>-module_<local>__[A-Za-z0-9_-]+$")` and collect
+  the component's `*Styles` object constants into one `binding_group` (the
+  `Widget-module_*` declaration-range example in `selectors.md` is exactly this shape).
+  Tailwind `tw-`-prefixed utility classes are shared across every component and so do
+  not discriminate — never anchor on them.
 - **error classes**: the `name` / message string the class sets — not its field
   shape.
 - **event emitters / reducers**: the event or action name strings.
@@ -154,8 +167,9 @@ authority.
 
 The design rationale (why anchor choice is an agent judgment rather than a cost
 term), the verifiability asymmetry, and the planned affordances that will speed
-this loop up — `match-selector` (probe "what does this candidate selector match?")
-and `synthesize-selectors --candidates N` (a menu of ranked candidates rather than
-one) — live in the `selector_authoring_agent` plan under
-`devinfra/js/debundle/plans/`. The two-bundle-version dogfood pair is the eventual
+this loop up — `match-selector` (probe "what does this candidate selector match?"),
+`synthesize-selectors --candidates N` (a menu of ranked candidates rather than one),
+and `selector-slack` (flags existing selectors that could be holed further without
+losing uniqueness — a heuristic for which pins to revisit) — live in the
+`selector_authoring_agent` plan under `devinfra/js/debundle/plans/`. The two-bundle-version dogfood pair is the eventual
 scorecard for whether these instructions actually produce durable selectors.

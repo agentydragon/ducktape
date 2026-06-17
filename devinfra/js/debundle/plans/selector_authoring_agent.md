@@ -59,7 +59,33 @@ Split the responsibility the current design conflates:
 The minimizer keeps earning its place: on the large mechanical tail (class/function
 declarations, literal-initialized constants, multi-declarator groups) its choice is
 usually fine and the agent can accept it wholesale. The agent spends its judgment on
-the residue the cost model gets wrong — the over-narrow, incidental-anchor cases.
+the residue the cost model gets wrong — the over-narrow, incidental-anchor cases —
+which, as the next section notes, the substrate cannot itself single out.
+
+## The worklist is an intelligence task too
+
+The same wall blocks the _other_ direction. Just as the cost model can't **choose** a
+forward-compatible anchor, it can't reliably tell **which already-written selectors
+need rework**. "Is this pin readable, stable, and unlikely to break on a rebuild?" is
+the same judgment as authoring one — there is no mechanical predicate for it. So the
+worklist of selectors to revisit is not something the substrate can hand the agent
+pre-computed; the agent forms it by reading source and weighing purpose.
+
+Two mechanical signals **bound** that search without defining it:
+
+- **Name-pins are unambiguously fragile.** `selector-debt` enumerates the
+  `binding.name` pins (a minified name churns every rebuild). That bucket is mechanical
+  and complete — every name-pin is debt.
+- **Holing slack is a heuristic for over-pin.** A `source_match` that pins more than it
+  needs — an anchor that could be holed further and still resolve uniquely — is a
+  _candidate_ for rework (the `selector-slack` query below). But slack is only a smell:
+  a zero-slack selector can still be pinned on an incidental anchor (the `name`-key case
+  has no slack and is still wrong), and a selector with slack can be perfectly readable.
+  The agent uses it to **prioritize**, never to decide.
+
+Everything between those bounds — a robust-looking `source_match` nonetheless pinned on
+the wrong thing — is invisible to the substrate and surfaces only when the agent reads
+the source, or when a future bundle breaks it.
 
 ## Forward-compatibility is an educated guess, not a guarantee
 
@@ -90,10 +116,12 @@ rubric. Keep the data in its own repo — do not copy real bundle source into Du
 fixtures; the eval runs against the private spec, only anonymized reductions become
 ducktape tests.
 
-Until that runs, a cheap inline proxy is **perturbation testing** (a W5 acceptance
-idea in [read-off minimization](readoff_minimization.md)): mutate volatile fragments
-of the current chunk and confirm the selector still resolves. It catches "pinned an
-incidental detail" without a second bundle.
+There is **no inline self-check** for forward-compatibility — no perturbation pass
+that mutates the current chunk and re-resolves. A single-bundle perturbation only
+re-confirms today's match (which the prove-gate already guarantees) and would lend
+false confidence to a guess that only a real second bundle can test. The version-port
+flow is the sole stability signal; until v2 ships, stability is the agent's reasoned
+bet and nothing more.
 
 ## Agent-facing affordances
 
@@ -105,7 +133,9 @@ query feed the next.
 
 - `debundle show-source` — source of a body item / binding.
 - `debundle bindings …` / `debundle modules …` — binding and module inventory.
-- `debundle spec selector-debt` — fragile-pin worklist.
+- `debundle spec selector-debt` — the mechanical name-pin census (every `binding.name`
+  pin). Complete for that bucket; **not** the over-pin worklist, which is not
+  mechanically identifiable (see above).
 - `debundle spec synthesize-selectors` — the minimizer's single chosen selector.
 - keep-going spec validation — all selector failures in one pass.
 
@@ -127,7 +157,25 @@ the concrete anchors it pins), not just the one minimal pick. The agent reads th
 a menu — accept one, or use them to locate a better semantic anchor the ranker
 undervalued.
 
-Both new commands follow the
+### New: `selector-slack` (the over-pin heuristic)
+
+Given an existing spec (or a module filter), report per selector whether any
+currently-kept anchor could be **holed further** — replaced with `ANYTHING` /
+`STMT_LIST` / `OBJECT_PROPS` / `CLASS_REST`, or tightened to a
+`STR_LITERAL_MATCHING_RE` stable-prefix anchor — while the selector still resolves to
+the same unique target. This is the minimizer's relaxation step run _against a
+hand-written selector_ instead of from scratch: every relaxation that preserves
+uniqueness counts as slack, and the slack set is what the selector over-pins.
+
+It is the mechanical half of "report over-narrow selectors as debt even when they
+match" (the [automated spec workflows](automated_spec_workflows.md) goal). Output is a
+list ranked most-slack-first that the agent reads as a **where to look next** heuristic,
+never a verdict: high slack flags a likely over-pin, but the agent still judges whether
+the surviving anchor is the right one (a zero-slack selector can still be pinned on an
+incidental key). Reports slack only; it never rewrites — relaxing the pin is an
+authoring decision, run back through `match-selector` and the prove-gate.
+
+All three new commands follow the
 [automated spec workflows](automated_spec_workflows.md) contract: `--format
 json|ndjson`, the shared `--module` / `--source-root` filters, stable output, and a
 reason for every rejected candidate.
@@ -168,10 +216,10 @@ Avoid — these are incidental or actively unstable and churn on unrelated rebui
 - a generic object key with its value holed (`{ name: ANYTHING }`);
 - positional/structural shape with no kept value (arity, declaration order);
 - minified identifiers (already wildcarded) and their close neighbors;
-- **content hashes and generated ids** — hashed CSS class/module names
-  (`Button_a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id query
-  params, cache-busting suffixes. Pin the stable prefix and hole/regex the volatile
-  tail; never pin the hash.
+- **content hashes and generated ids** — hashed CSS-module class names
+  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id
+  query params, cache-busting suffixes. Pin the stable prefix and hole/regex the
+  volatile tail; never pin the hash.
 
 ## Common-case playbook
 
@@ -179,8 +227,21 @@ Domain patterns the skill recognizes and has a canned approach for:
 
 - **literal/enum tables** (i18n, routes, MIME, error codes): anchor on the
   distinctive key/value pair; group siblings.
-- **CSS / style maps**: regex-prefix anchors for generated class names; hole the hash
-  suffix. The hashed segment is the most volatile thing in the bundle — never pin it.
+- **CSS Modules / style maps** (the dogfood target's styling): the bundle is built
+  with CSS Modules, so every class-name string literal is shaped
+  `<Component>-module_<local>__<hash>` (e.g. `Button-module_root__a1b2c3`). The trailing
+  `<hash>` is regenerated every build — the single most volatile token in the bundle —
+  so **never pin it**: anchor each className constant with a
+  `STR_LITERAL_MATCHING_RE("^<Component>-module_<local>__[A-Za-z0-9_-]+$")` prefix regex
+  and let the tail float. Components collect these constants into `*Styles` **objects**
+  (`{ root: rootClassName, … }`, composed at use sites with `clsx`); there are many such
+  objects across the spec. Pin the object as a `binding_group` over its
+  className-constant declarators — each constant carrying its own prefix-regex anchor —
+  and hole the object body with `OBJECT_PROPS` down to the discriminating keys, rather
+  than emitting N overlapping member selectors. Tailwind utility classes (the
+  `tw-`-prefixed atoms appearing in the same `clsx` calls) are shared across every
+  component, so they **do not discriminate** — treat them as noise, never as anchors.
+  Ships as an anonymized `css_module_styles` fixture, not real bundle source.
 - **error classes**: the `name` / message string the class sets, not its field shape.
 - **event emitters / reducers**: the event/action name strings.
 - **API clients**: the endpoint path or operation name, the stable method name; hole
@@ -212,7 +273,10 @@ way it dispatches naming/extraction lanes.
   inventory/plan/apply/validate CLI model, patch-plan artifacts, perf budgets, and the
   three product flows. This plan amends only its selector-choice assumption: the cost
   model ranks and proves; it does not decide. The "report over-narrow selectors as
-  debt even when they match" goal stays — now the agent is what acts on that debt.
+  debt even when they match" goal stays, but is reframed: mechanically it is only the
+  `selector-slack` heuristic (which selectors _could_ be holed further), and judging
+  which flagged selectors are genuinely debt is the agent's call, not a worklist the
+  substrate hands over.
 - [read-off minimization](readoff_minimization.md) stays as the suggester/prover
   implementation. Its remaining over-pin backlog (e.g. value-over-key preference, the
   `single_target_class_whole_body` outcome) is no longer a blocker for spec quality —
@@ -221,14 +285,15 @@ way it dispatches naming/extraction lanes.
 
 ## Open questions / milestones
 
-- **M1 — `match-selector` + `--candidates N`.** The two read-only primitives; the
-  loop is not useful without them.
+- **M1 — read-only primitives: `match-selector`, `synthesize-selectors --candidates N`,
+  `selector-slack`.** The loop is not useful without the hypothesis-test probe and the
+  candidate menu; `selector-slack` feeds the prioritization heuristic for what to
+  revisit.
 - **M2 — the skill.** Loop + playbook + anonymized fixtures, grounded/tested.
 - **M3 — port-based evaluation.** Run the two-version dogfood pair as a held-out eval
   of the skill's instructions; version-port emits a per-selector survived/broke
   verdict attributed to anchor kind; feed a stability scorecard back into the
   playbook.
 - **Open:** how much the agent should batch-accept minimizer output vs. review
-  per-binding (cost/latency vs. quality); whether perturbation testing is cheap enough
-  to run inline as a stability pre-check; how the skill records its anchor rationale so
+  per-binding (cost/latency vs. quality); how the skill records its anchor rationale so
   the port feedback can attribute survival to a choice.
