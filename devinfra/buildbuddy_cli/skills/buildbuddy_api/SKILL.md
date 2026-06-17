@@ -257,7 +257,7 @@ this from the detected group_id and repo URL. `GetWorkflows` returns empty for t
 ## Raw API Fallback
 
 If `bbapi` is not available, use the Twirp JSON API at `app.buildbuddy.io` directly
-with curl. Read <devinfra/buildbuddy_cli/client.go> for how the CLI talks to the API
+with curl. Read <../../client.go> for how the CLI talks to the API
 (Twirp JSON over HTTP). The API key comes from `BUILDBUDDY_API_KEY` env var, or
 parse it from `~/.config/bazel/buildbuddy.bazelrc` (`x-buildbuddy-api-key=...`).
 
