@@ -1,13 +1,16 @@
 # Plan: agent-authored forward-compatible selectors
 
-Status: **design**. Reframes the selector-choice half of
+Status: **in progress**. The plan and the `debundle_stabilize` skill (M2) landed in
+#2332; the `match-selector` query + over-pin slack primitive (M1) landed in #2335.
+Remaining: `synthesize-selectors --candidates N` (M1) and port-based evaluation (M3).
+Reframes the selector-choice half of
 [automated spec workflows](automated_spec_workflows.md). That doc's mechanical
 `selective × stable × cost` ranker
 ([read-off minimization](readoff_minimization.md)) stays — but demoted from
 decision-maker to **suggester + uniqueness oracle**. The decision of **which**
-anchor a selector pins moves to an agent (a new `debundle_*` skill). Validity stays
-mechanically gated; forward-compatibility is an agent judgment, sanity-checked after
-the fact against real bundle versions.
+anchor a selector pins moves to an agent (the `debundle_stabilize` skill). Validity
+stays mechanically gated; forward-compatibility is an agent judgment, sanity-checked
+after the fact against real bundle versions.
 
 ## Why a cost model can't author forward-compatible selectors
 
@@ -78,7 +81,8 @@ Two mechanical signals **bound** that search without defining it:
   and complete — every name-pin is debt.
 - **Holing slack is a heuristic for over-pin.** A `source_match` that pins more than it
   needs — an anchor that could be holed further and still resolve uniquely — is a
-  _candidate_ for rework (the `selector-slack` query below). But slack is only a smell:
+  _candidate_ for rework (`match-selector` reports this slack; see below). But slack is
+  only a smell:
   a zero-slack selector can still be pinned on an incidental anchor (the `name`-key case
   has no slack and is still wrong), and a selector with slack can be perfectly readable.
   The agent uses it to **prioritize**, never to decide.
@@ -139,43 +143,41 @@ query feed the next.
 - `debundle spec synthesize-selectors` — the minimizer's single chosen selector.
 - keep-going spec validation — all selector failures in one pass.
 
-### New: `match-selector` (the hypothesis-test primitive)
+### Landed: `match-selector` (hypothesis-test probe + over-pin slack) — #2335
 
-Give it a candidate `source_match` (inline or a spec member) and a chunk; get back
-**what it resolves to**: the set of matching item/binding ids, the count, the
-uniqueness verdict, and the binding it would bind. This is the interactive
-counterpart to the batch minimizer — it lets the agent ask "if I anchor on X, is the
-match set the singleton I mean, and is it the right singleton?" and chain the
-returned ids into `show-source`. The matcher already exists internally (the
-prove-gate); this exposes it as a standalone probe that returns handles instead of a
-boolean.
+Give it a candidate `source_match` and a chunk; get back **what it resolves to** — the
+matching item/binding ids, the uniqueness verdict, and the binding it would bind — and,
+when the selector pins a unique target, its **slack**. The interactive counterpart to
+the batch minimizer: the agent asks "if I anchor on X, is the match set the singleton I
+mean, the right one — and did I over-pin it?" and chains the returned ids into
+`show-source`. The matcher already exists internally (the prove-gate); this exposes it
+as a probe that returns handles instead of a boolean.
 
-### New: `synthesize-selectors --candidates N`
+**Slack** is the mechanical half of "report over-narrow selectors as debt even when
+they match" (the [automated spec workflows](automated_spec_workflows.md) goal). It
+walks the selector AST and, for each pinned place, tries replacing it with the matching
+wildcard / run-hole — value-holing (`ANYTHING`) plus structural drops of an object
+property, class member, block statement, or call/`new` argument — keeping the
+relaxation iff the same unique target still resolves. Matching and slack share the
+parse + baseline resolve, so they are answered together (`--no-slack` skips slack for a
+fast match-only check). A non-empty slack list is a **where to look next** heuristic,
+never a verdict: high slack flags a likely over-pin, but the agent still judges whether
+the surviving anchors are right (a zero-slack selector can still be pinned on an
+incidental key). It reports only; relaxing a pin is an authoring decision, run back
+through `match-selector`. _(This subsumes the separately-planned `selector-slack`
+command — query and slack are the same authoring question.)_ Not yet covered:
+top-level context-statement drops and destructure-pattern property drops.
+
+### Planned: `synthesize-selectors --candidates N`
 
 Emit the top-N ranked candidates per item (each with its uniqueness proof, cost, and
 the concrete anchors it pins), not just the one minimal pick. The agent reads them as
 a menu — accept one, or use them to locate a better semantic anchor the ranker
-undervalued.
+undervalued. The remaining M1 piece: it needs the read-off walk to collect rather than
+short-circuit at the first proving anchor set, plus a multi-selector-per-item report
+shape.
 
-### New: `selector-slack` (the over-pin heuristic)
-
-Given an existing spec (or a module filter), report per selector whether any
-currently-kept anchor could be **holed further** — replaced with `ANYTHING` /
-`STMT_LIST` / `OBJECT_PROPS` / `CLASS_REST`, or tightened to a
-`STR_LITERAL_MATCHING_RE` stable-prefix anchor — while the selector still resolves to
-the same unique target. This is the minimizer's relaxation step run _against a
-hand-written selector_ instead of from scratch: every relaxation that preserves
-uniqueness counts as slack, and the slack set is what the selector over-pins.
-
-It is the mechanical half of "report over-narrow selectors as debt even when they
-match" (the [automated spec workflows](automated_spec_workflows.md) goal). Output is a
-list ranked most-slack-first that the agent reads as a **where to look next** heuristic,
-never a verdict: high slack flags a likely over-pin, but the agent still judges whether
-the surviving anchor is the right one (a zero-slack selector can still be pinned on an
-incidental key). Reports slack only; it never rewrites — relaxing the pin is an
-authoring decision, run back through `match-selector` and the prove-gate.
-
-All three new commands follow the
+Both commands follow the
 [automated spec workflows](automated_spec_workflows.md) contract: `--format
 json|ndjson`, the shared `--module` / `--source-root` filters, stable output, and a
 reason for every rejected candidate.
@@ -274,9 +276,9 @@ way it dispatches naming/extraction lanes.
   three product flows. This plan amends only its selector-choice assumption: the cost
   model ranks and proves; it does not decide. The "report over-narrow selectors as
   debt even when they match" goal stays, but is reframed: mechanically it is only the
-  `selector-slack` heuristic (which selectors _could_ be holed further), and judging
-  which flagged selectors are genuinely debt is the agent's call, not a worklist the
-  substrate hands over.
+  slack heuristic `match-selector` reports (which selectors _could_ be holed further),
+  and judging which flagged selectors are genuinely debt is the agent's call, not a
+  worklist the substrate hands over.
 - [read-off minimization](readoff_minimization.md) stays as the suggester/prover
   implementation. Its remaining over-pin backlog (e.g. value-over-key preference, the
   `single_target_class_whole_body` outcome) is no longer a blocker for spec quality —
@@ -285,11 +287,12 @@ way it dispatches naming/extraction lanes.
 
 ## Open questions / milestones
 
-- **M1 — read-only primitives: `match-selector`, `synthesize-selectors --candidates N`,
-  `selector-slack`.** The loop is not useful without the hypothesis-test probe and the
-  candidate menu; `selector-slack` feeds the prioritization heuristic for what to
-  revisit.
-- **M2 — the skill.** Loop + playbook + anonymized fixtures, grounded/tested.
+- **M1 — read-only primitives.** `match-selector` (hypothesis-test probe + over-pin
+  slack, value + structural) **landed** (#2335). Remaining: `synthesize-selectors
+--candidates N` (the ranked-candidate menu).
+- **M2 — the skill.** Loop + playbook + anonymized fixtures. The `debundle_stabilize`
+  skill **landed** (#2332); grounding its playbook entries with tested fixtures is
+  still open.
 - **M3 — port-based evaluation.** Run the two-version dogfood pair as a held-out eval
   of the skill's instructions; version-port emits a per-selector survived/broke
   verdict attributed to anchor kind; feed a stability scorecard back into the

@@ -65,6 +65,11 @@ One-line status for each `plans/` design doc; this is the discovery index.
   inventory/plan/apply/validate CLI surface and the synthesize / stabilize /
   version-port / new-app-bootstrap flows. Foundational milestones realized by the
   read-off work; repair-report, version-port, and bootstrap flows not started.
+- <plans/selector_authoring_agent.md> — **in progress.** Reframes selector choice as an
+  agent task: the `debundle_stabilize` skill picks forward-compatible anchors; the
+  minimizer is demoted to suggester + uniqueness oracle. Plan + skill landed (#2332);
+  the `match-selector` query + over-pin slack primitive landed (#2335). Open:
+  `--candidates N` and port-based evaluation.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.

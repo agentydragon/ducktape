@@ -70,8 +70,10 @@ This census is complete for name pins but blind to the other failure mode: a
 selector that is _already_ `source_match` yet pinned on an incidental anchor (the
 `{ name: ANYTHING }` shape). No command enumerates those — judging whether a pin is
 forward-stable is the same intelligence as authoring it, so you find them by reading
-source. The planned `selector-slack` probe (see Background) will at least flag
-over-specified selectors as a starting heuristic.
+source. `match-selector` (used in the loop below) reports **slack** as a starting
+heuristic — kept things that could be holed further without losing uniqueness — but a
+clean (zero-slack) selector can still be pinned on the wrong anchor, so slack only
+prioritizes; it never decides.
 
 ## The loop (per member, or per cohesive cluster)
 
@@ -91,11 +93,13 @@ over-specified selectors as a starting heuristic.
    member YAML — by hand, or by taking `synthesize-selectors --apply` output and
    tightening it onto the anchor you picked.
 
-4. **Prove it.** Run `debundle spec validate` (keep-going): it resolves every
-   selector and reports `no-match`, `ambiguous`, and `duplicate-claim`. Your edit
-   must resolve uniquely. This is today's way to answer "does my anchor actually
-   single this out?"; the planned `match-selector` probe (see Background) will make
-   it a faster inline check.
+4. **Prove it.** Test the candidate with
+   `debundle spec match-selector --source-file <chunk> --match '<selector>'
+--target-binding <name>`: it reports whether the selector resolves **uniquely** to
+   the binding you mean, and its **slack** — the kept things you could still hole
+   without losing uniqueness (i.e. whether you over-pinned). For a whole-spec sweep,
+   `debundle spec validate` (keep-going) resolves every selector and reports
+   `no-match` / `ambiguous` / `duplicate-claim`.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into a
    `binding_group` rather than emitting N overlapping member selectors.
@@ -166,10 +170,10 @@ authority.
 ## Background
 
 The design rationale (why anchor choice is an agent judgment rather than a cost
-term), the verifiability asymmetry, and the planned affordances that will speed
-this loop up — `match-selector` (probe "what does this candidate selector match?"),
-`synthesize-selectors --candidates N` (a menu of ranked candidates rather than one),
-and `selector-slack` (flags existing selectors that could be holed further without
-losing uniqueness — a heuristic for which pins to revisit) — live in the
-`selector_authoring_agent` plan under `devinfra/js/debundle/plans/`. The two-bundle-version dogfood pair is the eventual
-scorecard for whether these instructions actually produce durable selectors.
+term) and the verifiability asymmetry live in the `selector_authoring_agent` plan
+under `devinfra/js/debundle/plans/`. `match-selector` (which probes "what does this
+candidate match?" and reports over-pin slack in one shot) has landed; the one planned
+affordance still to come is `synthesize-selectors --candidates N` (a menu of ranked
+candidates rather than the minimizer's single pick). The two-bundle-version dogfood
+pair is the eventual scorecard for whether these instructions actually produce
+durable selectors.
