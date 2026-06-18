@@ -1098,3 +1098,16 @@ rust_test(
     crate = ":chunk_facts",
     edition = "2024",
 )
+
+# Coverage instrument: run over a real chunk to see how many top-level
+# statements fully extract vs. hit a fail-closed Unsupported, with the
+# first-blocker histogram — drives P1 growth by real-corpus frequency.
+rust_binary(
+    name = "chunk_facts_coverage",
+    srcs = ["chunk_facts_coverage.rs"],
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":js_ast",
+    ],
+)

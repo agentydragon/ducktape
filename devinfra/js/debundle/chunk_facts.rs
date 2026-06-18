@@ -16,6 +16,8 @@
 //! declarator / call / member / literal shapes and errors on everything else;
 //! it is intentionally not yet complete.
 
+use std::collections::BTreeMap;
+
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     BlockStmt, Callee, Class, ClassMember, Decl, Expr, Function, Lit, MemberExpr, MemberProp,
@@ -324,6 +326,37 @@ pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
     Ok(extractor.facts)
 }
 
+/// Per-top-level-statement coverage of the extractor over a chunk: how many
+/// statements fully extract vs. hit a fail-closed [`Unsupported`]. This is the
+/// instrument that turns P1 growth into a prioritized worklist — run it over a
+/// real chunk and grow the walk to clear the most frequent blocker first.
+#[derive(Debug, Default)]
+pub struct CoverageReport {
+    pub total: usize,
+    pub covered: usize,
+    /// `Unsupported.context` -> count. Each top-level statement contributes its
+    /// **first** blocker (the walk bails at the first unmodeled node), so this
+    /// ranks "what to model next", not every gap in the subtree.
+    pub unsupported: BTreeMap<&'static str, usize>,
+}
+
+/// Attempt extraction of each top-level statement independently and tally the
+/// outcome. Unlike [`extract_facts`], one statement's `Unsupported` does not
+/// abort the others — the point is to measure how far coverage reaches.
+pub fn coverage_report(module: &Module) -> CoverageReport {
+    let mut report = CoverageReport::default();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        report.total += 1;
+        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        let mut extractor = Extractor::default();
+        match extractor.module_item(item, ordinal) {
+            Ok(_) => report.covered += 1,
+            Err(Unsupported { context }) => *report.unsupported.entry(context).or_default() += 1,
+        }
+    }
+    report
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,6 +477,21 @@ mod tests {
                 "kind {expected} present: {kinds:?}"
             );
         }
+    }
+
+    #[test]
+    fn coverage_report_tallies_per_statement() {
+        // One extractable statement; one blocked by an unmodeled BinExpr. One
+        // statement's gap does not abort the tally of the other.
+        let report = js_ast::with_swc_globals(|| {
+            coverage_report(
+                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\nconst b = x + y;\n")
+                    .unwrap(),
+            )
+        });
+        assert_eq!(report.total, 2);
+        assert_eq!(report.covered, 1);
+        assert_eq!(report.unsupported.get("expr"), Some(&1));
     }
 
     #[test]
