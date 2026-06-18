@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    AssignTarget, BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, ForHead,
-    Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPatProp,
+    AssignTarget, BlockStmt, BlockStmtOrExpr, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread,
+    ForHead, Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPatProp,
     ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, VarDecl,
     VarDeclOrExpr, VarDeclarator,
 };
@@ -48,8 +48,10 @@ pub struct ChunkFacts {
     pub ident_name: Vec<(NodeId, String)>,
     /// member / property / method name (non-computed).
     pub prop_name: Vec<(NodeId, String)>,
-    /// operator token for `Bin` / `Unary` nodes (a T-invariant label).
+    /// operator token for `Bin` / `Unary` / `Update` / `Assign` nodes.
     pub operator: Vec<(NodeId, String)>,
+    /// regex literal -> (pattern, flags), both T-invariant labels.
+    pub regex: Vec<(NodeId, String, String)>,
     /// class node -> its super-class expression node (the syntactic `extends`).
     pub super_class: Vec<(NodeId, NodeId)>,
     /// top-level statement node -> its owner statement ordinal (owner-graph join).
@@ -434,6 +436,17 @@ impl Extractor {
                 self.facts.prop_name.push((id, js_ast::str_value(value)));
                 Ok(id)
             }
+            PropName::Num(number) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, number.value.to_string()));
+                Ok(id)
+            }
+            PropName::Computed(computed) => {
+                let id = self.node("ComputedKey");
+                let expr = self.expr(&computed.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
             _ => unsupported("prop_key"),
         }
     }
@@ -529,13 +542,12 @@ impl Extractor {
             Expr::Member(member) => self.member(member),
             Expr::Call(call) => {
                 let id = self.node("Call");
-                match &call.callee {
-                    Callee::Expr(callee) => {
-                        let callee = self.expr(callee)?;
-                        self.facts.child.push((id, 0, callee));
-                    }
-                    _ => return unsupported("callee"),
-                }
+                let callee = match &call.callee {
+                    Callee::Expr(callee) => self.expr(callee)?,
+                    Callee::Super(_) => self.node("Super"),
+                    Callee::Import(_) => self.node("ImportCallee"),
+                };
+                self.facts.child.push((id, 0, callee));
                 self.push_args(id, 1, &call.args)?;
                 Ok(id)
             }
@@ -589,10 +601,7 @@ impl Extractor {
                 for (index, elem) in array.elems.iter().enumerate() {
                     match elem {
                         Some(elem) => {
-                            if elem.spread.is_some() {
-                                return unsupported("array: spread");
-                            }
-                            let value = self.expr(&elem.expr)?;
+                            let value = self.expr_or_spread(elem)?;
                             self.facts.child.push((id, index as u32, value));
                         }
                         // Elision keeps positions faithful (`[a, , b]`).
@@ -656,6 +665,33 @@ impl Extractor {
                 }
                 Ok(id)
             }
+            Expr::Update(update) => {
+                // Kind encodes prefix vs postfix (`++i` vs `i++`) faithfully.
+                let id = self.node(if update.prefix {
+                    "UpdatePrefix"
+                } else {
+                    "UpdatePostfix"
+                });
+                self.facts
+                    .operator
+                    .push((id, update.op.as_str().to_string()));
+                let arg = self.expr(&update.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Arrow(arrow) => {
+                let id = self.node("Arrow");
+                for (index, param) in arrow.params.iter().enumerate() {
+                    let param = self.pat(param)?;
+                    self.facts.child.push((id, index as u32, param));
+                }
+                let body = match &*arrow.body {
+                    BlockStmtOrExpr::BlockStmt(block) => self.block(block)?,
+                    BlockStmtOrExpr::Expr(expr) => self.expr(expr)?,
+                };
+                self.facts.child.push((id, arrow.params.len() as u32, body));
+                Ok(id)
+            }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
             Expr::This(_) => Ok(self.node("This")),
@@ -717,13 +753,21 @@ impl Extractor {
         args: &[ExprOrSpread],
     ) -> Result<(), Unsupported> {
         for (index, arg) in args.iter().enumerate() {
-            if arg.spread.is_some() {
-                return unsupported("call/new: spread arg");
-            }
-            let arg = self.expr(&arg.expr)?;
-            self.facts.child.push((parent, base + index as u32, arg));
+            let child = self.expr_or_spread(arg)?;
+            self.facts.child.push((parent, base + index as u32, child));
         }
         Ok(())
+    }
+
+    fn expr_or_spread(&mut self, arg: &ExprOrSpread) -> Result<NodeId, Unsupported> {
+        let value = self.expr(&arg.expr)?;
+        if arg.spread.is_some() {
+            let spread = self.node("Spread");
+            self.facts.child.push((spread, 0, value));
+            Ok(spread)
+        } else {
+            Ok(value)
+        }
     }
 
     fn member(&mut self, member: &MemberExpr) -> Result<NodeId, Unsupported> {
@@ -778,9 +822,13 @@ impl Extractor {
                 self.facts.num_lit.push((id, token));
                 Ok(id)
             }
-            // Regex carries a value (pattern + flags) that needs its own fact
-            // before it can be modeled faithfully — loud until then.
-            Lit::Regex(_) => unsupported("lit:regex"),
+            Lit::Regex(regex) => {
+                let id = self.node("RegexLit");
+                self.facts
+                    .regex
+                    .push((id, regex.exp.to_string(), regex.flags.to_string()));
+                Ok(id)
+            }
             _ => unsupported("lit"),
         }
     }
