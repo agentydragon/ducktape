@@ -650,12 +650,26 @@ within the statement); `alpha_canonicalize.rs` seeds the canonicalization. This 
 extension, not a drawing-board reset — but it is the fidelity-critical piece, so it is built
 behind the differential, construct by construct, exactly as P1 coverage was.
 
-Remaining rungs, each differential-gated: (1) alpha via scope facts; (2) run/list holes as
-subsequence matches over the child-index — the chain-join placement encoding, with cross-gap
-alpha-binding coupling fail-closed (see the run-hole finding under "Can the query model match every
-selector kind faithfully?"); (3) statement-position holes; (4) resolver-level wiring
-(`DatalogResolver` returning the claimed binding) + the **corpus-wide** differential — the gate the
-goal names.
+**Landed (P2 rung 3 — run/list holes):** `selector_match::match_list_with_holes` / `place_segments`
+match a run-hole-bearing list (`STMT_LIST` / `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` /
+`DECLARATORS`, plus `ANYTHING` in its run-hole positions) as an ordered subsequence with gaps,
+mirroring the production matcher's same-named routines over facts (carrier detection per parent kind
+via `is_run_hole_carrier`, projecting `source_match/holes.rs`; greedy-leftmost placement with
+`Bindings` snapshot/restore). Fail-closed is now an **up-front needle scan**
+(`unsupported_needle_construct`) that rejects the `STR_LITERAL_MATCHING_RE` predicate and any
+run-hole keyword not consumed as a carrier (a misplaced hole) _before_ structural matching, so a
+kind/arity short-circuit can never mask an unhandled construct (the regex predicate caught exactly
+that — a `Call`-vs-`StrLit` mismatch returned a wrong `false`). `selector_match_differential_test`
+proves agreement with the production matcher on 23 cases incl. anchored/interior segments, the
+two-hole `{…, k, …}` corpus shape, and alpha+run-hole; fail-closed on the regex predicate and a
+misplaced run hole. _Per the finding above, this kernel realizes the placement as a direct
+greedy+backtracking search; the relational chain-join (cross-gap alpha-binding coupling fail-closed)
+is the P3/P4 native-lowering form._
+
+Remaining rungs, each differential-gated: (1) alpha via scope facts; (2) statement-position holes
+(parse-position-polymorphic `ANYTHING;`/`STMT;` matching any statement kind, not only `ExprStmt`);
+(3) resolver-level wiring (`DatalogResolver` returning the claimed binding) + the **corpus-wide**
+differential — the gate the goal names.
 
 ### What the matcher cannot do that the query model can
 

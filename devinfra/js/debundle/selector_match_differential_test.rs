@@ -135,6 +135,75 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: true,
                 expected: false,
             },
+            // --- run holes: ordered subsequence with gaps ---
+            // ARGS absorbs the whole argument run (including an empty one).
+            Case {
+                selector: "const a = foo.bar(ARGS);",
+                subject: "const a = foo.bar(1, 2);",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "const a = foo.bar(ARGS);",
+                subject: "const a = foo.bar();",
+                alpha: false,
+                expected: true,
+            },
+            // anchored-left fixed segment before the hole: first arg must match.
+            Case {
+                selector: "const a = foo(x, ARGS);",
+                subject: "const a = foo(x, 1, 2);",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "const a = foo(x, ARGS);",
+                subject: "const a = foo(y, 1);",
+                alpha: false,
+                expected: false,
+            },
+            // anchored-right fixed segment after the hole: last arg must match.
+            Case {
+                selector: "const a = foo(ARGS, z);",
+                subject: "const a = foo(1, 2, z);",
+                alpha: false,
+                expected: true,
+            },
+            // STMT_LIST absorbs leading statements; the trailing segment is anchored.
+            Case {
+                selector: "function f() { STMT_LIST; return 1; }",
+                subject: "function f() { a(); b(); return 1; }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { STMT_LIST; return 1; }",
+                subject: "function f() { return 2; }",
+                alpha: false,
+                expected: false,
+            },
+            // OBJECT_PROPS absorbs the surrounding properties; a two-hole list
+            // with an interior fixed segment (the corpus `{…, k, …}` shape).
+            Case {
+                selector: "const o = { a: 1, OBJECT_PROPS };",
+                subject: "const o = { a: 1, b: 2 };",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "const o = { OBJECT_PROPS, k: 1, OBJECT_PROPS };",
+                subject: "const o = { x: 0, k: 1, y: 2 };",
+                alpha: false,
+                expected: true,
+            },
+            // run hole under alpha mode: the binding still flows through the
+            // fixed segment (`a`↔`x`) while STMT_LIST absorbs the rest.
+            Case {
+                selector: "function f(a) { STMT_LIST; return a; }",
+                subject: "function g(x) { y(); return x; }",
+                alpha: true,
+                expected: true,
+            },
         ];
         for case in cases {
             let selector = selector(case.selector, case.alpha);
@@ -161,18 +230,36 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
 }
 
 #[test]
-fn fail_closed_on_run_holes() {
+fn fail_closed_on_regex_predicate() {
     js_ast::with_swc_globals(|| {
-        // `ARGS` is a variable-length run hole — not faithful yet, so the fact
-        // matcher errors rather than under-constraining the match.
+        // The `STR_LITERAL_MATCHING_RE` predicate sugar is not lowered yet, so
+        // the fact matcher errors rather than matching the callee literally.
         let result = selector_match::matches(
-            &facts("const a = foo.bar(ARGS);"),
-            &facts("const a = foo.bar(1, 2);"),
+            &facts("const a = STR_LITERAL_MATCHING_RE(\"^x\");"),
+            &facts("const a = \"xyz\";"),
             Mode::Exact,
         );
         assert!(
             matches!(result, Err(selector_match::Unsupported { .. })),
-            "run hole must be fail-closed, got {result:?}",
+            "regex predicate must be fail-closed, got {result:?}",
+        );
+    });
+}
+
+#[test]
+fn fail_closed_on_misplaced_run_hole() {
+    js_ast::with_swc_globals(|| {
+        // `ARGS` in expression position (not an argument list) is a misplaced run
+        // hole: it reaches the node matcher rather than being consumed as a list
+        // carrier, so the match errors rather than treating it as an identifier.
+        let result = selector_match::matches(
+            &facts("const a = ARGS;"),
+            &facts("const a = b;"),
+            Mode::Exact,
+        );
+        assert!(
+            matches!(result, Err(selector_match::Unsupported { .. })),
+            "misplaced run hole must be fail-closed, got {result:?}",
         );
     });
 }
