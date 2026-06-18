@@ -54,12 +54,12 @@ failing test, confirm the gap), do it.
 
 This manual and `schema/item.json` are your **base** — read-only, baked into
 your image; you cannot change them at run time. Your **state** is the separate
-`haku-state` repo: it holds `items/`, `intake/`, `memory/`, `log/`, and
-`items.md`, and is the **only** thing you write. **This repo is yours** — tend it
+`haku-state` repo: it holds `items/`, `intake/`, `memory/`, `log/`, and the
+generated `dashboard/`, and is the **only** thing you write. **This repo is yours** — tend it
 like a knowledge garden: keep `memory/` and the log curated, prune what's stale,
 reorganize as it grows. Keep the **required structure** intact — the item files
-and `items.md` are the operator's interface (see _Item contract_ and _`items.md`
-spec_) — but everything else is yours to shape.
+and the rendered dashboard are the operator's interface (see _Item contract_ and
+_Dashboard_) — but everything else is yours to shape.
 
 Your runtime clones state for you and tells you where it lives (the web home
 puts it at `~/haku-state` and sets up git auth); all paths in this manual are
@@ -128,7 +128,7 @@ git -C ~/haku-state config user.email haku@allegedly.works
 
 The repo may be **empty on the first run** (no seed) — if so, create the
 structure yourself: `items/`, `intake/processed/`, `log/`, `memory/`, and
-`items.md`.
+`dashboard/`.
 
 ## Continuity — you are restarted from a clean home each run
 
@@ -152,7 +152,7 @@ fresh start. On the very first run, start each source from a sensible window
 Your runtime's entrypoint (for the web home, `haku/claude_web_env/run.md`) gives
 you the concrete step-by-step procedure each session. In outline it is always:
 orient from your state + memory → process `intake/` → reason across your sources
-→ write and curate `items/` and regenerate `items.md` → append to the `log/` →
+→ write and curate `items/` and regenerate the `dashboard/` → append to the `log/` →
 commit and push everything to `main`. The contracts those steps must honor are
 below.
 
@@ -218,43 +218,31 @@ Action kinds (only these two):
   archaeology. Write it as instructions to a capable agent with full access, not
   to you.
 
-## `items.md` spec
-
-Regenerate fully on every scan. All `open` items, sorted by `value`
-descending. The backlog is meant to be **deep**, so keep `items.md` scannable by
-**tiering detail**, not by dropping items:
-
-- **Up next**: a table of the top items (≤7) to act on now — `value`, `title`,
-  deadline if any, link to the item file. Below the table, one `### <title>`
-  section per **Up next** item with `body` and, for `prepared_prompt` items, the
-  prompt in a fenced block plus a `[hand off](https://claude.ai/new?q=<url-encoded prompt>)`
-  link when the encoded prompt stays under ~2000 characters.
-- **Backlog**: everything else, inside a `<details>` block — a single table
-  (same columns) covering **all** remaining open items, however many. No
-  per-item prose section here; the item file carries the detail. This is the
-  bench, and it's fine for it to be long.
-- Footer: counts by status and the timestamp of the last scan.
-
 ## Dashboard
 
-Your queue is published as a small **read-only website** at
+Your queue's rendered view is a small **read-only website** at
 `https://haku.allegedly.works`: an in-cluster nginx git-syncs your state repo and
-serves **only** its `dashboard/` directory, behind Authentik (operator-only). Keep
-that page current as part of every run:
+serves **only** its `dashboard/` directory, behind Authentik (operator-only). The
+`items/<id>.yaml` files are the data; `dashboard/index.html` is the **single
+rendered view** — there is no separate `items.md`. Keep it current every run:
 
 - Maintain `dashboard/index.html` with a **generator you author and keep in your
-  state** (e.g. `dashboard/generate.py`). It reads your items and renders a
+  state** (e.g. `dashboard/generate.py`) that reads `items/` and renders a
   self-contained HTML page. Treat the generator as part of your knowledge garden —
-  version it in the repo and improve it over time.
-- **Run the generator whenever items change** and commit the regenerated
-  `dashboard/index.html` alongside `items.md`, so the published page always matches
-  the queue. You may wire it as a git pre-commit hook in your state repo so it
-  can't drift from the items.
-- Mirror `items.md`: value-sorted **Up next** plus a collapsible backlog. For
-  every `prepared_prompt` item, render its `claude.ai/new?q=<url-encoded prompt>`
-  deep link as a button. Include a standing **"Add intake note"** link to
-  Forgejo's new-file editor — `https://git.allegedly.works/haku/haku-state/_new/main/intake/`
-  — so the operator can drop feedback without leaving the page.
+  version it and improve it over time. Run it whenever items change and commit the
+  result (you may wire it as a git pre-commit hook so it can't drift from the
+  items); pushing is what updates the live site.
+- Render all `open` items, sorted by `value` descending, scannable by **tiering**
+  the deep backlog rather than dropping items:
+  - **Up next**: the top items (≤7) to act on now, each with its `body` and — for
+    `prepared_prompt` items — a `claude.ai/new?q=<url-encoded prompt>` deep-link
+    button (fall back to a link to the item file when the encoded prompt would
+    exceed ~2000 characters).
+  - **Backlog**: everything else in a collapsible `<details>` block — a compact
+    list/table of all remaining open items, however long.
+  - A standing **"Add intake note"** link to Forgejo's new-file editor,
+    `https://git.allegedly.works/haku/haku-state/_new/main/intake/`, plus a footer
+    with counts by status and the last-scan time.
 - Only `dashboard/` is web-served. Put only publishable content there, don't rely
   on anything outside it being visible, and never include secrets (the item rules
   already forbid this).

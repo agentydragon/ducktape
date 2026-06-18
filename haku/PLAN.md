@@ -78,9 +78,10 @@ items under its own credentials. Each role:
   agent account or me) changed what, when, and why, with diffs. Provisioned by
   `tf/gitops/haku-state` (the `augur-evidence` pattern): the `haku` service
   user owns it, I review as Forgejo site-admin.
-- **Dashboard** — v0 is **just a view of git**. Starts as the
-  curator-maintained, value-sorted `items.md` rendered by Forgejo (zero UI
-  code), later a committed static page served via git-sync (see phase 2).
+- **Dashboard** — v0 is **just a view of git**. It is the value-sorted
+  `dashboard/index.html` Haku regenerates from its items, served read-only behind
+  Authentik by an nginx + git-sync Deployment (see phase 2). There is no separate
+  `items.md` — the HTML is the single rendered view.
   Exactly three affordances per item,
   all of which are commits: **hand off** (follow the handoff URL, mark
   `in_progress`), **archive** (flip to a terminal status), and **leave
@@ -116,7 +117,7 @@ class Item(BaseModel):
 
 Serialization: `items/<id>.yaml` in the `haku-state` repo, validated against
 `base/schema/item.json` at write time. Items stay machine-readable, not freeform
-notes — Haku regenerates the rendered `items.md` view from them; freeform
+notes — Haku regenerates the rendered dashboard view from them; freeform
 reasoning lives in `body`, the `log/`, and commit messages.
 
 Action tiers (the discriminated union — only these two; the earlier `ToolCalls`
@@ -126,7 +127,7 @@ tier was dropped):
   acknowledge.
 - **Tier 1 — `PreparedPrompt`**: the workhorse. Full prompt text embedding the
   evidence and desired outcome so the executor session needs no archaeology.
-  Rendered in `items.md` as a **handoff URL** — a `claude.ai/new?q=<prompt>`
+  Rendered on the dashboard as a **handoff URL** — a `claude.ai/new?q=<prompt>`
   deep link where the prompt fits in a URL, otherwise a link to the raw item
   file to copy from.
 
@@ -178,13 +179,13 @@ credential can write only the state repo**:
   entrypoint (`haku/claude_web_env/run.md`), not in base. There is **no
   `.mcp.json`** (v0 has no MCP servers — Plaid is `psql`, Google is REST).
 - **state** — the `haku-state` repo: Haku's _accumulated information_. `items/`,
-  `intake/` (+ `processed/`), `memory/`, `log/`, generated `items.md`. This is
+  `intake/` (+ `processed/`), `memory/`, `log/`, generated `dashboard/`. This is
   the **only** thing Haku writes, and the only place it can.
 
 ```
 haku/base/  (read-only, in ducktape)          haku-state/  (state, Haku writes)
 ├── CLAUDE.md          # @AGENTS.md           ├── items/<id>.yaml
-├── AGENTS.md          # editor-facing        ├── items.md       # value-sorted view
+├── AGENTS.md          # editor-facing        ├── dashboard/     # rendered HTML view
 ├── instructions.md    # operating manual     ├── intake/        # freeform notes from me
 ├── playbooks/         # example playbooks     │   └── processed/ # + Haku's interpretation
 ├── schema/item.json   # JSON Schema          ├── memory/        # knowledge garden + bookmarks
@@ -212,7 +213,7 @@ Properties this buys:
   — the standard <../cluster/docs/container-images.md> flow.) State is **not
   seeded**: Terraform creates `haku-state` (`auto_init`) empty and Haku creates
   its own structure (`items/`, `intake/processed/`, `memory/`, `log/`,
-  `items.md`) on the first run.
+  `dashboard/`) on the first run.
 - **Schema lives in base** (`schema/item.json`). Haku validates items at write
   time against it; ducktape CI validates base. No second copy in state to drift.
 
@@ -483,8 +484,8 @@ cluster` (covers `plaid-mcp-db-ro:5432`, in-cluster LiteLLM, and
 
 Intake works from day one — I commit to `intake/` via the Forgejo web editor
 (phone included); the run reads unprocessed intake and folds guidance into
-`memory/`. Review and approval stay in Forgejo: the rendered `items.md` is the
-dashboard, approval = following an item's handoff URL.
+`memory/`. Review happens on the dashboard at `haku.allegedly.works`; approval =
+following an item's handoff URL, feedback = a Forgejo intake note.
 
 **The next source proves the filter-facade path.** Plaid used the
 scoped-credential trick; PostScanMail is the first HTTP MCP with no read-only
@@ -541,7 +542,7 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
 
 ### Phase 2 — handoff polish (+ optional UI)
 
-- Better handoff: `claude.ai/new?q=` deep links in `items.md` where prompts
+- Better handoff: `claude.ai/new?q=` deep links on the dashboard where prompts
   fit; for longer prompts, a stable per-item URL whose content is
   one-click-copyable. Closing the loop stays manual at first (I flip
   `status` after the handoff session finishes).

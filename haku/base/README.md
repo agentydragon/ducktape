@@ -7,8 +7,8 @@ writes here. Changing Haku's behaviour means editing this directory in ducktape
 and letting the image rebuild (Flux image automation bumps the CronJob tag).
 
 - `instructions.md` — Haku's operating manual: who it is, how it reasons, the
-  perimeter/credential model, hard rules, the item contract, the `items.md`
-  spec, and tone. Haku reads this as itself at run time.
+  perimeter/credential model, hard rules, the item contract, the dashboard spec,
+  and tone. Haku reads this as itself at run time.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
   Haku's runtime manual).
 - `playbooks/` — **example** playbooks (not a closed set); starting points Haku
