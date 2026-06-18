@@ -372,11 +372,22 @@ taxonomy and `describe`/`show-source`/`cluster` (they read the graph, not select
 
 ### Spec-format evolution (what the current YAML can't express)
 
-The current vocabulary — `selector.binding.name`, one contiguous `source_match`,
-`binding_groups`, `anonymous_statements` — has no way to say the things Datalog queries
-can, and that the pass needed: a cross-reference to another entity, disjoint relational
-constraints, one global symbol shared across selectors, or negation/counting. The format
-grows from "a name pin or one match-string" to **a query = a conjunction of atoms**:
+Two layers, kept distinct:
+
+- **IR (engine-facing) — Datalog-native.** The compiled form the solver consumes is a
+  normalized atom/rule set: per-target distinguished variables, the derived-predicate
+  library (`calls`/`alias`/… as rules), `@Name` cross-refs as shared variables, and any
+  negation. Non-negotiable — it is what the engine evaluates.
+- **Authoring (human/agent-facing) — a structured 1:1 skin over that IR**, not a raw
+  Datalog file. A _pure_ `.dl` spec isn't actually on the table: the dominant **shape**
+  atom must stay JS-with-holes (hand-written AST atoms are the unreadable dump the rubric
+  exists to avoid), so the format is always Datalog-for-relations + a JS-shape escape.
+
+So the authoring vocabulary — today `selector.binding.name`, one contiguous
+`source_match`, `binding_groups`, `anonymous_statements`, none of which can express a
+cross-reference, disjoint relational constraints, a shared global symbol, or
+negation/counting — grows from "a name pin or one match-string" to **a query = a
+conjunction of atoms**:
 
 - **shape atom** — today's JS-with-holes `source_match`, lowered to
   `child`/`kind`/`str_lit`/`prop_name` atoms. Holes mostly disappear: a query constrains
@@ -387,8 +398,13 @@ grows from "a name pin or one match-string" to **a query = a conjunction of atom
 - **cross-reference** — `@Name` is the _same logic variable_ as that entity's target,
   shared across the whole spec (subsumes per-match `target_binding`); `$x` is a
   clause-local hole.
+- **escape hatch** — a `where:` block of raw IR atoms sharing `$` variables, for the rare
+  multi-atom join or negation the structured keys express clumsily. This is where the
+  format goes rule-native exactly when YAML would fight the semantics, without paying that
+  cost for the simple 95%.
 - **negation / uniqueness** (later) — "the _only_ X with method m", "whose sole use is
-  @Y" — stratified-negation atoms; a few anchors need them, optional at first.
+  @Y" — stratified-negation atoms (most naturally written in the `where:` escape hatch);
+  a few anchors need them, optional at first.
 - **`minified_name`** — the bootstrap atom (temporary; dropped once nothing uses it).
 
 Sketch:
@@ -404,12 +420,18 @@ Sketch:
         class $self extends ANYTHING {
           getName() { return "DocumentAccessorFactory"; }
         }
+- name: soleConsumerOfFoo # escape hatch: multi-atom join + negation
+  where:
+    - "calls($self, @foo)"
+    - "not (calls(other, @foo), other != $self)"
 ```
 
 **Backward-compatible migration**: `binding.name` and `source_match` lower to query atoms
 (a name pin = `{ minified_name: "…" }`; a `source_match` = a shape atom), so every
 existing selector keeps resolving while the new atoms are added incrementally; the
-equivalence gate guards the swap.
+equivalence gate guards the swap. Keeping the skin **1:1 with the IR** also keeps a full
+rule-DSL switch cheap — a mechanical YAML→DSL codemod — deferred until the atom vocabulary
+stabilizes and only if relational/negation usage grows enough to justify it.
 
 ### Rollout
 
