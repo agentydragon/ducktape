@@ -16,7 +16,8 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   Tana MCP, exposes only read tools (default-deny allowlist via the generic
   facade's `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side so
   callers never see it, and is gated by a static bearer `haku-tana-ro-token`
-  reflected into `haku-sandbox`. Remaining **Haku-side wiring (deferred)**:
+  reflected into `haku-sandbox`, and the `tana_review` playbook + the
+  `haku-tana-ro-token` credentials row are wired into `base/`. Remaining:
   - Decide how Haku reaches it: an in-cluster MCP client / `kubectl
 port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
     vs. threading the Claude Code harness's MCP client to
@@ -27,15 +28,12 @@ port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
     `toEntities: cluster`; no new CNP needed for that hop.
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
-  - Add a `tana` playbook — read recent daily/calendar notes + recently-edited
-    nodes (synthesized from `search_nodes` + calendar-node traversal) → stale
-    tasks, captured notes implying action — and a credentials-table row in
-    `base/instructions.md`.
-- **ducktape git history** — Haku already has the ducktape checkout and runs
-  `git log` for base-sync; add a `ducktape_git_review` playbook that scans
-  recent history (new TODO/FIXME, new `TODO.md`/`PLAN.md` entries,
-  follow-up-flagged commits, reverts, half-finished threads) → proposals. No
-  infra; playbook + `base/instructions.md` row only.
+  - **Future (PLAN north star):** retire the pod dance by wiring Tana into the
+    harness — expose `tana-mcp-ro` behind a bearer-gated route and give Haku
+    `mcp__tana_ro__*` tools natively (the `kubectl-local` stdio-MCP pattern, but
+    the facade is already HTTP so a `.mcp.json` `http` entry suffices), with the
+    bearer threaded from the reflected secret. Then `tana_review` drops its
+    connection section.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
   Forgejo user read, add a repo-activity playbook (open PRs/issues/review

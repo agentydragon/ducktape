@@ -17,6 +17,11 @@ products (Docs, Slides, …) are fair game the same way when the token carries t
 scope — if a call 403s, the scope isn't granted, so note the gap in your log and
 move on.
 
+[`tana_review`](tana_review.md) (read-only Tana via the cluster-internal
+`tana-mcp-ro` facade) is **newly deployed** — its `haku-tana-ro-token` secret and
+pod-based connection aren't paved yet, so confirm it's on your wire before relying
+on it (and record the working recipe in your `memory/`).
+
 Designed but **not yet wired** — the tools aren't on your wire; don't attempt
 them, just note the gap in your log if one appears: PostScanMail (unopened mail →
 open/discard), Grocy stock (expiring / below-minimum). Each is blocked until it

@@ -117,6 +117,7 @@ can read exactly what you've been granted rather than guessing:
 | State repo (write)         | `haku-state-git-write`  | `username`, `password`, `repo_url`                |
 | Plaid Postgres (read-only) | `plaid-mcp-db-readonly` | `DATABASE_URL` (+ `username`/`password`/…)        |
 | Google read-only APIs      | `google-access-token`   | `access_token` (Gmail, Calendar, Drive, Tasks, …) |
+| Tana (read-only MCP)       | `haku-tana-ro-token`    | `token` (bearer for the `tana-mcp-ro` facade)     |
 
 More sources arrive the same way: a new read-only credential shows up as a
 secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
@@ -213,6 +214,13 @@ below.
   even if attempted. Call the Gmail/Calendar REST APIs with
   `Authorization: Bearer $TOK`. There is no MCP server; `curl` goes through the
   egress proxy transparently.
+- **Tana: read-only MCP, from a `haku-sandbox` pod.** The operator's Tana
+  workspace is reachable only through the cluster-internal `tana-mcp-ro` facade,
+  which exposes read tools only (writes are hidden and rejected) and holds the
+  Tana PAT itself — you never see it. Reach it from a pod (command + `kubectl
+logs`, not `exec`/`port-forward`) carrying the `haku-tana-ro-token` bearer; the
+  facade is newly deployed, so confirm it's on your wire before relying on it. See
+  `playbooks/tana_review.md`.
 - Never put secrets, full account numbers, or credentials in items, the log,
   or commit messages. Reference transactions by date + merchant + amount, mail
   and events by subject/title + sender + date (never raw bodies, never the
@@ -286,7 +294,8 @@ rendered view** — there is no separate `items.md`. Keep it current every run:
 [`drive_activity`](playbooks/drive_activity.md),
 [`tasks`](playbooks/tasks.md),
 [`keep_notes`](playbooks/keep_notes.md),
-[`ducktape_git_review`](playbooks/ducktape_git_review.md)), **not a closed set**. Read them
+[`ducktape_git_review`](playbooks/ducktape_git_review.md),
+[`tana_review`](playbooks/tana_review.md)), **not a closed set**. Read them
 for the pattern, run the ones whose sources you have, and develop your own over
 time (record those in your `memory/`, not base). Some sources are designed but
 not yet wired — if a tool isn't on your wire, don't use it; note the gap in your
