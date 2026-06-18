@@ -27,7 +27,7 @@ use swc_ecma_ast::{
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
     MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, OptChainBase,
     ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp,
-    VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
+    Tpl, VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -297,6 +297,7 @@ impl Extractor {
             Stmt::Break(_) => Ok(self.node("Break")),
             Stmt::Continue(_) => Ok(self.node("Continue")),
             Stmt::Empty(_) => Ok(self.node("Empty")),
+            Stmt::Debugger(_) => Ok(self.node("Debugger")),
             Stmt::For(for_stmt) => {
                 let id = self.node("For");
                 if let Some(init) = &for_stmt.init {
@@ -725,26 +726,13 @@ impl Extractor {
                 self.facts.child.push((id, 1, right));
                 Ok(id)
             }
-            Expr::Tpl(tpl) => {
-                // Interleave quasis and exprs in source order: q0 e0 q1 e1 … qn.
-                let id = self.node("Tpl");
-                let mut ordinal = 0u32;
-                for (index, quasi) in tpl.quasis.iter().enumerate() {
-                    let q = self.node("TplQuasi");
-                    let value = quasi
-                        .cooked
-                        .as_ref()
-                        .map(|cooked| cooked.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| quasi.raw.to_string());
-                    self.facts.str_lit.push((q, value));
-                    self.facts.child.push((id, ordinal, q));
-                    ordinal += 1;
-                    if let Some(expr) = tpl.exprs.get(index) {
-                        let expr = self.expr(expr)?;
-                        self.facts.child.push((id, ordinal, expr));
-                        ordinal += 1;
-                    }
-                }
+            Expr::Tpl(tpl) => self.tpl(tpl),
+            Expr::TaggedTpl(tagged) => {
+                let id = self.node("TaggedTpl");
+                let tag = self.expr(&tagged.tag)?;
+                self.facts.child.push((id, 0, tag));
+                let tpl = self.tpl(&tagged.tpl)?;
+                self.facts.child.push((id, 1, tpl));
                 Ok(id)
             }
             Expr::Update(update) => {
@@ -834,6 +822,30 @@ impl Extractor {
             Expr::This(_) => Ok(self.node("This")),
             other => unsupported(expr_variant_name(other)),
         }
+    }
+
+    /// Template literal: interleave quasis and exprs in source order
+    /// (`q0 e0 q1 e1 … qn`). Shared by `Tpl` and the `tpl` of a `TaggedTpl`.
+    fn tpl(&mut self, tpl: &Tpl) -> Result<NodeId, Unsupported> {
+        let id = self.node("Tpl");
+        let mut ordinal = 0u32;
+        for (index, quasi) in tpl.quasis.iter().enumerate() {
+            let q = self.node("TplQuasi");
+            let value = quasi
+                .cooked
+                .as_ref()
+                .map(|cooked| cooked.to_string_lossy().into_owned())
+                .unwrap_or_else(|| quasi.raw.to_string());
+            self.facts.str_lit.push((q, value));
+            self.facts.child.push((id, ordinal, q));
+            ordinal += 1;
+            if let Some(expr) = tpl.exprs.get(index) {
+                let expr = self.expr(expr)?;
+                self.facts.child.push((id, ordinal, expr));
+                ordinal += 1;
+            }
+        }
+        Ok(id)
     }
 
     fn object_prop(&mut self, prop: &PropOrSpread) -> Result<NodeId, Unsupported> {
@@ -1300,24 +1312,43 @@ mod tests {
 
     #[test]
     fn coverage_report_tallies_per_statement() {
-        // One extractable statement; one blocked by an unmodeled `debugger`
-        // statement. One statement's gap does not abort the tally of the other.
+        // One extractable statement; one blocked by an unmodeled `import.meta`
+        // meta-property. One statement's gap does not abort the tally of the other.
         let report = js_ast::with_swc_globals(|| {
             coverage_report(
-                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\ndebugger;\n").unwrap(),
+                &js_ast::parse_js_module_ast(
+                    "<test>",
+                    "const a = \"s\";\nconst b = import.meta;\n",
+                )
+                .unwrap(),
             )
         });
         assert_eq!(report.total, 2);
         assert_eq!(report.covered, 1);
-        assert_eq!(report.unsupported.get("stmt"), Some(&1));
+        assert_eq!(report.unsupported.get("expr:meta_prop"), Some(&1));
     }
 
     #[test]
     fn unmodeled_construct_errors_loudly_not_silently() {
-        // A `debugger` statement is not selector-relevant and stays unmodeled.
-        // Fail-closed means a hard error here, never a silently-incomplete fact
-        // set that would let a query under-constrain.
-        let error = extract("debugger;").unwrap_err();
-        assert_eq!(error.context, "stmt");
+        // `import.meta` (a meta-property) stays unmodeled. Fail-closed means a
+        // hard error here, never a silently-incomplete fact set that would let a
+        // query under-constrain.
+        let error = extract("const a = import.meta;").unwrap_err();
+        assert_eq!(error.context, "expr:meta_prop");
+    }
+
+    #[test]
+    fn extracts_debugger_and_tagged_template() {
+        // `debugger;` is a childless statement node; a tagged template carries
+        // its tag plus the template (quasis interleaved with exprs).
+        let facts = extract("function f() { debugger; }\nconst a = tag`x${y}z`;")
+            .expect("debugger + tagged template extract");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Debugger", "TaggedTpl", "Tpl", "TplQuasi"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
     }
 }

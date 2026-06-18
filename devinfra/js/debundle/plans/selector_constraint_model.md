@@ -693,9 +693,10 @@ list position" gaps; (2) lowering the **`STR_LITERAL_MATCHING_RE("re")` predicat
 subject whose value matches `re`, mirroring `holes.rs::string_literal_matches_regex`) cleared the
 remaining **79**. Re-measured: **4302 of 4327 selectors compared, 0 fail-closed, 0 disagreements**
 over 172,080 pairs — **every single-statement `source_match` selector in the corpus is matched, in
-agreement with production**. Only 19 multi-statement and 6 unparseable-standalone selectors are
-skipped; fail-closed now fires only on genuinely malformed input (a misplaced run hole, a malformed
-predicate).
+agreement with production**. (The 6 "unparseable" selectors were a chunk_facts coverage gap on the
+needle side — 4 tagged-template literals, 2 `debugger;` statements — now modeled, so the single-
+statement compared set is the whole single-statement corpus; fail-closed fires only on genuinely
+malformed input.)
 
 **Landed (resolver-level wiring — the end-to-end path):** `source_match::DatalogResolver` implements
 the `SelectorResolver` trait using the fact matcher as the per-statement match oracle and reusing

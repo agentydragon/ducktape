@@ -177,6 +177,9 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     // Why each fail-closed selector is unsupported, with a few example needles —
     // this is the worklist of remaining rungs.
     let mut unsupported_reasons: BTreeMap<&'static str, (usize, Vec<String>)> = BTreeMap::new();
+    let mut needle_parse_examples: Vec<String> = Vec::new();
+    let mut needle_facts_unsupported: BTreeMap<&'static str, (usize, Vec<String>)> =
+        BTreeMap::new();
 
     for selector in &all {
         if !selector.wildcard_string_literals.is_empty() {
@@ -186,6 +189,16 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         let Ok(needle_module) = js_ast::parse_js_module_ast("<needle>", &selector.match_source)
         else {
             tally.skipped_needle_parse += 1;
+            if needle_parse_examples.len() < 8 {
+                needle_parse_examples.push(
+                    selector
+                        .match_source
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                );
+            }
             continue;
         };
         if needle_module.body.len() != 1 {
@@ -193,10 +206,28 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
             continue;
         }
         let needle_item = &needle_module.body[0];
-        let Ok(needle_facts) = item_facts(needle_item) else {
-            // The needle itself does not project — count as needle-parse-ish.
-            tally.skipped_needle_parse += 1;
-            continue;
+        let needle_facts = match item_facts(needle_item) {
+            Ok(facts) => facts,
+            Err(unsupported) => {
+                // The needle parses but the extractor cannot project it (a
+                // construct chunk_facts has not modeled).
+                tally.skipped_needle_parse += 1;
+                let entry = needle_facts_unsupported
+                    .entry(unsupported.context)
+                    .or_default();
+                entry.0 += 1;
+                if entry.1.len() < 4 {
+                    entry.1.push(
+                        selector
+                            .match_source
+                            .lines()
+                            .next()
+                            .unwrap_or("")
+                            .to_string(),
+                    );
+                }
+                continue;
+            }
         };
         let mode = mode_of(selector);
         // Support probe: a needle with an unhandled construct (regex predicate,
@@ -280,6 +311,15 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         "    skipped needle-parse:      {}",
         tally.skipped_needle_parse
     );
+    for example in &needle_parse_examples {
+        println!("              e.g. (parse) {example}");
+    }
+    for (context, (count, examples)) in &needle_facts_unsupported {
+        println!("      {count:>4}  needle facts unsupported: {context}");
+        for example in examples {
+            println!("              e.g. {example}");
+        }
+    }
     println!("  pairs compared:   {}", tally.pairs);
     println!("  DISAGREEMENTS:    {}", tally.disagreements);
     if disagreements.is_empty() {
