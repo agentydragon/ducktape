@@ -6,6 +6,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra:persistence",
+        "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -43,6 +44,7 @@ py_library(
         ":proxy",
         ":upstream_probe",
         "//mcp_infra:persistence",
+        "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
         "@pypi//prometheus_client",
@@ -56,6 +58,9 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        "//mcp_infra:tool_filter",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -67,8 +72,21 @@ py_test(
         ":config",
         ":proxy",
         "//airlock:conftest",
+        "//mcp_infra:tool_filter",
         "@pypi//fastmcp",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":server",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 

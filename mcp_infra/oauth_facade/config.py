@@ -18,11 +18,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
+from mcp_infra.tool_filter import ToolFilter
 
 
 class HttpUpstream(BaseModel):
@@ -47,13 +48,34 @@ class StdioUpstream(BaseModel):
 Upstream = Annotated[HttpUpstream | StdioUpstream, Field(discriminator="kind")]
 
 
+class StaticBearerClientAuth(BaseModel):
+    """Cluster-internal client auth: every MCP request must carry a fixed bearer.
+
+    Alternative to the public Authentik OAuth gate (`auth`) for facades that are
+    not publicly routed. The token is a shared secret, distinct from
+    `upstream.bearer_token` (which the facade sends to the upstream); here the
+    network boundary plus this secret are the access control. Callers send
+    `Authorization: Bearer <static_bearer>`; probes (/healthz, /readyz) bypass it.
+    """
+
+    static_bearer: str = Field(description="Fixed bearer token required on every MCP request.")
+
+
 class FacadeSettings(BaseSettings):
-    """Config for the MCP OAuth facade."""
+    """Config for the MCP OAuth facade.
+
+    Exactly one client-auth mode is required: `auth` (public Authentik OAuth) or
+    `client_auth` (cluster-internal static bearer).
+    """
 
     model_config = SettingsConfigDict(env_prefix="MCP_FACADE_", env_nested_delimiter="__")
 
-    auth: AuthentikAuthConfig
+    auth: AuthentikAuthConfig | None = None
+    client_auth: StaticBearerClientAuth | None = None
     upstream: Upstream
+    tools: ToolFilter | None = Field(
+        default=None, description="Optional allow/deny filter over the tools exposed to callers (default: expose all)."
+    )
     facade_name: str = Field(description="Human-readable name shown in MCP server metadata.")
     instructions: str | None = None
     host: str = "0.0.0.0"
@@ -75,3 +97,9 @@ class FacadeSettings(BaseSettings):
             "readiness; sustained upstream failure flips the pod NotReady."
         ),
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_client_auth(self) -> FacadeSettings:
+        if (self.auth is None) == (self.client_auth is None):
+            raise ValueError("set exactly one of `auth` (public Authentik OAuth) or `client_auth` (static bearer)")
+        return self

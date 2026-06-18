@@ -153,6 +153,28 @@ py_library(
 )
 
 py_library(
+    name = "tool_filter",
+    srcs = ["tool_filter.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_tool_filter",
+    srcs = ["test_tool_filter.py"],
+    deps = [
+        ":conftest",
+        ":tool_filter",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "tool_schemas",
     srcs = ["tool_schemas.py"],
     visibility = ["//:__subpackages__"],

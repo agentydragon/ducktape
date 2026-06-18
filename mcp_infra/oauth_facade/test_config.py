@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
-from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream, StdioUpstream
+from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream, StaticBearerClientAuth, StdioUpstream
+from mcp_infra.tool_filter import ToolFilter
 
 
 def _auth() -> AuthentikAuthConfig:
@@ -61,6 +64,34 @@ def test_env_loading_stdio(monkeypatch) -> None:
     settings = FacadeSettings()
     assert isinstance(settings.upstream, StdioUpstream)
     assert settings.upstream.command == ["/upstream/node", "/upstream/build/index.js"]
+
+
+def test_static_bearer_client_auth_with_tool_filter(monkeypatch) -> None:
+    monkeypatch.setenv("MCP_FACADE_CLIENT_AUTH__STATIC_BEARER", "ro-token")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__BEARER_TOKEN", "pat")
+    monkeypatch.setenv("MCP_FACADE_FACADE_NAME", "Tana MCP (read-only)")
+    monkeypatch.setenv("MCP_FACADE_TOOLS__ALLOW", '["search_nodes","read_node"]')
+    settings = FacadeSettings()
+    assert settings.auth is None
+    assert settings.client_auth == StaticBearerClientAuth(static_bearer="ro-token")
+    assert settings.tools == ToolFilter(allow=["search_nodes", "read_node"])
+
+
+def test_requires_an_auth_mode() -> None:
+    with pytest.raises(ValidationError):
+        FacadeSettings(upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"), facade_name="x")
+
+
+def test_rejects_both_auth_modes() -> None:
+    with pytest.raises(ValidationError):
+        FacadeSettings(
+            auth=_auth(),
+            client_auth=StaticBearerClientAuth(static_bearer="t"),
+            upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+            facade_name="x",
+        )
 
 
 if __name__ == "__main__":

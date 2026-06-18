@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 
 from airlock.conftest import as_remote_server
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream
 from mcp_infra.oauth_facade.proxy import build_proxy_server
+from mcp_infra.tool_filter import ToolFilter, ToolFilterMiddleware
 
 
 def _settings(downstream_url: str) -> FacadeSettings:
@@ -59,6 +62,26 @@ async def test_facade_forwards_tool_calls() -> None:
             result = await client.call_tool_mcp("echo", {"text": "hi"})
         assert result.isError is False
         assert result.content[0].text == "echoed: hi"
+
+
+async def test_facade_filters_proxied_tools() -> None:
+    downstream = FastMCP("downstream")
+
+    @downstream.tool
+    async def read_node() -> str:
+        return "r"
+
+    @downstream.tool
+    async def trash_node() -> str:
+        return "w"
+
+    async with as_remote_server(downstream) as remote:
+        facade = build_proxy_server(_settings(remote.url))
+        facade.add_middleware(ToolFilterMiddleware(ToolFilter(allow=["read_*"])))
+        async with Client(facade) as client:
+            assert [tool.name for tool in await client.list_tools()] == ["read_node"]
+            with pytest.raises(ToolError):
+                await client.call_tool("trash_node", {})
 
 
 if __name__ == "__main__":
