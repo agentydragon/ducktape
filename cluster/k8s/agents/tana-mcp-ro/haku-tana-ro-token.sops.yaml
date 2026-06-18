@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-tana-ro-token
+    namespace: tana-mcp
+    annotations:
+        description: Static bearer authorizing the haku background agent to the read-only Tana MCP facade (tana-mcp-ro). Distinct from the Tana PAT; grants read-only tools only. Reflected into haku-sandbox for haku to read.
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:Ct3z/IQoR3Qzl41IxmPp/te3uCfqWVSf2GK6Ej/c4mNnMBSKi3i93OjT916gx91O4uGfsLeMeeLY0I2+9MTG0A==,iv:Uk9F1jy+86BK07+AgpU4l8t3J798y6Y8EhG5eaQONg8=,tag:YxbPrgDIhFJIzGSfm4KMSg==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBaM2RHMk0rWXBIZitBU2N5
+            UE9YcTcvK2h5R2NQMHNtaXB3NzhsVVRPT25NCjBvOXJUN0RoYXpGemw5dzdaNkFW
+            R0FjQ2dyclN5bFFYZWk3S04rbDVreUEKLS0tIGxoYnNielpNNm1WbE52RWoveFcz
+            Z2pObk5iZ1Q3TzdEbEI2SSszQlgrc1EKF8drmbtyYKMk614p8UerLZa3iPQHsoEK
+            pHvszN/yzILvDzGaNZkqbJcSB9vtAu/RFvF6X5MsbGCQIIWfpPRg+g==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2TzdvZm9yNmljYjdNWVFQ
+            SnIwOXlYYVd3cHhDMklUOU9Vb1BVY2NwTTFnCjJ0TzE5OXNZcXkxdk1jck93MFFK
+            Ylh5aExpbUZtUjRRUVdhVG1EVHQ0UXMKLS0tIDBiMkhlVHB6V0xkZkwzeE5mZDVi
+            Zk5JSzB3YTFDVGNsTG4vY2RERDg3WUEKWJZu3gw9vcc0VuCWsfKCmfEPdFSZQrYl
+            lwoyU5UhqZcqIFSsMoNaUTV+nFqxhIcaIlLxG8iivtKkna5K3/mzow==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-18T22:24:02Z"
+    mac: ENC[AES256_GCM,data:/R4EGU3f2nQDo+tui1bq246F/4fBgGIQUnIQdUgaJbEvKDLOJNt4q14iHUqFCGTbbGUyOZDjZIzTozl30zMo1QtMxgf4LAonccmgjih5sMFvCFhAQ2zKUT0MvgmYt5aNH+L208d/Q4bjsK1EOYqbOWriOnG9zIiwM4g36ux9zpw=,iv:LtyczMoT2xi57vln5YCp0PlVb98J0qWLcsN2LJq3hFc=,tag:M5vn+Sz35U7CQyndqbxuvA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

@@ -11,9 +11,31 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
 - **CPAP data** — read-only access to daily summaries / AHI / compliance (see
   `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and
   add a `cpap` playbook (compliance dips, AHI spikes, mask-leak trends).
-- **Tana workspace** — read-only access to the Tana workspace (via the Tana MCP
-  behind a read-only facade, or a read-only export). Add a `tana` playbook
-  (stale tasks, captured notes implying action).
+- **Tana workspace** — read-only Tana access. The cluster-internal read-only
+  facade is **built**: `tana-mcp-ro` (in the `tana-mcp` namespace) fronts the
+  Tana MCP, exposes only read tools (default-deny allowlist via the generic
+  facade's `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side so
+  callers never see it, and is gated by a static bearer `haku-tana-ro-token`
+  reflected into `haku-sandbox`. Remaining **Haku-side wiring (deferred)**:
+  - Decide how Haku reaches it: an in-cluster MCP client / `kubectl
+port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
+    vs. threading the Claude Code harness's MCP client to
+    `tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp` (needs the bearer wired
+    through the web env alongside the SOPS→kubectl path). The user prefers
+    starting simple (talk to it from a pod) over harness MCP wiring.
+  - Cluster-internal reach is already permitted by the `haku-sandbox` CCNP
+    `toEntities: cluster`; no new CNP needed for that hop.
+  - Confirm the read-only allowlist against the live `tools/list`; settle the
+    `get_or_create_calendar_node` exclusion (it can create a daily node).
+  - Add a `tana` playbook — read recent daily/calendar notes + recently-edited
+    nodes (synthesized from `search_nodes` + calendar-node traversal) → stale
+    tasks, captured notes implying action — and a credentials-table row in
+    `base/instructions.md`.
+- **ducktape git history** — Haku already has the ducktape checkout and runs
+  `git log` for base-sync; add a `ducktape_git_review` playbook that scans
+  recent history (new TODO/FIXME, new `TODO.md`/`PLAN.md` entries,
+  follow-up-flagged commits, reverts, half-finished threads) → proposals. No
+  infra; playbook + `base/instructions.md` row only.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
   Forgejo user read, add a repo-activity playbook (open PRs/issues/review
