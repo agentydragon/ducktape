@@ -8,7 +8,7 @@ from fastmcp.exceptions import ToolError
 
 from mcp_infra.tool_filter import ToolFilter, ToolFilterMiddleware
 
-_READ_ONLY = ToolFilter(allow=["read_*", "search_nodes"])
+_READ_ONLY = ToolFilter(allow={"search_nodes", "read_node"})
 
 
 def _server(policy: ToolFilter) -> FastMCP:
@@ -38,19 +38,20 @@ def test_admits_allowlist_is_default_deny() -> None:
 
 
 def test_admits_deny_subtracts_from_open_gate() -> None:
-    policy = ToolFilter(deny=["*_node"])
-    assert not policy.admits("read_node")
+    policy = ToolFilter(deny={"trash_node"})
+    assert not policy.admits("trash_node")
     assert policy.admits("list_tags")
 
 
 def test_admits_deny_overrides_allow() -> None:
-    policy = ToolFilter(allow=["read_*"], deny=["read_secret"])
+    policy = ToolFilter(allow={"read_node", "read_secret"}, deny={"read_secret"})
     assert policy.admits("read_node")
     assert not policy.admits("read_secret")
 
 
-def test_admits_globs_are_case_sensitive() -> None:
-    assert not ToolFilter(allow=["read_*"]).admits("READ_node")
+def test_admits_requires_an_exact_name() -> None:
+    # Names match exactly — not as prefixes or substrings.
+    assert not ToolFilter(allow={"read"}).admits("read_node")
 
 
 def test_empty_policy_admits_everything() -> None:

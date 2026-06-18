@@ -77,7 +77,7 @@ async def test_facade_filters_proxied_tools() -> None:
 
     async with as_remote_server(downstream) as remote:
         facade = build_proxy_server(_settings(remote.url))
-        facade.add_middleware(ToolFilterMiddleware(ToolFilter(allow=["read_*"])))
+        facade.add_middleware(ToolFilterMiddleware(ToolFilter(allow={"read_node"})))
         async with Client(facade) as client:
             assert [tool.name for tool in await client.list_tools()] == ["read_node"]
             with pytest.raises(ToolError):

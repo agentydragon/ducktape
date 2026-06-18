@@ -76,7 +76,7 @@ def test_static_bearer_client_auth_with_tool_filter(monkeypatch) -> None:
     settings = FacadeSettings()
     assert settings.auth is None
     assert settings.client_auth == StaticBearerClientAuth(static_bearer="ro-token")
-    assert settings.tools == ToolFilter(allow=["search_nodes", "read_node"])
+    assert settings.tools == ToolFilter(allow={"search_nodes", "read_node"})
 
 
 def test_requires_an_auth_mode() -> None:
