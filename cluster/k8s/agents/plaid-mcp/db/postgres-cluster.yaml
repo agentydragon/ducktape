@@ -33,7 +33,7 @@ spec:
         login: true
         passwordSecret:
           name: plaid-mcp-db-readonly
-        comment: "Read-only SQL access for the Plaid Postgres MCP facade."
+        comment: "Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the augur and haku-sandbox namespaces."
 
   bootstrap:
     initdb:
