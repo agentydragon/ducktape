@@ -24,8 +24,8 @@ use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     AssignTarget, BlockStmt, BlockStmtOrExpr, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread,
     ForHead, Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPatProp,
-    ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, VarDecl,
-    VarDeclOrExpr, VarDeclarator,
+    OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt,
+    SuperProp, VarDecl, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -692,6 +692,61 @@ impl Extractor {
                 self.facts.child.push((id, arrow.params.len() as u32, body));
                 Ok(id)
             }
+            Expr::SuperProp(super_prop) => {
+                let id = self.node("SuperProp");
+                match &super_prop.prop {
+                    SuperProp::Ident(name) => {
+                        let prop = self.node("PropName");
+                        self.facts.prop_name.push((prop, name.sym.to_string()));
+                        self.facts.child.push((id, 0, prop));
+                    }
+                    SuperProp::Computed(computed) => {
+                        let computed = self.expr(&computed.expr)?;
+                        self.facts.child.push((id, 0, computed));
+                    }
+                }
+                Ok(id)
+            }
+            Expr::Await(await_expr) => {
+                let id = self.node("Await");
+                let arg = self.expr(&await_expr.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Yield(yield_expr) => {
+                let id = self.node("Yield");
+                if let Some(arg) = &yield_expr.arg {
+                    let arg = self.expr(arg)?;
+                    self.facts.child.push((id, 0, arg));
+                }
+                Ok(id)
+            }
+            Expr::OptChain(opt_chain) => {
+                let id = self.node("OptChain");
+                let base = match &*opt_chain.base {
+                    OptChainBase::Member(member) => self.member(member)?,
+                    OptChainBase::Call(call) => {
+                        let call_id = self.node("OptCall");
+                        let callee = self.expr(&call.callee)?;
+                        self.facts.child.push((call_id, 0, callee));
+                        self.push_args(call_id, 1, &call.args)?;
+                        call_id
+                    }
+                };
+                self.facts.child.push((id, 0, base));
+                Ok(id)
+            }
+            Expr::Class(class_expr) => {
+                let id = self.node("ClassExpr");
+                if let Some(ident) = &class_expr.ident {
+                    let name = self.node("Ident");
+                    self.facts.ident_name.push((name, ident.sym.to_string()));
+                    self.facts.child.push((id, 0, name));
+                }
+                let class = self.class_node(&class_expr.class)?;
+                self.facts.child.push((id, 1, class));
+                Ok(id)
+            }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
             Expr::This(_) => Ok(self.node("This")),
@@ -1086,6 +1141,19 @@ mod tests {
             .expect("covered shape extracts");
         let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in ["ForOf", "ObjectPat", "PatAssign", "Tpl", "TplQuasi"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_super_await_optional_chain() {
+        let facts = extract("class C extends B { async m() { return await super.n()?.p; } }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["SuperProp", "Await", "OptChain"] {
             assert!(
                 kinds.contains(expected),
                 "kind {expected} present: {kinds:?}"
