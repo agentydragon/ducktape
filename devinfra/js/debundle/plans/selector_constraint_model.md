@@ -565,27 +565,61 @@ with a uniqueness guard, and an AST-literal-∧-import-edge join all resolve to 
 So the vocabulary is proven expressible in the engine we picked — the gap to production is the
 phase-2 AST-facts EDB and the template→atoms lowering, not the solver's capability.
 
-### Rollout
+### Rollout: to a parity Datalog resolver
 
-1. **Shadow** — build EDB + solver, assert per-target agreement with the matcher across
-   the chunk (the bootstrap equivalence gate). **Landed**: `selector_solve` (Ascent EDB +
-   `name_owner`/`aliases` rules) + `selector_solve_bin --check` (ad-hoc gate on any
-   emitted `owner_graph.json`), and an e2e gate (`e2e/selector_solve_shadow_test`) that
-   runs the real pipeline and asserts the solver's name-pin resolution **agrees,
-   owner-for-owner, with the production resolver** (`peel::resolve_binding_owners`) on the
-   minified surface over emitted output, plus the categoricity precondition.
-   _Deferred_: embedding the check **inside** the `validate` verb. `validate` runs
-   `--dry-run`, which emits `owner_graph.json` only on realizability rejection
-   (`ReportEmission::OnRejection`) — not for clean or selector-problem chunks — so a clean
-   in-`validate` embed needs a new core-pipeline knob to force `Full` report emission
-   under dry-run. Done as the e2e gate (on real `Full` output) instead, with no
-   core-pipeline change.
-2. **Flip** — solver becomes source of truth in `plan_builder` / `validate` /
-   `match_selector` / the prove-gate; keep the matcher as a cross-check, then delete it.
-3. **Extend the YAML** — relational atoms + `@Name` cross-refs; `selector-debt` and
-   `synthesize-selectors` gain the cross-ref capability; convert the metaNode debt.
-4. **Phase-2 AST facts** — sub-statement `child`/`str_lit`/`prop_name` for shape/identity
-   anchors at AST granularity; then negation/uniqueness atoms.
+The spine is `source_match::DifferentialResolver` (landed): it runs both matchers, returns the
+primary, and records divergence — so **parity is a continuously-checked invariant** ("0
+differential disagreements across the corpus"), not a big-bang cutover. The enabling trick is the
+**shape-atom escape hatch**: the Datalog resolver delegates any un-lowered construct to the
+existing matcher, so parity holds from the first day the resolver exists and is _preserved_ as
+constructs are lowered one at a time — the delegated set only ever shrinks.
+
+**P0 — landed.** `selector_solve` (phase-1 Ascent EDB over the owner graph: `name_owner` +
+derived `aliases`); `selector_solve_bin --check` and `e2e/selector_solve_shadow_test` (the
+bootstrap equivalence gate — the solver's name-pin resolution agrees owner-for-owner with
+`peel::resolve_binding_owners` on real emitted output, plus the categoricity precondition); the
+`SelectorResolver` / `AstWildcardResolver` / `DifferentialResolver` seam; and
+`selector_query_examples` (all six relational capabilities proven runnable in Ascent).
+_Deferred:_ embedding the shadow check **inside** the `validate` verb needs a core-pipeline knob
+to force `Full` report emission under `--dry-run` (`validate`'s dry-run emits `owner_graph.json`
+only on realizability rejection, `ReportEmission::OnRejection`); done as the e2e gate on real
+`Full` output instead, with no core-pipeline change.
+
+**P1 — AST-facts EDB.** Project a parsed chunk into `child` / `kind` / `str_lit` / `prop_name`
+plus alpha-canonicalized identifier facts, joined to owners by span/ordinal — the synthetic facts
+in `selector_query_examples` made real; `alpha_canonicalize.rs` seeds the canonicalization.
+_Exit:_ round-trip test — the facts reconstruct each top-level statement's shape on a fixture
+chunk.
+
+**P2 — `DatalogResolver`, full delegation.** Second `SelectorResolver` impl that lowers every
+`source_match` to one opaque shape atom = a call into `AstWildcardResolver`; wire
+`DifferentialResolver<AstWildcard, Datalog>` into the resolution path behind a flag. _Exit:_
+differential green by construction across the gaffer `tana/re` corpus — proves the
+EDB/plumbing/round-trip at zero behavior risk.
+
+**P3 — native lowering, construct by construct, differential-gated.** Replace shape atoms with
+real atoms in the hole order from "Holes under the query model": existential → omit, equality →
+shared variable, `STR_LITERAL_MATCHING_RE` → `str_matches` filter, identifiers → alpha facts,
+then the structural body (`child` / `kind` / `prop_name`). Ordered/positional holes stay shape
+atoms longest (possibly permanently). _Exit per construct:_ 0 differential disagreements
+corpus-wide before it counts as native. This is the bulk of the work, but each step is small and
+reversible.
+
+**P4 — one global solve + `@Name` cross-refs.** Shift from per-selector solves to one CSP over the
+whole spec: shared logic variables for `@Name`, `all_different` for duplicate-claim, per-target
+categoricity. **"Fully capable" lands here** — the six proven capabilities become usable in real
+specs. _Exit:_ the solver reproduces the existing ambiguity / duplicate-claim diagnostics, and the
+metaNode debt pins (bare delegators, empty-ish classes) rewrite as cross-ref queries and resolve.
+
+**P5 — flip + delete.** Swap `primary` / `shadow` in production, soak one cycle with the
+differential still recording, then drop the `AstWildcardResolver` arm and retire the dead matcher
+modules. _Exit:_ the solver is the sole resolver, the matcher is removed, CI green.
+
+**Risks** (none is the engine — proven in P0): fact extraction (P1) is the only true greenfield
+and the biggest chunk; alpha-equivalence scoping must be faithfully canonicalized into facts (the
+differential catches drift, but it is the subtlest correctness point); ordered/positional holes
+likely never fully lower and stay escape-hatch shape atoms — acceptable, since parity requires
+never regressing, not lowering everything.
 
 ## Open questions
 
