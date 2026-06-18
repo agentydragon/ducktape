@@ -693,7 +693,12 @@ fn timed_classify<T: PartialEq + std::fmt::Debug>(
 ) {
     let started = Instant::now();
     let datalog = datalog();
-    *datalog_time += started.elapsed();
+    let dl = started.elapsed();
+    *datalog_time += dl;
+    // Surface the datalog hot path: which selectors dominate the per-chunk time.
+    if dl > Duration::from_millis(400) {
+        eprintln!("  SLOW dl {:>6.2}s: {}", dl.as_secs_f64(), site());
+    }
     let started = Instant::now();
     let production = production();
     *production_time += started.elapsed();

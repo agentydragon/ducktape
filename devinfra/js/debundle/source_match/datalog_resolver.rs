@@ -48,10 +48,29 @@ fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
 /// resolver differential tractable.
 pub struct ChunkResolver<'m> {
     module: &'m Module,
-    body_facts: Vec<chunk_facts::ChunkFacts>,
     /// Root node kind of each body item, cached once for the single-statement
     /// scan's sound root-kind prefilter (see `matching_body_indices`).
     body_root_kinds: Vec<Option<&'static str>>,
+    /// Each body item's match `Index`, built once. The matcher rebuilds a
+    /// subject's index on every call otherwise, so caching it here turns the
+    /// per-`(selector, subject)` index construction into one build per subject
+    /// for the whole chunk — the dominant cost of a corpus-wide resolve.
+    body_indices: Vec<selector_match::Index>,
+    /// One synthetic single-declarator subject index per declarator of every
+    /// var-decl owner, built once. The single-declarator var-decl member path
+    /// matches its needle against each declarator; without this it re-synthesizes
+    /// the item and re-extracts facts for every declarator on every such selector
+    /// (the second-worst per-selector cost after declarator holes).
+    var_declarator_subjects: Vec<VarDeclaratorSubject>,
+}
+
+/// A var-decl owner's single declarator, projected once to a synthetic
+/// single-declarator subject index. `body_idx`/`declarator_idx` locate the
+/// declarator back in `module.body` for binding extraction on a match.
+struct VarDeclaratorSubject {
+    body_idx: usize,
+    declarator_idx: usize,
+    index: selector_match::Index,
 }
 
 impl<'m> ChunkResolver<'m> {
@@ -65,10 +84,30 @@ impl<'m> ChunkResolver<'m> {
             .iter()
             .map(selector_match::subject_root_kind)
             .collect();
+        let body_indices = body_facts
+            .iter()
+            .map(selector_match::Index::build)
+            .collect();
+        let mut var_declarator_subjects = Vec::new();
+        for (body_idx, item) in module.body.iter().enumerate() {
+            let Some(var) = item_var_decl(item) else {
+                continue;
+            };
+            for (declarator_idx, declarator) in var.decls.iter().enumerate() {
+                if let Some(facts) = item_facts(&single_declarator_item(item, declarator)) {
+                    var_declarator_subjects.push(VarDeclaratorSubject {
+                        body_idx,
+                        declarator_idx,
+                        index: selector_match::Index::build(&facts),
+                    });
+                }
+            }
+        }
         Self {
             module,
-            body_facts,
             body_root_kinds,
+            body_indices,
+            var_declarator_subjects,
         }
     }
 }
@@ -81,24 +120,26 @@ fn matching_body_indices(
     needle_facts: &chunk_facts::ChunkFacts,
     mode: selector_match::Mode,
 ) -> Result<Vec<usize>> {
-    // Probe the needle once: an unsupported construct errors uniformly.
-    selector_match::matches(needle_facts, needle_facts, mode)
+    // Build the needle index once; probe it (an unsupported construct errors
+    // uniformly), then match it against each cached body index.
+    let needle_index = selector_match::Index::build(needle_facts);
+    selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     // Sound root-kind prefilter: when the needle root is a concrete kind, a
     // subject whose root kind differs is a guaranteed non-match (the `nkind !=
-    // subject kind` gate in the matcher), so skip it without building its index.
+    // subject kind` gate in the matcher), so skip it without matching.
     let prefilter = selector_match::needle_root_kind_prefilter(needle_facts);
     let mut indices = Vec::new();
     // A non-extractable statement projects to empty facts (no root) and so
     // matches nothing — the same outcome as the old skip; any divergence would
     // surface in the differential.
-    for (body_idx, facts) in chunk.body_facts.iter().enumerate() {
+    for (body_idx, subject_index) in chunk.body_indices.iter().enumerate() {
         if let Some(kind) = prefilter
             && chunk.body_root_kinds[body_idx] != Some(kind)
         {
             continue;
         }
-        if selector_match::matches(needle_facts, facts, mode)
+        if selector_match::matches_indexed(&needle_index, subject_index, mode)
             .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
         {
             indices.push(body_idx);
@@ -170,33 +211,33 @@ fn resolve_var_declarator_member(
         }
         None => 0,
     };
+    // Match the needle against each var-decl owner's declarator via the cached
+    // synthetic single-declarator indices (built once for the chunk), so this
+    // scan is index-build-free.
+    let needle_index = selector_match::Index::build(&needle_facts);
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
-    for item in &chunk.module.body {
-        let Some(candidate_var) = item_var_decl(item) else {
+    for subject in &chunk.var_declarator_subjects {
+        if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
+            .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
+        {
             continue;
-        };
-        for declarator in &candidate_var.decls {
-            let Some(facts) = item_facts(&single_declarator_item(item, declarator)) else {
-                continue;
-            };
-            if !selector_match::matches(&needle_facts, &facts, mode).map_err(|unsupported| {
-                anyhow::anyhow!("datalog resolver: {}", unsupported.reason)
-            })? {
-                continue;
-            }
-            let declared = declared_bindings_for_var_declarator(declarator);
-            if selector.target_binding.is_none() && declared.len() != 1 {
-                bail!(
-                    "datalog resolver: export `{export_name}` matched a declarator binding {} \
-                     names; needs a single-binding declarator or target_binding",
-                    declared.len(),
-                );
-            }
-            let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
-                bail!("datalog resolver: target binding index out of range for matched declarator");
-            };
-            matches.push(binding);
         }
+        let item = &chunk.module.body[subject.body_idx];
+        let declarator = &item_var_decl(item)
+            .expect("cached var-declarator subject owner is a var-decl")
+            .decls[subject.declarator_idx];
+        let declared = declared_bindings_for_var_declarator(declarator);
+        if selector.target_binding.is_none() && declared.len() != 1 {
+            bail!(
+                "datalog resolver: export `{export_name}` matched a declarator binding {} \
+                 names; needs a single-binding declarator or target_binding",
+                declared.len(),
+            );
+        }
+        let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
+            bail!("datalog resolver: target binding index out of range for matched declarator");
+        };
+        matches.push(binding);
     }
     match matches.as_slice() {
         [single] => Ok(single.clone()),
@@ -237,24 +278,27 @@ fn resolve_declarator_hole_member(
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
     let needle_facts = item_facts(needle)
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let needle_index = selector_match::Index::build(&needle_facts);
     let mode = datalog_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly (and makes
     // the per-subject `.expect` below sound — the only `Unsupported` source is the
     // needle construct, invariant across subjects and prebindings).
-    selector_match::var_declarator_alignment(&needle_facts, &needle_facts, mode, None)
+    selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
     for (body_idx, item) in chunk.module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
-        let facts = &chunk.body_facts[body_idx];
+        // Reuse the cached body index across the candidate-binding inner loop:
+        // every alignment attempt for this owner shares one prebuilt subject index.
+        let subject_index = &chunk.body_indices[body_idx];
         let alignment = target_binding_candidate_names(candidate_var, target_binding_idx)
             .into_iter()
             .find_map(|candidate_binding| {
-                selector_match::var_declarator_alignment(
-                    &needle_facts,
-                    facts,
+                selector_match::var_declarator_alignment_indexed(
+                    &needle_index,
+                    subject_index,
                     mode,
                     Some((target_binding, &candidate_binding)),
                 )
@@ -326,9 +370,13 @@ fn resolve_single_declarator_target_window(
         .map(item_facts)
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-    let windows = selector_match::match_single_declarator_target_windows(
-        &needle_facts,
-        &chunk.body_facts,
+    let needle_indices: Vec<_> = needle_facts
+        .iter()
+        .map(selector_match::Index::build)
+        .collect();
+    let windows = selector_match::match_single_declarator_target_windows_indexed(
+        &needle_indices,
+        &chunk.body_indices,
         target_item_idx,
         datalog_mode(selector),
     )
@@ -403,9 +451,13 @@ fn resolve_member_multi(
         .map(item_facts)
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-    let alignments = selector_match::match_top_level_sequence(
-        &needle_facts,
-        &chunk.body_facts,
+    let needle_indices: Vec<_> = needle_facts
+        .iter()
+        .map(selector_match::Index::build)
+        .collect();
+    let alignments = selector_match::match_top_level_sequence_indexed(
+        &needle_indices,
+        &chunk.body_indices,
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
@@ -452,9 +504,13 @@ fn resolve_anonymous_multi(
         .map(item_facts)
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-    let alignments = selector_match::match_top_level_sequence(
-        &needle_facts,
-        &chunk.body_facts,
+    let needle_indices: Vec<_> = needle_facts
+        .iter()
+        .map(selector_match::Index::build)
+        .collect();
+    let alignments = selector_match::match_top_level_sequence_indexed(
+        &needle_indices,
+        &chunk.body_indices,
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
@@ -501,17 +557,18 @@ fn resolve_group_declarator_holes(
         .collect::<Result<_>>()?;
     let needle_facts = item_facts(needle)
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let needle_index = selector_match::Index::build(&needle_facts);
     let mode = datalog_mode(selector);
-    selector_match::var_declarator_alignment(&needle_facts, &needle_facts, mode, None)
+    selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
     for (body_idx, item) in chunk.module.body.iter().enumerate() {
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
-        let Some(alignment) = selector_match::var_declarator_alignment(
-            &needle_facts,
-            &chunk.body_facts[body_idx],
+        let Some(alignment) = selector_match::var_declarator_alignment_indexed(
+            &needle_index,
+            &chunk.body_indices[body_idx],
             mode,
             None,
         )
@@ -580,33 +637,30 @@ fn resolve_group_single_declarator(
         .collect::<Result<_>>()?;
     let needle_facts = item_facts(needle)
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let needle_index = selector_match::Index::build(&needle_facts);
     let mode = datalog_mode(selector);
-    selector_match::matches(&needle_facts, &needle_facts, mode)
+    selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
-    for (body_idx, item) in chunk.module.body.iter().enumerate() {
-        let Some(candidate_var) = item_var_decl(item) else {
+    for subject in &chunk.var_declarator_subjects {
+        if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
+            .expect("needle construct already probed as supported")
+        {
             continue;
-        };
-        for declarator in &candidate_var.decls {
-            let Some(facts) = item_facts(&single_declarator_item(item, declarator)) else {
-                continue;
-            };
-            if !selector_match::matches(&needle_facts, &facts, mode)
-                .expect("needle construct already probed as supported")
-            {
-                continue;
-            }
-            let declarator_bindings = declared_bindings_for_var_declarator(declarator);
-            let mut resolved = BTreeMap::new();
-            for (target, target_binding_idx) in &target_binding_indices {
-                let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
-                    bail!("datalog resolver: target `{target}` binding index out of range");
-                };
-                resolved.insert(target.clone(), binding.clone());
-            }
-            matches.push((body_idx, resolved));
         }
+        let item = &chunk.module.body[subject.body_idx];
+        let declarator = &item_var_decl(item)
+            .expect("cached var-declarator subject owner is a var-decl")
+            .decls[subject.declarator_idx];
+        let declarator_bindings = declared_bindings_for_var_declarator(declarator);
+        let mut resolved = BTreeMap::new();
+        for (target, target_binding_idx) in &target_binding_indices {
+            let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
+                bail!("datalog resolver: target `{target}` binding index out of range");
+            };
+            resolved.insert(target.clone(), binding.clone());
+        }
+        matches.push((subject.body_idx, resolved));
     }
     one_group_match(matches, request_id)
 }
@@ -634,9 +688,13 @@ fn resolve_group_general(
         .map(item_facts)
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-    let alignments = selector_match::match_top_level_sequence(
-        &needle_facts,
-        &chunk.body_facts,
+    let needle_indices: Vec<_> = needle_facts
+        .iter()
+        .map(selector_match::Index::build)
+        .collect();
+    let alignments = selector_match::match_top_level_sequence_indexed(
+        &needle_indices,
+        &chunk.body_indices,
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;

@@ -87,21 +87,27 @@ impl Bindings {
 }
 
 /// Per-node lookups over one `ChunkFacts`, built once.
-struct Index<'a> {
-    kind: HashMap<NodeId, &'a str>,
+/// A node-indexed view of one statement's `ChunkFacts`, owning its string labels
+/// (`Box<str>`) so it can be **built once and cached** — e.g. one per chunk body
+/// item in `ChunkResolver` — and reused across many needle matches, instead of
+/// rebuilt per `(needle, subject)` pair. `kind` keeps the `&'static` node-kind
+/// tags (already static in the facts); the value labels are copied out so the
+/// index outlives the borrowed facts.
+pub struct Index {
+    kind: HashMap<NodeId, &'static str>,
     children: HashMap<NodeId, Vec<NodeId>>,
-    ident: HashMap<NodeId, &'a str>,
-    str_lit: HashMap<NodeId, &'a str>,
-    num_lit: HashMap<NodeId, &'a str>,
+    ident: HashMap<NodeId, Box<str>>,
+    str_lit: HashMap<NodeId, Box<str>>,
+    num_lit: HashMap<NodeId, Box<str>>,
     bool_lit: HashMap<NodeId, bool>,
-    prop_name: HashMap<NodeId, &'a str>,
-    operator: HashMap<NodeId, &'a str>,
-    regex: HashMap<NodeId, (&'a str, &'a str)>,
+    prop_name: HashMap<NodeId, Box<str>>,
+    operator: HashMap<NodeId, Box<str>>,
+    regex: HashMap<NodeId, (Box<str>, Box<str>)>,
     roots: Vec<NodeId>,
 }
 
-impl<'a> Index<'a> {
-    fn build(facts: &'a ChunkFacts) -> Self {
+impl Index {
+    pub fn build(facts: &ChunkFacts) -> Self {
         let mut by_parent: HashMap<NodeId, Vec<(u32, NodeId)>> = HashMap::new();
         for (parent, ordinal, child) in &facts.child {
             by_parent
@@ -122,33 +128,33 @@ impl<'a> Index<'a> {
             ident: facts
                 .ident_name
                 .iter()
-                .map(|(id, s)| (*id, s.as_str()))
+                .map(|(id, s)| (*id, s.as_str().into()))
                 .collect(),
             str_lit: facts
                 .str_lit
                 .iter()
-                .map(|(id, s)| (*id, s.as_str()))
+                .map(|(id, s)| (*id, s.as_str().into()))
                 .collect(),
             num_lit: facts
                 .num_lit
                 .iter()
-                .map(|(id, s)| (*id, s.as_str()))
+                .map(|(id, s)| (*id, s.as_str().into()))
                 .collect(),
             bool_lit: facts.bool_lit.iter().copied().collect(),
             prop_name: facts
                 .prop_name
                 .iter()
-                .map(|(id, s)| (*id, s.as_str()))
+                .map(|(id, s)| (*id, s.as_str().into()))
                 .collect(),
             operator: facts
                 .operator
                 .iter()
-                .map(|(id, s)| (*id, s.as_str()))
+                .map(|(id, s)| (*id, s.as_str().into()))
                 .collect(),
             regex: facts
                 .regex
                 .iter()
-                .map(|(id, exp, flags)| (*id, (exp.as_str(), flags.as_str())))
+                .map(|(id, exp, flags)| (*id, (exp.as_str().into(), flags.as_str().into())))
                 .collect(),
             roots: facts.top_level.iter().map(|(id, _)| *id).collect(),
         }
@@ -158,7 +164,7 @@ impl<'a> Index<'a> {
         self.children.get(&id).map_or(&[], Vec::as_slice)
     }
 
-    fn kind_of(&self, id: NodeId) -> &'a str {
+    fn kind_of(&self, id: NodeId) -> &'static str {
         self.kind.get(&id).copied().unwrap_or_default()
     }
 }
@@ -193,7 +199,7 @@ fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
         "BindingIdent" => index
             .ident
             .get(&node)
-            .is_some_and(|n| *n == ANYTHING_HOLE_KEYWORD),
+            .is_some_and(|n| **n == *ANYTHING_HOLE_KEYWORD),
         "ExprStmt" => {
             let kids = index.children_of(node);
             kids.len() == 1
@@ -276,7 +282,7 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
                 let kids = index.children_of(child);
                 kids.len() == 1
                     && index.prop_name.get(&kids[0]).is_some_and(|name| {
-                        *name == CLASS_REST_HOLE_KEYWORD || *name == ANYTHING_HOLE_KEYWORD
+                        **name == *CLASS_REST_HOLE_KEYWORD || **name == *ANYTHING_HOLE_KEYWORD
                     })
             }
         }
@@ -289,7 +295,7 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
                     && index
                         .ident
                         .get(&kids[0])
-                        .is_some_and(|name| *name == CASE_REST_HOLE_KEYWORD)
+                        .is_some_and(|name| **name == *CASE_REST_HOLE_KEYWORD)
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
@@ -318,7 +324,7 @@ fn list_prefix_len(parent_kind: &str) -> usize {
 /// at `node`: a `Call` of exactly the predicate callee with one string-literal
 /// argument. Mirrors `holes.rs::string_literal_regex_pattern`. The predicate
 /// matches a string-literal subject whose value matches `re`, not by structure.
-fn regex_predicate_pattern<'a>(index: &Index<'a>, node: NodeId) -> Option<&'a str> {
+fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
     if index.kind_of(node) != "Call" {
         return None;
     }
@@ -329,9 +335,9 @@ fn regex_predicate_pattern<'a>(index: &Index<'a>, node: NodeId) -> Option<&'a st
     let is_predicate = index
         .ident
         .get(callee)
-        .is_some_and(|name| *name == STRING_LITERAL_REGEX_PREDICATE);
+        .is_some_and(|name| **name == *STRING_LITERAL_REGEX_PREDICATE);
     (is_predicate && index.kind_of(*arg) == "StrLit")
-        .then(|| index.str_lit.get(arg).copied())
+        .then(|| index.str_lit.get(arg).map(|s| &**s))
         .flatten()
 }
 
@@ -381,8 +387,8 @@ fn homo(
         return Ok(false);
     }
     match (
-        needle.ident.get(&nid).copied(),
-        subject.ident.get(&sid).copied(),
+        needle.ident.get(&nid).map(|s| &**s),
+        subject.ident.get(&sid).map(|s| &**s),
     ) {
         (Some(n), Some(s)) => {
             let consistent = match mode {
@@ -562,7 +568,7 @@ fn place_segments(
 /// root wrapper kind so the caller can enforce wrapper symmetry (a plain `const`
 /// statement must not match an `export const`). `None` if the statement is not a
 /// (possibly exported) variable declaration.
-fn var_decl_node<'a>(index: &Index<'a>) -> Option<(&'a str, NodeId)> {
+fn var_decl_node(index: &Index) -> Option<(&'static str, NodeId)> {
     let &root = index.roots.first()?;
     match index.kind_of(root) {
         "VarDecl" => Some(("VarDecl", root)),
@@ -730,13 +736,23 @@ pub fn var_declarator_alignment(
     mode: Mode,
     prebind: Option<(&str, &str)>,
 ) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
-    let needle = Index::build(needle);
-    if let Some(reason) = unsupported_needle_construct(&needle) {
+    var_declarator_alignment_indexed(&Index::build(needle), &Index::build(subject), mode, prebind)
+}
+
+/// Like [`var_declarator_alignment`], but over **prebuilt** indices, so the
+/// declarator-hole resolver can reuse cached body indices across the
+/// owner × candidate-binding inner loop instead of rebuilding both indices on
+/// every alignment attempt.
+pub fn var_declarator_alignment_indexed(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    prebind: Option<(&str, &str)>,
+) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
+    if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
-    let subject = Index::build(subject);
-    let (Some((nwrap, nvd)), Some((swrap, svd))) =
-        (var_decl_node(&needle), var_decl_node(&subject))
+    let (Some((nwrap, nvd)), Some((swrap, svd))) = (var_decl_node(needle), var_decl_node(subject))
     else {
         return Ok(None);
     };
@@ -752,9 +768,9 @@ pub fn var_declarator_alignment(
         return Ok(None);
     }
     align_var_declarators(
-        &needle,
+        needle,
         needle.children_of(nvd),
-        &subject,
+        subject,
         subject.children_of(svd),
         mode,
         &mut bindings,
@@ -794,7 +810,7 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
         }
     }
     for (node, name) in index.ident.iter().chain(index.prop_name.iter()) {
-        if *name == STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(node) {
+        if **name == *STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(node) {
             return Some("malformed STR_LITERAL_MATCHING_RE predicate");
         }
         if is_run_hole_keyword(name) && !consumed.contains(node) {
@@ -810,16 +826,21 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
 /// predicate, a misplaced run hole) rather than returning a weaker match. Both
 /// inputs are single-statement `ChunkFacts`.
 pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<bool, Unsupported> {
-    let needle = Index::build(needle);
-    if let Some(reason) = unsupported_needle_construct(&needle) {
+    matches_indexed(&Index::build(needle), &Index::build(subject), mode)
+}
+
+/// Like [`matches`], but over **prebuilt** indices, so a caller resolving many
+/// needles against one chunk body builds each subject `Index` once (cached in
+/// `ChunkResolver`) rather than per `(needle, subject)` pair.
+pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bool, Unsupported> {
+    if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
-    let subject = Index::build(subject);
     let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
         return Ok(false);
     };
     let mut bindings = Bindings::default();
-    homo(&needle, n_root, &subject, s_root, mode, &mut bindings)
+    homo(needle, n_root, subject, s_root, mode, &mut bindings)
 }
 
 /// A **sound** per-candidate prefilter for the single-statement `matches` scan:
@@ -880,6 +901,17 @@ pub fn match_top_level_sequence(
 ) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
     let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
     let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
+    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode)
+}
+
+/// Like [`match_top_level_sequence`], but over **prebuilt** subject indices so a
+/// caller resolving many multi-statement needles against one chunk body reuses
+/// the cached body `Index`es instead of rebuilding them all per call.
+pub fn match_top_level_sequence_indexed(
+    needle_idx: &[Index],
+    subject_idx: &[Index],
+    mode: Mode,
+) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
     let mut segments: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < needle_idx.len() {
@@ -908,8 +940,8 @@ pub fn match_top_level_sequence(
     let mut matches = Vec::new();
     let mut bindings = Bindings::default();
     place_top_level(
-        &needle_idx,
-        &subject_idx,
+        needle_idx,
+        subject_idx,
         &segments,
         0,
         0,
@@ -941,12 +973,24 @@ pub fn match_single_declarator_target_windows(
     mode: Mode,
 ) -> Result<Vec<(usize, usize)>, Unsupported> {
     let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
-    for needle in &needle_idx {
+    let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
+    match_single_declarator_target_windows_indexed(&needle_idx, &subject_idx, target_idx, mode)
+}
+
+/// Like [`match_single_declarator_target_windows`], but over **prebuilt** subject
+/// indices so the caller reuses the cached chunk body indices instead of
+/// rebuilding them all per selector.
+pub fn match_single_declarator_target_windows_indexed(
+    needle_idx: &[Index],
+    subject_idx: &[Index],
+    target_idx: usize,
+    mode: Mode,
+) -> Result<Vec<(usize, usize)>, Unsupported> {
+    for needle in needle_idx {
         if let Some(reason) = unsupported_needle_construct(needle) {
             return Err(Unsupported { reason });
         }
     }
-    let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
     let n = needle_idx.len();
     let mut matches = Vec::new();
     if n == 0 || n > subject_idx.len() {
@@ -956,8 +1000,8 @@ pub fn match_single_declarator_target_windows(
         let mut bindings = Bindings::default();
         let mut found: Vec<usize> = Vec::new();
         match_declarator_target_window(
-            &needle_idx,
-            &subject_idx,
+            needle_idx,
+            subject_idx,
             window_start,
             target_idx,
             0,
