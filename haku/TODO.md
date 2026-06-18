@@ -22,11 +22,12 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   (currently suspended; see `cluster/` ActivityWatch). Useful for time-use
   patterns and "what changed in your routine" reasoning (e.g. cross-referencing
   CPAP weekend leakage with weekend activity).
-- **Google Drive + Keep scopes** — add `drive.readonly`
-  (+ `drive.activity.readonly`) and `keep.readonly` to the airlock
-  `google-access-token` grant so the `drive_activity` / `keep_notes` playbooks
-  work (today they 403 and log the gap). Other Google products (Docs, Tasks)
-  light up the same way as their scopes are added.
+- **Google Keep scope** — add `keep.readonly` to the airlock
+  `google-access-token` grant so the `keep_notes` playbook works (today it 403s
+  and logs the gap). `drive.readonly` + `drive.activity.readonly` are already in
+  the grant (the `drive_activity` playbook works once the token is re-consented to
+  pick up the added scope). Other Google products (Docs, Tasks) light up the same
+  way as their scopes are added.
 
 ## Read-only filter facades (sources designed, not yet wired)
 
