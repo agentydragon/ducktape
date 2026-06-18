@@ -15,8 +15,8 @@
 # per-sandbox archive clamp rests on the same assumption).
 #
 # To add a new sandbox namespace, add it to the namespaces list below
-# and add the corresponding mitmproxy-ca-cert SOPS secret + Kyverno
-# injection (already handled by inject-mitmproxy ClusterPolicy).
+# and ensure the corresponding trust-manager Bundle target + Kyverno injection
+# are configured (already handled by inject-mitmproxy ClusterPolicy).
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:

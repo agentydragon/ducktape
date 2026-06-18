@@ -1,22 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - mitmproxy-ca-key.sops.yaml
+  - certificate.yaml
+  - trust-bundle.yaml
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
   - cnp-cloud-api-egress.yaml
   - ccnp-sandbox-proxy-egress.yaml
-configMapGenerator:
-  - name: mitmproxy-ca-cert
-    namespace: agents-mitmproxy
-    files:
-      - ca-cert.pem
-    options:
-      disableNameSuffixHash: true
-      annotations:
-        description: MITM proxy CA cert for sandbox HTTPS inspection
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox,openclaw-sandbox,openclaw-gateway
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox,openclaw-sandbox,openclaw-gateway

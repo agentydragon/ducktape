@@ -1,0 +1,27 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: mitmproxy-ca-cert
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        name: cluster-root-ca-secret
+        key: ca.crt
+    - secret:
+        name: mitmproxy-ca
+        key: tls.crt
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for mitmproxy-inspected sandbox HTTPS traffic
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - claude-sandbox
+            - openclaw-sandbox
+            - openclaw-gateway

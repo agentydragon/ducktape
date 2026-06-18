@@ -5,6 +5,8 @@ metadata:
   namespace: agents-mitmproxy
   labels:
     app.kubernetes.io/name: mitmproxy
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
@@ -22,14 +24,11 @@ spec:
             - sh
             - -c
             - |
-              cat /mitmproxy-ca-key/mitmproxy-ca.key /mitmproxy-ca-cert/ca-cert.pem > /mitmproxy-data/mitmproxy-ca.pem
-              cp /mitmproxy-ca-cert/ca-cert.pem /mitmproxy-data/mitmproxy-ca-cert.pem
+              cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
+              cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
           volumeMounts:
-            - name: mitmproxy-ca-cert
-              mountPath: /mitmproxy-ca-cert
-              readOnly: true
-            - name: mitmproxy-ca-key
-              mountPath: /mitmproxy-ca-key
+            - name: mitmproxy-ca
+              mountPath: /mitmproxy-ca
               readOnly: true
             - name: mitmproxy-data
               mountPath: /mitmproxy-data
@@ -71,11 +70,8 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
-        - name: mitmproxy-ca-cert
-          configMap:
-            name: mitmproxy-ca-cert
-        - name: mitmproxy-ca-key
+        - name: mitmproxy-ca
           secret:
-            secretName: mitmproxy-ca-key
+            secretName: mitmproxy-ca
         - name: mitmproxy-data
           emptyDir: {}

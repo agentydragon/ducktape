@@ -1,6 +1,6 @@
 # Auto-inject mitmproxy proxy config into all pods in sandbox namespaces.
 # This makes any pod (e.g. `kubectl run --image=curlimages/curl`) work
-# turnkey with HTTP_PROXY, HTTPS_PROXY, SSL trust, and the CA cert mounted,
+# turnkey with HTTP_PROXY, HTTPS_PROXY, SSL trust, and the CA bundle mounted,
 # without the pod spec needing to know about the proxy.
 #
 # Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
@@ -34,7 +34,7 @@ metadata:
       Mutates pods in claude-sandbox and openclaw-sandbox to automatically
       inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
-      and mount the mitmproxy CA cert at /mitmproxy-ca/ca-cert.pem.
+      and mount the mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
 spec:
   mutateExistingOnPolicyUpdate: false
   rules:
@@ -84,22 +84,22 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: SSL_CERT_FILE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: CURL_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: REQUESTS_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NODE_EXTRA_CA_CERTS
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
                 value:
@@ -142,22 +142,22 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: SSL_CERT_FILE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: CURL_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: REQUESTS_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NODE_EXTRA_CA_CERTS
-                  value: /mitmproxy-ca/ca-cert.pem
+                  value: /mitmproxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
                 value:
