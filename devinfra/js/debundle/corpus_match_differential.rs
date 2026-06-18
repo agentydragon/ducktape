@@ -624,6 +624,9 @@ fn module_case(path: &Path, modules_root: &Path) -> Result<ModuleCase> {
 /// The chunk a module was emitted from: the `<chunk>` whose prepared-chunks tree
 /// holds `<chunk>/<module-path>.js`. (`prepare_chunks` emits each debundled
 /// module under its source chunk, so the selectors' owners live in that chunk.)
+/// The returned chunk id maps to the analysis source `<snapshot>/<chunk>.js` —
+/// the original minified bundle the selectors were written against, not the
+/// debundled `<chunk>/entry.js` (which is the emitted ES-import entry).
 fn find_target_chunk(js_root: &Path, module_path: &str) -> Option<String> {
     let relative = format!("{module_path}.js");
     fs::read_dir(js_root)
@@ -664,7 +667,7 @@ fn classify_and_record<T: PartialEq + std::fmt::Debug>(
     classify_resolver(tally, datalog, production);
 }
 
-fn run_per_chunk(modules_root: &Path, js_root: &Path) -> Result<()> {
+fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> Result<()> {
     let mut by_chunk: BTreeMap<String, Vec<ModuleCase>> = BTreeMap::new();
     let mut unmapped: Vec<String> = Vec::new();
     let mut module_count = 0usize;
@@ -682,11 +685,13 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path) -> Result<()> {
     let mut groups = ResolverTally::default();
     let mut issues: Vec<Issue> = Vec::new();
     for (chunk, cases) in &by_chunk {
-        let entry = js_root.join(chunk).join("entry.js");
-        let source = fs::read_to_string(&entry)
-            .with_context(|| format!("reading chunk entry {}", entry.display()))?;
-        let module = js_ast::parse_js_module_ast(&entry.to_string_lossy(), &source)
-            .with_context(|| format!("parsing chunk entry {}", entry.display()))?;
+        // Resolve against the original minified bundle (the analysis source the
+        // selectors were authored against), not the debundled `<chunk>/entry.js`.
+        let chunk_source = snapshot_root.join(format!("{chunk}.js"));
+        let source = fs::read_to_string(&chunk_source)
+            .with_context(|| format!("reading chunk source {}", chunk_source.display()))?;
+        let module = js_ast::parse_js_module_ast(&chunk_source.to_string_lossy(), &source)
+            .with_context(|| format!("parsing chunk source {}", chunk_source.display()))?;
         // Build the chunk's EDB once; every module of this chunk resolves against it.
         let resolver = ChunkResolver::new(&module);
         for case in cases {
@@ -802,14 +807,22 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Per-target-chunk resolver differential: resolve each module's selectors
     // against *its own* chunk (the one it was emitted from), not one fixed chunk.
-    // `PER_CHUNK_JS_ROOT` is the prepared-chunks dir (`<chunk>/entry.js` inputs,
-    // and `<chunk>/<module-path>.js` emitted outputs used to find the chunk).
+    // `PER_CHUNK_JS_ROOT` is the prepared-chunks dir, used only for the
+    // module->chunk mapping via its `<chunk>/<module-path>.js` emitted outputs;
+    // the analysis source each chunk resolves against is the upstream minified
+    // snapshot `<snapshot-static-dir>/<chunk>.js`, not `<chunk>/entry.js`.
     if let Ok(js_root) = std::env::var("PER_CHUNK_JS_ROOT") {
-        let [modules_root] = args.as_slice() else {
-            bail!("usage: PER_CHUNK_JS_ROOT=<js-dir> corpus_match_differential <spec-modules-dir>");
+        let [modules_root, snapshot_root] = args.as_slice() else {
+            bail!(
+                "usage: PER_CHUNK_JS_ROOT=<js-dir> corpus_match_differential <spec-modules-dir> <snapshot-static-dir>"
+            );
         };
         return js_ast::with_swc_globals(|| {
-            run_per_chunk(Path::new(modules_root), Path::new(&js_root))
+            run_per_chunk(
+                Path::new(modules_root),
+                Path::new(&js_root),
+                Path::new(snapshot_root),
+            )
         });
     }
     let [specs_root, chunk_paths @ ..] = args.as_slice() else {
