@@ -846,14 +846,18 @@ no in-production shadow run).
    minified snapshot source (commits on `claude/lucid-mendel-178j6q`). It now streams per-chunk with
    a budget and separates datalog/production timing. Result + findings:
    <../debug/2026_06_18_per_chunk_gate_real_source.md>.
-2. **Candidate prefilter for the fact resolver** — index `chunk_facts` body items by root node kind
-   (and var-kind), match a needle only against same-kind candidates. Sound (top-level selectors
-   anchor on a concrete statement kind) and the analog of production's per-candidate prefilter.
-   Prerequisite for a complete corpus pass — without it, parity is only spot-checkable, not provable.
+2. **Make a corpus pass tractable** (prerequisite for proving parity at all). The root-kind
+   prefilter landed (commit `954d3525`; `ChunkResolver` caches body root kinds; sound — same
+   verdicts) but only bought ~15% (measured 79 vs 70 / 8306 under a 150 s budget). The dominant cost
+   is not candidate count — `selector_match::matches` rebuilds `Index::build(subject)` on every
+   `(selector, subject)` pair, O(selectors × subjects × size). **Next lever: cache each body item's
+   `Index` once in `ChunkResolver` and thread it through the match path** (pure memoization, sound),
+   and extend the prefilter/caching to the var-decl declarator scan. Numbers + diagnosis:
+   <../debug/2026_06_18_per_chunk_gate_real_source.md>.
 3. **Close the 4 fail-closed faithfulness gaps** — faithful interior `STMT_LIST`-run-around-pinned-
    statement matching, `CLASS_REST`-absence enforcement, and multi-statement run alignment, until the
-   real-source gate is 0 fail-closed / 0 disagreements over **all** 8306 selectors (now measurable
-   after step 2).
+   real-source gate is 0 fail-closed / 0 disagreements over **all** 8306 selectors (measurable once
+   step 2 lands).
 4. **Route the three production call sites through `SelectorResolver`** — pass a resolver in, default
    `AstWildcardResolver` (no behavior change; the trait method bodies already delegate to the same
    free functions). Mechanical, atomic, keeps all tests green.

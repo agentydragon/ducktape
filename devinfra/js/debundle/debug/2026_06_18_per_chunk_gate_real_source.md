@@ -91,3 +91,33 @@ Neither is a model-level dead end — both are fixable matcher work — but they
 real, and they are the gate to the goal's "parity proven, not asserted." The
 fail-closed direction means the current state is _safe_ to shadow (it errors
 rather than mis-claims), but not yet correct enough to flip.
+
+## Update — root-kind prefilter landed: sound but insufficient
+
+Implemented the candidate prefilter (commit `954d3525`): `ChunkResolver` caches
+each body item's root node kind, and the single-statement scan skips subjects
+whose root kind differs from a concrete (non-hole) needle root — the exact
+`nkind != subject kind` gate in `homo`, so it changes no verdict.
+
+Re-run, same 150 s budget, head-to-head:
+
+|        | measured  | member r/j/fc/or/vd | dl time | ~per-selector |
+| ------ | --------- | ------------------- | ------- | ------------- |
+| before | 70 / 8306 | 60/0/4/0/0          | 151.7 s | 2.17 s        |
+| after  | 79 / 8306 | 69/0/4/0/0          | 148.9 s | 1.88 s        |
+
+**Confirmed sound** (identical verdicts — same 4 fail-closed, 0 over-resolved, 0
+value-disagree; only the measured count rose). But the speedup is **~15 %**, not
+the order of magnitude a corpus pass needs (still ~4 h).
+
+**Diagnosis — the dominant cost is not candidate count.** `selector_match::matches`
+rebuilds `Index::build(subject)` on **every** call, so the per-`(selector, subject)`
+index construction is O(selectors × subjects × subject-size) — billions of
+rebuilds across the corpus. The root-kind prefilter only removes the wrong-kind
+fraction of those rebuilds; the right-kind subjects (and the var-decl member path,
+which scans declarators without going through `matching_body_indices`) still
+rebuild per pair. **The real throughput lever is caching each body item's `Index`
+once in `ChunkResolver` and threading it into the match path** (sound — a pure
+memoization, no semantic change), plus extending the same prefilter/caching to the
+var-decl declarator scan. That is the corrected step-2 of the switch plan; the
+root-kind prefilter is a necessary-but-partial building block toward it.
