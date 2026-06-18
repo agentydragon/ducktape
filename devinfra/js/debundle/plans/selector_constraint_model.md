@@ -583,6 +583,29 @@ to a free wildcard (that would under-constrain and mis-match). `DatalogResolver`
 matcher over the corpus selectors and **proves** parity (zero disagreements) rather than asserting
 it.
 
+**Landed (P2 rung 1):** `selector_match::matches` is the homomorphism over `ChunkFacts`, and
+`selector_match_differential_test` proves it agrees with the production matcher
+(`source_match::needle_matches`, exposing `PreparedNeedle::matches`) on the faithful subset —
+exact-identifier structure with expression-position single-node holes — and is fail-closed on
+run/list holes and the regex predicate (rejected up front, so an arity check cannot mask them as a
+wrong `false`). The differential already earned its keep, catching that arity short-circuit in the
+first cut.
+
+**Design finding (the next rung's gate):** faithful **alpha-equivalence** needs _within-statement_
+scope/binding information — which needle identifier occurrences are the same binding, with
+shadowing — and the P1 EDB does not carry it (`resolves_to` is owner-level, across top-level
+statements, not inside one). So rung 1 does exact-identifier matching and **fail-closes** on alpha
+rather than approximating it with a free wildcard (which would under-constrain). The next rung adds
+a per-occurrence **scope/alpha-canonical fact** to `chunk_facts` (a de Bruijn-style binding index
+within the statement); `alpha_canonicalize.rs` seeds the canonicalization. This is an additive EDB
+extension, not a drawing-board reset — but it is the fidelity-critical piece, so it is built
+behind the differential, construct by construct, exactly as P1 coverage was.
+
+Remaining rungs, each differential-gated: (1) alpha via scope facts; (2) run/list holes as
+subsequence matches over the child-index; (3) statement-position holes; (4) resolver-level wiring
+(`DatalogResolver` returning the claimed binding) + the **corpus-wide** differential — the gate the
+goal names.
+
 ### What the matcher cannot do that the query model can
 
 Today's matcher is single-pattern, positive, intra-statement, and per-selector independent: it
