@@ -616,7 +616,16 @@ mapping to one chunk identifier — a join, not a free wildcard; `STR_LITERAL_MA
 `str_matches` filter; ordered runs → child-index `<` constraints). This is the conjunctive query
 the model describes, now concrete over `ChunkFacts`; whether evaluated as Ascent rules or a direct
 homomorphism search is an implementation choice, but it operates over the EDB, not by re-walking
-ASTs. Fail-closed governs it: a hole whose faithful rule is not yet implemented makes the lowering
+ASTs. **This per-`(selector, candidate)` homomorphism is the kernel match relation, not a rival
+"N separate solves" architecture.** The one global evaluation is still the target (P4): for today's
+cross-ref-free corpus the global solve **decomposes by connected components** into exactly these
+independent matches (two selectors are connected only when they share a variable — an `@Name`
+cross-reference — which the current YAML cannot even express), so per-selector and one-global give
+identical answers, and the single fixpoint earns its keep only once selectors share variables
+(`@Name`, `all_different`, counting). The order is forced by the parity gate: "zero disagreements
+vs. the matcher" is inherently per-selector (the matcher is), so the kernel is proven per-pair
+first, then composed into one fixpoint that adds the cross-selector joins. Fail-closed governs it:
+a hole whose faithful rule is not yet implemented makes the lowering
 **error**, never emit a weaker query — the alpha-consistency join in particular must not degrade
 to a free wildcard (that would under-constrain and mis-match). `DatalogResolver` wraps this behind
 `source_match::SelectorResolver`; `DifferentialResolver<AstWildcard, Datalog>` runs it beside the
