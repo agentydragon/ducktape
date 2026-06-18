@@ -475,11 +475,55 @@ So in the clean native form the surviving holes are exactly the existence qualif
 equality and regex become first-class CQ constructs, and order/position is
 expressible-but-discouraged.
 
-**Nothing is dropped during migration.** The shape atom _is_ today's matcher as one
-atom-producer, so a `source_match` with any hole — including ordered/positional ones —
-keeps resolving as an opaque shape atom. Native lowering (existential → gone, equality →
-variable, regex → filter) is opportunistic; a hole we cannot yet lower cleanly just stays
-inside an opaque shape atom, so the spec never loses expressiveness.
+**Fail-closed, never silently weaker.** The lowering is total-or-loud: each construct compiles to
+atoms _provably equivalent_ to the matcher's semantics, or the lowering raises
+`Unsupported(construct)` and the resolver **errors** — it never emits a query that quietly omits a
+part it didn't model (which would under-constrain and silently match the wrong owner). The
+existential "vanish" above is _not_ such an omission: the matcher's `ANYTHING`/run-holes mean
+"don't care", and a CQ that doesn't mention those positions means exactly that — dropping a
+don't-care is faithful; dropping a _constraining_ part is the forbidden thing that triggers the
+error. The only sanctioned fallback is an **explicit, opt-in shape atom** that faithfully delegates
+a whole sub-pattern to the existing matcher (`AstWildcardResolver`) — visible in the spec, never an
+automatic swallow. So "unsupported" is always either a hard error or a conscious, recorded
+delegation; the unsupported set is counted and shrinking toward empty (the precondition for
+deleting the matcher). (Differential refinement for P2–P3: tag an `Unsupported` rejection
+distinctly from a no-match, so a Datalog `Unsupported` is never masked when the matcher also
+rejects — `DifferentialResolver`'s `(reject, reject) ⇒ agree` rule holds only when both are
+genuine no-matches.)
+
+### Can the query model match every selector kind faithfully?
+
+Yes — every selector kind and hole the specs depend on has a faithful encoding over an AST-facts
+EDB; nothing is fundamentally inexpressible.
+
+| construct                                                                                    | faithful encoding                                     | EDB fact needed                                        |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
+| `binding: { name }`                                                                          | `name_owner` lookup                                   | owner graph (have it)                                  |
+| structural shape (`class` / `function` / call …)                                             | positive `kind` / `child` / `prop_name` join          | `kind(node,k)`, `child(parent,idx,child)`, `prop_name` |
+| anonymous `EXPR` / `STMT` / `ANYTHING`                                                       | unmentioned position (faithful don't-care)            | —                                                      |
+| run-holes `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` / `DECLARATORS` | absorb = don't-constrain; anchors keep relative order | `child` index column                                   |
+| named `EXPR_x` (cross-occurrence equality)                                                   | one shared variable used twice (a join)               | per-node structural-canonical id                       |
+| `STR_LITERAL_MATCHING_RE("re")`                                                              | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
+| `identifiers: exact`                                                                         | name filter                                           | `name(node,spelling)`                                  |
+| `identifiers: alpha_all`                                                                     | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
+| `target_binding` / `target_statement(s)`                                                     | choice of distinguished variable                      | —                                                      |
+| `binding_groups` (adopt_names / exports)                                                     | mechanical per-target expansion (already done)        | —                                                      |
+| ordered / positional anchors                                                                 | child-index compare (`i < j`; adjacency `j == i + 1`) | `child` index column                                   |
+
+So beyond the phase-1 owner graph the lowering needs: `kind`, `child(parent, idx, child)`,
+`prop_name`, `name`, `str_lit`, and a per-node structural-canonical id (plus the existing
+`resolves_to`). Two encodings must be proven **bit-for-bit faithful**, not merely plausible — this
+is exactly where fail-closed lowering earns its keep:
+
+- **run-hole adjacency / subsequence** — the matcher's precise rule for when siblings must be
+  contiguous vs may have gaps (run-hole present ⇒ gaps allowed; absent ⇒ exact adjacency). The
+  index-comparison encoding is simple; reproducing the matcher's exact rule is the work.
+- **alpha-equivalence scoping** — shadowing and which binding a wildcard reference resolves to.
+  `resolves_to` carries scope, but matching the matcher's exact alpha rules is the subtlest point.
+
+Both are guarded twice: the lowering **errors** on any pattern whose faithful encoding it has not
+implemented (no silent approximation), and the corpus differential flags any lowered query that
+disagrees with the matcher.
 
 ### What the matcher cannot do that the query model can
 
@@ -591,19 +635,20 @@ in `selector_query_examples` made real; `alpha_canonicalize.rs` seeds the canoni
 _Exit:_ round-trip test — the facts reconstruct each top-level statement's shape on a fixture
 chunk.
 
-**P2 — `DatalogResolver`, full delegation.** Second `SelectorResolver` impl that lowers every
-`source_match` to one opaque shape atom = a call into `AstWildcardResolver`; wire
+**P2 — `DatalogResolver`, explicit total delegation.** Second `SelectorResolver` impl that lowers
+every `source_match` to one **explicit, faithful** shape atom — a call into `AstWildcardResolver`
+(total delegation that runs the real matcher, _not_ a silent skip); wire
 `DifferentialResolver<AstWildcard, Datalog>` into the resolution path behind a flag. _Exit:_
 differential green by construction across the gaffer `tana/re` corpus — proves the
 EDB/plumbing/round-trip at zero behavior risk.
 
-**P3 — native lowering, construct by construct, differential-gated.** Replace shape atoms with
-real atoms in the hole order from "Holes under the query model": existential → omit, equality →
-shared variable, `STR_LITERAL_MATCHING_RE` → `str_matches` filter, identifiers → alpha facts,
-then the structural body (`child` / `kind` / `prop_name`). Ordered/positional holes stay shape
-atoms longest (possibly permanently). _Exit per construct:_ 0 differential disagreements
-corpus-wide before it counts as native. This is the bulk of the work, but each step is small and
-reversible.
+**P3 — native lowering, construct by construct, fail-closed + differential-gated.** Replace shape
+atoms with real atoms in the hole order from "Holes under the query model": existential → omit,
+equality → shared variable, `STR_LITERAL_MATCHING_RE` → `str_matches` filter, identifiers → alpha
+facts, then the structural body (`child` / `kind` / `prop_name`). The lowering is **fail-closed**:
+a construct compiles to provably-faithful atoms or it hard-errors — never a silently-weaker query.
+_Exit per construct:_ 0 differential disagreements corpus-wide and no fail-closed errors over the
+set declared native. This is the bulk of the work, but each step is small and reversible.
 
 **P4 — one global solve + `@Name` cross-refs.** Shift from per-selector solves to one CSP over the
 whole spec: shared logic variables for `@Name`, `all_different` for duplicate-claim, per-target
@@ -616,10 +661,11 @@ differential still recording, then drop the `AstWildcardResolver` arm and retire
 modules. _Exit:_ the solver is the sole resolver, the matcher is removed, CI green.
 
 **Risks** (none is the engine — proven in P0): fact extraction (P1) is the only true greenfield
-and the biggest chunk; alpha-equivalence scoping must be faithfully canonicalized into facts (the
-differential catches drift, but it is the subtlest correctness point); ordered/positional holes
-likely never fully lower and stay escape-hatch shape atoms — acceptable, since parity requires
-never regressing, not lowering everything.
+and the biggest chunk; the two encodings that must be proven bit-for-bit faithful are **run-hole
+adjacency/subsequence** and **alpha-equivalence scoping** (both expressible — see the feasibility
+table — but fidelity-sensitive; fail-closed lowering refuses anything unproven, and the
+differential catches drift). Positional anchors _are_ expressible (child-index compare); they stay
+discouraged for stability (T-variant), not because the engine cannot match them.
 
 ## Open questions
 
