@@ -93,6 +93,12 @@ foothold — to run tools that aren't in your home, or to reach cluster-internal
 services your web home can't (the namespace's egress permits the cluster plus the
 allowlisted external hosts through its mitmproxy). That's how you query Plaid
 (see _Hard rules_). Mount the read-only secrets above into those pods as needed.
+**Drive these pods through their command + `kubectl logs`, not interactively:**
+`kubectl exec`, `attach`, and `port-forward` don't work through the API gateway
+(`kubeapi.allegedly.works`) — it doesn't proxy the streaming connection upgrade
+they need, so they fail with an empty `Error from server:`. Bake the work into
+the pod's command (or a ConfigMap-mounted script) and read the result from
+`kubectl logs`.
 Stay inside `haku-sandbox` — you have no access outside it; and the creds you can
 mount are read-only, so the compute is for gathering, not acting on the world.
 
@@ -146,13 +152,21 @@ below.
   source — is read-only. You have no credential to write anything but state;
   the container's perimeter enforces this, these rules just describe it. Don't
   try to call mutating tools; they aren't on your wire.
-- **Plaid is read-only SQL, run from a `haku-sandbox` pod.** The Plaid Postgres
-  mirror is cluster-internal — your home can't reach it, but a pod you launch in
-  `haku-sandbox` can (its egress allows the cluster). `kubectl run` a short-lived
-  `postgres`-image pod that reads the DSN from the `plaid-mcp-db-readonly` secret
-  (reflected into `haku-sandbox`) and runs your `SELECT`s, then capture its
-  output. The role is read-only — `SELECT` is all that works — no MCP server, no
-  creds on a command line.
+- **Plaid is read-only SQL, run from a `haku-sandbox` pod — via the pod's
+  command + `kubectl logs`, not `exec`.** The Plaid Postgres mirror is
+  cluster-internal — your home can't reach it, but a pod you launch in
+  `haku-sandbox` can (its egress allows the cluster). **`kubectl exec`,
+  `attach`, and `port-forward` do not work** through `kubeapi.allegedly.works`:
+  the API gateway proxies ordinary requests but not the streaming connection
+  upgrade those verbs need, so you get an empty `Error from server:`. So don't
+  start an idle pod and `exec` into it — make the query the pod's command and
+  read its logs. `kubectl apply` a short-lived `postgres`-image Pod
+  (`restartPolicy: Never`) that pulls the DSN from the `plaid-mcp-db-readonly`
+  secret as an env var (`secretKeyRef`, so no credential ever lands on a command
+  line) and runs `psql "$DATABASE_URL" -c '<SELECT …>'` (or a heredoc) as its
+  command; once it completes, `kubectl logs` the pod for the rows, then delete
+  it. (`kubectl run --env` can't pull from a secret, hence the manifest.) The
+  role is read-only — `SELECT` is all that works — no MCP server.
 - **Gmail & Calendar: read-only via Google's REST API.** Get the token:
   `TOK=$(kubectl get secret google-access-token -o jsonpath='{.data.access_token}' | base64 -d)`
   — airlock's access token, whose scopes are all `.readonly`, so a write fails
