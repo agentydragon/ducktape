@@ -61,6 +61,7 @@ devinfra/js/debundle/peel/golden/**
 # entirely, which would also unblock cluster/k8s/flux-system, kustomization,
 # etc.) and drop these excludes.
 secrets/claude-web-k8s-jwt.yaml
+secrets/haku-k8s-jwt.yaml
 **/*.sops.yaml
 secrets/claude-web-attic.yaml
 secrets/hosts/*-attic.yaml
