@@ -1,6 +1,6 @@
 # calendar_prep (example)
 
-Read Calendar with the read-only Google token (see `../AGENTS.md` → _Hard rules_)
+Read Calendar with the read-only Google token (see `../instructions.md` → _Hard rules_)
 over the next ~7–14 days:
 `curl -s -H "Authorization: Bearer $TOK" 'https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=<now>&timeMax=<+14d>&singleEvents=true&orderBy=startTime'`.
 Look for:

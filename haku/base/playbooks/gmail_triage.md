@@ -1,6 +1,6 @@
 # gmail_triage (example)
 
-Read Gmail with the read-only token (see `../AGENTS.md` → _Hard rules_). List new
+Read Gmail with the read-only token (see `../instructions.md` → _Hard rules_). List new
 mail since your bookmark (on the first run, a window like `newer_than:7d`):
 `curl -s -H "Authorization: Bearer $TOK" 'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=newer_than:7d'`,
 then fetch each with `.../messages/{id}?format=metadata` (use `format=full` only

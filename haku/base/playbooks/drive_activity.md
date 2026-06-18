@@ -1,17 +1,24 @@
 # drive_activity (example)
 
-Scan recent Google Drive activity with the read-only Google token (see
-`../AGENTS.md` → _Hard rules_; same `$TOK`). List what changed since your
-bookmark, e.g. files by recent modification:
+Recent Google Drive activity is a **window into what the operator is currently
+working on** — use it both to orient (what's going on this week, what they care
+about right now) and to spot concrete ways to help. Read it with the read-only
+Google token (see `../instructions.md` → _Hard rules_; same `$TOK`): list what
+changed since your bookmark, e.g. files by recent modification
 `curl -s -H "Authorization: Bearer $TOK" 'https://www.googleapis.com/drive/v3/files?orderBy=modifiedTime desc&fields=files(id,name,modifiedTime,owners,shared,webViewLink)&pageSize=50'`,
 or the Drive Activity API
 (`https://driveactivity.googleapis.com/v2/activity:query`) for a change feed.
-Look for:
+
+Let it inform your wider reasoning — a burst of edits on a doc or project tells
+you what to cross-reference elsewhere (calendar, mail) and where help is welcome
+— and look for direct findings:
 
 - docs shared with the operator that look like they await a read or reply
 - files implying a task (a draft to finish, a form/agreement to sign, a doc to
   review before a meeting — cross-reference `calendar_prep`)
 - comments or @-mentions directed at the operator
+- a project they're actively editing where you could offer to draft, summarize,
+  research, or prepare the next step
 - stale shared drafts worth closing out
 
 File one item per finding, referencing the file by name + `webViewLink` + last

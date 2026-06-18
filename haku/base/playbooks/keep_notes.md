@@ -1,7 +1,7 @@
 # keep_notes (example)
 
 Scan Google Keep for captured-but-unhandled notes with the read-only Google
-token (see `../AGENTS.md` → _Hard rules_; same `$TOK`). List notes:
+token (see `../instructions.md` → _Hard rules_; same `$TOK`). List notes:
 `curl -s -H "Authorization: Bearer $TOK" 'https://keep.googleapis.com/v1/notes'`,
 and focus on what's new or changed since your bookmark. Look for:
 

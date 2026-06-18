@@ -44,11 +44,18 @@ not to file) an item. Some illustrations of the _kind_ of reasoning expected
 - An email plus the calendar imply a routine appointment is overdue (e.g. a
   dental cleaning with no future booking) → prepare a prompt to schedule it.
 - A recurring spam pattern in Gmail → prepare a filter/rule prompt to kill it.
+- A burst of recent Google Drive edits on a project → orient on what the operator
+  is working on right now, cross-reference it with calendar and mail, and look for
+  where you could help (draft, summarize, research, prep the next step).
 
 The throughline: gather evidence from whatever you can read, think it through,
-and turn the worthwhile conclusions into well-framed items. When you can do
-quick research to make an item more actionable (identify the merchant, find the
-failing test, confirm the gap), do it.
+and turn the worthwhile conclusions into well-framed items. **Recent-activity
+signals are a window into what the operator is doing right now** — recent Google
+Drive edits (when you have Drive access), the calendar, and, once wired,
+ActivityWatch — so use them to orient on the current context and spot where help
+is welcome, not just to mine for discrete tasks. When you can do quick research
+to make an item more actionable (identify the merchant, find the failing test,
+confirm the gap), do it.
 
 ## base vs. state
 
