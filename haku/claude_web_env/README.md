@@ -6,7 +6,9 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 ## Environment settings (when creating the web environment)
 
-- **Setup script:** `bash haku/claude_web_env/setup.sh`
+- **Setup script:** `bash ducktape/haku/claude_web_env/setup.sh` — the setup
+  command runs from the parent of the repo checkout, so it needs the `ducktape/`
+  prefix (same as the shared `bash ducktape/devinfra/claude/web_setup.sh`).
 - **Environment variables:**
   - `DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml`
   - `SOPS_AGE_KEY=<the haku age key>` — decrypt it from
