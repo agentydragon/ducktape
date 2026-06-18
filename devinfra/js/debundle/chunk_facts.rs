@@ -22,9 +22,10 @@ use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    AssignTarget, BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit,
-    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ParamOrTsParamProp, Pat, Prop,
-    PropName, PropOrSpread, SimpleAssignTarget, Stmt, VarDeclarator,
+    AssignTarget, BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, ForHead,
+    Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPatProp,
+    ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, VarDecl,
+    VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -224,20 +225,51 @@ impl Extractor {
             Stmt::Break(_) => Ok(self.node("Break")),
             Stmt::Continue(_) => Ok(self.node("Continue")),
             Stmt::Empty(_) => Ok(self.node("Empty")),
+            Stmt::For(for_stmt) => {
+                let id = self.node("For");
+                if let Some(init) = &for_stmt.init {
+                    let init = self.var_decl_or_expr(init)?;
+                    self.facts.child.push((id, 0, init));
+                }
+                if let Some(test) = &for_stmt.test {
+                    let test = self.expr(test)?;
+                    self.facts.child.push((id, 1, test));
+                }
+                if let Some(update) = &for_stmt.update {
+                    let update = self.expr(update)?;
+                    self.facts.child.push((id, 2, update));
+                }
+                let body = self.stmt(&for_stmt.body)?;
+                self.facts.child.push((id, 3, body));
+                Ok(id)
+            }
+            Stmt::ForIn(for_in) => {
+                let id = self.node("ForIn");
+                let left = self.for_head(&for_in.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&for_in.right)?;
+                self.facts.child.push((id, 1, right));
+                let body = self.stmt(&for_in.body)?;
+                self.facts.child.push((id, 2, body));
+                Ok(id)
+            }
+            Stmt::ForOf(for_of) => {
+                let id = self.node("ForOf");
+                let left = self.for_head(&for_of.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&for_of.right)?;
+                self.facts.child.push((id, 1, right));
+                let body = self.stmt(&for_of.body)?;
+                self.facts.child.push((id, 2, body));
+                Ok(id)
+            }
             _ => unsupported("stmt"),
         }
     }
 
     fn decl(&mut self, decl: &Decl) -> Result<NodeId, Unsupported> {
         match decl {
-            Decl::Var(var) => {
-                let id = self.node("VarDecl");
-                for (index, declarator) in var.decls.iter().enumerate() {
-                    let d = self.var_declarator(declarator)?;
-                    self.facts.child.push((id, index as u32, d));
-                }
-                Ok(id)
-            }
+            Decl::Var(var) => self.var_decl(var),
             Decl::Fn(fn_decl) => {
                 let id = self.node("FnDecl");
                 let name = self.node("Ident");
@@ -261,6 +293,30 @@ impl Extractor {
                 Ok(id)
             }
             _ => unsupported("decl"),
+        }
+    }
+
+    fn var_decl(&mut self, var: &VarDecl) -> Result<NodeId, Unsupported> {
+        let id = self.node("VarDecl");
+        for (index, declarator) in var.decls.iter().enumerate() {
+            let d = self.var_declarator(declarator)?;
+            self.facts.child.push((id, index as u32, d));
+        }
+        Ok(id)
+    }
+
+    fn var_decl_or_expr(&mut self, init: &VarDeclOrExpr) -> Result<NodeId, Unsupported> {
+        match init {
+            VarDeclOrExpr::VarDecl(var) => self.var_decl(var),
+            VarDeclOrExpr::Expr(expr) => self.expr(expr),
+        }
+    }
+
+    fn for_head(&mut self, head: &ForHead) -> Result<NodeId, Unsupported> {
+        match head {
+            ForHead::VarDecl(var) => self.var_decl(var),
+            ForHead::Pat(pat) => self.pat(pat),
+            _ => unsupported("for_head"),
         }
     }
 
@@ -389,7 +445,76 @@ impl Extractor {
                 self.facts.ident_name.push((id, binding.id.sym.to_string()));
                 Ok(id)
             }
+            Pat::Array(array) => {
+                let id = self.node("ArrayPat");
+                for (index, elem) in array.elems.iter().enumerate() {
+                    match elem {
+                        Some(elem) => {
+                            let elem = self.pat(elem)?;
+                            self.facts.child.push((id, index as u32, elem));
+                        }
+                        None => {
+                            let elision = self.node("Elision");
+                            self.facts.child.push((id, index as u32, elision));
+                        }
+                    }
+                }
+                Ok(id)
+            }
+            Pat::Object(object) => {
+                let id = self.node("ObjectPat");
+                for (index, prop) in object.props.iter().enumerate() {
+                    let prop = self.object_pat_prop(prop)?;
+                    self.facts.child.push((id, index as u32, prop));
+                }
+                Ok(id)
+            }
+            Pat::Rest(rest) => {
+                let id = self.node("RestPat");
+                let arg = self.pat(&rest.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Pat::Assign(assign) => {
+                let id = self.node("AssignPat");
+                let left = self.pat(&assign.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&assign.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Pat::Expr(expr) => self.expr(expr),
             _ => unsupported("pat"),
+        }
+    }
+
+    fn object_pat_prop(&mut self, prop: &ObjectPatProp) -> Result<NodeId, Unsupported> {
+        match prop {
+            ObjectPatProp::KeyValue(key_value) => {
+                let id = self.node("PatKeyValue");
+                let key = self.prop_key(&key_value.key)?;
+                self.facts.child.push((id, 0, key));
+                let value = self.pat(&key_value.value)?;
+                self.facts.child.push((id, 1, value));
+                Ok(id)
+            }
+            ObjectPatProp::Assign(assign) => {
+                let id = self.node("PatAssign");
+                self.facts
+                    .ident_name
+                    .push((id, assign.key.id.sym.to_string()));
+                if let Some(value) = &assign.value {
+                    let value = self.expr(value)?;
+                    self.facts.child.push((id, 0, value));
+                }
+                Ok(id)
+            }
+            ObjectPatProp::Rest(rest) => {
+                let id = self.node("RestPat");
+                let arg = self.pat(&rest.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
         }
     }
 
@@ -507,6 +632,28 @@ impl Extractor {
                 self.facts.child.push((id, 0, target));
                 let right = self.expr(&assign.right)?;
                 self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Expr::Tpl(tpl) => {
+                // Interleave quasis and exprs in source order: q0 e0 q1 e1 … qn.
+                let id = self.node("Tpl");
+                let mut ordinal = 0u32;
+                for (index, quasi) in tpl.quasis.iter().enumerate() {
+                    let q = self.node("TplQuasi");
+                    let value = quasi
+                        .cooked
+                        .as_ref()
+                        .map(|cooked| cooked.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| quasi.raw.to_string());
+                    self.facts.str_lit.push((q, value));
+                    self.facts.child.push((id, ordinal, q));
+                    ordinal += 1;
+                    if let Some(expr) = tpl.exprs.get(index) {
+                        let expr = self.expr(expr)?;
+                        self.facts.child.push((id, ordinal, expr));
+                        ordinal += 1;
+                    }
+                }
                 Ok(id)
             }
             // Parentheses are transparent: the matcher matches modulo grouping.
@@ -878,6 +1025,19 @@ mod tests {
             .expect("covered shape extracts");
         let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in ["ClassDecl", "ClassProp", "Constructor", "This", "Assign"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_for_of_destructuring_and_template() {
+        let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ForOf", "ObjectPat", "PatAssign", "Tpl", "TplQuasi"] {
             assert!(
                 kinds.contains(expected),
                 "kind {expected} present: {kinds:?}"
