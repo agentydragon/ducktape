@@ -23,8 +23,8 @@ use std::collections::BTreeMap;
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     AssignTarget, BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit,
-    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, Pat, Prop, PropName, PropOrSpread,
-    SimpleAssignTarget, Stmt, VarDeclarator,
+    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ParamOrTsParamProp, Pat, Prop,
+    PropName, PropOrSpread, SimpleAssignTarget, Stmt, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -322,6 +322,46 @@ impl Extractor {
                 self.facts.child.push((id, 1, function));
                 Ok(id)
             }
+            ClassMember::Constructor(constructor) => {
+                let id = self.node("Constructor");
+                let key = self.prop_key(&constructor.key)?;
+                self.facts.child.push((id, 0, key));
+                let mut next = 1u32;
+                for param in &constructor.params {
+                    match param {
+                        ParamOrTsParamProp::Param(param) => {
+                            let pat = self.pat(&param.pat)?;
+                            self.facts.child.push((id, next, pat));
+                            next += 1;
+                        }
+                        ParamOrTsParamProp::TsParamProp(_) => {
+                            return unsupported("constructor: ts param prop");
+                        }
+                    }
+                }
+                if let Some(body) = &constructor.body {
+                    let body = self.block(body)?;
+                    self.facts.child.push((id, next, body));
+                }
+                Ok(id)
+            }
+            ClassMember::ClassProp(prop) => {
+                let id = self.node("ClassProp");
+                let key = self.prop_key(&prop.key)?;
+                self.facts.child.push((id, 0, key));
+                if let Some(value) = &prop.value {
+                    let value = self.expr(value)?;
+                    self.facts.child.push((id, 1, value));
+                }
+                Ok(id)
+            }
+            ClassMember::StaticBlock(static_block) => {
+                let id = self.node("StaticBlock");
+                let body = self.block(&static_block.body)?;
+                self.facts.child.push((id, 0, body));
+                Ok(id)
+            }
+            ClassMember::Empty(_) => Ok(self.node("ClassMemberEmpty")),
             _ => unsupported("class_member"),
         }
     }
@@ -580,6 +620,20 @@ impl Extractor {
                 self.facts.bool_lit.push((id, boolean.value));
                 Ok(id)
             }
+            Lit::Null(_) => Ok(self.node("NullLit")),
+            Lit::BigInt(big_int) => {
+                let id = self.node("BigIntLit");
+                let token = big_int
+                    .raw
+                    .as_ref()
+                    .map(|raw| raw.to_string())
+                    .unwrap_or_else(|| big_int.value.to_string());
+                self.facts.num_lit.push((id, token));
+                Ok(id)
+            }
+            // Regex carries a value (pattern + flags) that needs its own fact
+            // before it can be modeled faithfully — loud until then.
+            Lit::Regex(_) => unsupported("lit:regex"),
             _ => unsupported("lit"),
         }
     }
@@ -811,6 +865,19 @@ mod tests {
         let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
         let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in ["If", "Block", "ExprStmt", "Call", "Throw"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_class_constructor_and_property() {
+        let facts = extract("class C { x = 1; constructor(a) { this.a = a; } }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ClassDecl", "ClassProp", "Constructor", "This", "Assign"] {
             assert!(
                 kinds.contains(expected),
                 "kind {expected} present: {kinds:?}"
