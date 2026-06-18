@@ -558,6 +558,13 @@ classes, consumer clusters the matcher can reach only by minified name or a frag
 (exactly what the stabilization rubric flags). The relational model turns each into a
 re-minification-proof identity anchor.
 
+**All six are implemented and pass** as Ascent rules over a synthetic EDB in
+`selector_query_examples.rs` (`selector_query_examples_test`): cross-ref joins, a disequality
+`all_different`, stratified negation (`!rel`), recursive transitive closure, `count` aggregation
+with a uniqueness guard, and an AST-literal-∧-import-edge join all resolve to the expected owners.
+So the vocabulary is proven expressible in the engine we picked — the gap to production is the
+phase-2 AST-facts EDB and the template→atoms lowering, not the solver's capability.
+
 ### Rollout
 
 1. **Shadow** — build EDB + solver, assert per-target agreement with the matcher across
