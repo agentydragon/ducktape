@@ -444,6 +444,7 @@ creation_rules:
           - *iguana-agentydragon
           - *claude-web
           - *codex-cloud-agent
+          - *haku
           - *ci
   # Hetzner Robot webservice credentials (admin + all user keys)
   - path_regex: secrets/hetzner-robot\.sops\.yaml$
