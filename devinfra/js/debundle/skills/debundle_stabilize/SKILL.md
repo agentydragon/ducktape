@@ -149,26 +149,136 @@ prioritizes; it never decides.
 
 ## What makes a good anchor
 
-Prefer anchors that are **behavior-causal** (the code would have to change behavior
-to lose them) and **human-meaningful** (named for what they do):
+A selector is a **claim about what makes the entity recognizable**. The durable
+claims describe the entity's **identity / contract** — what it _is_, in words a
+human would use to name it and a minifier cannot erase. The fragile claims describe
+its **implementation** — what its code currently _looks like_, which is exactly what
+a behavior-preserving refactor or the next re-minification churns. Anchor on the
+identity side of that line.
 
-- descriptive string/number literals — route paths, error codes, event names, i18n
-  keys, MIME types, status strings;
-- stable member/method/property names that name behavior (`fetchAcl`, `dispatch`);
-- API/operation/selector identities (`.then`, GraphQL op names, action types);
+**The read-it-back test.** Say the `match` aloud as a sentence. "The class whose
+`getName` returns `'DocumentAccessorFactory'`" names an identity — durable. "The
+class with a method holding a `for`-loop over `.children` that calls `eN(…)`" can
+only be read as a description of today's code — a photograph; replace it.
+Unreadability is a _symptom_: a selector reads like an AST dump precisely when it
+anchors on tokens that carry no identity, and those are the volatile ones. If you
+can't read it back as "the X that _<declares/does the identifying thing>_," keep
+looking.
+
+**Literals the code emits about itself are the strongest anchor.** A minifier
+renames `getOwner` → `gO` freely but cannot rewrite the string
+`"DocumentAccessorFactory"` — strings are observable behavior. So an identity carried
+by a _literal_ is doubly stable: identity-bearing _and_ minification-immune. The
+ladder:
+
+Prefer (identity / contract — behavior-causal, human-meaningful):
+
+- a literal the entity emits **about itself** — a `getName`/`get type` returning its
+  name, `static displayName`, an error `name`/`message`, an action `type`, an
+  event / route / MIME / i18n / registration key;
+- public member or method names that name behavior _and_ survive minification
+  (`fetchAcl`, `dispatch`) — under `alpha_all` property names are exact anchors, so
+  they only help when the build keeps them (in this app, member names generally
+  survive);
+- API / operation identities (GraphQL op names, action types);
 - a **stable prefix** of an otherwise volatile string, via a regex anchor.
 
-Avoid — incidental or actively unstable, churned by unrelated rebuilds:
+Disprefer (implementation / incidental — churned by refactors and rebuilds):
 
-- bare numbers (`0`, `1`), booleans, and other ubiquitous literals;
-- a generic object key with its value holed (`{ name: ANYTHING }`);
+- **control-flow and body internals** — `for`/`while`/`switch` shape, statement
+  sequences, nested expression trees: the mechanism, never the identity;
 - positional / structural shape with no kept value (arity, declaration order);
-- minified identifiers (the matcher already wildcards them) and their neighbors;
+- uniqueness borrowed from an unrelated **neighbor** declaration;
+- bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
+  its value holed (`{ name: ANYTHING }`); minified identifiers (already wildcarded);
 - **content hashes and generated ids** — hashed CSS-module class names
-  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id
-  query params, cache-busting suffixes. The hashed segment is the _most_ volatile thing
-  in the bundle. Pin the stable prefix and hole / regex-anchor the volatile tail;
-  **never pin the hash.**
+  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`),
+  build-id query params, cache-busting suffixes: the _most_ volatile thing in the
+  bundle. Pin the stable prefix and hole / regex-anchor the volatile tail; **never
+  pin the hash.**
+
+### Good / okay / bad: one entity, three selectors
+
+The source the chunk happens to ship today (minified top-level names elided):
+
+```js
+class DocumentAccessorFactory extends NodeAccessor {
+  getName() {
+    return "DocumentAccessorFactory";
+  }
+  getOwner(node) {
+    for (const c of node.children) if (c.isOwner) return c;
+    return null;
+  }
+}
+```
+
+All three resolve uniquely _today_; they differ only in what they claim makes this
+the class. The wrapper (`identifiers: alpha_all`, `target_binding:
+DocumentAccessorFactory`) is the same each time — only the `match:` body changes.
+
+**Good** — anchors on the self-naming literal; holes the mechanism:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getName() {
+      STMT_LIST;
+      return "DocumentAccessorFactory";
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class whose `getName` returns `'DocumentAccessorFactory'`." The kept
+anchors are one method name plus the literal it returns — the literal is the
+load-bearing, minifier-immune part. Superclass and every body except the
+identifying `return` are holed, so any identity-preserving refactor still matches.
+
+**Okay** — anchors on a stable member name, no self-identity literal:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getOwner(ANYTHING) {
+      STMT_LIST;
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class with a `getOwner` method." Bodies holed (good), but it leans on
+the method _name_ surviving minification and only describes a _capability_, not an
+identity — another class could grow a `getOwner`. Fine when no self-naming literal
+exists; strictly weaker than Good.
+
+**Bad** — anchors on the implementation of `getOwner`:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getOwner(node) {
+      for (const c of node.children) if (c.isOwner) return c;
+      return null;
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class whose `getOwner` loops over `node.children` looking for
+`isOwner`." It pins the _mechanism_: rewrite the loop to
+`node.children.find((c) => c.isOwner)` (behavior-preserving) and it breaks though
+the class is unchanged. A photograph of today's body — and the longer and more
+literal the body it pins, the more fragile, not less.
+
+**No good anchor at all → leave honest debt.** If the entity is just
+`class DocumentAccessorFactory extends NodeAccessor {}` — empty body, no self-name,
+no distinctive surviving member — then every unique selector is either
+neighbor-borrowed or shape-only. Keep the name pin with a comment (step 6). An
+honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 ## Playbook (common cases)
 
