@@ -260,6 +260,39 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: false,
                 expected: true,
             },
+            // async / generator are part of a function's identity: an async-fn
+            // needle must not match a non-async fn (and vice versa), matching
+            // production's `eq_ignore_span` on `is_async`/`is_generator`.
+            Case {
+                selector: "async function f(a) { STMT_LIST; return a; }",
+                subject: "async function g(x) { y(); return x; }",
+                alpha: true,
+                expected: true,
+            },
+            Case {
+                selector: "async function f(a) { STMT_LIST; return a; }",
+                subject: "function g(x) { y(); return x; }",
+                alpha: true,
+                expected: false,
+            },
+            Case {
+                selector: "function f(a) { STMT_LIST; return a; }",
+                subject: "async function g(x) { y(); return x; }",
+                alpha: true,
+                expected: false,
+            },
+            Case {
+                selector: "function* f() { STMT_LIST; }",
+                subject: "function* g() { y(); }",
+                alpha: true,
+                expected: true,
+            },
+            Case {
+                selector: "function* f() { STMT_LIST; }",
+                subject: "function g() { y(); }",
+                alpha: true,
+                expected: false,
+            },
             // STR_LITERAL_MATCHING_RE matches a string literal whose value matches
             // the pattern — by regex, not by structure.
             Case {

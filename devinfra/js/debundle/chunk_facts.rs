@@ -413,7 +413,16 @@ impl Extractor {
     }
 
     fn function(&mut self, function: &Function) -> Result<NodeId, Unsupported> {
-        let id = self.node("Function");
+        // async/generator are part of the function's identity (production compares
+        // them via `eq_ignore_span`), so they must distinguish the node — fold them
+        // into the kind tag the matcher compares exactly, not drop them.
+        let kind = match (function.is_async, function.is_generator) {
+            (false, false) => "Function",
+            (true, false) => "AsyncFunction",
+            (false, true) => "GeneratorFunction",
+            (true, true) => "AsyncGeneratorFunction",
+        };
+        let id = self.node(kind);
         for (index, param) in function.params.iter().enumerate() {
             let pat = self.pat(&param.pat)?;
             self.facts.child.push((id, index as u32, pat));
@@ -750,7 +759,13 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Arrow(arrow) => {
-                let id = self.node("Arrow");
+                // async is part of the arrow's identity (see `function`); fold it
+                // into the kind tag rather than dropping it.
+                let id = self.node(if arrow.is_async {
+                    "AsyncArrow"
+                } else {
+                    "Arrow"
+                });
                 for (index, param) in arrow.params.iter().enumerate() {
                     let param = self.pat(param)?;
                     self.facts.child.push((id, index as u32, param));
