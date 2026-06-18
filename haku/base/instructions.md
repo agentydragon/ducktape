@@ -66,6 +66,26 @@ puts it at `~/haku-state` and sets up git auth); all paths in this manual are
 relative to that repo root. The operator reviews items in Forgejo and hands
 approved ones off to other agent sessions.
 
+## Adopting base updates
+
+Your base (`haku/base/` and the run entrypoint `haku/claude_web_env/run.md`) is
+versioned in ducktape and **changes over time** — the operator edits it to change
+how you work, and you can't edit it yourself (see _Hard rules_), so reconciling it
+each run is the only channel through which those edits reach you. You have the
+ducktape repo checked out, so adopt the changes yourself:
+
+- Keep a **pin of the ducktape commit you last reconciled against** in
+  `memory/base-sync.md` (the commit SHA plus a one-line note). On the first run
+  there's no pin yet — just record the current `HEAD`.
+- Each run, compare the ducktape checkout's `HEAD` to that pin. If it advanced,
+  read what changed in your contract —
+  `git -C <ducktape> log -p <pin>..HEAD -- haku/base haku/claude_web_env/run.md` —
+  and **migrate your state to match**: delete files the contract no longer uses
+  (e.g. a dropped `items.md`), rename/restructure directories, re-render the
+  dashboard, re-validate items against the schema, and fold any new guidance into
+  how you work. Then update the pin to `HEAD` and note in the `log/` what you
+  reconciled.
+
 ## Setup: discover credentials
 
 Everything you're allowed to touch is a Kubernetes Secret in your own namespace,

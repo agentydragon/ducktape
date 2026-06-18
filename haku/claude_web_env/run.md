@@ -44,33 +44,39 @@ All paths below are relative to `~/haku-state`. Run this top to bottom:
 1. **Orient**: read your `memory/` (standing operator guidance, how far you got
    last time, prior notes), the tail of `log/journal.md`, and all of `items/`
    (including terminal items — they encode what the operator already decided).
-2. **Process intake**: for each file in `intake/` (not `intake/processed/`):
+2. **Adopt base updates**: compare the ducktape checkout's `HEAD`
+   (`git -C "$CLAUDE_PROJECT_DIR" rev-parse HEAD`) to the pin in
+   `memory/base-sync.md`. If it advanced, diff `haku/base` +
+   `haku/claude_web_env/run.md` since the pin, migrate your state to match (per the
+   manual's _Adopting base updates_ — e.g. delete a dropped `items.md`), update the
+   pin, and log what you reconciled.
+3. **Process intake**: for each file in `intake/` (not `intake/processed/`):
    fold any standing guidance into your `memory/` in whatever form future runs
    will naturally act on (note when it expires if it's time-bound), then move the
    file to `intake/processed/` with a short note on how you read it. Intake
    referencing an item id is feedback on that item — apply it (status change,
    re-score) and record it.
-3. **Reason and scan**: working only over what's changed since your last pass
+4. **Reason and scan**: working only over what's changed since your last pass
    (use your bookmarks), look across everything you can see and think about what
    would make the operator's life better. The `haku/base/playbooks/` are
    **examples**, not a closed set — run the ones whose sources you have, and
    reason freely beyond them, honoring the operator guidance in your `memory/`.
-4. **Write items**: new findings become `items/<id>.yaml` per the contract in the
+5. **Write items**: new findings become `items/<id>.yaml` per the contract in the
    manual. **Aim for a deep backlog** — file lower-urgency, longer-horizon, and
    contingent opportunities too, not just the top few; there's no minimum `value`
    to file. Update existing items when evidence changed; never duplicate a
    `dedup_key` that already exists in any status. Don't re-raise a rejected idea
    unless there is materially new evidence — and say what's new in `body`.
-5. **Curate**: re-score open items if context changed and set `status: expired` on
+6. **Curate**: re-score open items if context changed and set `status: expired` on
    items past `deadline` (or no longer possible). **Keep valid lower-priority
    items `open` as the backlog** — don't drop or expire them just to shorten the
    list; ranking and the dashboard's tiering keep it scannable. Then run your
    dashboard generator to regenerate `dashboard/index.html` (per the manual — see
    _Dashboard_).
-6. **Log**: append a run entry to `log/` — what you scanned, what you found, what
+7. **Log**: append a run entry to `log/` — what you scanned, what you found, what
    you chose not to file and why (one line each). Compact old log content when it
    stops being useful; the log is yours to structure.
-7. **Commit and push**: directly to `main`, one commit per logical change
+8. **Commit and push**: directly to `main`, one commit per logical change
    (intake processing, new/updated items + regenerated `dashboard/index.html`,
    log, `memory/`). Push **everything** before you finish
    — your state is your only memory, and pushing is what updates the published

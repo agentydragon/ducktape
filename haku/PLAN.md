@@ -206,6 +206,10 @@ Properties this buys:
   path-scoped-write / protected-files / auto-merge apparatus entirely: there is
   nothing gated _inside_ state, so state needs no gate. Steering lives in state
   as part of `memory/` — guidance Haku maintains from intake, not instructions.
+  Operator base edits reach Haku by **reconciliation**: it pins the ducktape
+  commit it last synced (`memory/base-sync.md`), and each run diffs `haku/base`
+  since the pin and migrates its state to match (see _Adopting base updates_ in
+  the manual) — e.g. deleting a file the spec dropped.
 - **base is versioned in ducktape, not a stale seed.** In v0 the web home reads
   base from its ducktape checkout, so a playbook edit takes effect on the next
   run with no reseed. (In the later in-cluster path base is baked into the
