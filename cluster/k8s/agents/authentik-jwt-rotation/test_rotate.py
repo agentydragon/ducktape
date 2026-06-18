@@ -31,7 +31,9 @@ def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     expires = datetime.now(UTC) + timedelta(hours=10)
     f = tmp_path / "t.yaml"
     f.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\njwt: abc\n')
-    assert 9 < remaining_hours(f) < 11
+    remaining = remaining_hours(f)
+    assert remaining is not None
+    assert 9 < remaining < 11
 
 
 def test_rotation_expected_issuer_derived_from_slug():
