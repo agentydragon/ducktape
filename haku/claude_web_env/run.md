@@ -65,14 +65,16 @@ All paths below are relative to `~/haku-state`. Run this top to bottom:
    items past `deadline` (or no longer possible). **Keep valid lower-priority
    items `open` as the backlog** — don't drop or expire them just to shorten the
    list; ranking and the `items.md` tiering keep it scannable. Then regenerate
-   `items.md` (spec in the manual).
+   `items.md`, and run your dashboard generator to refresh `dashboard/index.html`
+   (both per the manual — see _`items.md` spec_ and _Dashboard_).
 6. **Log**: append a run entry to `log/` — what you scanned, what you found, what
    you chose not to file and why (one line each). Compact old log content when it
    stops being useful; the log is yours to structure.
 7. **Commit and push**: directly to `main`, one commit per logical change
-   (intake processing, new/updated items + regenerated `items.md`, log,
-   `memory/`). Push **everything** before you finish — your state is your only
-   memory. Message format: `scan: <summary>` / `intake: <summary>` /
+   (intake processing, new/updated items + regenerated `items.md` +
+   `dashboard/index.html`, log, `memory/`). Push **everything** before you finish
+   — your state is your only memory, and pushing is what updates the published
+   dashboard. Message format: `scan: <summary>` / `intake: <summary>` /
    `log: <summary>`.
 
 Then stop — the operator reviews the items in Forgejo and hands off approved

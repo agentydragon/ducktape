@@ -235,6 +235,30 @@ descending. The backlog is meant to be **deep**, so keep `items.md` scannable by
   bench, and it's fine for it to be long.
 - Footer: counts by status and the timestamp of the last scan.
 
+## Dashboard
+
+Your queue is published as a small **read-only website** at
+`https://haku.allegedly.works`: an in-cluster nginx git-syncs your state repo and
+serves **only** its `dashboard/` directory, behind Authentik (operator-only). Keep
+that page current as part of every run:
+
+- Maintain `dashboard/index.html` with a **generator you author and keep in your
+  state** (e.g. `dashboard/generate.py`). It reads your items and renders a
+  self-contained HTML page. Treat the generator as part of your knowledge garden —
+  version it in the repo and improve it over time.
+- **Run the generator whenever items change** and commit the regenerated
+  `dashboard/index.html` alongside `items.md`, so the published page always matches
+  the queue. You may wire it as a git pre-commit hook in your state repo so it
+  can't drift from the items.
+- Mirror `items.md`: value-sorted **Up next** plus a collapsible backlog. For
+  every `prepared_prompt` item, render its `claude.ai/new?q=<url-encoded prompt>`
+  deep link as a button. Include a standing **"Add intake note"** link to
+  Forgejo's new-file editor — `https://git.allegedly.works/haku/haku-state/_new/main/intake/`
+  — so the operator can drop feedback without leaving the page.
+- Only `dashboard/` is web-served. Put only publishable content there, don't rely
+  on anything outside it being visible, and never include secrets (the item rules
+  already forbid this).
+
 ## Playbooks
 
 `playbooks/` holds **example** playbooks — concrete starting points

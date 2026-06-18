@@ -1,0 +1,150 @@
+# Read-only Haku dashboard: a git-sync sidecar keeps /data a shallow checkout of
+# haku-state, and nginx serves only its dashboard/ directory (the self-contained
+# index.html Haku regenerates each run). Access is gated by Authentik
+# (agentydragon-only) via the proxy outpost — nginx has no native auth. Modelled
+# on cluster/k8s/budget/app (Fava + ledger-sync).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-dashboard
+  namespace: haku-sandbox
+  labels:
+    app.kubernetes.io/name: haku-dashboard
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-dashboard
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101 # nginx-unprivileged uid; git-sync runs as the same uid
+        runAsGroup: 101
+        fsGroup: 101
+      initContainers:
+        # One-time clone so /data exists before nginx starts.
+        - name: state-sync-init
+          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          command: ["sh", "/scripts/sync.sh", "once"]
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp # git writes its global config under $HOME (/tmp); rootfs is read-only
+              mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: state-sync
+          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          command: ["sh", "/scripts/sync.sh"]
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: password
+            - name: SYNC_PERIOD
+              value: "300"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: haku-dashboard-sync
+        - name: nginx-conf
+          configMap:
+            name: haku-dashboard-nginx

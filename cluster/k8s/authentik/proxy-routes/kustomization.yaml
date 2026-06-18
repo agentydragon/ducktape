@@ -17,3 +17,4 @@ resources:
   - adsb-httproute.yaml
   - openhands-httproute.yaml
   - fava-httproute.yaml
+  - haku-dashboard-httproute.yaml

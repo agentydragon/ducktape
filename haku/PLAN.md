@@ -545,13 +545,14 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
   fit; for longer prompts, a stable per-item URL whose content is
   one-click-copyable. Closing the loop stays manual at first (I flip
   `status` after the handoff session finishes).
-- Dashboard ladder — **v0 is decided: the Forgejo web editor**, rendered
-  `items.md` as the view. Escalate a rung only when the current one
-  demonstrably hurts:
-  1. **Committed static page**: haku-regenerated `dashboard/index.html` in
-     the repo, served by a static container + git-sync sidecar behind
-     Authentik (the augur evidence-sync pattern). Affordances are plain
-     links: handoff URLs, Forgejo web-editor deep links for archive/feedback.
+- Dashboard ladder — escalate a rung only when the current one demonstrably
+  hurts:
+  1. **Committed static page (DONE):** Haku regenerates `dashboard/index.html`
+     in its state via a generator it authors and keeps under `dashboard/`; an
+     nginx + git-sync Deployment (`cluster/k8s/haku/dashboard/`, modelled on the
+     budget/Fava app) serves only that directory at `haku.allegedly.works` behind
+     Authentik (agentydragon-only). Affordances are plain links: `claude.ai/new?q=`
+     handoff buttons and a Forgejo new-file deep link for adding intake notes.
   2. **Pretty dashboard, still no backend**: a real web app (Svelte) whose
      build reads the repo from a git-sync volume and renders client-side;
      archive/feedback buttons call the Forgejo API with my Authentik session.

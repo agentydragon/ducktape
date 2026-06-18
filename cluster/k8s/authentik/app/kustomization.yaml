@@ -32,4 +32,5 @@ configMapGenerator:
       - blueprints/claude-service-account.yaml
       - blueprints/openhands-sso.yaml
       - blueprints/fava-sso.yaml
+      - blueprints/haku-dashboard-sso.yaml
     namespace: authentik
