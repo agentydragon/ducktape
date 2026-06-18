@@ -18,8 +18,8 @@
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    BlockStmt, Callee, Decl, Expr, Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl,
-    ModuleItem, Pat, Stmt, VarDeclarator,
+    BlockStmt, Callee, Class, ClassMember, Decl, Expr, Function, Lit, MemberExpr, MemberProp,
+    Module, ModuleDecl, ModuleItem, Pat, PropName, Stmt, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -42,6 +42,8 @@ pub struct ChunkFacts {
     pub ident_name: Vec<(NodeId, String)>,
     /// member / property / method name (non-computed).
     pub prop_name: Vec<(NodeId, String)>,
+    /// class node -> its super-class expression node (the syntactic `extends`).
+    pub super_class: Vec<(NodeId, NodeId)>,
     /// top-level statement node -> its owner statement ordinal (owner-graph join).
     pub top_level: Vec<(NodeId, usize)>,
 }
@@ -128,6 +130,17 @@ impl Extractor {
                 self.facts.child.push((id, 1, function));
                 Ok(id)
             }
+            Decl::Class(class_decl) => {
+                let id = self.node("ClassDecl");
+                let name = self.node("Ident");
+                self.facts
+                    .ident_name
+                    .push((name, class_decl.ident.sym.to_string()));
+                self.facts.child.push((id, 0, name));
+                let class = self.class_node(&class_decl.class)?;
+                self.facts.child.push((id, 1, class));
+                Ok(id)
+            }
             _ => unsupported("decl"),
         }
     }
@@ -165,6 +178,49 @@ impl Extractor {
             self.facts.child.push((id, index as u32, stmt));
         }
         Ok(id)
+    }
+
+    fn class_node(&mut self, class: &Class) -> Result<NodeId, Unsupported> {
+        let id = self.node("Class");
+        if let Some(super_class) = &class.super_class {
+            let super_node = self.expr(super_class)?;
+            self.facts.super_class.push((id, super_node));
+        }
+        for (index, member) in class.body.iter().enumerate() {
+            let member = self.class_member(member)?;
+            self.facts.child.push((id, index as u32, member));
+        }
+        Ok(id)
+    }
+
+    fn class_member(&mut self, member: &ClassMember) -> Result<NodeId, Unsupported> {
+        match member {
+            ClassMember::Method(method) => {
+                let id = self.node("Method");
+                let key = self.prop_key(&method.key)?;
+                self.facts.child.push((id, 0, key));
+                let function = self.function(&method.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            _ => unsupported("class_member"),
+        }
+    }
+
+    fn prop_key(&mut self, key: &PropName) -> Result<NodeId, Unsupported> {
+        match key {
+            PropName::Ident(name) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, name.sym.to_string()));
+                Ok(id)
+            }
+            PropName::Str(value) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, js_ast::str_value(value)));
+                Ok(id)
+            }
+            _ => unsupported("prop_key"),
+        }
     }
 
     fn pat(&mut self, pat: &Pat) -> Result<NodeId, Unsupported> {
@@ -349,6 +405,45 @@ mod tests {
             );
         }
         assert_eq!(facts.top_level.len(), 1);
+    }
+
+    #[test]
+    fn extracts_class_with_method_returning_literal() {
+        // The DocumentAccessorFactory example: identity = a getName() returning
+        // the class's own readable name, plus an `extends` edge.
+        let facts = extract(
+            "class DocumentAccessorFactory extends Base { getName() { return \"DocumentAccessorFactory\"; } }",
+        )
+        .expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert!(
+            idents.contains("DocumentAccessorFactory"),
+            "class name: {idents:?}"
+        );
+        assert!(idents.contains("Base"), "super class: {idents:?}");
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["getName"], "method name");
+        let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(strings, vec!["DocumentAccessorFactory"], "returned literal");
+        assert_eq!(facts.super_class.len(), 1, "one extends edge");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "ClassDecl",
+            "Class",
+            "Method",
+            "PropName",
+            "Function",
+            "Block",
+            "Return",
+            "StrLit",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
     }
 
     #[test]
