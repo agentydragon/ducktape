@@ -782,11 +782,66 @@ resolver — is what bounds the full member × subject cross-product, so runs us
 0 disagreements among the exercised owners, and resolver parity follows by construction (only the
 match oracle is swapped; binding extraction and categoricity are production's).
 
-Remaining: broaden subjects/chunks for wider resolved-parity coverage — member resolved-parity at
-scale is best measured by resolving each selector against its _target_ chunk (needs the spec→chunk
-map). Still-latent and differential-clean (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection has
-held over 250k+ pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently
-anonymous match-any). Each remains differential-gated.
+**Landed (per-target-chunk resolver differential):** `corpus_match_differential` gains a
+`PER_CHUNK_JS_ROOT` mode that resolves each module's selectors against **its own** target chunk —
+the `<chunk>` whose prepared-chunks tree holds `<chunk>/<module-path>.js` (`prepare_chunks` emits
+each debundled module under its source chunk, so its selectors' owners live there). Modules are
+grouped by chunk; per chunk the EDB is built once (`ChunkResolver`) and every module of that chunk
+resolves against it. This sidesteps the N-selectors × giant-ReactGraph blowup — each selector
+resolves against the small chunk that actually contains its owner — giving broad **resolved-parity**
+coverage as the end-to-end corpus-wide resolver gate (most modules target the main `index-DI2GynTv`
+chunk; lazy chunks carry their own). Build-verification pending: a transient environment crate-fetch
+breakage — cold `crate_universe` re-splice + policy-blocked crates.io — is blocking all local Rust
+builds, so compile + corpus run follow on recovery.
+
+Still-latent and differential-clean (not yet exercised by the corpus): alpha shadowing (whole-pattern
+bijection has held over 250k+ pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same
+subtree, currently anonymous match-any). Each remains differential-gated.
+
+## Switching from `AstWildcardMatcher` to the fact matcher
+
+**Where production resolves selectors today** — three call sites invoke the `AstWildcardResolver`
+free functions **directly** (not through the `SelectorResolver` trait):
+
+| Call site                              | Function                                     | Selector kind        |
+| -------------------------------------- | -------------------------------------------- | -------------------- |
+| `lowering/plans.rs`                    | `resolve_member_binding`                     | member               |
+| `lowering/materialize/plan_builder.rs` | `resolve_member_binding_group`               | binding group        |
+| `anonymous_resolution.rs`              | `find_anonymous_statement_body_index_groups` | anonymous statements |
+
+(`selector_codemod.rs` also resolves a group; `perf/` is profiling only.) The `SelectorResolver`
+trait, `DifferentialResolver`, and `DatalogResolver`/`ChunkResolver` exist but today are used only by
+the corpus harness and unit tests — **production is not yet routed through the trait**.
+
+**Readiness.** The fact matcher and resolver are functionally complete and parity is proven where it
+counts: the **matcher** differential is corpus-wide **0 disagreements**; the **resolver** is
+**0 fail-closed-by-shape** over all 6873 member selectors on both specs, **0 over-resolved / 0
+value-disagreements** across members + groups at bounded scale, and resolver parity follows by
+construction (only the match oracle is swapped; binding extraction + categoricity stay production's).
+What is **not** done is the wiring + soak: production still calls the old matcher directly, there is
+no in-production shadow run, and the per-target-chunk corpus gate (above) is built but not yet
+build-verified.
+
+**Migration plan (strangler-fig: shadow → flip → delete).**
+
+1. **Land the per-target-chunk gate** (`PER_CHUNK_JS_ROOT`): compile + run, confirm 0 disagreements
+   with broad resolved-parity (every selector resolves to its real owner). Small; blocked only on
+   the build-env recovery.
+2. **Route the three production call sites through `SelectorResolver`** — pass a resolver in, default
+   `AstWildcardResolver` (no behavior change; the trait method bodies already delegate to the same
+   free functions). Mechanical, atomic, keeps all tests green.
+3. **Shadow in production**: wire `DifferentialResolver<AstWildcardResolver, DatalogResolver>` with a
+   logging/metrics sink at those call sites. Production keeps using the AstWildcard answer; every
+   real debundle run now also runs the fact resolver and records any divergence — corpus-wide
+   evidence accumulated _in situ_, not just from the offline harness. This is the step that would
+   finally exercise the two still-latent risks (alpha shadowing, named-hole equality) on real runs.
+4. **Flip**: once the shadow phase is divergence-free over real runs, swap primary to
+   `DatalogResolver` (AstWildcard becomes the shadow, or is dropped). One-line change per call site.
+5. **Delete `AstWildcardMatcher`** and the now-unused free functions once nothing references them.
+
+**Distance to switch:** no new matcher capability is required — the remaining work is steps 1–3
+(land the gate, thread the trait through 3 call sites, wire the shadow), then a soak (4) and cleanup
+(5). The matcher/resolver themselves are switch-ready.
 
 ### What the matcher cannot do that the query model can
 

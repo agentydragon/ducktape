@@ -72,6 +72,19 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
   menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
   playbook with tested fixtures (M2) and port-based evaluation (M3).
+- <plans/selector_constraint_model.md> — **matcher/resolver complete; switch not wired.** A
+  fact-based selector resolver (`chunk_facts` EDB + `selector_match` homomorphism +
+  `ChunkResolver`, build-the-model-once) that resolves every selector kind the spec depends on.
+  Parity proven: matcher differential **corpus-wide 0 disagreements**; resolver **0
+  fail-closed-by-shape** (both specs) + **0 over-resolved / 0 value-disagreements** at bounded
+  scale. **Next (to actually switch off `AstWildcardMatcher`):** (1) build-verify the
+  `PER_CHUNK_JS_ROOT` per-target-chunk corpus gate (currently blocked on a build-env crate-fetch
+  breakage); (2) route the three production call sites (`lowering/plans.rs`,
+  `lowering/materialize/plan_builder.rs`, `anonymous_resolution.rs`) through `SelectorResolver`
+  (default `AstWildcardResolver`, no behavior change); (3) shadow
+  `DifferentialResolver<AstWildcard, Datalog>` in real runs; (4) flip primary to Datalog after a
+  clean soak; (5) delete `AstWildcardMatcher`. See the plan's "Switching from `AstWildcardMatcher`"
+  section.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
