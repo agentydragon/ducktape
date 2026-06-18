@@ -145,6 +145,13 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
+# Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
+# cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
+# per-IP pull-rate limit reliably 429s the shared CI runner during
+# `bazel build //...`. mirror.gcr.io serves the same content-addressed digests
+# with much higher anonymous limits and no credentials. gcr.io/ghcr.io images
+# below are pulled directly (they don't rate-limit).
+
 # Production base image for py_image_layer containers.
 # aspect_rules_py's py_binary generates a bash launcher, so the base needs a
 # shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
@@ -152,14 +159,14 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "debian_slim",
     digest = "sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a",
-    image = "docker.io/library/debian",
+    image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "bookworm-slim",
 )
 oci.pull(
     name = "debian_trixie_slim",
     digest = "sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a",
-    image = "docker.io/library/debian",
+    image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "trixie-slim",
 )
@@ -168,7 +175,7 @@ oci.pull(
 oci.pull(
     name = "postgres_18",
     digest = "sha256:a9abf4275f9e99bff8e6aed712b3b7dfec9cac1341bba01c1ffdfce9ff9fc34a",
-    image = "docker.io/library/postgres",
+    image = "mirror.gcr.io/library/postgres",
     platforms = ["linux/amd64"],
     tag = "18",
 )
@@ -177,7 +184,7 @@ oci.pull(
 oci.pull(
     name = "registry_2",
     digest = "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373",
-    image = "docker.io/library/registry",
+    image = "mirror.gcr.io/library/registry",
     platforms = ["linux/amd64"],
     tag = "2",
 )
@@ -186,7 +193,7 @@ oci.pull(
 oci.pull(
     name = "ryuk",
     digest = "sha256:bf3f74a47dee0acda89aba4b2fc9c7fdcf994a084db02a2d06566f07baae022e",
-    image = "docker.io/testcontainers/ryuk",
+    image = "mirror.gcr.io/testcontainers/ryuk",
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
@@ -195,7 +202,7 @@ oci.pull(
 oci.pull(
     name = "grocy",
     digest = "sha256:01036076182f2191e8ac42a3876548bfd3a139a2ada8705212e83806865c1f58",
-    image = "docker.io/linuxserver/grocy",
+    image = "mirror.gcr.io/linuxserver/grocy",
     platforms = ["linux/amd64"],
     tag = "v4.6.0-ls318",
 )
@@ -215,7 +222,7 @@ oci.pull(
 oci.pull(
     name = "inventree_stable",
     digest = "sha256:56adc4e50a7300daeb0ba5d6246f8c252b8bf2f43903e48808e097a2e730c9b1",
-    image = "docker.io/inventree/inventree",
+    image = "mirror.gcr.io/inventree/inventree",
     platforms = ["linux/amd64"],
     tag = "stable",
 )
@@ -236,14 +243,14 @@ oci.pull(
 oci.pull(
     name = "python_3_13_slim",
     digest = "sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d",
-    image = "docker.io/library/python",
+    image = "mirror.gcr.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
 )
 oci.pull(
     name = "mitmproxy",
     digest = "sha256:e0deb0df7edf9f909053f274a067cd1cacb90f5c17d74459e1693179c0b98d8f",
-    image = "docker.io/mitmproxy/mitmproxy",
+    image = "mirror.gcr.io/mitmproxy/mitmproxy",
     platforms = ["linux/amd64"],
     tag = "11",
 )
@@ -255,7 +262,7 @@ oci.pull(
 oci.pull(
     name = "nginx_unprivileged",
     digest = "sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48",
-    image = "docker.io/nginxinc/nginx-unprivileged",
+    image = "mirror.gcr.io/nginxinc/nginx-unprivileged",
     platforms = ["linux/amd64"],
     tag = "1.27-alpine",
 )
