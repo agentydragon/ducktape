@@ -135,6 +135,95 @@ impl Extractor {
                 }
                 Ok(id)
             }
+            Stmt::If(if_stmt) => {
+                let id = self.node("If");
+                let test = self.expr(&if_stmt.test)?;
+                self.facts.child.push((id, 0, test));
+                let cons = self.stmt(&if_stmt.cons)?;
+                self.facts.child.push((id, 1, cons));
+                if let Some(alt) = &if_stmt.alt {
+                    let alt = self.stmt(alt)?;
+                    self.facts.child.push((id, 2, alt));
+                }
+                Ok(id)
+            }
+            Stmt::While(while_stmt) => {
+                let id = self.node("While");
+                let test = self.expr(&while_stmt.test)?;
+                self.facts.child.push((id, 0, test));
+                let body = self.stmt(&while_stmt.body)?;
+                self.facts.child.push((id, 1, body));
+                Ok(id)
+            }
+            Stmt::DoWhile(do_while) => {
+                let id = self.node("DoWhile");
+                let body = self.stmt(&do_while.body)?;
+                self.facts.child.push((id, 0, body));
+                let test = self.expr(&do_while.test)?;
+                self.facts.child.push((id, 1, test));
+                Ok(id)
+            }
+            Stmt::Throw(throw) => {
+                let id = self.node("Throw");
+                let arg = self.expr(&throw.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Stmt::Block(block) => self.block(block),
+            Stmt::Try(try_stmt) => {
+                let id = self.node("Try");
+                let block = self.block(&try_stmt.block)?;
+                self.facts.child.push((id, 0, block));
+                if let Some(handler) = &try_stmt.handler {
+                    let catch = self.node("Catch");
+                    let mut next = 0u32;
+                    if let Some(param) = &handler.param {
+                        let param = self.pat(param)?;
+                        self.facts.child.push((catch, next, param));
+                        next += 1;
+                    }
+                    let body = self.block(&handler.body)?;
+                    self.facts.child.push((catch, next, body));
+                    self.facts.child.push((id, 1, catch));
+                }
+                if let Some(finalizer) = &try_stmt.finalizer {
+                    let finalizer = self.block(finalizer)?;
+                    self.facts.child.push((id, 2, finalizer));
+                }
+                Ok(id)
+            }
+            Stmt::Switch(switch) => {
+                let id = self.node("Switch");
+                let discriminant = self.expr(&switch.discriminant)?;
+                self.facts.child.push((id, 0, discriminant));
+                for (index, case) in switch.cases.iter().enumerate() {
+                    let case_id = self.node("SwitchCase");
+                    let mut next = 0u32;
+                    if let Some(test) = &case.test {
+                        let test = self.expr(test)?;
+                        self.facts.child.push((case_id, next, test));
+                        next += 1;
+                    }
+                    for stmt in &case.cons {
+                        let stmt = self.stmt(stmt)?;
+                        self.facts.child.push((case_id, next, stmt));
+                        next += 1;
+                    }
+                    self.facts.child.push((id, (index + 1) as u32, case_id));
+                }
+                Ok(id)
+            }
+            Stmt::Labeled(labeled) => {
+                let id = self.node("Labeled");
+                let body = self.stmt(&labeled.body)?;
+                self.facts.child.push((id, 0, body));
+                Ok(id)
+            }
+            // Loop/branch jumps carry only a T-variant label; the node identity
+            // is what selectors anchor on.
+            Stmt::Break(_) => Ok(self.node("Break")),
+            Stmt::Continue(_) => Ok(self.node("Continue")),
+            Stmt::Empty(_) => Ok(self.node("Empty")),
             _ => unsupported("stmt"),
         }
     }
@@ -714,6 +803,19 @@ mod tests {
         );
         let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(props, vec!["b"], "assigned member name");
+    }
+
+    #[test]
+    fn extracts_control_flow_statements() {
+        // if/else with a block consequent and a throw alternative.
+        let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["If", "Block", "ExprStmt", "Call", "Throw"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
     }
 
     #[test]
