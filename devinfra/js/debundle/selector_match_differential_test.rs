@@ -241,6 +241,28 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: false,
                 expected: true,
             },
+            // STR_LITERAL_MATCHING_RE matches a string literal whose value matches
+            // the pattern — by regex, not by structure.
+            Case {
+                selector: "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
+                subject: "const a = \"xyz\";",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
+                subject: "const a = \"abc\";",
+                alpha: false,
+                expected: false,
+            },
+            // the predicate only matches a string literal — a non-string subject
+            // (here a number) never matches.
+            Case {
+                selector: "const a = STR_LITERAL_MATCHING_RE(\"foo\");",
+                subject: "const a = 5;",
+                alpha: false,
+                expected: false,
+            },
         ];
         for case in cases {
             let selector = selector(case.selector, case.alpha);
@@ -267,18 +289,19 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
 }
 
 #[test]
-fn fail_closed_on_regex_predicate() {
+fn fail_closed_on_malformed_regex_predicate() {
     js_ast::with_swc_globals(|| {
-        // The `STR_LITERAL_MATCHING_RE` predicate sugar is not lowered yet, so
-        // the fact matcher errors rather than matching the callee literally.
+        // A `STR_LITERAL_MATCHING_RE` that is not a well-formed predicate (here,
+        // no argument) is not lowered — the callee keyword is reserved, so the
+        // matcher errors rather than treating it as an ordinary call/identifier.
         let result = selector_match::matches(
-            &facts("const a = STR_LITERAL_MATCHING_RE(\"^x\");"),
-            &facts("const a = \"xyz\";"),
+            &facts("const a = STR_LITERAL_MATCHING_RE();"),
+            &facts("const a = b();"),
             Mode::Exact,
         );
         assert!(
             matches!(result, Err(selector_match::Unsupported { .. })),
-            "regex predicate must be fail-closed, got {result:?}",
+            "malformed regex predicate must be fail-closed, got {result:?}",
         );
     });
 }

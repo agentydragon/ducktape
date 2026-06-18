@@ -10,12 +10,14 @@
 //! as an ordered subsequence with gaps. The run-hole placement mirrors the
 //! production matcher's `match_list_with_holes` / `place_segments` over facts:
 //! the carriers partition the needle list into maximal fixed segments, placed
-//! greedy-leftmost with `Bindings` snapshot/restore. Fail-closed elsewhere: the
-//! `STR_LITERAL_MATCHING_RE` predicate and any **misplaced** run-hole keyword
-//! (one reaching the node matcher rather than being consumed as a list carrier)
-//! return [`Unsupported`] rather than a weaker (under-constraining) match.
-//! Parity with the production matcher is **proven** by
-//! `selector_match_differential_test` against `source_match::needle_matches`.
+//! greedy-leftmost with `Bindings` snapshot/restore. The
+//! `STR_LITERAL_MATCHING_RE("re")` predicate matches a string-literal subject
+//! whose value matches `re`. Fail-closed only on what is genuinely unhandled: a
+//! **misplaced** run-hole keyword (one reaching the node matcher rather than
+//! being consumed as a list carrier) or a malformed predicate returns
+//! [`Unsupported`] rather than a weaker (under-constraining) match. Parity with
+//! the production matcher is **proven** by `selector_match_differential_test`
+//! against `source_match::needle_matches`.
 //!
 //! This per-`(needle, subject)` homomorphism is the **kernel match relation**,
 //! not a rival "N separate solves" design: the one global evaluation (the plan's
@@ -30,6 +32,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chunk_facts::{ChunkFacts, NodeId};
+use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
@@ -311,6 +314,27 @@ fn list_prefix_len(parent_kind: &str) -> usize {
     matches!(parent_kind, "Call" | "New" | "OptCall" | "Switch") as usize
 }
 
+/// The regex pattern of a well-formed `STR_LITERAL_MATCHING_RE("re")` predicate
+/// at `node`: a `Call` of exactly the predicate callee with one string-literal
+/// argument. Mirrors `holes.rs::string_literal_regex_pattern`. The predicate
+/// matches a string-literal subject whose value matches `re`, not by structure.
+fn regex_predicate_pattern<'a>(index: &Index<'a>, node: NodeId) -> Option<&'a str> {
+    if index.kind_of(node) != "Call" {
+        return None;
+    }
+    let kids = index.children_of(node);
+    let [callee, arg] = kids else {
+        return None;
+    };
+    let is_predicate = index
+        .ident
+        .get(callee)
+        .is_some_and(|name| *name == STRING_LITERAL_REGEX_PREDICATE);
+    (is_predicate && index.kind_of(*arg) == "StrLit")
+        .then(|| index.str_lit.get(arg).copied())
+        .flatten()
+}
+
 fn homo(
     needle: &Index,
     nid: NodeId,
@@ -328,6 +352,18 @@ fn homo(
     // structural matching can mask them, so they never reach here.)
     if is_single_node_hole(needle, nid) {
         return Ok(true);
+    }
+
+    // `STR_LITERAL_MATCHING_RE("re")` predicate: matches a string-literal subject
+    // whose value matches `re` (an invalid pattern matches nothing), not by
+    // structure. Checked before the kind comparison (the needle is a `Call`, the
+    // subject a `StrLit`). Mirrors `holes.rs::string_literal_matches_regex`.
+    if let Some(pattern) = regex_predicate_pattern(needle, nid) {
+        return Ok(subject.kind_of(sid) == "StrLit"
+            && subject
+                .str_lit
+                .get(&sid)
+                .is_some_and(|value| Regex::new(pattern).is_ok_and(|re| re.is_match(value))));
     }
 
     // Structural equality: kind, then non-identifier labels (always exact),
@@ -532,19 +568,12 @@ fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
 
 /// Reject — **before** structural matching, so it can never be masked by an
 /// earlier kind/arity mismatch short-circuiting to `false` — any needle
-/// construct this matcher does not faithfully handle: the unlowered
-/// `STR_LITERAL_MATCHING_RE` predicate, and any run-hole keyword that is not
-/// consumed as a list carrier (a misplaced hole). A keyword is consumed iff it
-/// lies inside a carrier subtree, so this mirrors exactly what list placement
-/// will and will not absorb.
+/// construct this matcher does not faithfully handle: a run-hole keyword not
+/// consumed as a list carrier (a misplaced hole), or a `STR_LITERAL_MATCHING_RE`
+/// occurrence that is not a well-formed predicate callee. A token is consumed
+/// iff it lies inside a run-hole carrier subtree or is a predicate's callee/arg,
+/// which mirrors exactly what the matcher's structural rules absorb.
 fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
-    if index
-        .ident
-        .values()
-        .any(|name| *name == STRING_LITERAL_REGEX_PREDICATE)
-    {
-        return Some("STR_LITERAL_MATCHING_RE predicate not lowered");
-    }
     let mut consumed: HashSet<NodeId> = HashSet::new();
     for (&parent, kids) in &index.children {
         let parent_kind = index.kind_of(parent);
@@ -554,12 +583,22 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
             }
         }
     }
-    let misplaced = index
-        .ident
-        .iter()
-        .chain(index.prop_name.iter())
-        .any(|(node, name)| is_run_hole_keyword(name) && !consumed.contains(node));
-    misplaced.then_some("run-hole keyword outside a list position")
+    // A well-formed predicate consumes its own callee + string-literal argument
+    // (the matcher handles the whole `Call`, never the bare callee identifier).
+    for &node in index.kind.keys() {
+        if regex_predicate_pattern(index, node).is_some() {
+            consumed.extend(index.children_of(node));
+        }
+    }
+    for (node, name) in index.ident.iter().chain(index.prop_name.iter()) {
+        if *name == STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(node) {
+            return Some("malformed STR_LITERAL_MATCHING_RE predicate");
+        }
+        if is_run_hole_keyword(name) && !consumed.contains(node) {
+            return Some("run-hole keyword outside a list position");
+        }
+    }
+    None
 }
 
 /// True iff the needle (one top-level statement) structurally matches the

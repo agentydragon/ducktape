@@ -1109,6 +1109,7 @@ rust_library(
     deps = [
         ":chunk_facts",
         ":source_match_holes",
+        "@crates//:regex",
     ],
 )
 

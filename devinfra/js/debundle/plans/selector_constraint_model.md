@@ -686,21 +686,26 @@ fidelity bug, not a matcher bug: `chunk_facts` dropped the `var`/`let`/`const` d
 so a `let` selector matched a `const` of the same shape. Recording the keyword as an operator-class
 label drove the differential to **0 disagreements** over those 505k pairs. **This is the gate
 working as designed** — proven, not asserted, and it found a gap the 28 hand-picked cases did not.
-Of the 4327 selectors, 4223 are compared and **79 are fail-closed/delegated**; 0 string-wildcard
-and 19 multi-statement selectors are skipped. Extending run-hole carrier detection to `SwitchCase`
-bodies (`STMT_LIST` inside a `case`/`default` clause — the case test falls out as an anchored-left
-fixed segment under the same placement) closed the last **14** "run-hole keyword outside a list
-position" gaps with **0 new disagreements**, so run-hole carrier coverage is now **complete for the
-corpus**: every remaining fail-closed selector is the **`STR_LITERAL_MATCHING_RE` regex predicate**
-(79), one well-defined feature.
+Two rungs then drove the fail-closed set to **zero**: (1) extending run-hole carrier detection to
+`SwitchCase` bodies (`STMT_LIST` inside a `case`/`default` clause — the case test falls out as an
+anchored-left fixed segment under the same placement) closed the **14** "run-hole keyword outside a
+list position" gaps; (2) lowering the **`STR_LITERAL_MATCHING_RE("re")` predicate** (a string-literal
+subject whose value matches `re`, mirroring `holes.rs::string_literal_matches_regex`) cleared the
+remaining **79**. Re-measured: **4302 of 4327 selectors compared, 0 fail-closed, 0 disagreements**
+over 172,080 pairs — **every single-statement `source_match` selector in the corpus is matched, in
+agreement with production**. Only 19 multi-statement and 6 unparseable-standalone selectors are
+skipped; fail-closed now fires only on genuinely malformed input (a misplaced run hole, a malformed
+predicate).
 
-Remaining toward a fully-green corpus gate: (a) broaden the differential — more subjects, more
-chunks, and binding-group expansion (the harness caps subjects because the production matcher
-re-parses per call); (b) shrink the **79 fail-closed** by lowering the regex predicate
-(`str_matches(node, "re")` filter atom); plus the still-deferred rungs — alpha via scope facts
-(shadowing), named single-node / list-hole **equality** (`EXPR_x` repeated ⇒ same subtree), and
-resolver-level wiring (`DatalogResolver` returning the claimed binding) so the differential runs
-through the real resolution path, not just the matcher. Each is differential-gated.
+Remaining toward the full end-to-end gate: (a) **multi-statement selectors** (the 19 with
+`target_statements` — a statement-run match, not single-statement); (b) **binding-group** selectors
+(sugar the harness does not yet expand) and the 6 unparseable-standalone needles; (c) broaden the
+differential — more subjects/chunks (the harness caps subjects because the production matcher
+re-parses per call); (d) **resolver-level wiring** (`DatalogResolver` returning the claimed binding)
+so the differential runs through the real resolution path, not just the matcher. Still-latent and
+differential-clean so far (so not yet exercised by the corpus): alpha shadowing (whole-pattern
+bijection has held over 172k pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same
+subtree, currently treated as anonymous match-any). Each remains differential-gated.
 
 ### What the matcher cannot do that the query model can
 
