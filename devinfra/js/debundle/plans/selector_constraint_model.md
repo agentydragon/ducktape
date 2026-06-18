@@ -291,6 +291,33 @@ the chunk + the existing `owner_graph.json`, emits EDB facts, runs a handful of 
 per-target bindings + categoricity — enough to validate the model on real Tana without
 touching the production pipeline.
 
+### Feasibility (probed 2026-06-18, chunk `78d928dca7`)
+
+`owner_graph.json` _is_ the phase-1 EDB — no JS parser needed for name-pin + reference
+cross-refs. Nodes are **owners** (top-level statements) carrying `declared_bindings`
+(`{binding, export_name}` — minified + readable), `source_location`, `statement_kind`,
+`purity`, and `destination` (module); edges are owner→owner carrying
+`{binding, edge_kind, constrains_init_order}` with `edge_kind` ∈ `{lazy_use, eager_use,
+sequenced, local_effect, lazy_rebind, deferred_rebind, eager_rebind}`. That is
+`resolves_to` at owner/binding granularity, plus module membership and init-order.
+
+A hand-rolled-Datalog probe over it confirmed the model on real data:
+
+- **name-pin is categorical**: all **9069** chunk bindings resolve to exactly one
+  declaring owner (0 ambiguous); all 23 metaNode pins unique. The bootstrap reproduces
+  current resolution with no parser.
+- **cross-refs resolve uniquely from the reference graph alone**: `UBt`
+  (`isMeetingTranscriptionProvider`) is pinned by "the owner whose use-set is `{@EBt}`"
+  (exactly one owner references `EBt`); `HI` by "the `var_decl` aliasing `@UJ`" — both
+  unique, without the minified name.
+
+**Phase-2 boundary**: AST shape and literals are _not_ in `owner_graph.json` (owners
+expose only line spans + statement kind), so local-identity anchors (`str_lit` message
+strings, method-name fingerprints) and call-arg/decorator precision need parsing the
+chunk (SWC) and joining AST nodes to owners by `source_location` / `statement_ordinal`.
+Until then the engine resolves at per-owner (statement) granularity, which already
+covers name-pin + reference cross-refs.
+
 ## Open questions
 
 - **Derived predicates to ship first** — `calls` and `alias` (both over `resolves_to`)
