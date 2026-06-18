@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    BlockStmt, Callee, Class, ClassMember, Decl, Expr, Function, Lit, MemberExpr, MemberProp,
-    Module, ModuleDecl, ModuleItem, Pat, PropName, Stmt, VarDeclarator,
+    BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit, MemberExpr,
+    MemberProp, Module, ModuleDecl, ModuleItem, Pat, PropName, Stmt, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -44,6 +44,8 @@ pub struct ChunkFacts {
     pub ident_name: Vec<(NodeId, String)>,
     /// member / property / method name (non-computed).
     pub prop_name: Vec<(NodeId, String)>,
+    /// operator token for `Bin` / `Unary` nodes (a T-invariant label).
+    pub operator: Vec<(NodeId, String)>,
     /// class node -> its super-class expression node (the syntactic `extends`).
     pub super_class: Vec<(NodeId, NodeId)>,
     /// top-level statement node -> its owner statement ordinal (owner-graph join).
@@ -59,6 +61,29 @@ pub struct Unsupported {
 
 fn unsupported<T>(context: &'static str) -> Result<T, Unsupported> {
     Err(Unsupported { context })
+}
+
+/// Name the unmodeled `Expr` variant so the coverage histogram ranks what to
+/// implement next. Diagnostic only — fail-closed correctness is the error
+/// itself, not the label precision; rare variants fall through to `expr:other`.
+fn expr_variant_name(expr: &Expr) -> &'static str {
+    match expr {
+        Expr::Object(_) => "expr:object",
+        Expr::Assign(_) => "expr:assign",
+        Expr::Arrow(_) => "expr:arrow",
+        Expr::Fn(_) => "expr:fn",
+        Expr::Tpl(_) => "expr:tpl",
+        Expr::TaggedTpl(_) => "expr:tagged_tpl",
+        Expr::Await(_) => "expr:await",
+        Expr::Update(_) => "expr:update",
+        Expr::Yield(_) => "expr:yield",
+        Expr::OptChain(_) => "expr:opt_chain",
+        Expr::This(_) => "expr:this",
+        Expr::MetaProp(_) => "expr:meta_prop",
+        Expr::Class(_) => "expr:class",
+        Expr::SuperProp(_) => "expr:super_prop",
+        _ => "expr:other",
+    }
 }
 
 #[derive(Default)]
@@ -254,19 +279,94 @@ impl Extractor {
                     }
                     _ => return unsupported("callee"),
                 }
-                for (index, arg) in call.args.iter().enumerate() {
-                    if arg.spread.is_some() {
-                        return unsupported("call: spread arg");
+                self.push_args(id, 1, &call.args)?;
+                Ok(id)
+            }
+            Expr::New(new) => {
+                let id = self.node("New");
+                let callee = self.expr(&new.callee)?;
+                self.facts.child.push((id, 0, callee));
+                if let Some(args) = &new.args {
+                    self.push_args(id, 1, args)?;
+                }
+                Ok(id)
+            }
+            Expr::Bin(bin) => {
+                let id = self.node("Bin");
+                self.facts.operator.push((id, bin.op.as_str().to_string()));
+                let left = self.expr(&bin.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&bin.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Expr::Unary(unary) => {
+                let id = self.node("Unary");
+                self.facts
+                    .operator
+                    .push((id, unary.op.as_str().to_string()));
+                let arg = self.expr(&unary.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Cond(cond) => {
+                let id = self.node("Cond");
+                let test = self.expr(&cond.test)?;
+                self.facts.child.push((id, 0, test));
+                let cons = self.expr(&cond.cons)?;
+                self.facts.child.push((id, 1, cons));
+                let alt = self.expr(&cond.alt)?;
+                self.facts.child.push((id, 2, alt));
+                Ok(id)
+            }
+            Expr::Seq(seq) => {
+                let id = self.node("Seq");
+                for (index, item) in seq.exprs.iter().enumerate() {
+                    let item = self.expr(item)?;
+                    self.facts.child.push((id, index as u32, item));
+                }
+                Ok(id)
+            }
+            Expr::Array(array) => {
+                let id = self.node("Array");
+                for (index, elem) in array.elems.iter().enumerate() {
+                    match elem {
+                        Some(elem) => {
+                            if elem.spread.is_some() {
+                                return unsupported("array: spread");
+                            }
+                            let value = self.expr(&elem.expr)?;
+                            self.facts.child.push((id, index as u32, value));
+                        }
+                        // Elision keeps positions faithful (`[a, , b]`).
+                        None => {
+                            let elision = self.node("Elision");
+                            self.facts.child.push((id, index as u32, elision));
+                        }
                     }
-                    let arg = self.expr(&arg.expr)?;
-                    self.facts.child.push((id, (index + 1) as u32, arg));
                 }
                 Ok(id)
             }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
-            _ => unsupported("expr"),
+            other => unsupported(expr_variant_name(other)),
         }
+    }
+
+    fn push_args(
+        &mut self,
+        parent: NodeId,
+        base: u32,
+        args: &[ExprOrSpread],
+    ) -> Result<(), Unsupported> {
+        for (index, arg) in args.iter().enumerate() {
+            if arg.spread.is_some() {
+                return unsupported("call/new: spread arg");
+            }
+            let arg = self.expr(&arg.expr)?;
+            self.facts.child.push((parent, base + index as u32, arg));
+        }
+        Ok(())
     }
 
     fn member(&mut self, member: &MemberExpr) -> Result<NodeId, Unsupported> {
@@ -480,26 +580,45 @@ mod tests {
     }
 
     #[test]
+    fn extracts_common_expression_variants() {
+        // (b + c) ? new D(e) : [f] — binary, conditional, new, array.
+        let facts = extract("const a = b + c ? new D(e) : [f];").expect("covered shape extracts");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Cond", "Bin", "New", "Array"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        let operators: Vec<&str> = facts.operator.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(operators, vec!["+"], "binary operator token");
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        for name in ["a", "b", "c", "D", "e", "f"] {
+            assert!(idents.contains(name), "ident {name} present: {idents:?}");
+        }
+    }
+
+    #[test]
     fn coverage_report_tallies_per_statement() {
-        // One extractable statement; one blocked by an unmodeled BinExpr. One
-        // statement's gap does not abort the tally of the other.
+        // One extractable statement; one blocked by an unmodeled `debugger`
+        // statement. One statement's gap does not abort the tally of the other.
         let report = js_ast::with_swc_globals(|| {
             coverage_report(
-                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\nconst b = x + y;\n")
-                    .unwrap(),
+                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\ndebugger;\n").unwrap(),
             )
         });
         assert_eq!(report.total, 2);
         assert_eq!(report.covered, 1);
-        assert_eq!(report.unsupported.get("expr"), Some(&1));
+        assert_eq!(report.unsupported.get("stmt"), Some(&1));
     }
 
     #[test]
     fn unmodeled_construct_errors_loudly_not_silently() {
-        // `a + b` is a BinExpr the seed slice does not model. Fail-closed means
-        // a hard error here, never a silently-incomplete fact set that would let
-        // a query under-constrain.
-        let error = extract("const y = a + b;").unwrap_err();
-        assert_eq!(error.context, "expr");
+        // A `debugger` statement is not selector-relevant and stays unmodeled.
+        // Fail-closed means a hard error here, never a silently-incomplete fact
+        // set that would let a query under-constrain.
+        let error = extract("debugger;").unwrap_err();
+        assert_eq!(error.context, "stmt");
     }
 }
