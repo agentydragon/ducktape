@@ -822,6 +822,35 @@ pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<
     homo(&needle, n_root, &subject, s_root, mode, &mut bindings)
 }
 
+/// A **sound** per-candidate prefilter for the single-statement `matches` scan:
+/// the root node kind a subject must share for `matches` to possibly return true.
+/// `Some(kind)` ⟹ every subject whose root kind differs is a guaranteed
+/// `Ok(false)` (it is exactly the `nkind != subject kind` gate in [`homo`], which
+/// runs after the hole/predicate special-cases), so the caller may skip it
+/// without changing any verdict. `None` ⟹ no prefilter applies — the needle root
+/// is a single-node hole or the regex predicate, which match subjects of *other*
+/// kinds — so the caller must run the full match. Mirrors production's
+/// `no_wildcard_shape_prefilter` role for the fact matcher.
+pub fn needle_root_kind_prefilter(needle: &ChunkFacts) -> Option<&'static str> {
+    let index = Index::build(needle);
+    let &root = index.roots.first()?;
+    if is_single_node_hole(&index, root) || regex_predicate_pattern(&index, root).is_some() {
+        return None;
+    }
+    subject_root_kind(needle)
+}
+
+/// The root (top-level) node kind of a single-statement `ChunkFacts`, for caching
+/// subject root kinds against [`needle_root_kind_prefilter`]. `node_kind` is dense
+/// in node id by construction, so this is an O(1) lookup of the `top_level` node.
+pub fn subject_root_kind(facts: &ChunkFacts) -> Option<&'static str> {
+    let (root_id, _) = facts.top_level.first()?;
+    facts
+        .node_kind
+        .get(*root_id as usize)
+        .map(|(_, kind)| *kind)
+}
+
 /// True iff a needle root (one statement's facts) is a module-level `STMT_LIST`
 /// hole — an expression statement whose sole child is the keyword. These
 /// separate the needle's fixed segments at the top level (mirrors

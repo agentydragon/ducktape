@@ -49,16 +49,27 @@ fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
 pub struct ChunkResolver<'m> {
     module: &'m Module,
     body_facts: Vec<chunk_facts::ChunkFacts>,
+    /// Root node kind of each body item, cached once for the single-statement
+    /// scan's sound root-kind prefilter (see `matching_body_indices`).
+    body_root_kinds: Vec<Option<&'static str>>,
 }
 
 impl<'m> ChunkResolver<'m> {
     pub fn new(module: &'m Module) -> Self {
-        let body_facts = module
+        let body_facts: Vec<_> = module
             .body
             .iter()
             .map(|item| item_facts(item).unwrap_or_default())
             .collect();
-        Self { module, body_facts }
+        let body_root_kinds = body_facts
+            .iter()
+            .map(selector_match::subject_root_kind)
+            .collect();
+        Self {
+            module,
+            body_facts,
+            body_root_kinds,
+        }
     }
 }
 
@@ -73,11 +84,20 @@ fn matching_body_indices(
     // Probe the needle once: an unsupported construct errors uniformly.
     selector_match::matches(needle_facts, needle_facts, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    // Sound root-kind prefilter: when the needle root is a concrete kind, a
+    // subject whose root kind differs is a guaranteed non-match (the `nkind !=
+    // subject kind` gate in the matcher), so skip it without building its index.
+    let prefilter = selector_match::needle_root_kind_prefilter(needle_facts);
     let mut indices = Vec::new();
     // A non-extractable statement projects to empty facts (no root) and so
     // matches nothing — the same outcome as the old skip; any divergence would
     // surface in the differential.
     for (body_idx, facts) in chunk.body_facts.iter().enumerate() {
+        if let Some(kind) = prefilter
+            && chunk.body_root_kinds[body_idx] != Some(kind)
+        {
+            continue;
+        }
         if selector_match::matches(needle_facts, facts, mode)
             .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
         {
