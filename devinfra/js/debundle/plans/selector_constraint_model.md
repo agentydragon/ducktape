@@ -318,6 +318,25 @@ chunk (SWC) and joining AST nodes to owners by `source_location` / `statement_or
 Until then the engine resolves at per-owner (statement) granularity, which already
 covers name-pin + reference cross-refs.
 
+An **in-process Datalog spike** (Ascent 0.8, ~60 lines) reran the same over the live
+owner_graph and passed — `declares=9069 uses=25886`, name-pin categorical for all 9069
+bindings, and the `ubt`/`hi` rules resolve to the right owners (8763 / 1225) without the
+minified name — confirming the model through a real engine with the
+`facts → rules → answers` boundary. The whole evaluator is:
+
+```
+name_owner(b, o) <-- declares(o, b).            // bootstrap
+refs(o, b)       <-- uses(o, b, _).
+ubt(o)           <-- refs(o, "EBt").             // calls @EBt
+hi(o)            <-- stmt_kind(o, "var_decl"), uses(o, "UJ", "eager_use").  // alias @UJ
+```
+
+Productionizing it: add `ascent` to the root `Cargo.toml` + a crate_universe repin
+(`CARGO_BAZEL_REPIN=1`), then a `rust_binary` under `x/` (the repo is one cargo package
+
+- crate_universe — no standalone-nested-cargo precedent, so the spike itself lived
+  outside the tree until then).
+
 ## Open questions
 
 - **Derived predicates to ship first** — `calls` and `alias` (both over `resolves_to`)
