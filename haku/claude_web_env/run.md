@@ -24,8 +24,15 @@ surface for anything you can't reach from here directly.
   ducktape repo you have checked out (`cluster/k8s/haku/rbac/` = your perimeter).
   See the credential table in `haku/base/instructions.md`.
 - Cluster-internal data (e.g. Plaid Postgres) isn't reachable from here — run a
-  pod **in `haku-sandbox`** (`kubectl run …`) to query it, as the manual
-  describes.
+  pod **in `haku-sandbox`** to query it, as the manual describes. **Gotcha:**
+  `kubectl exec`/`attach` (and `kubectl run -i`) fail with an empty
+  `Error from server:` — the L7 proxy in front of `kubeapi.allegedly.works` drops
+  the exec stream; `kubectl logs`/`get`/`apply`/`delete` are fine. So make the SQL
+  the pod's **command** and read results from logs: put the SQL in a `ConfigMap`,
+  run a `postgres:16` pod whose command is `psql "$DATABASE_URL" -f /sql/q.sql`
+  (DSN via `envFrom` the `plaid-mcp-db-readonly` secret, never on the command
+  line), `restartPolicy: Never`, poll `.status.phase` until `Succeeded`, then
+  `kubectl logs` it. Delete the pod after (20-pod quota).
 
 ## Continuity — you are restarted from this same prompt
 
