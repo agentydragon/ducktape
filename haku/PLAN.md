@@ -62,29 +62,11 @@ daemon UX).
 
 ## Architecture
 
-Four roles, deliberately decoupled so each can be dumb at first:
-
-```
-                 ┌──────────────────────────────────────────────┐
-                 │  read-only MCP fleet (gmail, calendar, grocy,│
-                 │  postscanmail, plaid-db, tana, manifold, k8s)│
-                 └──────▲───────────────────────────▲───────────┘
-                        │ read-only creds           │ its own creds
-   cron/event   ┌───────┴────────┐          ┌───────┴────────┐
-   trigger ────▶│  SCANNER agent │          │ EXECUTOR: big  │◀── handoff URL
-                │  (container)   │          │ scaffold, e.g. │
-                └───────┬────────┘          │ Claude app     │
-                        │ propose items     └───────▲────────┘
-                        ▼                           │
-                ┌─────────────────┐  decide/feedback│
-                │   ITEM STORE    │◀────────────────┤
-                │  (Forgejo repo) │        ┌────────┴───────┐
-                └───────▲─────────┘        │   DASHBOARD    │
-                        │ dedup/rerank/    │ (value-sorted) │
-                ┌───────┴────────┐         └────────────────┘
-                │ CURATOR agent  │
-                └────────────────┘
-```
+Four roles, deliberately decoupled so each can be dumb at first. The **scanner**
+reads the read-only source fleet and proposes items into the **item store**; the
+**curator** dedups/re-ranks them there; the **dashboard** is a value-sorted view
+of the store; and the **executor** is an external scaffold that picks up handed-off
+items under its own credentials. Each role:
 
 - **Scanner** — Haku itself: v0 is the Claude Code web home (later, an
   in-cluster container) with the read-only credential bundle reachable from
