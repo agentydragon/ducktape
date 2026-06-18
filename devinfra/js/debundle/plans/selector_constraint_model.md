@@ -465,8 +465,19 @@ inside an opaque shape atom, so the spec never loses expressiveness.
 
 ### Rollout
 
-1. **Shadow** — build EDB + solver, run alongside the matcher in `validate`, assert
-   per-target agreement across the chunk (the bootstrap equivalence gate).
+1. **Shadow** — build EDB + solver, assert per-target agreement with the matcher across
+   the chunk (the bootstrap equivalence gate). **Landed**: `selector_solve` (Ascent EDB +
+   `name_owner`/`aliases` rules) + `selector_solve_bin --check` (ad-hoc gate on any
+   emitted `owner_graph.json`), and an e2e gate (`e2e/selector_solve_shadow_test`) that
+   runs the real pipeline and asserts the solver's name-pin resolution **agrees,
+   owner-for-owner, with the production resolver** (`peel::resolve_binding_owners`) on the
+   minified surface over emitted output, plus the categoricity precondition.
+   _Deferred_: embedding the check **inside** the `validate` verb. `validate` runs
+   `--dry-run`, which emits `owner_graph.json` only on realizability rejection
+   (`ReportEmission::OnRejection`) — not for clean or selector-problem chunks — so a clean
+   in-`validate` embed needs a new core-pipeline knob to force `Full` report emission
+   under dry-run. Done as the e2e gate (on real `Full` output) instead, with no
+   core-pipeline change.
 2. **Flip** — solver becomes source of truth in `plan_builder` / `validate` /
    `match_selector` / the prove-gate; keep the matcher as a cross-check, then delete it.
 3. **Extend the YAML** — relational atoms + `@Name` cross-refs; `selector-debt` and

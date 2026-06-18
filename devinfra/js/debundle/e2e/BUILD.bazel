@@ -201,6 +201,30 @@ rust_test(
     ],
 )
 
+# Bootstrap shadow gate: the in-process Datalog selector solver
+# (`:selector_solve`) must reproduce the production binding-name resolver
+# (`peel::resolve_binding_owners`) on the minified-name surface, over an
+# `owner_graph.json` the real pipeline emits. The equivalence check the
+# relational-selector bootstrap rests on; see
+# plans/selector_constraint_model.md.
+rust_test(
+    name = "selector_solve_shadow_test",
+    srcs = ["selector_solve_shadow_test.rs"],
+    crate_root = "selector_solve_shadow_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:selector_solve",
+        "@crates//:serde_json",
+    ],
+)
+
 # CLI verb `debundle modules merge` (+ deprecated `debundle module
 # merge`): pure YAML splice with the new `--dry-run` flag. The
 # binary-shelling tests cover the new clap top-level node and the
