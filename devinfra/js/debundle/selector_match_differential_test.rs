@@ -448,6 +448,22 @@ fn var_declarator_alignment_rejects_kind_mismatch() {
 }
 
 #[test]
+fn alpha_scopes_per_function_so_reused_param_names_stay_independent() {
+    js_ast::with_swc_globals(|| {
+        // Two functions reuse the param spelling `p` in distinct scopes; the
+        // subject uses *different* param names (e, t). Scope-aware alpha matches —
+        // each function's param is an independent binding — where a flat bijection
+        // would force `p`↔`e` then reject `p`↔`t` and find no alignment.
+        let needle = roots("function a(p){ g = p; }\nfunction b(p){ h = p; }");
+        let subject = roots("function x(e){ M = e; }\nfunction y(t){ N = t; }");
+        let alignments =
+            selector_match::match_top_level_sequence(&needle, &subject, Mode::AlphaAll)
+                .expect("supported");
+        assert_eq!(alignments, vec![vec![Some(0), Some(1)]]);
+    });
+}
+
+#[test]
 fn fail_closed_on_misplaced_run_hole() {
     js_ast::with_swc_globals(|| {
         // `ARGS` in expression position (not an argument list) is a misplaced run

@@ -57,36 +57,100 @@ pub enum Mode {
     AlphaAll,
 }
 
-/// Bijective needle↔subject identifier binding accumulated during alpha
-/// matching. `bind` succeeds iff consistent in both directions, so distinct
-/// needle identifiers map to distinct subject ones (alpha-equivalence is a
-/// bijection). Cloneable so run-hole placement can snapshot/restore it across
-/// backtracked segment placements. NOTE: this is whole-pattern consistency
-/// without within-statement scoping/shadowing — faithful for the non-shadowing
-/// selectors the corpus uses; the corpus differential is the gate.
+/// One lexical frame's bijective needle↔subject identifier map.
 #[derive(Default, Clone)]
-struct Bindings {
-    needle_to_subject: HashMap<String, String>,
-    subject_to_needle: HashMap<String, String>,
+struct AlphaScope {
+    forward: HashMap<String, String>,
+    backward: HashMap<String, String>,
 }
 
-impl Bindings {
-    fn bind(&mut self, needle: &str, subject: &str) -> bool {
-        if let Some(existing) = self.needle_to_subject.get(needle) {
-            return existing == subject;
+/// Scope-aware bijective needle↔subject identifier binding accumulated during
+/// alpha matching — a stack of lexical frames, mirroring the production matcher's
+/// `alpha_scopes`. References (`match_ref`) resolve against the visible stack
+/// (innermost-out); bindings (`match_binding`) consult only the current frame so a
+/// binding may shadow an outer same-spelled one. A function/arrow/constructor/
+/// setter/catch node pushes a frame around its params + body, so same-spelled
+/// locals in sibling scopes (e.g. a param reused across two functions) stay
+/// independent — without this the flat bijection conflated them and under-matched.
+/// Cloneable so run-hole placement can snapshot/restore across backtracking.
+#[derive(Clone)]
+struct Bindings {
+    scopes: Vec<AlphaScope>,
+}
+
+impl Default for Bindings {
+    fn default() -> Self {
+        Self {
+            scopes: vec![AlphaScope::default()],
         }
-        if self.subject_to_needle.contains_key(subject) {
-            return false;
-        }
-        self.needle_to_subject
-            .insert(needle.to_string(), subject.to_string());
-        self.subject_to_needle
-            .insert(subject.to_string(), needle.to_string());
-        true
     }
 }
 
-/// Per-node lookups over one `ChunkFacts`, built once.
+impl Bindings {
+    fn push_scope(&mut self) {
+        self.scopes.push(AlphaScope::default());
+    }
+
+    fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    /// Match an identifier **reference**: consult the visible scope stack
+    /// (innermost-out); bind in the current frame if neither side is known.
+    fn match_ref(&mut self, needle: &str, subject: &str) -> bool {
+        for scope in self.scopes.iter().rev() {
+            if let Some(mapped) = scope.forward.get(needle) {
+                return mapped == subject;
+            }
+            if scope.backward.contains_key(subject) {
+                return false;
+            }
+        }
+        self.bind_current(needle, subject)
+    }
+
+    /// Match an identifier **binding** (declaration): consult only the current
+    /// frame, so it may shadow an outer binding of the same spelling.
+    fn match_binding(&mut self, needle: &str, subject: &str) -> bool {
+        self.bind_current(needle, subject)
+    }
+
+    fn bind_current(&mut self, needle: &str, subject: &str) -> bool {
+        let scope = self.scopes.last_mut().expect("always a root scope");
+        match (scope.forward.get(needle), scope.backward.get(subject)) {
+            (Some(mapped), _) => mapped == subject,
+            (None, Some(_)) => false,
+            (None, None) => {
+                scope
+                    .forward
+                    .insert(needle.to_string(), subject.to_string());
+                scope
+                    .backward
+                    .insert(subject.to_string(), needle.to_string());
+                true
+            }
+        }
+    }
+}
+
+/// Node kinds that introduce a lexical scope for their params + body (mirrors the
+/// production matcher's `with_alpha_scope` sites: function/arrow bodies, catch
+/// clauses, setter and constructor params).
+fn introduces_alpha_scope(kind: &str) -> bool {
+    matches!(
+        kind,
+        "Function"
+            | "AsyncFunction"
+            | "GeneratorFunction"
+            | "AsyncGeneratorFunction"
+            | "Arrow"
+            | "AsyncArrow"
+            | "Constructor"
+            | "Setter"
+            | "Catch"
+    )
+}
+
 /// A node-indexed view of one statement's `ChunkFacts`, owning its string labels
 /// (`Box<str>`) so it can be **built once and cached** — e.g. one per chunk body
 /// item in `ChunkResolver` — and reused across many needle matches, instead of
@@ -393,7 +457,10 @@ fn homo(
         (Some(n), Some(s)) => {
             let consistent = match mode {
                 Mode::Exact => n == s,
-                Mode::AlphaAll => bindings.bind(n, s),
+                // A binding identifier (declaration) shadows within its frame; a
+                // reference resolves against the visible scope stack.
+                Mode::AlphaAll if nkind == "BindingIdent" => bindings.match_binding(n, s),
+                Mode::AlphaAll => bindings.match_ref(n, s),
             };
             if !consistent {
                 return Ok(false);
@@ -403,6 +470,14 @@ fn homo(
         _ => return Ok(false),
     }
 
+    // A function/arrow/constructor/setter/catch node scopes its params + body, so
+    // same-spelled locals in sibling scopes stay independent (alpha shadowing).
+    if mode == Mode::AlphaAll && introduces_alpha_scope(nkind) {
+        bindings.push_scope();
+        let result = match_children(needle, nid, nkind, subject, sid, mode, bindings);
+        bindings.pop_scope();
+        return result;
+    }
     match_children(needle, nid, nkind, subject, sid, mode, bindings)
 }
 
@@ -763,7 +838,7 @@ pub fn var_declarator_alignment_indexed(
     }
     let mut bindings = Bindings::default();
     if let Some((n, s)) = prebind
-        && !bindings.bind(n, s)
+        && !bindings.match_binding(n, s)
     {
         return Ok(None);
     }
