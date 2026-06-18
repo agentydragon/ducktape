@@ -1099,6 +1099,37 @@ rust_test(
     edition = "2024",
 )
 
+# P2 matching core: a structural homomorphism from a selector needle's
+# chunk_facts onto a candidate's, fail-closed outside the faithful subset.
+# Operates over the AST-facts EDB, not by re-walking ASTs.
+rust_library(
+    name = "selector_match",
+    srcs = ["selector_match.rs"],
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":source_match_holes",
+    ],
+)
+
+# Differential parity gauge: the fact-based matcher must agree with the
+# production matcher (source_match::needle_matches) on the faithful subset and
+# be fail-closed outside it.
+rust_test(
+    name = "selector_match_differential_test",
+    srcs = ["selector_match_differential_test.rs"],
+    crate_root = "selector_match_differential_test.rs",
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":js_ast",
+        ":selector_match",
+        ":source_match",
+        ":spec",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
 # Coverage instrument: run over a real chunk to see how many top-level
 # statements fully extract vs. hit a fail-closed Unsupported, with the
 # first-blocker histogram — drives P1 growth by real-corpus frequency.

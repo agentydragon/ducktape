@@ -19,6 +19,20 @@
 
 use super::*;
 
+/// Run the production matcher's needle against a single candidate statement —
+/// the per-statement matching primitive `PreparedNeedle::matches`, exposed so a
+/// fact-based (Datalog) matcher can be **differential-tested** against it. The
+/// needle is the selector's `match_source` parsed to one top-level item.
+pub fn needle_matches(selector: &AnonymousStatementSelector, subject: &ModuleItem) -> bool {
+    let module = js_ast::parse_js_module_ast("<selector needle>", &selector.match_source)
+        .expect("selector source parses");
+    let needle = module
+        .body
+        .first()
+        .expect("selector source has a top-level statement");
+    PreparedNeedle::new(needle, selector).matches(subject)
+}
+
 /// Resolve JS-template selectors against a parsed chunk. The two failure modes
 /// of every method are no-match and ambiguous (more than one claim); a `Result`
 /// `Ok` is the unique resolution.

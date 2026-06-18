@@ -93,7 +93,7 @@ pub use binding_resolution::{
 };
 pub use resolver::{
     AstWildcardResolver, DifferentialResolver, DisagreementSink, ResolverDisagreement,
-    ResolverOutcome, ResolverSite, SelectorResolver,
+    ResolverOutcome, ResolverSite, SelectorResolver, needle_matches,
 };
 pub use timing::{selector_body_key, selector_key, source_match_preview};
 pub use types::{
