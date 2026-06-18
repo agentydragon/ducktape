@@ -79,7 +79,8 @@ def jwt_payload(token: str) -> dict[str, Any]:
     """Decode a JWT's base64url payload (no signature verification)."""
     segment = token.split(".")[1]
     padded = segment + "=" * (-len(segment) % 4)
-    return json.loads(base64.urlsafe_b64decode(padded))
+    payload: dict[str, Any] = json.loads(base64.urlsafe_b64decode(padded))
+    return payload
 
 
 def remaining_hours(sops_file: Path) -> float | None:
@@ -99,7 +100,8 @@ def mint_jwt(client: httpx.Client, rotation: Rotation, client_id: str, client_se
         TOKEN_URL, auth=(client_id, client_secret), data={"grant_type": "client_credentials", "scope": rotation.scopes}
     )
     resp.raise_for_status()
-    if not (token := resp.json().get("access_token")):
+    token: str | None = resp.json().get("access_token")
+    if not token:
         raise RuntimeError(f"{rotation.name}: client_credentials returned no access_token")
     return token
 
@@ -116,7 +118,8 @@ def exchange_jwt(client: httpx.Client, rotation: Rotation, source_jwt: str, exch
         },
     )
     resp.raise_for_status()
-    if not (token := resp.json().get("access_token")):
+    token: str | None = resp.json().get("access_token")
+    if not token:
         raise RuntimeError(f"{rotation.name}: proxy-provider exchange returned no access_token")
     if token == source_jwt:
         raise RuntimeError(f"{rotation.name}: proxy-provider exchange returned the source JWT unchanged")
