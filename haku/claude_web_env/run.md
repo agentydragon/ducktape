@@ -56,11 +56,16 @@ All paths below are relative to `~/haku-state`. Run this top to bottom:
    **examples**, not a closed set — run the ones whose sources you have, and
    reason freely beyond them, honoring the operator guidance in your `memory/`.
 4. **Write items**: new findings become `items/<id>.yaml` per the contract in the
-   manual. Update existing items when evidence changed; never duplicate a
+   manual. **Aim for a deep backlog** — file lower-urgency, longer-horizon, and
+   contingent opportunities too, not just the top few; there's no minimum `value`
+   to file. Update existing items when evidence changed; never duplicate a
    `dedup_key` that already exists in any status. Don't re-raise a rejected idea
    unless there is materially new evidence — and say what's new in `body`.
-5. **Curate**: re-score open items if context changed, set `status: expired` on
-   items past `deadline`, then regenerate `items.md` (spec in the manual).
+5. **Curate**: re-score open items if context changed and set `status: expired` on
+   items past `deadline` (or no longer possible). **Keep valid lower-priority
+   items `open` as the backlog** — don't drop or expire them just to shorten the
+   list; ranking and the `items.md` tiering keep it scannable. Then regenerate
+   `items.md` (spec in the manual).
 6. **Log**: append a run entry to `log/` — what you scanned, what you found, what
    you chose not to file and why (one line each). Compact old log content when it
    stops being useful; the log is yours to structure.
