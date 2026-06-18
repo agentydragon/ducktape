@@ -3,9 +3,8 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - cronjob.yaml
-  - alloy-otlp-cronjob.yaml
 configMapGenerator:
-  - name: authentik-jwt-rotation-script
+  - name: authentik-jwt-rotations-config
     namespace: agents-infra
     files:
-      - rotate.sh
+      - rotations.yaml

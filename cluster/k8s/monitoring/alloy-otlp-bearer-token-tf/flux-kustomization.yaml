@@ -20,4 +20,6 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: tofu-state-db
-    - name: claude-jwt-rotation
+    # authentik-jwt-rotation owns the agents-infra namespace this secret's
+    # rotator runs in, and rotates the alloy-otlp bearer token committed here.
+    - name: authentik-jwt-rotation

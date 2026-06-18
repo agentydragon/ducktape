@@ -280,8 +280,10 @@ repos:
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
+            # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest
+            cluster/k8s/agents/authentik-jwt-rotation/rotations\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests
-            cluster/k8s/agents/claude-jwt-rotation/trixie_jwt_rotation\.yaml|
+            cluster/k8s/agents/authentik-jwt-rotation/trixie_authentik_rotation\.yaml|
             cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
             # Authelia app config files, not K8s manifests
             cluster/k8s/authelia/app/configuration\.yml|

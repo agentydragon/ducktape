@@ -43,8 +43,8 @@ resources:
   - tana-litellm-proxy-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
-  - claude-jwt-rotation-image-repository.yaml
-  - claude-jwt-rotation-image-policy.yaml
+  - authentik-jwt-rotation-image-repository.yaml
+  - authentik-jwt-rotation-image-policy.yaml
   - attic-jwt-rotation-image-repository.yaml
   - attic-jwt-rotation-image-policy.yaml
   - grocy-mcp-oidc-server-image-repository.yaml

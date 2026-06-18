@@ -123,7 +123,7 @@ locals {
         }
       },
       # kubectl-sandbox-client-credentials: machine-to-machine OIDC for
-      # write_kubeconfig.py / claude-jwt-rotation CronJob. Non-interactive
+      # write_kubeconfig.py / authentik-jwt-rotation CronJob. Non-interactive
       # client_credentials grant; same fixed-groups scope mapping as
       # kubectl-sandbox-mcp, so issued tokens always carry
       # groups: ["kubectl-sandbox-users"].

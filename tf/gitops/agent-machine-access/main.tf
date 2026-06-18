@@ -772,7 +772,7 @@ resource "authentik_policy_binding" "kubectl_sandbox_scoped_users" {
 # Group subject (`oidc-ksbx-groups:kubectl-sandbox-users`) that every
 # sandbox RoleBinding already binds. Zero new RBAC.
 #
-# Consumer: cluster/k8s/agents/claude-jwt-rotation/ CronJob. It runs
+# Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob. It runs
 # biweekly, exchanges client_id + client_secret for a JWT, commits the JWT
 # SOPS-encrypted to secrets/claude-web-k8s-jwt.yaml. `write_kubeconfig.py`
 # on Claude Code sessions decrypts and embeds it.
@@ -790,7 +790,7 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_client_credentials" {
   include_claims_in_id_token = true
 
   # 45d access-token validity — comfortable margin over the biweekly rotation
-  # CronJob. See cluster/k8s/agents/claude-jwt-rotation/ for cadence math.
+  # CronJob. See cluster/k8s/agents/authentik-jwt-rotation/ for cadence math.
   access_token_validity = "hours=1080"
 
   property_mappings = [
@@ -841,7 +841,7 @@ resource "authentik_policy_binding" "kubectl_sandbox_cc_auto_user" {
 }
 
 # K8s Secret holding the client_id + client_secret. Lives in agents-infra
-# (where the claude-jwt-rotation CronJob runs) and is the only place this
+# (where the authentik-jwt-rotation CronJob runs) and is the only place this
 # credential exists outside Authentik — the CC web sandbox only ever holds
 # the already-minted JWT (in secrets/claude-web-k8s-jwt.yaml SOPS).
 resource "kubernetes_secret" "kubectl_sandbox_client_credentials" {
@@ -849,7 +849,7 @@ resource "kubernetes_secret" "kubectl_sandbox_client_credentials" {
     name      = "kubectl-sandbox-client-credentials"
     namespace = "agents-infra"
     annotations = {
-      description = "client_id + client_secret for kubectl-sandbox-client-credentials OIDC provider (mounted by claude-jwt-rotation CronJob)"
+      description = "client_id + client_secret for kubectl-sandbox-client-credentials OIDC provider (mounted by authentik-jwt-rotation CronJob)"
     }
   }
 

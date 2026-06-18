@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: authentik-jwt-rotation
+  namespace: agents-infra
+  annotations:
+    description: >-
+      Rotates every Authentik client_credentials JWT listed in rotations.yaml
+      (claude-web k8s, alloy-otlp). Runs hourly; rotate.py reads each output's
+      unencrypted `expires_unencrypted` field (no decryption needed) and skips
+      entries with > rotate_below_hours remaining, so a real mint runs only
+      ~every 44 days per token. Everything minted this cycle lands in one commit.
+spec:
+  schedule: "15 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          # No Kubernetes API access; don't mount a SA token.
+          serviceAccountName: ""
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+          volumes:
+            - name: rotations-config
+              configMap:
+                name: authentik-jwt-rotations-config
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: claude-web-k8s-creds
+              secret:
+                secretName: kubectl-sandbox-client-credentials
+            - name: alloy-otlp-creds
+              secret:
+                secretName: alloy-otlp-client-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              # Initial placeholder matching the ImagePolicy filterTags regex
+              # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field to the
+              # latest published tag on first reconcile after a push-images.yml run.
+              image: ghcr.io/agentydragon/authentik-jwt-rotation:devel-20260425073929-855b763 # {"$imagepolicy": "flux-system:authentik-jwt-rotation"}
+              args: ["--config", "/config/rotations.yaml"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: rotations-config
+                  mountPath: /config
+                  readOnly: true
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: claude-web-k8s-creds
+                  mountPath: /var/run/secrets/authentik/claude-web-k8s
+                  readOnly: true
+                - name: alloy-otlp-creds
+                  mountPath: /var/run/secrets/authentik/alloy-otlp
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

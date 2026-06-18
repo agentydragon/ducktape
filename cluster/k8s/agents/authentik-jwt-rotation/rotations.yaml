@@ -1,0 +1,19 @@
+# Rotations driven by the authentik-jwt-rotation CronJob. Each entry mints (and
+# for proxy consumers, exchanges) an Authentik client_credentials JWT and commits
+# it SOPS-encrypted. credentials_dir points at a mounted *-client-credentials
+# secret (see cronjob.yaml volumeMounts).
+rotations:
+  - name: claude-web-k8s
+    provider_slug: kubectl-sandbox-client-credentials
+    scopes: openid profile email groups
+    expected_group: kubectl-sandbox-users
+    credentials_dir: /var/run/secrets/authentik/claude-web-k8s
+    sops_file: secrets/claude-web-k8s-jwt.yaml
+    token_field: jwt
+  - name: alloy-otlp
+    provider_slug: alloy-otlp-client-credentials
+    scopes: openid profile email
+    exchange_scopes: openid profile email ak_proxy
+    credentials_dir: /var/run/secrets/authentik/alloy-otlp
+    sops_file: secrets/alloy-otlp-bearer-token.yaml
+    token_field: token

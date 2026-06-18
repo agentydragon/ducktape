@@ -134,7 +134,7 @@ TCP supervisor port: <archive/2026_06_12_gvisor_era_networking.md>.
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
 `alloy-otlp.allegedly.works`. Authentik is the canonical source for the bearer
 JWT: the TF module creates a dedicated `alloy-otlp-client-credentials` OAuth2
-provider, and the `alloy-otlp-jwt-rotation` CronJob mints a source JWT hourly
+provider, and the shared `authentik-jwt-rotation` CronJob mints a source JWT hourly
 when the existing token has <24h of validity remaining. The job immediately
 exchanges that source JWT into an `alloy-otlp` proxy-scoped JWT before writing
 it to git, because Authentik proxy outposts only accept Bearers issued by the
@@ -148,9 +148,9 @@ instead of exporting the OTEL token.
 Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
 Key files: TF module in <tf/gitops/alloy-otlp-bearer-token/> and the shared
-rotator in <cluster/k8s/agents/claude-jwt-rotation/>. Rotation is normally
+rotator in <cluster/k8s/agents/authentik-jwt-rotation/>. Rotation is normally
 automatic; to force a refresh, delete `secrets/alloy-otlp-bearer-token.yaml`
-from `devel` or manually run the `alloy-otlp-jwt-rotation` CronJob.
+from `devel` or manually run the `authentik-jwt-rotation` CronJob.
 
 ## Web Setup
 

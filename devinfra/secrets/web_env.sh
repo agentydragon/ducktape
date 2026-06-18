@@ -28,7 +28,7 @@ try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" 
 # decrypts the file directly, avoiding kubectl reachability during daemon init.
 # Bootstrap note: right after the TF module first creates the Authentik client
 # credentials, the SOPS file may not exist until the first successful
-# alloy-otlp-jwt-rotation run; that warning is expected.
+# authentik-jwt-rotation run; that warning is expected.
 try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]' "OTEL bearer token — traces to Grafana Alloy"
 
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)

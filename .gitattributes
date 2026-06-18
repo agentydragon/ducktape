@@ -57,6 +57,8 @@ website/posts/** filename-conventions-ignored=true
 # (pygit2) and skips the file from orphan detection + resource parsing.
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 cluster/k8s/evidence/market-roster/market-roster.yaml cluster-manifest-ignored=true
+# rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
+cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true

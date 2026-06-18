@@ -93,8 +93,8 @@ Claude Code web sessions authenticate via an **Authentik-issued OIDC JWT**
 that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
 `AuthenticationConfiguration` maps that claim to
 `oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
-subjects on. JWTs are minted biweekly by the `claude-jwt-rotation`
-CronJob in the `agents-infra` namespace — see <../claude-jwt-rotation/>.
+subjects on. JWTs are minted biweekly by the `authentik-jwt-rotation`
+CronJob in the `agents-infra` namespace — see <../authentik-jwt-rotation/>.
 
 OIDC users who log into the `kubectl-sandbox-mcp` Authentik application
 (interactive MCP) receive the same group claim via the same
@@ -110,7 +110,7 @@ egress proxy eats client certs).
 
 ## Kubeconfig Provisioning
 
-The JWT is minted by the `claude-jwt-rotation` CronJob via Authentik's
+The JWT is minted by the `authentik-jwt-rotation` CronJob via Authentik's
 `kubectl-sandbox-client-credentials` OAuth2 provider and committed
 SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`. At session start,
 <devinfra/k8s/kubeconfig.py> decrypts it and builds a kubeconfig

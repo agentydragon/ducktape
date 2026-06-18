@@ -42,7 +42,7 @@ spec:
       name: auth-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: claude-jwt-rotation
+      name: authentik-jwt-rotation
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: attic-jwt-rotation

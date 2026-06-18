@@ -302,12 +302,12 @@ apt.install(
     manifest = "//cpap:bookworm_cpap_sync.yaml",
 )
 
-# JWT rotation image: curl + jq + git + bash on debian:trixie-slim for the
-# claude-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
+# JWT rotation image: git + ca-certificates on debian:trixie-slim for the
+# authentik-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
 apt.install(
-    name = "trixie_jwt_rotation",
-    lock = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.lock.json",
-    manifest = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.yaml",
+    name = "trixie_authentik_rotation",
+    lock = "//cluster/k8s/agents/authentik-jwt-rotation:trixie_authentik_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/authentik-jwt-rotation:trixie_authentik_rotation.yaml",
 )
 
 # attic-jwt-rotation CronJob (kubectl exec into attic pod for atticadm + commit).
@@ -359,7 +359,7 @@ apt.install(
     lock = "//loom/wayback/cache:trixie_wayback_cache.lock.json",
     manifest = "//loom/wayback/cache:trixie_wayback_cache.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_jwt_rotation", "trixie_wayback_cache")
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -756,7 +756,7 @@ http_archive(
 )
 
 # sops - Mozilla SOPS binary for age/KMS secret encryption/decryption.
-# Used by the claude-jwt-rotation CronJob image.
+# Used by the authentik-jwt-rotation CronJob image.
 http_file(
     name = "sops_linux_amd64",
     downloaded_file_path = "sops",

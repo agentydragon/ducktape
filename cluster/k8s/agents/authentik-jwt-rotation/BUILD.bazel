@@ -1,0 +1,71 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# imports=["."] puts this (kebab-cased, non-importable-as-a-package) directory on
+# sys.path so rotate.py is importable as the top-level module `rotate`.
+py_library(
+    name = "rotate",
+    srcs = ["rotate.py"],
+    imports = ["."],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_rotate",
+    srcs = ["test_rotate.py"],
+    imports = ["."],
+    deps = [
+        ":rotate",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "rotate_bin",
+    imports = ["."],
+    main = "rotate.py",
+    deps = [":rotate"],
+)
+
+# sops binary layer — placed at /usr/local/bin/sops.
+pkg_tar(
+    name = "sops_layer",
+    srcs = ["@sops_linux_amd64//file:sops"],
+    package_dir = "/usr/local/bin",
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":rotate_bin",
+    group = "65534",
+    owner = "65534",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("rotate_bin"),
+    env = py_image_env(binary_name = "rotate_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    # @trixie_authentik_rotation provides git + ca-certificates (HTTPS push);
+    # sops_layer the sops binary; layers the Python app + interpreter.
+    tars = [
+        "@trixie_authentik_rotation//:flat",
+        ":sops_layer",
+        ":layers",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["authentik-jwt-rotation:latest"],
+)

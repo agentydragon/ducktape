@@ -18,7 +18,7 @@ AuthenticationConfiguration maps that claim to
 `oidc-ksbx-groups:kubectl-sandbox-users`, which every sandbox RoleBinding
 already subjects on. Zero RBAC edits.
 
-The JWT is minted in-cluster by the `claude-jwt-rotation` CronJob (a
+The JWT is minted in-cluster by the `authentik-jwt-rotation` CronJob (a
 client_credentials exchange against Authentik's token endpoint) and committed
 to `secrets/claude-web-k8s-jwt.yaml`, SOPS-encrypted. This script decrypts
 it at SessionStart with the recipient's `SOPS_AGE_KEY` — no HTTP calls from
