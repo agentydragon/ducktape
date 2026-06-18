@@ -94,6 +94,37 @@ impl Resolution {
             _ => None,
         }
     }
+
+    /// Bootstrap-precondition gate: the solver's name-pin path can faithfully
+    /// reproduce the matcher only if every binding name resolves to exactly one
+    /// owner. Reports any binding declared by more than one owner.
+    pub fn shadow_check(&self) -> ShadowReport {
+        let mut ambiguous: Vec<(String, usize)> = self
+            .name_to_owners
+            .iter()
+            .filter(|(_, owners)| owners.len() > 1)
+            .map(|(name, owners)| (name.clone(), owners.len()))
+            .collect();
+        ambiguous.sort();
+        ShadowReport {
+            total: self.name_to_owners.len(),
+            ambiguous,
+        }
+    }
+}
+
+/// Result of the shadow-precondition gate. `ok()` iff name-pin resolution is
+/// total and categorical over the whole chunk.
+pub struct ShadowReport {
+    pub total: usize,
+    /// Binding names declared by more than one owner, with the owner count.
+    pub ambiguous: Vec<(String, usize)>,
+}
+
+impl ShadowReport {
+    pub fn ok(&self) -> bool {
+        self.ambiguous.is_empty()
+    }
 }
 
 /// Build the EDB from an owner graph and run the phase-1 solve.
@@ -180,5 +211,26 @@ mod tests {
         .unwrap();
         assert_eq!(r.ambiguous(), 1);
         assert_eq!(r.owner_for("dup"), None);
+    }
+
+    #[test]
+    fn shadow_gate_passes_when_categorical_and_flags_ambiguous() {
+        let categorical = solve_str(
+            r#"{"nodes":[{"id":"owner:0","statement_kind":"x",
+                "declared_bindings":[{"binding":"a"}]}],"edges":[]}"#,
+        )
+        .unwrap();
+        assert!(categorical.shadow_check().ok());
+
+        let ambiguous = solve_str(
+            r#"{"nodes":[
+                {"id":"owner:0","statement_kind":"x","declared_bindings":[{"binding":"dup"}]},
+                {"id":"owner:1","statement_kind":"x","declared_bindings":[{"binding":"dup"}]}
+               ],"edges":[]}"#,
+        )
+        .unwrap();
+        let rep = ambiguous.shadow_check();
+        assert!(!rep.ok());
+        assert_eq!(rep.ambiguous, vec![("dup".to_string(), 2)]);
     }
 }
