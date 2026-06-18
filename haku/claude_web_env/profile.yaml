@@ -1,0 +1,60 @@
+# Claude Code web profile for Haku, the personal background agent.
+#
+# Selected via DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml
+# (with DUCKTAPE_CLAUDE_HOOK_IMPL=rust and SOPS_AGE_KEY=<haku age key>).
+#
+# Models devinfra/claude/claude_hook/profiles/web/profile.yaml. Deviations:
+#   - K8S_* overrides so kubeconfig.py materializes Haku's kubeconfig (the JWT in
+#     secrets/haku-k8s-jwt.yaml → group `haku` → haku-sandbox-admin in the
+#     haku-sandbox namespace) instead of claude-web's.
+#   - No bazel/RBE warmup — Haku scans and writes git, it doesn't build.
+startup_env_script: devinfra/secrets/web_env.sh
+
+idle_watchdog: false
+
+env_exports: |
+  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
+  # Nix devtools win over /opt/node22 (see the web profile for the rationale).
+  export PATH="/usr/local/bin:${PATH}"
+  # Materialize Haku's kubeconfig, not claude-web's: read the haku JWT and
+  # present as the `haku` user in the haku-sandbox namespace.
+  export K8S_JWT_SOPS_PATH=secrets/haku-k8s-jwt.yaml
+  export K8S_USER=haku
+  export K8S_NAMESPACE=haku-sandbox
+
+background_commands:
+  # Materialize ~/.kube/config from the SOPS-encrypted haku JWT (decrypted with
+  # SOPS_AGE_KEY=haku). after_env so the K8S_* exports above are in scope.
+  - name: kubeconfig
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
+    timeout: 30
+    after_env: true
+  # Pre-clone Haku's state repo into ./state and write ~/.netrc, so the agent
+  # starts with its memory ready and git needs no inline creds. After kubeconfig.
+  - name: clone haku-state
+    command: bash "$CLAUDE_PROJECT_DIR/haku/claude_web_env/clone-state.sh"
+    timeout: 60
+    after_env: true
+  - name: creds banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
+    timeout: 10
+    after_env: true
+  - name: nix nixpkgs check
+    command: |
+      if ! command -v nix &>/dev/null; then
+        echo "ERROR: Nix not found on PATH. setup.sh should have installed Nix — did it complete?"
+        exit 1
+      fi
+      if nix-instantiate '<nixpkgs>' --eval -E '1' &>/dev/null 2>&1; then
+        echo "Nix: nixpkgs available."
+      else
+        nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs
+        nix-channel --update nixpkgs
+        echo "Nix: nixpkgs channel configured."
+      fi
+    timeout: 120
+  - name: pre-commit setup
+    command: pre-commit install --install-hooks
+    timeout: 300
+
+context_template: devinfra/claude/claude_hook/profiles/web/context.mako
