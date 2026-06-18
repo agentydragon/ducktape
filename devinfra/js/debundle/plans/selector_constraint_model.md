@@ -556,6 +556,33 @@ extracts with zero `Unsupported`; until then each gap is loud and counted, not a
 top-level join to the owner graph is `js_ast::statement_ordinal_for_body_index` (owner = top-level
 statement by ordinal).
 
+### Landed (P1) and the P2/P3 matching design
+
+**Landed (P1):** `chunk_facts` projects `node_kind` / `child(parent, ordinal, child)` / `str_lit` /
+`num_lit` / `bool_lit` / `ident_name` / `prop_name` / `operator` / `regex` / `super_class` + the
+`top_level` owner-ordinal join, and `chunk_facts_coverage` (the instrument that drove growth)
+reports **100%** top-level extraction on every measured chunk (index, ReactGraph, Calendar,
+VoiceChatModal). Fail-closed throughout: an unmodeled construct errors, never silently drops.
+
+**P2/P3 — matching over the facts.** The selector needle is parsed and projected through the
+**same `chunk_facts` extractor**, giving needle facts in the identical schema. A match is then a
+**homomorphism** from needle nodes onto chunk nodes, anchored so the needle's top-level statement
+maps to a chunk owner and the claimed distinguished variable's image is the resolved owner. The
+homomorphism respects, per node: `node_kind` equality, label equality (`str_lit` / `prop_name` /
+`operator` / `regex` / …), and the positional `child` structure — with hole rules layered on
+exactly as the holes section prescribes (existential → the needle omits that child; alpha
+identifier → a logic variable with **intra-pattern consistency**, the same needle identifier
+mapping to one chunk identifier — a join, not a free wildcard; `STR_LITERAL_MATCHING_RE` → a
+`str_matches` filter; ordered runs → child-index `<` constraints). This is the conjunctive query
+the model describes, now concrete over `ChunkFacts`; whether evaluated as Ascent rules or a direct
+homomorphism search is an implementation choice, but it operates over the EDB, not by re-walking
+ASTs. Fail-closed governs it: a hole whose faithful rule is not yet implemented makes the lowering
+**error**, never emit a weaker query — the alpha-consistency join in particular must not degrade
+to a free wildcard (that would under-constrain and mis-match). `DatalogResolver` wraps this behind
+`source_match::SelectorResolver`; `DifferentialResolver<AstWildcard, Datalog>` runs it beside the
+matcher over the corpus selectors and **proves** parity (zero disagreements) rather than asserting
+it.
+
 ### What the matcher cannot do that the query model can
 
 Today's matcher is single-pattern, positive, intra-statement, and per-selector independent: it
@@ -660,11 +687,13 @@ to force `Full` report emission under `--dry-run` (`validate`'s dry-run emits `o
 only on realizability rejection, `ReportEmission::OnRejection`); done as the e2e gate on real
 `Full` output instead, with no core-pipeline change.
 
-**P1 — AST-facts EDB.** Project a parsed chunk into `child` / `kind` / `str_lit` / `prop_name`
-plus alpha-canonicalized identifier facts, joined to owners by span/ordinal — the synthetic facts
-in `selector_query_examples` made real; `alpha_canonicalize.rs` seeds the canonicalization.
-_Exit:_ round-trip test — the facts reconstruct each top-level statement's shape on a fixture
-chunk.
+**P1 — AST-facts EDB. ✅ Landed.** `chunk_facts` projects a parsed chunk into `node_kind` /
+`child(parent, ordinal, child)` / `str_lit` / `num_lit` / `bool_lit` / `ident_name` / `prop_name`
+/ `operator` / `regex` / `super_class` + the `top_level` owner-ordinal join, fail-closed (loud
+`Unsupported` on any unmodeled construct). `chunk_facts_coverage` drove growth by real-corpus
+blocker frequency to **100%** top-level extraction on every measured chunk (index, ReactGraph,
+Calendar, VoiceChatModal). Alpha-canonicalization (for the alpha-identifier hole rule) is deferred
+to P3's lowering, where it is the fidelity-critical piece.
 
 **P2 — `DatalogResolver`, explicit total delegation.** Second `SelectorResolver` impl that lowers
 every `source_match` to one **explicit, faithful** shape atom — a call into `AstWildcardResolver`
