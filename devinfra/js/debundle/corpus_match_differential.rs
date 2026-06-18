@@ -18,6 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use source_match::{
@@ -667,6 +668,38 @@ fn classify_and_record<T: PartialEq + std::fmt::Debug>(
     classify_resolver(tally, datalog, production);
 }
 
+impl ResolverTally {
+    fn add(&mut self, other: &ResolverTally) {
+        self.resolved_parity += other.resolved_parity;
+        self.reject_parity += other.reject_parity;
+        self.fail_closed += other.fail_closed;
+        self.over_resolved += other.over_resolved;
+        self.value_disagreements += other.value_disagreements;
+    }
+}
+
+/// Resolve one selector both ways, timing each side separately (the datalog
+/// resolver has no candidate prefilter, so per-side timing localizes where the
+/// per-chunk cost lives), then classify + record like `classify_and_record`.
+#[allow(clippy::too_many_arguments)]
+fn timed_classify<T: PartialEq + std::fmt::Debug>(
+    tally: &mut ResolverTally,
+    issues: &mut Vec<Issue>,
+    site: impl Fn() -> String,
+    datalog: impl FnOnce() -> anyhow::Result<T>,
+    production: impl FnOnce() -> anyhow::Result<T>,
+    datalog_time: &mut Duration,
+    production_time: &mut Duration,
+) {
+    let started = Instant::now();
+    let datalog = datalog();
+    *datalog_time += started.elapsed();
+    let started = Instant::now();
+    let production = production();
+    *production_time += started.elapsed();
+    classify_and_record(tally, issues, site, &datalog, &production);
+}
+
 fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> Result<()> {
     let mut by_chunk: BTreeMap<String, Vec<ModuleCase>> = BTreeMap::new();
     let mut unmapped: Vec<String> = Vec::new();
@@ -680,68 +713,154 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
         }
     }
 
+    // Read + size each chunk's source up front so chunks process
+    // smallest-source-first: the bulk of chunks report quickly and the few large
+    // minified chunks — where the prefilter-less fact matcher is slow — come last
+    // and stand out as the bottleneck. Resolve against the original minified
+    // bundle (the analysis source the selectors were authored against), not the
+    // debundled `<chunk>/entry.js`.
+    let mut chunks: Vec<(String, String, Vec<ModuleCase>)> = Vec::new();
+    for (chunk, cases) in by_chunk {
+        let chunk_source = snapshot_root.join(format!("{chunk}.js"));
+        let source = fs::read_to_string(&chunk_source)
+            .with_context(|| format!("reading chunk source {}", chunk_source.display()))?;
+        chunks.push((chunk, source, cases));
+    }
+    chunks.sort_by_key(|(_, source, _)| source.len());
+    let chunk_count = chunks.len();
+    // A per-chunk wall-clock budget keeps the run terminating even on the giant
+    // chunks: once a chunk's elapsed exceeds it, the remaining selectors are
+    // counted unmeasured rather than blocking. Unset = no budget (run to the end).
+    let budget = std::env::var("PER_CHUNK_BUDGET_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs);
+
     let mut members = ResolverTally::default();
     let mut anonymous = ResolverTally::default();
     let mut groups = ResolverTally::default();
     let mut issues: Vec<Issue> = Vec::new();
-    for (chunk, cases) in &by_chunk {
-        // Resolve against the original minified bundle (the analysis source the
-        // selectors were authored against), not the debundled `<chunk>/entry.js`.
-        let chunk_source = snapshot_root.join(format!("{chunk}.js"));
-        let source = fs::read_to_string(&chunk_source)
-            .with_context(|| format!("reading chunk source {}", chunk_source.display()))?;
-        let module = js_ast::parse_js_module_ast(&chunk_source.to_string_lossy(), &source)
-            .with_context(|| format!("parsing chunk source {}", chunk_source.display()))?;
+    let mut unmeasured = 0usize;
+    for (index, (chunk, source, cases)) in chunks.iter().enumerate() {
+        let module = js_ast::parse_js_module_ast(chunk, source)
+            .with_context(|| format!("parsing chunk source {chunk}"))?;
         // Build the chunk's EDB once; every module of this chunk resolves against it.
         let resolver = ChunkResolver::new(&module);
-        for case in cases {
+        let chunk_total: usize = cases
+            .iter()
+            .map(|case| case.members.len() + case.anonymous.len() + case.groups.len())
+            .sum();
+        let started = Instant::now();
+        let deadline = budget.map(|budget| started + budget);
+        let past_deadline =
+            |deadline: Option<Instant>| deadline.is_some_and(|d| Instant::now() >= d);
+        let (mut member, mut anon, mut group) = (
+            ResolverTally::default(),
+            ResolverTally::default(),
+            ResolverTally::default(),
+        );
+        let (mut datalog_time, mut production_time) = (Duration::ZERO, Duration::ZERO);
+        let mut measured = 0usize;
+        'cases: for case in cases {
             for selector in &case.members {
-                classify_and_record(
-                    &mut members,
+                if past_deadline(deadline) {
+                    break 'cases;
+                }
+                timed_classify(
+                    &mut member,
                     &mut issues,
                     || format!("member {} {}", case.module_path, preview(selector)),
-                    &resolver.resolve_member(&case.module_path, "export", selector),
-                    &AstWildcardResolver.resolve_member(
-                        &module,
-                        &case.module_path,
-                        "export",
-                        selector,
-                    ),
+                    || resolver.resolve_member(&case.module_path, "export", selector),
+                    || {
+                        AstWildcardResolver.resolve_member(
+                            &module,
+                            &case.module_path,
+                            "export",
+                            selector,
+                        )
+                    },
+                    &mut datalog_time,
+                    &mut production_time,
                 );
+                measured += 1;
             }
             for selector in &case.anonymous {
-                classify_and_record(
-                    &mut anonymous,
+                if past_deadline(deadline) {
+                    break 'cases;
+                }
+                timed_classify(
+                    &mut anon,
                     &mut issues,
                     || format!("anonymous {} {}", case.module_path, preview(selector)),
-                    &resolver.resolve_anonymous_groups(&case.module_path, selector),
-                    &AstWildcardResolver.resolve_anonymous_groups(
-                        &module,
-                        &case.module_path,
-                        selector,
-                    ),
+                    || resolver.resolve_anonymous_groups(&case.module_path, selector),
+                    || {
+                        AstWildcardResolver.resolve_anonymous_groups(
+                            &module,
+                            &case.module_path,
+                            selector,
+                        )
+                    },
+                    &mut datalog_time,
+                    &mut production_time,
                 );
+                measured += 1;
             }
             for (selector, exports) in &case.groups {
-                classify_and_record(
-                    &mut groups,
+                if past_deadline(deadline) {
+                    break 'cases;
+                }
+                timed_classify(
+                    &mut group,
                     &mut issues,
                     || format!("group {} {}", case.module_path, preview(selector)),
-                    &resolver.resolve_member_group(&case.module_path, selector, exports),
-                    &AstWildcardResolver.resolve_member_group(
-                        &module,
-                        &case.module_path,
-                        selector,
-                        exports,
-                    ),
+                    || resolver.resolve_member_group(&case.module_path, selector, exports),
+                    || {
+                        AstWildcardResolver.resolve_member_group(
+                            &module,
+                            &case.module_path,
+                            selector,
+                            exports,
+                        )
+                    },
+                    &mut datalog_time,
+                    &mut production_time,
                 );
+                measured += 1;
             }
         }
+        let chunk_unmeasured = chunk_total - measured;
+        unmeasured += chunk_unmeasured;
+        members.add(&member);
+        anonymous.add(&anon);
+        groups.add(&group);
+        // Stream a per-chunk line to stderr so the run is observable live (the
+        // final stdout summary only prints at the end). M=member tallies
+        // r/j/fc/or/vd = resolved-parity / reject-parity / fail-closed /
+        // over-resolved / value-disagree.
+        eprintln!(
+            "[{:>2}/{}] {:<30} mods={:<3} sel={:<4} meas={:<4} unmeas={:<4} M(r/j/fc/or/vd) {}/{}/{}/{}/{} | dl {:>6.1}s prod {:>6.1}s tot {:>6.1}s",
+            index + 1,
+            chunk_count,
+            chunk,
+            cases.len(),
+            chunk_total,
+            measured,
+            chunk_unmeasured,
+            member.resolved_parity,
+            member.reject_parity,
+            member.fail_closed,
+            member.over_resolved,
+            member.value_disagreements,
+            datalog_time.as_secs_f64(),
+            production_time.as_secs_f64(),
+            started.elapsed().as_secs_f64(),
+        );
     }
 
     println!("per-target-chunk resolver differential");
     println!("  modules:          {module_count}");
-    println!("  chunks touched:   {}", by_chunk.len());
+    println!("  chunks touched:   {chunk_count}");
+    println!("  selectors unmeasured (per-chunk budget): {unmeasured}");
     println!(
         "  unmapped modules (no emitted <chunk>/<path>.js): {}",
         unmapped.len()
