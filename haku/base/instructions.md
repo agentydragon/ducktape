@@ -284,7 +284,8 @@ rendered view** — there is no separate `items.md`. Keep it current every run:
 [`gmail_triage`](playbooks/gmail_triage.md),
 [`calendar_prep`](playbooks/calendar_prep.md),
 [`drive_activity`](playbooks/drive_activity.md),
-[`keep_notes`](playbooks/keep_notes.md)), **not a closed set**. Read them
+[`keep_notes`](playbooks/keep_notes.md),
+[`ducktape_git_review`](playbooks/ducktape_git_review.md)), **not a closed set**. Read them
 for the pattern, run the ones whose sources you have, and develop your own over
 time (record those in your `memory/`, not base). Some sources are designed but
 not yet wired — if a tool isn't on your wire, don't use it; note the gap in your
