@@ -121,3 +121,35 @@ once in `ChunkResolver` and threading it into the match path** (sound — a pure
 memoization, no semantic change), plus extending the same prefilter/caching to the
 var-decl declarator scan. That is the corrected step-2 of the switch plan; the
 root-kind prefilter is a necessary-but-partial building block toward it.
+
+## Resolution — both prerequisites landed; gate green over measured
+
+**Throughput (commit `dc1aa695`).** Made `Index` own its labels so `ChunkResolver`
+can cache each body item's index once (plus one synthetic single-declarator index
+per var-decl declarator), and added prebuilt-index variants of every matcher entry
+point. Pure memoization — verdicts unchanged. Per-selector resolve on the main
+chunk dropped 1.83 s → 0.34 s (~5.4×); the worst path (declarator-hole members)
+6–8 s → 0.71 s. A full 8306-selector pass is now tractable (~50–60 min).
+
+**Faithfulness — the 4 fail-closed were two distinct bugs:**
+
+1. **async/generator dropped from the facts** (commit `a89a58be`). The extractor
+   projected every function/arrow to a bare `Function`/`Arrow` node, so
+   `async function`≡`function` and the matcher over-matched. Fixed by folding
+   async/generator into the node-kind tag (`AsyncFunction`, … / `AsyncArrow`).
+   Closed the 3 over-match gaps (AsyncBootloader, checkForVersionUpdate,
+   initBundle).
+2. **scope-blind alpha bijection** (commit `23414587`). `Bindings` was a single
+   flat spelling-keyed map, so a needle reusing a param name across two function
+   scopes forced both to the same subject name — under-matching when the subject
+   used different param names per function (confirmed: `match_top_level_sequence`
+   returned `[[Some(0),Some(1)]]` for matching param spellings but `[]` for
+   differing ones). Fixed by making `Bindings` a scope stack mirroring production's
+   `alpha_scopes` (references resolve up the stack; bindings shadow in the current
+   frame; function/arrow/constructor/setter/catch nodes push a frame). Closed the
+   last gap (boot_progress/state).
+
+**Result.** The per-target-chunk gate is **green** over every measured selector:
+`fail-closed 0 / over-resolved 0 / value-disagree 0` (347 selectors under a 150 s
+budget — "every selector resolves to the same owner as production"). The full
+uncapped pass over all 8306 selectors is the standing corpus-wide proof.

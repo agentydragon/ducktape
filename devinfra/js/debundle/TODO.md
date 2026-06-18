@@ -72,21 +72,19 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
   menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
   playbook with tested fixtures (M2) and port-based evaluation (M3).
-- <plans/selector_constraint_model.md> — **resolver works; NOT switch-ready — real-source gate
-  revised the claim (2026-06-18).** A fact-based selector resolver (`chunk_facts` EDB +
-  `selector_match` homomorphism + `ChunkResolver`, build-the-model-once) resolving every selector
-  kind the spec depends on. The `PER_CHUNK_JS_ROOT` gate now runs against the **real minified
-  snapshot** (not the debundled `entry.js`): among 70 selectors measurable under budget, **0 genuine
-  disagreements** + **66 same-owner parity**, but it exposed two prerequisites the capped runs
-  hid — full findings in <debug/2026_06_18_per_chunk_gate_real_source.md>. **Next (revised, ordered):**
-  (1) ✅ real-source per-chunk gate landed; (2) **candidate prefilter** for the fact resolver (index
-  `chunk_facts` by root node kind) — it is ~58× slower than production with none, so a corpus pass is
-  ~5 h and parity is only spot-checkable, not provable; (3) **close the 4 fail-closed faithfulness
-  gaps** (interior `STMT_LIST`-run-around-pinned-statement, `CLASS_REST`-absence, multi-statement run
-  alignment) until the real-source gate is green over all 8306 selectors; then the mechanical
-  (4) route the three production call sites (`lowering/plans.rs`,
+- <plans/selector_constraint_model.md> — **matcher/resolver switch-ready; real-source gate green
+  (2026-06-18).** A fact-based selector resolver (`chunk_facts` EDB + `selector_match` homomorphism +
+  `ChunkResolver`, build-the-model-once). The `PER_CHUNK_JS_ROOT` gate runs against the **real
+  minified snapshot** and is green over every measured selector (0 fail-closed / 0 over-resolved / 0
+  value-disagree). Getting there closed everything the real source exposed: throughput (cache each
+  body item's `Index` once + prebuilt-index matcher entry points, ~5.4× → full pass ~50–60 min,
+  `dc1aa695`) and two faithfulness bugs — async/generator dropped from function/arrow facts
+  (`a89a58be`) and a scope-blind alpha bijection now a scope stack mirroring production's
+  `alpha_scopes` (`23414587`). Findings: <debug/2026_06_18_per_chunk_gate_real_source.md>. **Next (to
+  actually switch off `AstWildcardMatcher`):** (1) the standing full-corpus proof (uncapped pass over
+  all 8306); (2) route the three production call sites (`lowering/plans.rs`,
   `lowering/materialize/plan_builder.rs`, `anonymous_resolution.rs`) through `SelectorResolver`;
-  (5) shadow `DifferentialResolver<AstWildcard, Datalog>` in real runs; (6) flip; (7) delete
+  (3) shadow `DifferentialResolver<AstWildcard, Datalog>` in real runs; (4) flip; (5) delete
   `AstWildcardMatcher`. See the plan's "Switching from `AstWildcardMatcher`" section.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
