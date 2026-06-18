@@ -34,8 +34,12 @@ home-manager. See cluster/docs/lessons_learned/
 Usage:
     python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write OUTPUT_PATH
 
-Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-jwt.yaml)
-and SOPS_AGE_KEY (for sops decryption) in the environment.
+Requires CLAUDE_PROJECT_DIR (to locate the JWT SOPS file) and SOPS_AGE_KEY
+(for sops decryption) in the environment.
+
+Defaults to the Claude Code web identity. Other agents (e.g. haku) override
+the SOPS path, kubeconfig user, and namespace via the K8S_JWT_SOPS_PATH /
+K8S_USER / K8S_NAMESPACE env vars.
 """
 
 from __future__ import annotations
@@ -50,11 +54,26 @@ from pathlib import Path
 
 import yaml
 
-_K8S_JWT_SOPS_PATH = "secrets/claude-web-k8s-jwt.yaml"
-
 DEFAULT_SERVER = "https://kubeapi.allegedly.works"
+
+# Claude Code web is the default identity; other agents (e.g. haku) override
+# these via the K8S_JWT_SOPS_PATH / K8S_USER / K8S_NAMESPACE env vars so a
+# single script materializes any agent's bearer-token kubeconfig.
+_DEFAULT_K8S_JWT_SOPS_PATH = "secrets/claude-web-k8s-jwt.yaml"
 DEFAULT_USER = "claude-code-web"
 DEFAULT_NAMESPACE = "claude-sandbox"
+
+
+def _jwt_sops_path() -> str:
+    return os.environ.get("K8S_JWT_SOPS_PATH", _DEFAULT_K8S_JWT_SOPS_PATH)
+
+
+def _user() -> str:
+    return os.environ.get("K8S_USER", DEFAULT_USER)
+
+
+def _namespace() -> str:
+    return os.environ.get("K8S_NAMESPACE", DEFAULT_NAMESPACE)
 
 
 def _sops_extract(sops_path: Path, key: str, *, sops_age_key: str | None) -> str:
@@ -72,25 +91,21 @@ def _sops_extract(sops_path: Path, key: str, *, sops_age_key: str | None) -> str
 
 def decrypt_jwt(project_dir: Path, *, sops_age_key: str | None = None) -> str:
     """Return the JWT from the SOPS-encrypted file."""
-    sops_path = project_dir / _K8S_JWT_SOPS_PATH
+    sops_path = project_dir / _jwt_sops_path()
     if not sops_path.is_file():
         raise RuntimeError(f"k8s JWT SOPS file not found: {sops_path}")
     return _sops_extract(sops_path, "jwt", sops_age_key=sops_age_key)
 
 
 def build_kubeconfig(token: str) -> dict:
+    user = _user()
     return {
         "apiVersion": "v1",
         "kind": "Config",
         "clusters": [{"cluster": {"server": DEFAULT_SERVER}, "name": "cluster"}],
-        "contexts": [
-            {
-                "context": {"cluster": "cluster", "namespace": DEFAULT_NAMESPACE, "user": DEFAULT_USER},
-                "name": DEFAULT_USER,
-            }
-        ],
-        "current-context": DEFAULT_USER,
-        "users": [{"name": DEFAULT_USER, "user": {"token": token}}],
+        "contexts": [{"context": {"cluster": "cluster", "namespace": _namespace(), "user": user}, "name": user}],
+        "current-context": user,
+        "users": [{"name": user, "user": {"token": token}}],
     }
 
 

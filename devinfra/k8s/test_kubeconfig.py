@@ -26,6 +26,16 @@ def test_build_kubeconfig_token() -> None:
     assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
     assert kc["clusters"][0]["cluster"] == {"server": kubeconfig.DEFAULT_SERVER}
     assert kc["current-context"] == kubeconfig.DEFAULT_USER
+    assert kc["contexts"][0]["context"]["namespace"] == kubeconfig.DEFAULT_NAMESPACE
+
+
+def test_build_kubeconfig_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("K8S_USER", "haku-k8s")
+    monkeypatch.setenv("K8S_NAMESPACE", "haku")
+    kc = kubeconfig.build_kubeconfig(_FAKE_TOKEN)
+    assert kc["current-context"] == "haku-k8s"
+    assert kc["users"][0]["name"] == "haku-k8s"
+    assert kc["contexts"][0]["context"] == {"cluster": "cluster", "namespace": "haku", "user": "haku-k8s"}
 
 
 def test_write_kubeconfig_file_fresh(tmp_path: Path) -> None:
@@ -97,6 +107,27 @@ def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
     assert kc["current-context"] == "claude-code-web"
     assert output_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_main_end_to_end_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """K8S_JWT_SOPS_PATH / K8S_USER / K8S_NAMESPACE retarget the writer (e.g. haku)."""
+    project_dir = tmp_path / "repo"
+    (project_dir / "secrets").mkdir(parents=True)
+    (project_dir / "secrets" / "haku-k8s-jwt.yaml").write_text("stub")
+
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+    monkeypatch.setenv("K8S_JWT_SOPS_PATH", "secrets/haku-k8s-jwt.yaml")
+    monkeypatch.setenv("K8S_USER", "haku-k8s")
+    monkeypatch.setenv("K8S_NAMESPACE", "haku")
+    monkeypatch.setattr(kubeconfig.subprocess, "run", _make_fake_sops())
+
+    output_path = tmp_path / "out" / "kubeconfig"
+    kubeconfig.main(["--write", str(output_path)])
+
+    kc = yaml.safe_load(output_path.read_text())
+    assert kc["current-context"] == "haku-k8s"
+    assert kc["contexts"][0]["context"]["namespace"] == "haku"
+    assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
 
 
 if __name__ == "__main__":

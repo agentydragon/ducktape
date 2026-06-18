@@ -10,6 +10,13 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/claude-web-k8s
     sops_file: secrets/claude-web-k8s-jwt.yaml
     token_field: jwt
+  - name: haku-k8s
+    provider_slug: kubectl-sandbox-client-credentials
+    scopes: openid profile email groups
+    expected_group: haku
+    credentials_dir: /var/run/secrets/authentik/haku-k8s
+    sops_file: secrets/haku-k8s-jwt.yaml
+    token_field: jwt
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email

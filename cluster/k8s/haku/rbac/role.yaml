@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-secret-reader
+  namespace: haku
+  annotations:
+    description: "Haku's credential perimeter: get/list Secrets and ConfigMaps in the haku namespace only (e.g. plaid-mcp-db-readonly, the capability registry). Deliberately not the cluster diagnostics group. Every secret here must hold only a read-only credential — Haku can fully use anything it can read."
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list"]

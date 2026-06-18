@@ -4,10 +4,11 @@ Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
 SOPS-encrypted to `secrets/`. One job rotates every token in
 <rotations.yaml>:
 
-| Rotation         | Provider                             | Output                                 | Notes          |
-| ---------------- | ------------------------------------ | -------------------------------------- | -------------- |
-| `claude-web-k8s` | `kubectl-sandbox-client-credentials` | `secrets/claude-web-k8s-jwt.yaml`      | group check    |
-| `alloy-otlp`     | `alloy-otlp-client-credentials`      | `secrets/alloy-otlp-bearer-token.yaml` | proxy exchange |
+| Rotation         | Provider                             | Output                                 | Notes                |
+| ---------------- | ------------------------------------ | -------------------------------------- | -------------------- |
+| `claude-web-k8s` | `kubectl-sandbox-client-credentials` | `secrets/claude-web-k8s-jwt.yaml`      | group check          |
+| `haku-k8s`       | `kubectl-sandbox-client-credentials` | `secrets/haku-k8s-jwt.yaml`            | group check (`haku`) |
+| `alloy-otlp`     | `alloy-otlp-client-credentials`      | `secrets/alloy-otlp-bearer-token.yaml` | proxy exchange       |
 
 `rotate.py` reads each output's unencrypted-by-suffix `expires_unencrypted`
 field (no decryption, no in-cluster age key), skips entries with more than
