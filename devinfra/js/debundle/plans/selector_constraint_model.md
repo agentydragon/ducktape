@@ -39,10 +39,11 @@ is exactly the relation a rebuild destroys.
 Model the source not as text but as a **labeled relational structure** `G`:
 
 - **nodes** — AST nodes plus binding entities;
-- **relations** — AST `child` / `sibling` _and_ semantic edges:
-  `calls(caller, callee, argpos)`, `alias(x, y)`, `decorates(helper, class, "method")`,
-  `def_use(def, use)`, `member_access(node, "prop")`, `imports` / `exports`,
-  `member_of_module`;
+- **relations** — AST `child` / `sibling` plus the one semantic edge alpha-renaming
+  forces on us (and that survives it): `resolves_to(use, def)` — which identifier
+  occurrence binds to which declaration — and `member_of_module(binding, module)`.
+  Higher-level edges (`calls`, `alias`, a decorator application, …) are **derived**
+  from AST shape + `resolves_to`, not primitives (see Implementation);
 - **labels** — the tokens minification cannot rewrite: string/number literals,
   property & method names, operators, keywords. Identifiers carry _no_ label (that is
   the renaming).
@@ -93,10 +94,10 @@ same time**.
 
 Partition the signature by behavior under the minification transform `T`:
 
-| Class           | Relations / labels                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------- |
-| **T-invariant** | literals, property/method names, `calls`, `alias`, `decorates`, `def_use`, `imports`, module membership |
-| **T-variant**   | identifier spellings, source position/order, **adjacency**, control-flow shape, arity                   |
+| Class           | Relations / labels                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **T-invariant** | literals, property/method names, `resolves_to` (and edges derived from it — `calls`, `alias`, …), module membership |
+| **T-variant**   | identifier spellings, source position/order, **adjacency**, control-flow shape, arity                               |
 
 A selector should be a query over the **invariant** sub-signature only. The whole
 "identity vs implementation" rubric of the `debundle_stabilize` skill collapses to one
@@ -123,9 +124,10 @@ two surface syntaxes are front-ends to the same back-end:
 - **AST-shape atoms** — JS-with-holes (today's `source_match`). Natural for local
   structure ("a class with these methods", "a function returning this literal").
   Keep it.
-- **Relational atoms** — `calls` / `alias` / `decorates` / `def_use` /
-  `member_access`, addressing other targets by `@Name` (including across modules).
-  Not naturally AST-shaped; written as explicit edge constraints.
+- **Relational atoms** — references to other targets by `@Name`, joined through
+  `resolves_to` (and the derived predicates built on it — `calls`, `alias`, …),
+  including across modules. Not naturally AST-shaped; written as explicit edge
+  constraints.
 
 Both compile to constraint-atoms in the one CSP. Use JS-AST where it reads naturally;
 use relational atoms for the cross-node edges. They are not two systems — they are two
@@ -143,13 +145,79 @@ parsers feeding one constraint store.
   [read-off minimization](readoff_minimization.md)); the real objective is
   `T`-invariance, and the agent supplies that prior.
 
+## Implementation: the solving core
+
+Conjunctive-query evaluation over a fixed relational structure _is_ the
+CSP/homomorphism problem, but its natural off-the-shelf engine is **Datalog**, not a
+numeric finite-domain solver: the structure is a large fixed EDB (~1–2M AST facts)
+joined by selective equality atoms (database territory), and a Datalog engine takes
+exactly `(facts, rules, query) → answers`. Using one avoids reimplementing a solver and
+**forces a clean serialization boundary** (program → facts, spec → rules).
+
+**EDB — facts extracted once per chunk.** The AST plus the one semantic edge:
+
+```
+child(parent, idx, node).   kind(node, Kind).   prop_name(node, "foo").
+str_lit(node, "…").   num_lit(node, 5).   operator(node, "+").
+resolves_to(use, def).   member_of_module(binding, module).
+```
+
+Most of this already exists as the owner/reference graph; the work is to _expose_ it as
+queryable relations. `resolves_to` is the only genuinely new, genuinely semantic
+relation — the one minification preserves while names churn.
+
+**Derived predicates — a rule library, not engine primitives.** `calls`, `alias`, a
+decorator application, etc. are rules over AST shape + `resolves_to`:
+
+```
+calls(Caller, Callee) :- kind(S, CallExpr), ancestor(Caller, S),
+                         callee(S, Use), resolves_to(Use, Callee).
+alias(X, Target)      :- kind(D, VarDecl), declarator(D, X, Init),
+                         resolves_to(Init, Target).
+```
+
+**Selectors lower to query bodies.** An AST-shape `source_match` compiles to a
+conjunction of `child` / `kind` / `prop_name` / `str_lit` / `resolves_to` atoms — and
+the **holes mostly vanish**, because a conjunctive query constrains only what it
+_mentions_: `CLASS_REST`, `ANYTHING`, `STMT_LIST` are just unmentioned structure.
+(Ordered/positional holes — "`open` before `close`", "a run of statements" — need
+recursion or sibling-order atoms, and are T-variant anyway.)
+
+**Variable scoping — the resolved form of "don't apply/rename independently":**
+
+- _Global symbols_ = the named spec entities (each target + shared anchor). A symbol
+  used in two selectors is the **same** logic variable ⇒ same source binding. That is
+  the cross-reference; `@Name` is just reusing a name — one global renaming for named
+  things, no post-hoc node-identity join.
+- _Clause-local holes_ = pattern-internal throwaways (a param, an `EXPR`), standardized
+  apart per selector so unrelated functions' `n`s do not collide.
+
+**Solve / read-back.** Evaluate once. Per target symbol: exactly one binding → pinned;
+zero → `no-match`; ≥2 → `ambiguous` (categoricity is just _counting_ answer bindings, no
+full-solution enumeration). `all_different(targets)` is a rule
+`dup(A, B) :- claims(A, N), claims(B, N), A < B.` → `duplicate-claim`. Translate-out =
+answer tuple per distinguished variable → claim node → module.
+
+**Engine.** In-process Rust Datalog — **Ascent** or **Crepe** (rules compile to Rust);
+**Soufflé** for the fastest mature out-of-process engine; **Differential Dataflow /
+DDlog** if we later want **incremental** re-evaluation (attractive for the interactive
+`stabilize` loop: edit one selector, re-check instantly).
+
+**Caveats.** Pure positive Datalog needs care for closed-world / counting anchors ("the
+class with _exactly_ these members"; "the _only_ class with method m" as a writable
+anchor) — stratified negation / aggregation; categoricity as a _check_ is plain
+counting. Variable-length holes need recursion. Most cases — literal + `resolves_to`
+anchors — are plain positive CQ. New code is the AST→atoms lowering (replacing the
+matcher's _search_; we keep the lowering) plus the EDB extractor.
+
 ## Scale and performance
 
-One _conceptual_ CSP, but it **decomposes by connected components**: a selector with no
-cross-references is a size-1 component, solved by the current direct
-match/lookup; only cross-referencing clusters need a joint solve, and those are small.
-Rare-literal anchors prune variable domains to near-singletons (the same pruning that
-makes today's matcher fast), so subgraph-match NP-hardness is defanged in practice.
+The problem **decomposes by connected components**: a selector that shares no symbol
+with any other is an independent subquery whose rare-literal anchors prune it to
+near-singleton — so the common single-match case is as cheap as today's matcher, and
+only the small cross-reference clusters need a genuine joint solve. With the Datalog
+back-end this falls out of indexing + selectivity-ordered semi-naive evaluation rather
+than hand-rolled propagation.
 
 Tooling payoff: have the solver **report, per target, which relations forced
 uniqueness, tagged invariant/variant**. Then `selector-debt` can auto-flag "unique only
@@ -168,9 +236,10 @@ F12) and of the skip-with-reason ask (F5).
     separately-pinned `EBt` (or one edge further, to the reader of the
     `meetingRecordingTranscriptionProviderParamId` member).
   - the 12 `__decorate` copies (**provably un-pinnable locally** — identical
-    templates): "the helper `h` in `h(_, @CalendarViewAccessor.prototype,
-"clearDayStartEndTimeConfig")`" — a `decorates` edge to an already-pinned class
-    plus a method literal. The use-site disambiguates the copy.
+    templates): the helper `h` in the call `h(_, @CalendarViewAccessor.prototype,
+"clearDayStartEndTimeConfig")` — generic call/arg/member atoms plus
+    `resolves_to` of the 2nd argument's base to `@CalendarViewAccessor` and a method
+    literal. The use-site disambiguates the copy.
   - `let HI = UJ`: `alias(HI, @NavigationStackItemAccessor)`.
 - **Residual true debt**: only when no invariant label is reachable from the target
   along any invariant edge.
@@ -181,8 +250,8 @@ become roughly 5.
 
 ## Incremental path
 
-1. **Named cross-reference anchors** (MVP): let an anchor be `@Name` plus one of a
-   small edge set (`calls`, `alias`, `decorates`, `member_access`). A bounded
+1. **Named cross-reference anchors** (MVP): let an anchor be `@Name` joined through
+   `resolves_to` (directly, or via the derived `calls` / `alias` patterns). A bounded
    extension of today's matcher — it already binds `target_binding` within a window;
    now an anchor can be a name resolved elsewhere. This alone turns metaNode's 18 debt
    into ~5 and removes the neighbor-borrow temptation.
@@ -193,14 +262,45 @@ become roughly 5.
 3. **Full relational templates**: arbitrary conjunctive queries over the invariant
    signature; whole-spec homomorphism as the limit.
 
+## Bootstrapping prototype
+
+Goal: a prototype that re-identifies the symbols the **current** Tana spec identifies,
+end to end through the new engine — then ratchet selector quality up without touching
+the engine.
+
+1. **Name-pin bootstrap.** Add a `minified_name(binding, "EBt")` EDB relation and lower
+   every current spec entry to the trivial rule
+   `target_X(B) :- minified_name(B, "<current minified name>")`. This reproduces today's
+   name-pin resolution exactly, through the Datalog path — exercising the EDB extractor,
+   lowering, solve, and read-back against real Tana before any structural matching
+   exists.
+2. **Equivalence gate.** Assert the prototype's per-target bindings equal the current
+   debundler's resolution for the whole chunk (a diff harness). That is the regression
+   oracle for everything after.
+3. **Swap name pins for structural / relational queries**, selector by selector, keeping
+   the gate green: first local AST-shape (`str_lit` identity anchors), then `@Name` +
+   `resolves_to` / `calls` / `alias` for the cross-ref cases (the metaNode debt).
+   `minified_name` atoms stay as the honest-debt fallback for the genuinely anchorless.
+4. **Drop `minified_name`** once no selector references it — at which point the spec is
+   fully expressed in the T-invariant signature and the two-bundle-version
+   forward-compat scorecard becomes meaningful.
+
+First cut: a standalone PoC (its own crate under `devinfra/js/debundle/x/`) that reads
+the chunk + the existing `owner_graph.json`, emits EDB facts, runs a handful of rules
+(name-pin for most, the three metaNode cross-ref cases as structural), and prints
+per-target bindings + categoricity — enough to validate the model on real Tana without
+touching the production pipeline.
+
 ## Open questions
 
-- **Relation set to expose first** — `calls` / `alias` / `decorates` / `member_access`
-  cover the pass's cases; `def_use` and `imports/exports` are the obvious next.
-- **Alpha-consistency across cross-refs** — within one pattern, co-referring
-  identifier holes must back the same source-identifier-class; across a cross-ref the
-  join should be by **resolved node identity** (`@Name`'s target), not by name, so two
-  patterns alpha-rename independently.
+- **Derived predicates to ship first** — `calls` and `alias` (both over `resolves_to`)
+  cover the pass's cases; a decorator-application pattern and `imports`/`exports` are
+  the obvious next. `resolves_to` itself is the only genuinely new EDB relation.
+- **Scoping** (resolved — see Implementation): named spec symbols are global logic
+  variables (shared by name ⇒ same source binding, which _is_ the cross-reference);
+  pattern-internal holes are clause-local, standardized apart. Open sub-question: how
+  the surface syntax distinguishes "this `@Name` is the global entity" from a
+  clause-local hole that happens to share a spelling.
 - **Cross-module references** — a target in module A anchored on a binding owned by
   module B is fine: it is the same `G`. Worth confirming the owner-graph/module
   assignment stays consistent when a selector reaches across a module boundary.
