@@ -1,7 +1,7 @@
 # Claude Code web profile for Haku, the personal background agent.
 #
 # Selected via DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml
-# (with DUCKTAPE_CLAUDE_HOOK_IMPL=rust and SOPS_AGE_KEY=<haku age key>).
+# (with SOPS_AGE_KEY=<haku age key>).
 #
 # Models devinfra/claude/claude_hook/profiles/web/profile.yaml. Deviations:
 #   - K8S_* overrides so kubeconfig.py materializes Haku's kubeconfig (the JWT in
@@ -23,17 +23,14 @@ env_exports: |
   export K8S_NAMESPACE=haku-sandbox
 
 background_commands:
-  # Materialize ~/.kube/config from the SOPS-encrypted haku JWT (decrypted with
-  # SOPS_AGE_KEY=haku). after_env so the K8S_* exports above are in scope.
-  - name: kubeconfig
-    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
-    timeout: 30
-    after_env: true
-  # Pre-clone Haku's state repo into ./state and write ~/.netrc, so the agent
-  # starts with its memory ready and git needs no inline creds. After kubeconfig.
-  - name: clone haku-state
-    command: bash "$CLAUDE_PROJECT_DIR/haku/claude_web_env/clone-state.sh"
-    timeout: 60
+  # One command does the whole home bootstrap: materialize ~/.kube/config from
+  # the SOPS-encrypted haku JWT (the single place kubeconfig is built), then
+  # write ~/.netrc and clone haku-state into ~/haku-state — so the agent starts
+  # with cluster access and its memory ready, and git needs no inline creds.
+  # after_env so the K8S_* exports above are in scope.
+  - name: bootstrap
+    command: bash "$CLAUDE_PROJECT_DIR/haku/claude_web_env/bootstrap.sh"
+    timeout: 90
     after_env: true
   - name: creds banner
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"

@@ -4,7 +4,6 @@
 # Wire it as the web environment's setup script:
 #   bash haku/claude_web_env/setup.sh
 # paired with these environment settings:
-#   DUCKTAPE_CLAUDE_HOOK_IMPL=rust
 #   DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml
 #   SOPS_AGE_KEY=<the haku age key from secrets/haku-age-key.sops.yaml>
 #
