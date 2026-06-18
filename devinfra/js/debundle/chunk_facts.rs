@@ -11,22 +11,23 @@
 //! The matcher (`source_match`) is the fidelity source of truth for which
 //! children matter and in what order; this extractor mirrors those structural
 //! decisions, and the corpus differential is what proves the mirror is faithful.
-//! Coverage grows construct by construct until the corpus extracts with zero
-//! `Unsupported`. It now projects 100% of the `tana/re` index chunk's top-level
-//! statements and ~99.7%+ of other measured chunks (declarations, function and
-//! class bodies, control flow, calls/members, objects, assignments, operators,
-//! destructuring patterns, templates, module imports/exports); a few edge-case
-//! stragglers (unusual assignment targets, getter/setter object props) still
-//! error loudly until modeled.
+//! Coverage grew construct by construct until the corpus extracts with zero
+//! `Unsupported`: it now projects **100%** of the top-level statements of every
+//! measured `tana/re` chunk (index, ReactGraph, Calendar, VoiceChatModal —
+//! declarations, function/class bodies, control flow, calls/members, objects,
+//! assignments, operators, destructuring patterns, templates, module
+//! imports/exports). Any not-yet-modeled construct (e.g. TS-only nodes) still
+//! errors loudly rather than projecting silently-incomplete facts.
 
 use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    AssignTarget, BlockStmt, BlockStmtOrExpr, Callee, Class, ClassMember, Decl, DefaultDecl, Expr,
-    ExprOrSpread, ForHead, Function, ImportSpecifier, Lit, MemberExpr, MemberProp, Module,
-    ModuleDecl, ModuleItem, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName,
-    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, VarDecl, VarDeclOrExpr, VarDeclarator,
+    ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
+    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
+    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, OptChainBase,
+    ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp,
+    VarDecl, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -525,30 +526,8 @@ impl Extractor {
                 self.facts.ident_name.push((id, binding.id.sym.to_string()));
                 Ok(id)
             }
-            Pat::Array(array) => {
-                let id = self.node("ArrayPat");
-                for (index, elem) in array.elems.iter().enumerate() {
-                    match elem {
-                        Some(elem) => {
-                            let elem = self.pat(elem)?;
-                            self.facts.child.push((id, index as u32, elem));
-                        }
-                        None => {
-                            let elision = self.node("Elision");
-                            self.facts.child.push((id, index as u32, elision));
-                        }
-                    }
-                }
-                Ok(id)
-            }
-            Pat::Object(object) => {
-                let id = self.node("ObjectPat");
-                for (index, prop) in object.props.iter().enumerate() {
-                    let prop = self.object_pat_prop(prop)?;
-                    self.facts.child.push((id, index as u32, prop));
-                }
-                Ok(id)
-            }
+            Pat::Array(array) => self.array_pat(array),
+            Pat::Object(object) => self.object_pat(object),
             Pat::Rest(rest) => {
                 let id = self.node("RestPat");
                 let arg = self.pat(&rest.arg)?;
@@ -566,6 +545,32 @@ impl Extractor {
             Pat::Expr(expr) => self.expr(expr),
             _ => unsupported("pat"),
         }
+    }
+
+    fn array_pat(&mut self, array: &ArrayPat) -> Result<NodeId, Unsupported> {
+        let id = self.node("ArrayPat");
+        for (index, elem) in array.elems.iter().enumerate() {
+            match elem {
+                Some(elem) => {
+                    let elem = self.pat(elem)?;
+                    self.facts.child.push((id, index as u32, elem));
+                }
+                None => {
+                    let elision = self.node("Elision");
+                    self.facts.child.push((id, index as u32, elision));
+                }
+            }
+        }
+        Ok(id)
+    }
+
+    fn object_pat(&mut self, object: &ObjectPat) -> Result<NodeId, Unsupported> {
+        let id = self.node("ObjectPat");
+        for (index, prop) in object.props.iter().enumerate() {
+            let prop = self.object_pat_prop(prop)?;
+            self.facts.child.push((id, index as u32, prop));
+        }
+        Ok(id)
     }
 
     fn object_pat_prop(&mut self, prop: &ObjectPatProp) -> Result<NodeId, Unsupported> {
@@ -851,7 +856,35 @@ impl Extractor {
                     self.facts.child.push((id, 1, function));
                     Ok(id)
                 }
-                _ => unsupported("object: prop"),
+                Prop::Getter(getter) => {
+                    let id = self.node("Getter");
+                    let key = self.prop_key(&getter.key)?;
+                    self.facts.child.push((id, 0, key));
+                    if let Some(body) = &getter.body {
+                        let body = self.block(body)?;
+                        self.facts.child.push((id, 1, body));
+                    }
+                    Ok(id)
+                }
+                Prop::Setter(setter) => {
+                    let id = self.node("Setter");
+                    let key = self.prop_key(&setter.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let param = self.pat(&setter.param)?;
+                    self.facts.child.push((id, 1, param));
+                    if let Some(body) = &setter.body {
+                        let body = self.block(body)?;
+                        self.facts.child.push((id, 2, body));
+                    }
+                    Ok(id)
+                }
+                Prop::Assign(assign) => {
+                    let id = self.node("AssignProp");
+                    self.facts.ident_name.push((id, assign.key.sym.to_string()));
+                    let value = self.expr(&assign.value)?;
+                    self.facts.child.push((id, 0, value));
+                    Ok(id)
+                }
             },
         }
     }
@@ -864,6 +897,8 @@ impl Extractor {
                 Ok(id)
             }
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => self.member(member),
+            AssignTarget::Pat(AssignTargetPat::Array(array)) => self.array_pat(array),
+            AssignTarget::Pat(AssignTargetPat::Object(object)) => self.object_pat(object),
             _ => unsupported("assign: target"),
         }
     }
