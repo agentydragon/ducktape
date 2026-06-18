@@ -697,15 +697,26 @@ agreement with production**. Only 19 multi-statement and 6 unparseable-standalon
 skipped; fail-closed now fires only on genuinely malformed input (a misplaced run hole, a malformed
 predicate).
 
-Remaining toward the full end-to-end gate: (a) **multi-statement selectors** (the 19 with
-`target_statements` — a statement-run match, not single-statement); (b) **binding-group** selectors
-(sugar the harness does not yet expand) and the 6 unparseable-standalone needles; (c) broaden the
-differential — more subjects/chunks (the harness caps subjects because the production matcher
-re-parses per call); (d) **resolver-level wiring** (`DatalogResolver` returning the claimed binding)
-so the differential runs through the real resolution path, not just the matcher. Still-latent and
-differential-clean so far (so not yet exercised by the corpus): alpha shadowing (whole-pattern
-bijection has held over 172k pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same
-subtree, currently treated as anonymous match-any). Each remains differential-gated.
+**Landed (resolver-level wiring — the end-to-end path):** `source_match::DatalogResolver` implements
+the `SelectorResolver` trait using the fact matcher as the per-statement match oracle and reusing
+the **same** production binding-extraction (`declared_bindings`, `selector_binding_location`) that
+`AstWildcardResolver` uses — only the match decision is swapped, so resolver parity follows from the
+proven matcher parity by construction. It resolves member selectors (returning the claimed binding
+name) and anonymous-statement groups; `source_match_test` proves via
+`DifferentialResolver<AstWildcard, Datalog>` that it returns the same claim as production (e.g.
+`function f(){…}` → owner `alpha`) and is differential-silent. Fail-closed (an honest error, never a
+wrong claim) on the paths it does not yet mirror: var-declarator / declarator-hole member targets
+(production routes those through per-declarator alignment), binding groups, and multi-statement
+needles.
+
+Remaining toward the full end-to-end gate: (a) run the **resolver** differential corpus-wide
+(extend `corpus_match_differential` to compare `DatalogResolver` vs `AstWildcardResolver` through
+`DifferentialResolver`, support-gated like the matcher run); (b) the **var-declarator / binding-group
+/ multi-statement** resolution paths the resolver currently fail-closes; (c) broaden subjects/chunks
+(the harness caps subjects because the production matcher re-parses per call). Still-latent and
+differential-clean so far (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection
+has held over 172k pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently
+treated as anonymous match-any). Each remains differential-gated.
 
 ### What the matcher cannot do that the query model can
 
