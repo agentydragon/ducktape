@@ -12,6 +12,20 @@ the minimizer therefore either skips or pins by borrowing an adjacent neighbor.
 Notation: `@Name` means "the binding/node pinned elsewhere in the spec as `Name`"
 — a cross-reference to another selector's target.
 
+## Goal
+
+Replace the hand-rolled JS↔JS template matcher with a Datalog-based selector resolver that
+resolves every selector the `tana/re` spec depends on, over an explicit relational model of the
+program (owner graph + AST facts) rather than ad-hoc AST walking. Parity must be **proven, not
+asserted**: a corpus-wide differential against the current matcher reaches zero disagreements, and
+the lowering is **fail-closed** — each construct compiles to atoms provably faithful to the
+matcher's semantics, or it errors, never silently under-constraining. The design must stay
+**principled** — one general, faithful encoding per selector kind and hole, with no per-selector
+special cases, silent fallbacks, or hacks to force a hard construct through. If any construct, or
+the model itself, turns out not to admit such a faithful, principled encoding, we **abort and
+rethink the design** rather than push on with ugly hacks — an honest dead end beats a matcher we
+cannot trust.
+
 ## Problem: the only join we have is adjacency
 
 Today a selector is a single **contiguous AST window** matched as a tree-with-holes,
