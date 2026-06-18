@@ -18,8 +18,8 @@
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    Callee, Decl, Expr, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, Pat, Stmt,
-    VarDeclarator,
+    BlockStmt, Callee, Decl, Expr, Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl,
+    ModuleItem, Pat, Stmt, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -95,6 +95,14 @@ impl Extractor {
                 self.facts.child.push((id, 0, inner));
                 Ok(id)
             }
+            Stmt::Return(ret) => {
+                let id = self.node("Return");
+                if let Some(arg) = &ret.arg {
+                    let arg = self.expr(arg)?;
+                    self.facts.child.push((id, 0, arg));
+                }
+                Ok(id)
+            }
             _ => unsupported("stmt"),
         }
     }
@@ -109,6 +117,17 @@ impl Extractor {
                 }
                 Ok(id)
             }
+            Decl::Fn(fn_decl) => {
+                let id = self.node("FnDecl");
+                let name = self.node("Ident");
+                self.facts
+                    .ident_name
+                    .push((name, fn_decl.ident.sym.to_string()));
+                self.facts.child.push((id, 0, name));
+                let function = self.function(&fn_decl.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
             _ => unsupported("decl"),
         }
     }
@@ -120,6 +139,30 @@ impl Extractor {
         if let Some(init) = &declarator.init {
             let init = self.expr(init)?;
             self.facts.child.push((id, 1, init));
+        }
+        Ok(id)
+    }
+
+    fn function(&mut self, function: &Function) -> Result<NodeId, Unsupported> {
+        let id = self.node("Function");
+        for (index, param) in function.params.iter().enumerate() {
+            let pat = self.pat(&param.pat)?;
+            self.facts.child.push((id, index as u32, pat));
+        }
+        if let Some(body) = &function.body {
+            let block = self.block(body)?;
+            self.facts
+                .child
+                .push((id, function.params.len() as u32, block));
+        }
+        Ok(id)
+    }
+
+    fn block(&mut self, block: &BlockStmt) -> Result<NodeId, Unsupported> {
+        let id = self.node("Block");
+        for (index, stmt) in block.stmts.iter().enumerate() {
+            let stmt = self.stmt(stmt)?;
+            self.facts.child.push((id, index as u32, stmt));
         }
         Ok(id)
     }
@@ -278,6 +321,34 @@ mod tests {
         // One top-level statement, owner ordinal 0.
         assert_eq!(facts.top_level.len(), 1);
         assert_eq!(facts.top_level[0].1, 0);
+    }
+
+    #[test]
+    fn extracts_function_declaration_body() {
+        // The bare-delegator shape — the motivating `isMeetingTranscriptionProvider`
+        // example: a function whose only identity is the call in its body.
+        let facts = extract("function f(x) { return g(x); }").expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        for name in ["f", "x", "g"] {
+            assert!(idents.contains(name), "ident {name} present: {idents:?}");
+        }
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "FnDecl",
+            "Function",
+            "Block",
+            "Return",
+            "Call",
+            "Ident",
+            "BindingIdent",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        assert_eq!(facts.top_level.len(), 1);
     }
 
     #[test]
