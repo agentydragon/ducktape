@@ -12,20 +12,21 @@
 //! children matter and in what order; this extractor mirrors those structural
 //! decisions, and the corpus differential is what proves the mirror is faithful.
 //! Coverage grows construct by construct until the corpus extracts with zero
-//! `Unsupported`. It currently projects ~99% of the `tana/re` index chunk's
-//! top-level statements (declarations, function/class bodies, calls, members,
-//! objects, assignments, common operators); the long tail (a few statement and
-//! literal kinds, module imports/default-exports) still errors loudly until
-//! modeled.
+//! `Unsupported`. It now projects 100% of the `tana/re` index chunk's top-level
+//! statements and ~99.7%+ of other measured chunks (declarations, function and
+//! class bodies, control flow, calls/members, objects, assignments, operators,
+//! destructuring patterns, templates, module imports/exports); a few edge-case
+//! stragglers (unusual assignment targets, getter/setter object props) still
+//! error loudly until modeled.
 
 use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    AssignTarget, BlockStmt, BlockStmtOrExpr, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread,
-    ForHead, Function, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPatProp,
-    OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt,
-    SuperProp, VarDecl, VarDeclOrExpr, VarDeclarator,
+    AssignTarget, BlockStmt, BlockStmtOrExpr, Callee, Class, ClassMember, Decl, DefaultDecl, Expr,
+    ExprOrSpread, ForHead, Function, ImportSpecifier, Lit, MemberExpr, MemberProp, Module,
+    ModuleDecl, ModuleItem, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName,
+    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, VarDecl, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -109,16 +110,82 @@ impl Extractor {
     fn module_item(&mut self, item: &ModuleItem, ordinal: usize) -> Result<NodeId, Unsupported> {
         let id = match item {
             ModuleItem::Stmt(stmt) => self.stmt(stmt)?,
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-                let id = self.node("ExportDecl");
-                let inner = self.decl(&export.decl)?;
-                self.facts.child.push((id, 0, inner));
-                id
-            }
-            ModuleItem::ModuleDecl(_) => return unsupported("module_item: module_decl"),
+            ModuleItem::ModuleDecl(decl) => self.module_decl(decl)?,
         };
         self.facts.top_level.push((id, ordinal));
         Ok(id)
+    }
+
+    fn module_decl(&mut self, decl: &ModuleDecl) -> Result<NodeId, Unsupported> {
+        match decl {
+            ModuleDecl::ExportDecl(export) => {
+                let id = self.node("ExportDecl");
+                let inner = self.decl(&export.decl)?;
+                self.facts.child.push((id, 0, inner));
+                Ok(id)
+            }
+            ModuleDecl::Import(import) => {
+                let id = self.node("Import");
+                let src = self.node("StrLit");
+                self.facts
+                    .str_lit
+                    .push((src, js_ast::str_value(&import.src)));
+                self.facts.child.push((id, 0, src));
+                for (index, spec) in import.specifiers.iter().enumerate() {
+                    let local = match spec {
+                        ImportSpecifier::Named(named) => &named.local,
+                        ImportSpecifier::Default(default) => &default.local,
+                        ImportSpecifier::Namespace(namespace) => &namespace.local,
+                    };
+                    let spec_id = self.node("ImportSpecifier");
+                    self.facts.ident_name.push((spec_id, local.sym.to_string()));
+                    self.facts.child.push((id, (index + 1) as u32, spec_id));
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportDefaultExpr(export) => {
+                let id = self.node("ExportDefault");
+                let expr = self.expr(&export.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
+            ModuleDecl::ExportDefaultDecl(export) => {
+                let id = self.node("ExportDefaultDecl");
+                match &export.decl {
+                    DefaultDecl::Class(class_expr) => {
+                        let class = self.class_node(&class_expr.class)?;
+                        self.facts.child.push((id, 0, class));
+                    }
+                    DefaultDecl::Fn(fn_expr) => {
+                        let function = self.function(&fn_expr.function)?;
+                        self.facts.child.push((id, 0, function));
+                    }
+                    DefaultDecl::TsInterfaceDecl(_) => {
+                        return unsupported("export default: ts interface");
+                    }
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportNamed(export) => {
+                let id = self.node("ExportNamed");
+                if let Some(src) = &export.src {
+                    let src_id = self.node("StrLit");
+                    self.facts.str_lit.push((src_id, js_ast::str_value(src)));
+                    self.facts.child.push((id, 0, src_id));
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportAll(export) => {
+                let id = self.node("ExportAll");
+                let src = self.node("StrLit");
+                self.facts
+                    .str_lit
+                    .push((src, js_ast::str_value(&export.src)));
+                self.facts.child.push((id, 0, src));
+                Ok(id)
+            }
+            _ => unsupported("module_decl"),
+        }
     }
 
     fn stmt(&mut self, stmt: &Stmt) -> Result<NodeId, Unsupported> {
@@ -1159,6 +1226,25 @@ mod tests {
                 "kind {expected} present: {kinds:?}"
             );
         }
+    }
+
+    #[test]
+    fn extracts_module_imports_and_default_export() {
+        let facts = extract("import { a, b } from \"m\"; export default function () {}")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Import", "ImportSpecifier", "ExportDefaultDecl", "Function"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        let imported_module = facts.str_lit.iter().any(|(_, s)| s == "m");
+        assert!(
+            imported_module,
+            "import source recorded: {:?}",
+            facts.str_lit
+        );
     }
 
     #[test]
