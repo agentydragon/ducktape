@@ -20,7 +20,10 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use source_match::{AstWildcardResolver, DatalogResolver, SelectorResolver};
+use source_match::{
+    AstWildcardResolver, DatalogResolver, SelectorResolver,
+    binding_group_anonymous_statement_selector, binding_group_member_selectors,
+};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{Module, ModuleItem};
@@ -55,10 +58,24 @@ struct Selectors {
 fn load_selectors(specs_root: &Path) -> Result<Selectors> {
     let mut selectors = Selectors::default();
     for path in spec_modules::collect_module_files(specs_root)? {
+        let request_id = spec_modules::module_path_from_file(&path, specs_root);
         let claims = spec_modules::read_module_claims(&path)
             .with_context(|| format!("reading claims from {}", path.display()))?;
         selectors.members.extend(claims.member_selectors);
         selectors.anonymous.extend(claims.anonymous_selectors);
+        // Binding groups are sugar for several member selectors (one per
+        // exported target). Expand them exactly as the run pipeline does so they
+        // are measured too; a target_statements group is a multi-statement
+        // anonymous selector instead.
+        for group in &claims.binding_groups {
+            if let Some(selector) = binding_group_anonymous_statement_selector(group) {
+                selectors.anonymous.insert(selector);
+            } else if let Ok(members) = binding_group_member_selectors(&request_id, group) {
+                selectors
+                    .members
+                    .extend(members.into_iter().map(|member| member.selector));
+            }
+        }
     }
     Ok(selectors)
 }
