@@ -676,10 +676,27 @@ earlier expression-only rule would have forced into one alpha binding and wrongl
 differential now spans 28 cases. _Anonymous match-any only; cross-occurrence equality of **named**
 single-node holes (`EXPR_x`) is the deferred equality-hole rung._
 
-Remaining rungs, each differential-gated: (1) alpha via scope facts (shadowing); (2) named
-single-node / list-hole **equality** (`EXPR_x` repeated ⇒ same subtree — a shared variable);
-(3) resolver-level wiring (`DatalogResolver` returning the claimed binding) + the **corpus-wide**
-differential — the gate the goal names.
+**Landed (the corpus-wide differential harness — the gate):** `corpus_match_differential` (a
+`rust_binary`, run locally since ducktape CI cannot read the private gaffer corpus) loads every
+`source_match` selector from a spec `modules/` tree (via `spec_modules`) and, for each top-level
+statement of one or more real chunks, compares `selector_match::matches` against
+`source_match::needle_matches`. First run over the `78d928dca7` spec (4327 selectors) × 120
+ReactGraph statements = **505,080 pairs** surfaced exactly **one** disagreement — and it was a real
+fidelity bug, not a matcher bug: `chunk_facts` dropped the `var`/`let`/`const` declaration keyword,
+so a `let` selector matched a `const` of the same shape. Recording the keyword as an operator-class
+label drove the differential to **0 disagreements** over those 505k pairs. **This is the gate
+working as designed** — proven, not asserted, and it found a gap the 28 hand-picked cases did not.
+Of the 4327 selectors, 4209 are compared and **93 are fail-closed/delegated** (the remaining
+unsupported constructs — named-hole equality, the regex predicate, …); 0 string-wildcard and 19
+multi-statement selectors are skipped.
+
+Remaining toward a fully-green corpus gate: (a) broaden the differential — more subjects, more
+chunks, and binding-group expansion (the harness caps subjects because the production matcher
+re-parses per call); (b) shrink the **93 fail-closed** selectors via the rungs below; each is
+differential-gated. The rungs: (1) alpha via scope facts (shadowing); (2) named single-node /
+list-hole **equality** (`EXPR_x` repeated ⇒ same subtree — a shared variable); (3) resolver-level
+wiring (`DatalogResolver` returning the claimed binding) so the differential runs through the real
+resolution path, not just the matcher.
 
 ### What the matcher cannot do that the query model can
 

@@ -27,7 +27,7 @@ use swc_ecma_ast::{
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
     MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, OptChainBase,
     ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp,
-    VarDecl, VarDeclOrExpr, VarDeclarator,
+    VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -50,7 +50,9 @@ pub struct ChunkFacts {
     pub ident_name: Vec<(NodeId, String)>,
     /// member / property / method name (non-computed).
     pub prop_name: Vec<(NodeId, String)>,
-    /// operator token for `Bin` / `Unary` / `Update` / `Assign` nodes.
+    /// distinguishing keyword/operator token: the operator for `Bin` / `Unary`
+    /// / `Update` / `Assign`, and the declaration keyword (`var`/`let`/`const`)
+    /// for `VarDecl` — both are exact labels the matcher compares.
     pub operator: Vec<(NodeId, String)>,
     /// regex literal -> (pattern, flags), both T-invariant labels.
     pub regex: Vec<(NodeId, String, String)>,
@@ -368,6 +370,14 @@ impl Extractor {
 
     fn var_decl(&mut self, var: &VarDecl) -> Result<NodeId, Unsupported> {
         let id = self.node("VarDecl");
+        // The declaration keyword distinguishes `let`/`const`/`var` — a label
+        // the matcher compares, so a `let` selector cannot match a `const`.
+        let keyword = match var.kind {
+            VarDeclKind::Var => "var",
+            VarDeclKind::Let => "let",
+            VarDeclKind::Const => "const",
+        };
+        self.facts.operator.push((id, keyword.to_string()));
         for (index, declarator) in var.decls.iter().enumerate() {
             let d = self.var_declarator(declarator)?;
             self.facts.child.push((id, index as u32, d));
@@ -1167,8 +1177,14 @@ mod tests {
                 "kind {expected} present: {kinds:?}"
             );
         }
+        // The `const` declaration keyword is recorded as an operator-class label
+        // (so a `let` selector cannot match a `const`), then the binary `+`.
         let operators: Vec<&str> = facts.operator.iter().map(|(_, s)| s.as_str()).collect();
-        assert_eq!(operators, vec!["+"], "binary operator token");
+        assert_eq!(
+            operators,
+            vec!["const", "+"],
+            "decl keyword then binary operator"
+        );
         let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
         for name in ["a", "b", "c", "D", "e", "f"] {
             assert!(idents.contains(name), "ident {name} present: {idents:?}");

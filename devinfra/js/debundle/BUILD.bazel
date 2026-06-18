@@ -1142,3 +1142,24 @@ rust_binary(
         ":js_ast",
     ],
 )
+
+# The corpus-wide matcher differential gate: compare the fact matcher against
+# the production matcher over every source_match selector x every chunk
+# statement. Run locally against the (private) gaffer tana/re corpus; ducktape
+# CI cannot read it, so this is a measurement binary, not a checked-in test.
+rust_binary(
+    name = "corpus_match_differential",
+    srcs = ["corpus_match_differential.rs"],
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":js_ast",
+        ":selector_match",
+        ":source_match",
+        ":spec",
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
