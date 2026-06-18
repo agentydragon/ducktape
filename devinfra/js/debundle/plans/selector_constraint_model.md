@@ -539,6 +539,46 @@ Both are guarded twice: the lowering **errors** on any pattern whose faithful en
 implemented (no silent approximation), and the corpus differential flags any lowered query that
 disagrees with the matcher.
 
+**Finding (2026-06-18, probed against the matcher's `match_list_with_holes`/`place_segments` and
+the gaffer `tana/re` corpus): the two are not independent, and the dividing line is the
+_coupling_, not the hole count.** The matcher's run-hole routine does two things at once — (A)
+variable-length ordered-subsequence **placement** of the fixed segments around the holes, and (B)
+a **global bijective alpha-binding** constraint threaded through that placement (which is _why_ it
+backtracks — `place_segments` snapshots/restores `MatcherState{replacements, alpha_scopes}`). They
+encode very differently:
+
+- **(A) placement is cleanly Datalog-expressible — backtracking and all.** A list-with-holes is
+  `[hole?, seg₁, hole, …, segₖ, hole?]`; "`segᵢ` matches starting at ordinal `p`" is the
+  node-homomorphism over its elements vs `subject[p..]`, and a full match is a **chain**
+  `seg_at(1,p₁), seg_at(2,p₂), …` with `end(i) < start(i+1)` per gap-allowing hole plus the
+  anchoring equalities. Datalog evaluates the whole feasible-placement set at once, so the
+  imperative greedy+snapshot/restore search **disappears** — it was one operational strategy for a
+  relation Datalog computes set-at-a-time. **≥2 holes per list (interior segments with a free
+  start) are fine, and the corpus uses them** — `infra/sentryInit.initSentry` is
+  `[STMT_LIST, const s = …, STMT_LIST]`, `infra/android.serializeNodeForNativeBridge` is
+  `{OBJECT_PROPS, isTag: ANYTHING, OBJECT_PROPS}`. So the earlier "≤1 hole per list" intuition is
+  **empirically false**; the chain-join handles interior links regardless.
+- **(B) the alpha bijection coupled with variable placement does _not_ map onto pure set-at-a-time
+  Datalog.** Per _fixed_ placement the bijection is clean (stratified negation: reject
+  `pair(n,s₁),pair(n,s₂),s₁≠s₂` or `pair(n₁,s),pair(n₂,s),n₁≠n₂`). But which pairs a placement
+  induces depends on _where_ segments land, so a global per-placement check must carry the
+  accumulated binding map along the chain — an unbounded value: either materialize combinatorially
+  many placement-tagged binding sets, or model a "binding-map lattice" whose merge can _fail_
+  (a failing merge is not a lattice join). Both leave the fragment Ascent evaluates efficiently.
+  This is the sharpened form of the alpha-scoping risk above.
+
+**So we narrow on the coupling axis, not the hole-count axis.** In every corpus run-hole pattern
+the fixed landmarks between holes are structurally distinctive (`const s = ANYTHING && !0, …`, the
+prop name `isTag`, `return …`) and the alpha identifiers they carry are **fresh local
+declarations** or **anonymous `ANYTHING`** that never bind — no identifier's binding is decided by
+a variable-gap placement, so the bijection decomposes per-segment and stays the rung-2 conjunction.
+The principled encoding therefore lowers **placement** fully and keeps "an alpha-bound identifier
+whose binding would be decided by a variable-gap placement" **fail-closed** (loud `Unsupported`).
+The corpus-wide differential is what _proves_ the corpus never needs the forbidden coupling; if it
+ever flags a real selector that does, that is the go-back-to-the-drawing-board signal — pre-resolve
+the binding with scope facts independent of placement, or narrow the _selector_ language upstream so
+the pattern cannot be authored.
+
 ### Extracting the facts faithfully (P1 substrate)
 
 The facts above must be a faithful projection of the chunk, and fail-closed forbids silent gaps —
@@ -602,7 +642,9 @@ extension, not a drawing-board reset — but it is the fidelity-critical piece, 
 behind the differential, construct by construct, exactly as P1 coverage was.
 
 Remaining rungs, each differential-gated: (1) alpha via scope facts; (2) run/list holes as
-subsequence matches over the child-index; (3) statement-position holes; (4) resolver-level wiring
+subsequence matches over the child-index — the chain-join placement encoding, with cross-gap
+alpha-binding coupling fail-closed (see the run-hole finding under "Can the query model match every
+selector kind faithfully?"); (3) statement-position holes; (4) resolver-level wiring
 (`DatalogResolver` returning the claimed binding) + the **corpus-wide** differential — the gate the
 goal names.
 
