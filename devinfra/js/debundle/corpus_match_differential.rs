@@ -575,8 +575,243 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// One spec module's selectors, kept together (not aggregated across modules) so
+/// each can be resolved against the module's own target chunk.
+struct ModuleCase {
+    module_path: String,
+    members: Vec<AnonymousStatementSelector>,
+    anonymous: Vec<AnonymousStatementSelector>,
+    groups: Vec<(AnonymousStatementSelector, BTreeMap<String, String>)>,
+}
+
+fn module_case(path: &Path, modules_root: &Path) -> Result<ModuleCase> {
+    let module_path = spec_modules::module_path_from_file(path, modules_root);
+    let claims = spec_modules::read_module_claims(path)
+        .with_context(|| format!("reading claims from {}", path.display()))?;
+    let mut members: Vec<_> = claims.member_selectors.into_iter().collect();
+    let mut anonymous: Vec<_> = claims.anonymous_selectors.into_iter().collect();
+    let mut groups = Vec::new();
+    for group in &claims.binding_groups {
+        if let Some(selector) = binding_group_anonymous_statement_selector(group) {
+            anonymous.push(selector);
+        } else if let Ok(group_members) = binding_group_member_selectors(&module_path, group) {
+            let exports: BTreeMap<String, String> = group_members
+                .iter()
+                .filter_map(|member| {
+                    member
+                        .selector
+                        .target_binding
+                        .clone()
+                        .map(|target| (target, member.export_name.clone()))
+                })
+                .collect();
+            if let Some(first) = group_members.first() {
+                let mut selector = first.selector.clone();
+                selector.target_binding = None;
+                groups.push((selector, exports));
+            }
+            members.extend(group_members.into_iter().map(|member| member.selector));
+        }
+    }
+    Ok(ModuleCase {
+        module_path,
+        members,
+        anonymous,
+        groups,
+    })
+}
+
+/// The chunk a module was emitted from: the `<chunk>` whose prepared-chunks tree
+/// holds `<chunk>/<module-path>.js`. (`prepare_chunks` emits each debundled
+/// module under its source chunk, so the selectors' owners live in that chunk.)
+fn find_target_chunk(js_root: &Path, module_path: &str) -> Option<String> {
+    let relative = format!("{module_path}.js");
+    fs::read_dir(js_root)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .find(|entry| entry.path().join(&relative).is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+}
+
+/// A resolver disagreement (fail-closed / over-resolved / value-disagree) at a
+/// specific module selector — the per-chunk worklist / gate violations.
+struct Issue {
+    category: &'static str,
+    site: String,
+    detail: String,
+}
+
+fn classify_and_record<T: PartialEq + std::fmt::Debug>(
+    tally: &mut ResolverTally,
+    issues: &mut Vec<Issue>,
+    site: impl Fn() -> String,
+    datalog: &anyhow::Result<T>,
+    production: &anyhow::Result<T>,
+) {
+    let category = match (datalog, production) {
+        (Err(_), Ok(_)) => Some("fail-closed"),
+        (Ok(_), Err(_)) => Some("over-resolved"),
+        (Ok(d), Ok(p)) if d != p => Some("value-disagree"),
+        _ => None,
+    };
+    if let Some(category) = category {
+        issues.push(Issue {
+            category,
+            site: site(),
+            detail: format!("datalog={datalog:?} production={production:?}"),
+        });
+    }
+    classify_resolver(tally, datalog, production);
+}
+
+fn run_per_chunk(modules_root: &Path, js_root: &Path) -> Result<()> {
+    let mut by_chunk: BTreeMap<String, Vec<ModuleCase>> = BTreeMap::new();
+    let mut unmapped: Vec<String> = Vec::new();
+    let mut module_count = 0usize;
+    for path in spec_modules::collect_module_files(modules_root)? {
+        let case = module_case(&path, modules_root)?;
+        module_count += 1;
+        match find_target_chunk(js_root, &case.module_path) {
+            Some(chunk) => by_chunk.entry(chunk).or_default().push(case),
+            None => unmapped.push(case.module_path),
+        }
+    }
+
+    let mut members = ResolverTally::default();
+    let mut anonymous = ResolverTally::default();
+    let mut groups = ResolverTally::default();
+    let mut issues: Vec<Issue> = Vec::new();
+    for (chunk, cases) in &by_chunk {
+        let entry = js_root.join(chunk).join("entry.js");
+        let source = fs::read_to_string(&entry)
+            .with_context(|| format!("reading chunk entry {}", entry.display()))?;
+        let module = js_ast::parse_js_module_ast(&entry.to_string_lossy(), &source)
+            .with_context(|| format!("parsing chunk entry {}", entry.display()))?;
+        // Build the chunk's EDB once; every module of this chunk resolves against it.
+        let resolver = ChunkResolver::new(&module);
+        for case in cases {
+            for selector in &case.members {
+                classify_and_record(
+                    &mut members,
+                    &mut issues,
+                    || format!("member {} {}", case.module_path, preview(selector)),
+                    &resolver.resolve_member(&case.module_path, "export", selector),
+                    &AstWildcardResolver.resolve_member(
+                        &module,
+                        &case.module_path,
+                        "export",
+                        selector,
+                    ),
+                );
+            }
+            for selector in &case.anonymous {
+                classify_and_record(
+                    &mut anonymous,
+                    &mut issues,
+                    || format!("anonymous {} {}", case.module_path, preview(selector)),
+                    &resolver.resolve_anonymous_groups(&case.module_path, selector),
+                    &AstWildcardResolver.resolve_anonymous_groups(
+                        &module,
+                        &case.module_path,
+                        selector,
+                    ),
+                );
+            }
+            for (selector, exports) in &case.groups {
+                classify_and_record(
+                    &mut groups,
+                    &mut issues,
+                    || format!("group {} {}", case.module_path, preview(selector)),
+                    &resolver.resolve_member_group(&case.module_path, selector, exports),
+                    &AstWildcardResolver.resolve_member_group(
+                        &module,
+                        &case.module_path,
+                        selector,
+                        exports,
+                    ),
+                );
+            }
+        }
+    }
+
+    println!("per-target-chunk resolver differential");
+    println!("  modules:          {module_count}");
+    println!("  chunks touched:   {}", by_chunk.len());
+    println!(
+        "  unmapped modules (no emitted <chunk>/<path>.js): {}",
+        unmapped.len()
+    );
+    for example in unmapped.iter().take(8) {
+        println!("              e.g. {example}");
+    }
+    for (label, tally) in [
+        ("member", &members),
+        ("anonymous", &anonymous),
+        ("binding-group", &groups),
+    ] {
+        println!(
+            "  {label:<14} resolved-parity {} | reject-parity {} | fail-closed {} | over-resolved {} | value-disagree {}",
+            tally.resolved_parity,
+            tally.reject_parity,
+            tally.fail_closed,
+            tally.over_resolved,
+            tally.value_disagreements,
+        );
+    }
+    let genuine = members.value_disagreements
+        + members.over_resolved
+        + anonymous.value_disagreements
+        + anonymous.over_resolved
+        + groups.value_disagreements
+        + groups.over_resolved;
+    let fail_closed = members.fail_closed + anonymous.fail_closed + groups.fail_closed;
+    if !issues.is_empty() {
+        println!("\nissues (fail-closed / over-resolved / value-disagree):");
+        for issue in issues.iter().take(40) {
+            println!(
+                "  [{}] {}\n        {}",
+                issue.category, issue.site, issue.detail
+            );
+        }
+        if issues.len() > 40 {
+            println!("  … and {} more", issues.len() - 40);
+        }
+    }
+    if genuine == 0 && fail_closed == 0 {
+        println!("\nPER-CHUNK GATE: every selector resolves to the same owner as production. ✅");
+    } else {
+        println!(
+            "\nPER-CHUNK GATE: {genuine} genuine disagreement(s), {fail_closed} fail-closed — investigate."
+        );
+    }
+    Ok(())
+}
+
+fn preview(selector: &AnonymousStatementSelector) -> String {
+    selector
+        .match_source
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(60)
+        .collect()
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Per-target-chunk resolver differential: resolve each module's selectors
+    // against *its own* chunk (the one it was emitted from), not one fixed chunk.
+    // `PER_CHUNK_JS_ROOT` is the prepared-chunks dir (`<chunk>/entry.js` inputs,
+    // and `<chunk>/<module-path>.js` emitted outputs used to find the chunk).
+    if let Ok(js_root) = std::env::var("PER_CHUNK_JS_ROOT") {
+        let [modules_root] = args.as_slice() else {
+            bail!("usage: PER_CHUNK_JS_ROOT=<js-dir> corpus_match_differential <spec-modules-dir>");
+        };
+        return js_ast::with_swc_globals(|| {
+            run_per_chunk(Path::new(modules_root), Path::new(&js_root))
+        });
+    }
     let [specs_root, chunk_paths @ ..] = args.as_slice() else {
         bail!("usage: corpus_match_differential <spec-modules-dir> <chunk.js> [<chunk2.js> ...]");
     };
