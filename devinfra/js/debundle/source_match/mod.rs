@@ -58,6 +58,7 @@ mod holes;
 mod matcher;
 mod parse_validate;
 mod prepared_needle;
+mod resolver;
 mod string_literal_predicate;
 mod target_matching;
 mod timing;
@@ -89,6 +90,10 @@ pub use binding_resolution::{
     resolve_anonymous_statement_body_indices, resolve_member_binding, resolve_member_binding_group,
     resolve_member_binding_group_match, source_match_body_debt,
     source_match_declared_binding_names,
+};
+pub use resolver::{
+    AstWildcardResolver, DifferentialResolver, DisagreementSink, ResolverDisagreement,
+    ResolverOutcome, ResolverSite, SelectorResolver,
 };
 pub use timing::{selector_body_key, selector_key, source_match_preview};
 pub use types::{

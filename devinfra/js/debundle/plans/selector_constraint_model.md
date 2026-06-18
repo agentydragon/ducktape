@@ -345,6 +345,24 @@ matcher in `source_match/` (`binding_resolution.rs`, `matcher.rs`, `target_match
 seeded by the candidate/shape index (`selector_candidate_index.rs`, `shape_index.rs`).
 The solver replaces the matcher behind every caller.
 
+### The resolver seam (landed)
+
+The swap point is named in code: `source_match::SelectorResolver`, the trait both matchers
+implement — `(parsed chunk, JS-template selector) → unique {claimed binding | body-index
+group}`, with no-match / ambiguous as the only failure modes. `AstWildcardResolver` is today's
+hand-rolled matcher behind that trait (a thin delegation to the `binding_resolution` free
+functions); the Datalog matcher becomes the second impl.
+
+`DifferentialResolver { primary, shadow, sink }` is itself a `SelectorResolver`: it runs both,
+returns the **primary's** result unchanged, and reports every divergence to a `DisagreementSink`.
+The shadow never affects the answer, so it is safe to switch on in production — the parallel run
+is observation, not behavior. Agreement is "both resolve to the same claim, or both reject"
+(rejection text may differ; only the verdict counts) — the coarse output (the claim, never the
+internal hole bindings) is what makes the comparison clean. This is the mechanism the **Shadow**
+step below rides; **Flip** is swapping `primary`/`shadow`, and retiring the old matcher is
+dropping the `AstWildcardResolver` arm. The phase-1 `selector_solve_shadow_test` already
+demonstrates the agreement check at name-pin granularity, against `peel::resolve_binding_owners`.
+
 ### EDB from analysis the pipeline already does
 
 The pipeline already parses the chunk (`js_ast`), computes binding resolution and the
@@ -462,6 +480,83 @@ atom-producer, so a `source_match` with any hole — including ordered/positiona
 keeps resolving as an opaque shape atom. Native lowering (existential → gone, equality →
 variable, regex → filter) is opportunistic; a hole we cannot yet lower cleanly just stays
 inside an opaque shape atom, so the spec never loses expressiveness.
+
+### What the matcher cannot do that the query model can
+
+Today's matcher is single-pattern, positive, intra-statement, and per-selector independent: it
+matches one statement's JS shape in isolation, with no view of the reference graph. Six things
+out of reach today (or surviving only as brittle minified-name pins) become ordinary conjunctive
+queries once every selector shares one solve. (Predicate names below are illustrative of the
+derived-atom library — `calls`/`alias` exist; `imports`/`exports`/`extends` are the obvious next,
+per the open questions.)
+
+**1 — Anchor on a relationship, not a shape.** A bare delegator `function UBt(x){ return EBt(x) }`
+has no distinctive shape; the only handle today is the minified callee `EBt`, which dies on
+re-minification.
+
+```
+- name: isMeetingTranscriptionProvider
+  query: [{ calls: "@meetingTranscriptionRegistry" }] # the owner whose call target is that entity
+```
+
+**2 — Tie several targets together** (shared variable + automatic `all_different`). No selector
+can reference another's match today, and duplicate-claim is caught only post-hoc. `@registry` is
+the _same_ owner in every query; the consumers are pinned relative to it and forced distinct.
+
+```
+- name: registry
+  query: [{ shape: "const $self = new Map();" }]
+- name: addProvider
+  query: [{ calls: "@registry" }, { reads_member: { of: "@registry", name: "set" } }]
+- name: getProvider
+  query: [{ calls: "@registry" }, { reads_member: { of: "@registry", name: "get" } }]
+  # the solve keeps addProvider != getProvider without either naming the other
+```
+
+**3 — Negation / absence.** Positive-only matching cannot say "and lacks m" or "nothing
+references it".
+
+```
+- name: DisposableAccessor # has getName, but no dispose
+  where: ['has_method($self, "getName")', 'not has_method($self, "dispose")']
+- name: chunkEntryRoot # referenced by nothing else in the chunk
+  where: ["not resolves_to(_, $self)"]
+```
+
+**4 — Transitive closure / recursion.** The matcher has no reachability; "everything reachable"
+is inexpressible per-statement.
+
+```
+- name: meetingSubsystem # the registry plus its whole eager-use cone
+  query: [{ reachable_from: { root: "@meetingRegistry", via: eager_use } }]
+```
+
+**5 — Uniqueness / counting.** "Exactly one" today is per-selector existence over the chunk body,
+not a count predicate over the graph.
+
+```
+- name: theConfigSingleton # the ONLY exported class extending @BaseConfig
+  where: ["extends($self, @BaseConfig)", "exported($self)", "unique $self"]
+```
+
+**6 — Join identity (an AST literal) with relation (a graph edge) in one anchor.** A selector is
+shape-only or name-only today; it cannot combine "emits this literal" with "is imported by that
+module".
+
+```
+- name: DocumentAccessorFactory
+  query:
+    - shape: |
+        class $self extends ANYTHING {
+          getName() { return "DocumentAccessorFactory"; }
+        }
+    - { imported_by: "@settingsModule" } # str_lit identity AND a cross-module edge, one solve
+```
+
+Cases 1, 2, and 6 are the metaNode pins that are honest debt today — bare delegators, empty-ish
+classes, consumer clusters the matcher can reach only by minified name or a fragile body shape
+(exactly what the stabilization rubric flags). The relational model turns each into a
+re-minification-proof identity anchor.
 
 ### Rollout
 
