@@ -539,6 +539,23 @@ Both are guarded twice: the lowering **errors** on any pattern whose faithful en
 implemented (no silent approximation), and the corpus differential flags any lowered query that
 disagrees with the matcher.
 
+### Extracting the facts faithfully (P1 substrate)
+
+The facts above must be a faithful projection of the chunk, and fail-closed forbids silent gaps —
+which rules out the two convenient substrates. A `swc_ecma_visit::Visit` has default no-op
+methods, so a node type nobody overrode is **silently skipped** — the exact failure we reject. A
+generic walk over a serialized AST is not faithful-by-construction either: it reflects struct
+field layout, not source order, so it does not hand us the sibling ordering the run-hole/adjacency
+encoding needs. So the extractor is a plain recursive walk whose only catch-all is a loud
+`Unsupported { context }` error: a construct it has not modeled **crashes**, never projects to a
+silently-incomplete fact set that would match wrongly. The matcher (`AstWildcardMatcher`,
+`matcher.rs`) is the fidelity source of truth — it already encodes, per node type, which children
+matter and in what order — so the extractor mirrors those structural decisions and the corpus
+differential is what proves it did. Coverage grows construct-by-construct until the corpus
+extracts with zero `Unsupported`; until then each gap is loud and counted, not approximated. The
+top-level join to the owner graph is `js_ast::statement_ordinal_for_body_index` (owner = top-level
+statement by ordinal).
+
 ### What the matcher cannot do that the query model can
 
 Today's matcher is single-pattern, positive, intra-statement, and per-selector independent: it

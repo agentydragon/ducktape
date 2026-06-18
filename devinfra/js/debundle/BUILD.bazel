@@ -1077,3 +1077,24 @@ rust_test(
     crate = ":selector_query_examples",
     edition = "2024",
 )
+
+# P1 of the Datalog selector resolver: a faithful, fail-closed projection of a
+# parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
+# owner-ordinal join). The extractor errors loudly on any construct it has not
+# modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
+# construct-by-construct. See plans/selector_constraint_model.md.
+rust_library(
+    name = "chunk_facts",
+    srcs = ["chunk_facts.rs"],
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "chunk_facts_test",
+    crate = ":chunk_facts",
+    edition = "2024",
+)

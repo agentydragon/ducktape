@@ -1,0 +1,291 @@
+//! P1 of the Datalog selector resolver (`plans/selector_constraint_model.md`):
+//! a faithful, **fail-closed** projection of a parsed chunk into AST facts.
+//!
+//! Fail-closed by construction: the walk's only catch-all is a loud
+//! [`Unsupported`] error, so a node type it has not modeled **crashes** rather
+//! than projecting a silently-incomplete fact set — which is what would let a
+//! lowered selector query under-constrain and match the wrong owner. There is
+//! deliberately no `swc_ecma_visit::Visit` here: its default no-op methods make
+//! a forgotten node type a silent skip, the exact failure the goal forbids.
+//!
+//! The matcher (`source_match`) is the fidelity source of truth for which
+//! children matter and in what order; this extractor mirrors those structural
+//! decisions, and the corpus differential is what proves the mirror is faithful.
+//! Coverage grows construct by construct until the corpus extracts with zero
+//! `Unsupported`. This is the seed slice — it faithfully covers simple
+//! declarator / call / member / literal shapes and errors on everything else;
+//! it is intentionally not yet complete.
+
+use js_ast::statement_ordinal_for_body_index;
+use swc_ecma_ast::{
+    Callee, Decl, Expr, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, Pat, Stmt,
+    VarDeclarator,
+};
+
+pub type NodeId = u32;
+
+/// A faithful relational projection of one chunk's top-level statements. Each
+/// vector is an EDB relation the lowered selector queries join over.
+#[derive(Debug, Default)]
+pub struct ChunkFacts {
+    /// node -> syntactic kind tag.
+    pub node_kind: Vec<(NodeId, &'static str)>,
+    /// parent -> (source-order ordinal, child). The ordinal is what the
+    /// run-hole / adjacency encoding compares (`i < j`).
+    pub child: Vec<(NodeId, u32, NodeId)>,
+    /// string-literal value, unescaped via `js_ast::str_value`.
+    pub str_lit: Vec<(NodeId, String)>,
+    /// numeric-literal token, rendered faithfully (source `raw` when present).
+    pub num_lit: Vec<(NodeId, String)>,
+    pub bool_lit: Vec<(NodeId, bool)>,
+    /// identifier spelling (the `identifiers: exact` surface).
+    pub ident_name: Vec<(NodeId, String)>,
+    /// member / property / method name (non-computed).
+    pub prop_name: Vec<(NodeId, String)>,
+    /// top-level statement node -> its owner statement ordinal (owner-graph join).
+    pub top_level: Vec<(NodeId, usize)>,
+}
+
+/// A construct the extractor has not modeled yet. Loud by design — never a
+/// silent gap. `context` names where the gap is, so coverage can grow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unsupported {
+    pub context: &'static str,
+}
+
+fn unsupported<T>(context: &'static str) -> Result<T, Unsupported> {
+    Err(Unsupported { context })
+}
+
+#[derive(Default)]
+struct Extractor {
+    facts: ChunkFacts,
+    next: NodeId,
+}
+
+impl Extractor {
+    fn node(&mut self, kind: &'static str) -> NodeId {
+        let id = self.next;
+        self.next += 1;
+        self.facts.node_kind.push((id, kind));
+        id
+    }
+
+    fn module_item(&mut self, item: &ModuleItem, ordinal: usize) -> Result<NodeId, Unsupported> {
+        let id = match item {
+            ModuleItem::Stmt(stmt) => self.stmt(stmt)?,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                let id = self.node("ExportDecl");
+                let inner = self.decl(&export.decl)?;
+                self.facts.child.push((id, 0, inner));
+                id
+            }
+            ModuleItem::ModuleDecl(_) => return unsupported("module_item: module_decl"),
+        };
+        self.facts.top_level.push((id, ordinal));
+        Ok(id)
+    }
+
+    fn stmt(&mut self, stmt: &Stmt) -> Result<NodeId, Unsupported> {
+        match stmt {
+            Stmt::Decl(decl) => self.decl(decl),
+            Stmt::Expr(expr_stmt) => {
+                let id = self.node("ExprStmt");
+                let inner = self.expr(&expr_stmt.expr)?;
+                self.facts.child.push((id, 0, inner));
+                Ok(id)
+            }
+            _ => unsupported("stmt"),
+        }
+    }
+
+    fn decl(&mut self, decl: &Decl) -> Result<NodeId, Unsupported> {
+        match decl {
+            Decl::Var(var) => {
+                let id = self.node("VarDecl");
+                for (index, declarator) in var.decls.iter().enumerate() {
+                    let d = self.var_declarator(declarator)?;
+                    self.facts.child.push((id, index as u32, d));
+                }
+                Ok(id)
+            }
+            _ => unsupported("decl"),
+        }
+    }
+
+    fn var_declarator(&mut self, declarator: &VarDeclarator) -> Result<NodeId, Unsupported> {
+        let id = self.node("VarDeclarator");
+        let name = self.pat(&declarator.name)?;
+        self.facts.child.push((id, 0, name));
+        if let Some(init) = &declarator.init {
+            let init = self.expr(init)?;
+            self.facts.child.push((id, 1, init));
+        }
+        Ok(id)
+    }
+
+    fn pat(&mut self, pat: &Pat) -> Result<NodeId, Unsupported> {
+        match pat {
+            Pat::Ident(binding) => {
+                let id = self.node("BindingIdent");
+                self.facts.ident_name.push((id, binding.id.sym.to_string()));
+                Ok(id)
+            }
+            _ => unsupported("pat"),
+        }
+    }
+
+    fn expr(&mut self, expr: &Expr) -> Result<NodeId, Unsupported> {
+        match expr {
+            Expr::Ident(ident) => {
+                let id = self.node("Ident");
+                self.facts.ident_name.push((id, ident.sym.to_string()));
+                Ok(id)
+            }
+            Expr::Lit(lit) => self.lit(lit),
+            Expr::Member(member) => self.member(member),
+            Expr::Call(call) => {
+                let id = self.node("Call");
+                match &call.callee {
+                    Callee::Expr(callee) => {
+                        let callee = self.expr(callee)?;
+                        self.facts.child.push((id, 0, callee));
+                    }
+                    _ => return unsupported("callee"),
+                }
+                for (index, arg) in call.args.iter().enumerate() {
+                    if arg.spread.is_some() {
+                        return unsupported("call: spread arg");
+                    }
+                    let arg = self.expr(&arg.expr)?;
+                    self.facts.child.push((id, (index + 1) as u32, arg));
+                }
+                Ok(id)
+            }
+            // Parentheses are transparent: the matcher matches modulo grouping.
+            Expr::Paren(paren) => self.expr(&paren.expr),
+            _ => unsupported("expr"),
+        }
+    }
+
+    fn member(&mut self, member: &MemberExpr) -> Result<NodeId, Unsupported> {
+        let id = self.node("Member");
+        let obj = self.expr(&member.obj)?;
+        self.facts.child.push((id, 0, obj));
+        match &member.prop {
+            MemberProp::Ident(name) => {
+                let prop = self.node("PropName");
+                self.facts.prop_name.push((prop, name.sym.to_string()));
+                self.facts.child.push((id, 1, prop));
+            }
+            MemberProp::Computed(computed) => {
+                let computed = self.expr(&computed.expr)?;
+                self.facts.child.push((id, 1, computed));
+            }
+            MemberProp::PrivateName(_) => return unsupported("member: private name"),
+        }
+        Ok(id)
+    }
+
+    fn lit(&mut self, lit: &Lit) -> Result<NodeId, Unsupported> {
+        match lit {
+            Lit::Str(value) => {
+                let id = self.node("StrLit");
+                self.facts.str_lit.push((id, js_ast::str_value(value)));
+                Ok(id)
+            }
+            Lit::Num(number) => {
+                let id = self.node("NumLit");
+                let token = number
+                    .raw
+                    .as_ref()
+                    .map(|raw| raw.to_string())
+                    .unwrap_or_else(|| number.value.to_string());
+                self.facts.num_lit.push((id, token));
+                Ok(id)
+            }
+            Lit::Bool(boolean) => {
+                let id = self.node("BoolLit");
+                self.facts.bool_lit.push((id, boolean.value));
+                Ok(id)
+            }
+            _ => unsupported("lit"),
+        }
+    }
+}
+
+/// Project a parsed chunk's top-level statements into AST facts, or fail loudly
+/// at the first construct not yet modeled.
+pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
+    let mut extractor = Extractor::default();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        extractor.module_item(item, ordinal)?;
+    }
+    Ok(extractor.facts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn extract(src: &str) -> Result<ChunkFacts, Unsupported> {
+        js_ast::with_swc_globals(|| {
+            extract_facts(&js_ast::parse_js_module_ast("<test>", src).unwrap())
+        })
+    }
+
+    #[test]
+    fn extracts_member_call_with_string_arg_faithfully() {
+        let facts = extract("const x = foo.bar(\"hello\");").expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert!(idents.contains("x"), "declarator name present: {idents:?}");
+        assert!(idents.contains("foo"), "member object present: {idents:?}");
+
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["bar"], "member property name");
+        let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(strings, vec!["hello"], "string-literal argument value");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "VarDecl",
+            "VarDeclarator",
+            "BindingIdent",
+            "Call",
+            "Member",
+            "PropName",
+            "Ident",
+            "StrLit",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+
+        // Every child edge references a node that exists (the projection is a tree).
+        let nodes: BTreeSet<NodeId> = facts.node_kind.iter().map(|(id, _)| *id).collect();
+        for (parent, _, child) in &facts.child {
+            assert!(
+                nodes.contains(parent) && nodes.contains(child),
+                "child edge ({parent},{child}) references an unknown node",
+            );
+        }
+
+        // One top-level statement, owner ordinal 0.
+        assert_eq!(facts.top_level.len(), 1);
+        assert_eq!(facts.top_level[0].1, 0);
+    }
+
+    #[test]
+    fn unmodeled_construct_errors_loudly_not_silently() {
+        // `a + b` is a BinExpr the seed slice does not model. Fail-closed means
+        // a hard error here, never a silently-incomplete fact set that would let
+        // a query under-constrain.
+        let error = extract("const y = a + b;").unwrap_err();
+        assert_eq!(error.context, "expr");
+    }
+}
