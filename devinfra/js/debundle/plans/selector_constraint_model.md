@@ -705,9 +705,9 @@ the **same** production binding-extraction (`declared_bindings`, `selector_bindi
 proven matcher parity by construction. It resolves member selectors (returning the claimed binding
 name) and anonymous-statement groups; `source_match_test` proves via
 `DifferentialResolver<AstWildcard, Datalog>` that it returns the same claim as production (e.g.
-`function f(){…}` → owner `alpha`) and is differential-silent. Fail-closed (an honest error, never a
-wrong claim) on the paths it does not yet mirror: declarator-**hole** targets (alignment-aware
-extraction) and a var-declarator target inside a multi-statement window. **Multi-statement needles
+`function f(){…}` → owner `alpha`) and is differential-silent. **Every member-selector shape now
+resolves** (the `CLASSIFY_ONLY` shape scan reports 0 members failing closed by shape); fail-closed
+remains only for genuinely unhandled constructs, never a wrong claim. **Multi-statement needles
 are handled**: `selector_match::match_top_level_sequence` aligns the needle's statements against the
 chunk body as an ordered subsequence with module-level `STMT_LIST` holes, enumerating every
 alignment (mirrors `find_matching_body_group_alignments`); `resolve_anonymous_multi` /
@@ -721,6 +721,21 @@ production-ambiguous case into a spurious unique resolution). `source_match_test
 declarator of `const a=1, target=compute()` resolves to `target` and that the resolver detects the
 same ambiguity as production.
 
+**Declarator-hole members are handled** (the dominant `*-module_*` class —
+`const DECLARATORS_BEFORE = null, x = STR_LITERAL_MATCHING_RE(…), DECLARATORS_AFTER = null;`, alpha
+mode): `selector_match::var_declarator_alignment` returns the greedy-leftmost declarator alignment
+(needle declarator → subject declarator, `None` for a hole) under an optional alpha prebinding,
+composing the whole var-decl-statement match with production's `match_var_declarator_slice_with_alignment`.
+`resolve_declarator_hole_member` prebinds each candidate target name (so the alpha bijection pins the
+target's identity), reads `alignment[target_decl_idx]`, and takes that declarator's binding —
+mirroring `find_matching_target_var_decl_with_declarator_holes`. **Single-declarator var-decl targets
+inside a multi-statement window** are handled by `match_single_declarator_target_windows`, which
+threads one `Bindings` through each contiguous window and matches the target item per-declarator
+(mirroring `find_matching_target_binding_ranges_with_single_declarator` / `SingleDeclaratorTargetWindow`);
+a declarator-**hole** target in a window takes the general path (whole-statement match +
+`declared_bindings[idx]`), exactly as production, which does not special-case it. `source_match_test`
+proves each path resolves to the same owner as production and rejects the same ambiguities.
+
 **Landed (the resolver differential, run corpus-wide):** `corpus_match_differential` now also runs
 the full `SelectorResolver` path both ways (`DatalogResolver` vs `AstWildcardResolver`) over the same
 chunk and classifies each selector: resolved-parity (both claim the same owner), reject-parity (both
@@ -733,18 +748,38 @@ both ways (resolved-parity); the 3708 member selectors mostly reject against thi
 disagreements** (the 2 var-declarator members now resolve to the same owner both ways). The
 end-to-end resolver path is therefore demonstrated parity-clean.
 
-Re-measured (78d928dca7 vs ReactGraph): member 6873 selectors (incl. expanded binding groups) — 0
-over-resolved, 0 value disagreements, 2 residual fail-closes (declarator-hole / var-declarator-in-
-window); anonymous 619 — all resolved-parity, 0 disagreements. **0 genuine disagreements.**
+**Binding groups resolve atomically too**: `DatalogResolver::resolve_member_group` mirrors
+`resolve_member_binding_group_impl`'s three branches — single-declarator (`resolve_group_single_declarator`),
+declarator-hole (`resolve_group_declarator_holes`, one plain alignment supplies every target), and
+the general sequence path (`resolve_group_general`, one top-level alignment) — reusing the same
+primitives, so the materialize step's atomic group resolution can ride the same matcher swap.
+`source_match_test` proves a `*-module_*`-style declarator-hole group resolves both targets to the
+same owners as production, and a general multi-statement group likewise. The corpus harness now also
+runs a `resolve_member_group` differential (reconstructing each group's `target -> export` map),
+so binding groups are on the gate, not only their member expansion.
 
-Remaining: (a) the **declarator-hole** member target and a **var-declarator target inside a
-multi-statement window** (the two residual fail-closes; production uses per-declarator-range
-alignment); member resolved-parity at scale is best measured by resolving each selector
-against its _target_ chunk, which needs the spec→chunk map); (b) broaden subjects/chunks (the harness
-caps subjects because the production matcher re-parses per call). Still-latent and differential-clean (not yet
-exercised by the corpus): alpha shadowing (whole-pattern bijection has held over 250k+ pairs) and
-named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently anonymous match-any). Each
-remains differential-gated.
+Re-measured (78d928dca7 vs ReactGraph), after the declarator-hole and windowed var-decl paths
+landed: the `CLASSIFY_ONLY` shape scan over all **6873** member selectors reports **0 failing closed
+by shape** (down from 16, then 1, then 0 as the single-declarator-window, declarator-hole, and
+windowed-declarator-hole paths landed). The resolver differential over the affected shapes
+(declarator-hole + multi-statement needles) is **0 fail-closed, 0 over-resolved, 0 value
+disagreements**, with the previously-fail-closed selectors whose owners are present now resolving to
+the **same owner as production** (resolved-parity); the binding-group pass (**814** groups) is
+likewise **0 fail-closed, 0 over-resolved, 0 value disagreements**. **0 genuine disagreements.**
+
+Note: the resolver differential re-projects facts per selector (the measurement binary has no
+cross-selector fact cache), so the now-active declarator-hole/window paths — which do real per-item
+alignment work where they used to bail instantly — make the full member × subject cross-product slow;
+runs are bounded by `CORPUS_DIFF_MAX_SUBJECTS` and the `NEW_PATHS_ONLY` filter. The verdict is
+unchanged by the bound: 0 disagreements among the exercised owners, and resolver parity follows by
+construction (only the match oracle is swapped; binding extraction and categoricity are production's).
+
+Remaining: broaden subjects/chunks for wider resolved-parity coverage — member resolved-parity at
+scale is best measured by resolving each selector against its _target_ chunk (needs the spec→chunk
+map), and/or caching projected facts across selectors to lift the subject bound. Still-latent and
+differential-clean (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection has
+held over 250k+ pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently
+anonymous match-any). Each remains differential-gated.
 
 ### What the matcher cannot do that the query model can
 

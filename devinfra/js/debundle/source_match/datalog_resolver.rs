@@ -446,6 +446,224 @@ fn resolve_anonymous_multi(
     Ok(groups)
 }
 
+/// Binding-group branch 2 — a single-statement declarator-hole needle (the
+/// `*-module_*` group, e.g. tooltip's `const DECLARATORS_BEFORE = null, a = …,
+/// DECLARATORS_GAP = null, b = …, DECLARATORS_AFTER = null;`): one plain
+/// (un-prebound) declarator alignment per candidate owner yields every target's
+/// declarator at once. Mirrors `resolve_member_binding_group_with_declarator_holes`.
+fn resolve_group_declarator_holes(
+    module: &Module,
+    needle: &ModuleItem,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<ResolvedMemberBindingGroup> {
+    let needle_var = item_var_decl(needle).ok_or_else(|| {
+        anyhow::anyhow!(
+            "datalog resolver: declarator-hole group needle is not a variable declaration"
+        )
+    })?;
+    let target_locations: BTreeMap<String, (usize, usize)> = exports_by_target
+        .keys()
+        .map(|target| {
+            selector_var_declarator_binding_location(needle_var, request_id, selector, target)
+                .map(|location| (target.clone(), location))
+        })
+        .collect::<Result<_>>()?;
+    let needle_facts = item_facts(needle)
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let mode = datalog_mode(selector);
+    selector_match::var_declarator_alignment(&needle_facts, &needle_facts, mode, None)
+        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        let Some(candidate_var) = item_var_decl(item) else {
+            continue;
+        };
+        let Some(facts) = item_facts(item) else {
+            continue;
+        };
+        let Some(alignment) =
+            selector_match::var_declarator_alignment(&needle_facts, &facts, mode, None)
+                .expect("needle construct already probed as supported")
+        else {
+            continue;
+        };
+        let mut resolved = BTreeMap::new();
+        for (target, (target_decl_idx, target_binding_idx)) in &target_locations {
+            let Some(Some(candidate_decl_idx)) = alignment.get(*target_decl_idx) else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match target_binding \
+                     `{target}` was matched by a DECLARATORS hole, not a pinned declarator"
+                );
+            };
+            let Some(declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
+                bail!(
+                    "datalog resolver: target `{target}` aligned to a missing candidate declarator"
+                );
+            };
+            let Some(binding) = declared_bindings_for_var_declarator(declarator)
+                .into_iter()
+                .nth(*target_binding_idx)
+            else {
+                bail!("datalog resolver: target `{target}` binding index out of range");
+            };
+            resolved.insert(target.clone(), binding);
+        }
+        matches.push((body_idx, resolved));
+    }
+    one_group_match(matches, request_id)
+}
+
+/// Binding-group branch 1 — a single-statement single-declarator needle: match
+/// the declarator across every owner's declarators (a target inside a
+/// multi-declarator owner is found), reading each target's binding from the one
+/// matched declarator. Mirrors the single-declarator branch of
+/// `resolve_member_binding_group_impl`.
+fn resolve_group_single_declarator(
+    module: &Module,
+    needle: &ModuleItem,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<ResolvedMemberBindingGroup> {
+    let declared = declared_bindings(needle);
+    let target_binding_indices: BTreeMap<String, usize> = exports_by_target
+        .keys()
+        .map(|target| {
+            let indices: Vec<usize> = declared
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, binding)| (binding.binding_name == *target).then_some(idx))
+                .collect();
+            match indices.as_slice() {
+                [single] => Ok((target.clone(), *single)),
+                [] => bail!(
+                    "logical_module {request_id}: binding_groups[].source_match target_binding \
+                     `{target}` is not declared by the selector source"
+                ),
+                _ => bail!(
+                    "logical_module {request_id}: binding_groups[].source_match target_binding \
+                     `{target}` is ambiguous within the selector source"
+                ),
+            }
+        })
+        .collect::<Result<_>>()?;
+    let needle_facts = item_facts(needle)
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let mode = datalog_mode(selector);
+    selector_match::matches(&needle_facts, &needle_facts, mode)
+        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        let Some(candidate_var) = item_var_decl(item) else {
+            continue;
+        };
+        for declarator in &candidate_var.decls {
+            let Some(facts) = item_facts(&single_declarator_item(item, declarator)) else {
+                continue;
+            };
+            if !selector_match::matches(&needle_facts, &facts, mode)
+                .expect("needle construct already probed as supported")
+            {
+                continue;
+            }
+            let declarator_bindings = declared_bindings_for_var_declarator(declarator);
+            let mut resolved = BTreeMap::new();
+            for (target, target_binding_idx) in &target_binding_indices {
+                let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
+                    bail!("datalog resolver: target `{target}` binding index out of range");
+                };
+                resolved.insert(target.clone(), binding.clone());
+            }
+            matches.push((body_idx, resolved));
+        }
+    }
+    one_group_match(matches, request_id)
+}
+
+/// Binding-group branch 3 — a general (multi-statement or non-var) needle: a
+/// single top-level sequence alignment supplies every target's owner statement,
+/// read by declared-binding index. Mirrors the `find_matching_body_group_alignments`
+/// branch of `resolve_member_binding_group_impl`.
+fn resolve_group_general(
+    module: &Module,
+    needles: &[ModuleItem],
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<ResolvedMemberBindingGroup> {
+    let target_locations: BTreeMap<String, (usize, usize)> = exports_by_target
+        .keys()
+        .map(|target| {
+            selector_binding_location(needles, request_id, selector, target)
+                .map(|location| (target.clone(), location))
+        })
+        .collect::<Result<_>>()?;
+    let needle_facts = needles
+        .iter()
+        .map(item_facts)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let alignments = selector_match::match_top_level_sequence(
+        &needle_facts,
+        &body_item_facts(module),
+        datalog_mode(selector),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    let alignment = match alignments.as_slice() {
+        [single] => single,
+        [] => bail!(
+            "logical_module {request_id}: binding_groups[].source_match did not match any \
+             top-level declaration range"
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: binding_groups[].source_match is ambiguous — {} ranges",
+            multiple.len(),
+        ),
+    };
+    let mut resolved = BTreeMap::new();
+    for (target, (target_item_idx, target_binding_idx)) in &target_locations {
+        let Some(Some(body_idx)) = alignment.get(*target_item_idx) else {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match target_binding \
+                 `{target}` was matched by a STMT_LIST hole, not a pinned statement"
+            );
+        };
+        let Some(binding) = declared_bindings(&module.body[*body_idx])
+            .into_iter()
+            .nth(*target_binding_idx)
+        else {
+            bail!("datalog resolver: target `{target}` binding index out of range");
+        };
+        resolved.insert(target.clone(), binding);
+    }
+    Ok(ResolvedMemberBindingGroup {
+        body_idx: alignment.iter().flatten().copied().next().unwrap_or(0),
+        bindings: resolved,
+    })
+}
+
+/// Owner-level categoricity for the per-owner group branches: exactly one owner
+/// must match (production rejects zero or several).
+fn one_group_match(
+    mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)>,
+    request_id: &str,
+) -> Result<ResolvedMemberBindingGroup> {
+    match matches.len() {
+        1 => {
+            let (body_idx, bindings) = matches.remove(0);
+            Ok(ResolvedMemberBindingGroup { body_idx, bindings })
+        }
+        0 => bail!(
+            "logical_module {request_id}: binding_groups[].source_match did not match any owner"
+        ),
+        n => bail!(
+            "logical_module {request_id}: binding_groups[].source_match is ambiguous — {n} owners"
+        ),
+    }
+}
+
 impl SelectorResolver for DatalogResolver {
     fn resolve_member(
         &self,
@@ -521,12 +739,46 @@ impl SelectorResolver for DatalogResolver {
 
     fn resolve_member_group(
         &self,
-        _module: &Module,
-        _request_id: &str,
-        _selector: &AnonymousStatementSelector,
-        _exports_by_target: &BTreeMap<String, String>,
+        module: &Module,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+        exports_by_target: &BTreeMap<String, String>,
     ) -> Result<ResolvedMemberBindingGroup> {
-        bail!("datalog resolver: binding-group resolution not yet handled")
+        if selector.target_binding.is_some() {
+            bail!(
+                "datalog resolver: binding-group selector for {request_id} unexpectedly has \
+                 target_binding set"
+            );
+        }
+        let needles = parse_needles(request_id, selector)?;
+        let [first, ..] = needles.as_slice() else {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match parsed to zero \
+                 statements"
+            );
+        };
+        // Branch order mirrors `resolve_member_binding_group_impl`: single-declarator
+        // before declarator-holes (a lone hole declarator is single-declarator too),
+        // then the general sequence path.
+        if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
+            return resolve_group_single_declarator(
+                module,
+                first,
+                request_id,
+                selector,
+                exports_by_target,
+            );
+        }
+        if needles.len() == 1 && selector_var_decl_has_declarator_holes(first) {
+            return resolve_group_declarator_holes(
+                module,
+                first,
+                request_id,
+                selector,
+                exports_by_target,
+            );
+        }
+        resolve_group_general(module, &needles, request_id, selector, exports_by_target)
     }
 
     fn resolve_anonymous_groups(
@@ -577,6 +829,68 @@ mod tests {
 
     fn module(src: &str) -> Module {
         js_ast::parse_js_module_ast("<test>", src).unwrap()
+    }
+
+    fn group(match_source: &str) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            match_source: match_source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: None,
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        }
+    }
+
+    fn exports(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(target, export)| (target.to_string(), export.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn datalog_resolver_resolves_declarator_hole_group_like_production() {
+        js_ast::with_swc_globals(|| {
+            // The `*-module_*` binding-group shape: holes around several pinned,
+            // string-predicate declarators; one alignment supplies every target.
+            let chunk = module("const p = 1, aClass = \"abc\", bClass = \"xyz\", q = 2;\n");
+            let selector = group(
+                "const DECLARATORS_BEFORE = null, a = STR_LITERAL_MATCHING_RE(\"^abc$\"), \
+                 DECLARATORS_GAP = null, b = STR_LITERAL_MATCHING_RE(\"^xyz$\"), \
+                 DECLARATORS_AFTER = null;",
+            );
+            let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
+            let datalog = DatalogResolver
+                .resolve_member_group(&chunk, "test", &selector, &exports)
+                .expect("datalog resolves the group");
+            assert_eq!(datalog.bindings["a"].binding_name, "aClass");
+            assert_eq!(datalog.bindings["b"].binding_name, "bClass");
+            let production = AstWildcardResolver
+                .resolve_member_group(&chunk, "test", &selector, &exports)
+                .expect("production resolves the group");
+            assert_eq!(datalog, production);
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_resolves_general_group_like_production() {
+        js_ast::with_swc_globals(|| {
+            // A multi-statement (general-path) group: a leading anonymous statement
+            // then two single-declarator targets, matched as a contiguous window.
+            let chunk = module("init();\nconst alpha = makeA();\nconst beta = makeB();\n");
+            let selector = group("init();\nconst a = makeA();\nconst b = makeB();");
+            let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
+            let datalog = DatalogResolver
+                .resolve_member_group(&chunk, "test", &selector, &exports)
+                .expect("datalog resolves the general group");
+            assert_eq!(datalog.bindings["a"].binding_name, "alpha");
+            assert_eq!(datalog.bindings["b"].binding_name, "beta");
+            let production = AstWildcardResolver
+                .resolve_member_group(&chunk, "test", &selector, &exports)
+                .expect("production resolves");
+            assert_eq!(datalog, production);
+        });
     }
 
     #[test]
