@@ -29,6 +29,45 @@ pub struct Unsupported {
     pub reason: &'static str,
 }
 
+/// Identifier-matching mode (mirrors `SourceMatchIdentifierMode`). `Exact`
+/// requires identical spellings; `AlphaAll` treats value/binding identifiers as
+/// alpha-renamable — a needle identifier binds to one subject identifier
+/// consistently, which is the consistency join.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Exact,
+    AlphaAll,
+}
+
+/// Bijective needle↔subject identifier binding accumulated during alpha
+/// matching. `bind` succeeds iff consistent in both directions, so distinct
+/// needle identifiers map to distinct subject ones (alpha-equivalence is a
+/// bijection). NOTE (rung 2): this is whole-pattern consistency without
+/// within-statement scoping/shadowing — faithful for the non-shadowing
+/// selectors the corpus uses; the corpus differential is the gate that proves
+/// it (and would flag any shadowing case, which then motivates scope facts).
+#[derive(Default)]
+struct Bindings {
+    needle_to_subject: HashMap<String, String>,
+    subject_to_needle: HashMap<String, String>,
+}
+
+impl Bindings {
+    fn bind(&mut self, needle: &str, subject: &str) -> bool {
+        if let Some(existing) = self.needle_to_subject.get(needle) {
+            return existing == subject;
+        }
+        if self.subject_to_needle.contains_key(subject) {
+            return false;
+        }
+        self.needle_to_subject
+            .insert(needle.to_string(), subject.to_string());
+        self.subject_to_needle
+            .insert(subject.to_string(), needle.to_string());
+        true
+    }
+}
+
 /// Per-node lookups over one `ChunkFacts`, built once.
 struct Index<'a> {
     kind: HashMap<NodeId, &'a str>,
@@ -132,7 +171,14 @@ fn hole_class(name: &str) -> Option<HoleClass> {
     None
 }
 
-fn homo(needle: &Index, nid: NodeId, subject: &Index, sid: NodeId) -> Result<bool, Unsupported> {
+fn homo(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<bool, Unsupported> {
     let nkind = needle.kind.get(&nid).copied().unwrap_or_default();
 
     // Expression-position single-node hole (`ANYTHING` / `EXPR` / `STMT`):
@@ -146,12 +192,12 @@ fn homo(needle: &Index, nid: NodeId, subject: &Index, sid: NodeId) -> Result<boo
         return Ok(true);
     }
 
-    // Structural equality: kind, then labels, then positional children.
+    // Structural equality: kind, then non-identifier labels (always exact),
+    // then the identifier label (exact or alpha-bound), then children.
     if nkind != subject.kind.get(&sid).copied().unwrap_or_default() {
         return Ok(false);
     }
-    if needle.ident.get(&nid) != subject.ident.get(&sid)
-        || needle.str_lit.get(&nid) != subject.str_lit.get(&sid)
+    if needle.str_lit.get(&nid) != subject.str_lit.get(&sid)
         || needle.num_lit.get(&nid) != subject.num_lit.get(&sid)
         || needle.bool_lit.get(&nid) != subject.bool_lit.get(&sid)
         || needle.prop_name.get(&nid) != subject.prop_name.get(&sid)
@@ -160,6 +206,22 @@ fn homo(needle: &Index, nid: NodeId, subject: &Index, sid: NodeId) -> Result<boo
     {
         return Ok(false);
     }
+    match (
+        needle.ident.get(&nid).copied(),
+        subject.ident.get(&sid).copied(),
+    ) {
+        (Some(n), Some(s)) => {
+            let consistent = match mode {
+                Mode::Exact => n == s,
+                Mode::AlphaAll => bindings.bind(n, s),
+            };
+            if !consistent {
+                return Ok(false);
+            }
+        }
+        (None, None) => {}
+        _ => return Ok(false),
+    }
 
     let nchildren = needle.children_of(nid);
     let schildren = subject.children_of(sid);
@@ -167,24 +229,24 @@ fn homo(needle: &Index, nid: NodeId, subject: &Index, sid: NodeId) -> Result<boo
         return Ok(false);
     }
     for (nc, sc) in nchildren.iter().zip(schildren) {
-        if !homo(needle, *nc, subject, *sc)? {
+        if !homo(needle, *nc, subject, *sc, mode, bindings)? {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-/// True iff the needle (one top-level statement, exact-identifier semantics)
-/// structurally matches the subject statement, with expression-position
-/// single-node holes. Errors (fail-closed) on un-lowered constructs rather than
-/// returning a weaker match. Both inputs are single-statement `ChunkFacts`.
-pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts) -> Result<bool, Unsupported> {
+/// True iff the needle (one top-level statement) structurally matches the
+/// subject statement under `mode`, with expression-position single-node holes.
+/// Errors (fail-closed) on un-lowered constructs rather than returning a weaker
+/// match. Both inputs are single-statement `ChunkFacts`.
+pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<bool, Unsupported> {
     let needle = Index::build(needle);
     let subject = Index::build(subject);
     // Fail-closed up front: a needle containing any not-yet-faithful hole
     // (variable-length run/list hole or the regex predicate) cannot be matched
-    // soundly in rung 1, and an arity check during traversal could otherwise
-    // mask it as a wrong `false`. Reject the whole needle loudly instead.
+    // soundly yet, and an arity check during traversal could otherwise mask it
+    // as a wrong `false`. Reject the whole needle loudly instead.
     if needle
         .ident
         .values()
@@ -197,5 +259,6 @@ pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts) -> Result<bool, Unsupp
     let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
         return Ok(false);
     };
-    homo(&needle, n_root, &subject, s_root)
+    let mut bindings = Bindings::default();
+    homo(&needle, n_root, &subject, s_root, mode, &mut bindings)
 }
