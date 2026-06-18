@@ -706,7 +706,13 @@ name) and anonymous-statement groups; `source_match_test` proves via
 `DifferentialResolver<AstWildcard, Datalog>` that it returns the same claim as production (e.g.
 `function f(){…}` → owner `alpha`) and is differential-silent. Fail-closed (an honest error, never a
 wrong claim) on the paths it does not yet mirror: declarator-**hole** targets (alignment-aware
-extraction), binding groups, and multi-statement needles. **Var-declarator members are handled** at
+extraction) and a var-declarator target inside a multi-statement window. **Multi-statement needles
+are handled**: `selector_match::match_top_level_sequence` aligns the needle's statements against the
+chunk body as an ordered subsequence with module-level `STMT_LIST` holes, enumerating every
+alignment (mirrors `find_matching_body_group_alignments`); `resolve_anonymous_multi` /
+`resolve_member_multi` project each alignment onto the target-statement / target-binding. **Binding
+groups are expanded** as the run pipeline does (so they are measured as member/anonymous selectors).
+**Var-declarator members are handled** at
 declarator granularity — a single-declarator needle is matched against each declarator of each
 var-decl owner (a synthetic single-declarator statement), so a match inside a multi-declarator owner
 is counted and categoricity is faithful (a whole-statement match would miss it and turn a
@@ -726,8 +732,13 @@ both ways (resolved-parity); the 3708 member selectors mostly reject against thi
 disagreements** (the 2 var-declarator members now resolve to the same owner both ways). The
 end-to-end resolver path is therefore demonstrated parity-clean.
 
-Remaining: (a) the **declarator-hole / binding-group / multi-statement** resolution paths the
-resolver fail-closes (member resolved-parity at scale is best measured by resolving each selector
+Re-measured (78d928dca7 vs ReactGraph): member 6873 selectors (incl. expanded binding groups) — 0
+over-resolved, 0 value disagreements, 2 residual fail-closes (declarator-hole / var-declarator-in-
+window); anonymous 619 — all resolved-parity, 0 disagreements. **0 genuine disagreements.**
+
+Remaining: (a) the **declarator-hole** member target and a **var-declarator target inside a
+multi-statement window** (the two residual fail-closes; production uses per-declarator-range
+alignment); member resolved-parity at scale is best measured by resolving each selector
 against its _target_ chunk, which needs the spec→chunk map); (b) broaden subjects/chunks (the harness
 caps subjects because the production matcher re-parses per call). Still-latent and differential-clean (not yet
 exercised by the corpus): alpha shadowing (whole-pattern bijection has held over 250k+ pairs) and

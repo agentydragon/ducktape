@@ -618,3 +618,133 @@ pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<
     let mut bindings = Bindings::default();
     homo(&needle, n_root, &subject, s_root, mode, &mut bindings)
 }
+
+/// True iff a needle root (one statement's facts) is a module-level `STMT_LIST`
+/// hole — an expression statement whose sole child is the keyword. These
+/// separate the needle's fixed segments at the top level (mirrors
+/// `holes.rs::module_item_list_hole_name`).
+fn is_module_stmt_list_hole(index: &Index) -> bool {
+    let Some(&root) = index.roots.first() else {
+        return false;
+    };
+    index.kind_of(root) == "ExprStmt" && {
+        let kids = index.children_of(root);
+        kids.len() == 1 && node_ident_hole(index, kids[0], STMT_LIST_HOLE_KEYWORD)
+    }
+}
+
+/// Match a multi-statement needle (each element one statement's facts, in source
+/// order) against a chunk body (each element one top-level statement's facts, in
+/// body order) as an ordered subsequence with module-level `STMT_LIST` holes,
+/// **enumerating every alignment** (needle-index → body-index, `None` for a hole
+/// position). Mirrors `body_search::find_matching_body_group_alignments` /
+/// `place_module_item_segments` over facts: never anchored at module level, and
+/// an all-holes needle pins nothing (no alignment). Fail-closed on an unsupported
+/// non-hole needle statement.
+pub fn match_top_level_sequence(
+    needles: &[ChunkFacts],
+    subject_items: &[ChunkFacts],
+    mode: Mode,
+) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
+    let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
+    let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
+    let mut segments: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < needle_idx.len() {
+        if is_module_stmt_list_hole(&needle_idx[i]) {
+            i += 1;
+            continue;
+        }
+        // A fixed (non-hole) needle statement must be faithfully supported.
+        if let Some(reason) = unsupported_needle_construct(&needle_idx[i]) {
+            return Err(Unsupported { reason });
+        }
+        let start = i;
+        while i < needle_idx.len() && !is_module_stmt_list_hole(&needle_idx[i]) {
+            if let Some(reason) = unsupported_needle_construct(&needle_idx[i]) {
+                return Err(Unsupported { reason });
+            }
+            i += 1;
+        }
+        segments.push((start, i - start));
+    }
+    // An all-holes needle pins nothing — no alignment (matches the matcher).
+    if segments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut alignment = vec![None; needle_idx.len()];
+    let mut matches = Vec::new();
+    let mut bindings = Bindings::default();
+    place_top_level(
+        &needle_idx,
+        &subject_idx,
+        &segments,
+        0,
+        0,
+        mode,
+        &mut bindings,
+        &mut alignment,
+        &mut matches,
+    )?;
+    Ok(matches)
+}
+
+/// Recursive ordered-subsequence placement of the needle's fixed segments into
+/// the chunk body, enumerating every alignment with `Bindings` + alignment
+/// snapshot/restore. Mirrors `place_module_item_segments`.
+#[allow(clippy::too_many_arguments)]
+fn place_top_level(
+    needle_idx: &[Index],
+    subject_idx: &[Index],
+    segments: &[(usize, usize)],
+    seg_idx: usize,
+    cand_min: usize,
+    mode: Mode,
+    bindings: &mut Bindings,
+    alignment: &mut [Option<usize>],
+    matches: &mut Vec<Vec<Option<usize>>>,
+) -> Result<(), Unsupported> {
+    let Some(&(needle_start, seg_len)) = segments.get(seg_idx) else {
+        matches.push(alignment.to_vec());
+        return Ok(());
+    };
+    let remaining: usize = segments[seg_idx..].iter().map(|(_, len)| len).sum();
+    let Some(latest_start) = subject_idx.len().checked_sub(remaining) else {
+        return Ok(());
+    };
+    for start in cand_min..=latest_start {
+        let bindings_snapshot = bindings.clone();
+        let alignment_snapshot = alignment.to_vec();
+        let mut segment_ok = true;
+        for offset in 0..seg_len {
+            let needle = &needle_idx[needle_start + offset];
+            let subject = &subject_idx[start + offset];
+            let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first())
+            else {
+                segment_ok = false;
+                break;
+            };
+            if !homo(needle, n_root, subject, s_root, mode, bindings)? {
+                segment_ok = false;
+                break;
+            }
+            alignment[needle_start + offset] = Some(start + offset);
+        }
+        if segment_ok {
+            place_top_level(
+                needle_idx,
+                subject_idx,
+                segments,
+                seg_idx + 1,
+                start + seg_len,
+                mode,
+                bindings,
+                alignment,
+                matches,
+            )?;
+        }
+        *bindings = bindings_snapshot;
+        alignment.copy_from_slice(&alignment_snapshot);
+    }
+    Ok(())
+}

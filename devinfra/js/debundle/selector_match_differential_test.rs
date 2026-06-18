@@ -39,6 +39,25 @@ fn first_item(source: &str) -> swc_ecma_ast::ModuleItem {
         .unwrap()
 }
 
+/// Per-top-level-statement facts (one `ChunkFacts` per item), for the
+/// multi-statement sequence matcher.
+fn roots(source: &str) -> Vec<chunk_facts::ChunkFacts> {
+    let module = js_ast::parse_js_module_ast("<t>", source).unwrap();
+    let span = module.span;
+    module
+        .body
+        .into_iter()
+        .map(|item| {
+            chunk_facts::extract_facts(&swc_ecma_ast::Module {
+                span,
+                body: vec![item],
+                shebang: None,
+            })
+            .unwrap()
+        })
+        .collect()
+}
+
 struct Case {
     selector: &'static str,
     subject: &'static str,
@@ -285,6 +304,33 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 case.selector, case.subject, case.alpha,
             );
         }
+    });
+}
+
+#[test]
+fn multi_statement_sequence_aligns_around_a_stmt_list_hole() {
+    js_ast::with_swc_globals(|| {
+        // Two fixed statements with a STMT_LIST hole between them; the hole
+        // absorbs the intervening body statements (module-level subsequence).
+        let needle = roots("const a = first();\nSTMT_LIST;\nconst b = second();");
+        let subject = roots("const a = first();\nx();\ny();\nconst b = second();");
+        let alignments = selector_match::match_top_level_sequence(&needle, &subject, Mode::Exact)
+            .expect("supported multi-statement needle");
+        // `const a` pins body 0, `const b` pins body 3; the hole spans 1..3.
+        assert_eq!(alignments, vec![vec![Some(0), None, Some(3)]]);
+    });
+}
+
+#[test]
+fn multi_statement_sequence_enumerates_all_alignments() {
+    js_ast::with_swc_globals(|| {
+        // `foo();` matches two body positions, so there are two alignments —
+        // the matcher must enumerate both (categoricity at the resolver level).
+        let needle = roots("STMT_LIST;\nfoo();");
+        let subject = roots("foo();\nbar();\nfoo();");
+        let alignments = selector_match::match_top_level_sequence(&needle, &subject, Mode::Exact)
+            .expect("supported multi-statement needle");
+        assert_eq!(alignments, vec![vec![None, Some(0)], vec![None, Some(2)]]);
     });
 }
 

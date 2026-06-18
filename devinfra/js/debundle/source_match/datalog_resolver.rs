@@ -38,24 +38,6 @@ fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
     chunk_facts::extract_facts(&module).ok()
 }
 
-/// Parse a selector's `match_source` to exactly one top-level needle item, or
-/// fail closed (multi-statement needles are a separate, not-yet-handled path).
-fn single_needle(request_id: &str, selector: &AnonymousStatementSelector) -> Result<ModuleItem> {
-    let module = js_ast::parse_js_module_ast(
-        &format!("<datalog needle in {request_id}>"),
-        &selector.match_source,
-    )?;
-    match module.body.into_iter().collect::<Vec<_>>().as_slice() {
-        [single] => Ok(single.clone()),
-        items => bail!(
-            "datalog resolver: selector source parsed to {} top-level statements; only \
-             single-statement needles are handled:\n{}",
-            items.len(),
-            selector.match_source,
-        ),
-    }
-}
-
 /// Top-level body indices whose statement the needle matches under the fact
 /// matcher. Fails closed if the needle itself is `Unsupported`.
 fn matching_body_indices(
@@ -188,6 +170,128 @@ fn resolve_var_declarator_member(
     }
 }
 
+/// Parse a selector's `match_source` to its top-level statements (any count).
+fn parse_needles(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<ModuleItem>> {
+    Ok(js_ast::parse_js_module_ast(
+        &format!("<datalog needle in {request_id}>"),
+        &selector.match_source,
+    )?
+    .body)
+}
+
+/// Per-body-item facts (one per top-level statement, in body order). A statement
+/// the extractor cannot project gets empty facts (no root), so it matches nothing
+/// while keeping body indices aligned with the sequence matcher's alignment.
+fn body_item_facts(module: &Module) -> Vec<chunk_facts::ChunkFacts> {
+    module
+        .body
+        .iter()
+        .map(|item| item_facts(item).unwrap_or_default())
+        .collect()
+}
+
+/// Multi-statement member: align the needle statements against the chunk body
+/// (module-level subsequence with `STMT_LIST` holes), then read the target
+/// binding from the body statement the target needle index aligned to.
+fn resolve_member_multi(
+    module: &Module,
+    needles: &[ModuleItem],
+    request_id: &str,
+    export_name: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<ResolvedMemberBinding> {
+    let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("datalog resolver: multi-statement member selector needs target_binding")
+    })?;
+    let (target_item_idx, target_binding_idx) =
+        selector_binding_location(needles, request_id, selector, target_binding)?;
+    // A var-declarator target statement needs declarator-level alignment within
+    // the window (production's single-declarator-range path) — not yet mirrored.
+    if selector_single_var_declarator(&needles[target_item_idx]).is_some()
+        || selector_var_decl_has_declarator_holes(&needles[target_item_idx])
+    {
+        bail!("datalog resolver: multi-statement var-declarator target not yet handled");
+    }
+    let needle_facts = needles
+        .iter()
+        .map(item_facts)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let alignments = selector_match::match_top_level_sequence(
+        &needle_facts,
+        &body_item_facts(module),
+        datalog_mode(selector),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    for alignment in alignments {
+        let Some(Some(body_idx)) = alignment.get(target_item_idx) else {
+            bail!("datalog resolver: target statement matched by a STMT_LIST hole");
+        };
+        let Some(binding) = declared_bindings(&module.body[*body_idx])
+            .into_iter()
+            .nth(target_binding_idx)
+        else {
+            bail!("datalog resolver: target binding index out of range");
+        };
+        matches.push(binding);
+    }
+    match matches.as_slice() {
+        [single] => Ok(single.clone()),
+        [] => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` did not match any top-level statement range"
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` is ambiguous — {} ranges",
+            multiple.len(),
+        ),
+    }
+}
+
+/// Multi-statement anonymous selector: align the needle statements against the
+/// chunk body, then project each alignment onto the selector's target-statement
+/// indices (mirrors `find_anonymous_statement_body_index_groups`).
+fn resolve_anonymous_multi(
+    module: &Module,
+    needles: &[ModuleItem],
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<Vec<usize>>> {
+    let target_indices =
+        anonymous_selector_target_statement_indices(request_id, selector, needles)?;
+    let needle_facts = needles
+        .iter()
+        .map(item_facts)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let alignments = selector_match::match_top_level_sequence(
+        &needle_facts,
+        &body_item_facts(module),
+        datalog_mode(selector),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    let mut groups = Vec::new();
+    for alignment in alignments {
+        let mut group = Vec::with_capacity(target_indices.len());
+        for &target_idx in &target_indices {
+            let Some(Some(body_idx)) = alignment.get(target_idx) else {
+                bail!(
+                    "datalog resolver: anonymous target statement {target_idx} matched by a \
+                     STMT_LIST hole"
+                );
+            };
+            group.push(*body_idx);
+        }
+        groups.push(group);
+    }
+    Ok(groups)
+}
+
 impl SelectorResolver for DatalogResolver {
     fn resolve_member(
         &self,
@@ -196,19 +300,22 @@ impl SelectorResolver for DatalogResolver {
         export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
-        let needle = single_needle(request_id, selector)?;
+        let needles = parse_needles(request_id, selector)?;
+        let [needle] = needles.as_slice() else {
+            return resolve_member_multi(module, &needles, request_id, export_name, selector);
+        };
         // Declarator-hole var-decls need alignment-aware extraction (a DECLARATORS
         // run hole absorbs declarators, so the owner's binding index no longer
         // lines up with the needle's) — not yet mirrored, fail closed.
-        if selector_var_decl_has_declarator_holes(&needle) {
+        if selector_var_decl_has_declarator_holes(needle) {
             bail!("datalog resolver: declarator-hole member target not yet handled");
         }
         // A single-declarator var-decl resolves at declarator granularity (so a
         // match inside a multi-declarator owner is counted) — production's path.
-        if selector_single_var_declarator(&needle).is_some() {
+        if selector_single_var_declarator(needle).is_some() {
             return resolve_var_declarator_member(
                 module,
-                &needle,
+                needle,
                 request_id,
                 export_name,
                 selector,
@@ -217,7 +324,7 @@ impl SelectorResolver for DatalogResolver {
         let target_binding_idx = match &selector.target_binding {
             Some(target_binding) => {
                 let (target_item_idx, binding_idx) = selector_binding_location(
-                    std::slice::from_ref(&needle),
+                    std::slice::from_ref(needle),
                     request_id,
                     selector,
                     target_binding,
@@ -227,7 +334,7 @@ impl SelectorResolver for DatalogResolver {
             }
             None => 0,
         };
-        let needle_facts = item_facts(&needle)
+        let needle_facts = item_facts(needle)
             .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
         let indices = matching_body_indices(module, &needle_facts, datalog_mode(selector))?;
         let [body_idx] = indices.as_slice() else {
@@ -267,13 +374,11 @@ impl SelectorResolver for DatalogResolver {
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
-        if selector.target_statements.is_some() {
-            bail!(
-                "datalog resolver: multi-statement (target_statements) selectors not yet handled"
-            );
-        }
-        let needle = single_needle(request_id, selector)?;
-        let needle_facts = item_facts(&needle)
+        let needles = parse_needles(request_id, selector)?;
+        let [needle] = needles.as_slice() else {
+            return resolve_anonymous_multi(module, &needles, request_id, selector);
+        };
+        let needle_facts = item_facts(needle)
             .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
         Ok(
             matching_body_indices(module, &needle_facts, datalog_mode(selector))?
@@ -400,6 +505,31 @@ mod tests {
                 "datalog must detect the same ambiguity as production, got {:?}",
                 sink.0.borrow(),
             );
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_resolves_multi_statement_anonymous_like_production() {
+        js_ast::with_swc_globals(|| {
+            // A two-statement target_statements selector matching a contiguous
+            // window inside the chunk body.
+            let chunk = module("x();\nfoo();\nbar();\ny();\n");
+            let selector = AnonymousStatementSelector {
+                match_source: "foo();\nbar();".to_string(),
+                identifiers: SourceMatchIdentifierMode::Exact,
+                target_binding: None,
+                target_statement: None,
+                target_statements: Some(spec::TargetStatements::Indices(vec![0, 1])),
+                wildcard_string_literals: BTreeSet::new(),
+            };
+            let datalog = DatalogResolver
+                .resolve_anonymous_groups(&chunk, "test", &selector)
+                .expect("datalog resolves the multi-statement window");
+            assert_eq!(datalog, vec![vec![1, 2]]);
+            let production = AstWildcardResolver
+                .resolve_anonymous_groups(&chunk, "test", &selector)
+                .expect("production resolves");
+            assert_eq!(datalog, production);
         });
     }
 
