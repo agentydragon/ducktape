@@ -204,6 +204,43 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: true,
                 expected: true,
             },
+            // --- parse-position-polymorphic single-node holes ---
+            // ANYTHING in parameter (pattern) position matches any param and
+            // never binds: two ANYTHING params are independent (they would
+            // collide if treated as one alpha binding).
+            Case {
+                selector: "function f(ANYTHING, ANYTHING) { return 1; }",
+                subject: "function f(a, b) { return 1; }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f(ANYTHING, ANYTHING) { return ANYTHING; }",
+                subject: "function g(a, b) { return c; }",
+                alpha: true,
+                expected: true,
+            },
+            // STMT in statement position matches exactly one statement (not a run).
+            Case {
+                selector: "function f() { STMT; return 1; }",
+                subject: "function f() { a(); return 1; }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { STMT; return 1; }",
+                subject: "function f() { a(); b(); return 1; }",
+                alpha: false,
+                expected: false,
+            },
+            // ANYTHING in statement position matches any statement kind, not only
+            // an expression statement (here, an `if`).
+            Case {
+                selector: "function f() { ANYTHING; return 1; }",
+                subject: "function f() { if (x) y(); return 1; }",
+                alpha: false,
+                expected: true,
+            },
         ];
         for case in cases {
             let selector = selector(case.selector, case.alpha);

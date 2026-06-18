@@ -160,12 +160,48 @@ impl<'a> Index<'a> {
     }
 }
 
-/// `ANYTHING` / `EXPR` / `STMT` (bare or named): a single-node hole matching any
-/// one subtree in expression position.
-fn is_single_node_hole(name: &str) -> bool {
-    hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-        || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
-        || hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
+/// `EXPR` (bare or named) or bare `ANYTHING`: a single-node hole in **expression**
+/// position (an `Ident`). Mirrors `holes.rs::expression_hole_name`.
+fn is_expr_single_hole(name: &str) -> bool {
+    hole_name_for(name, EXPR_HOLE_KEYWORD).is_some() || name == ANYTHING_HOLE_KEYWORD
+}
+
+/// `STMT` (bare or named, but not the `STMT_LIST` run hole) or bare `ANYTHING`: a
+/// single-node hole in **statement** position. Mirrors `holes.rs::statement_hole_name`
+/// with the `STMT_LIST`-wins-first precedence.
+fn is_stmt_single_hole(name: &str) -> bool {
+    name == ANYTHING_HOLE_KEYWORD
+        || (hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_none()
+            && hole_name_for(name, STMT_HOLE_KEYWORD).is_some())
+}
+
+/// A single-node hole borne by `node`, parse-position polymorphic: an expression
+/// `Ident` (`EXPR`/`ANYTHING`), a binding `BindingIdent` pattern (`ANYTHING` only,
+/// mirroring `is_anything_pat_hole`), or an expression-statement `ExprStmt`
+/// (`STMT`/`ANYTHING`, matching any statement kind). Anonymous match-any
+/// semantics; cross-occurrence equality of *named* single-node holes (`EXPR_x`)
+/// is deferred (the equality-hole rung) and differential-gated.
+fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
+    match index.kind_of(node) {
+        "Ident" => index
+            .ident
+            .get(&node)
+            .is_some_and(|n| is_expr_single_hole(n)),
+        "BindingIdent" => index
+            .ident
+            .get(&node)
+            .is_some_and(|n| *n == ANYTHING_HOLE_KEYWORD),
+        "ExprStmt" => {
+            let kids = index.children_of(node);
+            kids.len() == 1
+                && index.kind_of(kids[0]) == "Ident"
+                && index
+                    .ident
+                    .get(&kids[0])
+                    .is_some_and(|n| is_stmt_single_hole(n))
+        }
+        _ => false,
+    }
 }
 
 const RUN_HOLE_KEYWORDS: [&str; 6] = [
@@ -282,14 +318,12 @@ fn homo(
 ) -> Result<bool, Unsupported> {
     let nkind = needle.kind_of(nid);
 
-    // Expression-position single-node hole: matches any one subtree. (Unhandled
-    // constructs — the regex predicate, misplaced run-hole keywords — are
-    // rejected up front in [`matches`], before structural matching can mask
-    // them, so they never reach here.)
-    if nkind == "Ident"
-        && let Some(&name) = needle.ident.get(&nid)
-        && is_single_node_hole(name)
-    {
+    // Single-node hole (expression / pattern / statement position): matches any
+    // one subtree, before the kind check so a `STMT;`/`ANYTHING` needle can match
+    // a different-kind subject. (Unhandled constructs — the regex predicate,
+    // misplaced run-hole keywords — are rejected up front in [`matches`], before
+    // structural matching can mask them, so they never reach here.)
+    if is_single_node_hole(needle, nid) {
         return Ok(true);
     }
 

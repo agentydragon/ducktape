@@ -666,8 +666,18 @@ misplaced run hole. _Per the finding above, this kernel realizes the placement a
 greedy+backtracking search; the relational chain-join (cross-gap alpha-binding coupling fail-closed)
 is the P3/P4 native-lowering form._
 
-Remaining rungs, each differential-gated: (1) alpha via scope facts; (2) statement-position holes
-(parse-position-polymorphic `ANYTHING;`/`STMT;` matching any statement kind, not only `ExprStmt`);
+**Landed (P2 rung 4 — parse-position-polymorphic single-node holes):** `is_single_node_hole` now
+fires by position — an expression `Ident` (`EXPR`/`ANYTHING`), a binding `BindingIdent` pattern
+(`ANYTHING`, mirroring `is_anything_pat_hole`; its wildcard-idents registration gate is satisfied by
+construction), or an expression statement `ExprStmt` (`STMT`/`ANYTHING`, matching **any** statement
+kind, checked before the kind comparison). This fixes a real corpus disagreement:
+`infra/android.serializeNodesForNativeBridge(ANYTHING, ANYTHING)` — two `ANYTHING` params that the
+earlier expression-only rule would have forced into one alpha binding and wrongly rejected. The
+differential now spans 28 cases. _Anonymous match-any only; cross-occurrence equality of **named**
+single-node holes (`EXPR_x`) is the deferred equality-hole rung._
+
+Remaining rungs, each differential-gated: (1) alpha via scope facts (shadowing); (2) named
+single-node / list-hole **equality** (`EXPR_x` repeated ⇒ same subtree — a shared variable);
 (3) resolver-level wiring (`DatalogResolver` returning the claimed binding) + the **corpus-wide**
 differential — the gate the goal names.
 
