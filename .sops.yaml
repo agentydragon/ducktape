@@ -13,8 +13,8 @@ keys:
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Haku agent key (Haku background-agent routine; private key in
-  # secrets/haku-web-age-key.sops.yaml, decryptable by agentydragon's user keys)
-  - &haku-web age1756xpy6yg7r8vdducm5cdn4cqt3m5qkcncxumsh8htlfdzpae4cq0c6gqf
+  # secrets/haku-age-key.sops.yaml, decryptable by agentydragon's user keys)
+  - &haku age1756xpy6yg7r8vdducm5cdn4cqt3m5qkcncxumsh8htlfdzpae4cq0c6gqf
   # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
   # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
   - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
@@ -391,10 +391,10 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Private half of the haku-web age keypair. Encrypted only to agentydragon's
+  # Private half of the haku age keypair. Encrypted only to agentydragon's
   # user ssh keys (+ admin) so the operator can retrieve it for the Haku routine's
-  # env; haku-web itself is deliberately NOT a reader (it would be circular).
-  - path_regex: secrets/haku-web-age-key\.sops\.yaml$
+  # env; haku itself is deliberately NOT a reader (it would be circular).
+  - path_regex: secrets/haku-age-key\.sops\.yaml$
     key_groups:
       - age:
           - *admin
@@ -403,13 +403,13 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
   # Haku background-agent K8s bearer JWT (auto-rotated by the authentik-jwt-rotation
-  # CronJob). Decrypted only by the Haku routine (haku-web); admin + user keys
+  # CronJob). Decrypted only by the Haku routine (haku); admin + user keys
   # for break-glass.
   - path_regex: secrets/haku-k8s-jwt\.yaml$
     key_groups:
       - age:
           - *admin
-          - *haku-web
+          - *haku
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
