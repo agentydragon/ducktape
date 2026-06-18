@@ -705,9 +705,14 @@ proven matcher parity by construction. It resolves member selectors (returning t
 name) and anonymous-statement groups; `source_match_test` proves via
 `DifferentialResolver<AstWildcard, Datalog>` that it returns the same claim as production (e.g.
 `function f(){…}` → owner `alpha`) and is differential-silent. Fail-closed (an honest error, never a
-wrong claim) on the paths it does not yet mirror: var-declarator / declarator-hole member targets
-(production routes those through per-declarator alignment), binding groups, and multi-statement
-needles.
+wrong claim) on the paths it does not yet mirror: declarator-**hole** targets (alignment-aware
+extraction), binding groups, and multi-statement needles. **Var-declarator members are handled** at
+declarator granularity — a single-declarator needle is matched against each declarator of each
+var-decl owner (a synthetic single-declarator statement), so a match inside a multi-declarator owner
+is counted and categoricity is faithful (a whole-statement match would miss it and turn a
+production-ambiguous case into a spurious unique resolution). `source_match_test` proves the inner
+declarator of `const a=1, target=compute()` resolves to `target` and that the resolver detects the
+same ambiguity as production.
 
 **Landed (the resolver differential, run corpus-wide):** `corpus_match_differential` now also runs
 the full `SelectorResolver` path both ways (`DatalogResolver` vs `AstWildcardResolver`) over the same
@@ -717,14 +722,14 @@ reject), fail-closed (datalog errors where production resolves — the worklist)
 must be 0). Over the `78d928dca7` spec against the ReactGraph chunk: **0 genuine disagreements** (0
 value, 0 over-resolved). All **619 anonymous-statement selectors resolve to the identical owner**
 both ways (resolved-parity); the 3708 member selectors mostly reject against this non-target chunk
-(reject-parity) with **2 var-declarator fail-closes** and 0 disagreements. The end-to-end resolver
-path is therefore demonstrated parity-clean, with the fail-closed set being exactly the unimplemented
-resolution paths.
+(reject-parity), and after the declarator-level path landed there are **0 fail-closes and 0
+disagreements** (the 2 var-declarator members now resolve to the same owner both ways). The
+end-to-end resolver path is therefore demonstrated parity-clean.
 
-Remaining: (a) the **var-declarator / binding-group / multi-statement** resolution paths the resolver
-fail-closes (member resolved-parity is best measured by resolving each selector against its _target_
-chunk, which needs the spec→chunk map); (b) broaden subjects/chunks (the harness caps subjects
-because the production matcher re-parses per call). Still-latent and differential-clean (not yet
+Remaining: (a) the **declarator-hole / binding-group / multi-statement** resolution paths the
+resolver fail-closes (member resolved-parity at scale is best measured by resolving each selector
+against its _target_ chunk, which needs the spec→chunk map); (b) broaden subjects/chunks (the harness
+caps subjects because the production matcher re-parses per call). Still-latent and differential-clean (not yet
 exercised by the corpus): alpha shadowing (whole-pattern bijection has held over 250k+ pairs) and
 named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently anonymous match-any). Each
 remains differential-gated.

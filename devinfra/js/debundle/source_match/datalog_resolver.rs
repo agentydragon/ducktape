@@ -83,6 +83,111 @@ fn matching_body_indices(
     Ok(indices)
 }
 
+/// A synthetic single-declarator version of a var-decl `item` keeping only
+/// `declarator`, cloned from the real item so span/context stay valid. Matching
+/// the single-declarator needle against this *is* the per-declarator match the
+/// production resolver does. Counting matches across every declarator of every
+/// owner keeps categoricity faithful: a single-declarator needle that matches
+/// one declarator of a multi-declarator owner is a real match a whole-statement
+/// match would miss — which would mis-count and turn a production-ambiguous case
+/// into a spurious unique resolution.
+fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
+    let mut cloned = item.clone();
+    match &mut cloned {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var.decls = vec![declarator.clone()],
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+            if let Decl::Var(var) = &mut export.decl {
+                var.decls = vec![declarator.clone()];
+            }
+        }
+        _ => {}
+    }
+    cloned
+}
+
+/// Resolve a single-declarator var-decl member selector by matching its
+/// declarator against every declarator of every var-decl owner (production's
+/// per-declarator path), so the match count — hence categoricity — is faithful.
+fn resolve_var_declarator_member(
+    module: &Module,
+    needle: &ModuleItem,
+    request_id: &str,
+    export_name: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<ResolvedMemberBinding> {
+    let needle_facts = item_facts(needle)
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let mode = datalog_mode(selector);
+    // Probe the needle once: an unsupported construct errors uniformly.
+    selector_match::matches(&needle_facts, &needle_facts, mode)
+        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    // Which of the needle declarator's declared bindings is the target.
+    let target_binding_idx = match &selector.target_binding {
+        Some(target_binding) => {
+            let declared = declared_bindings(needle);
+            let indices: Vec<usize> = declared
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, binding)| {
+                    (binding.binding_name == *target_binding).then_some(idx)
+                })
+                .collect();
+            match indices.as_slice() {
+                [single] => *single,
+                [] => bail!(
+                    "logical_module {request_id}: target_binding `{target_binding}` is not \
+                     declared by the selector source"
+                ),
+                _ => bail!(
+                    "logical_module {request_id}: target_binding `{target_binding}` is \
+                     ambiguous within the selector source"
+                ),
+            }
+        }
+        None => 0,
+    };
+    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    for item in &module.body {
+        let Some(candidate_var) = item_var_decl(item) else {
+            continue;
+        };
+        for declarator in &candidate_var.decls {
+            let Some(facts) = item_facts(&single_declarator_item(item, declarator)) else {
+                continue;
+            };
+            if !selector_match::matches(&needle_facts, &facts, mode).map_err(|unsupported| {
+                anyhow::anyhow!("datalog resolver: {}", unsupported.reason)
+            })? {
+                continue;
+            }
+            let declared = declared_bindings_for_var_declarator(declarator);
+            if selector.target_binding.is_none() && declared.len() != 1 {
+                bail!(
+                    "datalog resolver: export `{export_name}` matched a declarator binding {} \
+                     names; needs a single-binding declarator or target_binding",
+                    declared.len(),
+                );
+            }
+            let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
+                bail!("datalog resolver: target binding index out of range for matched declarator");
+            };
+            matches.push(binding);
+        }
+    }
+    match matches.as_slice() {
+        [single] => Ok(single.clone()),
+        [] => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` did not match any declarator in the chunk"
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` is ambiguous — matched {} declarators",
+            multiple.len(),
+        ),
+    }
+}
+
 impl SelectorResolver for DatalogResolver {
     fn resolve_member(
         &self,
@@ -92,12 +197,22 @@ impl SelectorResolver for DatalogResolver {
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
         let needle = single_needle(request_id, selector)?;
-        // Var-declarator and declarator-hole targets use bespoke production paths
-        // (per-declarator alignment); not yet mirrored — fail closed.
-        if selector_single_var_declarator(&needle).is_some()
-            || selector_var_decl_has_declarator_holes(&needle)
-        {
-            bail!("datalog resolver: var-declarator member target not yet handled");
+        // Declarator-hole var-decls need alignment-aware extraction (a DECLARATORS
+        // run hole absorbs declarators, so the owner's binding index no longer
+        // lines up with the needle's) — not yet mirrored, fail closed.
+        if selector_var_decl_has_declarator_holes(&needle) {
+            bail!("datalog resolver: declarator-hole member target not yet handled");
+        }
+        // A single-declarator var-decl resolves at declarator granularity (so a
+        // match inside a multi-declarator owner is counted) — production's path.
+        if selector_single_var_declarator(&needle).is_some() {
+            return resolve_var_declarator_member(
+                module,
+                &needle,
+                request_id,
+                export_name,
+                selector,
+            );
         }
         let target_binding_idx = match &selector.target_binding {
             Some(target_binding) => {
@@ -235,6 +350,54 @@ mod tests {
             assert!(
                 sink.0.borrow().is_empty(),
                 "datalog and production must agree, got {:?}",
+                sink.0.borrow(),
+            );
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_resolves_declarator_inside_multi_declarator_owner() {
+        js_ast::with_swc_globals(|| {
+            // The target init lives in the second declarator of a multi-declarator
+            // statement — only declarator-level matching finds it.
+            let chunk = module("const a = 1, target = compute();\nconst other = 2;\n");
+            let selector = member("const x = compute();", Some("x"));
+            let datalog = DatalogResolver
+                .resolve_member(&chunk, "test", "X", &selector)
+                .expect("datalog resolves the inner declarator");
+            assert_eq!(datalog.binding_name, "target");
+            let production = AstWildcardResolver
+                .resolve_member(&chunk, "test", "X", &selector)
+                .expect("production resolves");
+            assert_eq!(datalog, production);
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_var_declarator_categoricity_matches_production() {
+        js_ast::with_swc_globals(|| {
+            // The same init appears in two declarators (one inside a
+            // multi-declarator owner) — ambiguous. The resolver must count both
+            // (declarator-level), so it rejects exactly as production does; a
+            // whole-statement match would miss the multi-declarator one and
+            // spuriously resolve unique.
+            let chunk = module("const a = 1, b = compute();\nconst c = compute();\n");
+            let selector = member("const x = compute();", Some("x"));
+            let sink = CollectingSink::default();
+            let differential = DifferentialResolver {
+                primary: AstWildcardResolver,
+                shadow: DatalogResolver,
+                sink: &sink,
+            };
+            assert!(
+                differential
+                    .resolve_member(&chunk, "test", "X", &selector)
+                    .is_err(),
+                "two declarators with the same init are ambiguous",
+            );
+            assert!(
+                sink.0.borrow().is_empty(),
+                "datalog must detect the same ambiguity as production, got {:?}",
                 sink.0.borrow(),
             );
         });
