@@ -21,7 +21,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use source_match::{
-    AstWildcardResolver, DatalogResolver, SelectorResolver,
+    AstWildcardResolver, ChunkResolver, SelectorResolver,
     binding_group_anonymous_statement_selector, binding_group_member_selectors,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
@@ -171,10 +171,10 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
             body: vec![],
             shebang: None,
         };
+        let classify = ChunkResolver::new(&empty);
         let mut residual: Vec<(&str, String)> = Vec::new();
         for selector in &selectors.members {
-            if let Err(error) =
-                DatalogResolver.resolve_member(&empty, "classify", "export", selector)
+            if let Err(error) = classify.resolve_member("classify", "export", selector)
                 && error.to_string().contains("not yet handled")
             {
                 residual.push((selector.match_source.as_str(), error.to_string()));
@@ -410,15 +410,20 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         }
     }
 
-    // Resolver-level differential: run the full SelectorResolver path both ways
-    // (DatalogResolver vs AstWildcardResolver) over the same capped chunk body,
-    // and classify the outcomes. This is end-to-end (claimed bindings), not just
-    // per-statement verdicts.
+    // Resolver-level differential: run the full resolution path both ways
+    // (ChunkResolver — the fact-based resolver over one shared EDB — vs
+    // AstWildcardResolver) over the same capped chunk body, and classify the
+    // outcomes. This is end-to-end (claimed bindings), not just per-statement
+    // verdicts.
     let resolver_module = Module {
         span: DUMMY_SP,
         body: subjects.iter().map(|(item, _)| item.clone()).collect(),
         shebang: None,
     };
+    // Build the chunk's relational model (the EDB) ONCE; every selector resolves
+    // against this shared model rather than re-projecting it — the single pass the
+    // independent per-selector matches share.
+    let chunk = ChunkResolver::new(&resolver_module);
     // `NEW_PATHS_ONLY=1` restricts the member pass to the shapes this change
     // affects — declarator-hole needles (carry `DECLARATORS`) and multi-statement
     // needles — so their real owners can be exercised uncapped quickly. The other
@@ -444,8 +449,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         if groups_only || (new_paths_only && !affects_new_path(selector)) {
             continue;
         }
-        let datalog =
-            DatalogResolver.resolve_member(&resolver_module, "corpus", "export", selector);
+        let datalog = chunk.resolve_member("corpus", "export", selector);
         let production =
             AstWildcardResolver.resolve_member(&resolver_module, "corpus", "export", selector);
         match (&datalog, &production) {
@@ -473,7 +477,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         for selector in &selectors.anonymous {
             classify_resolver(
                 &mut anonymous,
-                &DatalogResolver.resolve_anonymous_groups(&resolver_module, "corpus", selector),
+                &chunk.resolve_anonymous_groups("corpus", selector),
                 &AstWildcardResolver.resolve_anonymous_groups(&resolver_module, "corpus", selector),
             );
         }
@@ -483,12 +487,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     let mut groups = ResolverTally::default();
     let mut group_disagreements: Vec<(String, String, String)> = Vec::new();
     for case in &selectors.groups {
-        let datalog = DatalogResolver.resolve_member_group(
-            &resolver_module,
-            &case.request_id,
-            &case.selector,
-            &case.exports,
-        );
+        let datalog = chunk.resolve_member_group(&case.request_id, &case.selector, &case.exports);
         let production = AstWildcardResolver.resolve_member_group(
             &resolver_module,
             &case.request_id,

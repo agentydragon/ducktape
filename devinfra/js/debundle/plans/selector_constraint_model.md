@@ -698,11 +698,17 @@ needle side — 4 tagged-template literals, 2 `debugger;` statements — now mod
 statement compared set is the whole single-statement corpus; fail-closed fires only on genuinely
 malformed input.)
 
-**Landed (resolver-level wiring — the end-to-end path):** `source_match::DatalogResolver` implements
-the `SelectorResolver` trait using the fact matcher as the per-statement match oracle and reusing
-the **same** production binding-extraction (`declared_bindings`, `selector_binding_location`) that
-`AstWildcardResolver` uses — only the match decision is swapped, so resolver parity follows from the
-proven matcher parity by construction. It resolves member selectors (returning the claimed binding
+**Landed (resolver-level wiring — the end-to-end path):** `source_match::ChunkResolver` builds the
+chunk's relational model — the AST plus its top-level body projected to per-statement facts (the EDB)
+— **once**, then resolves every selector against that one shared model. This is the single pass the
+goal asks for: for today's cross-reference-free corpus the global solve factors into independent
+per-selector matches, and those matches now share one built EDB instead of each re-projecting it (a
+non-extractable statement projects to empty facts, which has no root and so matches nothing — the
+same outcome as skipping). `DatalogResolver` is the thin `SelectorResolver`-trait adapter over
+`ChunkResolver::new(module)` (per-call, for the differential's per-selector comparison). It uses the
+fact matcher as the per-statement match oracle and reuses the **same** production binding-extraction
+(`declared_bindings`, `selector_binding_location`) that `AstWildcardResolver` uses — only the match
+decision is swapped, so resolver parity follows from the proven matcher parity by construction. It resolves member selectors (returning the claimed binding
 name) and anonymous-statement groups; `source_match_test` proves via
 `DifferentialResolver<AstWildcard, Datalog>` that it returns the same claim as production (e.g.
 `function f(){…}` → owner `alpha`) and is differential-silent. **Every member-selector shape now
@@ -767,17 +773,18 @@ disagreements**, with the previously-fail-closed selectors whose owners are pres
 the **same owner as production** (resolved-parity); the binding-group pass (**814** groups) is
 likewise **0 fail-closed, 0 over-resolved, 0 value disagreements**. **0 genuine disagreements.**
 
-Note: the resolver differential re-projects facts per selector (the measurement binary has no
-cross-selector fact cache), so the now-active declarator-hole/window paths — which do real per-item
-alignment work where they used to bail instantly — make the full member × subject cross-product slow;
-runs are bounded by `CORPUS_DIFF_MAX_SUBJECTS` and the `NEW_PATHS_ONLY` filter. The verdict is
-unchanged by the bound: 0 disagreements among the exercised owners, and resolver parity follows by
-construction (only the match oracle is swapped; binding extraction and categoricity are production's).
+Note: the **datalog** side now builds the EDB once (`ChunkResolver`) and resolves all selectors
+against it — a true single pass, no per-selector re-projection. The differential's remaining cost is
+the **production reference** (`AstWildcardResolver` matches each needle across the body per selector,
+plus a needle parse on each side), which a differential inherently must run; that — not the datalog
+resolver — is what bounds the full member × subject cross-product, so runs use
+`CORPUS_DIFF_MAX_SUBJECTS` / `NEW_PATHS_ONLY` / `GROUPS_ONLY`. The verdict is unchanged by the bound:
+0 disagreements among the exercised owners, and resolver parity follows by construction (only the
+match oracle is swapped; binding extraction and categoricity are production's).
 
 Remaining: broaden subjects/chunks for wider resolved-parity coverage — member resolved-parity at
 scale is best measured by resolving each selector against its _target_ chunk (needs the spec→chunk
-map), and/or caching projected facts across selectors to lift the subject bound. Still-latent and
-differential-clean (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection has
+map). Still-latent and differential-clean (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection has
 held over 250k+ pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently
 anonymous match-any). Each remains differential-gated.
 
