@@ -201,3 +201,73 @@ remove the guesswork.
   pin-drift note, F3 `cli.md` `match-selector` row, F4/F5 minimizer behavior
   (skip-with-reason on neighbor-only uniqueness; menu-of-1 signal), F6 `alpha_all`
   flag spelling, F9 output-schema docs.
+
+## Pass 1 — running a real pass on `domains/graph/metaNode`
+
+Ran one full pass (23 name pins). Outcome: **5 converted** to forward-compatible
+`source_match` (4 accepted from the minimizer on own-identity anchors —
+`addMeetingBotCommand`/`startAiChatCommandHandler` own message strings,
+`sortNodeByViewSortSpec` `.sortBySortSpecification`, `canRunMeetingClassificationCommands`
+`eventClassificationConfig`; 1 hand-authored — `recordHomeNodeAttributeUsage` onto its
+own `throw new Error("Could not find workspace attribute definition")`, proven unique).
+**18 left as honest debt**: 12 TS codegen helpers, 3 anchorless re-export aliases, 2 bare
+delegators, 1 empty class. ~22% convertible is the _correct_ answer here — this module is
+anchor-poor (mostly mobx-decorated accessors + their helpers/aliases), not a pass failure.
+
+### F10 — `synthesize-selectors --apply` canonicalizes the whole YAML; review only after prettier (MEDIUM)
+
+`--apply` of 4 selectors produced a **2051-line diff** (whole file rewritten in the
+debundler's canonical 0-space form). Running gaffer's prettier reconciled it to **46/11
+— exactly the 4 semantic changes**. So the gaffer-AGENTS "prettier reconciles" claim
+holds _fully_, but a `git diff` taken before prettier is unreviewable noise. The skill /
+gaffer workflow should state: **run the repo formatter immediately after `--apply`,
+before reading the diff.**
+
+### F11 — the pipeline gate needs Bazel; only the per-selector loop runs binary-only (MEDIUM; refines F8)
+
+`spec validate` / `debundle run` (the realizability + cycle gate) can't run standalone
+from the released binary here: (a) `--tree-source-root` must be the **repo root**, not the
+snapshot dir — `spec_config` paths are repo-root-relative, and passing the snapshot dir
+doubles the path; (b) it then needs Bazel-provided **vendor package trees** (`mermaid`, …)
+via runfiles (`Could not locate Bazel-provided package tree; pass packagesRoot`). So:
+selector-debt/synthesize/match-selector = binary-only (great); the gate = the Bazel
+`:debundle` target. (Also: `--server_javabase` is a **startup** option — must precede
+`build`, not follow it; the gate recipe should show placement.)
+
+### F12 — 5 of 9 minimizer conversions were neighbor-borrows, and line-count didn't catch them (MEDIUM; reinforces F5)
+
+Of the 9 `would_change` candidates, **5 manufactured uniqueness from an adjacent unrelated
+declaration**, with the target's own body fully holed: `CardsViewAccessor`←`M2e`,
+`recordHomeNodeAttributeUsage`←a 30-line neighbor, `isMeetingTranscriptionProvider`←the
+`SystemCommandFailed` error class, `calendarViewAccessor`/`NavigationStackAccessor_export`←
+adjacent `decorate(…, "<method>")` statements. The `>40-line` over-pin heuristic flagged
+**none** of them (they were 33/8/2/2 lines). Neighbor-borrow is a _semantic_ property
+(uniqueness contributed only by a non-target node), not a size one — the detector in F5
+must key on that, not length. For 1 of the 5 (`recordHomeNodeAttributeUsage`) the target
+_did_ have its own anchor the minimizer ignored (the error string); the other 4 had none.
+
+### F13 — duplicated TS codegen helpers are structurally un-pinnable; carve them out (MEDIUM)
+
+**12 of 23** metaNode pins are `__decorate` / `__defineProperty` /
+`__getOwnPropertyDescriptor` helper aliases. All 12 skip with "no sparse selector" —
+correctly: the bundler emits an identical copy per module, so nothing but the minified
+name distinguishes them. Selector authoring _cannot_ fix these; they need debundler
+helper-recognition (the existing `effect: typescript_decorate_helper` annotation shows
+partial awareness). The skill should explicitly scope these out ("not your job — leave as
+name-pin debt; tracked as a helper-recognition tooling item") so an agent doesn't burn
+effort hunting anchors that can't exist.
+
+### F14 — honest-debt comments go stale when tooling catches up (LOW; worklist gap)
+
+`startAiChatCommandHandler` carried a comment: blocked on "matching one string-literal
+declarator inside a mixed multi-declarator declaration." That DECLARATORS support has since
+landed, and the minimizer now converts it cleanly (the comment was obsolete). A pass must
+**re-evaluate existing commented debt against current tooling**, not only the bare name
+pins — the worklist's `selector-debt` census lists the name pin but not "is its blocker
+still real." Add a re-check step.
+
+### Skill-update candidates from this pass
+
+- worklist: add "run the repo formatter right after `--apply`, before reviewing" (F10);
+- playbook: add a "duplicated codegen helpers → honest debt, not your job" case (F13);
+- worklist: add "re-check commented debt — tooling may have caught up" (F14).
