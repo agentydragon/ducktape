@@ -337,6 +337,91 @@ Productionizing it: add `ascent` to the root `Cargo.toml` + a crate_universe rep
 - crate_universe — no standalone-nested-cargo precedent, so the spike itself lived
   outside the tree until then).
 
+## Landing in the debundle binary
+
+This is not a side tool — eventually it replaces the **resolution layer**: the code
+that maps each spec selector to its node on the chunk. Today that is the per-selector
+matcher in `source_match/` (`binding_resolution.rs`, `matcher.rs`, `target_matching.rs`)
+seeded by the candidate/shape index (`selector_candidate_index.rs`, `shape_index.rs`).
+The solver replaces the matcher behind every caller.
+
+### EDB from analysis the pipeline already does
+
+The pipeline already parses the chunk (`js_ast`), computes binding resolution and the
+owner/reference graph (`program_analysis`, `facts/`, `graph/`, emitted as
+`owner_graph.json`), and builds the candidate index. Those _are_ the EDB: `resolves_to`
+
+- module membership + ordinal/purity from the owner graph (proven), AST
+  `child`/`kind`/`str_lit`/`prop_name` from the parsed tree (phase 2), label posting lists
+  from the candidate index. EDB construction is a re-projection of existing analysis,
+  slotted after analysis and before materialization.
+
+### It replaces several workflow parts, not just the matcher
+
+| Today                                                                       | Becomes                                                                                                                                  |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `lowering/materialize/plan_builder.rs` resolves each selector individually  | one `solve(spec, edb)`; the plan consumes per-target bindings                                                                            |
+| `validate` no-match / ambiguous / duplicate-claim (per-selector + post-hoc) | solver categoricity (no-match / ambiguous) + `all_different` (duplicate-claim) in one keep-going pass                                    |
+| `match_selector.rs` resolves one candidate                                  | single-query solve over the EDB; gains probing of **relational/cross-ref** candidates, not just local shapes                             |
+| `selector_codemod.rs` prove-gate (candidate-index uniqueness)               | solver categoricity; the minimizer's search space grows to relational atoms — it can now _propose_ the cross-ref selectors that now skip |
+| `selector_debt.rs` source-aware near-ambiguous / repeated-body scan         | solver reports per target **which atoms forced uniqueness, tagged invariant/variant**, and the categoricity margin                       |
+
+The cycle/atomic gate (`gate.rs`, `realizability/`, `atomic_units.rs`) and emit run
+**downstream of resolution on the resolved ownership** — unchanged, as are the module
+taxonomy and `describe`/`show-source`/`cluster` (they read the graph, not selectors).
+
+### Spec-format evolution (what the current YAML can't express)
+
+The current vocabulary — `selector.binding.name`, one contiguous `source_match`,
+`binding_groups`, `anonymous_statements` — has no way to say the things Datalog queries
+can, and that the pass needed: a cross-reference to another entity, disjoint relational
+constraints, one global symbol shared across selectors, or negation/counting. The format
+grows from "a name pin or one match-string" to **a query = a conjunction of atoms**:
+
+- **shape atom** — today's JS-with-holes `source_match`, lowered to
+  `child`/`kind`/`str_lit`/`prop_name` atoms. Holes mostly disappear: a query constrains
+  only what it mentions, so `CLASS_REST`/`STMT_LIST`/`ANYTHING` go away (only
+  ordered/positional holes remain, and those are T-variant).
+- **relational atoms** — `calls`, `alias`, `reads_member`, or the raw `resolves_to`,
+  tying the target to other nodes.
+- **cross-reference** — `@Name` is the _same logic variable_ as that entity's target,
+  shared across the whole spec (subsumes per-match `target_binding`); `$x` is a
+  clause-local hole.
+- **negation / uniqueness** (later) — "the _only_ X with method m", "whose sole use is
+  @Y" — stratified-negation atoms; a few anchors need them, optional at first.
+- **`minified_name`** — the bootstrap atom (temporary; dropped once nothing uses it).
+
+Sketch:
+
+```
+- name: isMeetingTranscriptionProvider
+  query: [{ calls: "@resolveMeetingTranscriptionProvider" }]
+- name: HI
+  query: [{ alias_of: "@NavigationStackItemAccessor" }]
+- name: DocumentAccessorFactory
+  query:
+    - shape: |
+        class $self extends ANYTHING {
+          getName() { return "DocumentAccessorFactory"; }
+        }
+```
+
+**Backward-compatible migration**: `binding.name` and `source_match` lower to query atoms
+(a name pin = `{ minified_name: "…" }`; a `source_match` = a shape atom), so every
+existing selector keeps resolving while the new atoms are added incrementally; the
+equivalence gate guards the swap.
+
+### Rollout
+
+1. **Shadow** — build EDB + solver, run alongside the matcher in `validate`, assert
+   per-target agreement across the chunk (the bootstrap equivalence gate).
+2. **Flip** — solver becomes source of truth in `plan_builder` / `validate` /
+   `match_selector` / the prove-gate; keep the matcher as a cross-check, then delete it.
+3. **Extend the YAML** — relational atoms + `@Name` cross-refs; `selector-debt` and
+   `synthesize-selectors` gain the cross-ref capability; convert the metaNode debt.
+4. **Phase-2 AST facts** — sub-statement `child`/`str_lit`/`prop_name` for shape/identity
+   anchors at AST granularity; then negation/uniqueness atoms.
+
 ## Open questions
 
 - **Derived predicates to ship first** — `calls` and `alias` (both over `resolves_to`)
