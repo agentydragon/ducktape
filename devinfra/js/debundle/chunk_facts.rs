@@ -21,7 +21,8 @@ use std::collections::BTreeMap;
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit, MemberExpr,
-    MemberProp, Module, ModuleDecl, ModuleItem, Pat, PropName, Stmt, VarDeclarator,
+    MemberProp, Module, ModuleDecl, ModuleItem, Pat, Prop, PropName, PropOrSpread, Stmt,
+    VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -347,9 +348,63 @@ impl Extractor {
                 }
                 Ok(id)
             }
+            Expr::Fn(fn_expr) => {
+                let id = self.node("FnExpr");
+                if let Some(ident) = &fn_expr.ident {
+                    let name = self.node("Ident");
+                    self.facts.ident_name.push((name, ident.sym.to_string()));
+                    self.facts.child.push((id, 0, name));
+                }
+                let function = self.function(&fn_expr.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            Expr::Object(object) => {
+                let id = self.node("Object");
+                for (index, prop) in object.props.iter().enumerate() {
+                    let prop = self.object_prop(prop)?;
+                    self.facts.child.push((id, index as u32, prop));
+                }
+                Ok(id)
+            }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
             other => unsupported(expr_variant_name(other)),
+        }
+    }
+
+    fn object_prop(&mut self, prop: &PropOrSpread) -> Result<NodeId, Unsupported> {
+        match prop {
+            PropOrSpread::Spread(spread) => {
+                let id = self.node("Spread");
+                let expr = self.expr(&spread.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::Shorthand(ident) => {
+                    let id = self.node("Shorthand");
+                    self.facts.ident_name.push((id, ident.sym.to_string()));
+                    Ok(id)
+                }
+                Prop::KeyValue(key_value) => {
+                    let id = self.node("KeyValue");
+                    let key = self.prop_key(&key_value.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let value = self.expr(&key_value.value)?;
+                    self.facts.child.push((id, 1, value));
+                    Ok(id)
+                }
+                Prop::Method(method) => {
+                    let id = self.node("ObjectMethod");
+                    let key = self.prop_key(&method.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let function = self.function(&method.function)?;
+                    self.facts.child.push((id, 1, function));
+                    Ok(id)
+                }
+                _ => unsupported("object: prop"),
+            },
         }
     }
 
@@ -597,6 +652,21 @@ mod tests {
         for name in ["a", "b", "c", "D", "e", "f"] {
             assert!(idents.contains(name), "ident {name} present: {idents:?}");
         }
+    }
+
+    #[test]
+    fn extracts_function_expression_and_object_literal() {
+        let facts = extract("const a = { handler: function (x) { return x; }, ...rest };")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Object", "KeyValue", "FnExpr", "Function", "Spread"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["handler"], "object key");
     }
 
     #[test]
