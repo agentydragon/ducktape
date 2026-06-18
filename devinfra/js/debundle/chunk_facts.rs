@@ -12,17 +12,19 @@
 //! children matter and in what order; this extractor mirrors those structural
 //! decisions, and the corpus differential is what proves the mirror is faithful.
 //! Coverage grows construct by construct until the corpus extracts with zero
-//! `Unsupported`. This is the seed slice — it faithfully covers simple
-//! declarator / call / member / literal shapes and errors on everything else;
-//! it is intentionally not yet complete.
+//! `Unsupported`. It currently projects ~99% of the `tana/re` index chunk's
+//! top-level statements (declarations, function/class bodies, calls, members,
+//! objects, assignments, common operators); the long tail (a few statement and
+//! literal kinds, module imports/default-exports) still errors loudly until
+//! modeled.
 
 use std::collections::BTreeMap;
 
 use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
-    BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit, MemberExpr,
-    MemberProp, Module, ModuleDecl, ModuleItem, Pat, Prop, PropName, PropOrSpread, Stmt,
-    VarDeclarator,
+    AssignTarget, BlockStmt, Callee, Class, ClassMember, Decl, Expr, ExprOrSpread, Function, Lit,
+    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, Pat, Prop, PropName, PropOrSpread,
+    SimpleAssignTarget, Stmt, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -367,8 +369,20 @@ impl Extractor {
                 }
                 Ok(id)
             }
+            Expr::Assign(assign) => {
+                let id = self.node("Assign");
+                self.facts
+                    .operator
+                    .push((id, assign.op.as_str().to_string()));
+                let target = self.assign_target(&assign.left)?;
+                self.facts.child.push((id, 0, target));
+                let right = self.expr(&assign.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
+            Expr::This(_) => Ok(self.node("This")),
             other => unsupported(expr_variant_name(other)),
         }
     }
@@ -405,6 +419,18 @@ impl Extractor {
                 }
                 _ => unsupported("object: prop"),
             },
+        }
+    }
+
+    fn assign_target(&mut self, target: &AssignTarget) -> Result<NodeId, Unsupported> {
+        match target {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                let id = self.node("Ident");
+                self.facts.ident_name.push((id, binding.id.sym.to_string()));
+                Ok(id)
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => self.member(member),
+            _ => unsupported("assign: target"),
         }
     }
 
@@ -667,6 +693,27 @@ mod tests {
         }
         let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(props, vec!["handler"], "object key");
+    }
+
+    #[test]
+    fn extracts_member_assignment() {
+        // `a.b = c;` — the module-export assignment shape that dominates the
+        // corpus after fn/object.
+        let facts = extract("a.b = c;").expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ExprStmt", "Assign", "Member"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        assert!(
+            facts.operator.iter().any(|(_, op)| op == "="),
+            "assign operator: {:?}",
+            facts.operator,
+        );
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["b"], "assigned member name");
     }
 
     #[test]
