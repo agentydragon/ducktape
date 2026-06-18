@@ -11,8 +11,10 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   and tone. Durable, runtime-agnostic. Keep it at the "what Haku is and
   what it must honor" level.
 - The **run procedure** (the imperative step-by-step a session executes) lives
-  in the runtime entrypoint, `haku/claude_web_env/run.md`, not here. If you find
-  yourself writing "step 1, step 2…" in `base/`, it belongs in the entrypoint.
+  in `haku/run.md` (environment-neutral); per-environment entrypoints like
+  `haku/claude_web_env/run.md` only layer setup and defer to it. Neither belongs
+  in `base/` — if you find yourself writing "step 1, step 2…" here, it belongs in
+  `haku/run.md`.
 - `schema/item.json` — the item schema, validated at write time. Changing item
   shape means editing this **and** the _Item contract_ / _Dashboard_ spec in
   `instructions.md` together.
@@ -27,6 +29,7 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
 - Do **not** add seed content to Haku's state from here — `haku-state` starts
   empty and Haku creates its own structure. `base/` and state are separate; the
   only thing Haku writes is state.
-- Keep `instructions.md` and the entrypoint in sync when you change the cycle:
-  the contracts are described once in `instructions.md`; the entrypoint only
-  sequences the steps and must not redefine them.
+- Keep `instructions.md` and `haku/run.md` in sync when you change the cycle: the
+  contracts are described once in `instructions.md`; `haku/run.md` only sequences
+  the steps (and per-environment entrypoints only add setup) — neither redefines
+  the contracts.

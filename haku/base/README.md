@@ -15,9 +15,10 @@ and letting the image rebuild (Flux image automation bumps the CronJob tag).
   adapts and grows from.
 - `schema/item.json` — JSON Schema for items, validated at write time.
 
-The step-by-step run procedure lives in the runtime entrypoint
-(`haku/claude_web_env/run.md`), which reads this manual; `base/` holds the
-durable contracts, not the imperative steps.
+The step-by-step run procedure lives in `haku/run.md` (environment-neutral;
+per-environment entrypoints like `haku/claude_web_env/run.md` just layer setup
+and defer to it), which reads this manual; `base/` holds the durable contracts,
+not the imperative steps.
 
 No `.mcp.json`: v0 has no MCP servers — Plaid is plain `psql` (via a
 `haku-sandbox` pod) and Gmail/Calendar are read-only REST calls.

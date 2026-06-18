@@ -175,8 +175,10 @@ credential can write only the state repo**:
   (editor-facing, per repo convention — not Haku's runtime manual),
   `schema/item.json`, `playbooks/` (examples, not a closed set), `README.md`.
   Authoritative, versioned and CI'd in the monorepo, read-only at run time —
-  Haku never writes it. The step-by-step run procedure lives in the runtime
-  entrypoint (`haku/claude_web_env/run.md`), not in base. There is **no
+  Haku never writes it. The step-by-step run procedure lives in `haku/run.md`
+  (environment-neutral; per-environment entrypoints like
+  `haku/claude_web_env/run.md` just layer setup and defer to it), not in base.
+  There is **no
   `.mcp.json`** (v0 has no MCP servers — Plaid is `psql`, Google is REST).
 - **state** — the `haku-state` repo: Haku's _accumulated information_. `items/`,
   `intake/` (+ `processed/`), `memory/`, `log/`, generated `dashboard/`. This is
@@ -195,8 +197,9 @@ haku/base/  (read-only, in ducktape)          haku-state/  (state, Haku writes)
 Properties this buys:
 
 - **The runtime is generic**: behavior is base content, not job config. v0
-  reads base straight from the ducktape checkout in the web home — `run.md` is
-  the entrypoint, `instructions.md` the manual — and writes only into the state
+  reads base straight from the ducktape checkout in the web home —
+  `haku/run.md` is the procedure (via the `claude_web_env/run.md` entrypoint),
+  `instructions.md` the manual — and writes only into the state
   clone at `~/haku-state`. (In the later in-cluster path, base is the image's
   working directory instead; same separation.)
 - **Self-modification is structural, not policed by CI.** Haku _cannot_ edit
@@ -454,7 +457,8 @@ order, each step a discrete deliverable:
    (delegates to the shared `web_setup.sh`), `profile.yaml` (claude-hook profile
    with the `K8S_*` overrides → group `haku` / `haku-sandbox`), `bootstrap.sh`
    (materializes `~/.kube/config` from the haku JWT, writes `~/.netrc`, clones
-   `haku-state` to `~/haku-state`), and `run.md` (the run procedure). Configured
+   `haku-state` to `~/haku-state`), and `run.md` (the web entrypoint → the
+   neutral `haku/run.md`). Configured
    in the Claude Code web UI per `haku/claude_web_env/README.md`.
 4. **`haku-sandbox` namespace + ServiceAccount + sandbox RBAC + quota** — the
    namespace + scoped JWT identity (group `haku`) landed via the identity PR

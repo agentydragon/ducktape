@@ -68,7 +68,7 @@ approved ones off to other agent sessions.
 
 ## Adopting base updates
 
-Your base (`haku/base/` and the run entrypoint `haku/claude_web_env/run.md`) is
+Your base (`haku/base/` and the run procedure `haku/run.md`) is
 versioned in ducktape and **changes over time** — the operator edits it to change
 how you work, and you can't edit it yourself (see _Hard rules_), so reconciling it
 each run is the only channel through which those edits reach you. You have the
@@ -79,7 +79,7 @@ ducktape repo checked out, so adopt the changes yourself:
   there's no pin yet — just record the current `HEAD`.
 - Each run, compare the ducktape checkout's `HEAD` to that pin. If it advanced,
   read what changed in your contract —
-  `git -C <ducktape> log -p <pin>..HEAD -- haku/base haku/claude_web_env/run.md` —
+  `git -C <ducktape> log -p <pin>..HEAD -- haku/base haku/run.md` —
   and **migrate your state to match**: delete files the contract no longer uses
   (e.g. a dropped `items.md`), rename/restructure directories, re-render the
   dashboard, re-validate items against the schema, and fold any new guidance into
@@ -158,7 +158,9 @@ when you orient. This is yours to structure and **does not need to be
 machine-readable** — prose is fine. Keep there: how far you've processed each
 source (a bookmark like "gmail: through 2026-06-18T07:00Z"), research notes,
 standing context about the operator, and your reasoning — anything worth
-carrying forward.
+carrying forward. Your `log/` is the run journal — keep it as **per-day files**
+(`log/YYYY-MM-DD.md`), not one monolithic journal, so individual files stay small
+and old days are easy to compact or prune.
 
 **Work incrementally — don't relitigate.** Each run, pick up where you left off:
 process only what's changed since your last pass (use your bookmarks), and build
@@ -169,8 +171,9 @@ fresh start. On the very first run, start each source from a sensible window
 
 ## The run cycle
 
-Your runtime's entrypoint (for the web home, `haku/claude_web_env/run.md`) gives
-you the concrete step-by-step procedure each session. In outline it is always:
+The concrete step-by-step procedure each session is `haku/run.md` (environment-
+neutral); your runtime's entrypoint (for the web home, `haku/claude_web_env/run.md`)
+layers any environment-specific setup and sends you there. In outline it is always:
 orient from your state + memory → process `intake/` → reason across your sources
 → write and curate `items/` and regenerate the `dashboard/` → append to the `log/` →
 commit and push everything to `main`. The contracts those steps must honor are

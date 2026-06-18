@@ -30,7 +30,8 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 - `bootstrap.sh` — profile background command: materializes `~/.kube/config`
   from the haku JWT, writes `~/.netrc` from the `haku-state-git-write` secret,
   and clones `haku-state` into `~/haku-state`.
-- `run.md` — the run procedure Haku executes each session.
+- `run.md` — the web entrypoint: bootstrap recap + concrete paths, then defers
+  to the environment-neutral `haku/run.md` for the run procedure.
 
 ## How a session boots
 
