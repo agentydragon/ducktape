@@ -433,6 +433,36 @@ equivalence gate guards the swap. Keeping the skin **1:1 with the IR** also keep
 rule-DSL switch cheap — a mechanical YAML→DSL codemod — deferred until the atom vocabulary
 stabilizes and only if relational/negation usage grows enough to justify it.
 
+### Holes under the query model
+
+The current `source_match` hole vocabulary maps four ways; only the first is a true
+"hole" in the CQ:
+
+- **existential** (the majority) — `ANYTHING`, anonymous `EXPR`/`STMT`, and the run-holes
+  `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / a single `CLASS_REST` / `CASE_REST` /
+  `DECLARATORS` ("ignore the rest") — **vanish**: a CQ asserts only what it requires, so
+  you simply do not mention those children/args/members.
+- **equality** — a named `EXPR_x` repeated (same subtree in two places) → a **shared
+  variable** used twice (a join). (List-hole name suffixes like `STMT_LIST_x` are labels,
+  not equality, so they stay existential.)
+- **predicate** — `STR_LITERAL_MATCHING_RE("re")` → a **filter atom**
+  `str_matches(node, "re")` (a builtin), not existence.
+- **ordered / positional** — multiple anchored runs implying a subsequence
+  (`CLASS_REST; a(){} CLASS_REST; b(){}` ⇒ `a` before `b`), `DECLARATORS_BEFORE/AFTER`,
+  the `target_statement` index → **sibling-order atoms**, which are **T-variant**.
+  Permitted only via the `where:` escape hatch and flagged by `selector-debt` — a
+  stabilization target, not a default.
+
+So in the clean native form the surviving holes are exactly the existence qualifiers;
+equality and regex become first-class CQ constructs, and order/position is
+expressible-but-discouraged.
+
+**Nothing is dropped during migration.** The shape atom _is_ today's matcher as one
+atom-producer, so a `source_match` with any hole — including ordered/positional ones —
+keeps resolving as an opaque shape atom. Native lowering (existential → gone, equality →
+variable, regex → filter) is opportunistic; a hole we cannot yet lower cleanly just stays
+inside an opaque shape atom, so the spec never loses expressiveness.
+
 ### Rollout
 
 1. **Shadow** — build EDB + solver, run alongside the matcher in `validate`, assert
