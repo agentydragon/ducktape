@@ -353,6 +353,68 @@ fn fail_closed_on_malformed_regex_predicate() {
 }
 
 #[test]
+fn var_declarator_alignment_pins_target_through_holes() {
+    js_ast::with_swc_globals(|| {
+        // A pinned `c` declarator between two `DECLARATORS` holes: the holes absorb
+        // declarators 0 and 2, the pinned segment aligns greedy-leftmost to the
+        // string-literal declarator at index 1 (alpha: `c` binds to `q`).
+        let needle =
+            facts("const DECLARATORS_BEFORE = null, c = \"abc\", DECLARATORS_AFTER = null;");
+        let subject = facts("const p = 1, q = \"abc\", r = 2;");
+        let alignment =
+            selector_match::var_declarator_alignment(&needle, &subject, Mode::AlphaAll, None)
+                .expect("supported needle")
+                .expect("the pinned declarator matches");
+        assert_eq!(alignment, vec![None, Some(1), None]);
+    });
+}
+
+#[test]
+fn var_declarator_alignment_prebinding_forces_target_identity() {
+    js_ast::with_swc_globals(|| {
+        // Two subject declarators carry the same init; prebinding the needle's `c`
+        // to the second subject binding pins the alignment to declarator 1 (the
+        // production declarator-hole resolver's per-candidate prebinding).
+        let needle = facts("const c = \"abc\", DECLARATORS_AFTER = null;");
+        let subject = facts("const x = \"abc\", y = \"abc\";");
+        let to_first = selector_match::var_declarator_alignment(
+            &needle,
+            &subject,
+            Mode::AlphaAll,
+            Some(("c", "x")),
+        )
+        .expect("supported")
+        .expect("matches x");
+        assert_eq!(to_first, vec![Some(0), None]);
+        let to_second = selector_match::var_declarator_alignment(
+            &needle,
+            &subject,
+            Mode::AlphaAll,
+            Some(("c", "y")),
+        )
+        .expect("supported");
+        // `c` is anchored-left (no leading hole), so prebinding it to `y`
+        // (declarator 1) cannot align to the anchored position 0 → no match.
+        assert_eq!(to_second, None);
+    });
+}
+
+#[test]
+fn var_declarator_alignment_rejects_kind_mismatch() {
+    js_ast::with_swc_globals(|| {
+        // `let` needle against a `const` subject: the declarators would align, but
+        // the `var`/`let`/`const` kind differs, so the statements do not match.
+        let needle = facts("let DECLARATORS_BEFORE = null, c = \"abc\";");
+        let subject = facts("const q = \"abc\";");
+        assert_eq!(
+            selector_match::var_declarator_alignment(&needle, &subject, Mode::AlphaAll, None)
+                .expect("supported needle"),
+            None,
+        );
+    });
+}
+
+#[test]
 fn fail_closed_on_misplaced_run_hole() {
     js_ast::with_swc_globals(|| {
         // `ARGS` in expression position (not an argument list) is a misplaced run

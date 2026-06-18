@@ -128,6 +128,38 @@ struct Disagreement {
 fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     let selectors = load_selectors(specs_root)?;
 
+    // Fast residual-path classification (no subjects needed): the resolver's
+    // shape dispatch bails with "not yet handled" before touching the body, so
+    // running it against an empty module surfaces exactly the member selectors
+    // that still fail closed by shape. `CLASSIFY_ONLY=1` returns after this.
+    if std::env::var("CLASSIFY_ONLY").is_ok() {
+        let empty = Module {
+            span: DUMMY_SP,
+            body: vec![],
+            shebang: None,
+        };
+        let mut residual: Vec<(&str, String)> = Vec::new();
+        for selector in &selectors.members {
+            if let Err(error) =
+                DatalogResolver.resolve_member(&empty, "classify", "export", selector)
+                && error.to_string().contains("not yet handled")
+            {
+                residual.push((selector.match_source.as_str(), error.to_string()));
+            }
+        }
+        println!(
+            "residual-path member selectors (still fail closed by shape): {}",
+            residual.len()
+        );
+        for (source, reason) in &residual {
+            println!("  --- {reason}");
+            for line in source.lines() {
+                println!("      {line}");
+            }
+        }
+        return Ok(());
+    }
+
     // Parse every chunk once; collect (item, facts) for each top-level statement
     // that the extractor can project (an unsupported chunk construct is skipped
     // as a subject and counted).
@@ -253,16 +285,21 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         let mut production_true = 0usize;
         let mut fact_true = 0usize;
         let mut disagreeing = 0usize;
-        for (subject_item, subject_facts) in &subjects {
-            tally.pairs += 1;
-            let production = source_match::needle_matches(selector, subject_item);
-            let fact = selector_match::matches(&needle_facts, subject_facts, mode)
-                .expect("supported needle never errors per-subject");
-            production_true += production as usize;
-            fact_true += fact as usize;
-            if production != fact {
-                tally.disagreements += 1;
-                disagreeing += 1;
+        // `RESOLVER_ONLY=1` skips the per-subject matcher pass (the matcher core is
+        // unchanged and already proven 0-disagreement) to re-validate just the
+        // resolver pass quickly, uncapped.
+        if std::env::var("RESOLVER_ONLY").is_err() {
+            for (subject_item, subject_facts) in &subjects {
+                tally.pairs += 1;
+                let production = source_match::needle_matches(selector, subject_item);
+                let fact = selector_match::matches(&needle_facts, subject_facts, mode)
+                    .expect("supported needle never errors per-subject");
+                production_true += production as usize;
+                fact_true += fact as usize;
+                if production != fact {
+                    tally.disagreements += 1;
+                    disagreeing += 1;
+                }
             }
         }
         if disagreeing > 0 {
@@ -350,12 +387,26 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         shebang: None,
     };
     let mut members = ResolverTally::default();
+    // Fail-closed (datalog Err, production Ok) member selectors — the resolver
+    // worklist. Print the source + the datalog reason so the residual rungs are
+    // identifiable, not just counted.
+    let mut fail_closed_members: Vec<(String, String)> = Vec::new();
     for selector in &selectors.members {
-        classify_resolver(
-            &mut members,
-            &DatalogResolver.resolve_member(&resolver_module, "corpus", "export", selector),
-            &AstWildcardResolver.resolve_member(&resolver_module, "corpus", "export", selector),
-        );
+        let datalog =
+            DatalogResolver.resolve_member(&resolver_module, "corpus", "export", selector);
+        let production =
+            AstWildcardResolver.resolve_member(&resolver_module, "corpus", "export", selector);
+        if datalog.is_err() && production.is_ok() {
+            fail_closed_members.push((
+                selector.match_source.clone(),
+                datalog
+                    .as_ref()
+                    .err()
+                    .map(|e| e.to_string())
+                    .unwrap_or_default(),
+            ));
+        }
+        classify_resolver(&mut members, &datalog, &production);
     }
     let mut anonymous = ResolverTally::default();
     for selector in &selectors.anonymous {
@@ -390,6 +441,15 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
             "  VALUE DISAGREEMENTS (both Ok, differ):        {}",
             tally.value_disagreements
         );
+    }
+    if !fail_closed_members.is_empty() {
+        println!("\nfail-closed member selectors (datalog Err, production Ok):");
+        for (source, reason) in &fail_closed_members {
+            println!("  --- reason: {reason}");
+            for line in source.lines() {
+                println!("      {line}");
+            }
+        }
     }
     let genuine = members.value_disagreements
         + members.over_resolved

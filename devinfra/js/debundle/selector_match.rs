@@ -558,6 +558,209 @@ fn place_segments(
     Ok(false)
 }
 
+/// The var-decl node of a single var-decl-statement's facts, paired with the
+/// root wrapper kind so the caller can enforce wrapper symmetry (a plain `const`
+/// statement must not match an `export const`). `None` if the statement is not a
+/// (possibly exported) variable declaration.
+fn var_decl_node<'a>(index: &Index<'a>) -> Option<(&'a str, NodeId)> {
+    let &root = index.roots.first()?;
+    match index.kind_of(root) {
+        "VarDecl" => Some(("VarDecl", root)),
+        "ExportDecl" => {
+            let &kid = index.children_of(root).first()?;
+            (index.kind_of(kid) == "VarDecl").then_some(("ExportDecl", kid))
+        }
+        _ => None,
+    }
+}
+
+/// Greedy-leftmost alignment of a needle var-decl's declarators (possibly
+/// carrying `DECLARATORS` run holes) onto a subject var-decl's declarators,
+/// recording for each needle declarator the subject declarator it placed onto.
+/// Mirrors `matcher::match_var_declarator_slice_with_alignment`: a hole-free
+/// needle aligns 1:1 (lengths must match); otherwise the non-hole declarators
+/// partition into maximal fixed segments placed as an ordered subsequence with
+/// gaps. `None` when no placement matches.
+fn align_var_declarators(
+    needle: &Index,
+    ndecls: &[NodeId],
+    subject: &Index,
+    sdecls: &[NodeId],
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
+    let mut alignment = vec![None; ndecls.len()];
+    let is_hole = |d: NodeId| is_run_hole_carrier(needle, "VarDecl", d);
+    if !ndecls.iter().any(|&d| is_hole(d)) {
+        if ndecls.len() != sdecls.len() {
+            return Ok(None);
+        }
+        for (idx, (&nd, &sd)) in ndecls.iter().zip(sdecls).enumerate() {
+            if !homo(needle, nd, subject, sd, mode, bindings)? {
+                return Ok(None);
+            }
+            alignment[idx] = Some(idx);
+        }
+        return Ok(Some(alignment));
+    }
+    let mut segments: Vec<(usize, usize)> = Vec::new();
+    let mut idx = 0;
+    while idx < ndecls.len() {
+        if is_hole(ndecls[idx]) {
+            idx += 1;
+            continue;
+        }
+        let start = idx;
+        while idx < ndecls.len() && !is_hole(ndecls[idx]) {
+            idx += 1;
+        }
+        segments.push((start, idx - start));
+    }
+    // An all-holes declarator list pins nothing (no positions to align).
+    if segments.is_empty() {
+        return Ok(Some(alignment));
+    }
+    let anchored_left = !is_hole(ndecls[0]);
+    let anchored_right = !is_hole(ndecls[ndecls.len() - 1]);
+    let placed = place_declarator_segments(
+        needle,
+        ndecls,
+        subject,
+        sdecls,
+        &segments,
+        anchored_left,
+        anchored_right,
+        0,
+        0,
+        mode,
+        bindings,
+        &mut alignment,
+    )?;
+    Ok(placed.then_some(alignment))
+}
+
+/// `place_segments` for declarator lists, additionally recording the chosen
+/// alignment (and rolling it back alongside `Bindings` on a failed placement).
+/// Mirrors `matcher::place_var_declarator_segments`.
+#[allow(clippy::too_many_arguments)]
+fn place_declarator_segments(
+    needle: &Index,
+    ndecls: &[NodeId],
+    subject: &Index,
+    sdecls: &[NodeId],
+    segments: &[(usize, usize)],
+    anchored_left: bool,
+    anchored_right: bool,
+    seg_idx: usize,
+    cand_min: usize,
+    mode: Mode,
+    bindings: &mut Bindings,
+    alignment: &mut [Option<usize>],
+) -> Result<bool, Unsupported> {
+    let Some(&(needle_start, seg_len)) = segments.get(seg_idx) else {
+        return Ok(true);
+    };
+    let remaining: usize = segments[seg_idx..].iter().map(|(_, len)| len).sum();
+    let Some(latest_start) = sdecls.len().checked_sub(remaining) else {
+        return Ok(false);
+    };
+    let mut lo = cand_min;
+    let mut hi = latest_start;
+    if seg_idx == 0 && anchored_left {
+        hi = hi.min(0);
+    }
+    if seg_idx == segments.len() - 1 && anchored_right {
+        lo = lo.max(latest_start);
+    }
+    for start in lo..=hi {
+        let bindings_snapshot = bindings.clone();
+        let alignment_snapshot = alignment.to_vec();
+        let mut segment_ok = true;
+        for offset in 0..seg_len {
+            if !homo(
+                needle,
+                ndecls[needle_start + offset],
+                subject,
+                sdecls[start + offset],
+                mode,
+                bindings,
+            )? {
+                segment_ok = false;
+                break;
+            }
+            alignment[needle_start + offset] = Some(start + offset);
+        }
+        if segment_ok
+            && place_declarator_segments(
+                needle,
+                ndecls,
+                subject,
+                sdecls,
+                segments,
+                anchored_left,
+                anchored_right,
+                seg_idx + 1,
+                start + seg_len,
+                mode,
+                bindings,
+                alignment,
+            )?
+        {
+            return Ok(true);
+        }
+        *bindings = bindings_snapshot;
+        alignment.copy_from_slice(&alignment_snapshot);
+    }
+    Ok(false)
+}
+
+/// Match two var-decl statements and, on success, return the greedy-leftmost
+/// declarator alignment (needle declarator index → subject declarator index,
+/// `None` for a `DECLARATORS`-hole-absorbed needle position); `None` if they do
+/// not match. `prebind` pins one needle identifier to one subject identifier
+/// before matching (alpha-mode coupling, mirroring `prebind_alpha_sym`), so the
+/// caller can force the target binding's identity — a no-op under `Exact`. This
+/// composes the whole-statement var-decl match (wrapper symmetry, `var`/`let`/
+/// `const` kind, declarator alignment) with production's
+/// `var_declarator_alignment`: a `Some` result *is* a faithful match. Fail-
+/// closed on an unsupported needle construct.
+pub fn var_declarator_alignment(
+    needle: &ChunkFacts,
+    subject: &ChunkFacts,
+    mode: Mode,
+    prebind: Option<(&str, &str)>,
+) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
+    let needle = Index::build(needle);
+    if let Some(reason) = unsupported_needle_construct(&needle) {
+        return Err(Unsupported { reason });
+    }
+    let subject = Index::build(subject);
+    let (Some((nwrap, nvd)), Some((swrap, svd))) =
+        (var_decl_node(&needle), var_decl_node(&subject))
+    else {
+        return Ok(None);
+    };
+    // Wrapper symmetry (plain vs exported) and `var`/`let`/`const` kind: the
+    // node-level structure the declarator alignment does not itself compare.
+    if nwrap != swrap || needle.operator.get(&nvd) != subject.operator.get(&svd) {
+        return Ok(None);
+    }
+    let mut bindings = Bindings::default();
+    if let Some((n, s)) = prebind
+        && !bindings.bind(n, s)
+    {
+        return Ok(None);
+    }
+    align_var_declarators(
+        &needle,
+        needle.children_of(nvd),
+        &subject,
+        subject.children_of(svd),
+        mode,
+        &mut bindings,
+    )
+}
+
 fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
     if out.insert(node) {
         for &child in index.children_of(node) {
@@ -687,6 +890,138 @@ pub fn match_top_level_sequence(
         &mut matches,
     )?;
     Ok(matches)
+}
+
+/// Resolve a **contiguous** multi-statement needle whose item at `target_idx` is
+/// a single-declarator var-decl, mirroring production's
+/// `find_matching_target_binding_ranges_with_single_declarator` /
+/// `SingleDeclaratorTargetWindow`. For each body window of length
+/// `needles.len()`, thread one `Bindings` through the items in source order:
+/// every non-target item matches as a whole statement, and at `target_idx` the
+/// match branches over the window item's declarators (each matched via the
+/// single needle declarator, so a target inside a multi-declarator owner is
+/// found). Returns `(target_body_idx, subject_declarator_idx)` for every
+/// full-window match — the caller reads the binding from that declarator and
+/// applies owner-level categoricity. This path is fixed-window (no module-level
+/// `STMT_LIST` holes); a hole-bearing needle item fails closed via the per-item
+/// unsupported scan, matching production (which rejects it).
+pub fn match_single_declarator_target_windows(
+    needles: &[ChunkFacts],
+    subject_items: &[ChunkFacts],
+    target_idx: usize,
+    mode: Mode,
+) -> Result<Vec<(usize, usize)>, Unsupported> {
+    let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
+    for needle in &needle_idx {
+        if let Some(reason) = unsupported_needle_construct(needle) {
+            return Err(Unsupported { reason });
+        }
+    }
+    let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
+    let n = needle_idx.len();
+    let mut matches = Vec::new();
+    if n == 0 || n > subject_idx.len() {
+        return Ok(matches);
+    }
+    for window_start in 0..=(subject_idx.len() - n) {
+        let mut bindings = Bindings::default();
+        let mut found: Vec<usize> = Vec::new();
+        match_declarator_target_window(
+            &needle_idx,
+            &subject_idx,
+            window_start,
+            target_idx,
+            0,
+            mode,
+            &mut bindings,
+            None,
+            &mut found,
+        )?;
+        matches.extend(
+            found
+                .into_iter()
+                .map(|decl| (window_start + target_idx, decl)),
+        );
+    }
+    Ok(matches)
+}
+
+/// One window's recursive item-by-item match for
+/// [`match_single_declarator_target_windows`], threading `Bindings` in source
+/// order and branching at `target_idx` over the window item's declarators. The
+/// chosen declarator index is carried to the window end (when it is recorded),
+/// so a binding is reported only for a full-window match. Mirrors
+/// `SingleDeclaratorTargetWindow::match_items`.
+#[allow(clippy::too_many_arguments)]
+fn match_declarator_target_window(
+    needles: &[Index],
+    subjects: &[Index],
+    window_start: usize,
+    target_idx: usize,
+    item_idx: usize,
+    mode: Mode,
+    bindings: &mut Bindings,
+    chosen_decl: Option<usize>,
+    found: &mut Vec<usize>,
+) -> Result<(), Unsupported> {
+    if item_idx == needles.len() {
+        if let Some(decl) = chosen_decl {
+            found.push(decl);
+        }
+        return Ok(());
+    }
+    let needle = &needles[item_idx];
+    let subject = &subjects[window_start + item_idx];
+    let snapshot = bindings.clone();
+    if item_idx == target_idx {
+        let (Some((nwrap, nvd)), Some((swrap, svd))) =
+            (var_decl_node(needle), var_decl_node(subject))
+        else {
+            return Ok(());
+        };
+        if nwrap != swrap || needle.operator.get(&nvd) != subject.operator.get(&svd) {
+            return Ok(());
+        }
+        let [needle_decl] = needle.children_of(nvd) else {
+            return Ok(());
+        };
+        for (decl_idx, &subject_decl) in subject.children_of(svd).iter().enumerate() {
+            *bindings = snapshot.clone();
+            if homo(needle, *needle_decl, subject, subject_decl, mode, bindings)? {
+                match_declarator_target_window(
+                    needles,
+                    subjects,
+                    window_start,
+                    target_idx,
+                    item_idx + 1,
+                    mode,
+                    bindings,
+                    Some(decl_idx),
+                    found,
+                )?;
+            }
+        }
+        *bindings = snapshot;
+    } else {
+        let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
+            return Ok(());
+        };
+        if homo(needle, n_root, subject, s_root, mode, bindings)? {
+            match_declarator_target_window(
+                needles,
+                subjects,
+                window_start,
+                target_idx,
+                item_idx + 1,
+                mode,
+                bindings,
+                chosen_decl,
+                found,
+            )?;
+        }
+        *bindings = snapshot;
+    }
+    Ok(())
 }
 
 /// Recursive ordered-subsequence placement of the needle's fixed segments into
