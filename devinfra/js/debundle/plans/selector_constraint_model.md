@@ -686,17 +686,21 @@ fidelity bug, not a matcher bug: `chunk_facts` dropped the `var`/`let`/`const` d
 so a `let` selector matched a `const` of the same shape. Recording the keyword as an operator-class
 label drove the differential to **0 disagreements** over those 505k pairs. **This is the gate
 working as designed** — proven, not asserted, and it found a gap the 28 hand-picked cases did not.
-Of the 4327 selectors, 4209 are compared and **93 are fail-closed/delegated** (the remaining
-unsupported constructs — named-hole equality, the regex predicate, …); 0 string-wildcard and 19
-multi-statement selectors are skipped.
+Of the 4327 selectors, 4223 are compared and **79 are fail-closed/delegated**; 0 string-wildcard
+and 19 multi-statement selectors are skipped. Extending run-hole carrier detection to `SwitchCase`
+bodies (`STMT_LIST` inside a `case`/`default` clause — the case test falls out as an anchored-left
+fixed segment under the same placement) closed the last **14** "run-hole keyword outside a list
+position" gaps with **0 new disagreements**, so run-hole carrier coverage is now **complete for the
+corpus**: every remaining fail-closed selector is the **`STR_LITERAL_MATCHING_RE` regex predicate**
+(79), one well-defined feature.
 
 Remaining toward a fully-green corpus gate: (a) broaden the differential — more subjects, more
 chunks, and binding-group expansion (the harness caps subjects because the production matcher
-re-parses per call); (b) shrink the **93 fail-closed** selectors via the rungs below; each is
-differential-gated. The rungs: (1) alpha via scope facts (shadowing); (2) named single-node /
-list-hole **equality** (`EXPR_x` repeated ⇒ same subtree — a shared variable); (3) resolver-level
-wiring (`DatalogResolver` returning the claimed binding) so the differential runs through the real
-resolution path, not just the matcher.
+re-parses per call); (b) shrink the **79 fail-closed** by lowering the regex predicate
+(`str_matches(node, "re")` filter atom); plus the still-deferred rungs — alpha via scope facts
+(shadowing), named single-node / list-hole **equality** (`EXPR_x` repeated ⇒ same subtree), and
+resolver-level wiring (`DatalogResolver` returning the claimed binding) so the differential runs
+through the real resolution path, not just the matcher. Each is differential-gated.
 
 ### What the matcher cannot do that the query model can
 

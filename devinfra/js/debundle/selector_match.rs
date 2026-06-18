@@ -238,7 +238,10 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
     let ck = index.kind_of(child);
     match parent_kind {
         // `STMT_LIST;` — an expression statement whose sole child is the keyword.
-        "Block" => {
+        // A `SwitchCase`'s body is a statement list too; its leading `case` test
+        // (when present) is a non-carrier, so it falls out as an anchored-left
+        // fixed segment under the same placement.
+        "Block" | "SwitchCase" => {
             ck == "ExprStmt" && {
                 let kids = index.children_of(child);
                 kids.len() == 1 && node_ident_hole(index, kids[0], STMT_LIST_HOLE_KEYWORD)
