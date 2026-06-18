@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://git.allegedly.works/haku/haku-state/schema/item.json",
+  "title": "Haku item",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "dedup_key", "title", "body", "value", "action", "source", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "ULID; also the filename stem (items/<id>.yaml)",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "dedup_key": {
+      "type": "string",
+      "description": "Stable key for 'same suggestion'; unique across all items in any status"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "body": {
+      "type": "string",
+      "description": "Rationale + evidence references (dates, merchants, amounts, item ids)"
+    },
+    "value": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Expected usefulness to the operator; see AGENTS.md anchors"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Perishability; past deadline the item is set to expired"
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "suggestion" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "prompt"],
+          "properties": {
+            "kind": { "const": "prepared_prompt" },
+            "prompt": {
+              "type": "string",
+              "description": "Self-contained prompt for an executor agent session"
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "string",
+      "description": "What produced the item — a playbook name (e.g. plaid_anomalies) or a short tag for a self-directed finding"
+    },
+    "status": {
+      "enum": ["open", "in_progress", "done", "rejected", "snoozed", "expired"]
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "Why the operator rejected it; feeds future calibration"
+    }
+  }
+}
