@@ -709,14 +709,25 @@ wrong claim) on the paths it does not yet mirror: var-declarator / declarator-ho
 (production routes those through per-declarator alignment), binding groups, and multi-statement
 needles.
 
-Remaining toward the full end-to-end gate: (a) run the **resolver** differential corpus-wide
-(extend `corpus_match_differential` to compare `DatalogResolver` vs `AstWildcardResolver` through
-`DifferentialResolver`, support-gated like the matcher run); (b) the **var-declarator / binding-group
-/ multi-statement** resolution paths the resolver currently fail-closes; (c) broaden subjects/chunks
-(the harness caps subjects because the production matcher re-parses per call). Still-latent and
-differential-clean so far (not yet exercised by the corpus): alpha shadowing (whole-pattern bijection
-has held over 172k pairs) and named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently
-treated as anonymous match-any). Each remains differential-gated.
+**Landed (the resolver differential, run corpus-wide):** `corpus_match_differential` now also runs
+the full `SelectorResolver` path both ways (`DatalogResolver` vs `AstWildcardResolver`) over the same
+chunk and classifies each selector: resolved-parity (both claim the same owner), reject-parity (both
+reject), fail-closed (datalog errors where production resolves — the worklist), over-resolved
+(datalog resolves where production errors — must be 0), value-disagreement (both resolve, differ —
+must be 0). Over the `78d928dca7` spec against the ReactGraph chunk: **0 genuine disagreements** (0
+value, 0 over-resolved). All **619 anonymous-statement selectors resolve to the identical owner**
+both ways (resolved-parity); the 3708 member selectors mostly reject against this non-target chunk
+(reject-parity) with **2 var-declarator fail-closes** and 0 disagreements. The end-to-end resolver
+path is therefore demonstrated parity-clean, with the fail-closed set being exactly the unimplemented
+resolution paths.
+
+Remaining: (a) the **var-declarator / binding-group / multi-statement** resolution paths the resolver
+fail-closes (member resolved-parity is best measured by resolving each selector against its _target_
+chunk, which needs the spec→chunk map); (b) broaden subjects/chunks (the harness caps subjects
+because the production matcher re-parses per call). Still-latent and differential-clean (not yet
+exercised by the corpus): alpha shadowing (whole-pattern bijection has held over 250k+ pairs) and
+named single-node-hole **equality** (`EXPR_x` ⇒ same subtree, currently anonymous match-any). Each
+remains differential-gated.
 
 ### What the matcher cannot do that the query model can
 

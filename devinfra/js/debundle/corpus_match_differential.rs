@@ -20,6 +20,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use source_match::{AstWildcardResolver, DatalogResolver, SelectorResolver};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{Module, ModuleItem};
@@ -43,18 +44,49 @@ fn item_facts(item: &ModuleItem) -> Result<chunk_facts::ChunkFacts, chunk_facts:
     chunk_facts::extract_facts(&module)
 }
 
-/// Every distinct `source_match` selector under a spec `modules/` root: member
-/// `source_match` selectors and anonymous-statement selectors. (Binding-group
-/// sugar is not expanded here yet — noted in the summary.)
-fn load_selectors(specs_root: &Path) -> Result<BTreeSet<AnonymousStatementSelector>> {
-    let mut selectors = BTreeSet::new();
+/// Member and anonymous-statement `source_match` selectors under a spec
+/// `modules/` root. (Binding-group sugar is not expanded here yet.)
+#[derive(Default)]
+struct Selectors {
+    members: BTreeSet<AnonymousStatementSelector>,
+    anonymous: BTreeSet<AnonymousStatementSelector>,
+}
+
+fn load_selectors(specs_root: &Path) -> Result<Selectors> {
+    let mut selectors = Selectors::default();
     for path in spec_modules::collect_module_files(specs_root)? {
         let claims = spec_modules::read_module_claims(&path)
             .with_context(|| format!("reading claims from {}", path.display()))?;
-        selectors.extend(claims.member_selectors);
-        selectors.extend(claims.anonymous_selectors);
+        selectors.members.extend(claims.member_selectors);
+        selectors.anonymous.extend(claims.anonymous_selectors);
     }
     Ok(selectors)
+}
+
+/// Resolver-level outcome comparison (mirrors `DifferentialResolver`'s agreement
+/// rule, but split so the fail-closed worklist is distinguished from genuine
+/// disagreements).
+#[derive(Default)]
+struct ResolverTally {
+    resolved_parity: usize,
+    reject_parity: usize,
+    fail_closed: usize,
+    over_resolved: usize,
+    value_disagreements: usize,
+}
+
+fn classify_resolver<T: PartialEq>(
+    tally: &mut ResolverTally,
+    datalog: &anyhow::Result<T>,
+    production: &anyhow::Result<T>,
+) {
+    match (datalog, production) {
+        (Ok(d), Ok(p)) if d == p => tally.resolved_parity += 1,
+        (Ok(_), Ok(_)) => tally.value_disagreements += 1,
+        (Err(_), Err(_)) => tally.reject_parity += 1,
+        (Err(_), Ok(_)) => tally.fail_closed += 1,
+        (Ok(_), Err(_)) => tally.over_resolved += 1,
+    }
 }
 
 #[derive(Default)]
@@ -114,8 +146,14 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         subjects.truncate(cap);
     }
 
+    let all: BTreeSet<AnonymousStatementSelector> = selectors
+        .members
+        .iter()
+        .chain(&selectors.anonymous)
+        .cloned()
+        .collect();
     let mut tally = Tally {
-        selectors: selectors.len(),
+        selectors: all.len(),
         ..Default::default()
     };
     let mut disagreements: Vec<Disagreement> = Vec::new();
@@ -123,7 +161,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     // this is the worklist of remaining rungs.
     let mut unsupported_reasons: BTreeMap<&'static str, (usize, Vec<String>)> = BTreeMap::new();
 
-    for selector in &selectors {
+    for selector in &all {
         if !selector.wildcard_string_literals.is_empty() {
             tally.skipped_string_wildcards += 1;
             continue;
@@ -243,6 +281,69 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         if disagreements.len() > 40 {
             println!("  … and {} more", disagreements.len() - 40);
         }
+    }
+
+    // Resolver-level differential: run the full SelectorResolver path both ways
+    // (DatalogResolver vs AstWildcardResolver) over the same capped chunk body,
+    // and classify the outcomes. This is end-to-end (claimed bindings), not just
+    // per-statement verdicts.
+    let resolver_module = Module {
+        span: DUMMY_SP,
+        body: subjects.iter().map(|(item, _)| item.clone()).collect(),
+        shebang: None,
+    };
+    let mut members = ResolverTally::default();
+    for selector in &selectors.members {
+        classify_resolver(
+            &mut members,
+            &DatalogResolver.resolve_member(&resolver_module, "corpus", "export", selector),
+            &AstWildcardResolver.resolve_member(&resolver_module, "corpus", "export", selector),
+        );
+    }
+    let mut anonymous = ResolverTally::default();
+    for selector in &selectors.anonymous {
+        classify_resolver(
+            &mut anonymous,
+            &DatalogResolver.resolve_anonymous_groups(&resolver_module, "corpus", selector),
+            &AstWildcardResolver.resolve_anonymous_groups(&resolver_module, "corpus", selector),
+        );
+    }
+    for (label, count, tally) in [
+        ("member", selectors.members.len(), &members),
+        ("anonymous", selectors.anonymous.len(), &anonymous),
+    ] {
+        println!("\nresolver differential ({label}, {count} selectors)");
+        println!(
+            "  resolved-parity (both claim the same owner): {}",
+            tally.resolved_parity
+        );
+        println!(
+            "  reject-parity   (both reject):                {}",
+            tally.reject_parity
+        );
+        println!(
+            "  fail-closed     (datalog Err, production Ok): {}",
+            tally.fail_closed
+        );
+        println!(
+            "  over-resolved   (datalog Ok, production Err): {}",
+            tally.over_resolved
+        );
+        println!(
+            "  VALUE DISAGREEMENTS (both Ok, differ):        {}",
+            tally.value_disagreements
+        );
+    }
+    let genuine = members.value_disagreements
+        + members.over_resolved
+        + anonymous.value_disagreements
+        + anonymous.over_resolved;
+    if genuine == 0 {
+        println!(
+            "\nRESOLVER GATE: 0 genuine disagreements; the rest is the fail-closed worklist. ✅"
+        );
+    } else {
+        println!("\nRESOLVER GATE: {genuine} genuine disagreement(s) — investigate.");
     }
     Ok(())
 }
