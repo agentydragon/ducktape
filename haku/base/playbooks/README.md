@@ -2,7 +2,7 @@
 
 These are **examples** — concrete starting points showing the _kind_ of value to
 look for and how to gather it. They are **not a closed set**: your scope is
-open-ended (see `../AGENTS.md`). Read them for the pattern, run the ones whose
+open-ended (see `../instructions.md`). Read them for the pattern, run the ones whose
 sources you currently have, adapt them, and grow your own over time — record
 playbooks you develop in your state `memory/`, not here (this directory is
 read-only base).
