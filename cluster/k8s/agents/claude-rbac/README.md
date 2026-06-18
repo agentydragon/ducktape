@@ -101,6 +101,12 @@ OIDC users who log into the `kubectl-sandbox-mcp` Authentik application
 `kubectl_sandbox_fixed_groups` scope mapping, so the RBAC below applies
 unchanged.
 
+Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
+separate explicit Authentik allowlist for effective groups. The normal provider
+client-credentials principal maps to `kubectl-sandbox-users`; the `haku-k8s`
+service account maps to `haku`; unknown machine principals receive no Kubernetes
+RBAC group.
+
 Laptops run their own admin kubeconfig (deployed by home-manager from
 `secrets/shared/kubeconfig.yaml`) with cluster-admin-level access; it's
 not governed by this sandbox RBAC. See
@@ -110,8 +116,8 @@ egress proxy eats client certs).
 
 ## Kubeconfig Provisioning
 
-The JWT is minted by the `authentik-jwt-rotation` CronJob via Authentik's
-`kubectl-sandbox-client-credentials` OAuth2 provider and committed
+The Claude web JWT is minted by the `authentik-jwt-rotation` CronJob via
+Authentik's `kubectl-sandbox-client-credentials` OAuth2 provider and committed
 SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`. At session start,
 <devinfra/k8s/kubeconfig.py> decrypts it and builds a kubeconfig
 with `user.token` auth pointing at `https://kubeapi.allegedly.works`

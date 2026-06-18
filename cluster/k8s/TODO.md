@@ -153,3 +153,10 @@ Options to consider:
 - [ ] Configure a fallback substituter on wyrm2 (e.g. `cache.nixos.org`
       ahead of `cache.allegedly.works`, or as a fallback) so a degraded
       attic doesn't block local rebuilds.
+
+## Slim down `authentik-jwt-rotation` image
+
+- [ ] 2026-06-18: Revisit `authentik-jwt-rotation` image contents. It still
+      bundles shell tools like `curl`/`git`; consider moving to the standard
+      Python image pattern with `pygit2` and certifi/CA-certs, matching the
+      other pygit2-based images, and remove the extra package cruft.

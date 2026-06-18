@@ -738,14 +738,24 @@ resource "authentik_property_mapping_provider_scope" "kubectl_sandbox_fixed_grou
     # Overrides the user's real groups with a fixed sandbox-only group.
     # The kubectl-sandbox-mcp application authenticates users via consent,
     # but the issued token only carries this group — no privilege escalation.
-    #
-    # Per-SA fixed groups (no real-group passthrough). The haku service
-    # account gets a read-only haku identity; everyone else keeps the
-    # sandbox group. kube-apiserver maps these via the oidc-ksbx-groups:
-    # prefix.
-    if request.user.username == "haku-k8s":
-        return {"groups": ["haku"]}
     return {"groups": ["kubectl-sandbox-users"]}
+  EXPR
+}
+
+## Machine-client scope mapping for kubectl-sandbox-client-credentials.
+## This provider is trusted by kube-apiserver, so keep the effective groups as
+## an explicit allowlist of known machine principals. Unknown users get no
+## Kubernetes RBAC group instead of falling back to sandbox.
+resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
+  name       = "kubectl-client-credentials-machine-groups"
+  scope_name = "groups"
+  expression = <<-EXPR
+    username = request.user.username
+    if username == "ak-kubectl-sandbox-client-credentials-client_credentials":
+        return {"groups": ["kubectl-sandbox-users"]}
+    if username == "haku-k8s":
+        return {"groups": ["haku"]}
+    return {"groups": []}
   EXPR
 }
 
@@ -773,11 +783,9 @@ resource "authentik_policy_binding" "kubectl_sandbox_scoped_users" {
 # ============================================================================
 # Non-interactive sibling of kubectl-sandbox-mcp: confidential OAuth2 client
 # using `client_credentials` grant, so a CronJob can mint JWTs without a
-# browser. Reuses the same `kubectl_sandbox_fixed_groups` scope mapping —
-# issued tokens always carry `groups: ["kubectl-sandbox-users"]`, which
-# kube-apiserver's AuthenticationConfiguration maps to the existing K8s
-# Group subject (`oidc-ksbx-groups:kubectl-sandbox-users`) that every
-# sandbox RoleBinding already binds. Zero new RBAC.
+# browser. Reuses the same kube-apiserver trusted issuer/audience for every
+# machine identity; the provider's machine-only scope mapping is an explicit
+# principal-to-groups allowlist.
 #
 # Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob. It runs
 # biweekly, exchanges client_id + client_secret for a JWT, commits the JWT
@@ -804,7 +812,7 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_client_credentials" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
-    authentik_property_mapping_provider_scope.kubectl_sandbox_fixed_groups.id,
+    authentik_property_mapping_provider_scope.kubectl_machine_groups.id,
   ]
 
   # client_credentials doesn't redirect, so allowed_redirect_uris is omitted.
@@ -814,29 +822,13 @@ resource "authentik_application" "kubectl_sandbox_client_credentials" {
   name              = "kubectl-sandbox-client-credentials"
   slug              = "kubectl-sandbox-client-credentials"
   protocol_provider = authentik_provider_oauth2.kubectl_sandbox_client_credentials.id
-  meta_description  = "Machine-to-machine kubectl access for Claude Code (client_credentials → JWT with fixed sandbox group)"
-}
-
-# Service account user for the client_credentials grant. Authentik resolves
-# the issued token's `preferred_username`/subject to this user; the fixed
-# groups scope mapping overrides whatever groups the user actually has.
-resource "authentik_user" "kubectl_sandbox_client_credentials" {
-  username = "kubectl-sandbox-client-credentials"
-  name     = "kubectl-sandbox client_credentials service account"
-  type     = "service_account"
-  path     = "goauthentik.io/service-accounts"
-}
-
-resource "authentik_policy_binding" "kubectl_sandbox_client_credentials" {
-  target = authentik_application.kubectl_sandbox_client_credentials.uuid
-  user   = authentik_user.kubectl_sandbox_client_credentials.id
-  order  = 0
+  meta_description  = "Machine-to-machine kubectl access with explicit Authentik principal-to-group mapping"
 }
 
 # Authentik auto-creates an internal service account for client_credentials
 # grants (username: ak-<slug>-client_credentials). The client_credentials flow
-# authenticates as THIS user, not the TF-managed one above. Without a policy
-# binding for it, the grant is rejected with invalid_grant.
+# authenticates as this user. Without a policy binding for it, the grant is
+# rejected with invalid_grant.
 data "authentik_user" "kubectl_sandbox_cc_auto" {
   username = "ak-kubectl-sandbox-client-credentials-client_credentials"
 }
@@ -844,7 +836,7 @@ data "authentik_user" "kubectl_sandbox_cc_auto" {
 resource "authentik_policy_binding" "kubectl_sandbox_cc_auto_user" {
   target = authentik_application.kubectl_sandbox_client_credentials.uuid
   user   = data.authentik_user.kubectl_sandbox_cc_auto.pk
-  order  = 1
+  order  = 0
 }
 
 # K8s Secret holding the client_id + client_secret. Lives in agents-infra
@@ -873,20 +865,18 @@ resource "kubernetes_secret" "kubectl_sandbox_client_credentials" {
 # kubectl-sandbox-client-credentials OAuth2 provider — no dedicated provider,
 # so no kube-apiserver issuer entry and no cluster bootstrap. Instead of a
 # provider-level client_secret, the authentik-jwt-rotation CronJob authenticates
-# as the haku-k8s service account using that SA's app-password token (an
-# `authentik_token`) paired with the shared provider's client_id. Authentik
-# issues a token FOR the haku-k8s SA, and the shared kubectl_sandbox_fixed_groups
-# scope mapping evaluates with request.user = haku-k8s, returning
-# groups: ["haku"] (every other caller still gets kubectl-sandbox-users). The
-# apiserver maps that claim to oidc-ksbx-groups:haku — read-only access to the
-# haku namespace, isolated from the sandbox group.
+# as the haku-k8s service account using that SA's app-password token paired with
+# the shared provider's client_id. Authentik issues a token FOR the haku-k8s SA,
+# and the provider's machine-only scope mapping emits groups: ["haku"] only for
+# that exact username. Unknown machine principals receive no Kubernetes group.
+# The apiserver maps that claim to oidc-ksbx-groups:haku — read-only access to
+# the haku namespace, isolated from the sandbox group.
 #
 # Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob (the haku-k8s
-# rotations.yaml entry). It exchanges client_id + the SA token (as
-# client_secret) for a JWT and commits it SOPS-encrypted to
-# secrets/haku-k8s-jwt.yaml.
+# rotations.yaml entry). It exchanges client_id + username + app-password for a
+# JWT and commits it SOPS-encrypted to secrets/haku-k8s-jwt.yaml.
 
-# Service account whose identity the issued JWT carries. The shared scope
+# Service account whose identity the issued JWT carries. The machine scope
 # mapping branches on this username (haku-k8s) to emit groups: ["haku"].
 resource "authentik_user" "haku_k8s" {
   username = "haku-k8s"
@@ -895,13 +885,13 @@ resource "authentik_user" "haku_k8s" {
   path     = "goauthentik.io/service-accounts"
 }
 
-# App-password token for the haku-k8s SA, used as the client_secret in the
-# client_credentials exchange against the shared provider's client_id. Mirrors
-# the agent_sa_token / claude_api SA-token pattern (intent = "api").
+# App-password token for the haku-k8s SA, used as the password in the
+# client_credentials username/password exchange against the shared provider's
+# client_id.
 resource "authentik_token" "haku_k8s" {
   identifier   = "haku-k8s-client-credentials"
   user         = authentik_user.haku_k8s.id
-  intent       = "api"
+  intent       = "app_password"
   expiring     = false
   retrieve_key = true
   description  = "client_credentials app-password for Haku's k8s JWT rotation"
@@ -916,8 +906,8 @@ resource "authentik_policy_binding" "haku_k8s_client_credentials" {
   order  = 2
 }
 
-# K8s Secret holding the shared provider's client_id + the haku-k8s SA token
-# (used as client_secret). Lives in agents-infra (where the authentik-jwt-rotation
+# K8s Secret holding the shared provider's client_id + the haku-k8s username
+# and app-password. Lives in agents-infra (where the authentik-jwt-rotation
 # CronJob runs) and is the only place this credential exists outside Authentik
 # — the minted JWT lives SOPS-encrypted in secrets/haku-k8s-jwt.yaml.
 resource "kubernetes_secret" "haku_client_credentials" {
@@ -925,12 +915,13 @@ resource "kubernetes_secret" "haku_client_credentials" {
     name      = "haku-client-credentials"
     namespace = "agents-infra"
     annotations = {
-      description = "client_id (shared kubectl-sandbox-client-credentials provider) + the haku-k8s SA app-password (client_secret), authenticating the haku-k8s service account so its JWT carries groups: [\"haku\"] (mounted by authentik-jwt-rotation CronJob)"
+      description = "client_id (shared kubectl-sandbox-client-credentials provider) + haku-k8s username/app-password, authenticating the haku-k8s service account so its JWT carries groups: [\"haku\"] (mounted by authentik-jwt-rotation CronJob)"
     }
   }
 
   data = {
-    client_id     = authentik_provider_oauth2.kubectl_sandbox_client_credentials.client_id
-    client_secret = authentik_token.haku_k8s.key
+    client_id = authentik_provider_oauth2.kubectl_sandbox_client_credentials.client_id
+    username  = authentik_user.haku_k8s.username
+    password  = authentik_token.haku_k8s.key
   }
 }

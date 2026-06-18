@@ -27,7 +27,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 import typer
@@ -39,13 +39,19 @@ logger = logging.getLogger(__name__)
 AUTH_BASE = "https://auth.allegedly.works"
 TOKEN_URL = f"{AUTH_BASE}/application/o/token/"
 
+CredentialMode = Literal["client_secret", "user_password"]
+
 
 class Rotation(BaseModel):
     name: str = Field(description="Human-readable name for logs and the commit message")
     provider_slug: str = Field(description="Authentik provider slug; pins the expected source-JWT issuer")
     scopes: str = Field(description="OAuth scopes for the client_credentials mint")
+    credential_mode: CredentialMode = Field(
+        default="client_secret",
+        description="How to authenticate to the token endpoint: provider client_secret or service-account username/password",
+    )
     credentials_dir: Path = Field(
-        description="Mounted secret dir holding client_id + client_secret (+ proxy_client_id when exchanging)"
+        description="Mounted secret dir holding client credentials (+ proxy_client_id when exchanging)"
     )
     sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
     token_field: str = Field(description="YAML field name under which the token is written")
@@ -95,10 +101,18 @@ def remaining_hours(sops_file: Path) -> float | None:
     return None
 
 
-def mint_jwt(client: httpx.Client, rotation: Rotation, client_id: str, client_secret: str) -> str:
-    resp = client.post(
-        TOKEN_URL, auth=(client_id, client_secret), data={"grant_type": "client_credentials", "scope": rotation.scopes}
-    )
+def mint_jwt(client: httpx.Client, rotation: Rotation) -> str:
+    client_id = (rotation.credentials_dir / "client_id").read_text().strip()
+    data = {"grant_type": "client_credentials", "scope": rotation.scopes}
+
+    if rotation.credential_mode == "client_secret":
+        client_secret = (rotation.credentials_dir / "client_secret").read_text().strip()
+        resp = client.post(TOKEN_URL, auth=(client_id, client_secret), data=data)
+    else:
+        username = (rotation.credentials_dir / "username").read_text().strip()
+        password = (rotation.credentials_dir / "password").read_text().strip()
+        resp = client.post(TOKEN_URL, data={**data, "client_id": client_id, "username": username, "password": password})
+
     resp.raise_for_status()
     token: str | None = resp.json().get("access_token")
     if not token:
@@ -136,10 +150,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
         return False
     logger.info("%s: rotating (remaining=%s)", rotation.name, "none" if remaining is None else f"{remaining:.0f}h")
 
-    client_id = (rotation.credentials_dir / "client_id").read_text().strip()
-    client_secret = (rotation.credentials_dir / "client_secret").read_text().strip()
-
-    source_jwt = mint_jwt(client, rotation, client_id, client_secret)
+    source_jwt = mint_jwt(client, rotation)
     source_payload = jwt_payload(source_jwt)
     if source_payload.get("iss") != rotation.expected_issuer:
         raise RuntimeError(

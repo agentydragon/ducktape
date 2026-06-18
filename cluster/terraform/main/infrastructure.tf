@@ -124,9 +124,9 @@ locals {
       },
       # kubectl-sandbox-client-credentials: machine-to-machine OIDC for
       # write_kubeconfig.py / authentik-jwt-rotation CronJob. Non-interactive
-      # client_credentials grant; same fixed-groups scope mapping as
-      # kubectl-sandbox-mcp, so issued tokens always carry
-      # groups: ["kubectl-sandbox-users"].
+      # client_credentials grant; Authentik maps known machine principals to
+      # their effective groups while kube-apiserver keeps trusting one stable
+      # issuer/audience.
       {
         issuer = {
           url       = "https://auth.${var.cluster_domain}/application/o/kubectl-sandbox-client-credentials/"

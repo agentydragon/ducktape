@@ -118,13 +118,15 @@ still use it.
 We already ran `kubectl-sandbox-mcp` for the interactive OAuth case — its
 `kubectl_sandbox_fixed_groups` scope mapping hardcodes
 `groups: ["kubectl-sandbox-users"]` on issued JWTs regardless of caller.
-The fix reuses that scope mapping on a new OIDC provider
-(`kubectl-sandbox-client-credentials`, `client_type = "confidential"`) with
+The non-interactive OIDC provider
+(`kubectl-sandbox-client-credentials`, `client_type = "confidential"`) uses
 a `client_credentials` grant so machine identities can mint JWTs without
-user consent. A 4th JWT issuer entry in the apiserver's
+user consent. Its current scope mapping is machine-specific: known principals
+map to explicit effective groups, while unknown principals receive no
+Kubernetes group. A 4th JWT issuer entry in the apiserver's
 `AuthenticationConfiguration` (`cluster/terraform/main/infrastructure.tf`)
-maps that provider's `groups` claim to the same
-`oidc-ksbx-groups:kubectl-sandbox-users` Group as every other sandbox path.
+maps that provider's `groups` claim through the stable
+`oidc-ksbx-groups:` prefix.
 
 **Zero RoleBinding edits.** Same constraint the cert migration enforced,
 same solution shape — map identity to Group at one layer, don't duplicate.
@@ -175,8 +177,9 @@ the already-minted JWT.
   mapping". Adding SA subjects to every binding (which the pre-2026-04-18
   token flow did) is a 30-binding surface that stops scaling.
 - **`kubectl-sandbox-mcp`'s `kubectl_sandbox_fixed_groups` scope mapping
-  is reusable** for any Authentik OAuth2 provider that wants to issue
-  sandbox-scoped JWTs. Don't rebuild it; attach it.
+  is reusable** for user-facing Authentik OAuth2 providers that should always
+  issue sandbox-scoped JWTs. Machine providers trusted by kube-apiserver should
+  instead use an explicit principal-to-groups allowlist.
 - **`mktemp` creates the file; `memfd_create` doesn't touch the filesystem
   at all.** The original latent crash (clobber-check against a zero-byte
   `mktemp` output) was masking the real network failure. Temp-file lifecycle
@@ -190,8 +193,9 @@ s_client -connect <host>:443 | openssl x509 -noout -issuer`. If the
 ## References
 
 - Fix commit: (this branch, claude/fix-kubectl-auth-4qjkm)
-- Pre-existing Authentik scope mapping:
-  `tf/gitops/agent-machine-access/main.tf` `kubectl_sandbox_fixed_groups`
+- Authentik scope mappings:
+  `tf/gitops/agent-machine-access/main.tf` `kubectl_sandbox_fixed_groups`,
+  `kubectl_machine_groups`
 - Apiserver `AuthenticationConfiguration`:
   `cluster/terraform/main/infrastructure.tf`
 - Gateway API routes: `cluster/k8s/kube-api-proxy/`

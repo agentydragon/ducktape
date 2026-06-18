@@ -12,4 +12,5 @@ spec:
     name: flux-system
   dependsOn:
     - name: github-secrets-sync-secrets
+    - name: agent-machine-access-tf
   timeout: 2m

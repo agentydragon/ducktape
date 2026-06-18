@@ -24,6 +24,8 @@ py_test(
     imports = ["."],
     deps = [
         ":rotate",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -13,6 +13,7 @@ rotations:
   - name: haku-k8s
     provider_slug: kubectl-sandbox-client-credentials
     scopes: openid profile email groups
+    credential_mode: user_password
     expected_group: haku
     credentials_dir: /var/run/secrets/authentik/haku-k8s
     sops_file: secrets/haku-k8s-jwt.yaml
