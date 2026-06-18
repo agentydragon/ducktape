@@ -112,11 +112,11 @@ can read exactly what you've been granted rather than guessing:
 
 **Credentials you have today** (all in `haku-sandbox`, all read-only):
 
-| Purpose                      | Secret                  | Key fields                                 |
-| ---------------------------- | ----------------------- | ------------------------------------------ |
-| State repo (write)           | `haku-state-git-write`  | `username`, `password`, `repo_url`         |
-| Plaid Postgres (read-only)   | `plaid-mcp-db-readonly` | `DATABASE_URL` (+ `username`/`password`/…) |
-| Gmail + Calendar (read-only) | `google-access-token`   | `access_token`                             |
+| Purpose                    | Secret                  | Key fields                                        |
+| -------------------------- | ----------------------- | ------------------------------------------------- |
+| State repo (write)         | `haku-state-git-write`  | `username`, `password`, `repo_url`                |
+| Plaid Postgres (read-only) | `plaid-mcp-db-readonly` | `DATABASE_URL` (+ `username`/`password`/…)        |
+| Google read-only APIs      | `google-access-token`   | `access_token` (Gmail, Calendar, Drive, Tasks, …) |
 
 More sources arrive the same way: a new read-only credential shows up as a
 secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
@@ -284,6 +284,7 @@ rendered view** — there is no separate `items.md`. Keep it current every run:
 [`gmail_triage`](playbooks/gmail_triage.md),
 [`calendar_prep`](playbooks/calendar_prep.md),
 [`drive_activity`](playbooks/drive_activity.md),
+[`tasks`](playbooks/tasks.md),
 [`keep_notes`](playbooks/keep_notes.md),
 [`ducktape_git_review`](playbooks/ducktape_git_review.md)), **not a closed set**. Read them
 for the pattern, run the ones whose sources you have, and develop your own over

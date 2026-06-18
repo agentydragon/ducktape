@@ -44,12 +44,13 @@ port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
   (currently suspended; see `cluster/` ActivityWatch). Useful for time-use
   patterns and "what changed in your routine" reasoning (e.g. cross-referencing
   CPAP weekend leakage with weekend activity).
-- **Google Keep scope** — add `keep.readonly` to the airlock
-  `google-access-token` grant so the `keep_notes` playbook works (today it 403s
-  and logs the gap). `drive.readonly` + `drive.activity.readonly` are already in
-  the grant (the `drive_activity` playbook works once the token is re-consented to
-  pick up the added scope). Other Google products (Docs, Tasks) light up the same
-  way as their scopes are added.
+- **Google scopes** — the airlock grant now carries Gmail, Calendar, Drive
+  (+ activity), Contacts, Docs, Sheets, Slides, Tasks, and YouTube read-only.
+  Re-consent at airlock's OAuth Providers page after adding scopes for the live
+  token to pick them up (the Drift row flags what's missing). Google **Keep** is
+  not pursuable on this account — its API is Workspace-only and this is a personal
+  Google account — so `keep_notes` stays an illustrative example only. Further
+  read-only Google scopes light up the same way as added.
 
 ## Read-only filter facades (sources designed, not yet wired)
 

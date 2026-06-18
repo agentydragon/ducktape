@@ -9,11 +9,13 @@ read-only base).
 
 Available now: [`plaid_anomalies`](plaid_anomalies.md),
 [`gmail_triage`](gmail_triage.md), [`calendar_prep`](calendar_prep.md),
-[`drive_activity`](drive_activity.md), [`keep_notes`](keep_notes.md), and
+[`drive_activity`](drive_activity.md), [`tasks`](tasks.md),
+[`keep_notes`](keep_notes.md), and
 [`ducktape_git_review`](ducktape_git_review.md) (your ducktape checkout — always
-reachable). The Google ones share the read-only Google token; other Google products (Docs, Tasks, …) are
-fair game the same way when the token carries their scope — if a call 403s, the
-scope isn't granted, so note the gap in your log and move on.
+reachable). The Google ones share the read-only Google token; other Google
+products (Docs, Slides, …) are fair game the same way when the token carries their
+scope — if a call 403s, the scope isn't granted, so note the gap in your log and
+move on.
 
 Designed but **not yet wired** — the tools aren't on your wire; don't attempt
 them, just note the gap in your log if one appears: PostScanMail (unopened mail →

@@ -47,9 +47,11 @@ oauth:
         - https://www.googleapis.com/auth/drive.readonly
         - https://www.googleapis.com/auth/drive.activity.readonly
         - https://www.googleapis.com/auth/calendar.readonly
+        - https://www.googleapis.com/auth/tasks.readonly
         - https://www.googleapis.com/auth/contacts.readonly
         - https://www.googleapis.com/auth/documents.readonly
         - https://www.googleapis.com/auth/spreadsheets.readonly
+        - https://www.googleapis.com/auth/presentations.readonly
         - https://www.googleapis.com/auth/youtube.readonly
       redirect_uri: https://airlock.allegedly.works/oauth/callback/google
       refresh_secret:
