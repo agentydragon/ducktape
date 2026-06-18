@@ -29,14 +29,51 @@ A `source_match` selector must satisfy two things, and only one is checkable now
    bundle in hand. It is an _educated guess_, and making that guess well is the
    whole job.
 
-The minimizer (`synthesize-selectors`) optimizes a mechanical cost model. It finds
-_a_ unique anchor, not necessarily _the_ anchor that identifies the entity. It will
+The minimizer (`synthesize-selectors`) is a first-class tool in your kit: it makes
+selectors **compact and unique** for you — holing volatile subtrees, collapsing
+declarator runs, and proving uniqueness (see The toolkit below). But it has **no
+semantic intelligence** — it is a mechanical read-off of the AST optimizing a cost
+model, so it finds _a_ unique anchor, not necessarily _the_ anchor that identifies
+the entity, and when both a readable anchor and an accidental token are unique it
+cannot tell which is which. It will
 happily pin a bare `0`, or a generic `{ name: ANYTHING }` key with the value holed,
 because those are cheap and unique _today_. Your job is to override those with an
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
 The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `binding_groups`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+
+## The toolkit
+
+Four debundler subcommands, all reading the chunk + `modules/` tree directly (no
+pipeline build or owner graph needed for this loop). Treat the **minimizer as a
+first-class instrument**, not a last resort:
+
+- **`spec selector-debt`** — the census. Ranks fragile name pins; add
+  `--source-file` to also surface the near-ambiguous structural selectors (see the
+  worklist).
+- **`spec synthesize-selectors` — the selector minimizer.** Your workhorse for
+  _compact_: it holes volatile subtrees (bodies, args, declarator runs,
+  `CLASS_REST`/`CASE_REST`), collapses multi-declarator runs into `binding_groups`,
+  and proves uniqueness — so much of the backlog converts to short, unique-today
+  selectors with no hand-authoring. Run it dry to read its pick, `--candidates N` for
+  a ranked menu, `--apply` to land a whole bucket. Use it two ways: as a **first-pass
+  converter** for the easy majority, and as a **compaction pass** once you have
+  hand-picked an anchor but want the surrounding shape holed down. But it has **no
+  semantic intelligence**: whether the anchor it kept is _meaningful_ — and swapping
+  in the readable one when it kept an accidental but-unique token — is judgment you
+  supply on top of its output (next section); it cannot be read off the AST.
+- **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
+  unique-or-not, the colliding matches, and over-pin slack.
+- **`spec validate`** — the whole-spec keep-going sweep (`no-match` / `ambiguous` /
+  `duplicate-claim`).
+
+Division of labor: the minimizer makes a selector **compact and unique today** by
+mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
+token that happens to be unique) and so **forward-compatible** is intelligence you
+supply — it cannot be read off the AST. Both halves of the backlog flow through
+these tools — the name pins from `selector-debt`'s default census, and the
+near-ambiguous structural selectors from its `--source-file` pass.
 
 ## Shared CLI workflows
 
@@ -173,9 +210,9 @@ authority.
 
 The design rationale (why anchor choice is an agent judgment rather than a cost
 term) and the verifiability asymmetry live in the `selector_authoring_agent` plan
-under `devinfra/js/debundle/plans/`. `match-selector` (which probes "what does this
-candidate match?" and reports over-pin slack in one shot) has landed; the one planned
-affordance still to come is `synthesize-selectors --candidates N` (a menu of ranked
-candidates rather than the minimizer's single pick). The two-bundle-version dogfood
-pair is the eventual scorecard for whether these instructions actually produce
-durable selectors.
+under `devinfra/js/debundle/plans/`. Both `match-selector` (probes "what does this
+candidate match?" and reports over-pin slack in one shot) and
+`synthesize-selectors --candidates N` (a menu of ranked candidates rather than the
+minimizer's single pick) have landed. The two-bundle-version dogfood pair is the
+eventual scorecard for whether these instructions actually produce durable
+selectors.
