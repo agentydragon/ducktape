@@ -65,8 +65,8 @@ warn() {
   log "WARNING: $*" >&2
 }
 
-# Hook implementation is Rust-only. Keep parsing the old selector so stale web
-# UI env vars or setup args do not break session startup.
+# Hook implementation is Rust-only. Keep parsing the old --impl setup arg so a
+# stale value does not break session startup.
 HOOK_IMPL="rust"
 # Install mode: "profile" (nix profile install) or "home-manager".
 MODE="${DUCKTAPE_WEB_SETUP_MODE:-profile}"
@@ -83,9 +83,6 @@ case "$MODE" in
     MODE="profile"
     ;;
 esac
-if [ -n "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" ] && [ "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" != "rust" ]; then
-  warn "Ignoring deprecated DUCKTAPE_CLAUDE_HOOK_IMPL=$DUCKTAPE_CLAUDE_HOOK_IMPL; claude-hook is Rust-only"
-fi
 DEVTOOLS_OUTPUT="devtools"
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

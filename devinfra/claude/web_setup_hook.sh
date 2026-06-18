@@ -10,9 +10,7 @@
 #
 # Unlike the init_script invocation of web_setup.sh (which runs BEFORE claude
 # and does not see user-UI env vars), this Setup hook fires as a subprocess of
-# `claude` and inherits the full user-UI env. `claude-hook` is Rust-only now;
-# web_setup.sh still logs any stale DUCKTAPE_CLAUDE_HOOK_IMPL value but always
-# installs the Rust hook implementation.
+# `claude` and inherits the full user-UI env.
 #
 # No-ops on CLI sessions (CLAUDE_CODE_REMOTE unset) — web_setup.sh is
 # web-only (Nix flake install, git remote, etc.) and must not run on NixOS.
@@ -34,7 +32,7 @@ exec >>"$LOG_FILE" 2>&1
 # Logged verbatim so we can observe what (if anything) Setup hooks receive.
 STDIN_DATA=$(cat)
 echo "[$(date -Iseconds)] web_setup_hook.sh: cwd=$(pwd) BASH_SOURCE=${BASH_SOURCE[0]}"
-echo "[$(date -Iseconds)] web_setup_hook.sh: CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-<unset>} IS_SANDBOX=${IS_SANDBOX:-<unset>} DUCKTAPE_CLAUDE_HOOK_IMPL=${DUCKTAPE_CLAUDE_HOOK_IMPL:-<unset>}"
+echo "[$(date -Iseconds)] web_setup_hook.sh: CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-<unset>} IS_SANDBOX=${IS_SANDBOX:-<unset>}"
 echo "[$(date -Iseconds)] web_setup_hook.sh: stdin=${STDIN_DATA:-(empty)}"
 
 if [ -z "${CLAUDE_CODE_REMOTE:-}" ]; then
