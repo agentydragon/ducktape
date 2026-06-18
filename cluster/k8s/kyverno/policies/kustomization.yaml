@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - require-gitops.yaml
   - inject-mitmproxy.yaml
+  - inject-haku-mitmproxy.yaml
   - restrict-agent-kustomization-patch.yaml
   - clusterrole-cleanup-controller-jobs.yaml
   - clusterrole-cleanup-controller-workloads.yaml

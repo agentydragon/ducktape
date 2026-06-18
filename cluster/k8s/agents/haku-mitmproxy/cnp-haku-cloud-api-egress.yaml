@@ -1,0 +1,60 @@
+# Allow the haku-mitmproxy egress to the external endpoints Haku workloads need.
+# Additive with the operator's default-deny NetworkPolicy.
+#
+# The registry FQDNs (ghcr.io, *.githubusercontent.com, Docker Hub) cover
+# image-related pod egress; Gmail/Calendar reach Google's APIs. Plaid Postgres
+# is reached cluster-internally (not via this proxy) — see the `toEntities:
+# cluster` rule in ccnp-haku-proxy-egress.yaml.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-cloud-api-egress
+  namespace: haku-mitmproxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mitmproxy
+  egress:
+    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: registry-1.docker.io
+        - matchName: auth.docker.io
+        - matchName: production.cloudflare.docker.com
+        - matchName: index.docker.io
+        - matchName: gmail.googleapis.com
+        - matchName: www.googleapis.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Allow forwarding to any in-cluster Service. Sandbox workloads keep
+    # mitmproxy in-path even when targeting cluster endpoints; NO_PROXY in the
+    # inject policy still permits explicit bypass for Service FQDNs that already
+    # match (`*.svc.cluster.local` and `10.0.0.0/8`).
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "11434"
+              protocol: TCP

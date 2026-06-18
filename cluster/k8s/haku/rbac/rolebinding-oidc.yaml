@@ -2,13 +2,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: haku-oidc-secret-reader
-  namespace: haku
+  namespace: haku-sandbox
   annotations:
-    description: 'Binds haku-secret-reader to the OIDC group oidc-ksbx-groups:haku — the group kube-apiserver derives from the Authentik haku-client-credentials JWT (groups: ["haku"]). This is how the Haku background-agent routine reads its own namespace''s read-only credentials.'
+    description: 'Binds haku-sandbox-admin to the OIDC group oidc-ksbx-groups:haku — the group kube-apiserver derives from the Authentik haku-client-credentials JWT (groups: ["haku"]). This is how the Haku background-agent routine drives its own sandbox namespace.'
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-secret-reader
+  name: haku-sandbox-admin
 subjects:
   - kind: Group
     name: oidc-ksbx-groups:haku

@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-mitmproxy-ca-key
+    namespace: haku-mitmproxy
+    annotations:
+        description: haku-mitmproxy CA private key for haku-sandbox HTTPS inspection
+type: Opaque
+stringData:
+    mitmproxy-ca.key: ENC[AES256_GCM,data:1qt/F//VKyZhhAdslqGKNL12FiR5oJTwPSRzHwWnPEcT1Je3AkOT6B07AdXmAcr+xKkvVWCT52u5YmcXXDPnTlr94iGJnRnKNmVmcpRyKKkcE2dE+GVfv8YCsPO5zkaOgBGGc4LbMphg8In4rBwpSjObL7559bn1HjNiaY2MA3wKwrJOtNvAVhUOkBdiHhkauX4gWZodhWpX3A9QY+iBvN1CoqWd+5RlqfKMWxcud3EOI6SiRbFk7Mcy7/qH3REb5s8loHiV8FbiIRVV7RO1bPLXMsEH8v7Y22GyKtXe6Gwgfyanysna8PKSV3twMtTooaWMXdTod1OjfAXsco0u1nMbWP8swuYTceO8yqMxOnrBTL3dwKZcC1fjdlEec14RjjO/uH3Brtcd0e+WE5aI5AYvMH8d9oQOv4ZU9Or352r2JHh1J+ObApUt5QrNo8XUA3LQglhpSJ9t0uo/Eqx2M/+fUTAbFi0J/ZOWdDxWJqbMARnhPZ2NAFPi9XVtinecnHKSH7IevTXCJVp3R+PYfLbXNJkiC0cBMth2scFOzYNyGEXTQ6zcjOTU9gxDWJCgV48KWjHHSnVT22w+KvBvk5VPOvQTUsGIp0yuRF9X1kA1LL2wTKWWMUBP2pyBi6xdEIxoZ9cg6fZ962bItK+h58DpQVwP9NsU/s+xj03eOSBosa8CEvSzkVDFDEFJxpPB95QVRQmQhSnGwQDbqBu6i0nTBTgdlVs9S4mDnGNcqFYqrqqBVDo2rzFVwNJnfbZST+eZlcKrOLncIcF9AMlv5TWzEZ1fLWY+63ZSmropa/vDjDf9UlWJS7Xnfs2sVGTPDL2j0IhcyjbyS8cJaogJCSOZIgfxeFJgjlSUV4kYgFeOJH5hS38iOjXz6v7xl1kl+4B/GOjvHbAqy6KnJeOW1yUBQ0eyoZutcTUgILZtNJlAM2LArI1wi1fodXcy2yinQ4/4NJUwocTCqp7toiocbVwH7FHOYezegtIuYFJW6AA4UADNcIl0YZ5cnLoUBdz9+RjyshGCI6u2G9pKMVQL2EX6qyQ4V8VO/8UbTZIR6iYqvSCL9i5kKf7RnImKvegSqO6tCO6y+ne2kEOU5dSp0ZagIeYYuSSrHDLVVMrg6D3uzt54wPeO2sh6dKkvJ+83YdtKT92lUUGQqtmo4pGrL9eKqH9mMpTuQ2V/gl8NkJLBmFbajyKVkcXt1FUJ8qIm4NnMaAXWvk+yEfHtzZbVkxZE6V8Ty+vW4eV1iBBhag/UBMJ+/Nw+K6TDx3n9UHuX80eah/vWovfle3PsZjmkLr2+ov609Kkd93TtrQQYnkGh5kKi4jPoMQIlT5Gz4PIseLH5+HQ02Mx+pDurmllcrhmMXZIFEp5BkW+cEPrclp++JQjLz2DNEY0HZXTBbheACc3V3DZx+76UvLtoyboYTeoL6ugoz4CKsqphDA5vHAHSG+LEZGPOG2UdE26wokYCdeCdB8jY1JUV3Fn2shrD+05WL8l3VMx9wvPLh/4wXKXfTTWsqTrh+z3ovNGnkDSUZ+prnvbFt8DmejX94dji16c4G/wXCMOMvUxcaANp5yZL/HCmzkcDkzd3z6KZfcqIJ5T0xh4Qw63LOJjnFrkBI6boe7ri3OO7td5DfXsEh2hdZAAoOEMGVY3c5Cc1VhKSYPvDgc4jsp5ubMwY6nOBcpEWhls/TXN4Qn7wc/5iTBzSMiuRSB+tgdWNA3LLCSka9XdxlWi/Rb7+RNxCMCuj5GwoPbQK5QvjJEoFCcWKItklHPigah27/sSLkf3y/1e/4KF7k1D/QXwSjyqTE6BhGB9Z+/lQAK+cYbK3fb/nyHmcvscrCqqSmu7fXk7kYlV6u3ZY2Xi95/b/hYAIryKO4aGlDWeFR4A6oO33iBc7gSjJ6QBc5TfNYlkh4TEeq5ihTr3mCUmyGC+vuoiiFEP/IyHVvHMJEWC00LzRym8mKfFPZVsCv2SCqumFxItRx4VGIFLIABiMsxwgqBcH+vzZfw+MZbikzANxA6txhfijcqde+HCCftzjuOnTpRPEv/G8+XUbRAHW5qnnZaDeVdaVebPxUGjZvoeIK7ptus7iR+ABWBhbsn9R0A4ha9trgIpuLelNwsETlF+azn/OWZwFsV+4H1ZYn4cIZ1rLJLyoSaz2RiB8Xq6GB5vFNZpO1hb+5MeDyF8O1APskoQMno2tDBOIBS4t7IGi47MT/Nt//Wl7Ce3hsoqL6+v1CFGN9YLQ1ibULbYpdE95+jyn1dL12e8GadNGIKOo,iv:RuOTTgsrsdI+teTIrBS6ayQ7yk0uvoTqV0Qlz1bKfUk=,tag:dz+VXnuOammz/hsZxBLmaw==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBla3hDcWJYUzFmWTNIMmh4
+            ZVhqcWp6N2NHQjQzY1dFdEd1OFh0OXVGd1JVCjJDUzBYWUV2OERVcUNsWUg2V2h2
+            NlBtRlNCMmJncTAyL1RrZ2xEWWRTbjAKLS0tIEFUR05NMUczcHZKcThjQzFOWFJO
+            alZaY0xmSTFMZFQ1TEFYQWx6emJxM2MKU3h/bC6DFqyB4lwTldHshiwCHqL/UEI7
+            eb5KF5FFGcjNt2FmqdnrWq0ZLEHxsBJCU4dBIJHYX3OUtXB5Hk0fmw==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2aDcweTBIQnd2bExlL0tP
+            V0ZiRE5Cb2hRQ1pNdUZyWld0VU9JQk9vNDFFCmxVWDlESXlqaHU2SGt1a09kZkFn
+            OFhpb1BWNkdpV2xwL1UvSWpPNE4yZWcKLS0tIHZ6ZGpDbStZZHNCb29pUUVUM2FH
+            N2NjNUxhYTNZSW91eDVqanBHSCsvcU0KtyLbRM0C1UyU/5P/r8JrZ5sYpSSvJzOe
+            cQCn97SrodSBGs8BuUp8Ahpb6EMMAOOvDRiOEb7pVIvQqiDfshVRJQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-18T06:33:37Z"
+    mac: ENC[AES256_GCM,data:0DpfrPAG+6NJdZVWveLvV/Oxn9UTxd5+6nkVTarxRHX8CA60mChsyRJoxLV+1ZoKBOHrcuBIAVUngFf5JlKKlx0ogm8smhma0J3NOyZ+mEdOcu1rpEC9CtHZSuqJoSJcwvqxGJOO6ixgU1NHswlf/ma+kK2S3tG4f+e1juOw0bU=,iv:qTEw0+YDa+K8OmsMq4yrUu+NRuVP6vYv0hoG8u4EKtk=,tag:dbCfI61bLgrhIpUyp8QPKQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

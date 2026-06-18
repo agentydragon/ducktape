@@ -1,11 +1,34 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-secret-reader
-  namespace: haku
+  name: haku-sandbox-admin
+  namespace: haku-sandbox
   annotations:
-    description: "Haku's credential perimeter: get/list Secrets and ConfigMaps in the haku namespace only (e.g. plaid-mcp-db-readonly, the capability registry). Deliberately not the cluster diagnostics group. Every secret here must hold only a read-only credential — Haku can fully use anything it can read."
+    description: "Full CRUD within the haku-sandbox compute sandbox (mirrors claude-sandbox-admin): pods/log/exec/attach, services, configmaps, secrets, PVCs, events, plus apps and batch workloads. The namespace is network-isolated behind its own mitmproxy; secrets here are still expected to hold only read-only credentials Haku may fully use."
 rules:
   - apiGroups: [""]
-    resources: ["secrets", "configmaps"]
-    verbs: ["get", "list"]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/attach
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+      - events
+    verbs: ["*"]
+
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["*"]
+
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["*"]

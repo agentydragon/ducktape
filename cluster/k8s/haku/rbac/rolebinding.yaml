@@ -2,12 +2,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: haku-scanner-secret-reader
-  namespace: haku
+  namespace: haku-sandbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-secret-reader
+  name: haku-sandbox-admin
 subjects:
   - kind: ServiceAccount
     name: haku-scanner
-    namespace: haku
+    namespace: haku-sandbox

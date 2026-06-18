@@ -5,3 +5,5 @@ resources:
   - role.yaml
   - rolebinding.yaml
   - rolebinding-oidc.yaml
+  - resourcequota.yaml
+  - limitrange.yaml
