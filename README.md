@@ -14,6 +14,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `grocy_mcp/`       | Auth-aware remote MCP server for Grocy        |
 | `x/editor_agent/`  | Experimental editor agent and package helpers |
 | `airlock/`         | Human-in-the-loop MCP approval proxy          |
+| `haku/`            | Personal background agent                     |
 | `props/`           | LLM critic eval system                        |
 | `devinfra/`        | Repo build, CI, lint infrastructure           |
 | `ansible/`         | System configuration (playbooks)              |
@@ -132,6 +133,8 @@ bb run //devinfra/lint:buildifier    # Format Bazel files
 ### `plans/`
 
 `<dir>/plans/` holds future work and work-in-progress design notes. Delete or tombstone a plan once it's fully done.
+
+When a component has one central plan, put it at `<dir>/PLAN.md` instead of a single-file `plans/` directory (e.g. `loom/PLAN.md`, `haku/PLAN.md`). Same lifecycle: delete or tombstone once fully done.
 
 ### `debug/`
 

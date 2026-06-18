@@ -28,6 +28,7 @@ spec:
   namespaces:
     - openclaw-sandbox
     - claude-sandbox
+    - haku-sandbox
   externalSecretSpec:
     refreshInterval: 1m
     secretStoreRef:

@@ -222,6 +222,7 @@ See README.md for descriptions of each convention. Agent rules:
 - **`x/`**: code under `x/` is experimental/unstable. Don't treat it as stable API.
 - **`TODO.md`**: cross-cutting or project-level TODOs go here. Remove entries once done.
 - **`plans/`**: delete or tombstone a plan once fully completed.
+- **`PLAN.md`**: a directory's single central plan — use instead of a one-file `plans/`; same lifecycle as `plans/` entries.
 - **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
 - **`SPEC.md`**: update when the component's high-level contract changes (new promise, new credential class, new behavior visible to users). Do **not** record implementation details — those go in README.md or code. Example: <devinfra/claude/claude_hook/SPEC.md>.
 
