@@ -347,6 +347,19 @@ Action kinds (only these two):
   and the evidence, and let it work out the how; don't shrink the ask to one
   mechanical step when the real win is bigger.
 
+**Interlink entities by their natural URL.** Where an item references an addressable
+entity, link it so the operator (and executors) can click straight through. The
+dashboard renders Markdown, so use `[text](url)` in `body` (and ``[`code`](url)``
+for file paths, which renders as a code-styled link); put plain URLs in
+`prepared_prompt` text. Natural URLs by source: **ducktape files** →
+`github.com/agentydragon/ducktape/blob/devel/<path>`; **GitHub PRs / commits / CI
+runs** → their `…/pull/<n>`, `…/commit/<sha>`, `…/actions/runs/<id>` URLs; **Gmail
+messages** → `mail.google.com/mail/u/0/#all/<messageId>`; **Tana nodes** → their Tana
+URL; **Drive files** → `drive.google.com/file/d/<fileId>/view`; **Calendar events** →
+their `htmlLink`. Plaid transactions have no public URL — keep referencing them by
+date + merchant + amount. Never put a secret or token in a URL (the hard rules
+already forbid this).
+
 ## Dashboard
 
 Your queue's rendered view is a small **read-only website** at
@@ -362,13 +375,17 @@ rendered view** — there is no separate `items.md`. Keep it current every run:
   result (you may wire it as a git pre-commit hook so it can't drift from the
   items); pushing is what updates the live site.
 - Render all `open` items, sorted by `value` descending, scannable by **tiering**
-  the deep backlog rather than dropping items:
-  - **Up next**: the top items (≤7) to act on now, each with its `body` and — for
-    `prepared_prompt` items — a `claude.ai/new?q=<url-encoded prompt>` deep-link
-    button (fall back to a link to the item file when the encoded prompt would
-    exceed ~2000 characters).
-  - **Backlog**: everything else in a collapsible `<details>` block — a compact
-    list/table of all remaining open items, however long.
+  the deep backlog rather than dropping items. Each task is a **collapsible
+  `<details>`**: the `<summary>` is a compact row (value, title, deadline, kind),
+  and the task's full **`body` — compiled from Markdown to HTML** — plus its action
+  button live **only inside that task's own expanded details view**; nothing about a
+  task is shown on the page until you open it. The layout must stay readable on
+  mobile (don't let the deadline/kind squeeze the title; let long tokens/URLs wrap).
+  - **Up next**: the top items (≤7) to act on now; expanding a `prepared_prompt` item
+    reveals a `claude.ai/new?q=<url-encoded prompt>` deep-link button (fall back to a
+    link to the item file when the encoded prompt would exceed ~2000 characters).
+  - **Backlog**: everything else inside a collapsible `<details>` section — each
+    still its own collapsible task, however long the list.
   - A standing **"Add intake note"** link to Forgejo's new-file editor,
     `https://git.allegedly.works/haku/haku-state/_new/main/intake/`, plus a footer
     with counts by status and the last-scan time.
