@@ -165,8 +165,15 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    // One selector resolver for the whole chunk, shared across every request's
+    // member and binding-group resolution (built once — see the seam contract in
+    // `source_match::SelectorResolver`). Production stays on the hand-rolled
+    // matcher here; the fact resolver swaps in at the flip without touching this
+    // wiring.
+    let selector_resolver = source_match::AstWildcardResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
         runtime_module: &runtime_ast.module,
+        selector_resolver: &selector_resolver,
         declaration_by_name: &declaration_by_name,
         chunk_top_level_mark,
         target_dir,

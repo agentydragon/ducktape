@@ -120,13 +120,22 @@ the production wiring/flip/delete — sequenced below.
   `ChunkResolver` impls it directly; the per-call `DatalogResolver` wrapper (which
   rebuilt the whole EDB on every call — fatal in the 1751-request loop) is
   **deleted**. Gate: `source_match_test` + `corpus_match_differential` build green.
-- **F2-wire (next):** thread one chunk-bound resolver, **built once per chunk**,
-  through the three production call sites, keeping production = `AstWildcardResolver`
-  (pure refactor, no behavior change). Sites: `lowering/plans.rs::resolve_source_match`,
-  `lowering/materialize/plan_builder.rs::resolve_request_source_matches` (member +
-  binding-group), `anonymous_resolution.rs`. The resolver is built in
-  `ChunkPlanBuilder` (where `runtime_module` is in scope) and shared across all
-  `add_explicit_request` calls. Gate: debundle e2e tests green + output unchanged.
+- **F2-wire-member-group ✅ (done this run):** the chunk-bound resolver is built
+  once in `materialize_chunk` (where `runtime_ast.module` has a stable borrow) and
+  carried on `ExplicitRequestContext`, so all 1751 requests share it. The member
+  path (`plans.rs::resolve_source_match` → `resolver.resolve_member`) and the
+  binding-group path (`plan_builder.rs::resolve_request_source_matches` →
+  `resolver.resolve_member_group(...).bindings`) now route through the seam.
+  Production stays `AstWildcardResolver` (the seam delegates to the same free
+  functions — behaviorally identical). Gate: `lowering_test` + e2e
+  `{edit_gate_source_match,binding_name_resolution,gate}_cli_test` green.
+- **F2-wire-anon (next):** the two anonymous paths still call the free functions —
+  the chunk-bound ordinals path (`lowering/anonymous.rs::resolve_anonymous_statement_ordinals`,
+  resolves against `runtime_module`) and the per-source co-move path
+  (`anonymous_resolution.rs`, resolves against each `parsed.module`). Thread the
+  seam through both (the ordinals path shares the chunk resolver; the co-move path
+  builds one resolver per parsed source). Needed before the flip so **every** path
+  goes through the seam. Gate: anonymous e2e tests green + output unchanged.
 - **F3 (GATE):** corpus differential = **0** over the real spec — already green
   standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
   fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
@@ -189,8 +198,9 @@ the production wiring/flip/delete — sequenced below.
 Append a row per verified commit. (Pre-run state: kernel complete + proven on real
 data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 
-| phase | step                                                       | commit            | gate result                                                                    |
-| ----- | ---------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
-| (pre) | kernel + surface + plan                                    | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                             |
-| F     | runbook + state correct                                    | 7cf02821          | doc only                                                                       |
-| F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver | (this)            | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |
+| phase | step                                                                        | commit            | gate result                                                                    |
+| ----- | --------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| (pre) | kernel + surface + plan                                                     | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                             |
+| F     | runbook + state correct                                                     | 7cf02821          | doc only                                                                       |
+| F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver                  | 7306ce37          | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |
+| F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | (this)            | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |

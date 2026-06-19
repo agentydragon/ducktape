@@ -76,7 +76,7 @@ pub(super) struct MemberRequest {
 impl MemberRequest {
     pub(super) fn resolve_source_match(
         &mut self,
-        runtime_module: &Module,
+        resolver: &dyn source_match::SelectorResolver,
         request_id: &str,
         cache: &mut BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
     ) -> Result<()> {
@@ -86,12 +86,7 @@ impl MemberRequest {
         let resolved = match cache.get(&selector) {
             Some(resolved) => resolved.clone(),
             None => {
-                let resolved = source_match::resolve_member_binding(
-                    runtime_module,
-                    request_id,
-                    &self.export_name,
-                    &selector,
-                )?;
+                let resolved = resolver.resolve_member(request_id, &self.export_name, &selector)?;
                 cache.insert(selector, resolved.clone());
                 resolved
             }

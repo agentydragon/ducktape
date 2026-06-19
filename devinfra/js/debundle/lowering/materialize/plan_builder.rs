@@ -317,6 +317,12 @@ pub(super) struct ChunkPlan {
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
     pub(super) runtime_module: &'a Module,
+    /// The selector resolver, built once for this chunk (see
+    /// `materialize_chunk`) and shared across every request's member and
+    /// binding-group `source_match` resolution. Carrying the resolver rather
+    /// than rebuilding it per request is what keeps a fact-based resolver's
+    /// per-chunk EDB construction off the hot path.
+    pub(super) selector_resolver: &'a dyn source_match::SelectorResolver,
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
@@ -327,6 +333,7 @@ pub(super) struct ExplicitRequestContext<'a> {
 
 fn resolve_request_source_matches(
     request: &mut LogicalRequest,
+    resolver: &dyn source_match::SelectorResolver,
     runtime_module: &Module,
     keep_going: bool,
     diagnostics: &mut Vec<SourceMatchDiagnostic>,
@@ -384,12 +391,10 @@ fn resolve_request_source_matches(
         let resolved = match source_match_group_cache.get(&cache_key) {
             Some(resolved) => resolved.clone(),
             None => {
-                let resolved = match source_match::resolve_member_binding_group(
-                    runtime_module,
-                    &request.id,
-                    &selector,
-                    &exports_by_target,
-                ) {
+                let resolved = match resolver
+                    .resolve_member_group(&request.id, &selector, &exports_by_target)
+                    .map(|group| group.bindings)
+                {
                     Ok(resolved) => resolved,
                     Err(error) if keep_going => {
                         let message = format!("{error:#}");
@@ -434,9 +439,7 @@ fn resolve_request_source_matches(
         if resolved_member_indices.contains(&idx) {
             continue;
         }
-        if let Err(error) =
-            member.resolve_source_match(runtime_module, &request.id, source_match_cache)
-        {
+        if let Err(error) = member.resolve_source_match(resolver, &request.id, source_match_cache) {
             if !keep_going {
                 return Err(error);
             }
@@ -590,6 +593,7 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         resolve_request_source_matches(
             request,
+            ctx.selector_resolver,
             ctx.runtime_module,
             self.keep_going,
             &mut self.source_match_diagnostics,
