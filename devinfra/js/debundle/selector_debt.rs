@@ -460,6 +460,11 @@ fn compute_selector_debt_impl(
                         .or_default()
                         .push(occurrence);
                 }
+                MemberSelectorSpec::CrossRef(_) => {
+                    // A cross-ref selector is re-minify-proof by construction —
+                    // the debt solution, not name-pin debt — so it contributes
+                    // nothing to the debt tallies.
+                }
             }
         }
 

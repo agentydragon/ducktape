@@ -303,6 +303,11 @@ pub(super) fn build_members(
                     })?;
                     (String::new(), export_name, Some(selector), false)
                 }
+                spec::MemberSelectorSpec::CrossRef(_) => anyhow::bail!(
+                    "logical_module {request_id}: members[].selector.cross_ref is not yet \
+                     resolvable — the @Name global-solve pass is pending; see \
+                     devinfra/js/debundle/debug/2026_06_19_p4_debt_worklist.md"
+                ),
             };
             let claim_origin = match &m.selector.source_match {
                 Some(selector) => match selector.target_binding.as_deref() {

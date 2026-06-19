@@ -1167,6 +1167,69 @@ pub struct MemberSelector {
     pub binding: Option<BindingSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cross_ref: Option<CrossRefSelector>,
+}
+
+/// Pin a member by a **cross-reference** to another spec member instead of by
+/// this member's own (re-minify-fragile) minified name. The anchor names another
+/// member by its readable name; the target is resolved through the owner graph as
+/// the entity standing in the named relation to the anchor's resolved binding —
+/// e.g. a shapeless delegator `function T(x){ return Anchor(x) }` pinned as "the
+/// function that references @Anchor". Exactly one of `references` / `aliases`.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(deny_unknown_fields)]
+pub struct CrossRefSelector {
+    /// The target references the anchor member (a delegator / consumer body).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references: Option<String>,
+    /// The target aliases the anchor member (`const T = Anchor`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aliases: Option<String>,
+    /// Optional statement-kind constraint disambiguating when several owners
+    /// stand in the relation to the anchor (e.g. `function_declaration`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BindingSourceKind>,
+}
+
+/// The validated cross-reference target (`MemberSelector::selected` resolves the
+/// `references`/`aliases` one-of into this).
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CrossRefTarget {
+    pub relation: CrossRefRelation,
+    pub anchor: String,
+    pub kind: Option<BindingSourceKind>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum CrossRefRelation {
+    References,
+    Aliases,
+}
+
+impl CrossRefSelector {
+    fn target(&self) -> std::result::Result<CrossRefTarget, MemberSelectorError> {
+        let (relation, anchor) = match (&self.references, &self.aliases) {
+            (Some(anchor), None) => (CrossRefRelation::References, anchor.clone()),
+            (None, Some(anchor)) => (CrossRefRelation::Aliases, anchor.clone()),
+            (None, None) => {
+                return Err(MemberSelectorError {
+                    message: "members[].selector.cross_ref must include `references` or `aliases`",
+                });
+            }
+            (Some(_), Some(_)) => {
+                return Err(MemberSelectorError {
+                    message: "members[].selector.cross_ref must use either `references` or \
+                              `aliases`, not both",
+                });
+            }
+        };
+        Ok(CrossRefTarget {
+            relation,
+            anchor,
+            kind: self.kind,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
@@ -1180,26 +1243,29 @@ pub struct BindingSelector {
 
 impl MemberSelector {
     pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
-        match (&self.binding, &self.source_match) {
-            (Some(binding), None) => Ok(MemberSelectorSpec::Binding(binding.clone())),
-            (None, Some(source_match)) if source_match.target_statement.is_some() => {
-                Err(MemberSelectorError {
-                    message: "members[].selector.source_match cannot include `target_statement`",
-                })
-            }
-            (None, Some(source_match)) if source_match.target_statements.is_some() => {
-                Err(MemberSelectorError {
-                    message: "members[].selector.source_match cannot include `target_statements`",
-                })
-            }
-            (None, Some(source_match)) => {
+        match (&self.binding, &self.source_match, &self.cross_ref) {
+            (Some(binding), None, None) => Ok(MemberSelectorSpec::Binding(binding.clone())),
+            (None, Some(source_match), None) => {
+                if source_match.target_statement.is_some() {
+                    return Err(MemberSelectorError {
+                        message: "members[].selector.source_match cannot include `target_statement`",
+                    });
+                }
+                if source_match.target_statements.is_some() {
+                    return Err(MemberSelectorError {
+                        message: "members[].selector.source_match cannot include `target_statements`",
+                    });
+                }
                 Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
             }
-            (Some(_), Some(_)) => Err(MemberSelectorError {
-                message: "members[].selector must use either `binding` or `source_match`, not both",
+            (None, None, Some(cross_ref)) => cross_ref.target().map(MemberSelectorSpec::CrossRef),
+            (None, None, None) => Err(MemberSelectorError {
+                message: "members[].selector must include one of `binding`, `source_match`, or \
+                          `cross_ref`",
             }),
-            (None, None) => Err(MemberSelectorError {
-                message: "members[].selector must include either `binding` or `source_match`",
+            _ => Err(MemberSelectorError {
+                message: "members[].selector must use exactly one of `binding`, `source_match`, \
+                          or `cross_ref`",
             }),
         }
     }
@@ -1209,6 +1275,7 @@ impl MemberSelector {
 pub enum MemberSelectorSpec {
     Binding(BindingSelector),
     SourceMatch(AnonymousStatementSelector),
+    CrossRef(CrossRefTarget),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -1327,5 +1394,67 @@ mod tests {
             message.contains("object_props"),
             "unexpected error: {message}"
         );
+    }
+
+    #[test]
+    fn cross_ref_references_selector_resolves_to_a_cross_ref_target() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "cross_ref": { "references": "isTranscriptionProvider", "kind": "function_declaration" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::CrossRef(CrossRefTarget {
+                relation: CrossRefRelation::References,
+                anchor: "isTranscriptionProvider".to_string(),
+                kind: Some(BindingSourceKind::FunctionDeclaration),
+            })
+        );
+    }
+
+    #[test]
+    fn cross_ref_aliases_selector_resolves_to_an_alias_target() {
+        let selector: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "aliases": "NodeAttributeAccessor" } }"#)
+                .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::CrossRef(CrossRefTarget {
+                relation: CrossRefRelation::Aliases,
+                anchor: "NodeAttributeAccessor".to_string(),
+                kind: None,
+            })
+        );
+    }
+
+    #[test]
+    fn cross_ref_requires_exactly_one_relation() {
+        let both: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
+                .unwrap();
+        assert!(both.selected().is_err(), "both relations must be rejected");
+
+        let neither: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "kind": "class_declaration" } }"#).unwrap();
+        assert!(neither.selected().is_err(), "no relation must be rejected");
+    }
+
+    #[test]
+    fn cross_ref_conflicts_with_other_selector_kinds() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "binding": { "name": "x" }, "cross_ref": { "references": "A" } }"#,
+        )
+        .unwrap();
+        assert!(
+            selector.selected().is_err(),
+            "a member must use exactly one selector kind",
+        );
+    }
+
+    #[test]
+    fn cross_ref_unknown_field_is_rejected() {
+        let result: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "calls": "B" } }"#);
+        assert!(result.is_err(), "unknown cross_ref field must be rejected");
     }
 }

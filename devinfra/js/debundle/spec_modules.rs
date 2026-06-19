@@ -158,6 +158,11 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             MemberSelectorSpec::SourceMatch(selector) => {
                 claims.member_selectors.insert(selector);
             }
+            MemberSelectorSpec::CrossRef(_) => {
+                // Cross-ref claims are validated in the @Name global-solve pass
+                // (per-target categoricity / all_different), not as a static
+                // binding or source-match claim here.
+            }
         }
     }
     for group in &module.binding_groups {
