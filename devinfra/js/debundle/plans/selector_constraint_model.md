@@ -1022,9 +1022,9 @@ a construct compiles to provably-faithful atoms or it hard-errors — never a si
 _Exit per construct:_ 0 differential disagreements corpus-wide and no fail-closed errors over the
 set declared native. This is the bulk of the work, but each step is small and reversible.
 
-**P4 — one global solve + `@Name` cross-refs. ⬅️ NEXT — unstarted, and the actual reason for the
-project.** Everything landed so far reproduces the _existing_ language; P4 is where new expressivity
-arrives. It needs the semantic `resolves_to` edge in the EDB (it lives in `owner_graph.json` but is
+**P4 — one global solve + `@Name` cross-refs. ⬅️ IN PROGRESS (`@Name` MVP solver kernel landed),
+and the actual reason for the project.** Everything landed so far reproduces the _existing_ language;
+P4 is where new expressivity arrives. It needs the semantic `resolves_to` edge in the EDB (it lives in `owner_graph.json` but is
 not yet joined into the fact matcher) plus the derived `calls`/`alias` rules, then a shift from
 per-selector solves to one CSP over the whole spec: shared logic variables for `@Name`,
 `all_different` for duplicate-claim, per-target categoricity. **"Fully capable" lands here** — the
@@ -1034,7 +1034,9 @@ cross-ref queries. The smallest first step (incremental-path step 1) is the **`@
 cross-reference anchor through `resolves_to`/`calls`/`alias`, which alone turns metaNode's ~18
 stabilization-debt items into ~5 and removes the neighbor-borrow temptation. _Exit:_ the solver
 reproduces the existing ambiguity / duplicate-claim diagnostics and the metaNode cross-ref pins
-resolve.
+resolve. The `@Name` MVP solver kernel has landed (`references` relation +
+`referencer_for`/`alias_owner_for`, 6/6 green); the quantitative debt measurement and the
+construct-by-construct worklist live in <../debug/2026_06_19_p4_debt_worklist.md>.
 
 **P5 — flip + delete (unstarted; independent of P4).** Now that parity is proven, the existing
 language can flip whenever the mechanical wiring (migration steps 4–7) is done — it does not wait on
