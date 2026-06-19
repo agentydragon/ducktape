@@ -19,10 +19,10 @@ import pytest
 import pytest_bazel
 import yaml
 
+from cluster.validation.authentik_blueprints import check_proxy_provider_outpost_assignment
 from cluster.validation.checks import (
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
-    check_proxy_provider_outpost_assignment,
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster

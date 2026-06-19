@@ -103,13 +103,20 @@ py_library(
 )
 
 py_library(
+    name = "authentik_blueprints",
+    srcs = ["authentik_blueprints.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "checks",
     srcs = ["checks.py"],
     deps = [
         ":cluster",
         ":kustomize",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -139,6 +146,7 @@ py_library(
     name = "validate_all",
     srcs = ["validate_all.py"],
     deps = [
+        ":authentik_blueprints",
         ":checks",
         ":cluster",
         ":crd_layering",
@@ -339,6 +347,7 @@ py_test(
         "@multitool//tools/kustomize",
     ],
     deps = [
+        ":authentik_blueprints",
         ":checks",
         ":cluster",
         ":dependencies",
