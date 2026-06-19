@@ -186,12 +186,33 @@ the categorical seam does **not** cover, so deleting it is materially larger:
   (`anonymous_resolution.rs` fn 2) still constructs `AstWildcardResolver` — flip it
   too (trivial) once its e2e coverage is confirmed; harmless mixed state until then
   (both resolvers are parity-proven).
-- **F5 (irreversible; gated):** delete `AstWildcardMatcher`, the `AstWildcardResolver`
-  wrapper, and the `binding_resolution` free functions that only it backed — atomic,
-  all references updated. **Blocked on the scope finding above**: first serve
-  `member_binding_candidates` + `source_match_body_debt` from the fact resolver (or
-  keep a residual matcher surface), migrate codemod/soundness. `body_debt` near-miss
-  diagnostics are the faithful-encoding risk — abort+report if they can't be reproduced.
+- **F5 — chosen direction: diagnostics-only residual matcher** (user decision). Make
+  the fact resolver the sole _resolver_; keep a minimal matcher surface used ONLY for
+  near-miss failure diagnostics + the codemod minimizer. Concrete plan:
+  1. **Add `ChunkResolver::member_candidates(request_id, selector) -> Result<Vec<ResolvedMemberBinding>>`**
+     — the non-categorical match list. Refactor the four member sub-paths
+     (`resolve_member_multi`, `resolve_var_declarator_member`,
+     `resolve_declarator_hole_member`, and the single-statement arm of `resolve_member`)
+     to each return their `matches: Vec<…>`; `resolve_member` keeps the
+     `[single]`/`[]`/`multiple` categoricity wrapper, `member_candidates` returns the
+     vec. **Required, not shortcuttable:** per-source categorical resolution would miss
+     intra-source ambiguity that `member_binding_candidates`' cross-source count catches.
+  2. **Reroute `anonymous_resolution.rs` fn 1** (`resolve_member_selector_claims_in_globals`)
+     from `source_match::member_binding_candidates` to the per-source fact resolver's
+     `member_candidates` (build one `ChunkResolver` per source, like fn 2).
+  3. **Flip fn 2** (co-move anonymous) from `AstWildcardResolver` to `ChunkResolver`.
+  4. Now the matcher (`AstWildcardMatcher` + `find_member_binding_matches` +
+     `find_anonymous_statement_body_index_groups` + `source_match_body_debt`) is reached
+     ONLY by: `source_match_body_debt` diagnostics (`plan_builder` + `selector_debt.rs`
+     - spec-validate), the `selector_codemod` minimizer, and the corpus differential's
+       oracle. Keep those; drop the `AstWildcardResolver` seam wrapper if nothing but the
+       differential uses it (the differential may keep its own oracle path).
+  - **e2e coverage (confirmed):** fns 1 & 2 are exercised by `edit_gate_source_match_cli_test`,
+    `binding_name_resolution_cli_test`, and `peel_factorize_{landability,extend_anonymous}_test`.
+  - **Endpoint-definition note:** this leaves `AstWildcardMatcher` alive as a
+    diagnostics/minimizer helper — so endpoint criterion #1 ("matcher deleted") is met
+    in spirit (sole _resolver_), not literally. Full deletion would additionally require
+    near-miss reasons on the fact model (deferred; AST-shaped, real quality risk).
 
 ### Phase X1 — `@Name` cross-references live (P4 step 1)
 
@@ -249,4 +270,6 @@ data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 | F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | 40f34b9b          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                               |
 | F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | 0220695a          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                               |
 | F     | F2-wire-anon-comove: per-source co-move anonymous path through the seam     | b3406173          | 4 e2e cli gates pass (local bazelisk)                                                 |
-| F     | F4: flip main lowering pipeline to the fact resolver (ChunkResolver)        | (this)            | `lowering_test` + 6 e2e cli output gates pass; corpus parity proven (unchanged logic) |
+| F     | F4: flip main lowering pipeline to the fact resolver (ChunkResolver)        | fe6e8d60          | `lowering_test` + 6 e2e cli output gates pass; corpus parity proven (unchanged logic) |
+| F     | record concrete F5 (matcher-deletion) fork from reading body_debt           | 376aa511          | doc only                                                                              |
+| F     | record chosen F5 direction (diagnostics-only residual) + impl plan          | (this)            | doc only                                                                              |
