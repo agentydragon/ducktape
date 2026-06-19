@@ -742,7 +742,12 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
             timed_classify(
                 &mut tally.members,
                 &mut tally.issues,
-                || format!("member {} {}", case.module_path, preview(selector)),
+                || {
+                    format!(
+                        "member {}\n      {}",
+                        case.module_path, selector.match_source
+                    )
+                },
                 || resolver.resolve_member(&case.module_path, "export", selector),
                 || {
                     AstWildcardResolver.resolve_member(
@@ -761,7 +766,12 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
             timed_classify(
                 &mut tally.anonymous,
                 &mut tally.issues,
-                || format!("anonymous {} {}", case.module_path, preview(selector)),
+                || {
+                    format!(
+                        "anonymous {}\n      {}",
+                        case.module_path, selector.match_source
+                    )
+                },
                 || resolver.resolve_anonymous_groups(&case.module_path, selector),
                 || {
                     AstWildcardResolver.resolve_anonymous_groups(
@@ -779,7 +789,12 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
             timed_classify(
                 &mut tally.groups,
                 &mut tally.issues,
-                || format!("group {} {}", case.module_path, preview(selector)),
+                || {
+                    format!(
+                        "group {}\n      {}",
+                        case.module_path, selector.match_source
+                    )
+                },
                 || resolver.resolve_member_group(&case.module_path, selector, exports),
                 || {
                     AstWildcardResolver.resolve_member_group(
@@ -802,8 +817,22 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     let mut by_chunk: BTreeMap<String, Vec<ModuleCase>> = BTreeMap::new();
     let mut unmapped: Vec<String> = Vec::new();
     let mut module_count = 0usize;
+    // `ONLY_MODULES=substr,substr` restricts the run to modules whose path contains
+    // any listed substring — fast targeted re-runs while diagnosing specific gaps,
+    // instead of the full ~36 min corpus pass.
+    let only_modules: Vec<String> = std::env::var("ONLY_MODULES")
+        .ok()
+        .map(|value| value.split(',').map(str::to_string).collect())
+        .unwrap_or_default();
     for path in spec_modules::collect_module_files(modules_root)? {
         let case = module_case(&path, modules_root)?;
+        if !only_modules.is_empty()
+            && !only_modules
+                .iter()
+                .any(|needle| case.module_path.contains(needle))
+        {
+            continue;
+        }
         module_count += 1;
         match find_target_chunk(js_root, &case.module_path) {
             Some(chunk) => by_chunk.entry(chunk).or_default().push(case),
@@ -910,15 +939,19 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
         + groups.over_resolved;
     let fail_closed = members.fail_closed + anonymous.fail_closed + groups.fail_closed;
     if !issues.is_empty() {
-        println!("\nissues (fail-closed / over-resolved / value-disagree):");
-        for issue in issues.iter().take(40) {
+        // Genuine disagreements (over-resolved / value-disagree) first — they are
+        // the priority — then the fail-closed worklist. Print all, not a prefix.
+        issues.sort_by_key(|issue| match issue.category {
+            "value-disagree" => 0,
+            "over-resolved" => 1,
+            _ => 2,
+        });
+        println!("\nissues (over-resolved / value-disagree first, then fail-closed):");
+        for issue in &issues {
             println!(
                 "  [{}] {}\n        {}",
                 issue.category, issue.site, issue.detail
             );
-        }
-        if issues.len() > 40 {
-            println!("  … and {} more", issues.len() - 40);
         }
     }
     if genuine == 0 && fail_closed == 0 {
@@ -929,17 +962,6 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
         );
     }
     Ok(())
-}
-
-fn preview(selector: &AnonymousStatementSelector) -> String {
-    selector
-        .match_source
-        .lines()
-        .next()
-        .unwrap_or("")
-        .chars()
-        .take(60)
-        .collect()
 }
 
 fn main() -> Result<()> {
