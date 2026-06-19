@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime as dt
 import logging
 import time
 from collections.abc import Mapping
@@ -127,3 +128,37 @@ class GitState:
             return False
         self.repo.create_commit(head.name, ARM_SIGNATURE, ARM_SIGNATURE, message, tree, [head_commit.id])
         return True
+
+    # --- operator-action overlay (clicks/) + free-form feedback -----------------
+    # The arm never edits items/ (Haku owns those). It records a clicked action as
+    # clicks/<item_id>/<action_id> (and removes it on un-click); Haku reduces these
+    # on its next run. The git history of clicks/ is the click/un-click event log.
+
+    @staticmethod
+    def _click_path(item_id: str, action_id: str) -> str:
+        return f"clicks/{item_id}/{action_id}"
+
+    def read_clicks(self) -> set[tuple[str, str]]:
+        """Currently-clicked (item_id, action_id) pairs, from the clicks/ overlay."""
+        root = self._dir / "clicks"
+        if not root.is_dir():
+            return set()
+        return {
+            (item_dir.name, click.name)
+            for item_dir in root.iterdir()
+            if item_dir.is_dir()
+            for click in item_dir.iterdir()
+            if click.is_file()
+        }
+
+    def set_click(self, item_id: str, action_id: str) -> None:
+        stamp = f"clicked_at: {dt.datetime.now(dt.UTC).isoformat(timespec='seconds')}\n"
+        self.commit_push({self._click_path(item_id, action_id): stamp.encode()}, f"arm: click {action_id} on {item_id}")
+
+    def clear_click(self, item_id: str, action_id: str) -> None:
+        self.commit_push({self._click_path(item_id, action_id): None}, f"arm: unclick {action_id} on {item_id}")
+
+    def write_feedback(self, text: str) -> None:
+        stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+        body = f"# Operator feedback ({stamp})\n\n{text.strip()}\n"
+        self.commit_push({f"intake/{stamp}-feedback.md": body.encode()}, "arm: feedback")

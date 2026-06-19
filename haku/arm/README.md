@@ -1,11 +1,24 @@
 # haku/arm — interactive dashboard "arm"
 
 A small FastAPI service that renders Haku's dashboard from a clone of the
-`haku-state` repo and (later milestones) writes operator actions back as git
-commits. It is an **"arm" of Haku**: an interface Haku builds for the operator to
-interact _with Haku_, running with **exactly Haku's perimeter** — read-only to the
-world, write only to the internal `haku-state` Forgejo, Authentik operator-only —
-and never anything more. It replaces the static `haku-dashboard` (nginx + git-sync).
+`haku-state` repo and writes operator actions back as git commits. It is an
+**"arm" of Haku**: an interface Haku builds for the operator to interact _with
+Haku_, running with **exactly Haku's perimeter** — read-only to the world, write
+only to the internal `haku-state` Forgejo, Authentik operator-only — and never
+anything more. It replaces the static `haku-dashboard` (nginx + git-sync).
+
+## Action model — the backend stays dumb
+
+The arm never interprets what an action _means_. Each item Haku writes can carry
+`actions[]` (e.g. _Snooze 30d_, _Draft the email_, _Research deeper_); the
+dashboard renders each `command` action as a **click/un-click toggle**. Clicking
+records an overlay file `clicks/<item-id>/<action-id>` (`POST`), un-clicking
+removes it (`…/unclick` for plain-form posts, or `DELETE`) — each a commit by the
+`haku-arm` identity. **Haku reduces the overlay on its next run**: it reads the
+clicked actions, carries out each one's intent, and clears the click. So new verbs
+need no backend change — Haku invents the action and its meaning; the arm only
+records the click. `claude_handoff` actions are stateless `claude.ai/new`
+deep-links (no commit). The global feedback box appends to `intake/`.
 
 ## Boundary
 
@@ -18,13 +31,13 @@ and never anything more. It replaces the static `haku-dashboard` (nginx + git-sy
 
 ## Layout
 
-| File                                 | Role                                                                                                                                                                    |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderer.py`                        | Markdown→HTML + per-item card rendering (ported from haku-state `dashboard/generate.py`) + `render_page`.                                                               |
-| `templates/` + `templates_loader.py` | Baked default Jinja page + CSS, override-able from the clone (fail-safe).                                                                                               |
-| `git_state.py`                       | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset) and `commit_push` with retry. Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
-| `config.py`                          | Env settings (`HAKU_ARM_*`).                                                                                                                                            |
-| `app.py`                             | FastAPI `create_app` + lifespan (clone + background pull loop) + routes (`GET /`, `GET /healthz`).                                                                      |
+| File                                 | Role                                                                                                                                                                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderer.py`                        | Markdown→HTML + per-item card rendering (ported from haku-state `dashboard/generate.py`) + `render_page`.                                                                                                        |
+| `templates/` + `templates_loader.py` | Baked default Jinja page + CSS, override-able from the clone (fail-safe).                                                                                                                                        |
+| `git_state.py`                       | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, and the clicks/-overlay + feedback writers. Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
+| `config.py`                          | Env settings (`HAKU_ARM_*`).                                                                                                                                                                                     |
+| `app.py`                             | FastAPI `create_app` + lifespan (clone + background pull loop). Routes: `GET /`, `GET /healthz`, `POST /items/{id}/actions/{action}` (+ `/unclick`, `DELETE`), `POST /feedback`.                                 |
 
 ## Perimeter / deploy
 

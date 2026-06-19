@@ -41,6 +41,12 @@ bottom:
    file to `intake/processed/` with a short note on how you read it. Intake
    referencing an item id is feedback on that item — apply it (status change,
    re-score) and record it.
+   Also **reduce operator clicks**: the dashboard arm records each clicked action
+   under `clicks/<item-id>/<action-id>` (and deletes it on un-click). For each
+   click present, look up that action in the item's `actions[]`, carry out its
+   `intent`/meaning — e.g. a `snooze` command → `status: snoozed` + `snoozed_until`;
+   `reject` → `status: rejected` + `rejection_reason`; a custom command → do the
+   research / file the follow-up — then **delete the click file**. Log what you did.
 4. **Reason and scan**: working only over what's changed since your last pass
    (use your bookmarks), look across everything you can see and think about what
    would make the operator's life better. The `haku/base/playbooks/` are
@@ -63,11 +69,13 @@ bottom:
    found, what you chose not to file and why (one line each). Compact or prune old
    daily files when they stop being useful; the log is otherwise yours to
    structure.
-8. **Commit and push**: directly to `main`, one commit per logical change
-   (intake processing, new/updated items + regenerated `dashboard/index.html`,
-   log, `memory/`). Push **everything** before you finish — your state is your
-   only memory, and pushing is what updates the published dashboard. Message
-   format: `scan: <summary>` / `intake: <summary>` / `log: <summary>`.
+8. **Commit and push**: to `main`, one commit per logical change (intake + click
+   processing, new/updated items + regenerated `dashboard/index.html`, log,
+   `memory/`). The dashboard arm is a **concurrent writer** to `main`, so
+   `git pull --rebase` before pushing (and retry if it raced). Push **everything**
+   before you finish — your state is your only memory, and pushing is what updates
+   the published dashboard. Message format: `scan: <summary>` / `intake: <summary>`
+   / `log: <summary>`.
 
 Then stop — the operator reviews the items (in Forgejo and on the dashboard) and
 hands off approved ones to other agent sessions.

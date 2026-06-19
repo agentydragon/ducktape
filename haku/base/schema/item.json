@@ -68,6 +68,36 @@
     "rejection_reason": {
       "type": "string",
       "description": "Why the operator rejected it; feeds future calibration"
+    },
+    "snoozed_until": {
+      "type": "string",
+      "format": "date",
+      "description": "When you set status=snoozed (e.g. from a clicked snooze action), the date to revisit"
+    },
+    "actions": {
+      "type": "array",
+      "description": "Operator-facing buttons you attach to the item. The dashboard renders each as a click/un-click toggle; the click state is recorded by the arm under clicks/<item-id>/<action-id> (NOT here). You reduce clicked actions on your next run — interpret the label/intent, do it, then clear the click. Include whatever fits: standard ones (snooze/reject/done) are just commands you interpret, plus item-specific ones.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "kind"],
+        "properties": {
+          "id": { "type": "string", "description": "Stable id within the item (used in the click path)" },
+          "label": { "type": "string", "description": "Button text shown to the operator" },
+          "kind": {
+            "enum": ["command", "claude_handoff"],
+            "description": "command = a request you execute next run when clicked (toggle); claude_handoff = a claude.ai/new deep-link rendered inline (no click state)"
+          },
+          "intent": {
+            "type": "string",
+            "description": "For kind=command: a self-contained instruction you (or a handed-off executor) carry out when this is clicked"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "For kind=claude_handoff: the prepared prompt to hand to Claude via the deep-link"
+          }
+        }
+      }
     }
   }
 }

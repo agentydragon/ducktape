@@ -45,6 +45,7 @@ py_library(
         ":renderer",
         ":templates_loader",
         "@pypi//fastapi",
+        "@pypi//python_multipart",  # keep: runtime dep for fastapi.Form (not imported)
         "@pypi//uvicorn",
     ],
 )
@@ -87,6 +88,7 @@ py_test(
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
 )

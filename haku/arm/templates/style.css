@@ -147,10 +147,74 @@ details.task[open] > summary::before {
   font-size: 0.85rem;
 }
 
+/* Operator action toggles (item.actions[]). Each command is a click/un-click
+   button; a clicked one is filled + shows it can be retracted on hover/focus. */
+.acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+.act-form {
+  margin: 0;
+}
+.act {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid #2a7;
+  background: transparent;
+  color: inherit;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.act.clicked {
+  background: #2a7;
+  color: #fff;
+}
+.act.clicked::before {
+  content: "✓ ";
+}
+.act.clicked:hover,
+.act.clicked:focus {
+  background: #c33;
+  border-color: #c33;
+}
+.act.clicked:hover::before,
+.act.clicked:focus::before {
+  content: "✕ ";
+}
+.act.handoff {
+  border-style: dashed;
+}
+
 details.backlog > summary {
   cursor: pointer;
   font-weight: 600;
   margin: 1.5rem 0 0.5rem;
+}
+
+/* Global free-form note → appended to intake/ as a commit. */
+section.feedback textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #8884;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+section.feedback button {
+  font: inherit;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.9rem;
+  border: 0;
+  border-radius: 6px;
+  background: #2a7;
+  color: #fff;
 }
 footer.page {
   margin-top: 2.5rem;

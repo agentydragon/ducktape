@@ -11,7 +11,15 @@ from haku.arm import renderer, templates_loader
 _NOWHERE = Path("/nonexistent-clone")  # no override → baked template/css
 
 
-def _item(idx: int, value: int, *, status: str = "open", kind: str = "suggestion", deadline: str | None = None) -> dict:
+def _item(
+    idx: int,
+    value: int,
+    *,
+    status: str = "open",
+    kind: str = "suggestion",
+    deadline: str | None = None,
+    actions: list[dict] | None = None,
+) -> dict:
     action = {"kind": kind} if kind == "suggestion" else {"kind": kind, "prompt": "do the thing"}
     item = {
         "id": f"01{idx:024d}",
@@ -25,6 +33,8 @@ def _item(idx: int, value: int, *, status: str = "open", kind: str = "suggestion
     }
     if deadline:
         item["deadline"] = deadline
+    if actions:
+        item["actions"] = actions
     return item
 
 
@@ -92,6 +102,44 @@ def test_render_page_tiers_and_counts() -> None:
 
 def test_render_page_empty() -> None:
     assert "No open items." in _page([])
+
+
+_SNOOZE = {"id": "snooze", "label": "Snooze 30d", "kind": "command", "intent": "snooze 30d"}
+
+
+def test_command_action_unclicked_renders_post_toggle() -> None:
+    item = _item(1, 50, actions=[_SNOOZE])
+    rendered = renderer.render_task(item)
+    assert f'action="/items/{item["id"]}/actions/snooze"' in rendered
+    assert "/unclick" not in rendered
+    assert 'class="act"' in rendered  # not the clicked variant
+
+
+def test_command_action_clicked_renders_unclick_toggle() -> None:
+    item = _item(1, 50, actions=[_SNOOZE])
+    rendered = renderer.render_task(item, clicked_ids={"snooze"})
+    assert f'action="/items/{item["id"]}/actions/snooze/unclick"' in rendered
+    assert 'class="act clicked"' in rendered
+
+
+def test_claude_handoff_action_is_stateless_link() -> None:
+    handoff = {"id": "draft", "label": "Draft the email", "kind": "claude_handoff", "prompt": "write it"}
+    rendered = renderer.render_task(_item(1, 50, actions=[handoff]))
+    assert renderer.CLAUDE_NEW in rendered
+    assert "<form" not in rendered  # handoff is a link, never a click-toggle
+
+
+def test_render_page_threads_clicks_to_the_right_item() -> None:
+    clicked, other = _item(1, 50, actions=[_SNOOZE]), _item(2, 40, actions=[_SNOOZE])
+    page = renderer.render_page(
+        [clicked, other],
+        scan_time="t",
+        page_template=templates_loader.load_page_template(_NOWHERE),
+        css="",
+        clicks={(clicked["id"], "snooze")},
+    )
+    assert f'action="/items/{clicked["id"]}/actions/snooze/unclick"' in page  # clicked → unclick
+    assert f'action="/items/{other["id"]}/actions/snooze"' in page  # untouched → plain click
 
 
 if __name__ == "__main__":

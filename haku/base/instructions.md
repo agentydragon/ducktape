@@ -360,6 +360,19 @@ their `htmlLink`. Plaid transactions have no public URL — keep referencing the
 date + merchant + amount. Never put a secret or token in a URL (the hard rules
 already forbid this).
 
+**Attach operator action buttons (`actions[]`).** An item may carry an `actions`
+list — buttons the dashboard arm renders as **click / un-click toggles**. The arm
+is dumb: clicking records a marker under `clicks/<item-id>/<action-id>`, un-clicking
+deletes it (each a commit); it never runs the action. **You** give the meaning on
+your next run (the run procedure's _reduce operator clicks_ step): for each click
+present, do the action's `intent`, then delete the click. So attach whatever fits —
+the standard set (`snooze`/`reject`/`done`/`raise`/`lower`, all `kind: command` whose
+`intent` you interpret into a status/score change) plus item-specific ones ("compare
+cleaner options"). `kind: claude_handoff` actions carry a `prompt` and render as an
+inline `claude.ai/new` deep-link instead (no click state). A free-form **feedback**
+box on every page writes a new `intake/` note. (Until the arm is cut over, the static
+`dashboard/generate.py` still renders; `actions[]` is inert there.)
+
 ## Dashboard
 
 Your queue's rendered view is a small **read-only website** at
