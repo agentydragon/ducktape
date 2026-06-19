@@ -89,3 +89,7 @@ spec:
               path: /healthz
               port: 8765
             periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: tana-mcp-ro-config
