@@ -4,7 +4,14 @@ listen = "[::]:8080"
 type = "s3"
 region = "us-east-1"
 bucket = "attic"
-endpoint = "http://seaweedfs-s3.seaweedfs.svc:8333"
+# Public S3 gateway (not the internal seaweedfs-s3.svc). attic presigns
+# single-chunk NAR downloads against this endpoint via a 307 redirect; the host
+# must be resolvable by external clients (CI), so it can't be a .svc name.
+# Multi-chunk NARs stream through attic regardless. attic's own chunk I/O also
+# routes here (through the gateway). Requires the `attic` identity on the
+# public-s3 config (cluster/k8s/seaweedfs/public-s3/s3-config-externalsecret.yaml)
+# so SeaweedFS validates the presigned URLs and attic's reads/writes.
+endpoint = "https://s3.allegedly.works"
 # Credentials sourced from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars.
 
 [database]
