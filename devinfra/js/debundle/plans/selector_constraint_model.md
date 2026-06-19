@@ -1,6 +1,12 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-Status: **design note / proposal.** Extends
+Status (2026-06-19): **foundation landed, expressivity next.** P0–P3 are done — the existing
+selector language is faithfully re-homed onto a relational AST-facts substrate, with the full
+8306-selector corpus differential **green (0 disagreements, 0 fail-closed)** and the resolver now on
+par with the hand-rolled matcher (~22s full pass). That is the equivalence gate, not new power:
+the resolver reproduces today's language exactly. **P4 — the relational/cross-reference query layer
+this doc exists for (`@Name`, `calls`/`alias`, the global solve) — is the next, unstarted phase.**
+Extends
 [the selector-authoring-agent plan](selector_authoring_agent.md) — which fixed
 _who_ chooses anchors (an agent, not the cost model) — with a proposal for _what a
 selector is_. Motivated by the tana/re stabilization pass
@@ -813,34 +819,47 @@ free functions **directly** (not through the `SelectorResolver` trait):
 trait, `DifferentialResolver`, and `DatalogResolver`/`ChunkResolver` exist but today are used only by
 the corpus harness and unit tests — **production is not yet routed through the trait**.
 
-**Readiness — revised by the real-source gate (2026-06-18).** The earlier evidence (matcher
-differential corpus-wide **0 disagreements**; resolver **0 fail-closed-by-shape** over 6873 member
-selectors; **0 over-resolved / 0 value-disagreements** at bounded scale) was necessary but **not
-sufficient**: it never ran the fact matcher against a real chunk's full statement population with
-nested-body needles. Running the per-target-chunk gate against the **real minified source** (not the
-debundled `entry.js`) surfaced what the capped runs could not — see
-<../debug/2026_06_18_per_chunk_gate_real_source.md>. Several real bugs were fixed (below), but a
-**correction**: the budget-limited runs only reached the alphabetical module prefix (`app/auth`,
-`app/bootstrap/*`), which is clean — the **full 8306-selector corpus is NOT green**, so the matcher
-is **not yet switch-ready**.
+**Readiness — full corpus green, parity proven, fast (2026-06-19).** The per-target-chunk gate
+against the **real minified source** now runs the **whole 8306-selector corpus green**: every
+selector resolves to the same owner as production — **0 over-resolved / 0 value-disagree /
+0 fail-closed** (16 reject-parity = both resolvers genuinely reject, which is agreement). The earlier
+"alphabetical-prefix was unrepresentative, corpus is NOT green" correction is itself now superseded:
+the gaps it exposed are closed. Result + the fixes:
+<../debug/2026_06_18_per_chunk_gate_real_source.md>.
 
 Landed so far:
 
-- **Throughput (commits `dc1aa695`, `5e65ae73`, `3c9151c9`).** `Index` owns its labels and is cached
-  per body item (+ one synthetic single-declarator index per var-decl declarator); dense `Vec`-indexed
-  `Index`; the corpus differential parallelized over modules. Pure-perf, no verdict change. Net: a
-  full pass went from impractical (~5 h) to ~36 min wall (~137 min single-threaded). Still too slow to
-  iterate — the declarator-hole hot path needs a **candidate index** (algorithmic), not more constant
-  factors.
-- **Two faithfulness bugs fixed** (drove the prefix to 0): async/generator dropped from function/arrow
-  facts (`a89a58be`; folded into the node kind), and a scope-blind alpha bijection (`23414587`; now a
-  scope stack mirroring production's `alpha_scopes`).
+- **Four faithfulness fixes drove the full corpus to 0/0.** (1) The multi-statement _member_ path
+  mirrored the gapped module-level `STMT_LIST` alignment, but production's member path is a fixed
+  contiguous window (`find_matching_body_ranges`) — the 9 over-resolved (`changeTypes`-style class
+  lists split by a top-level `STMT_LIST`); fixed with `match_fixed_window_sequence_indexed`. (2) A
+  class's superclass (`extends`) was extracted to a `super_class` fact but never compared in `homo`,
+  so a no-`extends` needle matched an `extends` subject and the "all subclasses extend the same base"
+  alpha constraint went unenforced (`changeTypes`); fixed by comparing `super_class` for `Class`
+  nodes. (3) `import.meta` / `new.target` were unextractable, so any owner statement containing one —
+  even in a region a needle's `STMT_LIST`/`DECLARATORS` hole would absorb — projected to empty facts
+  and was invisible (`pdfExtraction`, `listElementWithSuspense`); fixed by extracting meta-properties
+  (and the chunk now extracts 100% with 0 `Unsupported`). (4) An unsound init-kind prefilter dropped
+  string-literal declarators for a `STR_LITERAL_MATCHING_RE` needle; fixed (it now requires `StrLit`).
+- **Throughput: the full differential is ~22s wall (was ~200s opt / ~36 min fastbuild), ~9×** — and
+  the fact resolver is now **on par with the hand-rolled production matcher** (datalog ~44s vs prod
+  ~37s CPU; datalog alone ~13s). The load-bearing changes were the **candidate index** this plan
+  called for: precompile each `STR_LITERAL_MATCHING_RE` regex once per needle (not per candidate); an
+  invariant-token inverted index (string/number literals, member names, regex literals; intersected)
+  narrowing the single-statement and declarator scans; and token-indexing the declarator-hole owner
+  scan (the giant `initBundle` owner — the dominant cost). The pathological shapes are gone; the
+  residual is the inherent per-selector parse+match both resolvers pay, so the ~22s differential floor
+  is the trusted full-scan **oracle** running beside datalog on 4 cores, not the datalog resolver.
+  Detail: <../debug/2026_06_18_per_chunk_gate_real_source.md>.
 
-**Full-corpus state (NOT green).** Over all 8306 selectors: **9 over-resolved** (genuine — datalog
-resolves where production rejects) + **44 fail-closed** (more faithfulness gaps, e.g.
-`domains/transcript/pdfExtraction`). Verified real, not parallel-harness artifacts
-(`production_match_is_globals_independent`). These must reach zero before the matcher is switch-ready —
-and the pass must first be fast enough to iterate.
+**What this means.** The existing selector _language_ is now faithfully and efficiently re-homed onto
+the relational AST-facts substrate, **parity proven over the whole corpus**. But the Datalog resolver
+reproduces today's matcher **exactly — it adds no new expressivity yet**. P0–P3 of the rollout below
+are done (the equivalence gate + the native fact matcher); the **expressivity payoff — P4: `@Name`
+cross-references, relational atoms (`calls`/`alias`), and the one global solve — is the next and
+unstarted phase**, and it is what actually makes selectors more natural and forward-compatible (the
+whole motivation). The current corpus has no cross-references (the YAML can't express them), which is
+exactly why the per-selector solve is sufficient and green today.
 
 **Migration plan (strangler-fig: shadow → flip → delete).**
 
@@ -848,15 +867,14 @@ and the pass must first be fast enough to iterate.
    minified snapshot source (commits on `claude/lucid-mendel-178j6q`). It now streams per-chunk with
    a budget and separates datalog/production timing. Result + findings:
    <../debug/2026_06_18_per_chunk_gate_real_source.md>.
-2. 🔶 **Make a corpus pass fast enough to iterate** — partial. Caching + dense `Vec` `Index` +
-   module-parallelism (commits `dc1aa695`, `5e65ae73`, `3c9151c9`) took it from ~5 h to ~36 min wall,
-   but that is still too slow. **Open: a candidate index for the declarator-hole path** (its cost is
-   per-candidate deep init-homo over a giant `initBundle` var-decl owner) — algorithmic, the real
-   lever. Numbers: <../debug/2026_06_18_per_chunk_gate_real_source.md>.
-3. 🔶 **Close the fail-closed + over-resolved gaps** — partial. Two bugs fixed (async/generator in
-   facts `a89a58be`; scope-blind alpha `23414587`) cleared the alphabetical prefix, but the **full
-   corpus still has 44 fail-closed + 9 over-resolved** (genuine). Each needs diagnosis (the
-   over-resolved especially — datalog too permissive somewhere) until the full-corpus gate is 0/0.
+2. ✅ **Make a corpus pass fast enough to iterate** — done. The declarator-hole candidate index
+   landed (with regex precompile + the invariant-token index); the full differential is now ~22s wall
+   and the datalog resolver is on par with production. Numbers:
+   <../debug/2026_06_18_per_chunk_gate_real_source.md>.
+3. ✅ **Close the fail-closed + over-resolved gaps** — done. Four faithfulness fixes (fixed-window
+   member path, superclass matching, meta-property extraction, sound regex-predicate init prefilter)
+   drove the full 8306-selector gate to **0 over-resolved / 0 value-disagree / 0 fail-closed**. The
+   existing-language matcher is parity-proven and switch-ready.
 4. **Route the three production call sites through `SelectorResolver`** — pass a resolver in, default
    `AstWildcardResolver` (no behavior change; the trait method bodies already delegate to the same
    free functions). Mechanical, atomic, keeps all tests green.
@@ -868,11 +886,13 @@ and the pass must first be fast enough to iterate.
    `DatalogResolver` (AstWildcard becomes the shadow, or is dropped). One-line change per call site.
 7. **Delete `AstWildcardMatcher`** and the now-unused free functions once nothing references them.
 
-**Distance to switch:** further than the alphabetical-prefix sample implied — the matcher is **not**
-switch-ready. Steps 2–3 are only partial: the full 8306-selector corpus still has 44 fail-closed + 9
-over-resolved disagreements, and the pass is still ~36 min (needs the declarator-hole candidate
-index to be iterable). Both must be closed — gate 0/0 over the full corpus, pass fast enough to
-re-run — before the mechanical wiring + soak + cleanup (steps 4–7) apply.
+**Distance to switch:** the parity prerequisite (steps 2–3) is **met** — the full 8306-selector gate
+is 0/0 and the pass is ~22s, so the fact matcher faithfully and efficiently reproduces the existing
+language. What remains for the _existing language_ is the mechanical wiring + soak + cleanup
+(steps 4–7): route the three production call sites through `SelectorResolver`, shadow
+`DifferentialResolver` over real runs, flip, delete. None of these has started. The _new_
+expressivity (P4 below) is a separate track and is the actual reason for the project — the relational
+query layer; it too is unstarted.
 
 ### What the matcher cannot do that the query model can
 
@@ -986,30 +1006,41 @@ blocker frequency to **100%** top-level extraction on every measured chunk (inde
 Calendar, VoiceChatModal). Alpha-canonicalization (for the alpha-identifier hole rule) is deferred
 to P3's lowering, where it is the fidelity-critical piece.
 
-**P2 — `DatalogResolver`, explicit total delegation.** Second `SelectorResolver` impl that lowers
-every `source_match` to one **explicit, faithful** shape atom — a call into `AstWildcardResolver`
-(total delegation that runs the real matcher, _not_ a silent skip); wire
-`DifferentialResolver<AstWildcard, Datalog>` into the resolution path behind a flag. _Exit:_
-differential green by construction across the gaffer `tana/re` corpus — proves the
-EDB/plumbing/round-trip at zero behavior risk.
+**P2 — `DatalogResolver`, explicit total delegation. ⏭️ Bypassed** (superseded by P3). The
+delegation MVP turned out unnecessary: native lowering is itself zero-risk because the lowering is
+fail-closed and the corpus differential gates it, so we went straight to native matching rather than
+first delegating to `AstWildcardResolver`. As planned it would have been a second `SelectorResolver`
+impl lowering every `source_match` to one explicit shape atom calling the real matcher.
 
-**P3 — native lowering, construct by construct, fail-closed + differential-gated.** Replace shape
-atoms with real atoms in the hole order from "Holes under the query model": existential → omit,
+**P3 — native lowering, construct by construct, fail-closed + differential-gated. ✅ Landed
+(full-corpus differential 0/0, pass ~22s).** The fact matcher (`selector_match` over `chunk_facts`)
+replaces shape atoms with real atoms in the hole order from "Holes under the query model":
+existential → omit,
 equality → shared variable, `STR_LITERAL_MATCHING_RE` → `str_matches` filter, identifiers → alpha
 facts, then the structural body (`child` / `kind` / `prop_name`). The lowering is **fail-closed**:
 a construct compiles to provably-faithful atoms or it hard-errors — never a silently-weaker query.
 _Exit per construct:_ 0 differential disagreements corpus-wide and no fail-closed errors over the
 set declared native. This is the bulk of the work, but each step is small and reversible.
 
-**P4 — one global solve + `@Name` cross-refs.** Shift from per-selector solves to one CSP over the
-whole spec: shared logic variables for `@Name`, `all_different` for duplicate-claim, per-target
-categoricity. **"Fully capable" lands here** — the six proven capabilities become usable in real
-specs. _Exit:_ the solver reproduces the existing ambiguity / duplicate-claim diagnostics, and the
-metaNode debt pins (bare delegators, empty-ish classes) rewrite as cross-ref queries and resolve.
+**P4 — one global solve + `@Name` cross-refs. ⬅️ NEXT — unstarted, and the actual reason for the
+project.** Everything landed so far reproduces the _existing_ language; P4 is where new expressivity
+arrives. It needs the semantic `resolves_to` edge in the EDB (it lives in `owner_graph.json` but is
+not yet joined into the fact matcher) plus the derived `calls`/`alias` rules, then a shift from
+per-selector solves to one CSP over the whole spec: shared logic variables for `@Name`,
+`all_different` for duplicate-claim, per-target categoricity. **"Fully capable" lands here** — the
+six proven capabilities (in `selector_query_examples`) become usable in real specs, and the metaNode
+debt pins (bare delegators, empty-ish classes, consumer clusters) rewrite as re-minification-proof
+cross-ref queries. The smallest first step (incremental-path step 1) is the **`@Name` MVP**: a single
+cross-reference anchor through `resolves_to`/`calls`/`alias`, which alone turns metaNode's ~18
+stabilization-debt items into ~5 and removes the neighbor-borrow temptation. _Exit:_ the solver
+reproduces the existing ambiguity / duplicate-claim diagnostics and the metaNode cross-ref pins
+resolve.
 
-**P5 — flip + delete.** Swap `primary` / `shadow` in production, soak one cycle with the
-differential still recording, then drop the `AstWildcardResolver` arm and retire the dead matcher
-modules. _Exit:_ the solver is the sole resolver, the matcher is removed, CI green.
+**P5 — flip + delete (unstarted; independent of P4).** Now that parity is proven, the existing
+language can flip whenever the mechanical wiring (migration steps 4–7) is done — it does not wait on
+P4. Swap `primary` / `shadow` in production, soak one cycle with the differential still recording,
+then drop the `AstWildcardResolver` arm and retire the dead matcher modules. _Exit:_ the solver is
+the sole resolver, the matcher is removed, CI green.
 
 **Risks** (none is the engine — proven in P0): fact extraction (P1) is the only true greenfield
 and the biggest chunk; the two encodings that must be proven bit-for-bit faithful are **run-hole
