@@ -13,34 +13,6 @@
 - Removed permanently: QEMU, dosfstools, mtools, fuse3, fuse,
   gobject-introspection, cairo.dev, dbus.dev (unused)
 
-## `bb remote` Auto-Detection / git sync Issues
-
-### Unpushed commit breaks auto-detect
-
-When there are unpushed local commits, `bb remote` (without `--run_from_commit`
-or `--run_from_branch`) tries to use the local HEAD SHA as the base commit. The
-runner then does `git fetch --depth=1 origin <sha>` which fails with
-`upload-pack: not our ref` because the commit doesn't exist on the remote.
-
-Patches are only generated when both `--run_from_branch` and `--run_from_commit`
-are empty, so the workarounds drop local diffs:
-
-- `--run_from_branch=devel` / `--run_from_commit=origin/devel` work but silently
-  drop all local diffs (same footgun).
-
-This makes local iteration painful — you either push every change or lose your
-diff. There should be a better workflow.
-
-**Questions to investigate** (the `getBaseBranchAndCommit` / patch-generation
-flow in `remotebazel.go`):
-
-- How exactly does `getBaseBranchAndCommit` auto-detect? It should fall back to
-  the default branch when the local commit isn't pushed. Why isn't it?
-- Does it check if the commit exists on the remote before using it?
-- Is the issue that the local branch tracks a remote branch, so bb assumes the
-  commit is pushed?
-- What's the intended workflow for developing with unpushed commits?
-
 ## shiboken6 / PySide6
 
 - `ezdxf[draw]` → `pyside6` → `shiboken6`/`pyside6-addons` fails to install on `bb remote`

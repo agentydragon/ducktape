@@ -39,9 +39,11 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      # bb remote's base resolution falls back to `git rev-parse <default-branch>`
-      # which needs a local ref. actions/checkout only creates remote tracking refs
-      # (origin/devel), not local branches, so create one for PR builds.
+      # bb remote's base resolution falls back to `git rev-parse <default-branch>@{upstream}`
+      # (and then the local `<default-branch>` ref) — both need a local branch. actions/checkout
+      # only creates remote-tracking refs (origin/devel), not local branches, so create one for
+      # PR builds. buildbuddy#11838 fixed the unpushed-local-commits case but still reads
+      # @{upstream}, which requires the local branch.
       - name: Create local ref for default branch
         if: github.event_name == 'pull_request'
         run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"

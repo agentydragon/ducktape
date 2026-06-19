@@ -143,8 +143,19 @@ When `--run_from_branch` and `--run_from_commit` are both empty (auto mode):
    - If HEAD is ahead (unpushed commits): falls through to default branch
 4. **Fallback** (branch doesn't exist remotely, or has unpushed commits):
    - `branch = defaultBranch` (e.g., `devel`)
-   - `commit = git rev-parse devel` — uses the **local** ref, not
-     `origin/devel`
+   - `commit = git rev-parse devel@{upstream}` — the **remote-tracking** commit
+     (e.g. `origin/devel`), so an unpushed local `devel` tip is never used as
+     the base; the unpushed commits are sent as patches instead. Falls back to
+     `git rev-parse devel` (the **local** ref) only when `devel` has no upstream
+     configured.
+   - Resolving `@{upstream}` requires a **local** `devel` branch with tracking
+     config. A normal clone has this; a CI checkout that creates only
+     `origin/devel` (no local branch) does not — see Gotchas below.
+   - **Deviation from older `bb`:** before [buildbuddy#11838][bb11838] the
+     fallback was just `git rev-parse devel` (local ref), which broke when local
+     `devel` had unpushed commits. Our pinned `bb` (≥ 5.0.387) includes the fix.
+
+[bb11838]: https://github.com/buildbuddy-io/buildbuddy/pull/11838
 
 ### Phase 3: Generate patches (`generatePatches`, line 514)
 
@@ -165,19 +176,27 @@ with `git apply`. Result: workspace matches your local working tree.
 
 ### Scenario matrix
 
-| Scenario                                   | Base branch       | Base commit                 | Patches contain                  |
-| ------------------------------------------ | ----------------- | --------------------------- | -------------------------------- |
-| Local branch, pushed, HEAD on remote       | `feature-x`       | HEAD SHA                    | uncommitted changes only         |
-| Local branch, pushed, HEAD ahead of remote | `devel` (default) | local `git rev-parse devel` | all branch commits + uncommitted |
-| Local branch, not pushed                   | `devel` (default) | local `git rev-parse devel` | all branch commits + uncommitted |
-| Detached HEAD, ref exists remotely         | detached ref      | ref SHA                     | uncommitted changes only         |
-| Detached HEAD, ref not on remote           | `devel` (default) | local `git rev-parse devel` | everything since devel           |
+| Scenario                                   | Base branch       | Base commit                       | Patches contain                  |
+| ------------------------------------------ | ----------------- | --------------------------------- | -------------------------------- |
+| Local branch, pushed, HEAD on remote       | `feature-x`       | HEAD SHA                          | uncommitted changes only         |
+| Local branch, pushed, HEAD ahead of remote | `devel` (default) | `devel@{upstream}` (origin/devel) | all branch commits + uncommitted |
+| Local branch, not pushed                   | `devel` (default) | `devel@{upstream}` (origin/devel) | all branch commits + uncommitted |
+| Detached HEAD, ref exists remotely         | detached ref      | ref SHA                           | uncommitted changes only         |
+| Detached HEAD, ref not on remote           | `devel` (default) | `devel@{upstream}` (origin/devel) | everything since devel           |
+
+(The fallback rows assume a local `devel` branch with an upstream — a normal
+clone. With no local `devel` it falls back to `git rev-parse devel`, which also
+fails if absent: that is the CI case the `bazel-ci.yml` workaround handles.)
 
 ### Gotchas
 
-- **Local devel ref used, not origin/devel**: If your local `devel` is behind
-  `origin/devel`, the base commit may not exist on the remote → runner clone
-  fails. Run `git fetch` first.
+- **Fallback base is `origin/devel` via `@{upstream}`**: the fallback resolves
+  `devel@{upstream}` (the remote-tracking commit), so unpushed commits on a local
+  `devel` are sent as patches rather than used as the base. This needs a **local**
+  `devel` branch with tracking config. A CI checkout (`actions/checkout`) creates
+  only `origin/devel`, not a local branch, so `@{upstream}` (and the `git rev-parse
+devel` fallback) both fail — `bazel-ci.yml` creates a local `devel` ref for PR
+  builds. If `origin/devel` itself is stale, `git fetch` first.
 - **`--run_from_commit` disables patches**: When set, the runner checks out
   exactly that commit. Patches are only generated when BOTH `--run_from_branch`
   and `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper

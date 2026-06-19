@@ -68,44 +68,6 @@ def _read_repo_config(repo_root: Path) -> RepoConfig:
     )
 
 
-def _validate_git_state(repo: pygit2.Repository) -> None:
-    """Abort if the default branch has unpushed commits.
-
-    bb remote selects the local HEAD as the base commit. If that commit
-    doesn't exist on the remote, the runner fails during git fetch.
-    """
-    if repo.head_is_detached:
-        return
-
-    current_branch = repo.head.shorthand
-
-    origin_head = repo.references.get("refs/remotes/origin/HEAD")
-    if origin_head is None:
-        # CI (actions/checkout) doesn't set origin/HEAD — skip validation.
-        return
-    default_branch = origin_head.resolve().shorthand.removeprefix("origin/")
-
-    if current_branch != default_branch:
-        return
-
-    try:
-        local_oid = repo.references[f"refs/heads/{default_branch}"].resolve().target
-    except KeyError:
-        return
-    try:
-        remote_oid = repo.references[f"refs/remotes/origin/{default_branch}"].resolve().target
-    except KeyError:
-        return
-
-    if local_oid != remote_oid:
-        print(
-            f"bbr: aborting — {default_branch} has unpushed commits (local {local_oid} != origin {remote_oid}).",
-            file=sys.stderr,
-        )
-        print("bbr: push first or use a feature branch.", file=sys.stderr)
-        sys.exit(1)
-
-
 def _find_bb() -> str:
     """Locate the bb binary on PATH."""
     if path := shutil.which("bb"):
@@ -247,7 +209,6 @@ def main() -> None:
         args.remove("--dry-run")
 
     repo = pygit2.Repository(".")
-    _validate_git_state(repo)
     cmd = build_command(repo, args)
 
     if dry_run:

@@ -14,15 +14,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from devinfra.bbr import (
-    RepoConfig,
-    _bazelrc_args,
-    _env_args,
-    _read_repo_config,
-    _validate_git_state,
-    build_command,
-    find_verb_index,
-)
+from devinfra.bbr import RepoConfig, _bazelrc_args, _env_args, _read_repo_config, build_command, find_verb_index
 
 BB = "/usr/bin/bb"
 IMAGE = "ghcr.io/test/rbe@sha256:deadbeef"
@@ -86,42 +78,6 @@ class TestReadRepoConfig:
         assert result.bazel_args == ["--config=rbe"]
         assert result.runner_exec_properties == {}
         assert result.container_image is None
-
-
-class TestValidateGitState:
-    def test_detached_head_skips(self, tmp_path: Path) -> None:
-        repo = _make_repo(tmp_path)
-        repo.set_head(repo.head.target)
-        _validate_git_state(repo)
-
-    def test_feature_branch_skips(self, tmp_path: Path) -> None:
-        repo = _make_repo(tmp_path)
-        repo.references.create("refs/heads/my-feature", repo.head.target)
-        repo.set_head("refs/heads/my-feature")
-        _validate_git_state(repo)
-
-    def test_default_branch_unpushed_aborts(self, tmp_path: Path) -> None:
-        repo = _make_repo(tmp_path)
-        sig = pygit2.Signature("test", "test@test.com")
-        tree = repo.TreeBuilder().write()
-        new_oid = repo.create_commit("refs/heads/devel", sig, sig, "second", tree, [repo.head.target])
-        repo.set_head("refs/heads/devel")
-        assert repo.references["refs/heads/devel"].resolve().target == new_oid
-        with pytest.raises(SystemExit):
-            _validate_git_state(repo)
-
-    def test_default_branch_up_to_date_passes(self, tmp_path: Path) -> None:
-        repo = _make_repo(tmp_path)
-        _validate_git_state(repo)
-
-    def test_missing_origin_head_skips(self, tmp_path: Path) -> None:
-        """Without refs/remotes/origin/HEAD (e.g. CI), validation is skipped."""
-        repo = pygit2.init_repository(str(tmp_path / "bare"))
-        sig = pygit2.Signature("test", "test@test.com")
-        tree = repo.TreeBuilder().write()
-        repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
-        repo.set_head("refs/heads/devel")
-        _validate_git_state(repo)
 
 
 class TestFindVerbIndex:

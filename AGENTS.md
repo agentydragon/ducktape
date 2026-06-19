@@ -126,10 +126,6 @@ local-only runs that need the session config, use `bazelisk run //target -- ...`
 RBE-bound work (`bbr ...`) is unaffected because runner VMs don't use the session
 truststore.
 
-### Unpushed commits
-
-`bbr` aborts if local `devel` differs from `origin/devel`. Fix: `git push` first, or use a feature branch.
-
 ### Configuration layers
 
 | Layer   | Source                           | Contents                                                  |

@@ -5,7 +5,7 @@
 }:
 pkgs.stdenv.mkDerivation {
   pname = "bb";
-  version = "5.0.339";
+  version = "5.0.387";
   src = artifacts.bb;
   dontUnpack = true;
   nativeBuildInputs = [ pkgs.makeWrapper ];
