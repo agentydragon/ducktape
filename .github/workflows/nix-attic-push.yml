@@ -13,7 +13,13 @@ jobs:
   nix-attic-push:
     name: Build & push to Attic
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 360 min (GitHub-hosted ceiling) so the first run after enabling
+    # extra-substituters (below) can do the one-time cold build of paths
+    # cache.nixos.org can't serve — notably the unfree CUDA stack
+    # (cuda-merged/ollama for wyrm2), a ~1.5h+ local build that caused the
+    # earlier 120-min timeouts — and push them. Once cached, later runs
+    # substitute them and finish quickly, so this can be lowered again.
+    timeout-minutes: 360
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -36,6 +42,15 @@ jobs:
             # needed so builtins.fetchClosure of the gaffer closure
             # (nix/packages/gaffer.nix) passes signature verification.
             extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+            # Substitute from the main cache this job pushes to, so paths
+            # cache.nixos.org can't serve — notably the unfree CUDA stack
+            # (cuda-merged/ollama for the wyrm2 GPU host) — are pulled from a
+            # previous run instead of rebuilt locally every time. Auth is the
+            # ATTIC_TOKEN netrc written below (the CI token has main:pull). Attic
+            # advertises priority 41 < cache.nixos.org's 40, so the public cache
+            # still wins for the shared base; attic is only hit for paths it
+            # alone has.
+            extra-substituters = https://cache.allegedly.works/main
 
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client

@@ -45,7 +45,7 @@
       "sops_file": "secrets/ci/attic-main-writer.sops.yaml",
       "sub": "ducktape-ci",
       "validity": "1 year",
-      "_pull_rationale": "gaffer:r is needed by the nix-attic-push workflow: evaluating flake outputs that reference nix/packages/gaffer.nix triggers builtins.fetchClosure against cache.allegedly.works/gaffer to substitute the private drivefs/drivectl closures bundled into NixOS/home configs.",
+      "_pull_rationale": "main:r is used by the nix-attic-push workflow as an extra substituter so paths cache.nixos.org can't serve (the unfree CUDA stack: cuda-merged/ollama for wyrm2) are pulled from a prior run instead of rebuilt locally. gaffer:r is needed because evaluating flake outputs that reference nix/packages/gaffer.nix triggers builtins.fetchClosure against cache.allegedly.works/gaffer to substitute the private drivefs/drivectl closures bundled into NixOS/home configs.",
       "pull": ["main", "gaffer"],
       "push": ["main"]
     },
