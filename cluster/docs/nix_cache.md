@@ -12,10 +12,10 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 - **Caches** (private, priority 41, server-generated ED25519 keypairs):
   - `main` — ducktape CI's general-purpose cache (flake outputs)
   - `gaffer` — gaffer-private CI's cache (drivefs and friends)
-- **Trusted public keys** (consumer side, pinned in
-  `nix/nixos/modules/attic-substituter.nix`):
-  - `main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc=`
-  - `gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8=`
+- **Trusted public keys** (consumer side): single source of truth is
+  `nix/attic-pubkeys.json`, consumed by both
+  `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` CI
+  workflow. Update that file on cluster rebuild (see Bootstrap below).
 
 Caches are created (and signing keypairs generated) by the bootstrap Job in
 `cluster/k8s/nix-cache/bootstrap/`. Re-running the Job is idempotent: GET the
@@ -63,7 +63,8 @@ for cache in main gaffer; do
 done
 ```
 
-…and paste into `nix/nixos/modules/attic-substituter.nix` `trusted-public-keys`.
+…and paste into `nix/attic-pubkeys.json` (the single source of truth, read by
+both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` workflow).
 
 ## CI Push
 

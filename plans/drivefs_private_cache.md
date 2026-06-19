@@ -5,8 +5,8 @@
 The private-cache + JWT-rotation infra landed in commits
 `96c039b69..6ad34978d`:
 
-- `cache.allegedly.works/gaffer` cache exists (empty),
-  pubkey `gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8=`.
+- `cache.allegedly.works/gaffer` cache exists; trusted pubkey tracked in
+  `nix/attic-pubkeys.json` (SSOT).
 - Writer JWT for gaffer at `secrets/ci/attic-gaffer-writer.sops.yaml`,
   decryptable by the CI age key (already in gaffer-private's GHA secrets).
 - `nix/packages/gaffer.nix` ready to expose pins as `builtins.storePath`

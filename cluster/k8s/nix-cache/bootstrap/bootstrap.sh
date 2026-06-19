@@ -21,14 +21,15 @@
 # Public keys are NOT extracted by this script — fetch them from the
 # unauthenticated endpoint after the cache exists:
 #   curl https://cache.allegedly.works/<cache>/nix-cache-info
-# Paste the resulting `Trusted-Public-Key:` value into
-# nix/nixos/modules/attic-substituter.nix `trusted-public-keys`.
+# Paste each resulting `Trusted-Public-Key:` value into nix/attic-pubkeys.json
+# (the single source of truth, read by both nix/nixos/modules/attic-substituter.nix
+# and the nix-attic-push CI workflow).
 #
 # TODO: nice-to-have — auto-fetch the pubkey post-creation and push it
-# back into nix/nixos/modules/attic-substituter.nix via the
-# github-secrets-sync-pat PAT (same mechanism the rotator uses for SOPS
-# files). Today we just paste it once per cluster lifetime; the pubkey
-# only changes on full cluster rebuild, so the manual step is rare.
+# back into nix/attic-pubkeys.json via the github-secrets-sync-pat PAT
+# (same mechanism the rotator uses for SOPS files). Today we just paste it
+# once per cluster lifetime; the pubkey only changes on full cluster
+# rebuild, so the manual step is rare.
 #
 # To re-run after editing this script, the
 # `kustomize.toolkit.fluxcd.io/force: enabled` annotation on the Job tells

@@ -18,6 +18,13 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
 
+      # Attic cache trusted pubkeys live in nix/attic-pubkeys.json (SSOT). Read
+      # them with jq (preinstalled) here, not in extra_nix_config below, because
+      # that field is static and Nix isn't installed yet at this point.
+      - name: Load Attic trusted pubkeys
+        id: attic_keys
+        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
         with:
@@ -25,7 +32,10 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes fetch-closure
             netrc-file = /home/runner/.config/nix/netrc
-            extra-trusted-public-keys = main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc= gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8=
+            # Trusted pubkeys from nix/attic-pubkeys.json (SSOT), loaded above —
+            # needed so builtins.fetchClosure of the gaffer closure
+            # (nix/packages/gaffer.nix) passes signature verification.
+            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
 
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client

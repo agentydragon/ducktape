@@ -47,21 +47,11 @@ in
         "https://cache.allegedly.works/main?priority=40"
         "https://cache.allegedly.works/gaffer?priority=40"
       ];
-      trusted-public-keys = [
-        # main + gaffer caches: created by the bootstrap Job in
-        # cluster/k8s/nix-cache/bootstrap/, signing keypairs live in attic's
-        # Postgres DB. Pubkeys captured via:
-        #   curl -sSf -H "Authorization: Bearer $JWT" \
-        #     https://cache.allegedly.works/_api/v1/cache-config/<cache> \
-        #     | jq -r .public_key
-        # ($JWT is an atticadm-minted admin token with `--pull '*'`.)
-        # TODO: nice-to-have — auto-fetch pubkeys post-creation and push
-        # them back into this file via the github-secrets-sync-pat PAT
-        # (same mechanism the rotator uses for SOPS files). Pubkeys only
-        # change on full cluster rebuild, so the manual step is rare.
-        "main:owYQITaq2ixR/EnqKoIQAxgjalKKVqMemFwRMaUW53U="
-        "gaffer:78zVKxf5n254+14vXQeDKV2EHk1q2I9CrG6fLdwlQws="
-      ];
+      # Trusted pubkeys for the main + gaffer caches. Single source of truth is
+      # nix/attic-pubkeys.json; the nix-attic-push CI workflow reads the same
+      # file. Provenance + rotation runbook (capture pubkeys on cluster rebuild):
+      # cluster/k8s/nix-cache/bootstrap/bootstrap.sh.
+      trusted-public-keys = builtins.fromJSON (builtins.readFile ../../attic-pubkeys.json);
       netrc-file = config.sops.templates."attic-netrc".path;
       connect-timeout = 5;
     };
