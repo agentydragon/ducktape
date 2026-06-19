@@ -24,8 +24,9 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use source_match::{
     AstWildcardResolver, ChunkResolver, MemberBindingMatch, ResolvedMemberBinding,
-    SelectorResolver, binding_group_anonymous_statement_selector, binding_group_member_selectors,
-    member_binding_candidate_matches,
+    SelectorResolver, SourceMatchBodyDebt, binding_group_anonymous_statement_selector,
+    binding_group_member_selectors, fact_source_match_body_debt, member_binding_candidate_matches,
+    source_match_body_debt,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
@@ -770,6 +771,72 @@ fn timed_classify<T: PartialEq + std::fmt::Debug>(
     classify_and_record(tally, issues, site, &datalog, &production);
 }
 
+/// The near-miss body_debt differential for ONE selector that production fails to
+/// resolve — the F5 final gate. `body_debt`'s near-miss rows are the diagnostic
+/// shown precisely when a `source_match` does not resolve, so this is run only for
+/// the `Err` (no-match / ambiguous) selectors `body_debt` exists to explain. Both
+/// twins are driven with `min_score = 0`, `limit = 0` (no score floor, unlimited)
+/// — stricter than either production caller (`(1, 3)` lowering report, `(55, 3)`
+/// spec-validate), so no divergent row can hide below a floor or past a cap. The
+/// whole [`SourceMatchBodyDebt`] (`exact_groups` + `near_misses`) is compared, so
+/// reason strings, scores, declared bindings, and ordering must all be
+/// byte-identical. Classified into `tally`/`issues` like [`classify_and_record`];
+/// `(Ok, Ok)`-differ is the meaningful finding the gate forbids.
+fn near_miss_differential(
+    runtime_module: &Module,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    tally: &mut ResolverTally,
+    issues: &mut Vec<Issue>,
+    site: impl Fn() -> String,
+) {
+    let fact: anyhow::Result<SourceMatchBodyDebt> =
+        fact_source_match_body_debt(runtime_module, request_id, selector, 0, 0);
+    let matcher: anyhow::Result<SourceMatchBodyDebt> =
+        source_match_body_debt(runtime_module, request_id, selector, 0, 0);
+    // Record any violation as the near-miss rows themselves (not the whole struct's
+    // opaque Debug) so a real corpus divergence reports the exact reason strings the
+    // spec asks for. A dedicated `near-miss-*` category keeps these distinct from
+    // the resolver passes' generic `fail-closed`/`over-resolved`/`value-disagree`.
+    let detail = || {
+        format!(
+            "fact={} matcher={}",
+            match &fact {
+                Ok(debt) => format!(
+                    "near_misses={:?} exact_groups={:?}",
+                    debt.near_misses, debt.exact_groups
+                ),
+                Err(error) => format!("Err({error})"),
+            },
+            match &matcher {
+                Ok(debt) => format!(
+                    "near_misses={:?} exact_groups={:?}",
+                    debt.near_misses, debt.exact_groups
+                ),
+                Err(error) => format!("Err({error})"),
+            },
+        )
+    };
+    let category = match (&fact, &matcher) {
+        // (Ok, Ok)-differ is the meaningful finding: the fact and matcher near-miss
+        // rows disagree on some selector the JS corpus exercises.
+        (Ok(fact_debt), Ok(matcher_debt)) if fact_debt != matcher_debt => {
+            Some("near-miss-divergence")
+        }
+        (Err(_), Ok(_)) => Some("near-miss-fact-errored"),
+        (Ok(_), Err(_)) => Some("near-miss-matcher-errored"),
+        _ => None,
+    };
+    if let Some(category) = category {
+        issues.push(Issue {
+            category,
+            site: site(),
+            detail: detail(),
+        });
+    }
+    classify_resolver(tally, &fact, &matcher);
+}
+
 /// One module's classification tallies + issues, accumulated independently so
 /// cases can be resolved in parallel and reduced.
 #[derive(Default)]
@@ -781,6 +848,11 @@ struct CaseTally {
     candidates: ResolverTally,
     anonymous: ResolverTally,
     groups: ResolverTally,
+    /// Near-miss body_debt parity (fact `fact_source_match_body_debt` vs matcher
+    /// `source_match_body_debt`) over the selectors production fails to resolve —
+    /// the F5 final gate. Byte-identical reason rows ⇒ `resolved_parity`; any
+    /// `(Ok, Ok)`-differ is a real `body_debt` faithfulness divergence.
+    near_miss: ResolverTally,
     issues: Vec<Issue>,
     datalog_time: Duration,
     production_time: Duration,
@@ -793,6 +865,7 @@ impl CaseTally {
         self.candidates.add(&other.candidates);
         self.anonymous.add(&other.anonymous);
         self.groups.add(&other.groups);
+        self.near_miss.add(&other.near_miss);
         self.issues.extend(other.issues);
         self.datalog_time += other.datalog_time;
         self.production_time += other.production_time;
@@ -853,6 +926,28 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 &fact_candidates,
                 &matcher_candidates,
             );
+            // Near-miss body_debt differential (F5 final gate): the near-miss rows
+            // are `body_debt`'s diagnostic for a *non-resolving* selector, so run it
+            // only when production fails to resolve this member (no-match / ambiguous
+            // — the cases `body_debt` exists to explain).
+            if AstWildcardResolver::new(module)
+                .resolve_member(&case.module_path, "export", selector)
+                .is_err()
+            {
+                near_miss_differential(
+                    module,
+                    &case.module_path,
+                    selector,
+                    &mut tally.near_miss,
+                    &mut tally.issues,
+                    || {
+                        format!(
+                            "near-miss member {}\n      {}",
+                            case.module_path, selector.match_source
+                        )
+                    },
+                );
+            }
             tally.measured += 1;
         }
         for selector in &case.anonymous {
@@ -873,6 +968,24 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 &mut tally.datalog_time,
                 &mut tally.production_time,
             );
+            if AstWildcardResolver::new(module)
+                .resolve_anonymous_groups(&case.module_path, selector)
+                .is_err()
+            {
+                near_miss_differential(
+                    module,
+                    &case.module_path,
+                    selector,
+                    &mut tally.near_miss,
+                    &mut tally.issues,
+                    || {
+                        format!(
+                            "near-miss anonymous {}\n      {}",
+                            case.module_path, selector.match_source
+                        )
+                    },
+                );
+            }
             tally.measured += 1;
         }
         for (selector, exports) in &case.groups {
@@ -896,6 +1009,27 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 &mut tally.datalog_time,
                 &mut tally.production_time,
             );
+            // The group's `source_match` selector (`target_binding` already cleared)
+            // is what `body_debt` diagnoses; gate on the group's production
+            // resolution, run the near-miss differential on the group selector.
+            if AstWildcardResolver::new(module)
+                .resolve_member_group(&case.module_path, selector, exports)
+                .is_err()
+            {
+                near_miss_differential(
+                    module,
+                    &case.module_path,
+                    selector,
+                    &mut tally.near_miss,
+                    &mut tally.issues,
+                    || {
+                        format!(
+                            "near-miss group {}\n      {}",
+                            case.module_path, selector.match_source
+                        )
+                    },
+                );
+            }
             tally.measured += 1;
         }
         tally
@@ -949,6 +1083,8 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     let mut candidates = ResolverTally::default();
     let mut anonymous = ResolverTally::default();
     let mut groups = ResolverTally::default();
+    // F5 final gate: the near-miss body_debt parity over non-resolving selectors.
+    let mut near_miss = ResolverTally::default();
     let mut issues: Vec<Issue> = Vec::new();
     for (index, (chunk, source, cases)) in chunks.iter().enumerate() {
         let module = js_ast::parse_js_module_ast(chunk, source)
@@ -975,13 +1111,18 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
         candidates.add(&chunk_tally.candidates);
         anonymous.add(&chunk_tally.anonymous);
         groups.add(&chunk_tally.groups);
+        near_miss.add(&chunk_tally.near_miss);
         issues.extend(chunk_tally.issues);
         // Stream a per-chunk line to stderr so the run is observable live (the
         // final stdout summary only prints at the end). M=member tallies
         // r/j/fc/or/vd = resolved-parity / reject-parity / fail-closed /
-        // over-resolved / value-disagree.
+        // over-resolved / value-disagree. NM = near-miss body_debt parity over the
+        // chunk's non-resolving selectors: ok=byte-identical / d=divergences.
+        let chunk_near_miss_divergences = chunk_tally.near_miss.value_disagreements
+            + chunk_tally.near_miss.over_resolved
+            + chunk_tally.near_miss.fail_closed;
         eprintln!(
-            "[{:>2}/{}] {:<30} mods={:<3} sel={:<5} M(r/j/fc/or/vd) {}/{}/{}/{}/{} | dl {:>6.1}s prod {:>6.1}s tot {:>6.1}s",
+            "[{:>2}/{}] {:<30} mods={:<3} sel={:<5} M(r/j/fc/or/vd) {}/{}/{}/{}/{} NM(ok/d) {}/{} | dl {:>6.1}s prod {:>6.1}s tot {:>6.1}s",
             index + 1,
             chunk_count,
             chunk,
@@ -992,6 +1133,8 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
             chunk_tally.members.fail_closed,
             chunk_tally.members.over_resolved,
             chunk_tally.members.value_disagreements,
+            chunk_tally.near_miss.resolved_parity + chunk_tally.near_miss.reject_parity,
+            chunk_near_miss_divergences,
             chunk_tally.datalog_time.as_secs_f64(),
             chunk_tally.production_time.as_secs_f64(),
             started.elapsed().as_secs_f64(),
@@ -1013,6 +1156,10 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
         ("member-candidates", &candidates),
         ("anonymous", &anonymous),
         ("binding-group", &groups),
+        // Near-miss body_debt parity over the selectors production fails to resolve;
+        // here resolved-parity = rows byte-identical, value-disagree = rows DIVERGE
+        // (the meaningful finding), fail-closed/over-resolved = one twin errored.
+        ("near-miss", &near_miss),
     ] {
         println!(
             "  {label:<18} resolved-parity {} | reject-parity {} | fail-closed {} | over-resolved {} | value-disagree {}",
@@ -1034,14 +1181,18 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     let fail_closed =
         members.fail_closed + candidates.fail_closed + anonymous.fail_closed + groups.fail_closed;
     if !issues.is_empty() {
-        // Genuine disagreements (over-resolved / value-disagree) first — they are
-        // the priority — then the fail-closed worklist. Print all, not a prefix.
+        // Genuine disagreements first — they are the priority — then the
+        // fail-closed worklist. A near-miss-divergence (the F5 final gate's
+        // meaningful finding: fact vs matcher reason rows differ) ranks above the
+        // resolver passes' disagreements. Print all, not a prefix.
         issues.sort_by_key(|issue| match issue.category {
-            "value-disagree" => 0,
-            "over-resolved" => 1,
-            _ => 2,
+            "near-miss-divergence" => 0,
+            "value-disagree" => 1,
+            "over-resolved" => 2,
+            "near-miss-fact-errored" | "near-miss-matcher-errored" => 3,
+            _ => 4,
         });
-        println!("\nissues (over-resolved / value-disagree first, then fail-closed):");
+        println!("\nissues (near-miss / over-resolved / value-disagree first, then fail-closed):");
         for issue in &issues {
             println!(
                 "  [{}] {}\n        {}",
@@ -1054,6 +1205,24 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     } else {
         println!(
             "\nPER-CHUNK GATE: {genuine} genuine disagreement(s), {fail_closed} fail-closed — investigate."
+        );
+    }
+    // The F5 final gate (separate from the resolver gate above): over every
+    // selector production fails to resolve, the fact near-miss rows must be
+    // byte-identical to the `AstWildcardMatcher` rows. A divergence here, or one
+    // twin erroring while the other produces rows, is a `body_debt` faithfulness
+    // violation — the last thing between "sole resolver" and deleting the matcher.
+    let near_miss_divergences =
+        near_miss.value_disagreements + near_miss.over_resolved + near_miss.fail_closed;
+    let near_miss_selectors =
+        near_miss.resolved_parity + near_miss.reject_parity + near_miss_divergences;
+    if near_miss_divergences == 0 {
+        println!(
+            "\nNEAR-MISS GATE: {near_miss_selectors} non-resolving selector(s) — fact body_debt rows byte-identical to the AstWildcardMatcher rows; 0 divergences. ✅",
+        );
+    } else {
+        println!(
+            "\nNEAR-MISS GATE: {near_miss_divergences} divergence(s) over {near_miss_selectors} non-resolving selector(s) — fact body_debt rows differ from the AstWildcardMatcher rows; investigate.",
         );
     }
     Ok(())
