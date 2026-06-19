@@ -35,6 +35,29 @@ pub(super) struct MemberRequest {
     pub(super) binding: String,
     pub(super) export_name: String,
     pub(super) source_match: Option<spec::AnonymousStatementSelector>,
+    /// `@Name` cross-reference selector: pin this member's target by a
+    /// relational edge to a separately-identified anchor member, not by the
+    /// target's own minified name. Resolved after the chunk's owner graph is
+    /// built (the relational edges live there), against the anchor's
+    /// already-resolved binding — see `materialize::cross_ref` for the ordering
+    /// decision. `Some` ⟺ `binding` is empty and `source_match` is `None` until
+    /// the cross-ref pass fills `binding` in and clears this.
+    pub(super) cross_ref: Option<spec::CrossRefTarget>,
+    /// `reads_member` selector: pin this member's target by the member it reads
+    /// (`obj.X`), not by the target's own minified name. Resolved after the
+    /// chunk's owner graph is built (the member-read facts are derived from the
+    /// chunk AST and joined to it), against the owner-graph `reads_member` EDB —
+    /// see `materialize::reads_member`. `Some` ⟺ `binding` is empty until the
+    /// reads-member pass fills `binding` in.
+    pub(super) reads_member: Option<spec::ReadsMemberTarget>,
+    /// `member_of_module` **use-site** selector: pin this member's target by how
+    /// it is consumed (`mod.X`, `mod` an imported binding → its source module),
+    /// not by the target's own minified name. Resolved after the chunk's owner
+    /// graph is built (the use-site facts are derived from the chunk AST joined to
+    /// the import table), against the owner-graph `member_of_module` EDB — see
+    /// `materialize::member_of_module`. `Some` ⟺ `binding` is empty until the
+    /// member-of-module pass fills `binding` in.
+    pub(super) member_of_module: Option<spec::MemberOfModuleTarget>,
     /// When `true`, the member's source is an import specifier in the
     /// source chunk (not a top-level decl). The materializer looks up
     /// the import statement by `binding` in the chunk body and rewrites
@@ -76,7 +99,7 @@ pub(super) struct MemberRequest {
 impl MemberRequest {
     pub(super) fn resolve_source_match(
         &mut self,
-        runtime_module: &Module,
+        resolver: &dyn source_match::SelectorResolver,
         request_id: &str,
         cache: &mut BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
     ) -> Result<()> {
@@ -86,12 +109,7 @@ impl MemberRequest {
         let resolved = match cache.get(&selector) {
             Some(resolved) => resolved.clone(),
             None => {
-                let resolved = source_match::resolve_member_binding(
-                    runtime_module,
-                    request_id,
-                    &self.export_name,
-                    &selector,
-                )?;
+                let resolved = resolver.resolve_member(request_id, &self.export_name, &selector)?;
                 cache.insert(selector, resolved.clone());
                 resolved
             }
@@ -283,12 +301,23 @@ pub(super) fn build_members(
         .iter()
         .map(|m| {
             let selected = m.selector.selected()?;
-            let (binding, export_name, source_match, is_import_specifier) = match selected {
+            let (
+                binding,
+                export_name,
+                source_match,
+                cross_ref,
+                reads_member,
+                member_of_module,
+                is_import_specifier,
+            ) = match selected {
                 spec::MemberSelectorSpec::Binding(binding) => {
                     let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
                     (
                         binding.name,
                         export_name,
+                        None,
+                        None,
+                        None,
                         None,
                         matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)),
                     )
@@ -297,33 +326,115 @@ pub(super) fn build_members(
                     let export_name = m.name.clone().ok_or_else(|| {
                         anyhow::anyhow!(
                             "logical_module {request_id}: members[].selector.source_match \
-                             requires `name:` because the public export name cannot default \
-                             to a binding name until the selector is resolved"
+                                 requires `name:` because the public export name cannot default \
+                                 to a binding name until the selector is resolved"
                         )
                     })?;
-                    (String::new(), export_name, Some(selector), false)
+                    (
+                        String::new(),
+                        export_name,
+                        Some(selector),
+                        None,
+                        None,
+                        None,
+                        false,
+                    )
+                }
+                spec::MemberSelectorSpec::CrossRef(target) => {
+                    let export_name = m.name.clone().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "logical_module {request_id}: members[].selector.cross_ref \
+                                 requires `name:` because the public export name cannot default \
+                                 to a binding name until the cross-reference is resolved"
+                        )
+                    })?;
+                    (
+                        String::new(),
+                        export_name,
+                        None,
+                        Some(target),
+                        None,
+                        None,
+                        false,
+                    )
+                }
+                spec::MemberSelectorSpec::ReadsMember(target) => {
+                    let export_name = m.name.clone().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "logical_module {request_id}: members[].selector.reads_member \
+                                 requires `name:` because the public export name cannot default \
+                                 to a binding name until the reads-member target is resolved"
+                        )
+                    })?;
+                    (
+                        String::new(),
+                        export_name,
+                        None,
+                        None,
+                        Some(target),
+                        None,
+                        false,
+                    )
+                }
+                spec::MemberSelectorSpec::MemberOfModule(target) => {
+                    let export_name = m.name.clone().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "logical_module {request_id}: members[].selector.member_of_module \
+                                 requires `name:` because the public export name cannot default \
+                                 to a binding name until the use-site target is resolved"
+                        )
+                    })?;
+                    (
+                        String::new(),
+                        export_name,
+                        None,
+                        None,
+                        None,
+                        Some(target),
+                        false,
+                    )
                 }
             };
-            let claim_origin = match &m.selector.source_match {
-                Some(selector) => match selector.target_binding.as_deref() {
-                    Some(target) => format!(
-                        "members[].selector.source_match target_binding `{target}` as `{}`",
-                        m.name.as_deref().unwrap_or("<unnamed>")
-                    ),
+            let claim_origin = if m.selector.cross_ref.is_some() {
+                format!(
+                    "members[].selector.cross_ref as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                )
+            } else if m.selector.reads_member.is_some() {
+                format!(
+                    "members[].selector.reads_member as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                )
+            } else if m.selector.member_of_module.is_some() {
+                format!(
+                    "members[].selector.member_of_module as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                )
+            } else {
+                match &m.selector.source_match {
+                    Some(selector) => match selector.target_binding.as_deref() {
+                        Some(target) => format!(
+                            "members[].selector.source_match target_binding `{target}` as `{}`",
+                            m.name.as_deref().unwrap_or("<unnamed>")
+                        ),
+                        None => format!(
+                            "members[].selector.source_match as `{}`",
+                            m.name.as_deref().unwrap_or("<unnamed>")
+                        ),
+                    },
                     None => format!(
-                        "members[].selector.source_match as `{}`",
-                        m.name.as_deref().unwrap_or("<unnamed>")
+                        "members[].selector.binding as `{}`",
+                        m.name.as_deref().unwrap_or(&binding)
                     ),
-                },
-                None => format!(
-                    "members[].selector.binding as `{}`",
-                    m.name.as_deref().unwrap_or(&binding)
-                ),
+                }
             };
             Ok(MemberRequest {
                 binding,
                 export_name,
                 source_match,
+                cross_ref,
+                reads_member,
+                member_of_module,
                 is_import_specifier,
                 purity: m.purity,
                 effect: m.effect,
@@ -342,6 +453,9 @@ pub(super) fn build_members(
                 binding: String::new(),
                 export_name: expanded.export_name,
                 source_match: Some(expanded.selector),
+                cross_ref: None,
+                reads_member: None,
+                member_of_module: None,
                 is_import_specifier: false,
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,

@@ -190,7 +190,7 @@ fn source_match_report_details(
     selector: &spec::AnonymousStatementSelector,
     message: &str,
 ) -> SourceMatchReportDetails {
-    match source_match::source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
+    match source_match::fact_source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
         Ok(debt) => {
             let body_indices = debt
                 .exact_groups
@@ -317,6 +317,12 @@ pub(super) struct ChunkPlan {
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
     pub(super) runtime_module: &'a Module,
+    /// The selector resolver, built once for this chunk (see
+    /// `materialize_chunk`) and shared across every request's member and
+    /// binding-group `source_match` resolution. Carrying the resolver rather
+    /// than rebuilding it per request is what keeps a fact-based resolver's
+    /// per-chunk EDB construction off the hot path.
+    pub(super) selector_resolver: &'a dyn source_match::SelectorResolver,
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
@@ -327,6 +333,7 @@ pub(super) struct ExplicitRequestContext<'a> {
 
 fn resolve_request_source_matches(
     request: &mut LogicalRequest,
+    resolver: &dyn source_match::SelectorResolver,
     runtime_module: &Module,
     keep_going: bool,
     diagnostics: &mut Vec<SourceMatchDiagnostic>,
@@ -384,12 +391,10 @@ fn resolve_request_source_matches(
         let resolved = match source_match_group_cache.get(&cache_key) {
             Some(resolved) => resolved.clone(),
             None => {
-                let resolved = match source_match::resolve_member_binding_group(
-                    runtime_module,
-                    &request.id,
-                    &selector,
-                    &exports_by_target,
-                ) {
+                let resolved = match resolver
+                    .resolve_member_group(&request.id, &selector, &exports_by_target)
+                    .map(|group| group.bindings)
+                {
                     Ok(resolved) => resolved,
                     Err(error) if keep_going => {
                         let message = format!("{error:#}");
@@ -434,9 +439,7 @@ fn resolve_request_source_matches(
         if resolved_member_indices.contains(&idx) {
             continue;
         }
-        if let Err(error) =
-            member.resolve_source_match(runtime_module, &request.id, source_match_cache)
-        {
+        if let Err(error) = member.resolve_source_match(resolver, &request.id, source_match_cache) {
             if !keep_going {
                 return Err(error);
             }
@@ -590,6 +593,7 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         resolve_request_source_matches(
             request,
+            ctx.selector_resolver,
             ctx.runtime_module,
             self.keep_going,
             &mut self.source_match_diagnostics,
@@ -600,7 +604,7 @@ impl ChunkPlanBuilder {
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims = resolve_anonymous_statement_ordinals(
             request,
-            ctx.runtime_module,
+            ctx.selector_resolver,
             self.keep_going,
             &mut self.anonymous_statement_diagnostics,
         )?;
@@ -645,6 +649,19 @@ impl ChunkPlanBuilder {
         let module_id = ModuleId(LogicalModuleIndex(index));
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
+            // Cross-ref, reads-member, and member-of-module members resolve against
+            // the chunk's owner graph (and, for reads-member / member-of-module, the
+            // AST facts), all built after the plan (Stage A). They're claimed in
+            // dedicated post-Stage-A passes (`resolve_and_claim_cross_refs` /
+            // `resolve_and_claim_reads_members` / `resolve_and_claim_member_of_modules`)
+            // once those exist; until then their `binding` is empty, so they
+            // contribute nothing here.
+            if member.cross_ref.is_some()
+                || member.reads_member.is_some()
+                || member.member_of_module.is_some()
+            {
+                continue;
+            }
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
                 let existing = match existing_kind {
                     BindingKind::Owned {
@@ -757,6 +774,11 @@ impl ChunkPlanBuilder {
         let binding_comments: BTreeMap<String, String> = request
             .members
             .iter()
+            .filter(|member| {
+                member.cross_ref.is_none()
+                    && member.reads_member.is_none()
+                    && member.member_of_module.is_none()
+            })
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
@@ -768,6 +790,11 @@ impl ChunkPlanBuilder {
         let binding_claim_origins: BTreeMap<String, String> = request
             .members
             .iter()
+            .filter(|member| {
+                member.cross_ref.is_none()
+                    && member.reads_member.is_none()
+                    && member.member_of_module.is_none()
+            })
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .map(|member| (member.binding.clone(), member.claim_origin.clone()))
             .collect();
@@ -783,6 +810,527 @@ impl ChunkPlanBuilder {
             binding_comments,
             binding_claim_origins,
         });
+        Ok(())
+    }
+
+    /// Resolve and claim every `cross_ref` member across all explicit requests,
+    /// using the chunk's owner-graph `Resolution`. Runs after Stage A (the owner
+    /// graph carries the reference/alias edges cross-refs ride) but before
+    /// `finalize`. Cross-ref members were left unclaimed by `add_explicit_request`
+    /// (their target binding isn't known until here).
+    ///
+    /// **Anchor handle (the settled ordering decision).** A `@Anchor` names another
+    /// member by its readable `name:`; the kernel needs the anchor's *minified*
+    /// binding to ride the relational edge. The owner graph's `export_name` (the
+    /// readable→binding handle `owner_for_export` would use) is **not** populated at
+    /// this point — it is filled from the factorization, built later — so the anchor
+    /// binding comes from the **already-resolved members**: `export_name → binding`
+    /// over every binding/source_match member resolved by `add_explicit_request`.
+    /// See `materialize::cross_ref` and the `cross_ref_anchor_ordering` e2e test.
+    ///
+    /// Resolution is categorical / fail-closed: a cross-ref whose anchor is unknown,
+    /// or whose relational edge does not pick out exactly one declaring owner,
+    /// errors (or, under keep-going, is recorded as an unresolved-selector
+    /// diagnostic and skipped) — it never guesses.
+    pub(super) fn resolve_and_claim_cross_refs(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        owner_graph: &analysis::OwnerGraph,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        // No-op (and no owner-graph solve) for chunks without any cross-ref member.
+        if !explicit_requests
+            .iter()
+            .any(|request| request.members.iter().any(|m| m.cross_ref.is_some()))
+        {
+            return Ok(());
+        }
+        // The owner-graph solve carrying the reference/alias edges a cross-ref rides.
+        // Built once per chunk, only when a cross-ref member exists.
+        let resolution = cross_ref::build_resolution(owner_graph);
+
+        // export_name -> minified binding, over the members already resolved by
+        // `add_explicit_request`. Cross-ref members (still unresolved) are excluded
+        // by the empty-binding guard; an export name claimed by two resolved
+        // members can't anchor unambiguously, so it's dropped (resolution stays
+        // categorical — a missing anchor fails closed at the use site).
+        let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
+        for request in explicit_requests {
+            for member in &request.members {
+                if member.binding.is_empty() {
+                    continue;
+                }
+                anchor_binding
+                    .entry(member.export_name.clone())
+                    .and_modify(|slot| *slot = None)
+                    .or_insert_with(|| Some(member.binding.clone()));
+            }
+        }
+
+        // Resolution itself is fail-closed in both modes: an unresolvable
+        // cross-ref (unknown/ambiguous anchor, or a relational edge that doesn't
+        // pick out exactly one declaring owner) errors rather than guessing.
+        // Duplicate-claim clashes still follow the chunk's keep-going policy
+        // inside `resolve_cross_ref_member`.
+        for (index, request) in explicit_requests.iter().enumerate() {
+            for member in &request.members {
+                let Some(target) = &member.cross_ref else {
+                    continue;
+                };
+                self.resolve_cross_ref_member(
+                    request,
+                    member,
+                    target,
+                    &resolution,
+                    &anchor_binding,
+                    index,
+                    chunk_top_level_mark,
+                    chunk_id,
+                    declaration_by_name,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_cross_ref_member(
+        &mut self,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+        target: &spec::CrossRefTarget,
+        resolution: &selector_solve::Resolution,
+        anchor_binding: &HashMap<String, Option<String>>,
+        index: usize,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        let anchor = match anchor_binding.get(&target.anchor) {
+            Some(Some(binding)) => binding.as_str(),
+            Some(None) => bail!(
+                "logical_module {}: members[].selector.cross_ref anchor `@{}` (for member \
+                 `{}`) is ambiguous — several members resolve to it, so it cannot identify a \
+                 single binding. Anchor a cross-ref on a uniquely-named member.",
+                request.id,
+                target.anchor,
+                member.export_name,
+            ),
+            None => bail!(
+                "logical_module {}: members[].selector.cross_ref anchor `@{}` (for member \
+                 `{}`) does not name a resolved member in this chunk. The anchor must be the \
+                 readable `name:` of another member whose binding resolves in the same chunk.",
+                request.id,
+                target.anchor,
+                member.export_name,
+            ),
+        };
+        let binding =
+            cross_ref::resolve_cross_ref(resolution, target, anchor).with_context(|| {
+                format!(
+                    "logical_module {}: members[].selector.cross_ref for member `{}` did not \
+                 resolve to exactly one binding via `{}` of anchor `@{anchor_readable}` \
+                 (resolved binding `{anchor}`). The relational edge must pick out exactly one \
+                 declaring owner; add or refine `kind:` if several owners stand in the relation.",
+                    request.id,
+                    member.export_name,
+                    match target.relation {
+                        spec::CrossRefRelation::References => "references",
+                        spec::CrossRefRelation::Aliases => "aliases",
+                    },
+                    anchor_readable = target.anchor,
+                )
+            })?;
+        let binding_id = top_level_id(binding, chunk_top_level_mark);
+        if !declaration_by_name.contains_key(&binding_id) {
+            // Mirror the named-member path: a resolved binding with no top-level
+            // declaration in this chunk is recorded and the pipeline fails at the
+            // end with the full list, rather than half-claiming it here.
+            self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                chunk_id: chunk_id.to_string(),
+                module_path: spec::ModulePath::parse(&request.target_path, "")
+                    .expect("request target_path is a canonical module path"),
+                binding_name: binding.to_string(),
+                export_name: member.export_name.clone(),
+            });
+            return Ok(());
+        }
+        let module_id = ModuleId(LogicalModuleIndex(index));
+        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
+            let duplicate =
+                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
+            if !self.keep_going {
+                bail!("{}", render_duplicate_binding_claims(&[duplicate]));
+            }
+            self.duplicate_binding_claims.push(duplicate);
+            return Ok(());
+        }
+        // The residual sweep ran before Stage A (before this cross-ref pass), so
+        // the target binding — unclaimed at sweep time — was parked at the residual
+        // plan. Move it out: overwrite its assignment and prune the residual plan's
+        // export list, exactly as `apply_rebind_folds` / `synthesize_mini_factors`
+        // do, so the residual module doesn't keep `export { <binding> }` for a
+        // declaration that now lives in the explicit module (a Node load-time
+        // `Export 'X' is not defined` otherwise).
+        if let Some(prev) = self.binding_assignment.get(&binding_id).copied()
+            && Some(prev) == self.residual_plan_index
+            && let Some(residual_idx) = self.residual_plan_index
+        {
+            self.module_plans[residual_idx].bindings.remove(binding);
+        }
+        self.binding_assignment.insert(binding_id.clone(), index);
+        let kind = BindingKind::Owned { module: module_id };
+        self.catalogue_index_by_name
+            .insert(binding.to_string(), kind.clone());
+        self.bindings_catalogue.insert(binding_id, kind);
+        let plan = &mut self.module_plans[index];
+        plan.bindings
+            .insert(binding.to_string(), member.export_name.clone());
+        plan.binding_claim_origins
+            .insert(binding.to_string(), member.claim_origin.clone());
+        if let Some(comment) = &member.comment {
+            plan.binding_comments
+                .insert(binding.to_string(), comment.clone());
+        }
+        Ok(())
+    }
+
+    /// Build a `DuplicateBindingClaim` describing a clash between an
+    /// already-claimed `binding` and the cross-ref member now resolving to it.
+    /// Shares the existing-site projection with the named-member path.
+    fn duplicate_claim_for(
+        &self,
+        existing_kind: &BindingKind,
+        binding: &str,
+        chunk_id: &str,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+    ) -> DuplicateBindingClaim {
+        let existing = match existing_kind {
+            BindingKind::Owned {
+                module: ModuleId(LogicalModuleIndex(owner_index)),
+            } => {
+                let plan = self.module_plans.get(*owner_index);
+                DuplicateClaimSite {
+                    module_id: plan
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{owner_index}>")),
+                    export_name: plan.and_then(|plan| plan.bindings.get(binding)).cloned(),
+                    claim_origin: plan
+                        .and_then(|plan| plan.binding_claim_origins.get(binding))
+                        .cloned(),
+                }
+            }
+            BindingKind::Imported {
+                re_exporter: ModuleId(LogicalModuleIndex(re_index)),
+                public_name,
+                ..
+            } => {
+                let plan = self.module_plans.get(*re_index);
+                DuplicateClaimSite {
+                    module_id: plan
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                    export_name: Some(public_name.to_string()),
+                    claim_origin: plan
+                        .and_then(|plan| plan.binding_claim_origins.get(binding))
+                        .cloned(),
+                }
+            }
+        };
+        DuplicateBindingClaim {
+            chunk_id: chunk_id.to_string(),
+            binding: binding.to_string(),
+            existing,
+            duplicate: DuplicateClaimSite {
+                module_id: request.id.clone(),
+                export_name: Some(member.export_name.clone()),
+                claim_origin: Some(member.claim_origin.clone()),
+            },
+        }
+    }
+
+    /// Resolve and claim every `reads_member` member across all explicit
+    /// requests, using the chunk's owner-graph `Resolution` (with the chunk's AST
+    /// member-read facts joined in). Runs after Stage A (the owner graph exists
+    /// and the AST is in scope) but before `finalize`. Reads-member members were
+    /// left unclaimed by `add_explicit_request` (their target binding isn't known
+    /// until here).
+    ///
+    /// **Object anchor (the settled ordering decision, shared with `cross_ref`).**
+    /// A `reads_member` selector may constrain the object the member is read off
+    /// (`object: @Anchor`), naming another member by its readable `name:`. The
+    /// kernel needs the object's *minified* binding to match the AST member-read.
+    /// The owner graph's `export_name` is **not** populated at this point, so the
+    /// object binding comes from the **already-resolved members**: `export_name →
+    /// binding` over every binding/source_match member resolved by
+    /// `add_explicit_request`. See `materialize::reads_member` and `cross_ref`.
+    ///
+    /// Resolution is categorical / fail-closed: a reads-member whose object anchor
+    /// is unknown, or whose member relation does not pick out exactly one
+    /// declaring owner, errors (or, under keep-going, is recorded as an
+    /// unmatched-claim diagnostic and skipped) — it never guesses.
+    pub(super) fn resolve_and_claim_reads_members(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        owner_graph: &analysis::OwnerGraph,
+        module: &swc_ecma_ast::Module,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        // No-op (and no owner-graph solve / AST member-read scan) for chunks
+        // without any reads-member member.
+        if !explicit_requests
+            .iter()
+            .any(|request| request.members.iter().any(|m| m.reads_member.is_some()))
+        {
+            return Ok(());
+        }
+        // The owner-graph solve carrying the `reads_member` EDB (member-read facts
+        // derived from the chunk AST and joined to owners). Built once per chunk,
+        // only when a reads-member member exists.
+        let resolution = reads_member::build_resolution(owner_graph, module);
+
+        // export_name -> minified binding, over the members already resolved by
+        // `add_explicit_request`. Reads-member members (still unresolved) are
+        // excluded by the empty-binding guard; an export name claimed by two
+        // resolved members can't anchor an `object:` unambiguously, so it's
+        // dropped (resolution stays categorical — a missing object anchor fails
+        // closed at the use site).
+        let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
+        for request in explicit_requests {
+            for member in &request.members {
+                if member.binding.is_empty() {
+                    continue;
+                }
+                anchor_binding
+                    .entry(member.export_name.clone())
+                    .and_modify(|slot| *slot = None)
+                    .or_insert_with(|| Some(member.binding.clone()));
+            }
+        }
+
+        for (index, request) in explicit_requests.iter().enumerate() {
+            for member in &request.members {
+                let Some(target) = &member.reads_member else {
+                    continue;
+                };
+                self.resolve_reads_member_member(
+                    request,
+                    member,
+                    target,
+                    &resolution,
+                    &anchor_binding,
+                    index,
+                    chunk_top_level_mark,
+                    chunk_id,
+                    declaration_by_name,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_reads_member_member(
+        &mut self,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+        target: &spec::ReadsMemberTarget,
+        resolution: &selector_solve::Resolution,
+        anchor_binding: &HashMap<String, Option<String>>,
+        index: usize,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        // Resolve the optional `object: @Anchor` to the anchor's minified binding.
+        let object_binding = match &target.object {
+            None => None,
+            Some(object) => Some(match anchor_binding.get(object) {
+                Some(Some(binding)) => binding.as_str(),
+                Some(None) => bail!(
+                    "logical_module {}: members[].selector.reads_member object `@{}` (for member \
+                     `{}`) is ambiguous — several members resolve to it, so it cannot identify a \
+                     single object. Anchor on a uniquely-named member.",
+                    request.id,
+                    object,
+                    member.export_name,
+                ),
+                None => bail!(
+                    "logical_module {}: members[].selector.reads_member object `@{}` (for member \
+                     `{}`) does not name a resolved member in this chunk. The object must be the \
+                     readable `name:` of another member whose binding resolves in the same chunk.",
+                    request.id,
+                    object,
+                    member.export_name,
+                ),
+            }),
+        };
+        let binding = reads_member::resolve_reads_member(resolution, target, object_binding)
+            .with_context(|| {
+                let object_clause = match &target.object {
+                    Some(object) => format!(" off object `@{object}`"),
+                    None => String::new(),
+                };
+                format!(
+                    "logical_module {}: members[].selector.reads_member for member `{}` did not \
+                     resolve to exactly one binding via reading member `.{}`{object_clause}. The \
+                     relation must pick out exactly one declaring owner; add or refine `object:` \
+                     / `kind:` if several owners read the member.",
+                    request.id, member.export_name, target.member,
+                )
+            })?;
+        self.claim_post_stage_a_binding(
+            request,
+            member,
+            binding,
+            index,
+            chunk_top_level_mark,
+            chunk_id,
+            declaration_by_name,
+        )
+    }
+
+    /// Resolve and claim every `member_of_module` member across all explicit
+    /// requests, using the chunk's owner-graph `Resolution` with the
+    /// `member_of_module` use-site EDB (member accesses joined to the chunk's
+    /// import table). Runs after Stage A, mirroring
+    /// [`Self::resolve_and_claim_reads_members`]; `member_of_module` members were
+    /// left unclaimed by `add_explicit_request` (their target binding isn't known
+    /// until here).
+    ///
+    /// Unlike `reads_member`, the selector carries **no object anchor** — both its
+    /// labels (`module`, `member`) are re-minify-invariant and resolved directly
+    /// against the use-site EDB — so there is no anchor-first map to build.
+    /// Resolution is categorical / fail-closed: a use-site relation that does not
+    /// pick out exactly one declaring owner errors (or, under keep-going, is
+    /// recorded as an unmatched-claim diagnostic) — it never guesses.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn resolve_and_claim_member_of_modules(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        owner_graph: &analysis::OwnerGraph,
+        module: &swc_ecma_ast::Module,
+        import_sources: &HashMap<String, String>,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        // No-op (and no owner-graph solve / AST scan) for chunks without any
+        // member-of-module member.
+        if !explicit_requests
+            .iter()
+            .any(|request| request.members.iter().any(|m| m.member_of_module.is_some()))
+        {
+            return Ok(());
+        }
+        // The owner-graph solve carrying the `member_of_module` use-site EDB
+        // (member accesses joined to the import table). Built once per chunk, only
+        // when a member-of-module member exists.
+        let resolution = member_of_module::build_resolution(owner_graph, module, import_sources);
+
+        for (index, request) in explicit_requests.iter().enumerate() {
+            for member in &request.members {
+                let Some(target) = &member.member_of_module else {
+                    continue;
+                };
+                let binding = member_of_module::resolve_member_of_module(&resolution, target)
+                    .with_context(|| {
+                        format!(
+                            "logical_module {}: members[].selector.member_of_module for member \
+                             `{}` did not resolve to exactly one binding via consuming \
+                             `{}.{}`. The use-site relation must pick out exactly one declaring \
+                             owner; add or refine `kind:` if several owners consume the module \
+                             member.",
+                            request.id, member.export_name, target.module, target.member,
+                        )
+                    })?;
+                self.claim_post_stage_a_binding(
+                    request,
+                    member,
+                    binding,
+                    index,
+                    chunk_top_level_mark,
+                    chunk_id,
+                    declaration_by_name,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Claim a binding a post-Stage-A selector pass resolved to (the shared tail
+    /// of `reads_member` and `member_of_module`): record an unmatched-claim if the
+    /// binding has no top-level declaration; error / record a duplicate if already
+    /// claimed; otherwise move it out of the residual sweep and into module
+    /// `index`, registering its export name, claim origin, and comment. The
+    /// residual move mirrors the cross-ref pass — the binding was parked at the
+    /// residual plan when the pre-Stage-A sweep ran, before this pass knew its
+    /// identity.
+    #[allow(clippy::too_many_arguments)]
+    fn claim_post_stage_a_binding(
+        &mut self,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+        binding: &str,
+        index: usize,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        let binding_id = top_level_id(binding, chunk_top_level_mark);
+        if !declaration_by_name.contains_key(&binding_id) {
+            // Mirror the named-member path: a resolved binding with no top-level
+            // declaration in this chunk is recorded and the pipeline fails at the
+            // end with the full list, rather than half-claiming it here.
+            self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                chunk_id: chunk_id.to_string(),
+                module_path: spec::ModulePath::parse(&request.target_path, "")
+                    .expect("request target_path is a canonical module path"),
+                binding_name: binding.to_string(),
+                export_name: member.export_name.clone(),
+            });
+            return Ok(());
+        }
+        let module_id = ModuleId(LogicalModuleIndex(index));
+        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
+            let duplicate =
+                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
+            if !self.keep_going {
+                bail!("{}", render_duplicate_binding_claims(&[duplicate]));
+            }
+            self.duplicate_binding_claims.push(duplicate);
+            return Ok(());
+        }
+        // The residual sweep ran before Stage A (before this pass), so the target
+        // binding — unclaimed at sweep time — was parked at the residual plan. Move
+        // it out: overwrite its assignment and prune the residual plan's export
+        // list, so the residual module doesn't keep `export { <binding> }` for a
+        // declaration that now lives in the explicit module.
+        if let Some(prev) = self.binding_assignment.get(&binding_id).copied()
+            && Some(prev) == self.residual_plan_index
+            && let Some(residual_idx) = self.residual_plan_index
+        {
+            self.module_plans[residual_idx].bindings.remove(binding);
+        }
+        self.binding_assignment.insert(binding_id.clone(), index);
+        let kind = BindingKind::Owned { module: module_id };
+        self.catalogue_index_by_name
+            .insert(binding.to_string(), kind.clone());
+        self.bindings_catalogue.insert(binding_id, kind);
+        let plan = &mut self.module_plans[index];
+        plan.bindings
+            .insert(binding.to_string(), member.export_name.clone());
+        plan.binding_claim_origins
+            .insert(binding.to_string(), member.claim_origin.clone());
+        if let Some(comment) = &member.comment {
+            plan.binding_comments
+                .insert(binding.to_string(), comment.clone());
+        }
         Ok(())
     }
 

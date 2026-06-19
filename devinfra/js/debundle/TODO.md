@@ -72,6 +72,17 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
   menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
   playbook with tested fixtures (M2) and port-based evaluation (M3).
+- <plans/selector_constraint_model.md> + <plans/selector_resolver_endpoint.md> — **resolver
+  endpoint COMPLETE (2026-06-19, `825e2887`).** The fact-based resolver (`chunk_facts` EDB +
+  `selector_match` homomorphism + `ChunkResolver`) is the **sole** selector resolver; the
+  hand-rolled `AstWildcardMatcher` is **deleted**. The full 8306-selector corpus is **green** —
+  0 divergences across member / member-candidates / anonymous / binding-group / near-miss
+  (proven on the real minified snapshot before the oracle was retired). Remaining: **P4
+  expressivity** (`@Name` cross-refs + relational selectors, Phases X1–X5) — see
+  <debug/2026_06_19_p4_debt_worklist.md>; the X1 (`cross_ref`), X2 (`reads_member`), and
+  X3 (`member_of_module` use-site edge) primitives are **all landed and integrated**
+  (`acd80903`, `ce20a42b`, `ae6dec8b`). Remaining: the real-spec **conversions** (X1d
+  onward), X4/X5 (counting/uniqueness and one global solve), and push-to-zero.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
@@ -337,9 +348,6 @@ workflows, and must use generic synthetic fixtures.
   multiple bindings into one logical module. Add or design a form for
   one matched declaration context whose bindings should land in
   different modules, without repeating the whole source selector.
-- **Matcher core cleanup.** Factor anonymous-statement and member-binding
-  `source_match` resolution through a shared parse/canonicalize/window
-  matcher before adding more selector variants.
 
 ## Logical materialization breadth
 

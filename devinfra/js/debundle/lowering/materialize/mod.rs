@@ -4,7 +4,10 @@
 //! `apply_materialized_logical_chunks`.
 
 mod apply;
+mod cross_ref;
+mod member_of_module;
 mod plan_builder;
+mod reads_member;
 
 pub(super) use apply::apply_materialized_logical_chunks;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
@@ -165,8 +168,16 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    // One selector resolver for the whole chunk, shared across every request's
+    // member and binding-group resolution (built once — see the seam contract in
+    // `source_match::SelectorResolver`). The fact-based `ChunkResolver` is the
+    // production resolver: it builds the chunk's EDB once and resolves every
+    // selector against it, at parity with the former hand-rolled matcher (proven
+    // by the corpus differential, <debug/2026_06_18_per_chunk_gate_real_source.md>).
+    let selector_resolver = source_match::ChunkResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
         runtime_module: &runtime_ast.module,
+        selector_resolver: &selector_resolver,
         declaration_by_name: &declaration_by_name,
         chunk_top_level_mark,
         target_dir,
@@ -267,6 +278,58 @@ pub(super) fn materialize_logical_chunk(
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
+    // `@Name` cross-reference resolution: `add_explicit_request` left `cross_ref`
+    // members unclaimed because their target binding isn't known until the owner
+    // graph (its reference/alias edges) exists — i.e. now, post-Stage-A. Resolve +
+    // claim them here, before A5/mini-factors so cross-ref-claimed bindings are
+    // visible to them, exactly like named members. The builder builds the
+    // owner-graph solve once *only if* a member uses `cross_ref`, so this is a true
+    // no-op (no extra solve) for chunks without cross-refs.
+    time_phase!(timings, "resolve_cross_ref_members", {
+        builder.resolve_and_claim_cross_refs(
+            &explicit_requests,
+            &precomputed.owner_graph,
+            chunk_top_level_mark,
+            chunk_id,
+            &declaration_by_name,
+        )
+    })?;
+    // `reads_member` resolution: `add_explicit_request` left `reads_member`
+    // members unclaimed because their target binding isn't known until the owner
+    // graph + the chunk's AST member-read facts exist — i.e. now, post-Stage-A.
+    // Resolve + claim them here, before A5/mini-factors so reads-member-claimed
+    // bindings are visible to them, exactly like named members. The builder runs
+    // the owner-graph solve once *only if* a member uses `reads_member`, so this
+    // is a true no-op (no extra solve) for chunks without reads-member members.
+    time_phase!(timings, "resolve_reads_member_members", {
+        builder.resolve_and_claim_reads_members(
+            &explicit_requests,
+            &precomputed.owner_graph,
+            &runtime_ast.module,
+            chunk_top_level_mark,
+            chunk_id,
+            &declaration_by_name,
+        )
+    })?;
+    // `member_of_module` use-site resolution: the same post-Stage-A timing and
+    // no-op-when-absent contract as `reads_member`. Joins the chunk's member
+    // accesses to its import table (local import binding -> source module) so the
+    // selector resolves against the re-minify-invariant (module, member) pair.
+    let import_sources: HashMap<String, String> = runtime_import_facts
+        .iter_local_sources()
+        .map(|(local, src)| (local.to_string(), src.to_string()))
+        .collect();
+    time_phase!(timings, "resolve_member_of_module_members", {
+        builder.resolve_and_claim_member_of_modules(
+            &explicit_requests,
+            &precomputed.owner_graph,
+            &runtime_ast.module,
+            &import_sources,
+            chunk_top_level_mark,
+            chunk_id,
+            &declaration_by_name,
+        )
+    })?;
     time_phase!(timings, "fold_rebind_atomic_units", {
         apply_stage_one_a5(&mut builder, &precomputed);
     });

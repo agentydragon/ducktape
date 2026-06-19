@@ -460,6 +460,22 @@ fn compute_selector_debt_impl(
                         .or_default()
                         .push(occurrence);
                 }
+                MemberSelectorSpec::CrossRef(_) => {
+                    // A cross-ref selector is re-minify-proof by construction —
+                    // the debt solution, not name-pin debt — so it contributes
+                    // nothing to the debt tallies.
+                }
+                MemberSelectorSpec::ReadsMember(_) => {
+                    // A `reads_member` selector is re-minify-proof by construction
+                    // (it rides the invariant property name, not the minified
+                    // binding) — the debt solution, not name-pin debt.
+                }
+                MemberSelectorSpec::MemberOfModule(_) => {
+                    // A `member_of_module` use-site selector is re-minify-proof by
+                    // construction (it rides the invariant import source + export
+                    // name, not the minified binding) — the debt solution, not
+                    // name-pin debt.
+                }
             }
         }
 
@@ -987,7 +1003,7 @@ fn collect_source_aware_debt(
         return Ok(None);
     };
     *checked += 1;
-    let debt = source_match::source_match_body_debt(
+    let debt = source_match::fact_source_match_body_debt(
         runtime_module,
         module_path,
         selector,

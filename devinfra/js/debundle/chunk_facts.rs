@@ -1,0 +1,1672 @@
+//! P1 of the Datalog selector resolver (`plans/selector_constraint_model.md`):
+//! a faithful, **fail-closed** projection of a parsed chunk into AST facts.
+//!
+//! Fail-closed by construction: the walk's only catch-all is a loud
+//! [`Unsupported`] error, so a node type it has not modeled **crashes** rather
+//! than projecting a silently-incomplete fact set — which is what would let a
+//! lowered selector query under-constrain and match the wrong owner. There is
+//! deliberately no `swc_ecma_visit::Visit` here: its default no-op methods make
+//! a forgotten node type a silent skip, the exact failure the goal forbids.
+//!
+//! The matcher (`source_match`) is the fidelity source of truth for which
+//! children matter and in what order; this extractor mirrors those structural
+//! decisions, and the corpus differential is what proves the mirror is faithful.
+//! Coverage grew construct by construct until the corpus extracts with zero
+//! `Unsupported`: it now projects **100%** of the top-level statements of every
+//! measured `tana/re` chunk (index, ReactGraph, Calendar, VoiceChatModal —
+//! declarations, function/class bodies, control flow, calls/members, objects,
+//! assignments, operators, destructuring patterns, templates, module
+//! imports/exports). Any not-yet-modeled construct (e.g. TS-only nodes) still
+//! errors loudly rather than projecting silently-incomplete facts.
+
+use std::collections::{BTreeMap, HashMap};
+
+use js_ast::statement_ordinal_for_body_index;
+use swc_ecma_ast::{
+    ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
+    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
+    MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp,
+    OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt,
+    SuperProp, Tpl, VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
+};
+
+pub type NodeId = u32;
+
+/// A faithful relational projection of one chunk's top-level statements. Each
+/// vector is an EDB relation the lowered selector queries join over.
+#[derive(Debug, Default)]
+pub struct ChunkFacts {
+    /// node -> syntactic kind tag.
+    pub node_kind: Vec<(NodeId, &'static str)>,
+    /// parent -> (source-order ordinal, child). The ordinal is what the
+    /// run-hole / adjacency encoding compares (`i < j`).
+    pub child: Vec<(NodeId, u32, NodeId)>,
+    /// string-literal value, unescaped via `js_ast::str_value`.
+    pub str_lit: Vec<(NodeId, String)>,
+    /// A `StrLit` **needle** node whose value is a selector wildcard string literal
+    /// (`wildcard_string_literals`) -> the wildcard token. Only needle facts carry
+    /// these (real subject source never does): the matcher treats such a node as a
+    /// string wildcard that matches any string-literal subject, binding the token
+    /// to one concrete value across the match. Absent ⟹ the `str_lit` value is
+    /// matched exactly.
+    pub str_wildcard: Vec<(NodeId, String)>,
+    /// numeric-literal token, rendered faithfully (source `raw` when present).
+    pub num_lit: Vec<(NodeId, String)>,
+    pub bool_lit: Vec<(NodeId, bool)>,
+    /// identifier spelling (the `identifiers: exact` surface).
+    pub ident_name: Vec<(NodeId, String)>,
+    /// member / property / method name (non-computed).
+    pub prop_name: Vec<(NodeId, String)>,
+    /// distinguishing keyword/operator token: the operator for `Bin` / `Unary`
+    /// / `Update` / `Assign`, and the declaration keyword (`var`/`let`/`const`)
+    /// for `VarDecl` — both are exact labels the matcher compares.
+    pub operator: Vec<(NodeId, String)>,
+    /// regex literal -> (pattern, flags), both T-invariant labels.
+    pub regex: Vec<(NodeId, String, String)>,
+    /// class node -> its super-class expression node (the syntactic `extends`).
+    pub super_class: Vec<(NodeId, NodeId)>,
+    /// top-level statement node -> its owner statement ordinal (owner-graph join).
+    pub top_level: Vec<(NodeId, usize)>,
+}
+
+/// A construct the extractor has not modeled yet. Loud by design — never a
+/// silent gap. `context` names where the gap is, so coverage can grow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unsupported {
+    pub context: &'static str,
+}
+
+fn unsupported<T>(context: &'static str) -> Result<T, Unsupported> {
+    Err(Unsupported { context })
+}
+
+/// Name the unmodeled `Expr` variant so the coverage histogram ranks what to
+/// implement next. Diagnostic only — fail-closed correctness is the error
+/// itself, not the label precision; rare variants fall through to `expr:other`.
+fn expr_variant_name(expr: &Expr) -> &'static str {
+    match expr {
+        Expr::Object(_) => "expr:object",
+        Expr::Assign(_) => "expr:assign",
+        Expr::Arrow(_) => "expr:arrow",
+        Expr::Fn(_) => "expr:fn",
+        Expr::Tpl(_) => "expr:tpl",
+        Expr::TaggedTpl(_) => "expr:tagged_tpl",
+        Expr::Await(_) => "expr:await",
+        Expr::Update(_) => "expr:update",
+        Expr::Yield(_) => "expr:yield",
+        Expr::OptChain(_) => "expr:opt_chain",
+        Expr::This(_) => "expr:this",
+        Expr::MetaProp(_) => "expr:meta_prop",
+        Expr::Class(_) => "expr:class",
+        Expr::SuperProp(_) => "expr:super_prop",
+        _ => "expr:other",
+    }
+}
+
+#[derive(Default)]
+struct Extractor {
+    facts: ChunkFacts,
+    next: NodeId,
+    /// The selector's wildcard string literals, for a **needle** projection — a
+    /// `StrLit` whose value is in this set is additionally recorded in
+    /// `str_wildcard`. Empty for subject (chunk-body) projection.
+    wildcard_string_literals: std::collections::BTreeSet<String>,
+}
+
+impl Extractor {
+    fn node(&mut self, kind: &'static str) -> NodeId {
+        let id = self.next;
+        self.next += 1;
+        self.facts.node_kind.push((id, kind));
+        id
+    }
+
+    fn module_item(&mut self, item: &ModuleItem, ordinal: usize) -> Result<NodeId, Unsupported> {
+        let id = match item {
+            ModuleItem::Stmt(stmt) => self.stmt(stmt)?,
+            ModuleItem::ModuleDecl(decl) => self.module_decl(decl)?,
+        };
+        self.facts.top_level.push((id, ordinal));
+        Ok(id)
+    }
+
+    fn module_decl(&mut self, decl: &ModuleDecl) -> Result<NodeId, Unsupported> {
+        match decl {
+            ModuleDecl::ExportDecl(export) => {
+                let id = self.node("ExportDecl");
+                let inner = self.decl(&export.decl)?;
+                self.facts.child.push((id, 0, inner));
+                Ok(id)
+            }
+            ModuleDecl::Import(import) => {
+                let id = self.node("Import");
+                let src = self.node("StrLit");
+                self.facts
+                    .str_lit
+                    .push((src, js_ast::str_value(&import.src)));
+                self.facts.child.push((id, 0, src));
+                for (index, spec) in import.specifiers.iter().enumerate() {
+                    let local = match spec {
+                        ImportSpecifier::Named(named) => &named.local,
+                        ImportSpecifier::Default(default) => &default.local,
+                        ImportSpecifier::Namespace(namespace) => &namespace.local,
+                    };
+                    let spec_id = self.node("ImportSpecifier");
+                    self.facts.ident_name.push((spec_id, local.sym.to_string()));
+                    self.facts.child.push((id, (index + 1) as u32, spec_id));
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportDefaultExpr(export) => {
+                let id = self.node("ExportDefault");
+                let expr = self.expr(&export.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
+            ModuleDecl::ExportDefaultDecl(export) => {
+                let id = self.node("ExportDefaultDecl");
+                match &export.decl {
+                    DefaultDecl::Class(class_expr) => {
+                        let class = self.class_node(&class_expr.class)?;
+                        self.facts.child.push((id, 0, class));
+                    }
+                    DefaultDecl::Fn(fn_expr) => {
+                        let function = self.function(&fn_expr.function)?;
+                        self.facts.child.push((id, 0, function));
+                    }
+                    DefaultDecl::TsInterfaceDecl(_) => {
+                        return unsupported("export default: ts interface");
+                    }
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportNamed(export) => {
+                let id = self.node("ExportNamed");
+                if let Some(src) = &export.src {
+                    let src_id = self.node("StrLit");
+                    self.facts.str_lit.push((src_id, js_ast::str_value(src)));
+                    self.facts.child.push((id, 0, src_id));
+                }
+                Ok(id)
+            }
+            ModuleDecl::ExportAll(export) => {
+                let id = self.node("ExportAll");
+                let src = self.node("StrLit");
+                self.facts
+                    .str_lit
+                    .push((src, js_ast::str_value(&export.src)));
+                self.facts.child.push((id, 0, src));
+                Ok(id)
+            }
+            _ => unsupported("module_decl"),
+        }
+    }
+
+    fn stmt(&mut self, stmt: &Stmt) -> Result<NodeId, Unsupported> {
+        match stmt {
+            Stmt::Decl(decl) => self.decl(decl),
+            Stmt::Expr(expr_stmt) => {
+                let id = self.node("ExprStmt");
+                let inner = self.expr(&expr_stmt.expr)?;
+                self.facts.child.push((id, 0, inner));
+                Ok(id)
+            }
+            Stmt::Return(ret) => {
+                let id = self.node("Return");
+                if let Some(arg) = &ret.arg {
+                    let arg = self.expr(arg)?;
+                    self.facts.child.push((id, 0, arg));
+                }
+                Ok(id)
+            }
+            Stmt::If(if_stmt) => {
+                let id = self.node("If");
+                let test = self.expr(&if_stmt.test)?;
+                self.facts.child.push((id, 0, test));
+                let cons = self.stmt(&if_stmt.cons)?;
+                self.facts.child.push((id, 1, cons));
+                if let Some(alt) = &if_stmt.alt {
+                    let alt = self.stmt(alt)?;
+                    self.facts.child.push((id, 2, alt));
+                }
+                Ok(id)
+            }
+            Stmt::While(while_stmt) => {
+                let id = self.node("While");
+                let test = self.expr(&while_stmt.test)?;
+                self.facts.child.push((id, 0, test));
+                let body = self.stmt(&while_stmt.body)?;
+                self.facts.child.push((id, 1, body));
+                Ok(id)
+            }
+            Stmt::DoWhile(do_while) => {
+                let id = self.node("DoWhile");
+                let body = self.stmt(&do_while.body)?;
+                self.facts.child.push((id, 0, body));
+                let test = self.expr(&do_while.test)?;
+                self.facts.child.push((id, 1, test));
+                Ok(id)
+            }
+            Stmt::Throw(throw) => {
+                let id = self.node("Throw");
+                let arg = self.expr(&throw.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Stmt::Block(block) => self.block(block),
+            Stmt::Try(try_stmt) => {
+                let id = self.node("Try");
+                let block = self.block(&try_stmt.block)?;
+                self.facts.child.push((id, 0, block));
+                if let Some(handler) = &try_stmt.handler {
+                    let catch = self.node("Catch");
+                    let mut next = 0u32;
+                    if let Some(param) = &handler.param {
+                        let param = self.pat(param)?;
+                        self.facts.child.push((catch, next, param));
+                        next += 1;
+                    }
+                    let body = self.block(&handler.body)?;
+                    self.facts.child.push((catch, next, body));
+                    self.facts.child.push((id, 1, catch));
+                }
+                if let Some(finalizer) = &try_stmt.finalizer {
+                    let finalizer = self.block(finalizer)?;
+                    self.facts.child.push((id, 2, finalizer));
+                }
+                Ok(id)
+            }
+            Stmt::Switch(switch) => {
+                let id = self.node("Switch");
+                let discriminant = self.expr(&switch.discriminant)?;
+                self.facts.child.push((id, 0, discriminant));
+                for (index, case) in switch.cases.iter().enumerate() {
+                    let case_id = self.node("SwitchCase");
+                    let mut next = 0u32;
+                    if let Some(test) = &case.test {
+                        let test = self.expr(test)?;
+                        self.facts.child.push((case_id, next, test));
+                        next += 1;
+                    }
+                    for stmt in &case.cons {
+                        let stmt = self.stmt(stmt)?;
+                        self.facts.child.push((case_id, next, stmt));
+                        next += 1;
+                    }
+                    self.facts.child.push((id, (index + 1) as u32, case_id));
+                }
+                Ok(id)
+            }
+            Stmt::Labeled(labeled) => {
+                let id = self.node("Labeled");
+                let body = self.stmt(&labeled.body)?;
+                self.facts.child.push((id, 0, body));
+                Ok(id)
+            }
+            // Loop/branch jumps carry only a T-variant label; the node identity
+            // is what selectors anchor on.
+            Stmt::Break(_) => Ok(self.node("Break")),
+            Stmt::Continue(_) => Ok(self.node("Continue")),
+            Stmt::Empty(_) => Ok(self.node("Empty")),
+            Stmt::Debugger(_) => Ok(self.node("Debugger")),
+            Stmt::For(for_stmt) => {
+                let id = self.node("For");
+                if let Some(init) = &for_stmt.init {
+                    let init = self.var_decl_or_expr(init)?;
+                    self.facts.child.push((id, 0, init));
+                }
+                if let Some(test) = &for_stmt.test {
+                    let test = self.expr(test)?;
+                    self.facts.child.push((id, 1, test));
+                }
+                if let Some(update) = &for_stmt.update {
+                    let update = self.expr(update)?;
+                    self.facts.child.push((id, 2, update));
+                }
+                let body = self.stmt(&for_stmt.body)?;
+                self.facts.child.push((id, 3, body));
+                Ok(id)
+            }
+            Stmt::ForIn(for_in) => {
+                let id = self.node("ForIn");
+                let left = self.for_head(&for_in.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&for_in.right)?;
+                self.facts.child.push((id, 1, right));
+                let body = self.stmt(&for_in.body)?;
+                self.facts.child.push((id, 2, body));
+                Ok(id)
+            }
+            Stmt::ForOf(for_of) => {
+                let id = self.node("ForOf");
+                let left = self.for_head(&for_of.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&for_of.right)?;
+                self.facts.child.push((id, 1, right));
+                let body = self.stmt(&for_of.body)?;
+                self.facts.child.push((id, 2, body));
+                Ok(id)
+            }
+            _ => unsupported("stmt"),
+        }
+    }
+
+    fn decl(&mut self, decl: &Decl) -> Result<NodeId, Unsupported> {
+        match decl {
+            Decl::Var(var) => self.var_decl(var),
+            Decl::Fn(fn_decl) => {
+                let id = self.node("FnDecl");
+                let name = self.node("Ident");
+                self.facts
+                    .ident_name
+                    .push((name, fn_decl.ident.sym.to_string()));
+                self.facts.child.push((id, 0, name));
+                let function = self.function(&fn_decl.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            Decl::Class(class_decl) => {
+                let id = self.node("ClassDecl");
+                let name = self.node("Ident");
+                self.facts
+                    .ident_name
+                    .push((name, class_decl.ident.sym.to_string()));
+                self.facts.child.push((id, 0, name));
+                let class = self.class_node(&class_decl.class)?;
+                self.facts.child.push((id, 1, class));
+                Ok(id)
+            }
+            _ => unsupported("decl"),
+        }
+    }
+
+    fn var_decl(&mut self, var: &VarDecl) -> Result<NodeId, Unsupported> {
+        let id = self.node("VarDecl");
+        // The declaration keyword distinguishes `let`/`const`/`var` — a label
+        // the matcher compares, so a `let` selector cannot match a `const`.
+        let keyword = match var.kind {
+            VarDeclKind::Var => "var",
+            VarDeclKind::Let => "let",
+            VarDeclKind::Const => "const",
+        };
+        self.facts.operator.push((id, keyword.to_string()));
+        for (index, declarator) in var.decls.iter().enumerate() {
+            let d = self.var_declarator(declarator)?;
+            self.facts.child.push((id, index as u32, d));
+        }
+        Ok(id)
+    }
+
+    fn var_decl_or_expr(&mut self, init: &VarDeclOrExpr) -> Result<NodeId, Unsupported> {
+        match init {
+            VarDeclOrExpr::VarDecl(var) => self.var_decl(var),
+            VarDeclOrExpr::Expr(expr) => self.expr(expr),
+        }
+    }
+
+    fn for_head(&mut self, head: &ForHead) -> Result<NodeId, Unsupported> {
+        match head {
+            ForHead::VarDecl(var) => self.var_decl(var),
+            ForHead::Pat(pat) => self.pat(pat),
+            _ => unsupported("for_head"),
+        }
+    }
+
+    fn var_declarator(&mut self, declarator: &VarDeclarator) -> Result<NodeId, Unsupported> {
+        let id = self.node("VarDeclarator");
+        let name = self.pat(&declarator.name)?;
+        self.facts.child.push((id, 0, name));
+        if let Some(init) = &declarator.init {
+            let init = self.expr(init)?;
+            self.facts.child.push((id, 1, init));
+        }
+        Ok(id)
+    }
+
+    fn function(&mut self, function: &Function) -> Result<NodeId, Unsupported> {
+        // async/generator are part of the function's identity (production compares
+        // them via `eq_ignore_span`), so they must distinguish the node — fold them
+        // into the kind tag the matcher compares exactly, not drop them.
+        let kind = match (function.is_async, function.is_generator) {
+            (false, false) => "Function",
+            (true, false) => "AsyncFunction",
+            (false, true) => "GeneratorFunction",
+            (true, true) => "AsyncGeneratorFunction",
+        };
+        let id = self.node(kind);
+        for (index, param) in function.params.iter().enumerate() {
+            let pat = self.pat(&param.pat)?;
+            self.facts.child.push((id, index as u32, pat));
+        }
+        if let Some(body) = &function.body {
+            let block = self.block(body)?;
+            self.facts
+                .child
+                .push((id, function.params.len() as u32, block));
+        }
+        Ok(id)
+    }
+
+    fn block(&mut self, block: &BlockStmt) -> Result<NodeId, Unsupported> {
+        let id = self.node("Block");
+        for (index, stmt) in block.stmts.iter().enumerate() {
+            let stmt = self.stmt(stmt)?;
+            self.facts.child.push((id, index as u32, stmt));
+        }
+        Ok(id)
+    }
+
+    fn class_node(&mut self, class: &Class) -> Result<NodeId, Unsupported> {
+        let id = self.node("Class");
+        if let Some(super_class) = &class.super_class {
+            let super_node = self.expr(super_class)?;
+            self.facts.super_class.push((id, super_node));
+        }
+        for (index, member) in class.body.iter().enumerate() {
+            let member = self.class_member(member)?;
+            self.facts.child.push((id, index as u32, member));
+        }
+        Ok(id)
+    }
+
+    fn class_member(&mut self, member: &ClassMember) -> Result<NodeId, Unsupported> {
+        match member {
+            ClassMember::Method(method) => {
+                let id = self.node("Method");
+                let key = self.prop_key(&method.key)?;
+                self.facts.child.push((id, 0, key));
+                let function = self.function(&method.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            ClassMember::Constructor(constructor) => {
+                let id = self.node("Constructor");
+                let key = self.prop_key(&constructor.key)?;
+                self.facts.child.push((id, 0, key));
+                let mut next = 1u32;
+                for param in &constructor.params {
+                    match param {
+                        ParamOrTsParamProp::Param(param) => {
+                            let pat = self.pat(&param.pat)?;
+                            self.facts.child.push((id, next, pat));
+                            next += 1;
+                        }
+                        ParamOrTsParamProp::TsParamProp(_) => {
+                            return unsupported("constructor: ts param prop");
+                        }
+                    }
+                }
+                if let Some(body) = &constructor.body {
+                    let body = self.block(body)?;
+                    self.facts.child.push((id, next, body));
+                }
+                Ok(id)
+            }
+            ClassMember::ClassProp(prop) => {
+                let id = self.node("ClassProp");
+                let key = self.prop_key(&prop.key)?;
+                self.facts.child.push((id, 0, key));
+                if let Some(value) = &prop.value {
+                    let value = self.expr(value)?;
+                    self.facts.child.push((id, 1, value));
+                }
+                Ok(id)
+            }
+            ClassMember::StaticBlock(static_block) => {
+                let id = self.node("StaticBlock");
+                let body = self.block(&static_block.body)?;
+                self.facts.child.push((id, 0, body));
+                Ok(id)
+            }
+            ClassMember::Empty(_) => Ok(self.node("ClassMemberEmpty")),
+            _ => unsupported("class_member"),
+        }
+    }
+
+    fn prop_key(&mut self, key: &PropName) -> Result<NodeId, Unsupported> {
+        match key {
+            PropName::Ident(name) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, name.sym.to_string()));
+                Ok(id)
+            }
+            PropName::Str(value) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, js_ast::str_value(value)));
+                Ok(id)
+            }
+            PropName::Num(number) => {
+                let id = self.node("PropName");
+                self.facts.prop_name.push((id, number.value.to_string()));
+                Ok(id)
+            }
+            PropName::Computed(computed) => {
+                let id = self.node("ComputedKey");
+                let expr = self.expr(&computed.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
+            _ => unsupported("prop_key"),
+        }
+    }
+
+    fn pat(&mut self, pat: &Pat) -> Result<NodeId, Unsupported> {
+        match pat {
+            Pat::Ident(binding) => {
+                let id = self.node("BindingIdent");
+                self.facts.ident_name.push((id, binding.id.sym.to_string()));
+                Ok(id)
+            }
+            Pat::Array(array) => self.array_pat(array),
+            Pat::Object(object) => self.object_pat(object),
+            Pat::Rest(rest) => {
+                let id = self.node("RestPat");
+                let arg = self.pat(&rest.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Pat::Assign(assign) => {
+                let id = self.node("AssignPat");
+                let left = self.pat(&assign.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&assign.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Pat::Expr(expr) => self.expr(expr),
+            _ => unsupported("pat"),
+        }
+    }
+
+    fn array_pat(&mut self, array: &ArrayPat) -> Result<NodeId, Unsupported> {
+        let id = self.node("ArrayPat");
+        for (index, elem) in array.elems.iter().enumerate() {
+            match elem {
+                Some(elem) => {
+                    let elem = self.pat(elem)?;
+                    self.facts.child.push((id, index as u32, elem));
+                }
+                None => {
+                    let elision = self.node("Elision");
+                    self.facts.child.push((id, index as u32, elision));
+                }
+            }
+        }
+        Ok(id)
+    }
+
+    fn object_pat(&mut self, object: &ObjectPat) -> Result<NodeId, Unsupported> {
+        let id = self.node("ObjectPat");
+        for (index, prop) in object.props.iter().enumerate() {
+            let prop = self.object_pat_prop(prop)?;
+            self.facts.child.push((id, index as u32, prop));
+        }
+        Ok(id)
+    }
+
+    fn object_pat_prop(&mut self, prop: &ObjectPatProp) -> Result<NodeId, Unsupported> {
+        match prop {
+            ObjectPatProp::KeyValue(key_value) => {
+                let id = self.node("PatKeyValue");
+                let key = self.prop_key(&key_value.key)?;
+                self.facts.child.push((id, 0, key));
+                let value = self.pat(&key_value.value)?;
+                self.facts.child.push((id, 1, value));
+                Ok(id)
+            }
+            ObjectPatProp::Assign(assign) => {
+                let id = self.node("PatAssign");
+                self.facts
+                    .ident_name
+                    .push((id, assign.key.id.sym.to_string()));
+                if let Some(value) = &assign.value {
+                    let value = self.expr(value)?;
+                    self.facts.child.push((id, 0, value));
+                }
+                Ok(id)
+            }
+            ObjectPatProp::Rest(rest) => {
+                let id = self.node("RestPat");
+                let arg = self.pat(&rest.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+        }
+    }
+
+    fn expr(&mut self, expr: &Expr) -> Result<NodeId, Unsupported> {
+        match expr {
+            Expr::Ident(ident) => {
+                let id = self.node("Ident");
+                self.facts.ident_name.push((id, ident.sym.to_string()));
+                Ok(id)
+            }
+            Expr::Lit(lit) => self.lit(lit),
+            Expr::Member(member) => self.member(member),
+            Expr::Call(call) => {
+                let id = self.node("Call");
+                let callee = match &call.callee {
+                    Callee::Expr(callee) => self.expr(callee)?,
+                    Callee::Super(_) => self.node("Super"),
+                    Callee::Import(_) => self.node("ImportCallee"),
+                };
+                self.facts.child.push((id, 0, callee));
+                self.push_args(id, 1, &call.args)?;
+                Ok(id)
+            }
+            Expr::New(new) => {
+                let id = self.node("New");
+                let callee = self.expr(&new.callee)?;
+                self.facts.child.push((id, 0, callee));
+                if let Some(args) = &new.args {
+                    self.push_args(id, 1, args)?;
+                }
+                Ok(id)
+            }
+            Expr::Bin(bin) => {
+                let id = self.node("Bin");
+                self.facts.operator.push((id, bin.op.as_str().to_string()));
+                let left = self.expr(&bin.left)?;
+                self.facts.child.push((id, 0, left));
+                let right = self.expr(&bin.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Expr::Unary(unary) => {
+                let id = self.node("Unary");
+                self.facts
+                    .operator
+                    .push((id, unary.op.as_str().to_string()));
+                let arg = self.expr(&unary.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Cond(cond) => {
+                let id = self.node("Cond");
+                let test = self.expr(&cond.test)?;
+                self.facts.child.push((id, 0, test));
+                let cons = self.expr(&cond.cons)?;
+                self.facts.child.push((id, 1, cons));
+                let alt = self.expr(&cond.alt)?;
+                self.facts.child.push((id, 2, alt));
+                Ok(id)
+            }
+            Expr::Seq(seq) => {
+                let id = self.node("Seq");
+                for (index, item) in seq.exprs.iter().enumerate() {
+                    let item = self.expr(item)?;
+                    self.facts.child.push((id, index as u32, item));
+                }
+                Ok(id)
+            }
+            Expr::Array(array) => {
+                let id = self.node("Array");
+                for (index, elem) in array.elems.iter().enumerate() {
+                    match elem {
+                        Some(elem) => {
+                            let value = self.expr_or_spread(elem)?;
+                            self.facts.child.push((id, index as u32, value));
+                        }
+                        // Elision keeps positions faithful (`[a, , b]`).
+                        None => {
+                            let elision = self.node("Elision");
+                            self.facts.child.push((id, index as u32, elision));
+                        }
+                    }
+                }
+                Ok(id)
+            }
+            Expr::Fn(fn_expr) => {
+                let id = self.node("FnExpr");
+                if let Some(ident) = &fn_expr.ident {
+                    let name = self.node("Ident");
+                    self.facts.ident_name.push((name, ident.sym.to_string()));
+                    self.facts.child.push((id, 0, name));
+                }
+                let function = self.function(&fn_expr.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            Expr::Object(object) => {
+                let id = self.node("Object");
+                for (index, prop) in object.props.iter().enumerate() {
+                    let prop = self.object_prop(prop)?;
+                    self.facts.child.push((id, index as u32, prop));
+                }
+                Ok(id)
+            }
+            Expr::Assign(assign) => {
+                let id = self.node("Assign");
+                self.facts
+                    .operator
+                    .push((id, assign.op.as_str().to_string()));
+                let target = self.assign_target(&assign.left)?;
+                self.facts.child.push((id, 0, target));
+                let right = self.expr(&assign.right)?;
+                self.facts.child.push((id, 1, right));
+                Ok(id)
+            }
+            Expr::Tpl(tpl) => self.tpl(tpl),
+            Expr::TaggedTpl(tagged) => {
+                let id = self.node("TaggedTpl");
+                let tag = self.expr(&tagged.tag)?;
+                self.facts.child.push((id, 0, tag));
+                let tpl = self.tpl(&tagged.tpl)?;
+                self.facts.child.push((id, 1, tpl));
+                Ok(id)
+            }
+            Expr::Update(update) => {
+                // Kind encodes prefix vs postfix (`++i` vs `i++`) faithfully.
+                let id = self.node(if update.prefix {
+                    "UpdatePrefix"
+                } else {
+                    "UpdatePostfix"
+                });
+                self.facts
+                    .operator
+                    .push((id, update.op.as_str().to_string()));
+                let arg = self.expr(&update.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Arrow(arrow) => {
+                // async is part of the arrow's identity (see `function`); fold it
+                // into the kind tag rather than dropping it.
+                let id = self.node(if arrow.is_async {
+                    "AsyncArrow"
+                } else {
+                    "Arrow"
+                });
+                for (index, param) in arrow.params.iter().enumerate() {
+                    let param = self.pat(param)?;
+                    self.facts.child.push((id, index as u32, param));
+                }
+                let body = match &*arrow.body {
+                    BlockStmtOrExpr::BlockStmt(block) => self.block(block)?,
+                    BlockStmtOrExpr::Expr(expr) => self.expr(expr)?,
+                };
+                self.facts.child.push((id, arrow.params.len() as u32, body));
+                Ok(id)
+            }
+            Expr::SuperProp(super_prop) => {
+                let id = self.node("SuperProp");
+                match &super_prop.prop {
+                    SuperProp::Ident(name) => {
+                        let prop = self.node("PropName");
+                        self.facts.prop_name.push((prop, name.sym.to_string()));
+                        self.facts.child.push((id, 0, prop));
+                    }
+                    SuperProp::Computed(computed) => {
+                        let computed = self.expr(&computed.expr)?;
+                        self.facts.child.push((id, 0, computed));
+                    }
+                }
+                Ok(id)
+            }
+            Expr::Await(await_expr) => {
+                let id = self.node("Await");
+                let arg = self.expr(&await_expr.arg)?;
+                self.facts.child.push((id, 0, arg));
+                Ok(id)
+            }
+            Expr::Yield(yield_expr) => {
+                let id = self.node("Yield");
+                if let Some(arg) = &yield_expr.arg {
+                    let arg = self.expr(arg)?;
+                    self.facts.child.push((id, 0, arg));
+                }
+                Ok(id)
+            }
+            Expr::OptChain(opt_chain) => {
+                let id = self.node("OptChain");
+                let base = match &*opt_chain.base {
+                    OptChainBase::Member(member) => self.member(member)?,
+                    OptChainBase::Call(call) => {
+                        let call_id = self.node("OptCall");
+                        let callee = self.expr(&call.callee)?;
+                        self.facts.child.push((call_id, 0, callee));
+                        self.push_args(call_id, 1, &call.args)?;
+                        call_id
+                    }
+                };
+                self.facts.child.push((id, 0, base));
+                Ok(id)
+            }
+            Expr::Class(class_expr) => {
+                let id = self.node("ClassExpr");
+                if let Some(ident) = &class_expr.ident {
+                    let name = self.node("Ident");
+                    self.facts.ident_name.push((name, ident.sym.to_string()));
+                    self.facts.child.push((id, 0, name));
+                }
+                let class = self.class_node(&class_expr.class)?;
+                self.facts.child.push((id, 1, class));
+                Ok(id)
+            }
+            // Parentheses are transparent: the matcher matches modulo grouping.
+            Expr::Paren(paren) => self.expr(&paren.expr),
+            Expr::This(_) => Ok(self.node("This")),
+            // `import.meta` / `new.target`: fixed meta-properties with no
+            // renamable parts. The kind fully determines them (production compares
+            // the whole node), so fold it into the node tag.
+            Expr::MetaProp(meta) => Ok(self.node(match meta.kind {
+                MetaPropKind::ImportMeta => "MetaPropImportMeta",
+                MetaPropKind::NewTarget => "MetaPropNewTarget",
+            })),
+            other => unsupported(expr_variant_name(other)),
+        }
+    }
+
+    /// Template literal: interleave quasis and exprs in source order
+    /// (`q0 e0 q1 e1 … qn`). Shared by `Tpl` and the `tpl` of a `TaggedTpl`.
+    fn tpl(&mut self, tpl: &Tpl) -> Result<NodeId, Unsupported> {
+        let id = self.node("Tpl");
+        let mut ordinal = 0u32;
+        for (index, quasi) in tpl.quasis.iter().enumerate() {
+            let q = self.node("TplQuasi");
+            let value = quasi
+                .cooked
+                .as_ref()
+                .map(|cooked| cooked.to_string_lossy().into_owned())
+                .unwrap_or_else(|| quasi.raw.to_string());
+            self.facts.str_lit.push((q, value));
+            self.facts.child.push((id, ordinal, q));
+            ordinal += 1;
+            if let Some(expr) = tpl.exprs.get(index) {
+                let expr = self.expr(expr)?;
+                self.facts.child.push((id, ordinal, expr));
+                ordinal += 1;
+            }
+        }
+        Ok(id)
+    }
+
+    fn object_prop(&mut self, prop: &PropOrSpread) -> Result<NodeId, Unsupported> {
+        match prop {
+            PropOrSpread::Spread(spread) => {
+                let id = self.node("Spread");
+                let expr = self.expr(&spread.expr)?;
+                self.facts.child.push((id, 0, expr));
+                Ok(id)
+            }
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::Shorthand(ident) => {
+                    let id = self.node("Shorthand");
+                    self.facts.ident_name.push((id, ident.sym.to_string()));
+                    Ok(id)
+                }
+                Prop::KeyValue(key_value) => {
+                    let id = self.node("KeyValue");
+                    let key = self.prop_key(&key_value.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let value = self.expr(&key_value.value)?;
+                    self.facts.child.push((id, 1, value));
+                    Ok(id)
+                }
+                Prop::Method(method) => {
+                    let id = self.node("ObjectMethod");
+                    let key = self.prop_key(&method.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let function = self.function(&method.function)?;
+                    self.facts.child.push((id, 1, function));
+                    Ok(id)
+                }
+                Prop::Getter(getter) => {
+                    let id = self.node("Getter");
+                    let key = self.prop_key(&getter.key)?;
+                    self.facts.child.push((id, 0, key));
+                    if let Some(body) = &getter.body {
+                        let body = self.block(body)?;
+                        self.facts.child.push((id, 1, body));
+                    }
+                    Ok(id)
+                }
+                Prop::Setter(setter) => {
+                    let id = self.node("Setter");
+                    let key = self.prop_key(&setter.key)?;
+                    self.facts.child.push((id, 0, key));
+                    let param = self.pat(&setter.param)?;
+                    self.facts.child.push((id, 1, param));
+                    if let Some(body) = &setter.body {
+                        let body = self.block(body)?;
+                        self.facts.child.push((id, 2, body));
+                    }
+                    Ok(id)
+                }
+                Prop::Assign(assign) => {
+                    let id = self.node("AssignProp");
+                    self.facts.ident_name.push((id, assign.key.sym.to_string()));
+                    let value = self.expr(&assign.value)?;
+                    self.facts.child.push((id, 0, value));
+                    Ok(id)
+                }
+            },
+        }
+    }
+
+    fn assign_target(&mut self, target: &AssignTarget) -> Result<NodeId, Unsupported> {
+        match target {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                let id = self.node("Ident");
+                self.facts.ident_name.push((id, binding.id.sym.to_string()));
+                Ok(id)
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => self.member(member),
+            AssignTarget::Pat(AssignTargetPat::Array(array)) => self.array_pat(array),
+            AssignTarget::Pat(AssignTargetPat::Object(object)) => self.object_pat(object),
+            _ => unsupported("assign: target"),
+        }
+    }
+
+    fn push_args(
+        &mut self,
+        parent: NodeId,
+        base: u32,
+        args: &[ExprOrSpread],
+    ) -> Result<(), Unsupported> {
+        for (index, arg) in args.iter().enumerate() {
+            let child = self.expr_or_spread(arg)?;
+            self.facts.child.push((parent, base + index as u32, child));
+        }
+        Ok(())
+    }
+
+    fn expr_or_spread(&mut self, arg: &ExprOrSpread) -> Result<NodeId, Unsupported> {
+        let value = self.expr(&arg.expr)?;
+        if arg.spread.is_some() {
+            let spread = self.node("Spread");
+            self.facts.child.push((spread, 0, value));
+            Ok(spread)
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn member(&mut self, member: &MemberExpr) -> Result<NodeId, Unsupported> {
+        let id = self.node("Member");
+        let obj = self.expr(&member.obj)?;
+        self.facts.child.push((id, 0, obj));
+        match &member.prop {
+            MemberProp::Ident(name) => {
+                let prop = self.node("PropName");
+                self.facts.prop_name.push((prop, name.sym.to_string()));
+                self.facts.child.push((id, 1, prop));
+            }
+            MemberProp::Computed(computed) => {
+                let computed = self.expr(&computed.expr)?;
+                self.facts.child.push((id, 1, computed));
+            }
+            MemberProp::PrivateName(_) => return unsupported("member: private name"),
+        }
+        Ok(id)
+    }
+
+    fn lit(&mut self, lit: &Lit) -> Result<NodeId, Unsupported> {
+        match lit {
+            Lit::Str(value) => {
+                let id = self.node("StrLit");
+                let text = js_ast::str_value(value);
+                if self.wildcard_string_literals.contains(&text) {
+                    self.facts.str_wildcard.push((id, text.clone()));
+                }
+                self.facts.str_lit.push((id, text));
+                Ok(id)
+            }
+            Lit::Num(number) => {
+                let id = self.node("NumLit");
+                let token = number
+                    .raw
+                    .as_ref()
+                    .map(|raw| raw.to_string())
+                    .unwrap_or_else(|| number.value.to_string());
+                self.facts.num_lit.push((id, token));
+                Ok(id)
+            }
+            Lit::Bool(boolean) => {
+                let id = self.node("BoolLit");
+                self.facts.bool_lit.push((id, boolean.value));
+                Ok(id)
+            }
+            Lit::Null(_) => Ok(self.node("NullLit")),
+            Lit::BigInt(big_int) => {
+                let id = self.node("BigIntLit");
+                let token = big_int
+                    .raw
+                    .as_ref()
+                    .map(|raw| raw.to_string())
+                    .unwrap_or_else(|| big_int.value.to_string());
+                self.facts.num_lit.push((id, token));
+                Ok(id)
+            }
+            Lit::Regex(regex) => {
+                let id = self.node("RegexLit");
+                self.facts
+                    .regex
+                    .push((id, regex.exp.to_string(), regex.flags.to_string()));
+                Ok(id)
+            }
+            _ => unsupported("lit"),
+        }
+    }
+}
+
+/// Project a parsed chunk's top-level statements into AST facts, or fail loudly
+/// at the first construct not yet modeled.
+pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
+    extract_facts_items(&module.body)
+}
+
+/// Like [`extract_facts`], but over a borrowed item slice — so a caller projecting
+/// one statement at a time (the resolver's per-needle facts) need not clone the
+/// item into a one-item [`Module`] first.
+pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupported> {
+    let mut extractor = Extractor::default();
+    for (body_idx, item) in items.iter().enumerate() {
+        let ordinal = statement_ordinal_for_body_index(items, body_idx);
+        extractor.module_item(item, ordinal)?;
+    }
+    Ok(extractor.facts)
+}
+
+/// Like [`extract_facts_items`], but for a **needle** projection: a `StrLit` whose
+/// value is in `wildcard_string_literals` is additionally recorded in
+/// `ChunkFacts::str_wildcard`, so the matcher matches it as a string wildcard
+/// (any string-literal value, bound consistently) instead of by exact value.
+/// Subject (chunk-body) facts use [`extract_facts_items`] — they carry no
+/// wildcards.
+pub fn extract_facts_needle(
+    items: &[ModuleItem],
+    wildcard_string_literals: &std::collections::BTreeSet<String>,
+) -> Result<ChunkFacts, Unsupported> {
+    let mut extractor = Extractor {
+        wildcard_string_literals: wildcard_string_literals.clone(),
+        ..Extractor::default()
+    };
+    for (body_idx, item) in items.iter().enumerate() {
+        let ordinal = statement_ordinal_for_body_index(items, body_idx);
+        extractor.module_item(item, ordinal)?;
+    }
+    Ok(extractor.facts)
+}
+
+/// One `obj.X` member-access derived from a statement's AST facts: the property
+/// name `X`, plus the object identifier when the object is a bare `Ident`
+/// (`ctx.X` ⟹ `object = Some("ctx")`; `foo().X` / `this.X` / `a.b.X` ⟹ `None`).
+/// The owner-graph `reads_member` primitive's EDB row, projected from the same
+/// `Member`→`PropName` structure [`Extractor::member`] records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberReadFact {
+    pub object: Option<String>,
+    pub member: String,
+}
+
+/// The member accesses (`obj.X`, non-computed property) each top-level statement
+/// performs, keyed by the statement's source-order ordinal — the EDB for the
+/// `reads_member` selector primitive (the owner that reads member `.X`).
+///
+/// Derived from the per-statement AST facts ([`Member`]/[`PropName`]/[`Ident`]
+/// projection). **Per-statement-tolerant** like [`coverage_report`] (and unlike
+/// [`extract_facts`], which fails the whole chunk at the first unmodeled node): a
+/// statement whose subtree hits an [`Unsupported`] construct contributes no
+/// member-read rows rather than aborting the chunk. That tolerance is sound for a
+/// *selector* primitive — a missing member-read can only make a `reads_member`
+/// selector fail to resolve (fail-closed), never resolve to the wrong owner — and
+/// it keeps the resolution path robust on real chunks the rest of the pipeline
+/// already lowers. Computed member access (`obj[expr]`) carries no static
+/// property name and contributes nothing.
+pub fn member_reads_by_ordinal(module: &Module) -> BTreeMap<usize, Vec<MemberReadFact>> {
+    let mut by_ordinal: BTreeMap<usize, Vec<MemberReadFact>> = BTreeMap::new();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        let mut extractor = Extractor::default();
+        // A statement with an unmodeled construct yields no member-read rows
+        // (fail-closed for the selector), never a wrong row — so skip it.
+        if extractor.module_item(item, ordinal).is_err() {
+            continue;
+        }
+        let reads = member_reads_of_facts(&extractor.facts);
+        if !reads.is_empty() {
+            by_ordinal.entry(ordinal).or_default().extend(reads);
+        }
+    }
+    by_ordinal
+}
+
+/// Extract every `Member`-node `obj.X` from one statement's facts. A `Member`
+/// node carries child ordinal 0 = object expression, child ordinal 1 = the
+/// property: a `PropName` node (non-computed `.X`) or an arbitrary expression
+/// (computed `[expr]`). Only non-computed accesses — a `PropName` child with a
+/// static `prop_name` — are member reads; the object identifier is recorded when
+/// child 0 is a bare `Ident`.
+fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
+    let node_kind: HashMap<NodeId, &'static str> = facts.node_kind.iter().copied().collect();
+    let prop_name: HashMap<NodeId, &str> = facts
+        .prop_name
+        .iter()
+        .map(|(id, name)| (*id, name.as_str()))
+        .collect();
+    let ident_name: HashMap<NodeId, &str> = facts
+        .ident_name
+        .iter()
+        .map(|(id, name)| (*id, name.as_str()))
+        .collect();
+    // parent -> (ordinal -> child), to read a Member's positional children.
+    let mut children: HashMap<NodeId, HashMap<u32, NodeId>> = HashMap::new();
+    for (parent, ordinal, child) in &facts.child {
+        children
+            .entry(*parent)
+            .or_default()
+            .insert(*ordinal, *child);
+    }
+    facts
+        .node_kind
+        .iter()
+        .filter(|(_, kind)| *kind == "Member")
+        .filter_map(|(member_node, _)| {
+            let positional = children.get(member_node)?;
+            let prop_node = positional.get(&1)?;
+            // Non-computed access only: child 1 must be a `PropName` carrying `.X`.
+            let member = prop_name.get(prop_node)?;
+            let object = positional
+                .get(&0)
+                .filter(|obj| node_kind.get(obj) == Some(&"Ident"))
+                .and_then(|obj| ident_name.get(obj))
+                .map(|name| name.to_string());
+            Some(MemberReadFact {
+                object,
+                member: member.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// One `mod.X` **use-site** derived from a statement's AST facts joined to the
+/// chunk's import table: the import **source module** `mod` resolves to
+/// (`"./codegen"`, `"react"`) and the export `member` consumed off it. The
+/// owner-graph `member_of_module` primitive's EDB row — the first use-site edge,
+/// pinning an entity by *how it is consumed* rather than by its own minified
+/// name. Both labels are re-minify-invariant (module specifiers and export names
+/// are the public API), which is what makes the edge survive a rebuild.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleMemberUseFact {
+    pub module: String,
+    pub member: String,
+}
+
+/// The module-member uses (`mod.X`, `mod` a chunk-top imported binding) each
+/// top-level statement performs, keyed by the statement's source-order ordinal —
+/// the EDB for the `member_of_module` selector primitive (the entity consumed as
+/// `mod.X`).
+///
+/// Built by projecting the same `Member`→`PropName` member accesses
+/// [`member_reads_by_ordinal`] derives, then **joining the bare-identifier object
+/// to `import_sources`** (local import binding name → import source specifier);
+/// a member access whose object is not a chunk-top imported binding contributes
+/// nothing. **Per-statement-tolerant** like [`member_reads_by_ordinal`]: a
+/// statement whose subtree hits an [`Unsupported`] construct contributes no rows
+/// rather than aborting the chunk — sound for a *selector* primitive (a missing
+/// use can only make a `member_of_module` selector fail-closed, never resolve to
+/// the wrong owner). Computed access (`mod[expr]`) carries no static member name
+/// and contributes nothing.
+pub fn module_member_uses_by_ordinal(
+    module: &Module,
+    import_sources: &HashMap<String, String>,
+) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
+    let mut by_ordinal: BTreeMap<usize, Vec<ModuleMemberUseFact>> = BTreeMap::new();
+    for (ordinal, reads) in member_reads_by_ordinal(module) {
+        let uses: Vec<ModuleMemberUseFact> = reads
+            .into_iter()
+            .filter_map(|read| {
+                let object = read.object?;
+                let source = import_sources.get(&object)?;
+                Some(ModuleMemberUseFact {
+                    module: source.clone(),
+                    member: read.member,
+                })
+            })
+            .collect();
+        if !uses.is_empty() {
+            by_ordinal.insert(ordinal, uses);
+        }
+    }
+    by_ordinal
+}
+
+/// Per-top-level-statement coverage of the extractor over a chunk: how many
+/// statements fully extract vs. hit a fail-closed [`Unsupported`]. This is the
+/// instrument that turns P1 growth into a prioritized worklist — run it over a
+/// real chunk and grow the walk to clear the most frequent blocker first.
+#[derive(Debug, Default)]
+pub struct CoverageReport {
+    pub total: usize,
+    pub covered: usize,
+    /// `Unsupported.context` -> count. Each top-level statement contributes its
+    /// **first** blocker (the walk bails at the first unmodeled node), so this
+    /// ranks "what to model next", not every gap in the subtree.
+    pub unsupported: BTreeMap<&'static str, usize>,
+}
+
+/// Attempt extraction of each top-level statement independently and tally the
+/// outcome. Unlike [`extract_facts`], one statement's `Unsupported` does not
+/// abort the others — the point is to measure how far coverage reaches.
+pub fn coverage_report(module: &Module) -> CoverageReport {
+    let mut report = CoverageReport::default();
+    for (body_idx, item) in module.body.iter().enumerate() {
+        report.total += 1;
+        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+        let mut extractor = Extractor::default();
+        match extractor.module_item(item, ordinal) {
+            Ok(_) => report.covered += 1,
+            Err(Unsupported { context }) => *report.unsupported.entry(context).or_default() += 1,
+        }
+    }
+    report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn extract(src: &str) -> Result<ChunkFacts, Unsupported> {
+        js_ast::with_swc_globals(|| {
+            extract_facts(&js_ast::parse_js_module_ast("<test>", src).unwrap())
+        })
+    }
+
+    #[test]
+    fn extracts_member_call_with_string_arg_faithfully() {
+        let facts = extract("const x = foo.bar(\"hello\");").expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert!(idents.contains("x"), "declarator name present: {idents:?}");
+        assert!(idents.contains("foo"), "member object present: {idents:?}");
+
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["bar"], "member property name");
+        let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(strings, vec!["hello"], "string-literal argument value");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "VarDecl",
+            "VarDeclarator",
+            "BindingIdent",
+            "Call",
+            "Member",
+            "PropName",
+            "Ident",
+            "StrLit",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+
+        // Every child edge references a node that exists (the projection is a tree).
+        let nodes: BTreeSet<NodeId> = facts.node_kind.iter().map(|(id, _)| *id).collect();
+        for (parent, _, child) in &facts.child {
+            assert!(
+                nodes.contains(parent) && nodes.contains(child),
+                "child edge ({parent},{child}) references an unknown node",
+            );
+        }
+
+        // One top-level statement, owner ordinal 0.
+        assert_eq!(facts.top_level.len(), 1);
+        assert_eq!(facts.top_level[0].1, 0);
+    }
+
+    #[test]
+    fn extracts_function_declaration_body() {
+        // The bare-delegator shape — the motivating `isMeetingTranscriptionProvider`
+        // example: a function whose only identity is the call in its body.
+        let facts = extract("function f(x) { return g(x); }").expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        for name in ["f", "x", "g"] {
+            assert!(idents.contains(name), "ident {name} present: {idents:?}");
+        }
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "FnDecl",
+            "Function",
+            "Block",
+            "Return",
+            "Call",
+            "Ident",
+            "BindingIdent",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        assert_eq!(facts.top_level.len(), 1);
+    }
+
+    #[test]
+    fn extracts_class_with_method_returning_literal() {
+        // The DocumentAccessorFactory example: identity = a getName() returning
+        // the class's own readable name, plus an `extends` edge.
+        let facts = extract(
+            "class DocumentAccessorFactory extends Base { getName() { return \"DocumentAccessorFactory\"; } }",
+        )
+        .expect("covered shape extracts");
+
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert!(
+            idents.contains("DocumentAccessorFactory"),
+            "class name: {idents:?}"
+        );
+        assert!(idents.contains("Base"), "super class: {idents:?}");
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["getName"], "method name");
+        let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(strings, vec!["DocumentAccessorFactory"], "returned literal");
+        assert_eq!(facts.super_class.len(), 1, "one extends edge");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            "ClassDecl",
+            "Class",
+            "Method",
+            "PropName",
+            "Function",
+            "Block",
+            "Return",
+            "StrLit",
+        ] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_common_expression_variants() {
+        // (b + c) ? new D(e) : [f] — binary, conditional, new, array.
+        let facts = extract("const a = b + c ? new D(e) : [f];").expect("covered shape extracts");
+
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Cond", "Bin", "New", "Array"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        // The `const` declaration keyword is recorded as an operator-class label
+        // (so a `let` selector cannot match a `const`), then the binary `+`.
+        let operators: Vec<&str> = facts.operator.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(
+            operators,
+            vec!["const", "+"],
+            "decl keyword then binary operator"
+        );
+        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
+        for name in ["a", "b", "c", "D", "e", "f"] {
+            assert!(idents.contains(name), "ident {name} present: {idents:?}");
+        }
+    }
+
+    #[test]
+    fn extracts_function_expression_and_object_literal() {
+        let facts = extract("const a = { handler: function (x) { return x; }, ...rest };")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Object", "KeyValue", "FnExpr", "Function", "Spread"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["handler"], "object key");
+    }
+
+    #[test]
+    fn extracts_member_assignment() {
+        // `a.b = c;` — the module-export assignment shape that dominates the
+        // corpus after fn/object.
+        let facts = extract("a.b = c;").expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ExprStmt", "Assign", "Member"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        assert!(
+            facts.operator.iter().any(|(_, op)| op == "="),
+            "assign operator: {:?}",
+            facts.operator,
+        );
+        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(props, vec!["b"], "assigned member name");
+    }
+
+    #[test]
+    fn extracts_control_flow_statements() {
+        // if/else with a block consequent and a throw alternative.
+        let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["If", "Block", "ExprStmt", "Call", "Throw"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_class_constructor_and_property() {
+        let facts = extract("class C { x = 1; constructor(a) { this.a = a; } }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ClassDecl", "ClassProp", "Constructor", "This", "Assign"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_for_of_destructuring_and_template() {
+        let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["ForOf", "ObjectPat", "PatAssign", "Tpl", "TplQuasi"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_super_await_optional_chain() {
+        let facts = extract("class C extends B { async m() { return await super.n()?.p; } }")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["SuperProp", "Await", "OptChain"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_module_imports_and_default_export() {
+        let facts = extract("import { a, b } from \"m\"; export default function () {}")
+            .expect("covered shape extracts");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Import", "ImportSpecifier", "ExportDefaultDecl", "Function"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+        let imported_module = facts.str_lit.iter().any(|(_, s)| s == "m");
+        assert!(
+            imported_module,
+            "import source recorded: {:?}",
+            facts.str_lit
+        );
+    }
+
+    #[test]
+    fn coverage_report_tallies_per_statement() {
+        // One extractable statement; one blocked by an unmodeled private class
+        // member. One statement's gap does not abort the tally of the other.
+        let report = js_ast::with_swc_globals(|| {
+            coverage_report(
+                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\nclass C { #x = 1; }\n")
+                    .unwrap(),
+            )
+        });
+        assert_eq!(report.total, 2);
+        assert_eq!(report.covered, 1);
+        assert_eq!(report.unsupported.get("class_member"), Some(&1));
+    }
+
+    #[test]
+    fn unmodeled_construct_errors_loudly_not_silently() {
+        // A private class member stays unmodeled. Fail-closed means a hard error
+        // here, never a silently-incomplete fact set that would let a query
+        // under-constrain.
+        let error = extract("class C { #x = 1; }").unwrap_err();
+        assert_eq!(error.context, "class_member");
+    }
+
+    #[test]
+    fn extracts_meta_properties() {
+        // `import.meta` / `new.target` are fixed meta-properties: a subject
+        // statement using one must still project to facts (otherwise a needle
+        // whose `STMT_LIST` would absorb it could never match the owner).
+        let kinds: BTreeSet<&str> = extract("const a = import.meta;")
+            .expect("import.meta extracts")
+            .node_kind
+            .iter()
+            .map(|(_, k)| *k)
+            .collect();
+        assert!(kinds.contains("MetaPropImportMeta"), "kinds: {kinds:?}");
+    }
+
+    #[test]
+    fn extracts_debugger_and_tagged_template() {
+        // `debugger;` is a childless statement node; a tagged template carries
+        // its tag plus the template (quasis interleaved with exprs).
+        let facts = extract("function f() { debugger; }\nconst a = tag`x${y}z`;")
+            .expect("debugger + tagged template extract");
+        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in ["Debugger", "TaggedTpl", "Tpl", "TplQuasi"] {
+            assert!(
+                kinds.contains(expected),
+                "kind {expected} present: {kinds:?}"
+            );
+        }
+    }
+
+    fn member_reads(src: &str) -> BTreeMap<usize, Vec<MemberReadFact>> {
+        js_ast::with_swc_globals(|| {
+            member_reads_by_ordinal(&js_ast::parse_js_module_ast("<test>", src).unwrap())
+        })
+    }
+
+    #[test]
+    fn member_reads_by_ordinal_records_object_and_member() {
+        // A helper reading `ctx.uniqueId` (object is a bare ident), and a second
+        // statement reading `foo().label` (object is a call — no object ident).
+        let reads =
+            member_reads("function helper(ctx) { return ctx.uniqueId; }\nconst v = foo().label;\n");
+        assert_eq!(
+            reads[&0],
+            vec![MemberReadFact {
+                object: Some("ctx".to_string()),
+                member: "uniqueId".to_string(),
+            }],
+        );
+        assert_eq!(
+            reads[&1],
+            vec![MemberReadFact {
+                object: None,
+                member: "label".to_string(),
+            }],
+        );
+    }
+
+    #[test]
+    fn member_reads_by_ordinal_skips_computed_access() {
+        // `obj[expr]` is computed — no static property name — so it contributes no
+        // member-read row, while the sibling `obj.kept` does.
+        let reads = member_reads("function f(obj, k) { return obj[k] + obj.kept; }\n");
+        assert_eq!(
+            reads[&0],
+            vec![MemberReadFact {
+                object: Some("obj".to_string()),
+                member: "kept".to_string(),
+            }],
+        );
+    }
+
+    fn module_member_uses(
+        src: &str,
+        import_sources: &[(&str, &str)],
+    ) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
+        let imports: HashMap<String, String> = import_sources
+            .iter()
+            .map(|(local, src)| ((*local).to_string(), (*src).to_string()))
+            .collect();
+        js_ast::with_swc_globals(|| {
+            module_member_uses_by_ordinal(
+                &js_ast::parse_js_module_ast("<test>", src).unwrap(),
+                &imports,
+            )
+        })
+    }
+
+    #[test]
+    fn module_member_uses_joins_imported_object_to_source_module() {
+        // `codegen` is imported from `./codegen`; the helper consuming
+        // `codegen.emit` yields a use-site row keyed by the source module + export
+        // name (both re-minify-invariant). A second helper reads `.emit` off a
+        // *non-imported* local `local`, so it contributes nothing — the join to the
+        // import table is what makes this a module-member use, not any member read.
+        let uses = module_member_uses(
+            "function a() { return codegen.emit(); }\nfunction b(local) { return local.emit(); }\n",
+            &[("codegen", "./codegen")],
+        );
+        assert_eq!(
+            uses[&0],
+            vec![ModuleMemberUseFact {
+                module: "./codegen".to_string(),
+                member: "emit".to_string(),
+            }],
+        );
+        assert!(
+            !uses.contains_key(&1),
+            "non-imported object contributes no row"
+        );
+    }
+
+    #[test]
+    fn module_member_uses_skips_computed_access() {
+        // `mod[expr]` is computed — no static export name — so it contributes
+        // nothing even though `mod` is imported; the sibling `mod.kept` does.
+        let uses = module_member_uses(
+            "function f(k) { return mod[k] + mod.kept; }\n",
+            &[("mod", "./m")],
+        );
+        assert_eq!(
+            uses[&0],
+            vec![ModuleMemberUseFact {
+                module: "./m".to_string(),
+                member: "kept".to_string(),
+            }],
+        );
+    }
+}

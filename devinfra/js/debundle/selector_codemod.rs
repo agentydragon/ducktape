@@ -15,11 +15,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use selector_candidate_index::SelectorCandidateIndex;
 use serde::Serialize;
 use serde_yaml::Value;
 use shape_index::ShapeIndex;
-use source_match::BodyIndexFilter;
+// `SelectorResolver` is the trait carrying `resolve_member_group`; `ChunkResolver`
+// is the fact-based resolver the minimizer's prove-gate and candidate-list wrappers
+// resolve against.
+use source_match::{ChunkResolver, SelectorResolver};
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::{BytePos, DUMMY_SP, Span, Spanned};
@@ -618,14 +620,10 @@ struct ChunkSelectorIndex {
     source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
-    /// Built once per chunk and shared across every member and binding group so
-    /// the minimizer's per-anchor matcher scans only plausible top-level body
-    /// indices instead of the whole chunk. A pure prefilter — see
-    /// [`matched_body_indices`].
-    candidate_index: SelectorCandidateIndex,
     /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
     /// forms (single-target function and var) read their minimal anchor set off
-    /// it instead of running the cover search. The matcher stays the gate.
+    /// it instead of running the cover search. The fact `ChunkResolver` stays the
+    /// gate.
     shape_index: ShapeIndex,
 }
 
@@ -994,16 +992,26 @@ impl ChunkSelectorIndex {
             }
             decls.push(indexed);
         }
-        let candidate_index = SelectorCandidateIndex::new(&parsed.module);
         let shape_index = ShapeIndex::new(&parsed.module);
         Self {
             parsed,
             source,
             decls,
             binding_to_decl,
-            candidate_index,
             shape_index,
         }
+    }
+
+    /// The fact-based resolver for this chunk's module. Built per call rather than
+    /// stored, because the resolver borrows `self.parsed.module` (storing it
+    /// alongside its owner would be self-referential); the EDB build is the cheap
+    /// part of a resolve (the matcher's per-candidate work dwarfs it), so the
+    /// candidate-list wrappers reconstruct it each time. It internally prefilters
+    /// via its own token index, subsuming the matcher path's `SelectorCandidateIndex`
+    /// scan-narrowing — so callers pass the whole-chunk selector, no external
+    /// `BodyIndexFilter`.
+    fn resolver(&self) -> ChunkResolver<'_> {
+        ChunkResolver::new(&self.parsed.module)
     }
 }
 
@@ -1380,8 +1388,7 @@ fn prove_synthesized_selector(
             .iter()
             .map(|target| (target.export_name.clone(), target.export_name.clone()))
             .collect::<BTreeMap<_, _>>();
-        let matched = source_match::resolve_member_binding_group_match(
-            &index.parsed.module,
+        let matched = index.resolver().resolve_member_group(
             "<selector synthesis>",
             &selector,
             &exports_by_target,
@@ -1424,29 +1431,14 @@ fn prove_synthesized_selector(
         wildcard_string_literals: BTreeSet::new(),
     };
     let selector = source_match.selector();
-    // Prove fast-path. The candidate index is a sound match superset: every
-    // body index the matcher could resolve for this selector carries all of the
-    // selector's anchor features, so true matches ⊆ the posting-list
-    // intersection. Restrict the (correctness-bearing) matcher to that
-    // intersection instead of scanning the whole chunk. When the intersection is
-    // already `{decl.body_idx}` the matcher inspects a single item — proving
-    // both existence and uniqueness — rather than the O(chunk) per-member scan
-    // the unfiltered `member_binding_candidate_matches` would run. The matcher
-    // still gates the result, so an index false positive (a body in the
-    // intersection the matcher rejects) can never be accepted, and an empty/
-    // ambiguous match still `bail!`s below. See `prove_fast_path_*` tests and
-    // `selector_candidate_index`'s superset invariant.
-    let candidates: BTreeSet<usize> = index
-        .candidate_index
-        .candidate_set_for_source_match(&selector)?
-        .body_indices()
-        .collect();
-    let matches = source_match::member_binding_candidate_matches_within(
-        &index.parsed.module,
-        "<selector synthesis>",
-        &selector,
-        BodyIndexFilter::Restricted(&candidates),
-    )?;
+    // Prove gate. The fact resolver returns every candidate the selector resolves
+    // to in the chunk (count + per-match `body_idx`/`binding`); we then require
+    // exactly one, at the intended body index, bound to the intended runtime name.
+    // The resolver prefilters internally via its token index, so existence and
+    // uniqueness are decided without scanning the whole chunk per member.
+    let matches = index
+        .resolver()
+        .member_candidates("<selector synthesis>", &selector)?;
     let candidate_count = matches.len();
     let [candidate] = matches.as_slice() else {
         bail!("synthesized selector matched {candidate_count} candidate declaration groups");
@@ -1586,13 +1578,9 @@ fn synthesize_specialized_var_selector(
 /// Every `(body, binding-slot)` alignment a `target_binding` selector with
 /// `match_source` resolves to.
 ///
-/// The shared per-chunk [`SelectorCandidateIndex`] narrows the matcher's scan to
-/// the top-level body indices whose features could still match the selector,
-/// turning the inner loop from O(all top-level statements) into O(plausible
-/// candidates). The candidate set is a sound superset of the full-scan matches,
-/// so the still-run structural matcher remains the source of truth: it proves
-/// every reported match and discards index false positives. See
-/// `prefilter_matches_brute_force_scan` for the superset invariant test.
+/// Resolved through the fact-based [`ChunkResolver::member_candidates`] — the
+/// non-categorical candidate list. The resolver prefilters internally via its own
+/// token index, so this no longer threads a scan-narrowing candidate set.
 fn matched_binding_candidates(
     index: &ChunkSelectorIndex,
     export_name: &str,
@@ -1606,18 +1594,9 @@ fn matched_binding_candidates(
         target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     };
-    let selector = source_match.selector();
-    let candidates: BTreeSet<usize> = index
-        .candidate_index
-        .candidate_set_for_source_match(&selector)?
-        .body_indices()
-        .collect();
-    source_match::member_binding_candidate_matches_within(
-        &index.parsed.module,
-        "<selector minimization>",
-        &selector,
-        BodyIndexFilter::Restricted(&candidates),
-    )
+    index
+        .resolver()
+        .member_candidates("<selector minimization>", &source_match.selector())
 }
 
 /// Distinct body indices the selector resolves to (slot alignments within one
@@ -2544,207 +2523,5 @@ export { target };\n";
         // emits even when full_ast_fallback is off.
         let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
         assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
-    }
-}
-
-#[cfg(test)]
-mod prefilter_soundness_tests {
-    use super::*;
-
-    /// Many same-shaped sibling `const`s plus a few non-var statements, so the
-    /// candidate-index prefilter has both true matches to keep and unrelated
-    /// statements to prune. Synthetic only.
-    fn many_sibling_chunk() -> String {
-        let mut chunk = String::new();
-        for idx in 0..200 {
-            chunk.push_str(&format!(
-                "const binding{idx} = makeWidget(\"token-{idx}\", {{ role: \"button\" }});\n"
-            ));
-        }
-        for idx in 0..50 {
-            chunk.push_str(&format!("function helper{idx}(a, b) {{ return a + b; }}\n"));
-        }
-        chunk.push_str("sideEffect();\n");
-        chunk
-    }
-
-    /// The full unfiltered scan: matcher over every top-level statement. Source
-    /// of truth the prefilter must not under-include.
-    fn brute_force_matches(
-        index: &ChunkSelectorIndex,
-        export: &str,
-        source: &str,
-    ) -> BTreeSet<usize> {
-        let source_match = SourceMatch {
-            match_source: source.to_string(),
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: Some(export.to_string()),
-            target_statement: None,
-            target_statements: None,
-            wildcard_string_literals: BTreeSet::new(),
-        };
-        source_match::member_binding_candidate_matches_within(
-            &index.parsed.module,
-            "<brute-force>",
-            &source_match.selector(),
-            BodyIndexFilter::All,
-        )
-        .unwrap()
-        .iter()
-        .map(|matched| matched.body_idx)
-        .collect()
-    }
-
-    #[test]
-    fn prefilter_matches_brute_force_scan() {
-        js_ast::with_swc_globals(|| {
-            let index = ChunkSelectorIndex::new(
-                js_ast::parse_js_module_consuming("<prefilter-test>", many_sibling_chunk())
-                    .unwrap(),
-            );
-            // A selector specific enough to match exactly one sibling, and a holed
-            // selector that matches every sibling: both must agree between the
-            // prefiltered and brute-force scans.
-            for (export, source) in [
-                (
-                    "Target",
-                    r#"const Target = makeWidget("token-137", { role: "button" });"#,
-                ),
-                (
-                    "Target",
-                    r#"const Target = makeWidget(EXPR_HOLE, { role: "button" });"#,
-                ),
-            ] {
-                let prefiltered = matched_body_indices(&index, export, source).unwrap();
-                let brute = brute_force_matches(&index, export, source);
-                let candidates: BTreeSet<usize> = index
-                    .candidate_index
-                    .candidate_set_for_source_match(&{
-                        SourceMatch {
-                            match_source: source.to_string(),
-                            identifiers: SourceMatchIdentifierMode::AlphaAll,
-                            target_binding: Some(export.to_string()),
-                            target_statement: None,
-                            target_statements: None,
-                            wildcard_string_literals: BTreeSet::new(),
-                        }
-                        .selector()
-                    })
-                    .unwrap()
-                    .body_indices()
-                    .collect();
-                assert!(
-                    brute.is_subset(&candidates),
-                    "candidate set must be a sound superset of the brute-force matches: \
-                     brute={brute:?} candidates={candidates:?}"
-                );
-                assert_eq!(
-                    prefiltered, brute,
-                    "prefiltered scan must report identical matches to the full scan"
-                );
-            }
-        });
-    }
-
-    /// Candidate set for the single-target prove selector (same construction as
-    /// the fast-path in `prove_synthesized_selector`).
-    fn prove_candidate_set(
-        index: &ChunkSelectorIndex,
-        export: &str,
-        source: &str,
-    ) -> BTreeSet<usize> {
-        let source_match = SourceMatch {
-            match_source: source.to_string(),
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: Some(export.to_string()),
-            target_statement: None,
-            target_statements: None,
-            wildcard_string_literals: BTreeSet::new(),
-        };
-        index
-            .candidate_index
-            .candidate_set_for_source_match(&source_match.selector())
-            .unwrap()
-            .body_indices()
-            .collect()
-    }
-
-    /// The prove fast-path's soundness contract: for sampled synthesized
-    /// single-target selectors, whenever the index candidate set is a singleton
-    /// `{body_idx}`, the production matcher must resolve uniquely to exactly that
-    /// body index — i.e. an index-singleton proof never differs from the
-    /// full-matcher verdict. Walks the synthesized selector for every `const`
-    /// sibling in the chunk, so it covers both the genuinely-discriminated
-    /// targets (singleton candidate set) and any that need matcher
-    /// disambiguation (non-singleton, fall-through path).
-    #[test]
-    fn index_singleton_proof_implies_unique_matcher_resolution() {
-        js_ast::with_swc_globals(|| {
-            let index = ChunkSelectorIndex::new(
-                js_ast::parse_js_module_consuming("<prove-fast-path>", many_sibling_chunk())
-                    .unwrap(),
-            );
-            let mut singleton_hits = 0usize;
-            for sample in [0usize, 1, 42, 137, 199] {
-                let runtime = format!("binding{sample}");
-                let decl_idx = *index
-                    .binding_to_decl
-                    .get(&runtime)
-                    .and_then(|decls| decls.first())
-                    .expect("chunk declares the sampled binding");
-                let members = [NameBindingMember {
-                    member_index: 0,
-                    export_name: "Target".to_string(),
-                    binding_name: runtime.clone(),
-                    comment: None,
-                }];
-                let GroupSelectorOutcome::Synthesized(group) =
-                    synthesize_simplest_selector_for_group(
-                        &index, decl_idx, &members, true, false, 1,
-                    )
-                    .unwrap()
-                else {
-                    panic!("each distinct-token sibling must synthesize a selector");
-                };
-
-                let candidates = prove_candidate_set(&index, "Target", &group.match_source);
-                // The full, unfiltered matcher verdict — the source of truth.
-                let brute = brute_force_matches(&index, "Target", &group.match_source);
-                assert!(
-                    brute.is_subset(&candidates),
-                    "index candidate set must be a sound match superset: \
-                     brute={brute:?} candidates={candidates:?}"
-                );
-                if candidates == BTreeSet::from([decl_idx]) {
-                    singleton_hits += 1;
-                    // The crux: a singleton index proof must coincide with the
-                    // matcher resolving uniquely to that same body index.
-                    assert_eq!(
-                        brute,
-                        BTreeSet::from([decl_idx]),
-                        "index-singleton proof must imply unique matcher resolution; \
-                         selector:\n{}",
-                        group.match_source
-                    );
-                }
-                // Independently, the prove gate (which now runs the candidate-
-                // restricted matcher) must agree the selector resolves uniquely.
-                let targets = [SynthesizedTargetBinding {
-                    export_name: "Target".to_string(),
-                    runtime_binding: runtime,
-                }];
-                let decl = &index.decls[decl_idx];
-                assert_eq!(
-                    prove_synthesized_selector(&index, decl, &targets, &group.match_source)
-                        .unwrap(),
-                    1,
-                    "prove gate must accept the synthesized selector as unique"
-                );
-            }
-            assert!(
-                singleton_hits > 0,
-                "the distinct-token siblings must exercise the singleton fast-path"
-            );
-        });
     }
 }

@@ -117,6 +117,9 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
 
+    // Fact-based candidate list (the non-categorical match set), built once for
+    // the chunk and shared across the baseline resolve plus every slack relaxation.
+    let resolver = source_match::ChunkResolver::new(&parsed.module);
     let resolve = |match_source: String| -> Result<Vec<source_match::MemberBindingMatch>> {
         let selector = SourceMatch {
             match_source,
@@ -127,11 +130,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             wildcard_string_literals: BTreeSet::new(),
         }
         .selector();
-        source_match::member_binding_candidate_matches(
-            &parsed.module,
-            "<match-selector>",
-            &selector,
-        )
+        resolver.member_candidates("<match-selector>", &selector)
     };
 
     let baseline = resolve(config.match_source.clone())?;

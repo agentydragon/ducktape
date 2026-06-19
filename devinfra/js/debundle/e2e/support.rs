@@ -38,6 +38,9 @@ pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
     source_match: Option<FixtureSourceMatch>,
+    cross_ref: Option<FixtureCrossRefSelector>,
+    reads_member: Option<FixtureReadsMemberSelector>,
+    member_of_module: Option<FixtureMemberOfModuleSelector>,
     pub comment: Option<String>,
 }
 
@@ -149,6 +152,9 @@ impl Member {
             name,
             binding: None,
             source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
             comment: None,
         }
     }
@@ -159,6 +165,9 @@ impl Member {
             name,
             binding: Some(binding),
             source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
             comment: None,
         }
     }
@@ -177,6 +186,9 @@ impl Member {
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
             comment: None,
         }
     }
@@ -199,6 +211,9 @@ impl Member {
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
             comment: None,
         }
     }
@@ -220,6 +235,105 @@ impl Member {
                 target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
+            }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity that **references** the anchor member `@anchor`
+    /// (a delegator / consumer body), re-exported under `name`. `kind` optionally
+    /// narrows to one source-declaration kind (`function_declaration`, …) when
+    /// several owners reference the anchor.
+    pub fn cross_ref_references(
+        name: &'static str,
+        anchor: &'static str,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: Some(FixtureCrossRefSelector {
+                references: Some(anchor),
+                aliases: None,
+                kind,
+            }),
+            reads_member: None,
+            member_of_module: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the var-decl that **aliases** the anchor member
+    /// (`const T = @anchor`), re-exported under `name`.
+    pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: Some(FixtureCrossRefSelector {
+                references: None,
+                aliases: Some(anchor),
+                kind: None,
+            }),
+            reads_member: None,
+            member_of_module: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity that **reads member `.member`** off an object,
+    /// re-exported under `name`. `object` optionally constrains the object the
+    /// member is read off (the readable `name:` of another member, the codegen
+    /// context being the canonical object); `kind` optionally narrows to one
+    /// source-declaration kind (`function_declaration`, …) when several owners
+    /// read the member.
+    pub fn reads_member(
+        name: &'static str,
+        member: &'static str,
+        object: Option<&'static str>,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: Some(FixtureReadsMemberSelector {
+                member,
+                object,
+                kind,
+            }),
+            member_of_module: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity **consumed as `module.member`** at a use site
+    /// (`module` an import specifier, `member` an export name), re-exported under
+    /// `name`. The first use-site selector — pins by how the entity is consumed,
+    /// not its own body or minified name. `kind` optionally narrows to one
+    /// source-declaration kind (`class_declaration`, …) when several owners
+    /// consume the module member.
+    pub fn member_of_module(
+        name: &'static str,
+        module: &'static str,
+        member: &'static str,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: Some(FixtureMemberOfModuleSelector {
+                module,
+                member,
+                kind,
             }),
             comment: None,
         }
@@ -247,11 +361,44 @@ struct FixtureMemberSelector {
     binding: Option<FixtureBindingSelector>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_match: Option<FixtureSourceMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cross_ref: Option<FixtureCrossRefSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reads_member: Option<FixtureReadsMemberSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member_of_module: Option<FixtureMemberOfModuleSelector>,
 }
 
 #[derive(Serialize)]
 struct FixtureBindingSelector {
     name: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureCrossRefSelector {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    references: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aliases: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureReadsMemberSelector {
+    member: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureMemberOfModuleSelector {
+    module: &'static str,
+    member: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -467,9 +614,18 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
             selector: FixtureMemberSelector {
                 binding: m
                     .binding
-                    .or_else(|| m.source_match.is_none().then_some(m.name))
+                    .or_else(|| {
+                        (m.source_match.is_none()
+                            && m.cross_ref.is_none()
+                            && m.reads_member.is_none()
+                            && m.member_of_module.is_none())
+                        .then_some(m.name)
+                    })
                     .map(|name| FixtureBindingSelector { name }),
                 source_match: m.source_match.clone(),
+                cross_ref: m.cross_ref.clone(),
+                reads_member: m.reads_member.clone(),
+                member_of_module: m.member_of_module.clone(),
             },
             comment: m.comment.clone(),
         })

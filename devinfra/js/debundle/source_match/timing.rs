@@ -1,3 +1,6 @@
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
 use super::*;
 
 pub(crate) const SOURCE_MATCH_TIMINGS_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMINGS";
@@ -7,21 +10,24 @@ pub(crate) const SOURCE_MATCH_TIMING_THRESHOLD_ENV: &str =
 
 pub(crate) const SOURCE_MATCH_TIMING_PREVIEW_ENV: &str = "DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW";
 
-#[derive(Debug)]
-pub(crate) struct SourceMatchTimingConfig {
+struct SourceMatchTimingConfig {
     threshold: Duration,
     include_preview: bool,
 }
 
-pub(crate) fn source_match_timing_config() -> Option<&'static SourceMatchTimingConfig> {
+fn env_disabled(raw: &str) -> bool {
+    matches!(
+        raw.to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "off" | "no"
+    )
+}
+
+fn source_match_timing_config() -> Option<&'static SourceMatchTimingConfig> {
     static CONFIG: OnceLock<Option<SourceMatchTimingConfig>> = OnceLock::new();
     CONFIG
         .get_or_init(|| {
             let enabled = std::env::var(SOURCE_MATCH_TIMINGS_ENV).ok()?;
-            if matches!(
-                enabled.to_ascii_lowercase().as_str(),
-                "" | "0" | "false" | "off" | "no"
-            ) {
+            if env_disabled(&enabled) {
                 return None;
             }
             let threshold_ms = std::env::var(SOURCE_MATCH_TIMING_THRESHOLD_ENV)
@@ -30,12 +36,7 @@ pub(crate) fn source_match_timing_config() -> Option<&'static SourceMatchTimingC
                 .unwrap_or(0);
             let include_preview = std::env::var(SOURCE_MATCH_TIMING_PREVIEW_ENV)
                 .ok()
-                .is_none_or(|raw| {
-                    !matches!(
-                        raw.to_ascii_lowercase().as_str(),
-                        "" | "0" | "false" | "off" | "no"
-                    )
-                });
+                .is_none_or(|raw| !env_disabled(&raw));
             Some(SourceMatchTimingConfig {
                 threshold: Duration::from_millis(threshold_ms),
                 include_preview,
@@ -44,42 +45,53 @@ pub(crate) fn source_match_timing_config() -> Option<&'static SourceMatchTimingC
         .as_ref()
 }
 
-pub(crate) fn trace_source_match<T>(
+/// True iff `DUCKTAPE_SOURCE_MATCH_TIMINGS` is set to an enabled value, so a
+/// caller can skip computing the per-emit `status`/elapsed when timing is off.
+pub(crate) fn source_match_timings_enabled() -> bool {
+    source_match_timing_config().is_some()
+}
+
+/// Emit one `[debundle source_match]` timing line for a resolved selector, when
+/// timing is enabled and the elapsed duration meets the threshold. `kind` names
+/// the selector surface (e.g. `members[].selector.source_match export=`foo``) and
+/// `status` carries the per-surface result fields (e.g.
+/// `body_indices=[0] binding=foo`). The selector identity keys and (optionally)
+/// the source preview are appended uniformly. Emitting from the resolver's
+/// per-selector path (behind the chunk-level resolution cache) means a selector
+/// reused across modules is timed once per chunk.
+pub(crate) fn emit_source_match_timing(
     kind: &str,
     request_id: &str,
     selector: &AnonymousStatementSelector,
-    run: impl FnOnce() -> Result<T>,
-    summarize: impl FnOnce(&T) -> String,
-) -> Result<T> {
+    elapsed: Duration,
+    status: &str,
+) {
     let Some(config) = source_match_timing_config() else {
-        return run();
+        return;
     };
-    let started = Instant::now();
-    let result = run();
-    let elapsed = started.elapsed();
-    if elapsed >= config.threshold {
-        let status = match &result {
-            Ok(value) => summarize(value),
-            Err(error) => format!("error={}", first_error_line(error)),
-        };
-        eprintln!(
-            "[debundle source_match] elapsed_ms={} request={} kind={} {} {}",
-            elapsed.as_millis(),
-            request_id,
-            kind,
-            status,
-            source_match_timing_selector_details(selector, config),
-        );
+    if elapsed < config.threshold {
+        return;
     }
-    result
+    eprintln!(
+        "[debundle source_match] elapsed_ms={} request={} kind={} {} {}",
+        elapsed.as_millis(),
+        request_id,
+        kind,
+        status,
+        source_match_timing_selector_details(selector, config),
+    );
 }
 
-pub fn source_match_preview(source: &str) -> String {
-    let collapsed = source.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_for_log(&collapsed, 180)
+/// Run `f`, returning its result paired with the wall-clock duration — the
+/// minimal timer the resolver wraps a per-selector resolution in. Always runs
+/// `f` (the elapsed measurement is cheap); the emit decision is `emit_*`'s.
+pub(crate) fn time_source_match<T>(f: impl FnOnce() -> T) -> (T, Duration) {
+    let started = Instant::now();
+    let value = f();
+    (value, started.elapsed())
 }
 
-pub(crate) fn source_match_timing_selector_details(
+fn source_match_timing_selector_details(
     selector: &AnonymousStatementSelector,
     config: &SourceMatchTimingConfig,
 ) -> String {
@@ -103,6 +115,11 @@ pub(crate) fn source_match_timing_selector_details(
         ));
     }
     fields.join(" ")
+}
+
+pub fn source_match_preview(source: &str) -> String {
+    let collapsed = source.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_for_log(&collapsed, 180)
 }
 
 pub fn selector_body_key(selector: &AnonymousStatementSelector) -> String {
@@ -173,54 +190,4 @@ pub(crate) fn truncate_for_log(value: &str, max_chars: usize) -> String {
     let mut truncated = value.chars().take(max_chars).collect::<String>();
     truncated.push_str("...");
     truncated
-}
-
-pub(crate) fn render_timing_names<'a>(names: impl Iterator<Item = &'a str>) -> String {
-    const MAX_NAMES: usize = 6;
-    let names = names.collect::<Vec<_>>();
-    if names.is_empty() {
-        return "<none>".to_string();
-    }
-    let mut rendered = names
-        .iter()
-        .take(MAX_NAMES)
-        .map(|name| format!("`{name}`"))
-        .collect::<Vec<_>>();
-    if names.len() > MAX_NAMES {
-        rendered.push(format!("+{} more", names.len() - MAX_NAMES));
-    }
-    rendered.join(",")
-}
-
-pub(crate) fn render_timing_groups(groups: &[Vec<usize>]) -> String {
-    const MAX_GROUPS: usize = 4;
-    if groups.is_empty() {
-        return "[]".to_string();
-    }
-    let mut rendered = groups
-        .iter()
-        .take(MAX_GROUPS)
-        .map(|group| format!("{group:?}"))
-        .collect::<Vec<_>>();
-    if groups.len() > MAX_GROUPS {
-        rendered.push(format!("+{} more", groups.len() - MAX_GROUPS));
-    }
-    rendered.join(",")
-}
-
-pub(crate) fn render_timing_body_indices<'a>(indices: impl Iterator<Item = &'a usize>) -> String {
-    const MAX_INDICES: usize = 8;
-    let indices = indices.copied().collect::<Vec<_>>();
-    if indices.is_empty() {
-        return "[]".to_string();
-    }
-    let mut rendered = indices
-        .iter()
-        .take(MAX_INDICES)
-        .map(usize::to_string)
-        .collect::<Vec<_>>();
-    if indices.len() > MAX_INDICES {
-        rendered.push(format!("+{} more", indices.len() - MAX_INDICES));
-    }
-    format!("[{}]", rendered.join(","))
 }

@@ -24,6 +24,8 @@ petgraph = "^0.8.3"
 rustc-hash = "^2.1.2"
 # debundle selector index: roaring bitmaps for posting-list intersection
 roaring = "^0.10.12"
+# debundle relational-selector solver: in-process Datalog (CQ over the program graph)
+ascent = "^0.8.0"
 #tokio = { version = "*", features = ["full", "time"] }
 warp = "^0.4.2"
 futures = "^0.3.31"

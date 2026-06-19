@@ -26,6 +26,18 @@ impl RuntimeImportFacts {
             .find(|(id, _)| id.0.as_ref() == sym)
             .map(|(_, info)| info)
     }
+
+    /// `(local import binding name, import source specifier)` for every import
+    /// specifier in the chunk — the local→module-source map the `member_of_module`
+    /// use-site primitive joins member accesses against (`mod.X` ⟹ the source of
+    /// `mod`). Uses the **pre-rename** local sym (the key the map is built on),
+    /// which is what the `member_of_module` resolution runs against (it operates on
+    /// the chunk's owner graph + AST member-reads, before any naturalizer rename).
+    pub(super) fn iter_local_sources(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.imports
+            .iter()
+            .map(|(id, info)| (id.0.as_ref(), info.src.as_str()))
+    }
 }
 
 pub(super) fn record_runtime_imports(

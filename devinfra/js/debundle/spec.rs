@@ -1167,6 +1167,165 @@ pub struct MemberSelector {
     pub binding: Option<BindingSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cross_ref: Option<CrossRefSelector>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads_member: Option<ReadsMemberSelector>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_of_module: Option<MemberOfModuleSelector>,
+}
+
+/// Pin a member by a **cross-reference** to another spec member instead of by
+/// this member's own (re-minify-fragile) minified name. The anchor names another
+/// member by its readable name; the target is resolved through the owner graph as
+/// the entity standing in the named relation to the anchor's resolved binding —
+/// e.g. a shapeless delegator `function T(x){ return Anchor(x) }` pinned as "the
+/// function that references @Anchor". Exactly one of `references` / `aliases`.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(deny_unknown_fields)]
+pub struct CrossRefSelector {
+    /// The target references the anchor member (a delegator / consumer body).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references: Option<String>,
+    /// The target aliases the anchor member (`const T = Anchor`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aliases: Option<String>,
+    /// Optional statement-kind constraint disambiguating when several owners
+    /// stand in the relation to the anchor (e.g. `function_declaration`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BindingSourceKind>,
+}
+
+/// The validated cross-reference target (`MemberSelector::selected` resolves the
+/// `references`/`aliases` one-of into this).
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CrossRefTarget {
+    pub relation: CrossRefRelation,
+    pub anchor: String,
+    pub kind: Option<BindingSourceKind>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum CrossRefRelation {
+    References,
+    Aliases,
+}
+
+impl CrossRefSelector {
+    fn target(&self) -> std::result::Result<CrossRefTarget, MemberSelectorError> {
+        let (relation, anchor) = match (&self.references, &self.aliases) {
+            (Some(anchor), None) => (CrossRefRelation::References, anchor.clone()),
+            (None, Some(anchor)) => (CrossRefRelation::Aliases, anchor.clone()),
+            (None, None) => {
+                return Err(MemberSelectorError {
+                    message: "members[].selector.cross_ref must include `references` or `aliases`",
+                });
+            }
+            (Some(_), Some(_)) => {
+                return Err(MemberSelectorError {
+                    message: "members[].selector.cross_ref must use either `references` or \
+                              `aliases`, not both",
+                });
+            }
+        };
+        Ok(CrossRefTarget {
+            relation,
+            anchor,
+            kind: self.kind,
+        })
+    }
+}
+
+/// Pin a member by the **member it reads** off an object, instead of by this
+/// member's own (re-minify-fragile) minified name. The canonical shape is a TS
+/// codegen helper `function ls(c){ return c.uniqueId }` whose stable identity is
+/// "the function that reads `.uniqueId` off the codegen context" — pinned by the
+/// invariant property name `.uniqueId` (and optionally the object it reads off),
+/// never by the minified `ls`. Resolved through the owner graph's `reads_member`
+/// EDB: the unique declaring owner whose body reads the named member.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(deny_unknown_fields)]
+pub struct ReadsMemberSelector {
+    /// The property name `X` the target reads (`obj.X`). Required — the relation
+    /// is "reads member `.member`".
+    pub member: String,
+    /// Optional object constraint: the readable `name:` of another member the
+    /// property is read off (`@object.member`). Narrows "the owner that reads
+    /// `.X`" to "the owner that reads `.X` **off `@object`**" — the codegen
+    /// context being the canonical object. Resolved like a `cross_ref` anchor:
+    /// the object's already-resolved minified binding rides the relational edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<String>,
+    /// Optional statement-kind constraint disambiguating when several owners read
+    /// the member (e.g. `function_declaration`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BindingSourceKind>,
+}
+
+/// The validated `reads_member` target (`MemberSelector::selected` resolves the
+/// selector into this). `member` is always present; `object`/`kind` narrow it.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ReadsMemberTarget {
+    pub member: String,
+    pub object: Option<String>,
+    pub kind: Option<BindingSourceKind>,
+}
+
+impl ReadsMemberSelector {
+    fn target(&self) -> ReadsMemberTarget {
+        ReadsMemberTarget {
+            member: self.member.clone(),
+            object: self.object.clone(),
+            kind: self.kind,
+        }
+    }
+}
+
+/// Pin a member by **how it is consumed at a use site** — the export consumed as
+/// `mod.member`, where `mod` is a binding imported from `module` — instead of by
+/// this member's own (re-minify-fragile) minified name. This is the first
+/// *use-site* selector: it rides the import/use graph rather than the target's
+/// own body. The canonical shapes are the empty-class/superclass cluster
+/// (`class Uee extends Ye {}`, several byte-identical empty subclasses
+/// distinguished only by *how each is consumed*) and shapeless delegators with no
+/// internal anchor. Both `module` (an import specifier) and `member` (an export
+/// name) are re-minify-invariant, so the whole edge survives a bundle rebuild.
+/// Resolved through the owner graph's `member_of_module` EDB: the unique declaring
+/// owner whose body consumes `<module>.<member>`.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(deny_unknown_fields)]
+pub struct MemberOfModuleSelector {
+    /// The import **source specifier** the consumed binding is imported from
+    /// (`"./codegen"`, `"react"`). Required — half of the invariant "consumed as
+    /// `module.member`" identity.
+    pub module: String,
+    /// The export **name** consumed off the imported binding (`mod.member`).
+    /// Required — the other half of the identity.
+    pub member: String,
+    /// Optional statement-kind constraint disambiguating when several owners
+    /// consume the module member (e.g. `class_declaration` for the empty-subclass
+    /// cluster).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BindingSourceKind>,
+}
+
+/// The validated `member_of_module` target (`MemberSelector::selected` resolves
+/// the selector into this). `module`/`member` are always present; `kind` narrows.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct MemberOfModuleTarget {
+    pub module: String,
+    pub member: String,
+    pub kind: Option<BindingSourceKind>,
+}
+
+impl MemberOfModuleSelector {
+    fn target(&self) -> MemberOfModuleTarget {
+        MemberOfModuleTarget {
+            module: self.module.clone(),
+            member: self.member.clone(),
+            kind: self.kind,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
@@ -1180,26 +1339,45 @@ pub struct BindingSelector {
 
 impl MemberSelector {
     pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
-        match (&self.binding, &self.source_match) {
-            (Some(binding), None) => Ok(MemberSelectorSpec::Binding(binding.clone())),
-            (None, Some(source_match)) if source_match.target_statement.is_some() => {
-                Err(MemberSelectorError {
-                    message: "members[].selector.source_match cannot include `target_statement`",
-                })
+        match (
+            &self.binding,
+            &self.source_match,
+            &self.cross_ref,
+            &self.reads_member,
+            &self.member_of_module,
+        ) {
+            (Some(binding), None, None, None, None) => {
+                Ok(MemberSelectorSpec::Binding(binding.clone()))
             }
-            (None, Some(source_match)) if source_match.target_statements.is_some() => {
-                Err(MemberSelectorError {
-                    message: "members[].selector.source_match cannot include `target_statements`",
-                })
-            }
-            (None, Some(source_match)) => {
+            (None, Some(source_match), None, None, None) => {
+                if source_match.target_statement.is_some() {
+                    return Err(MemberSelectorError {
+                        message: "members[].selector.source_match cannot include `target_statement`",
+                    });
+                }
+                if source_match.target_statements.is_some() {
+                    return Err(MemberSelectorError {
+                        message: "members[].selector.source_match cannot include `target_statements`",
+                    });
+                }
                 Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
             }
-            (Some(_), Some(_)) => Err(MemberSelectorError {
-                message: "members[].selector must use either `binding` or `source_match`, not both",
+            (None, None, Some(cross_ref), None, None) => {
+                cross_ref.target().map(MemberSelectorSpec::CrossRef)
+            }
+            (None, None, None, Some(reads_member), None) => {
+                Ok(MemberSelectorSpec::ReadsMember(reads_member.target()))
+            }
+            (None, None, None, None, Some(member_of_module)) => Ok(
+                MemberSelectorSpec::MemberOfModule(member_of_module.target()),
+            ),
+            (None, None, None, None, None) => Err(MemberSelectorError {
+                message: "members[].selector must include one of `binding`, `source_match`, \
+                          `cross_ref`, `reads_member`, or `member_of_module`",
             }),
-            (None, None) => Err(MemberSelectorError {
-                message: "members[].selector must include either `binding` or `source_match`",
+            _ => Err(MemberSelectorError {
+                message: "members[].selector must use exactly one of `binding`, `source_match`, \
+                          `cross_ref`, `reads_member`, or `member_of_module`",
             }),
         }
     }
@@ -1209,6 +1387,9 @@ impl MemberSelector {
 pub enum MemberSelectorSpec {
     Binding(BindingSelector),
     SourceMatch(AnonymousStatementSelector),
+    CrossRef(CrossRefTarget),
+    ReadsMember(ReadsMemberTarget),
+    MemberOfModule(MemberOfModuleTarget),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -1326,6 +1507,198 @@ mod tests {
         assert!(
             message.contains("object_props"),
             "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn cross_ref_references_selector_resolves_to_a_cross_ref_target() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "cross_ref": { "references": "isTranscriptionProvider", "kind": "function_declaration" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::CrossRef(CrossRefTarget {
+                relation: CrossRefRelation::References,
+                anchor: "isTranscriptionProvider".to_string(),
+                kind: Some(BindingSourceKind::FunctionDeclaration),
+            })
+        );
+    }
+
+    #[test]
+    fn cross_ref_aliases_selector_resolves_to_an_alias_target() {
+        let selector: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "aliases": "NodeAttributeAccessor" } }"#)
+                .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::CrossRef(CrossRefTarget {
+                relation: CrossRefRelation::Aliases,
+                anchor: "NodeAttributeAccessor".to_string(),
+                kind: None,
+            })
+        );
+    }
+
+    #[test]
+    fn cross_ref_requires_exactly_one_relation() {
+        let both: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
+                .unwrap();
+        assert!(both.selected().is_err(), "both relations must be rejected");
+
+        let neither: MemberSelector =
+            serde_json::from_str(r#"{ "cross_ref": { "kind": "class_declaration" } }"#).unwrap();
+        assert!(neither.selected().is_err(), "no relation must be rejected");
+    }
+
+    #[test]
+    fn cross_ref_conflicts_with_other_selector_kinds() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "binding": { "name": "x" }, "cross_ref": { "references": "A" } }"#,
+        )
+        .unwrap();
+        assert!(
+            selector.selected().is_err(),
+            "a member must use exactly one selector kind",
+        );
+    }
+
+    #[test]
+    fn cross_ref_unknown_field_is_rejected() {
+        let result: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "calls": "B" } }"#);
+        assert!(result.is_err(), "unknown cross_ref field must be rejected");
+    }
+
+    #[test]
+    fn reads_member_selector_resolves_to_a_reads_member_target() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "reads_member": { "member": "uniqueId", "object": "codegenContext", "kind": "function_declaration" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::ReadsMember(ReadsMemberTarget {
+                member: "uniqueId".to_string(),
+                object: Some("codegenContext".to_string()),
+                kind: Some(BindingSourceKind::FunctionDeclaration),
+            })
+        );
+    }
+
+    #[test]
+    fn reads_member_selector_defaults_object_and_kind() {
+        let selector: MemberSelector =
+            serde_json::from_str(r#"{ "reads_member": { "member": "render" } }"#).unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::ReadsMember(ReadsMemberTarget {
+                member: "render".to_string(),
+                object: None,
+                kind: None,
+            })
+        );
+    }
+
+    #[test]
+    fn reads_member_requires_member() {
+        let result: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "reads_member": { "object": "ctx" } }"#);
+        assert!(result.is_err(), "reads_member without `member` is rejected");
+    }
+
+    #[test]
+    fn reads_member_conflicts_with_other_selector_kinds() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "binding": { "name": "x" }, "reads_member": { "member": "id" } }"#,
+        )
+        .unwrap();
+        assert!(
+            selector.selected().is_err(),
+            "a member must use exactly one selector kind",
+        );
+    }
+
+    #[test]
+    fn reads_member_unknown_field_is_rejected() {
+        let result: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "reads_member": { "member": "id", "writes": "x" } }"#);
+        assert!(
+            result.is_err(),
+            "unknown reads_member field must be rejected"
+        );
+    }
+
+    #[test]
+    fn member_of_module_selector_resolves_to_a_target() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "member_of_module": { "module": "./accessors", "member": "CardsView", "kind": "class_declaration" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::MemberOfModule(MemberOfModuleTarget {
+                module: "./accessors".to_string(),
+                member: "CardsView".to_string(),
+                kind: Some(BindingSourceKind::ClassDeclaration),
+            })
+        );
+    }
+
+    #[test]
+    fn member_of_module_selector_defaults_kind() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "member_of_module": { "module": "react", "member": "memo" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            selector.selected().unwrap(),
+            MemberSelectorSpec::MemberOfModule(MemberOfModuleTarget {
+                module: "react".to_string(),
+                member: "memo".to_string(),
+                kind: None,
+            })
+        );
+    }
+
+    #[test]
+    fn member_of_module_requires_module_and_member() {
+        let no_member: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "member_of_module": { "module": "./m" } }"#);
+        assert!(
+            no_member.is_err(),
+            "member_of_module without `member` is rejected"
+        );
+        let no_module: std::result::Result<MemberSelector, _> =
+            serde_json::from_str(r#"{ "member_of_module": { "member": "X" } }"#);
+        assert!(
+            no_module.is_err(),
+            "member_of_module without `module` is rejected"
+        );
+    }
+
+    #[test]
+    fn member_of_module_conflicts_with_other_selector_kinds() {
+        let selector: MemberSelector = serde_json::from_str(
+            r#"{ "binding": { "name": "x" }, "member_of_module": { "module": "./m", "member": "X" } }"#,
+        )
+        .unwrap();
+        assert!(
+            selector.selected().is_err(),
+            "a member must use exactly one selector kind",
+        );
+    }
+
+    #[test]
+    fn member_of_module_unknown_field_is_rejected() {
+        let result: std::result::Result<MemberSelector, _> = serde_json::from_str(
+            r#"{ "member_of_module": { "module": "./m", "member": "X", "object": "y" } }"#,
+        );
+        assert!(
+            result.is_err(),
+            "unknown member_of_module field must be rejected"
         );
     }
 }
