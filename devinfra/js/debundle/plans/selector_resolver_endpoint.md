@@ -53,13 +53,24 @@ are supplied by the `debundle_pipeline` rule at `gaffer-private//tana/re/web/78d
 (hand-running `debundle run` fails on missing `--tree-vendor-marks`/`--tree-source-root`/…).
 
 - **Query/measure/convert** (selector-debt, synthesize-selectors, match-selector, validate):
-  from `/home/user/gaffer-private`, `bazelisk run //tana/re:debundle_cli --config=nolint
---config=rbe --platforms= --remote_upload_local_results=false --remote_download_outputs=all
--- <subcommand> <args>` (the wrapper sets `DEBUNDLE_MODULES`/`SOURCE_ROOT`/`GRAPH`).
-  `selector-debt --modules <spec/modules>` also works via the raw binary (that's the 2193 count).
-- **Byte-identical gate**: `bazelisk build //tana/re/web/78d928dca7:debundle …` (pipeline
-  validates — selectors resolve uniquely) + `bazelisk test //tana/re/web/78d928dca7:regen_js_test`
-  (committed `js/` == pipeline output ⇒ an output-preserving conversion keeps it green; confirm).
+  the `debundle_cli` wrapper sets `DEBUNDLE_MODULES`/`SOURCE_ROOT`/`GRAPH`. **This degraded
+  session — verified flag forms (deviating breaks RBE):** `source
+devinfra/secrets/web_env.sh`, then `bazelisk
+--host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+--host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit run //tana/re:debundle_cli
+--config=nolint --config=rbe --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY
+--shell_executable=/bin/bash -- <subcommand>`. **Gotchas:** (1) **no `--platforms=`** — it
+  strips the RBE container identity ⇒ `PERMISSION_DENIED: Container identity unknown` on every
+  RBE-executed action (npm extract, regen); (2) **all bazel flags before `--`** (the `/tmp/bz`
+  wrapper appends `--config=rbe` etc. _after_ args, so for `run … -- …` they leak into the CLI
+  as `unexpected argument '--config'` — use raw `bazelisk` for `run`). First `run` compiles the
+  debundler locally (~few min); then fast. `selector-debt --modules <spec/modules>` also works
+  via a prebuilt raw binary (that's the count).
+- **Byte-identical gate**: `/tmp/bz test //tana/re/web/78d928dca7:regen_js_test --config=nolint`
+  (a `test`, so the appended flags are harmless). Verified PASSED on a fresh `--output_base`
+  (each lane worktree has its own) — i.e. parallel-lane-safe. **Do NOT add `--platforms=` or a
+  fresh `--output_base` via the AGENTS.md gate form here** — both reintroduce the container-identity
+  failure in this session.
 - **Test a NEW ducktape primitive against the real spec**: add `--config=source-debundler
 --override_module=ducktape=/home/user/ducktape-<lane>` to the gaffer build (see
   <gaffer//tana/re/web/AGENTS.md>).
