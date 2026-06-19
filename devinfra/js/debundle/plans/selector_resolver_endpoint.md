@@ -103,27 +103,43 @@ Each phase is a sequence of verified commits. A phase's gate authorizes the next
 
 ### Phase F — Replace & delete the hand-rolled matcher (headline goal)
 
-- **F0 (state):** the fact matcher (`selector_match` via `ChunkResolver`) already
-  reaches corpus parity standalone (differential = 0, per the worklist).
-  `DatalogResolver` is a stub; `ChunkResolver` does the work but may not cover all
-  three `SelectorResolver` methods.
-- **F1:** complete `DatalogResolver` as a full `SelectorResolver` — all three
-  methods (`resolve_member`, `resolve_member_group`, `resolve_anonymous_groups`)
-  delegate to `ChunkResolver`. Unit tests through the trait.
-- **F2:** route the three production call sites through
-  `DifferentialResolver<AstWildcard, Datalog>` in **shadow** (primary =
-  AstWildcard, behavior unchanged), with a divergence sink that fails the corpus
-  gate. Sites: `lowering/plans.rs::resolve_source_match`,
-  `lowering/materialize/plan_builder.rs` (binding-group),
-  `anonymous_resolution.rs::find_anonymous_statement_body_index_groups`.
-- **F3 (GATE):** corpus differential through the production-shadow path = **0**
-  over the real spec. Non-zero ⇒ diagnose each divergence and fix the fact matcher
-  **faithfully**; a divergence exposing an unencodable construct ⇒ **ABORT + write-up**.
-- **F4 (irreversible; gated on F3 = 0):** flip primary to Datalog
-  (`DifferentialResolver<Datalog, AstWildcard>`); one green corpus run.
-- **F5 (irreversible; gated):** delete `AstWildcardMatcher`, the `binding_resolution`
-  free functions, and all now-dead code — atomic, all references updated. Keep a
-  regression test that the fact resolver resolves the corpus.
+**State correction (execution, commit `7cf02821`→):** the runbook's original
+F0/F1 were stale. Reality on entry: the fact matcher reaches corpus parity
+standalone (the per-chunk differential is **green**, 0 disagreements, ~22s —
+<../debug/2026_06_18_per_chunk_gate_real_source.md>), **and `DatalogResolver`
+already fully implemented `SelectorResolver`** (all three methods, 14 tests).
+So F1 was done. The real remaining work is the **build-once-per-chunk seam** and
+the production wiring/flip/delete — sequenced below.
+
+- **F2-seam ✅ (done this run):** the per-call `SelectorResolver` trait (took
+  `module` per call) was a half-measure — only tests used it; production bypasses
+  it via the `binding_resolution` free functions, and the corpus binary already
+  builds `ChunkResolver` once. The trait is now **chunk-bound**: methods drop the
+  `module` arg, the implementor holds the chunk and builds its model once.
+  `AstWildcardResolver<'m>` wraps the borrow (production needs no precompute);
+  `ChunkResolver` impls it directly; the per-call `DatalogResolver` wrapper (which
+  rebuilt the whole EDB on every call — fatal in the 1751-request loop) is
+  **deleted**. Gate: `source_match_test` + `corpus_match_differential` build green.
+- **F2-wire (next):** thread one chunk-bound resolver, **built once per chunk**,
+  through the three production call sites, keeping production = `AstWildcardResolver`
+  (pure refactor, no behavior change). Sites: `lowering/plans.rs::resolve_source_match`,
+  `lowering/materialize/plan_builder.rs::resolve_request_source_matches` (member +
+  binding-group), `anonymous_resolution.rs`. The resolver is built in
+  `ChunkPlanBuilder` (where `runtime_module` is in scope) and shared across all
+  `add_explicit_request` calls. Gate: debundle e2e tests green + output unchanged.
+- **F3 (GATE):** corpus differential = **0** over the real spec — already green
+  standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
+  fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
+- **F4 (irreversible; gated on F3 = 0 + output byte-identical):** flip the
+  production resolver construction from `AstWildcardResolver` to `ChunkResolver`
+  (Datalog). **Deviation from the original runbook:** flip _directly_ rather than
+  via a permanent production `DifferentialResolver` — parity is already corpus-proven
+  and the byte-identical-output gate across the flip is a stronger proof than
+  doubling production cost forever. The differential stays the gate (corpus binary +
+  tests), not a hot-path fixture.
+- **F5 (irreversible; gated):** delete `AstWildcardMatcher`, the `AstWildcardResolver`
+  wrapper, and the `binding_resolution` free functions that only it backed — atomic,
+  all references updated. Keep the corpus differential as the standing regression.
 
 ### Phase X1 — `@Name` cross-references live (P4 step 1)
 
@@ -173,6 +189,8 @@ Each phase is a sequence of verified commits. A phase's gate authorizes the next
 Append a row per verified commit. (Pre-run state: kernel complete + proven on real
 data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 
-| phase | step                    | commit            | gate result                                        |
-| ----- | ----------------------- | ----------------- | -------------------------------------------------- |
-| (pre) | kernel + surface + plan | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist) |
+| phase | step                                                       | commit            | gate result                                                                    |
+| ----- | ---------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| (pre) | kernel + surface + plan                                    | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                             |
+| F     | runbook + state correct                                    | 7cf02821          | doc only                                                                       |
+| F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver | (this)            | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |

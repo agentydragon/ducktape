@@ -33,14 +33,16 @@ pub fn needle_matches(selector: &AnonymousStatementSelector, subject: &ModuleIte
     PreparedNeedle::new(needle, selector).matches(subject)
 }
 
-/// Resolve JS-template selectors against a parsed chunk. The two failure modes
-/// of every method are no-match and ambiguous (more than one claim); a `Result`
-/// `Ok` is the unique resolution.
+/// Resolve JS-template selectors against **one parsed chunk** the resolver is
+/// already bound to: an implementor builds its per-chunk model once (the fact
+/// resolver's EDB; production's nothing) and resolves many selectors against it,
+/// so a chunk with thousands of selectors pays the per-chunk setup once — not
+/// once per selector. The two failure modes of every method are no-match and
+/// ambiguous (more than one claim); a `Result` `Ok` is the unique resolution.
 pub trait SelectorResolver {
     /// Resolve a single-member `source_match` selector to its claimed binding.
     fn resolve_member(
         &self,
-        module: &Module,
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
@@ -50,7 +52,6 @@ pub trait SelectorResolver {
     /// bindings (selector-local target binding → matched binding).
     fn resolve_member_group(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
         exports_by_target: &BTreeMap<String, String>,
@@ -60,7 +61,6 @@ pub trait SelectorResolver {
     /// body-index groups (one inner vec per matched alignment).
     fn resolve_anonymous_groups(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>>;
@@ -68,36 +68,44 @@ pub trait SelectorResolver {
 
 /// Today's production matcher — the hand-rolled `AstWildcardMatcher`, exposed
 /// through the seam by delegating to the `binding_resolution` free functions.
-pub struct AstWildcardResolver;
+/// Holds only the chunk borrow: production keeps no per-chunk precompute (it
+/// prefilters per candidate at match time), so `new` is free and the per-call
+/// cost is the same as calling the free functions directly.
+pub struct AstWildcardResolver<'m> {
+    module: &'m Module,
+}
 
-impl SelectorResolver for AstWildcardResolver {
+impl<'m> AstWildcardResolver<'m> {
+    pub fn new(module: &'m Module) -> Self {
+        Self { module }
+    }
+}
+
+impl SelectorResolver for AstWildcardResolver<'_> {
     fn resolve_member(
         &self,
-        module: &Module,
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
-        resolve_member_binding(module, request_id, export_name, selector)
+        resolve_member_binding(self.module, request_id, export_name, selector)
     }
 
     fn resolve_member_group(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
         exports_by_target: &BTreeMap<String, String>,
     ) -> Result<ResolvedMemberBindingGroup> {
-        resolve_member_binding_group_match(module, request_id, selector, exports_by_target)
+        resolve_member_binding_group_match(self.module, request_id, selector, exports_by_target)
     }
 
     fn resolve_anonymous_groups(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
-        find_anonymous_statement_body_index_groups(module, request_id, selector)
+        find_anonymous_statement_body_index_groups(self.module, request_id, selector)
     }
 }
 
@@ -186,17 +194,16 @@ fn outcomes_agree<T: PartialEq>(primary: &Result<T>, shadow: &Result<T>) -> bool
 impl<P: SelectorResolver, S: SelectorResolver> SelectorResolver for DifferentialResolver<'_, P, S> {
     fn resolve_member(
         &self,
-        module: &Module,
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
         let primary = self
             .primary
-            .resolve_member(module, request_id, export_name, selector);
+            .resolve_member(request_id, export_name, selector);
         let shadow = self
             .shadow
-            .resolve_member(module, request_id, export_name, selector);
+            .resolve_member(request_id, export_name, selector);
         self.check(
             request_id,
             ResolverSite::Member {
@@ -209,32 +216,26 @@ impl<P: SelectorResolver, S: SelectorResolver> SelectorResolver for Differential
 
     fn resolve_member_group(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
         exports_by_target: &BTreeMap<String, String>,
     ) -> Result<ResolvedMemberBindingGroup> {
-        let primary =
-            self.primary
-                .resolve_member_group(module, request_id, selector, exports_by_target);
-        let shadow =
-            self.shadow
-                .resolve_member_group(module, request_id, selector, exports_by_target);
+        let primary = self
+            .primary
+            .resolve_member_group(request_id, selector, exports_by_target);
+        let shadow = self
+            .shadow
+            .resolve_member_group(request_id, selector, exports_by_target);
         self.check(request_id, ResolverSite::MemberGroup, primary, shadow)
     }
 
     fn resolve_anonymous_groups(
         &self,
-        module: &Module,
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
-        let primary = self
-            .primary
-            .resolve_anonymous_groups(module, request_id, selector);
-        let shadow = self
-            .shadow
-            .resolve_anonymous_groups(module, request_id, selector);
+        let primary = self.primary.resolve_anonymous_groups(request_id, selector);
+        let shadow = self.shadow.resolve_anonymous_groups(request_id, selector);
         self.check(
             request_id,
             ResolverSite::AnonymousStatements,
@@ -266,7 +267,6 @@ mod tests {
     impl SelectorResolver for RejectingResolver {
         fn resolve_member(
             &self,
-            _module: &Module,
             _request_id: &str,
             _export_name: &str,
             _selector: &AnonymousStatementSelector,
@@ -275,7 +275,6 @@ mod tests {
         }
         fn resolve_member_group(
             &self,
-            _module: &Module,
             _request_id: &str,
             _selector: &AnonymousStatementSelector,
             _exports_by_target: &BTreeMap<String, String>,
@@ -284,7 +283,6 @@ mod tests {
         }
         fn resolve_anonymous_groups(
             &self,
-            _module: &Module,
             _request_id: &str,
             _selector: &AnonymousStatementSelector,
         ) -> Result<Vec<Vec<usize>>> {
@@ -312,8 +310,8 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let module = two_const_module();
             let selector = member_selector("const readable = 2;");
-            let resolved = AstWildcardResolver
-                .resolve_member(&module, "test", "Beta", &selector)
+            let resolved = AstWildcardResolver::new(&module)
+                .resolve_member("test", "Beta", &selector)
                 .expect("selector should match exactly one const");
             assert_eq!(resolved.binding_name, "beta");
         });
@@ -326,12 +324,12 @@ mod tests {
             let selector = member_selector("const readable = 2;");
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
-                shadow: AstWildcardResolver,
+                primary: AstWildcardResolver::new(&module),
+                shadow: AstWildcardResolver::new(&module),
                 sink: &sink,
             };
             let resolved = differential
-                .resolve_member(&module, "test", "Beta", &selector)
+                .resolve_member("test", "Beta", &selector)
                 .expect("primary resolves");
             assert_eq!(resolved.binding_name, "beta");
             assert!(
@@ -348,14 +346,14 @@ mod tests {
             let selector = member_selector("const readable = 2;");
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
+                primary: AstWildcardResolver::new(&module),
                 shadow: RejectingResolver,
                 sink: &sink,
             };
             // The primary's answer is still returned — the shadow never affects
             // the result, only the divergence record.
             let resolved = differential
-                .resolve_member(&module, "mod/x", "Beta", &selector)
+                .resolve_member("mod/x", "Beta", &selector)
                 .expect("primary resolves even when the shadow rejects");
             assert_eq!(resolved.binding_name, "beta");
 
@@ -381,13 +379,13 @@ mod tests {
             let selector = member_selector("const readable = 99;");
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
+                primary: AstWildcardResolver::new(&module),
                 shadow: RejectingResolver,
                 sink: &sink,
             };
             assert!(
                 differential
-                    .resolve_member(&module, "test", "Beta", &selector)
+                    .resolve_member("test", "Beta", &selector)
                     .is_err(),
             );
             assert!(

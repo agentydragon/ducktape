@@ -453,7 +453,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
         }
         let datalog = chunk.resolve_member("corpus", "export", selector);
         let production =
-            AstWildcardResolver.resolve_member(&resolver_module, "corpus", "export", selector);
+            AstWildcardResolver::new(&resolver_module).resolve_member("corpus", "export", selector);
         match (&datalog, &production) {
             (Err(reason), Ok(_)) => {
                 fail_closed_members.push((selector.match_source.clone(), reason.to_string()))
@@ -480,7 +480,8 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
             classify_resolver(
                 &mut anonymous,
                 &chunk.resolve_anonymous_groups("corpus", selector),
-                &AstWildcardResolver.resolve_anonymous_groups(&resolver_module, "corpus", selector),
+                &AstWildcardResolver::new(&resolver_module)
+                    .resolve_anonymous_groups("corpus", selector),
             );
         }
     }
@@ -490,8 +491,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     let mut group_disagreements: Vec<(String, String, String)> = Vec::new();
     for case in &selectors.groups {
         let datalog = chunk.resolve_member_group(&case.request_id, &case.selector, &case.exports);
-        let production = AstWildcardResolver.resolve_member_group(
-            &resolver_module,
+        let production = AstWildcardResolver::new(&resolver_module).resolve_member_group(
             &case.request_id,
             &case.selector,
             &case.exports,
@@ -750,8 +750,7 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 },
                 || resolver.resolve_member(&case.module_path, "export", selector),
                 || {
-                    AstWildcardResolver.resolve_member(
-                        module,
+                    AstWildcardResolver::new(module).resolve_member(
                         &case.module_path,
                         "export",
                         selector,
@@ -774,11 +773,8 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 },
                 || resolver.resolve_anonymous_groups(&case.module_path, selector),
                 || {
-                    AstWildcardResolver.resolve_anonymous_groups(
-                        module,
-                        &case.module_path,
-                        selector,
-                    )
+                    AstWildcardResolver::new(module)
+                        .resolve_anonymous_groups(&case.module_path, selector)
                 },
                 &mut tally.datalog_time,
                 &mut tally.production_time,
@@ -797,8 +793,7 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 },
                 || resolver.resolve_member_group(&case.module_path, selector, exports),
                 || {
-                    AstWildcardResolver.resolve_member_group(
-                        module,
+                    AstWildcardResolver::new(module).resolve_member_group(
                         &case.module_path,
                         selector,
                         exports,

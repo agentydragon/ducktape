@@ -15,9 +15,6 @@
 
 use super::*;
 
-/// The fact-based resolver. See module docs.
-pub struct DatalogResolver;
-
 fn datalog_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
     match selector.identifiers {
         SourceMatchIdentifierMode::Exact => selector_match::Mode::Exact,
@@ -859,8 +856,8 @@ fn one_group_match(
     }
 }
 
-impl ChunkResolver<'_> {
-    pub fn resolve_member(
+impl SelectorResolver for ChunkResolver<'_> {
+    fn resolve_member(
         &self,
         request_id: &str,
         export_name: &str,
@@ -919,7 +916,7 @@ impl ChunkResolver<'_> {
             .ok_or_else(|| anyhow::anyhow!("datalog resolver: target binding index out of range"))
     }
 
-    pub fn resolve_member_group(
+    fn resolve_member_group(
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
@@ -962,7 +959,7 @@ impl ChunkResolver<'_> {
         resolve_group_general(self, &needles, request_id, selector, exports_by_target)
     }
 
-    pub fn resolve_anonymous_groups(
+    fn resolve_anonymous_groups(
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
@@ -979,37 +976,6 @@ impl ChunkResolver<'_> {
                 .map(|body_idx| vec![body_idx])
                 .collect(),
         )
-    }
-}
-
-impl SelectorResolver for DatalogResolver {
-    fn resolve_member(
-        &self,
-        module: &Module,
-        request_id: &str,
-        export_name: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<ResolvedMemberBinding> {
-        ChunkResolver::new(module).resolve_member(request_id, export_name, selector)
-    }
-
-    fn resolve_member_group(
-        &self,
-        module: &Module,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-        exports_by_target: &BTreeMap<String, String>,
-    ) -> Result<ResolvedMemberBindingGroup> {
-        ChunkResolver::new(module).resolve_member_group(request_id, selector, exports_by_target)
-    }
-
-    fn resolve_anonymous_groups(
-        &self,
-        module: &Module,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<Vec<usize>>> {
-        ChunkResolver::new(module).resolve_anonymous_groups(request_id, selector)
     }
 }
 
@@ -1072,13 +1038,13 @@ mod tests {
                  DECLARATORS_AFTER = null;",
             );
             let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let datalog = DatalogResolver
-                .resolve_member_group(&chunk, "test", &selector, &exports)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member_group("test", &selector, &exports)
                 .expect("datalog resolves the group");
             assert_eq!(datalog.bindings["a"].binding_name, "aClass");
             assert_eq!(datalog.bindings["b"].binding_name, "bClass");
-            let production = AstWildcardResolver
-                .resolve_member_group(&chunk, "test", &selector, &exports)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member_group("test", &selector, &exports)
                 .expect("production resolves the group");
             assert_eq!(datalog, production);
         });
@@ -1092,13 +1058,13 @@ mod tests {
             let chunk = module("init();\nconst alpha = makeA();\nconst beta = makeB();\n");
             let selector = group("init();\nconst a = makeA();\nconst b = makeB();");
             let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let datalog = DatalogResolver
-                .resolve_member_group(&chunk, "test", &selector, &exports)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member_group("test", &selector, &exports)
                 .expect("datalog resolves the general group");
             assert_eq!(datalog.bindings["a"].binding_name, "alpha");
             assert_eq!(datalog.bindings["b"].binding_name, "beta");
-            let production = AstWildcardResolver
-                .resolve_member_group(&chunk, "test", &selector, &exports)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member_group("test", &selector, &exports)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1110,11 +1076,11 @@ mod tests {
             let chunk = module("function alpha(n) { return n + 1; }\nconst beta = alpha(2);\n");
             // A function with a body the alpha selector matches structurally.
             let selector = member("function f(x) { return x + 1; }", Some("f"));
-            let datalog = DatalogResolver
-                .resolve_member(&chunk, "test", "Alpha", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "Alpha", &selector)
                 .expect("datalog resolves the function");
-            let production = AstWildcardResolver
-                .resolve_member(&chunk, "test", "Alpha", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member("test", "Alpha", &selector)
                 .expect("production resolves the function");
             assert_eq!(datalog.binding_name, "alpha");
             assert_eq!(datalog, production);
@@ -1130,12 +1096,12 @@ mod tests {
             let selector = member("function f() { return 7; }", None);
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
-                shadow: DatalogResolver,
+                primary: AstWildcardResolver::new(&chunk),
+                shadow: ChunkResolver::new(&chunk),
                 sink: &sink,
             };
             let resolved = differential
-                .resolve_member(&chunk, "test", "Alpha", &selector)
+                .resolve_member("test", "Alpha", &selector)
                 .expect("primary resolves");
             assert_eq!(resolved.binding_name, "alpha");
             assert!(
@@ -1153,12 +1119,12 @@ mod tests {
             // statement — only declarator-level matching finds it.
             let chunk = module("const a = 1, target = compute();\nconst other = 2;\n");
             let selector = member("const x = compute();", Some("x"));
-            let datalog = DatalogResolver
-                .resolve_member(&chunk, "test", "X", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "X", &selector)
                 .expect("datalog resolves the inner declarator");
             assert_eq!(datalog.binding_name, "target");
-            let production = AstWildcardResolver
-                .resolve_member(&chunk, "test", "X", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member("test", "X", &selector)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1176,14 +1142,12 @@ mod tests {
             let selector = member("const x = compute();", Some("x"));
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
-                shadow: DatalogResolver,
+                primary: AstWildcardResolver::new(&chunk),
+                shadow: ChunkResolver::new(&chunk),
                 sink: &sink,
             };
             assert!(
-                differential
-                    .resolve_member(&chunk, "test", "X", &selector)
-                    .is_err(),
+                differential.resolve_member("test", "X", &selector).is_err(),
                 "two declarators with the same init are ambiguous",
             );
             assert!(
@@ -1206,12 +1170,12 @@ mod tests {
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            let datalog = DatalogResolver
-                .resolve_member(&chunk, "test", "C", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "C", &selector)
                 .expect("datalog resolves the declarator-hole target");
             assert_eq!(datalog.binding_name, "theClass");
-            let production = AstWildcardResolver
-                .resolve_member(&chunk, "test", "C", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member("test", "C", &selector)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1231,14 +1195,12 @@ mod tests {
             );
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
-                shadow: DatalogResolver,
+                primary: AstWildcardResolver::new(&chunk),
+                shadow: ChunkResolver::new(&chunk),
                 sink: &sink,
             };
             assert!(
-                differential
-                    .resolve_member(&chunk, "test", "C", &selector)
-                    .is_err(),
+                differential.resolve_member("test", "C", &selector).is_err(),
                 "two matching owners are ambiguous",
             );
             assert!(
@@ -1264,12 +1226,12 @@ mod tests {
                 "function f(x) { return x + 1; }\nconst t = makeThing();",
                 Some("t"),
             );
-            let datalog = DatalogResolver
-                .resolve_member(&chunk, "test", "T", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "T", &selector)
                 .expect("datalog resolves the windowed single-declarator target");
             assert_eq!(datalog.binding_name, "theTarget");
-            let production = AstWildcardResolver
-                .resolve_member(&chunk, "test", "T", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member("test", "T", &selector)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1289,14 +1251,12 @@ mod tests {
             );
             let sink = CollectingSink::default();
             let differential = DifferentialResolver {
-                primary: AstWildcardResolver,
-                shadow: DatalogResolver,
+                primary: AstWildcardResolver::new(&chunk),
+                shadow: ChunkResolver::new(&chunk),
                 sink: &sink,
             };
             assert!(
-                differential
-                    .resolve_member(&chunk, "test", "T", &selector)
-                    .is_err(),
+                differential.resolve_member("test", "T", &selector).is_err(),
                 "two matching windows are ambiguous",
             );
             assert!(
@@ -1323,12 +1283,12 @@ mod tests {
                 "function f(x) { return x; }\nconst m = ANYTHING, DECLARATORS = null;",
                 Some("m"),
             );
-            let datalog = DatalogResolver
-                .resolve_member(&chunk, "test", "M", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "M", &selector)
                 .expect("datalog resolves the windowed declarator-hole target");
             assert_eq!(datalog.binding_name, "theTarget");
-            let production = AstWildcardResolver
-                .resolve_member(&chunk, "test", "M", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_member("test", "M", &selector)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1348,12 +1308,12 @@ mod tests {
                 target_statements: Some(spec::TargetStatements::Indices(vec![0, 1])),
                 wildcard_string_literals: BTreeSet::new(),
             };
-            let datalog = DatalogResolver
-                .resolve_anonymous_groups(&chunk, "test", &selector)
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_anonymous_groups("test", &selector)
                 .expect("datalog resolves the multi-statement window");
             assert_eq!(datalog, vec![vec![1, 2]]);
-            let production = AstWildcardResolver
-                .resolve_anonymous_groups(&chunk, "test", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_anonymous_groups("test", &selector)
                 .expect("production resolves");
             assert_eq!(datalog, production);
         });
@@ -1364,13 +1324,13 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let chunk = module("init();\nregister(widget);\nteardown();\n");
             let selector = member("register(ANYTHING);", None);
-            let groups = DatalogResolver
-                .resolve_anonymous_groups(&chunk, "test", &selector)
+            let groups = ChunkResolver::new(&chunk)
+                .resolve_anonymous_groups("test", &selector)
                 .expect("datalog resolves the anonymous statement");
             // matches exactly the `register(widget);` statement at body index 1.
             assert_eq!(groups, vec![vec![1]]);
-            let production = AstWildcardResolver
-                .resolve_anonymous_groups(&chunk, "test", &selector)
+            let production = AstWildcardResolver::new(&chunk)
+                .resolve_anonymous_groups("test", &selector)
                 .expect("production resolves");
             assert_eq!(groups, production);
         });

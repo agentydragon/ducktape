@@ -92,7 +92,7 @@ pub use binding_resolution::{
     resolve_member_binding_group_match, source_match_body_debt,
     source_match_declared_binding_names,
 };
-pub use datalog_resolver::{ChunkResolver, DatalogResolver};
+pub use datalog_resolver::ChunkResolver;
 pub use resolver::{
     AstWildcardResolver, DifferentialResolver, DisagreementSink, ResolverDisagreement,
     ResolverOutcome, ResolverSite, SelectorResolver, needle_matches,
