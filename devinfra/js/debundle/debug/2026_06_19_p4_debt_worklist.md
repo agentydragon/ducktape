@@ -37,10 +37,40 @@ separately-identified entity** instead of by its own minified name.
   - `alias_owner_for(@Name)` — the unique var-decl aliasing `@Name`
     (`const X = @Name`); pins a re-export by the class it aliases.
     Both return `None` on zero-or-several (per-target categoricity). 6/6 tests green.
-- **Remaining for Step 1:** surface syntax for the `@Name` anchor + the resolver
-  seam that feeds these into real selectors (the kernel is solver-internal so
-  far); the AST-level `calls` refinement (reference that is _specifically a
-  call_) over the parsed chunk.
+- **Proven on real data + refined** (commit `1ed920f2`): running the kernel on an
+  `owner_graph.json` the real pipeline emits caught that `export { X }` and
+  side-effect statements are owners that reference _every_ binding they touch, so
+  `references` now requires the referencer to be a _declaring_ owner (a `@Name`
+  target has identity). `e2e/selector_solve_cross_reference_test` proves a
+  delegator (`UBt→EBt`) and an alias (`const HI = UJ`) resolve on the emitted
+  graph; consumer owners are correctly excluded.
+
+**Remaining for Step 1 — the `@Name` selector (architecture).** The kernel
+resolves at owner granularity; making `@Name` usable in real selectors is:
+
+- **Surface** (`spec.rs`): a third `MemberSelectorSpec` variant beside `Binding`
+  and `SourceMatch` — `CrossRef`. A member's `selector` gains a `cross_ref` field;
+  `MemberSelector::selected()` enforces exactly-one-of {`binding`, `source_match`,
+  `cross_ref`}. Shape: `cross_ref: { references | aliases: @Name, kind?:
+function_declaration | class_declaration | variable_declarator }`. Fail-closed
+  (`deny_unknown_fields`; exactly one relation). Reuses the existing
+  `BindingSourceKind` enum for `kind`.
+- **Anchor semantics**: `@Name` is a global logic variable (per "Scoping
+  (resolved)" in the plan) — the binding the member `Name` resolves to. MVP:
+  resolve anchor members first (topologically), then cross-ref members against
+  their resolved bindings.
+- **Resolution**: owner-graph-only via `referencer_for` / `alias_owner_for`, plus
+  a `kind` filter (`stmt_kind`, already in the EDB) for the cases where several
+  declaring owners reference one anchor. Categorical / fail-closed.
+- **Plumbing — the architectural step**: cross-ref resolution needs a resolution
+  _context_ (owner graph + already-resolved anchor bindings) that the per-member,
+  per-chunk `SelectorResolver` trait does not carry. Step 1 therefore finishes
+  with a small **global-solve pass** (resolve anchors, then cross-refs) — the seed
+  of the one-solve P4/P5 want. This is the larger remaining chunk; the kernel and
+  the real-data gate are done.
+- Distinguishing `calls` (a call) from a bare `references` needs AST-level facts
+  and is a later refinement; owner-graph `references` + `kind` covers the MVP debt
+  shapes.
 
 ### Step 2 — `reads_member`
 
