@@ -15,8 +15,6 @@
 
 use super::*;
 
-use swc_common::DUMMY_SP;
-
 /// The fact-based resolver. See module docs.
 pub struct DatalogResolver;
 
@@ -27,15 +25,11 @@ fn datalog_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
     }
 }
 
-/// Facts for a single top-level statement (wrapped in a one-item module so the
-/// extractor's owner-ordinal join and the matcher's root anchoring see one root).
+/// Facts for a single top-level statement. Extracts from the borrowed item (one
+/// item being one root) — no per-call clone into a one-item `Module`, which on the
+/// per-selector hot path was the resolver's main overhead over production.
 fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
-    let module = Module {
-        span: DUMMY_SP,
-        body: vec![item.clone()],
-        shebang: None,
-    };
-    chunk_facts::extract_facts(&module).ok()
+    chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
 /// One chunk's relational model, built once: the AST plus its top-level body

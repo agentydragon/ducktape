@@ -238,3 +238,35 @@ non-resolution on this snapshot), which is agreement. The gate counts only
 Parity is now **proven** over the corpus, the goal's bar. Perf remains the
 ~36 min/pass cost (Track 1) — fine for a gate, still worth the algorithmic
 candidate-index lever before this is a routine pre-commit check.
+
+## Throughput — full differential 200s → 22s (2026-06-19)
+
+With parity proven, drove the per-chunk gate's wall time down. The `-c opt` build
+alone already cut the (fastbuild) ~36 min figure to ~200s; from there, five
+landed changes took the full 8306-selector differential to ~22s wall
+(`dl 43s | prod 37s | tot 20s` on 4 cores), still green:
+
+1. **Precompile regex predicates once per needle** (749s → 128s datalog). `homo`
+   recompiled each `STR_LITERAL_MATCHING_RE` pattern on every candidate; the
+   CSS-module class-name members scan every string-literal declarator, so the
+   compile — not the match — dominated. The `Index` now compiles each predicate
+   once at build.
+2. **Invariant-token candidate index** (128s → 110s). A token → containing-
+   statement inverted index (string/number literals, member names, regex
+   literals; hole keywords like `CLASS_REST` excluded) lets a selector visit only
+   candidates sharing its tokens, intersected across all the needle's tokens.
+   Wired into the single-statement and single-declarator scans.
+3. **Token-index the declarator-hole owner scan** (110s → 43s — the big one).
+   `resolve_declarator_hole_member` ran a full declarator alignment per candidate
+   binding over _every_ var-decl owner; the giant `initBundle` owner made it the
+   dominant cost. The needle's fixed declarators pin tokens, so the same index
+   narrows the owner scan.
+
+After these the datalog resolver (17× faster than the session's start) is **on
+par with the hand-rolled production matcher** (43s vs 37s CPU): the pathological
+shapes are gone and the residual is the inherent per-selector parse+match both
+resolvers pay. The differential's floor on 4 cores is ~20s because it runs _both_
+resolvers; the datalog resolver alone (the production deliverable) is ~13s. Going
+materially below that needs >4 cores, a datalog-only routine mode (full
+differential run less often), or giving the production oracle its own
+`BodyIndexFilter` candidate index in the differential.

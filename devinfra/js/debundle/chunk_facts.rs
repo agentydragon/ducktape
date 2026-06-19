@@ -1038,9 +1038,16 @@ impl Extractor {
 /// Project a parsed chunk's top-level statements into AST facts, or fail loudly
 /// at the first construct not yet modeled.
 pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
+    extract_facts_items(&module.body)
+}
+
+/// Like [`extract_facts`], but over a borrowed item slice — so a caller projecting
+/// one statement at a time (the resolver's per-needle facts) need not clone the
+/// item into a one-item [`Module`] first.
+pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupported> {
     let mut extractor = Extractor::default();
-    for (body_idx, item) in module.body.iter().enumerate() {
-        let ordinal = statement_ordinal_for_body_index(&module.body, body_idx);
+    for (body_idx, item) in items.iter().enumerate() {
+        let ordinal = statement_ordinal_for_body_index(items, body_idx);
         extractor.module_item(item, ordinal)?;
     }
     Ok(extractor.facts)
