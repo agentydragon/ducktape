@@ -977,13 +977,19 @@ pub fn var_declarator_init_kind(facts: &ChunkFacts) -> Option<&'static str> {
     init_node_of(&index).map(|init| index.kind_of(init))
 }
 
-/// Like [`var_declarator_init_kind`], but `None` when the needle's init is a
-/// single-node hole (`EXPR`/`ANYTHING`) — which matches any subject init, so no
-/// prefilter applies and the caller must run the full match.
+/// Like [`var_declarator_init_kind`], but `None` when the needle's init does not
+/// constrain the subject init kind: a single-node hole (`EXPR`/`ANYTHING`)
+/// matches any init, and a `STR_LITERAL_MATCHING_RE(...)` predicate is a `Call`
+/// in the needle that matches a `StrLit` subject — a deliberate cross-kind match.
+/// Skipping on init-kind mismatch in either case would drop valid declarators
+/// (mirrors the same two carve-outs in [`needle_root_kind_prefilter`]).
 pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<&'static str> {
     let index = Index::build(needle);
     let init = init_node_of(&index)?;
-    (!is_single_node_hole(&index, init)).then(|| index.kind_of(init))
+    if is_single_node_hole(&index, init) || regex_predicate_pattern(&index, init).is_some() {
+        return None;
+    }
+    Some(index.kind_of(init))
 }
 
 /// The init node of a single-declarator var-decl statement: `var_decl_node` →
