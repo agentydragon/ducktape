@@ -71,6 +71,9 @@ struct VarDeclaratorSubject {
     body_idx: usize,
     declarator_idx: usize,
     index: selector_match::Index,
+    /// The declarator's init-expression kind, cached for the sound init-kind
+    /// prefilter (most var-decl member scans reject on init kind without a match).
+    init_kind: Option<&'static str>,
 }
 
 impl<'m> ChunkResolver<'m> {
@@ -98,6 +101,7 @@ impl<'m> ChunkResolver<'m> {
                     var_declarator_subjects.push(VarDeclaratorSubject {
                         body_idx,
                         declarator_idx,
+                        init_kind: selector_match::var_declarator_init_kind(&facts),
                         index: selector_match::Index::build(&facts),
                     });
                 }
@@ -213,10 +217,17 @@ fn resolve_var_declarator_member(
     };
     // Match the needle against each var-decl owner's declarator via the cached
     // synthetic single-declarator indices (built once for the chunk), so this
-    // scan is index-build-free.
+    // scan is index-build-free. A sound init-kind prefilter skips declarators
+    // whose initializer kind cannot match the needle's, without a full match.
     let needle_index = selector_match::Index::build(&needle_facts);
+    let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
     for subject in &chunk.var_declarator_subjects {
+        if let Some(kind) = init_prefilter
+            && subject.init_kind != Some(kind)
+        {
+            continue;
+        }
         if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
             .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
         {
@@ -638,11 +649,17 @@ fn resolve_group_single_declarator(
     let needle_facts = item_facts(needle)
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
+    let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mode = datalog_mode(selector);
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
     for subject in &chunk.var_declarator_subjects {
+        if let Some(kind) = init_prefilter
+            && subject.init_kind != Some(kind)
+        {
+            continue;
+        }
         if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
             .expect("needle construct already probed as supported")
         {

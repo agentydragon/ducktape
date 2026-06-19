@@ -966,6 +966,34 @@ pub fn subject_root_kind(facts: &ChunkFacts) -> Option<&'static str> {
         .map(|(_, kind)| *kind)
 }
 
+/// The init-expression node kind of a single-declarator var-decl statement's
+/// first declarator (the `VarDeclarator` child at ordinal 1), or `None` when
+/// there is no init. A **sound secondary prefilter** for the var-decl member
+/// scan: a subject declarator can only match the needle declarator if their init
+/// kinds agree (the root-kind prefilter does not discriminate — every var-decl
+/// shares kind `VarDecl`). `None` returns fall through to the full match.
+pub fn var_declarator_init_kind(facts: &ChunkFacts) -> Option<&'static str> {
+    let index = Index::build(facts);
+    init_node_of(&index).map(|init| index.kind_of(init))
+}
+
+/// Like [`var_declarator_init_kind`], but `None` when the needle's init is a
+/// single-node hole (`EXPR`/`ANYTHING`) — which matches any subject init, so no
+/// prefilter applies and the caller must run the full match.
+pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<&'static str> {
+    let index = Index::build(needle);
+    let init = init_node_of(&index)?;
+    (!is_single_node_hole(&index, init)).then(|| index.kind_of(init))
+}
+
+/// The init node of a single-declarator var-decl statement: `var_decl_node` →
+/// first `VarDeclarator` → its `init` child (declarator child ordinal 1).
+fn init_node_of(index: &Index) -> Option<NodeId> {
+    let (_, var_decl) = var_decl_node(index)?;
+    let &declarator = index.children_of(var_decl).first()?;
+    index.children_of(declarator).get(1).copied()
+}
+
 /// True iff a needle root (one statement's facts) is a module-level `STMT_LIST`
 /// hole — an expression statement whose sole child is the keyword. These
 /// separate the needle's fixed segments at the top level (mirrors
