@@ -148,46 +148,59 @@ impl<'m> ChunkResolver<'m> {
     }
 
     /// Indices into `var_declarator_subjects` a single-declarator needle could
-    /// match — the rarest required-token postings (sound superset), or all
-    /// declarators when the needle pins no invariant token. Mirrors
-    /// [`Self::candidate_bodies`] for the declarator scan.
+    /// match — the intersection of every required token's postings (sound
+    /// superset), or all declarators when the needle pins no invariant token.
+    /// Mirrors [`Self::candidate_bodies`] for the declarator scan.
     fn candidate_declarators(&self, needle_index: &selector_match::Index) -> Vec<usize> {
-        let tokens = selector_match::invariant_tokens(needle_index);
-        if tokens.is_empty() {
-            return (0..self.var_declarator_subjects.len()).collect();
-        }
-        let mut rarest: Option<&Vec<usize>> = None;
-        for token in &tokens {
-            let Some(postings) = self.declarator_tokens.get(token) else {
-                return Vec::new();
-            };
-            if rarest.is_none_or(|current| postings.len() < current.len()) {
-                rarest = Some(postings);
-            }
-        }
-        rarest.cloned().unwrap_or_default()
+        intersect_postings(
+            &self.declarator_tokens,
+            &selector_match::invariant_tokens(needle_index),
+            self.var_declarator_subjects.len(),
+        )
     }
 
-    /// Body indices a needle could match: the rarest required-token postings list
-    /// (a sound superset — every match carries that token), or every body index
-    /// when the needle pins no invariant token. If any required token is absent
-    /// from the chunk, nothing can match.
+    /// Body indices a needle could match: the **intersection** of every required
+    /// token's postings (a sound superset — every match carries every token), or
+    /// every body index when the needle pins no invariant token. Intersecting
+    /// (not just taking the rarest list) is what shrinks the candidate set for
+    /// needles whose tokens are individually common but jointly rare.
     fn candidate_bodies(&self, needle_index: &selector_match::Index) -> Vec<usize> {
-        let tokens = selector_match::invariant_tokens(needle_index);
-        if tokens.is_empty() {
-            return (0..self.body_indices.len()).collect();
-        }
-        let mut rarest: Option<&Vec<usize>> = None;
-        for token in &tokens {
-            let Some(postings) = self.body_tokens.get(token) else {
-                return Vec::new();
-            };
-            if rarest.is_none_or(|current| postings.len() < current.len()) {
-                rarest = Some(postings);
-            }
-        }
-        rarest.cloned().unwrap_or_default()
+        intersect_postings(
+            &self.body_tokens,
+            &selector_match::invariant_tokens(needle_index),
+            self.body_indices.len(),
+        )
     }
+}
+
+/// Intersect the postings lists of every `token` (each a sorted, ascending index
+/// list) into the candidate set. Empty `tokens` ⟹ scan everything (`0..total`);
+/// a token absent from `index` ⟹ no candidate can match. Postings are intersected
+/// smallest-first via binary search, so the cost is bounded by the rarest token.
+fn intersect_postings(
+    index: &std::collections::HashMap<selector_match::Token, Vec<usize>>,
+    tokens: &[selector_match::Token],
+    total: usize,
+) -> Vec<usize> {
+    if tokens.is_empty() {
+        return (0..total).collect();
+    }
+    let mut postings: Vec<&Vec<usize>> = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        match index.get(token) {
+            Some(list) => postings.push(list),
+            None => return Vec::new(),
+        }
+    }
+    postings.sort_by_key(|list| list.len());
+    let mut candidates = postings[0].clone();
+    for list in &postings[1..] {
+        candidates.retain(|candidate| list.binary_search(candidate).is_ok());
+        if candidates.is_empty() {
+            break;
+        }
+    }
+    candidates
 }
 
 /// Top-level body indices whose statement the needle matches under the fact
