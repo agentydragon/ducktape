@@ -173,6 +173,12 @@ pub struct Index {
     /// as a separate relation because it is not a child member. `homo` compares
     /// it for `Class` nodes (mirrors production's `match_class` super_class arm).
     super_class: Vec<Option<NodeId>>,
+    /// `STR_LITERAL_MATCHING_RE(...)` predicate node -> its compiled pattern,
+    /// built once when the index is built (only needle indices carry predicates;
+    /// the marker keyword never appears in real subject source). `homo` looks the
+    /// regex up instead of recompiling it per candidate — the regex compile, not
+    /// the match, dominated the CSS-module class-name member scans.
+    predicate_regex: HashMap<NodeId, Regex>,
     roots: Vec<NodeId>,
 }
 
@@ -209,7 +215,7 @@ impl Index {
         for (class, super_node) in &facts.super_class {
             super_class[*class as usize] = Some(*super_node);
         }
-        Index {
+        let mut index = Index {
             kind,
             children,
             ident: label(&facts.ident_name),
@@ -220,8 +226,21 @@ impl Index {
             operator: label(&facts.operator),
             regex,
             super_class,
+            predicate_regex: HashMap::new(),
             roots: facts.top_level.iter().map(|(id, _)| *id).collect(),
+        };
+        // Compile each `STR_LITERAL_MATCHING_RE(...)` predicate once now (the
+        // structure needed to detect one is fully built above). A pattern that
+        // fails to compile is simply absent — `homo` then matches nothing, as the
+        // per-candidate `Regex::new(...).is_ok_and(...)` did before.
+        for node in 0..n as NodeId {
+            if let Some(pattern) = regex_predicate_pattern(&index, node)
+                && let Ok(compiled) = Regex::new(pattern)
+            {
+                index.predicate_regex.insert(node, compiled);
+            }
         }
+        index
     }
 
     fn children_of(&self, id: NodeId) -> &[NodeId] {
@@ -461,11 +480,12 @@ fn homo(
     // whose value matches `re` (an invalid pattern matches nothing), not by
     // structure. Checked before the kind comparison (the needle is a `Call`, the
     // subject a `StrLit`). Mirrors `holes.rs::string_literal_matches_regex`.
-    if let Some(pattern) = regex_predicate_pattern(needle, nid) {
+    if regex_predicate_pattern(needle, nid).is_some() {
         return Ok(subject.kind_of(sid) == "StrLit"
-            && subject
-                .str_lit_of(sid)
-                .is_some_and(|value| Regex::new(pattern).is_ok_and(|re| re.is_match(value))));
+            && match (needle.predicate_regex.get(&nid), subject.str_lit_of(sid)) {
+                (Some(re), Some(value)) => re.is_match(value),
+                _ => false,
+            });
     }
 
     // Structural equality: kind, then non-identifier labels (always exact),
@@ -1007,17 +1027,22 @@ pub fn var_declarator_init_kind(facts: &ChunkFacts) -> Option<&'static str> {
     init_node_of(&index).map(|init| index.kind_of(init))
 }
 
-/// Like [`var_declarator_init_kind`], but `None` when the needle's init does not
-/// constrain the subject init kind: a single-node hole (`EXPR`/`ANYTHING`)
-/// matches any init, and a `STR_LITERAL_MATCHING_RE(...)` predicate is a `Call`
-/// in the needle that matches a `StrLit` subject — a deliberate cross-kind match.
-/// Skipping on init-kind mismatch in either case would drop valid declarators
-/// (mirrors the same two carve-outs in [`needle_root_kind_prefilter`]).
+/// The subject init kind a needle declarator requires, or `None` when it
+/// constrains nothing (a single-node `EXPR`/`ANYTHING` init hole matches any
+/// init). A `STR_LITERAL_MATCHING_RE(...)` predicate is a `Call` in the needle,
+/// but [`homo`] matches it only against a `StrLit` subject — so the kind it
+/// *requires* is `StrLit`, not its own `Call` kind. Returning that (rather than
+/// `None`) keeps the prefilter both sound and selective: the CSS-module
+/// class-name members (`const x = STR_LITERAL_MATCHING_RE(…)`, the bulk of the
+/// per-chunk cost) scan only string-literal declarators, not every declarator.
 pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<&'static str> {
     let index = Index::build(needle);
     let init = init_node_of(&index)?;
-    if is_single_node_hole(&index, init) || regex_predicate_pattern(&index, init).is_some() {
+    if is_single_node_hole(&index, init) {
         return None;
+    }
+    if regex_predicate_pattern(&index, init).is_some() {
+        return Some("StrLit");
     }
     Some(index.kind_of(init))
 }
