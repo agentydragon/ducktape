@@ -129,13 +129,17 @@ the production wiring/flip/delete — sequenced below.
   Production stays `AstWildcardResolver` (the seam delegates to the same free
   functions — behaviorally identical). Gate: `lowering_test` + e2e
   `{edit_gate_source_match,binding_name_resolution,gate}_cli_test` green.
-- **F2-wire-anon (next):** the two anonymous paths still call the free functions —
-  the chunk-bound ordinals path (`lowering/anonymous.rs::resolve_anonymous_statement_ordinals`,
-  resolves against `runtime_module`) and the per-source co-move path
-  (`anonymous_resolution.rs`, resolves against each `parsed.module`). Thread the
-  seam through both (the ordinals path shares the chunk resolver; the co-move path
-  builds one resolver per parsed source). Needed before the flip so **every** path
-  goes through the seam. Gate: anonymous e2e tests green + output unchanged.
+- **F2-wire-anon-ordinals ✅ (done this run):** the chunk-bound anonymous path
+  (`lowering/anonymous.rs::resolve_anonymous_statement_ordinals`) now routes through
+  `ctx.selector_resolver.resolve_anonymous_groups`; the exactly-one-group
+  categoricity that lived in `resolve_anonymous_statement_body_indices` moved to the
+  caller (`one_anonymous_group`), so the flip carries this path too. Gate:
+  `lowering_test` + e2e `{peel_factorize_extend_anonymous,gate,edit_gate_source_match}_cli_test`.
+- **F2-wire-anon-comove (next):** the per-source co-move path
+  (`anonymous_resolution.rs`, resolves each `parsed.module`) still calls the free
+  function. Build one resolver per parsed source (once, outside the selector loop —
+  the flip needs build-once here too) and route through `resolve_anonymous_groups`.
+  Last path before the flip so **every** path goes through the seam.
 - **F3 (GATE):** corpus differential = **0** over the real spec — already green
   standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
   fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
@@ -203,4 +207,5 @@ data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 | (pre) | kernel + surface + plan                                                     | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                             |
 | F     | runbook + state correct                                                     | 7cf02821          | doc only                                                                       |
 | F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver                  | 7306ce37          | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |
-| F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | (this)            | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
+| F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | 40f34b9b          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
+| F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | (this)            | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |

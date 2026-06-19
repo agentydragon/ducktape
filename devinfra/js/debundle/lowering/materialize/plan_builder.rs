@@ -604,7 +604,7 @@ impl ChunkPlanBuilder {
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims = resolve_anonymous_statement_ordinals(
             request,
-            ctx.runtime_module,
+            ctx.selector_resolver,
             self.keep_going,
             &mut self.anonymous_statement_diagnostics,
         )?;
