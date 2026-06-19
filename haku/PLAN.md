@@ -78,10 +78,10 @@ items under its own credentials. Each role:
   agent account or me) changed what, when, and why, with diffs. Provisioned by
   `tf/gitops/haku-state` (the `augur-evidence` pattern): the `haku` service
   user owns it, I review as Forgejo site-admin.
-- **Dashboard** — v0 is **just a view of git**. It is the value-sorted
-  `dashboard/index.html` Haku regenerates from its items, served read-only behind
-  Authentik by an nginx + git-sync Deployment (see phase 2). There is no separate
-  `items.md` — the HTML is the single rendered view.
+- **Dashboard** — v0 is **just a view of git**. The `haku/console` service (a React
+  SPA over a JSON API) renders the value-sorted view from `items/` at request time,
+  served behind Authentik (see phase 2). There is no separate `items.md` and no page
+  Haku regenerates — the console renders.
   Exactly three affordances per item,
   all of which are commits: **hand off** (follow the handoff URL, mark
   `in_progress`), **archive** (flip to a terminal status), and **leave

@@ -62,9 +62,9 @@ bottom:
    items past `deadline` (or no longer possible). **Keep valid lower-priority
    items `open` as the backlog** — don't drop or expire them just to shorten the
    list; ranking and the dashboard's tiering keep it scannable. The dashboard console
-   server-renders the live site from `items/` on its own, so there's no page to
-   regenerate — only touch `dashboard/templates/{page.html.j2,style.css}` if you want
-   to change the look (per the manual — see _Dashboard_).
+   renders the live site from `items/` on its own, so there's no page to regenerate
+   and no templates to maintain — the look lives in the console's bundle (see
+   _Dashboard_).
 7. **Log**: append a run entry to **today's daily log file** (`log/YYYY-MM-DD.md`
    — one file per day, never one monolithic journal) — what you scanned, what you
    found, what you chose not to file and why (one line each). Compact or prune old

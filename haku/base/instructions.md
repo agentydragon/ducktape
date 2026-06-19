@@ -397,12 +397,11 @@ What the console renders (so you know what the operator sees):
   `clicks/` overlay and `intake/` notes (see the _Item contract_) — which you reduce
   each run.
 
-You shape **content** by writing good items; you shape **look** by _optionally_
-committing `dashboard/templates/{page.html.j2,style.css}` overrides, which the console
-loads in place of its baked defaults (and **fails safe** to those defaults if an
-override is missing or broken, so a bad commit can't take the dashboard down). You no
-longer author a generator or commit `dashboard/index.html` — the console renders. Never
-put secrets in items or templates (the item rules already forbid this).
+You shape **content** by writing good items; the **look** lives in the console's React
+bundle and changes only with a ducktape rebuild — there are no runtime template
+overrides. You author no generator and commit no `dashboard/` page, templates, or
+`index.html`; the console renders from `items/` on its own. Never put secrets in items
+(the item rules already forbid this).
 
 ## Playbooks
 
