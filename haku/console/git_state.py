@@ -1,9 +1,9 @@
 """Owns a working clone of the haku-state repo: read items/templates, and apply
 operator actions as git commits.
 
-The arm is a **second writer** to haku-state ``main`` (Haku's runs are the other),
+The console is a **second writer** to haku-state ``main`` (Haku's runs are the other),
 so every mutation reconciles against origin (fetch + hard-reset local branch) and
-retries the push on a non-fast-forward. Commits carry a distinct ``haku-arm``
+retries the push on a non-fast-forward. Commits carry a distinct ``haku-console``
 identity so Haku can attribute them. pygit2 talks to the cluster-internal
 plaintext-HTTP Forgejo, so no TLS/CA handling is needed (cf. the HTTPS
 ``finance/evidence`` clone that needs a cert callback).
@@ -27,7 +27,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-ARM_SIGNATURE = pygit2.Signature("haku-arm", "haku-arm@allegedly.works")
+CONSOLE_SIGNATURE = pygit2.Signature("haku-console", "haku-console@allegedly.works")
 
 
 class GitState:
@@ -126,11 +126,11 @@ class GitState:
         head_commit = self.repo[head.target].peel(pygit2.Commit)
         if tree == head_commit.tree_id:
             return False
-        self.repo.create_commit(head.name, ARM_SIGNATURE, ARM_SIGNATURE, message, tree, [head_commit.id])
+        self.repo.create_commit(head.name, CONSOLE_SIGNATURE, CONSOLE_SIGNATURE, message, tree, [head_commit.id])
         return True
 
     # --- operator-action overlay (clicks/) + free-form feedback -----------------
-    # The arm never edits items/ (Haku owns those). It records a clicked action as
+    # The console never edits items/ (Haku owns those). It records a clicked action as
     # clicks/<item_id>/<action_id> (and removes it on un-click); Haku reduces these
     # on its next run. The git history of clicks/ is the click/un-click event log.
 
@@ -153,12 +153,14 @@ class GitState:
 
     def set_click(self, item_id: str, action_id: str) -> None:
         stamp = f"clicked_at: {dt.datetime.now(dt.UTC).isoformat(timespec='seconds')}\n"
-        self.commit_push({self._click_path(item_id, action_id): stamp.encode()}, f"arm: click {action_id} on {item_id}")
+        self.commit_push(
+            {self._click_path(item_id, action_id): stamp.encode()}, f"console: click {action_id} on {item_id}"
+        )
 
     def clear_click(self, item_id: str, action_id: str) -> None:
-        self.commit_push({self._click_path(item_id, action_id): None}, f"arm: unclick {action_id} on {item_id}")
+        self.commit_push({self._click_path(item_id, action_id): None}, f"console: unclick {action_id} on {item_id}")
 
     def write_feedback(self, text: str) -> None:
         stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         body = f"# Operator feedback ({stamp})\n\n{text.strip()}\n"
-        self.commit_push({f"intake/{stamp}-feedback.md": body.encode()}, "arm: feedback")
+        self.commit_push({f"intake/{stamp}-feedback.md": body.encode()}, "console: feedback")

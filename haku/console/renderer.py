@@ -3,7 +3,7 @@
 The Markdown→HTML renderer and per-item card rendering are ported verbatim from
 haku-state's ``dashboard/generate.py`` (the static generator). The only change:
 ``render_page`` returns the HTML string (no disk write) and takes the page
-template + CSS as arguments, which the arm loads from its haku-state clone (see
+template + CSS as arguments, which the console loads from its haku-state clone (see
 ``templates_loader``) so Haku can evolve the look without an image rebuild.
 
 The renderer is intentionally a tiny vendored Markdown subset (paragraphs,
@@ -21,7 +21,7 @@ from collections.abc import Collection
 import jinja2
 
 # Public Forgejo web URLs for the browser-facing links the operator clicks
-# (distinct from the internal git URL the arm uses for git operations).
+# (distinct from the internal git URL the console uses for git operations).
 FORGEJO = "https://git.allegedly.works/haku/haku-state"
 INTAKE_NEW = f"{FORGEJO}/_new/main/intake/"
 ITEM_SRC = f"{FORGEJO}/src/branch/main/items"

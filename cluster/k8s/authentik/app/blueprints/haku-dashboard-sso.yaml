@@ -12,7 +12,7 @@ entries:
       name: haku-dashboard
     attrs:
       external_host: "https://haku.allegedly.works"
-      internal_host: "http://haku-arm.haku-sandbox.svc.cluster.local:8080"
+      internal_host: "http://haku-console.haku-sandbox.svc.cluster.local:8080"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]

@@ -51,7 +51,7 @@ spec:
       name: grocy-mcp-oidc-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-arm
+      name: haku-console
     # CLEANUP: remove when upstream releases the well-known 404 fallback.
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

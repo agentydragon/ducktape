@@ -52,7 +52,7 @@ py_library(
 
 py_binary(
     name = "server",
-    main_module = "haku.arm.app",
+    main_module = "haku.console.app",
     deps = [":app"],
 )
 
@@ -93,8 +93,8 @@ py_test(
     ],
 )
 
-# ── OCI image (the haku-arm service) ──────────────────────────────────────────
-# Plain debian-slim base: the arm clones/pushes haku-state over cluster-internal
+# ── OCI image (the haku-console service) ──────────────────────────────────────
+# Plain debian-slim base: the console clones/pushes haku-state over cluster-internal
 # plaintext HTTP, so (unlike finance/beancount_export) it needs no ca-certificates
 # apt layer for pygit2.
 
@@ -118,7 +118,7 @@ oci_image(
     env = py_image_env(binary_name = "server_bin"),
     labels = {
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
-        "org.opencontainers.image.title": "haku-arm",
+        "org.opencontainers.image.title": "haku-console",
     },
     tars = [":server_layers"],
     user = "1000:1000",
@@ -128,5 +128,5 @@ oci_image(
 oci_load(
     name = "server_load",
     image = ":server_image",
-    repo_tags = ["haku-arm:latest"],
+    repo_tags = ["haku-console:latest"],
 )

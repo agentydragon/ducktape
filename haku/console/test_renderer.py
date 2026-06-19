@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.arm import renderer, templates_loader
+from haku.console import renderer, templates_loader
 
 _NOWHERE = Path("/nonexistent-clone")  # no override → baked template/css
 

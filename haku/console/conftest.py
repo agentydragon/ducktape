@@ -1,4 +1,4 @@
-"""Shared fixtures for haku/arm tests: a seeded local haku-state git remote."""
+"""Shared fixtures for haku/console tests: a seeded local haku-state git remote."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import pygit2
 import pytest
 
-from haku.arm.config import Settings
-from haku.arm.git_state import GitState
+from haku.console.config import Settings
+from haku.console.git_state import GitState
 
 _ITEM = textwrap.dedent("""\
     id: "{id}"

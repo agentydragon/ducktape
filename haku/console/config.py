@@ -1,4 +1,4 @@
-"""Runtime settings for the Haku dashboard arm (env-driven, prefix ``HAKU_ARM_``)."""
+"""Runtime settings for the Haku console (env-driven, prefix ``HAKU_CONSOLE_``)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="HAKU_ARM_")
+    model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_")
 
     # haku-state git access. The repo_url is the cluster-internal plaintext-HTTP
     # Forgejo (no TLS, so no CA bundle needed); credentials come from the

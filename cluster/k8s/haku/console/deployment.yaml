@@ -1,4 +1,4 @@
-# Interactive Haku "arm": a FastAPI dashboard replacing the static haku-dashboard.
+# The Haku console: a FastAPI dashboard that replaced the static nginx haku-dashboard.
 # Unlike the dashboard (nginx + a git-sync sidecar), the app owns git itself —
 # it clones haku-state into an emptyDir at /data at startup and pushes back. Access
 # is gated by Authentik (agentydragon-only) via the proxy outpost — the app has no
@@ -9,21 +9,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: haku-arm
+  name: haku-console
   namespace: haku-sandbox
   labels:
-    app.kubernetes.io/name: haku-arm
+    app.kubernetes.io/name: haku-console
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: haku-arm
+      app.kubernetes.io/name: haku-console
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: haku-arm
+        app.kubernetes.io/name: haku-console
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -33,7 +33,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-arm:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-arm"}
+          image: ghcr.io/agentydragon/haku-console:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -41,17 +41,17 @@ spec:
           env:
             - name: HOME # libgit2/git config + temp writes land in the writable emptyDir
               value: /tmp
-            - name: HAKU_ARM_GIT_REPO_URL
+            - name: HAKU_CONSOLE_GIT_REPO_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: repo_url
-            - name: HAKU_ARM_GIT_USERNAME
+            - name: HAKU_CONSOLE_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: username
-            - name: HAKU_ARM_GIT_PASSWORD
+            - name: HAKU_CONSOLE_GIT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: haku-state-git-write

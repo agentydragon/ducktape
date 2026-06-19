@@ -76,7 +76,7 @@
     },
     "actions": {
       "type": "array",
-      "description": "Operator-facing buttons you attach to the item. The dashboard renders each as a click/un-click toggle; the click state is recorded by the arm under clicks/<item-id>/<action-id> (NOT here). You reduce clicked actions on your next run — interpret the label/intent, do it, then clear the click. Include whatever fits: standard ones (snooze/reject/done) are just commands you interpret, plus item-specific ones.",
+      "description": "Operator-facing buttons you attach to the item. The dashboard renders each as a click/un-click toggle; the click state is recorded by the console under clicks/<item-id>/<action-id> (NOT here). You reduce clicked actions on your next run — interpret the label/intent, do it, then clear the click. Include whatever fits: standard ones (snooze/reject/done) are just commands you interpret, plus item-specific ones.",
       "items": {
         "type": "object",
         "additionalProperties": false,

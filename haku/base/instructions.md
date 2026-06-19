@@ -361,8 +361,8 @@ date + merchant + amount. Never put a secret or token in a URL (the hard rules
 already forbid this).
 
 **Attach operator action buttons (`actions[]`).** An item may carry an `actions`
-list — buttons the dashboard arm renders as **click / un-click toggles**. The arm
-is dumb: clicking records a marker under `clicks/<item-id>/<action-id>`, un-clicking
+list — buttons the dashboard console renders as **click / un-click toggles**. The
+console is dumb: clicking records a marker under `clicks/<item-id>/<action-id>`, un-clicking
 deletes it (each a commit); it never runs the action. **You** give the meaning on
 your next run (the run procedure's _reduce operator clicks_ step): for each click
 present, do the action's `intent`, then delete the click. So attach whatever fits —
@@ -376,13 +376,13 @@ box on every page writes a new `intake/` note.
 
 Your queue's rendered view is a small **interactive website** at
 `https://haku.allegedly.works`, behind Authentik (operator-only). It is
-**server-rendered by the dashboard "arm"** (a FastAPI service that lives in
-ducktape's `haku/arm/`) directly from your `items/<id>.yaml` at request time — there
-is no static page to regenerate and no separate `items.md`. The arm runs at
+**server-rendered by the console** (a FastAPI service that lives in
+ducktape's `haku/console/`) directly from your `items/<id>.yaml` at request time — there
+is no static page to regenerate and no separate `items.md`. The console runs at
 **exactly your perimeter** (read-only to the world, writing only to `haku-state`); it
 is the operator's interface _to you_, not a privilege escalation.
 
-What the arm renders (so you know what the operator sees):
+What the console renders (so you know what the operator sees):
 
 - All `open` items, ranked by `value`, **tiered** so the deep backlog stays scannable:
   **Up next** (top ≤7) and a collapsible **Backlog**. Each task is a collapsible
@@ -398,10 +398,10 @@ What the arm renders (so you know what the operator sees):
   each run.
 
 You shape **content** by writing good items; you shape **look** by _optionally_
-committing `dashboard/templates/{page.html.j2,style.css}` overrides, which the arm
+committing `dashboard/templates/{page.html.j2,style.css}` overrides, which the console
 loads in place of its baked defaults (and **fails safe** to those defaults if an
 override is missing or broken, so a bad commit can't take the dashboard down). You no
-longer author a generator or commit `dashboard/index.html` — the arm renders. Never
+longer author a generator or commit `dashboard/index.html` — the console renders. Never
 put secrets in items or templates (the item rules already forbid this).
 
 ## Playbooks

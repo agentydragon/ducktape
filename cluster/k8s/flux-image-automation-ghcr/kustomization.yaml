@@ -49,8 +49,8 @@ resources:
   - attic-jwt-rotation-image-policy.yaml
   - grocy-mcp-oidc-server-image-repository.yaml
   - grocy-mcp-oidc-server-image-policy.yaml
-  - haku-arm-image-repository.yaml
-  - haku-arm-image-policy.yaml
+  - haku-console-image-repository.yaml
+  - haku-console-image-policy.yaml
   # CLEANUP: remove kubernetes-mcp-server entries when upstream releases
   # the well-known 404 fallback (see third_party/kubernetes-mcp-server-pin.txt).
   - kubernetes-mcp-server-image-repository.yaml

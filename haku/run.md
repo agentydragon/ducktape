@@ -41,7 +41,7 @@ bottom:
    file to `intake/processed/` with a short note on how you read it. Intake
    referencing an item id is feedback on that item — apply it (status change,
    re-score) and record it.
-   Also **reduce operator clicks**: the dashboard arm records each clicked action
+   Also **reduce operator clicks**: the dashboard console records each clicked action
    under `clicks/<item-id>/<action-id>` (and deletes it on un-click). For each
    click present, look up that action in the item's `actions[]`, carry out its
    `intent`/meaning — e.g. a `snooze` command → `status: snoozed` + `snoozed_until`;
@@ -61,7 +61,7 @@ bottom:
 6. **Curate**: re-score open items if context changed and set `status: expired` on
    items past `deadline` (or no longer possible). **Keep valid lower-priority
    items `open` as the backlog** — don't drop or expire them just to shorten the
-   list; ranking and the dashboard's tiering keep it scannable. The dashboard arm
+   list; ranking and the dashboard's tiering keep it scannable. The dashboard console
    server-renders the live site from `items/` on its own, so there's no page to
    regenerate — only touch `dashboard/templates/{page.html.j2,style.css}` if you want
    to change the look (per the manual — see _Dashboard_).
@@ -71,7 +71,7 @@ bottom:
    daily files when they stop being useful; the log is otherwise yours to
    structure.
 8. **Commit and push**: to `main`, one commit per logical change (intake + click
-   processing, new/updated items, log, `memory/`). The dashboard arm is a
+   processing, new/updated items, log, `memory/`). The dashboard console is a
    **concurrent writer** to `main`, so
    `git pull --rebase` before pushing (and retry if it raced). Push **everything**
    before you finish — your state is your only memory, and pushing is what updates

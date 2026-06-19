@@ -560,22 +560,22 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
      regenerated `dashboard/index.html` via a generator under `dashboard/`; an
      nginx + git-sync Deployment (`cluster/k8s/haku/dashboard/`, modelled on the
      budget/Fava app) served only that directory at `haku.allegedly.works` behind
-     Authentik (agentydragon-only). Cut over to the arm in place and deleted — the
-     `haku-dashboard` Authentik provider was repointed to the arm Service, and Haku no
+     Authentik (agentydragon-only). Cut over to the console in place and deleted — the
+     `haku-dashboard` Authentik provider was repointed to the console Service, and Haku no
      longer generates `index.html`.
-  2. **Interactive "arm" backend (DONE — `haku/arm/`):** the ladder skipped the
+  2. **Interactive console backend (DONE — `haku/console/`):** the ladder skipped the
      Svelte/client-side rung. A tested FastAPI engine in ducktape (Bazel
      `oci_image` → `push-images.yml` → Flux image automation, deployed in
      `haku-sandbox`, the standard <../cluster/docs/container-images.md> path)
      **server-renders** the dashboard from a pygit2 clone of `haku-state` and owns
-     its **own** write path (a `haku-arm` git identity), rather than calling the
+     its **own** write path (a `haku-console` git identity), rather than calling the
      Forgejo API with my session. It runs at **exactly Haku's perimeter** and is
      driven by `haku-state` at runtime (templates + per-item `actions[]`), so Haku
      evolves the look and the action surface without an image rebuild. Operator
      clicks are recorded as a generic `clicks/<item>/<action>` overlay (plus a
      free-form `intake/` feedback box); Haku reduces the overlay on its next run.
      **Takes over `haku.allegedly.works` in place** — the `haku-dashboard` Authentik
-     provider is repointed to the arm Service and the rung-1 nginx dashboard is
+     provider is repointed to the console Service and the rung-1 nginx dashboard is
      retired. Design: `haku-state` repo's `plans/dashboard-arm.md`.
 
 ### Phase 3 — later, maybe

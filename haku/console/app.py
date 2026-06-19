@@ -1,4 +1,4 @@
-"""FastAPI app for the Haku dashboard "arm".
+"""FastAPI app for the Haku console (the interactive dashboard).
 
 Renders the dashboard read-only from a haku-state clone (refreshed by a background
 pull loop) and records operator actions as git commits. The write endpoints are
@@ -20,9 +20,9 @@ import uvicorn
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from haku.arm import renderer, templates_loader
-from haku.arm.config import Settings
-from haku.arm.git_state import GitState
+from haku.console import renderer, templates_loader
+from haku.console.config import Settings
+from haku.console.git_state import GitState
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await pull
 
-    app = FastAPI(title="Haku dashboard arm", lifespan=lifespan)
+    app = FastAPI(title="Haku console", lifespan=lifespan)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
