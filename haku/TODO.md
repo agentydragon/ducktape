@@ -21,6 +21,14 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   Remaining:
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
+  - **Consider stronger auth for the public route (if/when feasible):** it's gated
+    only by the long-lived static bearer today. The same facade image already
+    supports Authentik OIDC — the read-write `tana-mcp-facade` runs that way
+    (`MCP_FACADE_AUTH__OIDC_*`, group-enforced, Valkey OAuth state) — which buys
+    short-lived tokens, central revocation, and audit, with Haku using
+    `fastmcp --auth oauth` so no read token ever touches a command line. Read-only
+    tools + the server-side PAT keep the blast radius small, so this is hardening,
+    not a blocker.
   - **Future (PLAN north star):** give Haku `mcp__tana_ro__*` tools natively via a
     `.mcp.json` `http` entry to the route (bearer threaded from the reflected
     secret), so `tana_review` can drop its connection section and the explicit
