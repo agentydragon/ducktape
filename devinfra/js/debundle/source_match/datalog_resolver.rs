@@ -422,9 +422,12 @@ fn resolve_single_declarator_target_window(
     }
 }
 
-/// Multi-statement member: align the needle statements against the chunk body
-/// (module-level subsequence with `STMT_LIST` holes), then read the target
-/// binding from the body statement the target needle index aligned to.
+/// Multi-statement member: align the needle statements against the chunk body as
+/// a fixed contiguous window, then read the target binding from the body
+/// statement at the window's target offset. Mirrors production's member path
+/// (`find_matching_target_bindings` → `find_matching_body_ranges`), which is
+/// fixed-window — **not** the gapped module-level `STMT_LIST` subsequence the
+/// anonymous/group paths use.
 fn resolve_member_multi(
     chunk: &ChunkResolver,
     needles: &[ModuleItem],
@@ -466,18 +469,16 @@ fn resolve_member_multi(
         .iter()
         .map(selector_match::Index::build)
         .collect();
-    let alignments = selector_match::match_top_level_sequence_indexed(
+    let starts = selector_match::match_fixed_window_sequence_indexed(
         &needle_indices,
         &chunk.body_indices,
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
-    for alignment in alignments {
-        let Some(Some(body_idx)) = alignment.get(target_item_idx) else {
-            bail!("datalog resolver: target statement matched by a STMT_LIST hole");
-        };
-        let Some(binding) = declared_bindings(&chunk.module.body[*body_idx])
+    for start in starts {
+        let body_idx = start + target_item_idx;
+        let Some(binding) = declared_bindings(&chunk.module.body[body_idx])
             .into_iter()
             .nth(target_binding_idx)
         else {

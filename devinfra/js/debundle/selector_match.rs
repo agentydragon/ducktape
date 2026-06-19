@@ -186,7 +186,7 @@ impl Index {
             kids.sort_by_key(|(ordinal, _)| *ordinal);
             children[parent] = kids.into_iter().map(|(_, child)| child).collect();
         }
-        let mut label = |source: &[(NodeId, String)]| {
+        let label = |source: &[(NodeId, String)]| {
             let mut out: Vec<Option<Box<str>>> = vec![None; n];
             for (id, value) in source {
                 out[*id as usize] = Some(value.as_str().into());
@@ -1073,6 +1073,58 @@ pub fn match_top_level_sequence_indexed(
         &mut matches,
     )?;
     Ok(matches)
+}
+
+/// Align a multi-statement needle against the subject body as a **fixed
+/// contiguous window**, mirroring production's member path
+/// (`find_matching_target_bindings` → `find_matching_body_ranges`, multi-needle
+/// branch): slide `subject.windows(needle.len())` and match each window
+/// positionally 1:1 with one [`Bindings`] threaded through the window. Returns
+/// the body start index of every full-window match.
+///
+/// Deviation from [`match_top_level_sequence_indexed`]: there are **no**
+/// module-level `STMT_LIST` holes here. A run-hole keyword is not faithfully
+/// encodable in a fixed-window position, so a needle bearing one fails closed via
+/// the per-item unsupported scan. Production agrees: it registers `STMT_LIST` as a
+/// list hole (`statement_lists`), not a single-statement wildcard (`statements`),
+/// so its fixed window matches the literal `STMT_LIST;` against no real statement
+/// and likewise finds zero — both sides reject.
+pub fn match_fixed_window_sequence_indexed(
+    needle_idx: &[Index],
+    subject_idx: &[Index],
+    mode: Mode,
+) -> Result<Vec<usize>, Unsupported> {
+    for needle in needle_idx {
+        if let Some(reason) = unsupported_needle_construct(needle) {
+            return Err(Unsupported { reason });
+        }
+    }
+    let n = needle_idx.len();
+    let mut starts = Vec::new();
+    if n == 0 || n > subject_idx.len() {
+        return Ok(starts);
+    }
+    for start in 0..=(subject_idx.len() - n) {
+        let mut bindings = Bindings::default();
+        let mut matched = true;
+        for offset in 0..n {
+            let needle = &needle_idx[offset];
+            let subject = &subject_idx[start + offset];
+            let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first())
+            else {
+                matched = false;
+                break;
+            };
+            if !homo(needle, n_root, subject, s_root, mode, &mut bindings)? {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            starts.push(start);
+        }
+    }
+    Ok(starts)
 }
 
 /// Resolve a **contiguous** multi-statement needle whose item at `target_idx` is
