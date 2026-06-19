@@ -158,78 +158,108 @@ fn introduces_alpha_scope(kind: &str) -> bool {
 /// tags (already static in the facts); the value labels are copied out so the
 /// index outlives the borrowed facts.
 pub struct Index {
-    kind: HashMap<NodeId, &'static str>,
-    children: HashMap<NodeId, Vec<NodeId>>,
-    ident: HashMap<NodeId, Box<str>>,
-    str_lit: HashMap<NodeId, Box<str>>,
-    num_lit: HashMap<NodeId, Box<str>>,
-    bool_lit: HashMap<NodeId, bool>,
-    prop_name: HashMap<NodeId, Box<str>>,
-    operator: HashMap<NodeId, Box<str>>,
-    regex: HashMap<NodeId, (Box<str>, Box<str>)>,
+    // Node ids are dense (`0..node_count`), so every relation is a `Vec` indexed
+    // by node id — array access instead of hashing on the per-node-match hot path.
+    kind: Vec<&'static str>,
+    children: Vec<Vec<NodeId>>,
+    ident: Vec<Option<Box<str>>>,
+    str_lit: Vec<Option<Box<str>>>,
+    num_lit: Vec<Option<Box<str>>>,
+    bool_lit: Vec<Option<bool>>,
+    prop_name: Vec<Option<Box<str>>>,
+    operator: Vec<Option<Box<str>>>,
+    regex: Vec<Option<(Box<str>, Box<str>)>>,
     roots: Vec<NodeId>,
 }
 
 impl Index {
     pub fn build(facts: &ChunkFacts) -> Self {
-        let mut by_parent: HashMap<NodeId, Vec<(u32, NodeId)>> = HashMap::new();
+        let n = facts.node_kind.len();
+        // node_kind is pushed in node-id order, so it already indexes by id.
+        let kind = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        let mut children: Vec<Vec<NodeId>> = vec![Vec::new(); n];
+        let mut child_ordinals: Vec<Vec<(u32, NodeId)>> = vec![Vec::new(); n];
         for (parent, ordinal, child) in &facts.child {
-            by_parent
-                .entry(*parent)
-                .or_default()
-                .push((*ordinal, *child));
+            child_ordinals[*parent as usize].push((*ordinal, *child));
         }
-        let children = by_parent
-            .into_iter()
-            .map(|(parent, mut kids)| {
-                kids.sort_by_key(|(ordinal, _)| *ordinal);
-                (parent, kids.into_iter().map(|(_, child)| child).collect())
-            })
-            .collect();
+        for (parent, mut kids) in child_ordinals.into_iter().enumerate() {
+            kids.sort_by_key(|(ordinal, _)| *ordinal);
+            children[parent] = kids.into_iter().map(|(_, child)| child).collect();
+        }
+        let mut label = |source: &[(NodeId, String)]| {
+            let mut out: Vec<Option<Box<str>>> = vec![None; n];
+            for (id, value) in source {
+                out[*id as usize] = Some(value.as_str().into());
+            }
+            out
+        };
+        let mut bool_lit = vec![None; n];
+        for (id, value) in &facts.bool_lit {
+            bool_lit[*id as usize] = Some(*value);
+        }
+        let mut regex: Vec<Option<(Box<str>, Box<str>)>> = vec![None; n];
+        for (id, exp, flags) in &facts.regex {
+            regex[*id as usize] = Some((exp.as_str().into(), flags.as_str().into()));
+        }
         Index {
-            kind: facts.node_kind.iter().map(|(id, k)| (*id, *k)).collect(),
+            kind,
             children,
-            ident: facts
-                .ident_name
-                .iter()
-                .map(|(id, s)| (*id, s.as_str().into()))
-                .collect(),
-            str_lit: facts
-                .str_lit
-                .iter()
-                .map(|(id, s)| (*id, s.as_str().into()))
-                .collect(),
-            num_lit: facts
-                .num_lit
-                .iter()
-                .map(|(id, s)| (*id, s.as_str().into()))
-                .collect(),
-            bool_lit: facts.bool_lit.iter().copied().collect(),
-            prop_name: facts
-                .prop_name
-                .iter()
-                .map(|(id, s)| (*id, s.as_str().into()))
-                .collect(),
-            operator: facts
-                .operator
-                .iter()
-                .map(|(id, s)| (*id, s.as_str().into()))
-                .collect(),
-            regex: facts
-                .regex
-                .iter()
-                .map(|(id, exp, flags)| (*id, (exp.as_str().into(), flags.as_str().into())))
-                .collect(),
+            ident: label(&facts.ident_name),
+            str_lit: label(&facts.str_lit),
+            num_lit: label(&facts.num_lit),
+            bool_lit,
+            prop_name: label(&facts.prop_name),
+            operator: label(&facts.operator),
+            regex,
             roots: facts.top_level.iter().map(|(id, _)| *id).collect(),
         }
     }
 
     fn children_of(&self, id: NodeId) -> &[NodeId] {
-        self.children.get(&id).map_or(&[], Vec::as_slice)
+        self.children.get(id as usize).map_or(&[], Vec::as_slice)
     }
 
     fn kind_of(&self, id: NodeId) -> &'static str {
-        self.kind.get(&id).copied().unwrap_or_default()
+        self.kind.get(id as usize).copied().unwrap_or_default()
+    }
+
+    fn ident_of(&self, id: NodeId) -> Option<&str> {
+        self.ident.get(id as usize).and_then(|slot| slot.as_deref())
+    }
+
+    fn str_lit_of(&self, id: NodeId) -> Option<&str> {
+        self.str_lit
+            .get(id as usize)
+            .and_then(|slot| slot.as_deref())
+    }
+
+    fn num_lit_of(&self, id: NodeId) -> Option<&str> {
+        self.num_lit
+            .get(id as usize)
+            .and_then(|slot| slot.as_deref())
+    }
+
+    fn bool_lit_of(&self, id: NodeId) -> Option<bool> {
+        self.bool_lit.get(id as usize).copied().flatten()
+    }
+
+    fn prop_name_of(&self, id: NodeId) -> Option<&str> {
+        self.prop_name
+            .get(id as usize)
+            .and_then(|slot| slot.as_deref())
+    }
+
+    fn operator_of(&self, id: NodeId) -> Option<&str> {
+        self.operator
+            .get(id as usize)
+            .and_then(|slot| slot.as_deref())
+    }
+
+    fn regex_of(&self, id: NodeId) -> Option<(&str, &str)> {
+        self.regex
+            .get(id as usize)
+            .and_then(|slot| slot.as_ref())
+            .map(|(exp, flags)| (&**exp, &**flags))
     }
 }
 
@@ -256,22 +286,15 @@ fn is_stmt_single_hole(name: &str) -> bool {
 /// is deferred (the equality-hole rung) and differential-gated.
 fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
     match index.kind_of(node) {
-        "Ident" => index
-            .ident
-            .get(&node)
-            .is_some_and(|n| is_expr_single_hole(n)),
+        "Ident" => index.ident_of(node).is_some_and(is_expr_single_hole),
         "BindingIdent" => index
-            .ident
-            .get(&node)
-            .is_some_and(|n| **n == *ANYTHING_HOLE_KEYWORD),
+            .ident_of(node)
+            .is_some_and(|n| n == ANYTHING_HOLE_KEYWORD),
         "ExprStmt" => {
             let kids = index.children_of(node);
             kids.len() == 1
                 && index.kind_of(kids[0]) == "Ident"
-                && index
-                    .ident
-                    .get(&kids[0])
-                    .is_some_and(|n| is_stmt_single_hole(n))
+                && index.ident_of(kids[0]).is_some_and(is_stmt_single_hole)
         }
         _ => false,
     }
@@ -298,8 +321,7 @@ fn is_run_hole_keyword(name: &str) -> bool {
 
 fn node_ident_hole(index: &Index, node: NodeId, keyword: &str) -> bool {
     index
-        .ident
-        .get(&node)
+        .ident_of(node)
         .is_some_and(|name| hole_name_for(name, keyword).is_some())
 }
 
@@ -345,8 +367,8 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
             ck == "ClassProp" && {
                 let kids = index.children_of(child);
                 kids.len() == 1
-                    && index.prop_name.get(&kids[0]).is_some_and(|name| {
-                        **name == *CLASS_REST_HOLE_KEYWORD || **name == *ANYTHING_HOLE_KEYWORD
+                    && index.prop_name_of(kids[0]).is_some_and(|name| {
+                        name == CLASS_REST_HOLE_KEYWORD || name == ANYTHING_HOLE_KEYWORD
                     })
             }
         }
@@ -357,9 +379,8 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
                 let kids = index.children_of(child);
                 kids.len() == 1
                     && index
-                        .ident
-                        .get(&kids[0])
-                        .is_some_and(|name| **name == *CASE_REST_HOLE_KEYWORD)
+                        .ident_of(kids[0])
+                        .is_some_and(|name| name == CASE_REST_HOLE_KEYWORD)
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
@@ -397,11 +418,10 @@ fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
         return None;
     };
     let is_predicate = index
-        .ident
-        .get(callee)
-        .is_some_and(|name| **name == *STRING_LITERAL_REGEX_PREDICATE);
+        .ident_of(*callee)
+        .is_some_and(|name| name == STRING_LITERAL_REGEX_PREDICATE);
     (is_predicate && index.kind_of(*arg) == "StrLit")
-        .then(|| index.str_lit.get(arg).map(|s| &**s))
+        .then(|| index.str_lit_of(*arg))
         .flatten()
 }
 
@@ -431,8 +451,7 @@ fn homo(
     if let Some(pattern) = regex_predicate_pattern(needle, nid) {
         return Ok(subject.kind_of(sid) == "StrLit"
             && subject
-                .str_lit
-                .get(&sid)
+                .str_lit_of(sid)
                 .is_some_and(|value| Regex::new(pattern).is_ok_and(|re| re.is_match(value))));
     }
 
@@ -441,19 +460,16 @@ fn homo(
     if nkind != subject.kind_of(sid) {
         return Ok(false);
     }
-    if needle.str_lit.get(&nid) != subject.str_lit.get(&sid)
-        || needle.num_lit.get(&nid) != subject.num_lit.get(&sid)
-        || needle.bool_lit.get(&nid) != subject.bool_lit.get(&sid)
-        || needle.prop_name.get(&nid) != subject.prop_name.get(&sid)
-        || needle.operator.get(&nid) != subject.operator.get(&sid)
-        || needle.regex.get(&nid) != subject.regex.get(&sid)
+    if needle.str_lit_of(nid) != subject.str_lit_of(sid)
+        || needle.num_lit_of(nid) != subject.num_lit_of(sid)
+        || needle.bool_lit_of(nid) != subject.bool_lit_of(sid)
+        || needle.prop_name_of(nid) != subject.prop_name_of(sid)
+        || needle.operator_of(nid) != subject.operator_of(sid)
+        || needle.regex_of(nid) != subject.regex_of(sid)
     {
         return Ok(false);
     }
-    match (
-        needle.ident.get(&nid).map(|s| &**s),
-        subject.ident.get(&sid).map(|s| &**s),
-    ) {
+    match (needle.ident_of(nid), subject.ident_of(sid)) {
         (Some(n), Some(s)) => {
             let consistent = match mode {
                 Mode::Exact => n == s,
@@ -833,7 +849,7 @@ pub fn var_declarator_alignment_indexed(
     };
     // Wrapper symmetry (plain vs exported) and `var`/`let`/`const` kind: the
     // node-level structure the declarator alignment does not itself compare.
-    if nwrap != swrap || needle.operator.get(&nvd) != subject.operator.get(&svd) {
+    if nwrap != swrap || needle.operator_of(nvd) != subject.operator_of(svd) {
         return Ok(None);
     }
     let mut bindings = Bindings::default();
@@ -869,8 +885,8 @@ fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
 /// which mirrors exactly what the matcher's structural rules absorb.
 fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
     let mut consumed: HashSet<NodeId> = HashSet::new();
-    for (&parent, kids) in &index.children {
-        let parent_kind = index.kind_of(parent);
+    for (parent, kids) in index.children.iter().enumerate() {
+        let parent_kind = index.kind_of(parent as NodeId);
         for &child in kids {
             if is_run_hole_carrier(index, parent_kind, child) {
                 collect_subtree(index, child, &mut consumed);
@@ -879,16 +895,19 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
     }
     // A well-formed predicate consumes its own callee + string-literal argument
     // (the matcher handles the whole `Call`, never the bare callee identifier).
-    for &node in index.kind.keys() {
+    for node in 0..index.kind.len() as NodeId {
         if regex_predicate_pattern(index, node).is_some() {
             consumed.extend(index.children_of(node));
         }
     }
-    for (node, name) in index.ident.iter().chain(index.prop_name.iter()) {
-        if **name == *STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(node) {
+    for node in 0..index.kind.len() as NodeId {
+        let Some(name) = index.ident_of(node).or_else(|| index.prop_name_of(node)) else {
+            continue;
+        };
+        if name == STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(&node) {
             return Some("malformed STR_LITERAL_MATCHING_RE predicate");
         }
-        if is_run_hole_keyword(name) && !consumed.contains(node) {
+        if is_run_hole_keyword(name) && !consumed.contains(&node) {
             return Some("run-hole keyword outside a list position");
         }
     }
@@ -1127,7 +1146,7 @@ fn match_declarator_target_window(
         else {
             return Ok(());
         };
-        if nwrap != swrap || needle.operator.get(&nvd) != subject.operator.get(&svd) {
+        if nwrap != swrap || needle.operator_of(nvd) != subject.operator_of(svd) {
             return Ok(());
         }
         let [needle_decl] = needle.children_of(nvd) else {
