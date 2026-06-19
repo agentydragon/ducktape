@@ -27,14 +27,25 @@ for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames |
     --no-link --print-out-paths >>"$out_paths"
 done
 
-# Home configurations (google-drive disabled via extendModules so the private
-# gaffer-private binary is never fetched at eval time)
+# Home configurations: disable google-drive via extendModules so the private
+# gaffer-private binary is never fetched at eval time.
+#
+# claude-web is a minimal standalone profile that does NOT import the
+# google-drive module, so injecting the option there fails with "The option
+# services.google-drive does not exist". Skip the override for it. (A generic
+# guard on whether the option exists is not possible: referencing `options`
+# from a module's config triggers infinite recursion in the module fixpoint.)
 for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
+  if [ "$host" = claude-web ]; then
+    target="flake.homeConfigurations.$host.activationPackage"
+  else
+    target="(flake.homeConfigurations.$host.extendModules {
+      modules = [ { services.google-drive.enable = false; } ];
+    }).activationPackage"
+  fi
   nix build --impure --expr "
     let flake = builtins.getFlake \"path:$(pwd)\";
-    in (flake.homeConfigurations.$host.extendModules {
-      modules = [{ services.google-drive.enable = false; }];
-    }).activationPackage
+    in $target
   " --no-link --print-out-paths >>"$out_paths"
 done
 
