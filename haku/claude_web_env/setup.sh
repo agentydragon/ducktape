@@ -13,4 +13,9 @@
 # Haku comes up as group `haku` against the `haku-sandbox` namespace.
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Install Haku's devtools closure (.#devtools-haku), which adds the fastmcp
+# MCP-client CLI on top of the shared devtools — so Haku can talk to in-cluster
+# MCP facades (tana-mcp-ro) turnkey-ly via `fastmcp call <url> --auth <bearer>`,
+# no runtime pip install. Claude web installs the lean default `.#devtools`.
+export DUCKTAPE_DEVTOOLS_OUTPUT=devtools-haku
 exec bash "${repo_root}/devinfra/claude/web_setup.sh"

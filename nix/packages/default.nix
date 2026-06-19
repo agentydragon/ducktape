@@ -315,6 +315,11 @@ rec {
   litert-lm = pkgs.callPackage ./litert-lm.nix { };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
+  # fastmcp's client CLI (`fastmcp call|list <url> --auth <bearer>`) exposed as a
+  # standalone app for agent closures (flake.nix `.#devtools-haku`). The library
+  # is consumed by the `ducktape` wheel above via `python3Packages.fastmcp`; this
+  # re-exposes its console script (fastmcp 3.x, pinned in fastmcp.nix) as an app.
+  fastmcp = python3Packages.toPythonApplication python3Packages.fastmcp;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
   telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };

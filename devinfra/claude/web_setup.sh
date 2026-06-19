@@ -83,7 +83,11 @@ case "$MODE" in
     MODE="profile"
     ;;
 esac
-DEVTOOLS_OUTPUT="devtools"
+# Which flake devtools output to `nix profile install`. Default is the lean
+# `.#devtools` (Claude web). Haku sets DUCKTAPE_DEVTOOLS_OUTPUT=devtools-haku
+# (in haku/claude_web_env/setup.sh) to get `.#devtools-haku`, which adds the
+# fastmcp MCP-client CLI. Only honored in `profile` install mode.
+DEVTOOLS_OUTPUT="${DUCKTAPE_DEVTOOLS_OUTPUT:-devtools}"
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
@@ -233,8 +237,13 @@ if [ "$MODE" = "home-manager" ]; then
 else
   # CRITICAL: remove first so install re-evaluates against the current flake
   # (see the "Pin drift on persistent rootfs" comment in the CRITICAL note above).
+  # Remove every known devtools variant first (by attr name) so install
+  # re-evaluates against the current flake (see the "Pin drift" note above) and
+  # so switching DUCKTAPE_DEVTOOLS_OUTPUT never leaves two devtools closures
+  # fighting over PATH.
   nix profile remove devtools 2>/dev/null || true
   nix profile remove devtools-rust 2>/dev/null || true
+  nix profile remove devtools-haku 2>/dev/null || true
   NIX_PROFILE="/nix/var/nix/profiles/default"
   nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
   log "Dev tools installed (impl=$HOOK_IMPL)."

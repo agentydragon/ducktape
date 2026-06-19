@@ -18,12 +18,18 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   callers never see it, and is gated by a static bearer `haku-tana-ro-token`
   reflected into `haku-sandbox`, and the `tana_review` playbook + the
   `haku-tana-ro-token` credentials row are wired into `base/`. Remaining:
-  - Decide how Haku reaches it: an in-cluster MCP client / `kubectl
-port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
-    vs. threading the Claude Code harness's MCP client to
-    `tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp` (needs the bearer wired
-    through the web env alongside the SOPS→kubectl path). The user prefers
-    starting simple (talk to it from a pod) over harness MCP wiring.
+  - **MCP client: done** — Haku's devtools closure now bakes in the fastmcp CLI
+    (flake `.#devtools-haku`), so the client is turnkey:
+    `fastmcp call <url> <tool> key=value --auth <bearer> --transport http`
+    (and `fastmcp list <url> --auth <bearer>`) — no runtime `pip install` or
+    hand-rolled JSON-RPC handshake.
+  - Decide how Haku reaches the facade with that client: `kubectl port-forward`
+    to `tana-mcp-ro` from the web home + `fastmcp call http://localhost:PORT/mcp`
+    (needs a port-forward RoleBinding for group `haku` in the `tana-mcp` ns —
+    Haku is admin only in `haku-sandbox`), vs. exposing `tana-mcp-ro` behind a
+    bearer-gated `*.allegedly.works` route so the web home reaches it directly
+    (the PLAN north star below). Read the bearer from the reflected
+    `haku-tana-ro-token` secret in `haku-sandbox` either way.
   - Cluster-internal reach is already permitted by the `haku-sandbox` CCNP
     `toEntities: cluster`; no new CNP needed for that hop.
   - Confirm the read-only allowlist against the live `tools/list`; settle the

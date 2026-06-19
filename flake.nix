@@ -377,6 +377,17 @@
             name = "ducktape-rbetools";
             paths = devToolPackages;
           };
+          # Haku's devtools: the shared closure plus a turnkey MCP-client CLI
+          # (the fastmcp `call`/`list` commands, with `--auth <bearer>`), so the
+          # background agent can talk to in-cluster MCP facades (tana-mcp-ro)
+          # without a runtime `pip install` or a hand-rolled JSON-RPC handshake.
+          # Claude web's `.#devtools` stays lean — no fastmcp Python dep tree.
+          # Installed by web_setup.sh when DUCKTAPE_DEVTOOLS_OUTPUT=devtools-haku
+          # (set by haku/claude_web_env/setup.sh).
+          devtools-haku = pkgs.symlinkJoin {
+            name = "ducktape-devtools-haku";
+            paths = devToolPackages ++ localOnlyPackages ++ [ ducktapePkgs.fastmcp ];
+          };
           # home-manager CLI, pinned to our flake input (release-25.11). Used by
           # web_setup.sh's home-manager install mode so activation does not pull
           # an unpinned home-manager from the registry:
