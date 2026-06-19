@@ -156,6 +156,7 @@ py_test(
         "//props:conftest",
         "//props/db:database",
         "//props/db:models",
+        "//props/db:snapshots",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

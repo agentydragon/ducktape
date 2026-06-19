@@ -12,7 +12,8 @@ import pytest
 import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 
-from props.db.models import AgentRunStatus, GradingEdge
+from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
+from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
 
@@ -178,6 +179,46 @@ def test_credit_sum_trigger_enforces_limit_fp(session, add_edge, fp_occurrence):
     with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
+
+
+def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, test_grader_run, example_subtract_orm):
+    """Regression: an edge whose critique reports files OVERLAPPING but not CONTAINED in
+    a restricted occurrence's match_file_restriction must insert successfully.
+
+    train1's tp-001/occ-1 is restricted to {subtract.py}. A critic that reports the issue
+    on {subtract.py, add.py} overlaps the restriction (subtract.py) but is not contained in
+    it (add.py is extra). The matchability rule is OVERLAP, so the edge is valid. The old
+    enforce_edge_filter_scope trigger used CONTAINMENT and rejected such edges — the poison
+    pill that crash-looped the grader.
+    """
+    issue_id = "overlap-not-containment"
+    session.add(ReportedIssue(agent_run_id=test_critic_run.agent_run_id, issue_id=issue_id, rationale="overlap test"))
+    session.add(
+        ReportedIssueOccurrence(
+            agent_run_id=test_critic_run.agent_run_id,
+            reported_issue_id=issue_id,
+            # subtract.py is inside tp-001's restriction set; add.py is outside it.
+            locations=[
+                LocationAnchor(file="subtract.py", start_line=1, end_line=1),
+                LocationAnchor(file="add.py", start_line=1, end_line=1),
+            ],
+        )
+    )
+    session.flush()
+
+    session.add(
+        GradingEdge(
+            grader_run_id=test_grader_run.agent_run_id,
+            critique_run_id=test_critic_run.agent_run_id,
+            critique_issue_id=issue_id,
+            snapshot_slug=example_subtract_orm.snapshot_slug,
+            tp_id="tp-001",
+            tp_occurrence_id="occ-1",
+            credit=1.0,
+            rationale="Overlaps subtract.py (in restriction), plus add.py (outside)",
+        )
+    )
+    session.commit()
 
 
 if __name__ == "__main__":

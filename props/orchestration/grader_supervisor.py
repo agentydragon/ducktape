@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import defaultdict
+from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -63,6 +65,26 @@ DEFAULT_RECONCILE_DEBOUNCE_S = 30.0
 # that crashed, a pod deleted out-of-band). 0 disables the loop.
 DEFAULT_PERIODIC_RECONCILE_S = 120.0
 
+# Crash-loop backoff: a grader that exits Failed is respawned, but only after an
+# exponentially growing quiet window keyed on how many times it has failed in a
+# row. Without this, a poison snapshot (e.g. an ungradeable critique) respawns a
+# fresh grader every reconcile and burns tokens unbounded.
+DEFAULT_BACKOFF_BASE_S = 120.0
+DEFAULT_BACKOFF_MAX_S = 3600.0
+# After this many consecutive failures the snapshot is quarantined: no respawn
+# until an operator intervenes (or the grader definition changes, which clears
+# the count). Surfaces a stuck snapshot instead of retrying forever.
+DEFAULT_MAX_CONSECUTIVE_FAILURES = 6
+
+
+@dataclass
+class _FailureState:
+    """Per-snapshot crash-loop accounting (monotonic clock)."""
+
+    consecutive: int
+    # Earliest monotonic time at which a respawn may be attempted.
+    respawn_not_before: float
+
 
 class GraderSupervisor:
     """Manages per-snapshot grader containers via reconciliation against the
@@ -85,6 +107,9 @@ class GraderSupervisor:
         *,
         reconcile_debounce_s: float = DEFAULT_RECONCILE_DEBOUNCE_S,
         periodic_reconcile_s: float = DEFAULT_PERIODIC_RECONCILE_S,
+        backoff_base_s: float = DEFAULT_BACKOFF_BASE_S,
+        backoff_max_s: float = DEFAULT_BACKOFF_MAX_S,
+        max_consecutive_failures: int = DEFAULT_MAX_CONSECUTIVE_FAILURES,
     ):
         self._registry = registry
         self._db_config = db_config
@@ -104,6 +129,11 @@ class GraderSupervisor:
         # Periodic backstop.
         self._periodic_reconcile_s = periodic_reconcile_s
         self._periodic_task: asyncio.Task[None] | None = None
+        # Crash-loop backoff state, keyed by snapshot.
+        self._backoff_base_s = backoff_base_s
+        self._backoff_max_s = backoff_max_s
+        self._max_consecutive_failures = max_consecutive_failures
+        self._failures: dict[SnapshotSlug, _FailureState] = {}
 
     async def __aenter__(self) -> GraderSupervisor:
         await self.start()
@@ -138,6 +168,9 @@ class GraderSupervisor:
             return
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
+        # A new grader image is a fresh attempt: clear crash-loop backoff so quarantined
+        # snapshots get re-graded (the new image may fix the failure).
+        self._failures.clear()
         # No restart flag: reconcile detects wrong-image graders from the API and
         # replaces them, so a tag move just schedules a normal reconcile.
         self._schedule_reconcile(trigger=f"grader_definition_changed:{notification.tag}")
@@ -221,8 +254,12 @@ class GraderSupervisor:
         for pod in pods:
             by_snapshot[pod.snapshot_slug].append(pod)
 
+        now = time.monotonic()
         handles_by_pod_name = {h.name: h for h in self._handles.values()}
         new_handles: dict[SnapshotSlug, AgentRunHandle] = {}
+        # Snapshots whose grader was observed Failed this cycle: never respawn them in
+        # the same reconcile that saw the crash, regardless of backoff window length.
+        failed_this_cycle: set[SnapshotSlug] = set()
         kept = adopted = reaped = spawned = 0
 
         for slug, plist in by_snapshot.items():
@@ -233,6 +270,17 @@ class GraderSupervisor:
             for pod in plist:
                 if keeper is not None and pod.name == keeper.name:
                     continue
+                # Terminal pods on the current image carry the crash-loop signal: a
+                # Failed exit feeds the backoff; a Succeeded exit clears it (a grader
+                # that finished its run proves the snapshot is gradeable again). A
+                # merely-Running pod is NOT proof of health — it may still crash — so
+                # it never resets the count.
+                if slug in desired and pod.image_ref == resolved.oci_ref:
+                    if pod.phase == "failed":
+                        self._record_failure(slug, now=now)
+                        failed_this_cycle.add(slug)
+                    elif pod.phase == "succeeded":
+                        self._failures.pop(slug, None)
                 await self._reap(pod, desired=desired, image=resolved, tracked=handles_by_pod_name)
                 reaped += 1
             if keeper is not None:
@@ -245,7 +293,7 @@ class GraderSupervisor:
                     adopted += 1
 
         for slug in desired:
-            if slug not in new_handles:
+            if slug not in new_handles and slug not in failed_this_cycle and self._may_spawn(slug, now=now):
                 handle = await self._spawn_grader(slug, image=resolved, trigger=trigger)
                 if handle is not None:
                     new_handles[slug] = handle
@@ -298,6 +346,35 @@ class GraderSupervisor:
             await handle.kill_and_delete()
         else:
             await self._registry.reap_grader_pod(pod, reason=reason)
+
+    # --- Crash-loop backoff ---
+
+    def _record_failure(self, slug: SnapshotSlug, *, now: float) -> None:
+        """Account a grader crash for ``slug`` and schedule its next respawn window."""
+        prev = self._failures.get(slug)
+        consecutive = (prev.consecutive if prev else 0) + 1
+        delay = min(self._backoff_base_s * 2 ** (consecutive - 1), self._backoff_max_s)
+        self._failures[slug] = _FailureState(consecutive=consecutive, respawn_not_before=now + delay)
+        if consecutive >= self._max_consecutive_failures:
+            logger.error(
+                "Grader for %s failed %d times in a row — quarantined, no respawn until the grader "
+                "definition changes or an operator clears it",
+                slug,
+                consecutive,
+            )
+        else:
+            logger.warning(
+                "Grader for %s failed (%d consecutive); backing off %.0fs before respawn", slug, consecutive, delay
+            )
+
+    def _may_spawn(self, slug: SnapshotSlug, *, now: float) -> bool:
+        """False while ``slug`` is quarantined or inside its crash-loop backoff window."""
+        state = self._failures.get(slug)
+        if state is None:
+            return True
+        if state.consecutive >= self._max_consecutive_failures:
+            return False
+        return now >= state.respawn_not_before
 
     # --- Internal helpers ---
 

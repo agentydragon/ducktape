@@ -144,6 +144,23 @@ class TestMatchableOccurrences:
         # Single file should have fewer matchable occurrences
         assert single_file <= all_files, "Single file should have <= matchable occurrences than all files"
 
+    def test_restricted_tp_matched_when_files_overlap_not_contain(self, session, test_trivial_snapshot):
+        """A file-restricted TP is matchable when reported files OVERLAP the restriction set,
+        even if extra (out-of-set) files are also reported.
+
+        tp-001 is restricted to {subtract.py}. Reporting {subtract.py, add.py} overlaps the
+        restriction (subtract.py) while also touching add.py (outside it). The rule is OVERLAP,
+        so tp-001 must be matchable — the regression that crash-looped the grader.
+        """
+        result = session.execute(
+            text("""
+                SELECT tp_id FROM matchable_occurrences(:snapshot, ARRAY['subtract.py', 'add.py'])
+                WHERE tp_id IS NOT NULL
+            """),
+            {"snapshot": test_trivial_snapshot.slug},
+        ).fetchall()
+        assert "tp-001" in {row.tp_id for row in result}
+
     def test_empty_file_array_only_matches_unrestricted(self, session, test_trivial_snapshot):
         """Empty file array should only match unrestricted (NULL) occurrences."""
         result = session.execute(
