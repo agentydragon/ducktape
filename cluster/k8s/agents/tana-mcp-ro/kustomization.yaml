@@ -1,7 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - configmap.yaml
   - haku-tana-ro-token.sops.yaml
   - deployment.yaml
   - service.yaml
+generatorOptions:
+  # Stable ConfigMap name (the Deployment volume references it); the stakater
+  # reloader annotation restarts the pod on config change.
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: tana-mcp-ro-config
+    namespace: tana-mcp
+    files:
+      - config.yaml

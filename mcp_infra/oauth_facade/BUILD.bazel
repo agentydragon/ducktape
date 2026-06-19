@@ -10,6 +10,7 @@ py_library(
         "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 

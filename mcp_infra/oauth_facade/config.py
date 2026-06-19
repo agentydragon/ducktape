@@ -11,15 +11,21 @@ upstream can be either:
 
 All fields load from `MCP_FACADE_*` env vars; nested fields use `__` as the
 delimiter (e.g. `MCP_FACADE_AUTH__OIDC_ISSUER`,
-`MCP_FACADE_UPSTREAM__KIND=stdio`).
+`MCP_FACADE_UPSTREAM__KIND=stdio`). Non-secret structured config may instead live
+in a YAML file: point `MCP_FACADE_CONFIG_FILE` at it and put e.g. `facade_name`
+and the `tools` allowlist there as real YAML (a clean list, not a JSON-in-env
+string). Env still outranks the file, and secrets and `upstream` stay in env —
+keep the YAML and env fields disjoint so no single nested field is split across
+sources.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
@@ -103,3 +109,19 @@ class FacadeSettings(BaseSettings):
         if (self.auth is None) == (self.client_auth is None):
             raise ValueError("set exactly one of `auth` (public Authentik OAuth) or `client_auth` (static bearer)")
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Insert an optional YAML file source (below env) when `MCP_FACADE_CONFIG_FILE` is set."""
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("MCP_FACADE_CONFIG_FILE"):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)

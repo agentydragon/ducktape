@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: tana-mcp-ro
   annotations:
-    description: "Cluster-internal read-only Tana MCP facade for background agents (haku). Exposes only read tools (MCP_FACADE_TOOLS__ALLOW) and injects the full Tana PAT server-side, so callers never see it. Client auth is a static bearer (haku-tana-ro-token, reflected into haku-sandbox), not Authentik — there is no public HTTPRoute."
+    description: "Cluster-internal read-only Tana MCP facade for background agents (haku). Exposes only read tools (config.yaml tools allowlist) and injects the full Tana PAT server-side, so callers never see it. Client auth is a static bearer (haku-tana-ro-token, reflected into haku-sandbox), not Authentik — there is no public HTTPRoute."
     reloader.stakater.com/auto: "true"
     # CPU: VPA manages requests only — no CPU limit so fastmcp's ~6 CPU-second
     # import isn't throttled (see tana-mcp-facade for the full rationale).
@@ -36,10 +36,16 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
-          envFrom:
-            - configMapRef:
-                name: tana-mcp-ro-config
           env:
+            # Non-secret structured config (facade_name + read-only tools allowlist)
+            # is the mounted config.yaml; the upstream and secrets stay in env so no
+            # single nested field is split across sources.
+            - name: MCP_FACADE_CONFIG_FILE
+              value: /etc/mcp-facade/config.yaml
+            - name: MCP_FACADE_UPSTREAM__KIND
+              value: http
+            - name: MCP_FACADE_UPSTREAM__URL
+              value: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
             # Server-held PAT injected to the upstream — never exposed to callers.
             - name: MCP_FACADE_UPSTREAM__BEARER_TOKEN
               valueFrom:
@@ -52,6 +58,10 @@ spec:
                 secretKeyRef:
                   name: haku-tana-ro-token
                   key: token
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mcp-facade
+              readOnly: true
           resources:
             requests:
               memory: "128Mi"

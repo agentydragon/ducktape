@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import textwrap
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -92,6 +94,42 @@ def test_rejects_both_auth_modes() -> None:
             upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
             facade_name="x",
         )
+
+
+def test_yaml_config_file_provides_structured_fields(tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        textwrap.dedent("""
+            facade_name: Tana MCP (read-only)
+            tools:
+              allow:
+                - search_nodes
+                - read_node
+        """)
+    )
+    monkeypatch.setenv("MCP_FACADE_CONFIG_FILE", str(config_file))
+    monkeypatch.setenv("MCP_FACADE_CLIENT_AUTH__STATIC_BEARER", "ro-token")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__BEARER_TOKEN", "pat")
+    settings = FacadeSettings()
+    # Structured config from YAML; secrets + upstream from env; merged into one model.
+    assert settings.facade_name == "Tana MCP (read-only)"
+    assert settings.tools == ToolFilter(allow=["search_nodes", "read_node"])
+    assert isinstance(settings.upstream, HttpUpstream)
+    assert settings.upstream.bearer_token == "pat"
+    assert settings.client_auth == StaticBearerClientAuth(static_bearer="ro-token")
+
+
+def test_env_overrides_yaml_config_file(tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("facade_name: From YAML\n")
+    monkeypatch.setenv("MCP_FACADE_CONFIG_FILE", str(config_file))
+    monkeypatch.setenv("MCP_FACADE_FACADE_NAME", "From env")
+    monkeypatch.setenv("MCP_FACADE_CLIENT_AUTH__STATIC_BEARER", "tok")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://upstream.svc:8263/mcp")
+    assert FacadeSettings().facade_name == "From env"
 
 
 if __name__ == "__main__":
