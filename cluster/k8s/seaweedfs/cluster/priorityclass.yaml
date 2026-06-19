@@ -1,0 +1,26 @@
+# Custom non-system PriorityClass for stateful infrastructure pods.
+#
+# Value 1_000_000: well above ordinary workloads (default 0) so the descheduler
+# (which evicts lowest-priority first) and the scheduler's preemption defer these
+# pods — but far below the built-in system-cluster-critical (2_000_000_000), so
+# they are NOT treated as control-plane components and stay below the
+# descheduler's default priorityThreshold. NOT globalDefault: only pods that opt
+# in via priorityClassName get it.
+#
+# Currently used by the SeaweedFS master/volume/filer/s3 components
+# (cluster/k8s/seaweedfs/cluster/seaweed.yaml). Reusable for other stateful
+# infra; see cluster/docs/lessons_learned/
+# 2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md for rationale.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: stateful-infra
+  annotations:
+    description: >-
+      Stateful infrastructure (databases, object storage, quorum members).
+      Deprioritizes these pods for descheduler eviction and scheduler
+      preemption without making them system-critical.
+value: 1000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Stateful infrastructure: defer eviction/preemption, not system-critical."

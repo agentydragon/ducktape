@@ -50,6 +50,21 @@ spec:
     volumeSizeLimitMB: 16000
     defaultReplication: "001"
     metricsPort: 9321
+    # QoS / eviction protection (see cluster/docs/lessons_learned/
+    # 2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md). Without requests
+    # these pods are BestEffort: the descheduler's first eviction target (QoS
+    # tiebreak) and the kernel OOM-killer's first victim under node memory
+    # pressure. Requests sized above steady-state (raft metadata is light,
+    # ~40Mi observed) so usage normally sits at/below request → kubelet ranks
+    # them last for node-pressure eviction. Memory limit is a generous safety
+    # cap; no CPU limit (avoid throttling raft). priorityClassName defers them
+    # in the descheduler's primary (priority) sort and shields from preemption.
+    priorityClassName: stateful-infra
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     tolerations:
@@ -74,8 +89,18 @@ spec:
     # (cluster/terraform/main/ovh-nodes.tf). With replication=001 across
     # 3 hosts, we can lose one node and still have 2 surviving copies.
     replicas: 3
+    # The operator routes requests.storage to the PVC volumeClaimTemplate and
+    # cpu/memory to the container (filterContainerResources strips `storage`),
+    # so adding compute requests here leaves the 1800Gi PVC untouched. QoS /
+    # eviction protection as on master; volume holds the in-memory needle index
+    # so memory is sized higher (≤435Mi observed). See the lessons_learned RCA.
+    priorityClassName: stateful-infra
     requests:
       storage: 1800Gi # leaves headroom on the 2 TB /dev/sdb
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1536Mi
     storageClassName: local-path-ovh
     dataCenter: "hil"
     rack: "hil-ovh-h109b04"
@@ -127,6 +152,15 @@ spec:
             name: seaweedfs-filer-db-app
             key: password
     metricsPort: 9326
+    # QoS / eviction protection as on master (metadata gateway to postgres,
+    # ~172Mi observed). Singleton, so deliberately NO PodDisruptionBudget —
+    # a maxUnavailable:0 PDB on a 1-replica set would wedge node drains.
+    priorityClassName: stateful-infra
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
 
@@ -144,6 +178,14 @@ spec:
     annotations:
       reloader.stakater.com/auto: "true"
     metricsPort: 9327
+    # QoS / eviction protection (stateless gateway, low usage). No PDB: it is
+    # stateless and freely reschedulable, so descheduler moves are harmless.
+    priorityClassName: stateful-infra
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
     # weed s3 defaults -ip.bind to localhost — kubelet's readiness probe from
     # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes
     # (and the Service ClusterIP) reach the API.

@@ -1,0 +1,39 @@
+# PodDisruptionBudgets for the SeaweedFS quorum/replicated StatefulSets.
+#
+# The descheduler honors PDBs unconditionally, so these are the lever that stops
+# it (and `kubectl drain` / node-autoscaler) from breaking quorum via voluntary
+# eviction — the trigger behind the 2026-06-19 crash-loop incident. The operator
+# CRD has no PDB field, so these are hand-written, selecting the operator's pod
+# labels (same selectors as the anti-affinity in seaweed.yaml).
+#
+# minAvailable: 2 of 3 → at most one master/volume pod may be voluntarily
+# disrupted at a time, preserving raft quorum (master) and ≥2 replicas
+# (volume, replication=001). The singleton filer and the stateless s3 gateway
+# deliberately get no PDB (a maxUnavailable:0 PDB on a 1-replica set would wedge
+# node drains; s3 is freely reschedulable).
+#
+# See cluster/docs/lessons_learned/
+# 2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-master
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/component: master
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-volume
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/component: volume
