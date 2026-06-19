@@ -374,7 +374,11 @@ fn resolve_declarator_hole_member(
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
-    for (body_idx, item) in chunk.module.body.iter().enumerate() {
+    // The fixed (non-hole) declarators pin invariant tokens any matching owner
+    // must carry, so the token index narrows the owner scan (the giant
+    // `initBundle` var-decl is the worst case). The `DECLARATORS` holes pin none.
+    for body_idx in chunk.candidate_bodies(&needle_index) {
+        let item = &chunk.module.body[body_idx];
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
@@ -651,7 +655,8 @@ fn resolve_group_declarator_holes(
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
-    for (body_idx, item) in chunk.module.body.iter().enumerate() {
+    for body_idx in chunk.candidate_bodies(&needle_index) {
+        let item = &chunk.module.body[body_idx];
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
