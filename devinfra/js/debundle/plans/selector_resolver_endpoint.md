@@ -135,11 +135,33 @@ the production wiring/flip/delete — sequenced below.
   categoricity that lived in `resolve_anonymous_statement_body_indices` moved to the
   caller (`one_anonymous_group`), so the flip carries this path too. Gate:
   `lowering_test` + e2e `{peel_factorize_extend_anonymous,gate,edit_gate_source_match}_cli_test`.
-- **F2-wire-anon-comove (next):** the per-source co-move path
-  (`anonymous_resolution.rs`, resolves each `parsed.module`) still calls the free
-  function. Build one resolver per parsed source (once, outside the selector loop —
-  the flip needs build-once here too) and route through `resolve_anonymous_groups`.
-  Last path before the flip so **every** path goes through the seam.
+- **F2-wire-anon-comove ✅ (done this run):** the per-source co-move anonymous
+  path (`anonymous_resolution.rs::resolve_anonymous_statement_claims_in_globals`)
+  now builds one resolver per parsed source (once, before the claims×selector loops)
+  and routes through `resolve_anonymous_groups`. Gate: 4 e2e cli gates pass.
+
+**Scope finding — F5 (delete) is broader than the lowering flip.** Wiring the
+lowering pipeline (member, group, anonymous) through the seam is enough to **flip
+that pipeline** to the fact resolver (F4). But `AstWildcardMatcher` has consumers
+the categorical seam does **not** cover, so deleting it is materially larger:
+
+- `anonymous_resolution.rs::resolve_member_selector_claims_in_globals` uses
+  `member_binding_candidates` — **non-categorical**, aggregates candidates across
+  sources then applies cross-source categoricity. The seam exposes only
+  categorical `resolve_member`; this needs a candidates method or a restructure.
+- `source_match_body_debt` / near-miss diagnostics (used in `plan_builder`
+  failure reporting) — rich partial-match output the fact resolver does not emit.
+  **Possible faithful-encoding risk** — flag at the abort bar if it can't be
+  reproduced.
+- `selector_codemod` (the minimizer) verifies minimized selectors via the matcher;
+  `shape_index_soundness_test` likewise.
+- the **corpus differential's own oracle is `AstWildcardResolver`** — deleting the
+  matcher retires the differential (parity is proven at the flip, then the oracle
+  is gone; the standing regression becomes ChunkResolver self-consistency, not a
+  differential). This is inherent to a matcher replacement, not a bug.
+  So F5 splits: serve `member_binding_candidates` + `source_match_body_debt` from
+  the fact resolver (or keep them as the residual matcher surface), migrate
+  codemod/soundness, then delete. The flip (F4) does **not** depend on this.
 - **F3 (GATE):** corpus differential = **0** over the real spec — already green
   standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
   fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
@@ -208,4 +230,5 @@ data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 | F     | runbook + state correct                                                     | 7cf02821          | doc only                                                                       |
 | F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver                  | 7306ce37          | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |
 | F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | 40f34b9b          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
-| F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | (this)            | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
+| F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | 0220695a          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
+| F     | F2-wire-anon-comove: per-source co-move anonymous path through the seam     | (this)            | 4 e2e cli gates pass (local bazelisk)                                          |

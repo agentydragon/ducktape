@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
+use source_match::SelectorResolver;
 use spec::AnonymousStatementSelector;
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 
@@ -282,16 +283,25 @@ fn resolve_anonymous_statement_claims_in_globals(
             read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
         parsed_by_source.insert(source_path.clone(), parsed);
     }
+    // One resolver per parsed source, built once and shared across the
+    // claims × selector loops below (the build-once seam contract; the fact
+    // resolver would rebuild a per-source EDB on every selector otherwise).
+    let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
+        .iter()
+        .map(|(source_path, parsed)| {
+            (
+                source_path.clone(),
+                source_match::AstWildcardResolver::new(&parsed.module),
+            )
+        })
+        .collect();
 
     for (module_idx, claims) in claims_by_module.iter().enumerate() {
         for selector in claims.selectors {
             let mut match_groups = Vec::<Vec<(String, OwnerId)>>::new();
             for (source_path, parsed) in &parsed_by_source {
-                let body_index_groups = source_match::find_anonymous_statement_body_index_groups(
-                    &parsed.module,
-                    &claims.module_path.to_string_lossy(),
-                    selector,
-                )?;
+                let body_index_groups = resolvers_by_source[source_path]
+                    .resolve_anonymous_groups(&claims.module_path.to_string_lossy(), selector)?;
                 for body_indices in body_index_groups {
                     let mut owners = Vec::with_capacity(body_indices.len());
                     for body_idx in body_indices {
