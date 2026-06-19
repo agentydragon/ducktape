@@ -1,4 +1,4 @@
-"""Render the Haku dashboard HTML from item dicts.
+"""Render the Haku dashboard HTML from typed item models.
 
 The Markdown→HTML renderer and per-item card rendering are ported verbatim from
 haku-state's ``dashboard/generate.py`` (the static generator). The only change:
@@ -19,6 +19,8 @@ import urllib.parse
 from collections.abc import Collection
 
 import jinja2
+
+from haku.console.models import ClaudeHandoffAction, Item, ItemStatus, OperatorAction, PreparedPrompt
 
 # Public Forgejo web URLs for the browser-facing links the operator clicks
 # (distinct from the internal git URL the console uses for git operations).
@@ -102,74 +104,70 @@ def md_to_html(text: str) -> str:
     return "\n".join(parts)
 
 
-def deeplink(item: dict) -> tuple[str, str]:
+def deeplink(item: Item) -> tuple[str, str]:
     """(href, label) for an item's primary action button."""
-    action = item.get("action", {})
-    if action.get("kind") == "prepared_prompt":
-        encoded = urllib.parse.quote(action["prompt"])
+    action = item.action
+    if isinstance(action, PreparedPrompt):
+        encoded = urllib.parse.quote(action.prompt)
         if len(encoded) <= MAX_DEEPLINK:
             return CLAUDE_NEW + encoded, "Hand to Claude →"
-    return f"{ITEM_SRC}/{item['id']}.yaml", "Open item →"
+    return f"{ITEM_SRC}/{item.id}.yaml", "Open item →"
 
 
-def _render_action(item_id: str, action: dict, clicked: bool) -> str:
+def _render_action(item_id: str, action: OperatorAction, clicked: bool) -> str:
     """One operator action attached to an item (``actions[]``).
 
     A ``command`` is a **click/un-click toggle**: the form POSTs to record the
     click (or to ``…/unclick`` to retract it) — the click state lives in the
     clicks/ overlay, not the item, and Haku reduces it on its next run. A
     ``claude_handoff`` is a stateless ``claude.ai/new`` deep-link (no commit)."""
-    label = html.escape(action["label"])
-    if action["kind"] == "claude_handoff":
-        encoded = urllib.parse.quote(action.get("prompt", ""))
+    label = html.escape(action.label)
+    if isinstance(action, ClaudeHandoffAction):
+        encoded = urllib.parse.quote(action.prompt)
         href = CLAUDE_NEW + encoded if len(encoded) <= MAX_DEEPLINK else f"{ITEM_SRC}/{item_id}.yaml"
         return f'<a class="act handoff" href="{html.escape(href)}">{label} →</a>'
-    base = f"/items/{urllib.parse.quote(item_id)}/actions/{urllib.parse.quote(action['id'])}"
+    base = f"/items/{urllib.parse.quote(item_id)}/actions/{urllib.parse.quote(action.id)}"
     target = f"{base}/unclick" if clicked else base
     btn = f'<button class="act{" clicked" if clicked else ""}" type="submit">{label}</button>'
     return f'<form class="act-form" method="post" action="{html.escape(target)}">{btn}</form>'
 
 
-def _render_actions(item: dict, clicked_ids: Collection[str]) -> str:
-    actions = item.get("actions") or []
-    if not actions:
+def _render_actions(item: Item, clicked_ids: Collection[str]) -> str:
+    if not item.actions:
         return ""
-    cells = "\n".join(_render_action(item["id"], a, a["id"] in clicked_ids) for a in actions)
+    cells = "\n".join(_render_action(item.id, a, a.id in clicked_ids) for a in item.actions)
     return f'<div class="acts">{cells}</div>'
 
 
-def render_task(item: dict, clicked_ids: Collection[str] = ()) -> str:
+def render_task(item: Item, clicked_ids: Collection[str] = ()) -> str:
     """One collapsible task. Summary = compact row; the body (Markdown→HTML),
     operator action toggles, and primary action button live only inside the
     expanded details view. ``clicked_ids`` are this item's currently-clicked
     action ids (from the clicks/ overlay)."""
     href, label = deeplink(item)
-    body = md_to_html(item.get("body", ""))
-    deadline = item.get("deadline")
-    dl = f'<span class="deadline">⏳ {html.escape(deadline[:10])}</span>' if deadline else ""
-    kind = item.get("action", {}).get("kind", "")
-    src = item.get("source", "")
+    body = md_to_html(item.body)
+    dl = f'<span class="deadline">⏳ {item.deadline.date().isoformat()}</span>' if item.deadline else ""
     return f"""
     <details class="task">
       <summary>
-        <span class="val">{item["value"]}</span>
-        <span class="title">{html.escape(item["title"])}</span>
-        <span class="meta">{dl}<span class="kind">{html.escape(kind)}</span></span>
+        <span class="val">{item.value}</span>
+        <span class="title">{html.escape(item.title)}</span>
+        <span class="meta">{dl}<span class="kind">{html.escape(item.action.kind)}</span></span>
       </summary>
       <div class="detail">
         {body}
         {_render_actions(item, clicked_ids)}
         <p class="actions">
           <a class="btn" href="{html.escape(href)}">{label}</a>
-          <span class="src">{html.escape(src)}</span>
-          <a class="srclink" href="{ITEM_SRC}/{item["id"]}.yaml">item source →</a>
+          <span class="src">{html.escape(item.source)}</span>
+          <a class="srclink" href="{ITEM_SRC}/{item.id}.yaml">item source →</a>
         </p>
       </div>
     </details>"""
 
 
 def render_page(
-    items: list[dict],
+    items: list[Item],
     *,
     scan_time: str,
     page_template: jinja2.Template,
@@ -179,18 +177,18 @@ def render_page(
     """Render the full dashboard page. Open items ranked by value: top UP_NEXT in
     "Up next", the rest in a collapsible "Backlog"; both are per-task ``<details>``.
     ``clicks`` are the currently-clicked ``(item_id, action_id)`` pairs (overlay)."""
-    by_status: dict[str, int] = {}
+    by_status: dict[ItemStatus, int] = {}
     for it in items:
-        by_status[it["status"]] = by_status.get(it["status"], 0) + 1
+        by_status[it.status] = by_status.get(it.status, 0) + 1
 
     clicked_by_item: dict[str, set[str]] = {}
     for item_id, action_id in clicks:
         clicked_by_item.setdefault(item_id, set()).add(action_id)
 
-    def task(it: dict) -> str:
-        return render_task(it, clicked_by_item.get(it["id"], frozenset()))
+    def task(it: Item) -> str:
+        return render_task(it, clicked_by_item.get(it.id, frozenset()))
 
-    open_items = sorted((it for it in items if it["status"] == "open"), key=lambda it: it["value"], reverse=True)
+    open_items = sorted((it for it in items if it.status == ItemStatus.OPEN), key=lambda it: it.value, reverse=True)
     up_next, backlog = open_items[:UP_NEXT], open_items[UP_NEXT:]
     up_next_html = "\n".join(task(it) for it in up_next) or "<p>No open items.</p>"
     backlog_html = (

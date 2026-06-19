@@ -25,6 +25,8 @@ from pathlib import Path
 import pygit2
 import yaml
 
+from haku.console.models import Item
+
 logger = logging.getLogger(__name__)
 
 CONSOLE_SIGNATURE = pygit2.Signature("haku-console", "haku-console@allegedly.works")
@@ -73,11 +75,11 @@ class GitState:
         origin = self.repo.lookup_reference(f"refs/remotes/origin/{self._branch}").target
         self.repo.reset(origin, pygit2.enums.ResetMode.HARD)
 
-    def read_items(self) -> list[dict]:
+    def read_items(self) -> list[Item]:
         items_dir = self._dir / "items"
         if not items_dir.is_dir():
             return []
-        return [yaml.safe_load(p.read_text()) for p in sorted(items_dir.glob("*.yaml"))]
+        return [Item.model_validate(yaml.safe_load(p.read_text())) for p in sorted(items_dir.glob("*.yaml"))]
 
     def read_text(self, relpath: str) -> str | None:
         path = self._dir / relpath

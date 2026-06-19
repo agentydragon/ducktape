@@ -2,33 +2,25 @@
 
 from __future__ import annotations
 
-import textwrap
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
 import pygit2
 import pytest
+import yaml
+from fastapi.testclient import TestClient
 
+from haku.console.app import create_app
 from haku.console.config import Settings
 from haku.console.git_state import GitState
+from haku.console.models import CommandAction, Item, ItemStatus, Suggestion
 
-_ITEM = textwrap.dedent("""\
-    id: "{id}"
-    dedup_key: {dk}
-    title: "{title}"
-    value: {value}
-    source: test
-    status: open
-    body: |
-      **why** this matters, with `code` and a [link](https://example.com/x).
-    action:
-      kind: suggestion
-    actions:
-      - id: snooze
-        label: "Snooze 30d"
-        kind: command
-        intent: "Snooze this item for 30 days"
-""")
+
+def _dump_item(item: Item) -> str:
+    # safe_dump quotes the all-but-leading-1 ULID id so PyYAML doesn't reload the
+    # leading-zero scalar as an (octal) int — which would fail Item's str id field.
+    return yaml.safe_dump(item.model_dump(mode="json", exclude_none=True), sort_keys=False, allow_unicode=True)
 
 
 def _seed_remote(bare: Path, work: Path) -> list[str]:
@@ -38,13 +30,19 @@ def _seed_remote(bare: Path, work: Path) -> list[str]:
     (work / "items").mkdir(parents=True)
     ids = []
     for i in range(3):
-        # 26 chars, valid Crockford base32. All-digit, so it must be YAML-quoted
-        # (see _ITEM) or PyYAML reads the leading-zero scalar as an octal int.
-        ulid = f"01{i:024d}"
+        ulid = f"01{i:024d}"  # 26 chars, valid Crockford base32
         ids.append(ulid)
-        (work / "items" / f"{ulid}.yaml").write_text(
-            _ITEM.format(id=ulid, dk=f"dk-{i}", title=f"Test item {i}", value=90 - i)
+        item = Item(
+            id=ulid,
+            title=f"Test item {i}",
+            value=90 - i,
+            source="test",
+            status=ItemStatus.OPEN,
+            body="**why** this matters, with `code` and a [link](https://example.com/x).",
+            action=Suggestion(),
+            actions=[CommandAction(id="snooze", label="Snooze 30d", intent="Snooze this item for 30 days")],
         )
+        (work / "items" / f"{ulid}.yaml").write_text(_dump_item(item))
     repo.index.add_all()
     repo.index.write()
     tree = repo.index.write_tree()
@@ -68,3 +66,11 @@ def seeded(tmp_path: Path) -> SimpleNamespace:
     )
     titles = [f"Test item {i}" for i in range(len(ids))]
     return SimpleNamespace(settings=settings, git_state=git_state, ids=ids, titles=titles, bare=bare)
+
+
+@pytest.fixture
+def client(seeded: SimpleNamespace) -> Iterator[TestClient]:
+    """App over the seeded remote; the context manager runs the lifespan, which clones it."""
+    app = create_app(seeded.settings, git_state=seeded.git_state)
+    with TestClient(app) as c:
+        yield c

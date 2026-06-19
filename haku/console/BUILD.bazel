@@ -8,7 +8,10 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "renderer",
     srcs = ["renderer.py"],
-    deps = ["@pypi//jinja2"],
+    deps = [
+        ":models",
+        "@pypi//jinja2",
+    ],
 )
 
 py_library(
@@ -21,9 +24,16 @@ py_library(
 )
 
 py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "git_state",
     srcs = ["git_state.py"],
     deps = [
+        ":models",
         "@pypi//pygit2",
         "@pypi//pyyaml",
     ],
@@ -61,10 +71,15 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":app",
         ":config",
         ":git_state",
+        ":models",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -72,6 +87,7 @@ py_test(
     name = "test_renderer",
     srcs = ["test_renderer.py"],
     deps = [
+        ":models",
         ":renderer",
         ":templates_loader",
         "//:conftest",
@@ -83,11 +99,8 @@ py_test(
     name = "test_app",
     srcs = ["test_app.py"],
     deps = [
-        ":app",
         ":conftest",
         "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
