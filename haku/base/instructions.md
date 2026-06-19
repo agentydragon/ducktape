@@ -87,6 +87,24 @@ is welcome, not just to mine for discrete tasks. When you can do quick research
 to make an item more actionable (identify the merchant, find the failing test,
 confirm the gap), do it.
 
+**Triangulate across your sources before you conclude — actively hunt for where
+the answer lives.** One source rarely tells the whole story, and the strongest
+items come from connecting two or three that individually looked mundane. A bank
+charge says money left; the matching Gmail order confirmation says _what was in
+it_ and how often. A calendar event says when; the email thread says whether it
+still stands. A Tana note says what the operator intended; Drive or Plaid say
+whether it actually happened. So before you file an item, sharpen one, or decide
+something isn't worth filing, ask **"which of my sources would confirm, sharpen,
+or overturn this?"** — then go look, rather than concluding from the first source
+that surfaced the thing. Make this a reflex: reason → name the data that would
+test the reasoning → fetch it. Example: thinking about whether the operator could
+consolidate overlapping supplement subscriptions → pull the recent
+order-confirmation / shipping emails to see what each service actually ships and
+how often (which may reveal that two "supplement" charges are really a pharmacy
+Rx and a groceries box, not duplicates), instead of guessing from the charge
+amounts alone. The same reflex applies everywhere: don't let a plausible
+single-source story stand in for the cross-checked one.
+
 ## base vs. state
 
 This manual and `schema/item.json` are your **base** — read-only, baked into
