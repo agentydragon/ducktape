@@ -186,9 +186,20 @@ the categorical seam does **not** cover, so deleting it is materially larger:
   (`anonymous_resolution.rs` fn 2) still constructs `AstWildcardResolver` — flip it
   too (trivial) once its e2e coverage is confirmed; harmless mixed state until then
   (both resolvers are parity-proven).
-- **F5 — chosen direction: diagnostics-only residual matcher** (user decision). Make
-  the fact resolver the sole _resolver_; keep a minimal matcher surface used ONLY for
-  near-miss failure diagnostics + the codemod minimizer. Concrete plan:
+- **F5 — chosen direction: pursue FULL deletion** (latest user decision, supersedes the
+  earlier diagnostics-only fallback). Make the fact resolver the sole resolver, then
+  reproduce the matcher's remaining surfaces on facts so `AstWildcardMatcher` can be
+  deleted outright: candidates, the codemod minimizer, and — the crux —
+  `source_match_body_debt` near-miss diagnostics. **Per the abort bar: attempt the
+  `body_debt` near-miss encoding on the fact model; if it can't be done faithfully
+  (the reason text is AST-walk-shaped), STOP and report — do not degrade or fake it.**
+  If full deletion proves infeasible at `body_debt`, fall back to the diagnostics-only
+  residual. Concrete plan:
+  - **New gate for step 1 (found while prepping):** the corpus differential proves
+    _categorical_ parity (count + winner), **not** full candidate-_list_ equivalence.
+    So `member_candidates` needs its own **candidate-list differential** (fact list ==
+    `member_binding_candidates` matcher list over the real corpus) before it can replace
+    the matcher path — add that to `corpus_match_differential` and gate on it = 0.
   1. **Add `ChunkResolver::member_candidates(request_id, selector) -> Result<Vec<ResolvedMemberBinding>>`**
      — the non-categorical match list. Refactor the four member sub-paths
      (`resolve_member_multi`, `resolve_var_declarator_member`,
