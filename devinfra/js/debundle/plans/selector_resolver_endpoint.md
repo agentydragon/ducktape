@@ -66,14 +66,19 @@ are supplied by the `debundle_pipeline` rule at `gaffer-private//tana/re/web/78d
 - All bazelisk runs: system-java truststore + RBE key (`/tmp/bz` wrapper, or `source
 devinfra/secrets/web_env.sh`), `dangerouslyDisableSandbox: true`.
 
-**Round status.** B1 (X1 `cross_ref` wiring, `acd80903`), B2 (X2 `reads_member`
-primitive, `ce20a42b`), and B3 (X3 `member_of_module` use-site primitive, `ae6dec8b`)
-are **all landed + integrated** on `claude/lucid-mendel-178j6q`, full suite green. **In
-flight:** Phase A stabilization lanes (existing minimizer, per family, gated on
-`regen_js_test`) — `features/tags` and `app/bootstrap` running. Next: the real-spec
-conversions (X1d+) ∥ push-to-zero escalation; then X4/X5 global-solve capstone.
-Re-measure `selector-debt` each round; terminate at name-only = 0 (or committed
-faithful-encoding dead-ends). Full plan:
+**Round status.** F (matcher deletion) and the X1/X2/X3 primitives (`cross_ref`
+`acd80903`, `reads_member` `ce20a42b`, `member_of_module` use-site `ae6dec8b`) are all
+**landed + integrated**; the branch was **squashed** to one commit (`395f2298b`), then
+a **post-squash trim** (`aabaa2de8`, −660 lines): deleted the spent
+`selector_query_examples` spike and the F5 study, and deduped the materialize
+kind-label, claim, and anchor-fold helpers (`kind_labels.rs`,
+`claim_post_stage_a_binding`, `resolved_anchor_bindings`). Full suite **129/129** green.
+gaffer-private **PR #366** applied the first Phase A minimizer conversions (156).
+**Next:** re-measure `selector-debt`, fan Phase A wide across the 162 families, then the
+X-primitive real-spec conversions (delegators via `cross_ref`, codegen helpers via
+`reads_member`, empty-class via `member_of_module`) ∥ push-to-zero escalation; then
+X4/X5 global-solve capstone. Re-measure `selector-debt` each round; terminate at
+name-only = 0 (or committed faithful-encoding dead-ends). Full plan:
 `/root/.claude/plans/shimmying-tinkering-hedgehog.md`.
 
 ## Operating rules (every step)
@@ -159,138 +164,15 @@ Each phase is a sequence of verified commits. A phase's gate authorizes the next
 
 ### Phase F — Replace & delete the hand-rolled matcher (headline goal) ✅ COMPLETE
 
-**Outcome (`825e2887`):** `AstWildcardMatcher` deleted; `ChunkResolver` is the sole
-resolver; parity proven 0-divergence across every pass before the oracle was retired;
-`body_debt` near-miss reproduced faithfully on facts. The bullets below are the
-completed historical record — the canonical per-commit trail is the progress ledger.
-
-**State correction (execution, commit `7cf02821`→):** the runbook's original
-F0/F1 were stale. Reality on entry: the fact matcher reaches corpus parity
-standalone (the per-chunk differential is **green**, 0 disagreements, ~22s —
-<../debug/2026_06_18_per_chunk_gate_real_source.md>), **and `DatalogResolver`
-already fully implemented `SelectorResolver`** (all three methods, 14 tests).
-So F1 was done. The real remaining work is the **build-once-per-chunk seam** and
-the production wiring/flip/delete — sequenced below.
-
-- **F2-seam ✅ (done this run):** the per-call `SelectorResolver` trait (took
-  `module` per call) was a half-measure — only tests used it; production bypasses
-  it via the `binding_resolution` free functions, and the corpus binary already
-  builds `ChunkResolver` once. The trait is now **chunk-bound**: methods drop the
-  `module` arg, the implementor holds the chunk and builds its model once.
-  `AstWildcardResolver<'m>` wraps the borrow (production needs no precompute);
-  `ChunkResolver` impls it directly; the per-call `DatalogResolver` wrapper (which
-  rebuilt the whole EDB on every call — fatal in the 1751-request loop) is
-  **deleted**. Gate: `source_match_test` + `corpus_match_differential` build green.
-- **F2-wire-member-group ✅ (done this run):** the chunk-bound resolver is built
-  once in `materialize_chunk` (where `runtime_ast.module` has a stable borrow) and
-  carried on `ExplicitRequestContext`, so all 1751 requests share it. The member
-  path (`plans.rs::resolve_source_match` → `resolver.resolve_member`) and the
-  binding-group path (`plan_builder.rs::resolve_request_source_matches` →
-  `resolver.resolve_member_group(...).bindings`) now route through the seam.
-  Production stays `AstWildcardResolver` (the seam delegates to the same free
-  functions — behaviorally identical). Gate: `lowering_test` + e2e
-  `{edit_gate_source_match,binding_name_resolution,gate}_cli_test` green.
-- **F2-wire-anon-ordinals ✅ (done this run):** the chunk-bound anonymous path
-  (`lowering/anonymous.rs::resolve_anonymous_statement_ordinals`) now routes through
-  `ctx.selector_resolver.resolve_anonymous_groups`; the exactly-one-group
-  categoricity that lived in `resolve_anonymous_statement_body_indices` moved to the
-  caller (`one_anonymous_group`), so the flip carries this path too. Gate:
-  `lowering_test` + e2e `{peel_factorize_extend_anonymous,gate,edit_gate_source_match}_cli_test`.
-- **F2-wire-anon-comove ✅ (done this run):** the per-source co-move anonymous
-  path (`anonymous_resolution.rs::resolve_anonymous_statement_claims_in_globals`)
-  now builds one resolver per parsed source (once, before the claims×selector loops)
-  and routes through `resolve_anonymous_groups`. Gate: 4 e2e cli gates pass.
-
-**Scope finding — F5 (delete) is broader than the lowering flip.** Wiring the
-lowering pipeline (member, group, anonymous) through the seam is enough to **flip
-that pipeline** to the fact resolver (F4). But `AstWildcardMatcher` has consumers
-the categorical seam does **not** cover, so deleting it is materially larger:
-
-- `anonymous_resolution.rs::resolve_member_selector_claims_in_globals` uses
-  `member_binding_candidates` — **non-categorical**, aggregates candidates across
-  sources then applies cross-source categoricity. The seam exposes only
-  categorical `resolve_member`; this needs a candidates method or a restructure.
-- `source_match_body_debt` (used in `plan_builder` failure reporting + spec-validate
-  near-miss hints). **Verdict after reading it:** it splits cleanly. `exact_groups`
-  the fact resolver already computes. But `near_misses` calls
-  `first_mismatch_reason(needle, candidate)` — a per-candidate **scored "first
-  structural divergence" with a human reason string**. That is matcher _introspection_
-  (an AST-walk that reports where/why a near-match diverged), not the boolean/set
-  verdict the fact matcher produces. **This is the genuine F5 fork** (the user's call,
-  not a resolution dead-end): (a) reimplement scored near-miss reasons over the fact
-  model — large, and the reason text is inherently AST-shaped; (b) accept degraded
-  failure diagnostics; or (c) keep a **diagnostics-only** residual matcher surface
-  (resolution on facts, near-miss reasons on the AST walk). Resolution itself is
-  fully served by facts — the headline goal does not depend on resolving this.
-- `selector_codemod` (the minimizer) verifies minimized selectors via the matcher;
-  `shape_index_soundness_test` likewise.
-- the **corpus differential's own oracle is `AstWildcardResolver`** — deleting the
-  matcher retires the differential (parity is proven at the flip, then the oracle
-  is gone; the standing regression becomes ChunkResolver self-consistency, not a
-  differential). This is inherent to a matcher replacement, not a bug.
-  So F5 splits: serve `member_binding_candidates` + `source_match_body_debt` from
-  the fact resolver (or keep them as the residual matcher surface), migrate
-  codemod/soundness, then delete. The flip (F4) does **not** depend on this.
-- **F3 (GATE):** corpus differential = **0** over the real spec — already green
-  standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
-  fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
-- **F4 ✅ (main lowering pipeline flipped this run):** the single construction site
-  in `materialize_chunk` now builds `ChunkResolver` (the fact resolver) instead of
-  `AstWildcardResolver`, so the whole lowering pipeline (member, binding-group,
-  anonymous-ordinals) resolves selectors via facts. Gated on: resolver parity proven
-  over the real corpus (the match logic is byte-identical since the green run — these
-  commits only changed the trait signature + wiring) + 6 e2e cli output gates green
-  (`{edit_gate_source_match,binding_name_resolution,gate,module_merge,peel_factorize_landability,peel_factorize_extend_anonymous}`).
-  **Deviation from the original runbook:** flipped _directly_, not via a permanent
-  production `DifferentialResolver` — the differential stays the gate (corpus binary +
-  tests), not a hot-path fixture. **Remaining:** the per-source co-move path
-  (`anonymous_resolution.rs` fn 2) still constructs `AstWildcardResolver` — flip it
-  too (trivial) once its e2e coverage is confirmed; harmless mixed state until then
-  (both resolvers are parity-proven).
-- **F5 ✅ DONE — full deletion completed** (`825e2887`): `member_candidates` +
-  candidate-list differential (0/corpus), codemod migrated off the matcher, `body_debt`
-  near-miss reproduced faithfully on facts (`fact_near_miss.rs`), then matcher + oracle
-  differentials deleted. _(Plan retained below as the completed record.)_ Make the fact
-  resolver the sole resolver, then
-  reproduce the matcher's remaining surfaces on facts so `AstWildcardMatcher` can be
-  deleted outright: candidates, the codemod minimizer, and — the crux —
-  `source_match_body_debt` near-miss diagnostics. **Per the abort bar: attempt the
-  `body_debt` near-miss encoding on the fact model; if it can't be done faithfully
-  (the reason text is AST-walk-shaped), STOP and report — do not degrade or fake it.**
-  If full deletion proves infeasible at `body_debt`, fall back to the diagnostics-only
-  residual. Concrete plan:
-  - **New gate for step 1 (found while prepping):** the corpus differential proves
-    _categorical_ parity (count + winner), **not** full candidate-_list_ equivalence.
-    So `member_candidates` needs its own **candidate-list differential** (fact list ==
-    `member_binding_candidates` matcher list over the real corpus) before it can replace
-    the matcher path — add that to `corpus_match_differential` and gate on it = 0.
-  1. **Add `ChunkResolver::member_candidates(request_id, selector) -> Result<Vec<ResolvedMemberBinding>>`**
-     — the non-categorical match list. Refactor the four member sub-paths
-     (`resolve_member_multi`, `resolve_var_declarator_member`,
-     `resolve_declarator_hole_member`, and the single-statement arm of `resolve_member`)
-     to each return their `matches: Vec<…>`; `resolve_member` keeps the
-     `[single]`/`[]`/`multiple` categoricity wrapper, `member_candidates` returns the
-     vec. **Required, not shortcuttable:** per-source categorical resolution would miss
-     intra-source ambiguity that `member_binding_candidates`' cross-source count catches.
-  2. **Reroute `anonymous_resolution.rs` fn 1** (`resolve_member_selector_claims_in_globals`)
-     from `source_match::member_binding_candidates` to the per-source fact resolver's
-     `member_candidates` (build one `ChunkResolver` per source, like fn 2).
-  3. **Flip fn 2** (co-move anonymous) from `AstWildcardResolver` to `ChunkResolver`.
-     ✅ done (`edit_gate_source_match` + `peel_factorize_{extend_anonymous,landability}`
-     - `gate` e2e green). Steps 1–2 (the `member_candidates` refactor + fn 1 reroute)
-       remain — the semantics-sensitive part, to be done carefully (not rushed).
-  4. Now the matcher (`AstWildcardMatcher` + `find_member_binding_matches` +
-     `find_anonymous_statement_body_index_groups` + `source_match_body_debt`) is reached
-     ONLY by: `source_match_body_debt` diagnostics (`plan_builder` + `selector_debt.rs`
-     - spec-validate), the `selector_codemod` minimizer, and the corpus differential's
-       oracle. Keep those; drop the `AstWildcardResolver` seam wrapper if nothing but the
-       differential uses it (the differential may keep its own oracle path).
-  - **e2e coverage (confirmed):** fns 1 & 2 are exercised by `edit_gate_source_match_cli_test`,
-    `binding_name_resolution_cli_test`, and `peel_factorize_{landability,extend_anonymous}_test`.
-  - **Endpoint-definition note:** ✅ superseded — `AstWildcardMatcher` was **fully
-    deleted** (`825e2887`); criterion #1 is met literally. The near-miss reasons were
-    reproduced faithfully on the fact model (`fact_near_miss.rs`), so no residual matcher
-    remains.
+`AstWildcardMatcher` and its entire support cluster are **deleted** (`825e2887`); the
+fact-based `ChunkResolver` is the sole resolver behind the `SelectorResolver` seam,
+corpus-proven at 0 divergences before the oracle was retired. Near-miss diagnostics run
+on the fact model (`source_match/fact_near_miss.rs`); the four post-deletion e2e
+regressions (match equivalence, `target_binding` prebind, timing, diagnostics) were
+repaired on the fact path (`08cc36ec`/`b6b3314a`/`74d669c8`) → full suite green. The
+blow-by-blow F0–F5 walkthrough is condensed into the **progress ledger** rows below
+(the durable record); live policy that still governs X4/X5 is in _Abort & escalation
+bar_ and _Pre-made decisions_ above.
 
 ### Phase X1 — `@Name` cross-references live (P4 step 1)
 
