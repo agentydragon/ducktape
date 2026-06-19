@@ -134,3 +134,17 @@ output_usd_per_1m_tokens = 1.74
 context_window_tokens = 200000
 max_output_tokens = 131072
 max_parallel_agents = 8
+
+# glm-5.2 (released 2026-06-17) ships a 1M-token context window, unlike the
+# 200k of earlier GLM models. Pricing left at the uniform family guardrail above.
+[[models]]
+name = "glm-5.2"
+upstream = "litellm"
+upstream_model = "glm-5.2-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 1000000
+max_output_tokens = 131072
+max_parallel_agents = 8

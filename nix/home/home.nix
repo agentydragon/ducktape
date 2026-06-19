@@ -298,7 +298,7 @@ in
         exec env \
           ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \
           ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
-          ANTHROPIC_MODEL=glm-5.1 \
+          ANTHROPIC_MODEL=glm-5.2 \
           claude --disallowed-tools "WebFetch WebSearch" \
           "$@"
       '')

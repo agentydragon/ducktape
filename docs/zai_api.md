@@ -173,7 +173,7 @@ Z.ai's gateway registers routes for many provider prefixes (`/api/v1/`, `/api/v2
 
 ## Available Models
 
-As of 2026-05-08:
+As of 2026-06-19:
 
 | Model ID      | Display Name |
 | ------------- | ------------ |
@@ -184,6 +184,10 @@ As of 2026-05-08:
 | `glm-5`       | GLM-5        |
 | `glm-5-turbo` | GLM-5-Turbo  |
 | `glm-5.1`     | GLM-5.1      |
+| `glm-5.2`     | GLM-5.2      |
+
+`glm-5.2` (released 2026-06-17) ships a 1M-token context window, up from the 200k
+of the earlier GLM-4.x / 5.x models.
 
 ## Prompt Caching
 
@@ -400,7 +404,7 @@ Notes:
 
 - **Claude Code** (`z-claude` alias): works via the Anthropic-compatible endpoint.
   Sets `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`, `ANTHROPIC_AUTH_TOKEN=$ZAI_API_KEY`,
-  `ANTHROPIC_MODEL=glm-5.1`.
+  `ANTHROPIC_MODEL=glm-5.2`.
 
 - **Codex CLI**: not compatible — requires OpenAI Responses API which Z.ai does not expose.
   `wire_api = "chat"` (Chat Completions mode) was deprecated in Codex ~2026-04-21 and is no

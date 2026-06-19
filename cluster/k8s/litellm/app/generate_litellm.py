@@ -48,7 +48,16 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # in favor of this one.
 _ZAI_ANTHROPIC_BASE = "https://api.z.ai/api/anthropic"
 # Full GLM matrix z.ai serves on the Anthropic endpoint (per /api/anthropic/v1/models, 2026-06).
-_ZAI_ANTHROPIC_MODELS: list[str] = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"]
+_ZAI_ANTHROPIC_MODELS: list[str] = [
+    "glm-4.5",
+    "glm-4.5-air",
+    "glm-4.6",
+    "glm-4.7",
+    "glm-5",
+    "glm-5-turbo",
+    "glm-5.1",
+    "glm-5.2",
+]
 
 
 def _zai_anthropic_entries() -> Iterator[dict]:

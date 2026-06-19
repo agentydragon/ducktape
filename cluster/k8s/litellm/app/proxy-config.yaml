@@ -164,6 +164,14 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  - model_name: glm-5.2-anthropic
+    litellm_params:
+      model: anthropic/glm-5.2
+      api_base: https://api.z.ai/api/anthropic
+      api_key: os.environ/ZAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
 litellm_settings:
   drop_params: true
   callbacks:
