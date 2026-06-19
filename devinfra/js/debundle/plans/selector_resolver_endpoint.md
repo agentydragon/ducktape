@@ -149,10 +149,18 @@ the categorical seam does **not** cover, so deleting it is materially larger:
   `member_binding_candidates` — **non-categorical**, aggregates candidates across
   sources then applies cross-source categoricity. The seam exposes only
   categorical `resolve_member`; this needs a candidates method or a restructure.
-- `source_match_body_debt` / near-miss diagnostics (used in `plan_builder`
-  failure reporting) — rich partial-match output the fact resolver does not emit.
-  **Possible faithful-encoding risk** — flag at the abort bar if it can't be
-  reproduced.
+- `source_match_body_debt` (used in `plan_builder` failure reporting + spec-validate
+  near-miss hints). **Verdict after reading it:** it splits cleanly. `exact_groups`
+  the fact resolver already computes. But `near_misses` calls
+  `first_mismatch_reason(needle, candidate)` — a per-candidate **scored "first
+  structural divergence" with a human reason string**. That is matcher _introspection_
+  (an AST-walk that reports where/why a near-match diverged), not the boolean/set
+  verdict the fact matcher produces. **This is the genuine F5 fork** (the user's call,
+  not a resolution dead-end): (a) reimplement scored near-miss reasons over the fact
+  model — large, and the reason text is inherently AST-shaped; (b) accept degraded
+  failure diagnostics; or (c) keep a **diagnostics-only** residual matcher surface
+  (resolution on facts, near-miss reasons on the AST walk). Resolution itself is
+  fully served by facts — the headline goal does not depend on resolving this.
 - `selector_codemod` (the minimizer) verifies minimized selectors via the matcher;
   `shape_index_soundness_test` likewise.
 - the **corpus differential's own oracle is `AstWildcardResolver`** — deleting the
