@@ -108,6 +108,7 @@ py_library(
     deps = [
         ":cluster",
         ":kustomize",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )
