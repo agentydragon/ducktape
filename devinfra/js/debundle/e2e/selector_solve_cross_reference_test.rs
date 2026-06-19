@@ -71,3 +71,57 @@ export { EBt, UBt, UJ, HI };
     // as a cross-ref target. This is the property the `declares` conjunct buys.
     assert_eq!(r.referencer_for("UBt"), None);
 }
+
+#[test]
+fn cross_reference_resolves_a_readable_at_name_anchor_end_to_end() {
+    // The real `@Name` surface: the anchor is named by its *readable* member
+    // name (re-minify-proof), never its minified binding. The spec renames flow
+    // into the owner graph as `export_name`s, so resolving
+    // `@isTranscriptionProvider` walks export_name -> anchor binding -> the
+    // function that references it -> that owner's binding (the delegator's
+    // minified name) — the exact chain the real isMeetingTranscriptionProvider /
+    // UBt -> EBt metaNode case needs, without writing a single minified name.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function EBt(x) { return x + 1; }
+function UBt(x) { return EBt(x); }
+console.log(UBt(41));
+export { EBt, UBt };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[
+                Member::renamed("isTranscriptionProvider", "EBt"),
+                Member::renamed("isMeetingTranscriptionProvider", "UBt"),
+            ],
+        )],
+    ));
+    assert_entry_output(&fixture, "42\n");
+
+    let text = fs::read_to_string(fixture.report_root.join("static/app/owner_graph.json"))
+        .expect("emitted owner_graph.json");
+    let r = solve_str(&text).expect("solve owner graph");
+
+    // The owner graph carries the spec's readable name as export_name — the
+    // stable handle `@Name` names; the minified `EBt` appears nowhere in it.
+    let anchor_owner = r
+        .owner_for_export("isTranscriptionProvider")
+        .expect("anchor resolves by readable export name");
+    let anchor_binding = r
+        .binding_for_owner(anchor_owner)
+        .expect("anchor owner declares one binding");
+    assert_eq!(
+        anchor_binding, "EBt",
+        "export_name maps to the minified binding"
+    );
+
+    // The cross-ref chain, kind-disambiguated as a real selector writes it: the
+    // function that references the anchor, back to its own binding.
+    let target_owner = r
+        .referencer_of_kind(anchor_binding, "fn_decl")
+        .expect("the delegating function resolves");
+    assert_eq!(
+        r.binding_for_owner(target_owner),
+        Some("UBt"),
+        "@isTranscriptionProvider's delegator is the function minified as UBt",
+    );
+}

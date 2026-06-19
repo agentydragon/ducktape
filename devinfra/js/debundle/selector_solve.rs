@@ -31,6 +31,11 @@ pub struct OwnerNode {
 #[derive(Deserialize)]
 pub struct DeclaredBinding {
     pub binding: String,
+    /// The readable name this binding is exported under — the spec's member
+    /// name. The stable, re-minify-proof handle a `@Name` anchor names (the
+    /// minified `binding` churns; this does not). Absent in lean test fixtures.
+    #[serde(default)]
+    pub export_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +95,11 @@ pub struct Resolution {
     /// owner -> its statement kind (e.g. `fn_decl`, `class_decl`, `var_decl`),
     /// for disambiguating a cross-ref target by kind.
     pub owner_kind: HashMap<u32, String>,
+    /// owner -> the binding(s) it declares (the minified name(s)).
+    pub owner_bindings: HashMap<u32, Vec<String>>,
+    /// readable export name (the spec member name) -> owners declaring a binding
+    /// under it. The `@Name` anchor's stable handle into the owner graph.
+    pub export_to_owners: HashMap<String, Vec<u32>>,
     pub edb_declares: usize,
     pub edb_uses: usize,
 }
@@ -163,6 +173,26 @@ impl Resolution {
         }
     }
 
+    /// The owner whose declared binding is exported under the readable name
+    /// `export_name` (the spec's member name) — the stable handle a `@Name`
+    /// anchor names. `None` if zero or several.
+    pub fn owner_for_export(&self, export_name: &str) -> Option<u32> {
+        match self.export_to_owners.get(export_name)?.as_slice() {
+            [o] => Some(*o),
+            _ => None,
+        }
+    }
+
+    /// The single binding an owner declares (the minified name), `None` if it
+    /// declares zero or several — used to turn a resolved cross-ref *owner* back
+    /// into the target's binding.
+    pub fn binding_for_owner(&self, owner: u32) -> Option<&str> {
+        match self.owner_bindings.get(&owner)?.as_slice() {
+            [b] => Some(b),
+            _ => None,
+        }
+    }
+
     /// Bootstrap-precondition gate: the solver's name-pin path can faithfully
     /// reproduce the matcher only if every binding name resolves to exactly one
     /// owner. Reports any binding declared by more than one owner.
@@ -198,11 +228,20 @@ impl ShadowReport {
 /// Build the EDB from an owner graph and run the phase-1 solve.
 pub fn solve(graph: &OwnerGraph) -> Resolution {
     let mut prog = AscentProgram::default();
+    let mut owner_bindings: HashMap<u32, Vec<String>> = HashMap::new();
+    let mut export_to_owners: HashMap<String, Vec<u32>> = HashMap::new();
     for n in &graph.nodes {
         let Some(o) = owner_id(&n.id) else { continue };
         prog.stmt_kind.push((o, n.statement_kind.clone()));
         for db in &n.declared_bindings {
             prog.declares.push((o, db.binding.clone()));
+            owner_bindings
+                .entry(o)
+                .or_default()
+                .push(db.binding.clone());
+            if let Some(export) = &db.export_name {
+                export_to_owners.entry(export.clone()).or_default().push(o);
+            }
         }
     }
     for e in &graph.edges {
@@ -231,6 +270,8 @@ pub fn solve(graph: &OwnerGraph) -> Resolution {
         aliases: prog.aliases,
         referencers,
         owner_kind,
+        owner_bindings,
+        export_to_owners,
         edb_declares,
         edb_uses,
     }
