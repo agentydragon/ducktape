@@ -1,11 +1,10 @@
-"""FastAPI app for the Haku console (the interactive dashboard).
+"""FastAPI app for the Haku console: JSON API + same-origin React SPA.
 
-Renders the dashboard read-only from a haku-state clone (refreshed by a background
-pull loop) and records operator actions as git commits. The write endpoints are
-**generic**: clicking an action records ``clicks/<item>/<action>`` and un-clicking
-removes it — the backend never interprets what an action *means* (snooze, reject,
-research…); Haku reduces the clicks overlay on its next run. Free-form feedback
-appends to ``intake/``.
+The dashboard is a React single-page app (static bundle) served same-origin with a
+JSON API under ``/api``. The write endpoints are **generic**: clicking an action
+records ``clicks/<item>/<action>`` and un-clicking removes it — the backend never
+interprets what an action *means* (snooze, reject, research…); Haku reduces the
+clicks overlay on its next run. Free-form feedback appends to ``intake/``.
 """
 
 from __future__ import annotations
@@ -14,22 +13,16 @@ import asyncio
 import contextlib
 import datetime as dt
 import logging
-from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
-from haku.console import renderer, templates_loader
 from haku.console.config import Settings
 from haku.console.git_state import GitState
+from haku.console.models import Click, DashboardResponse, FeedbackRequest
 
 logger = logging.getLogger(__name__)
-
-
-def _see_home() -> RedirectResponse:
-    """POST-redirect-GET back to the dashboard after a write."""
-    return RedirectResponse("/", status_code=303)
 
 
 async def _pull_loop(git_state: GitState, interval_s: float) -> None:
@@ -61,44 +54,41 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
+    @app.get("/api/dashboard")
+    async def dashboard() -> DashboardResponse:
+        """Items (with their currently-clicked action ids) and the last scan time."""
         async with git_state.lock:
             items = await asyncio.to_thread(git_state.read_items)
             clicks = await asyncio.to_thread(git_state.read_clicks)
-            css = await asyncio.to_thread(templates_loader.load_css, settings.clone_dir)
-            template = await asyncio.to_thread(templates_loader.load_page_template, settings.clone_dir)
-        scan = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
-        page = renderer.render_page(items, scan_time=scan, page_template=template, css=css, clicks=clicks)
-        return HTMLResponse(page)
+        scan_time = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+        clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
+        return DashboardResponse(scan_time=scan_time, items=items, clicks=clicked)
 
-    # Generic action recording: the backend never interprets an action's meaning —
-    # it only records (POST) or retracts (DELETE / …/unclick) the click. Haku reads
-    # the clicks/ overlay on its next run and carries out each action's intent.
-    @app.post("/items/{item_id}/actions/{action_id}")
-    async def click(item_id: str, action_id: str) -> RedirectResponse:
+    # Generic action recording: the backend never interprets an action's meaning — it
+    # only records (POST) or retracts (DELETE) the click. Haku reads the clicks/ overlay
+    # on its next run and carries out each action's intent.
+    @app.post("/api/items/{item_id}/actions/{action_id}")
+    async def click(item_id: str, action_id: str) -> dict[str, str]:
         async with git_state.lock:
             await asyncio.to_thread(git_state.set_click, item_id, action_id)
-        return _see_home()
+        return {"status": "clicked"}
 
-    # Plain-HTML forms can only POST, so the toggle's un-click posts here.
-    @app.post("/items/{item_id}/actions/{action_id}/unclick")
-    async def unclick(item_id: str, action_id: str) -> RedirectResponse:
-        async with git_state.lock:
-            await asyncio.to_thread(git_state.clear_click, item_id, action_id)
-        return _see_home()
-
-    @app.delete("/items/{item_id}/actions/{action_id}")
-    async def delete_click(item_id: str, action_id: str) -> dict[str, str]:
+    @app.delete("/api/items/{item_id}/actions/{action_id}")
+    async def unclick(item_id: str, action_id: str) -> dict[str, str]:
         async with git_state.lock:
             await asyncio.to_thread(git_state.clear_click, item_id, action_id)
         return {"status": "cleared"}
 
-    @app.post("/feedback")
-    async def feedback(text: Annotated[str, Form()]) -> RedirectResponse:
+    @app.post("/api/feedback")
+    async def feedback(req: FeedbackRequest) -> dict[str, str]:
         async with git_state.lock:
-            await asyncio.to_thread(git_state.write_feedback, text)
-        return _see_home()
+            await asyncio.to_thread(git_state.write_feedback, req.text)
+        return {"status": "ok"}
+
+    # The built React SPA is served same-origin for everything else. Mounted last so the
+    # API routes above take precedence; left unmounted in tests (static_dir unset).
+    if settings.static_dir is not None and settings.static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="spa")
 
     return app
 

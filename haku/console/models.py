@@ -84,3 +84,23 @@ class Item(BaseModel):
     status: ItemStatus
     deadline: datetime | None = None
     actions: list[OperatorAction] = Field(default_factory=list)
+
+
+# --- API request/response models (the JSON contract for the React SPA) ---------
+
+
+class Click(BaseModel):
+    """A currently-clicked operator action, from the clicks/ overlay."""
+
+    item_id: str
+    action_id: str
+
+
+class DashboardResponse(BaseModel):
+    scan_time: str
+    items: list[Item]
+    clicks: list[Click]
+
+
+class FeedbackRequest(BaseModel):
+    text: str

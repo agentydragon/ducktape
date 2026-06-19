@@ -81,10 +81,6 @@ class GitState:
             return []
         return [Item.model_validate(yaml.safe_load(p.read_text())) for p in sorted(items_dir.glob("*.yaml"))]
 
-    def read_text(self, relpath: str) -> str | None:
-        path = self._dir / relpath
-        return path.read_text() if path.is_file() else None
-
     def commit_push(self, changes: Mapping[str, bytes | None], message: str, *, retries: int = 5) -> None:
         """Apply ``changes`` (relpath → bytes, or None to delete), commit, and push.
 
