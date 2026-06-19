@@ -215,12 +215,12 @@ symlink bridge) vs. <claude_hook/profiles/web/home-manager.yaml> (`home-manager`
 `~/.nix-profile/bin` directly). In `home-manager` mode, point `DUCKTAPE_CLAUDE_HOOKS_PROFILE`
 at the `home-manager.yaml` sibling.
 
-**Which devtools closure** (orthogonal to install mode): in `profile` mode
-`web_setup.sh` installs `.#devtools` by default, or the flake output named by
-`DUCKTAPE_DEVTOOLS_OUTPUT`. Haku's <../../haku/claude_web_env/setup.sh> sets
-`DUCKTAPE_DEVTOOLS_OUTPUT=devtools-haku` to get `.#devtools-haku`, which adds the
-fastmcp MCP-client CLI (`fastmcp call <url> --auth <bearer>`) for talking to
-in-cluster MCP facades; Claude web uses the lean default.
+**Which flake output** (orthogonal to install mode): in `profile` mode
+`web_setup.sh` installs `.#devtools` by default, or the output named by
+`DUCKTAPE_WEB_SETUP_OUTPUT`. Haku's <../../haku/claude_web_env/setup.sh> sets
+`DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` to get `.#agent-haku`, which composes
+`.#devtools` and adds the fastmcp MCP-client CLI (`fastmcp call <url> --auth
+<bearer>`) for talking to in-cluster MCP facades; Claude web uses the lean default.
 
 Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
 delivered only to the interactive Claude Code process — not to the setup script. All

@@ -25,8 +25,9 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 ## Files
 
 - `setup.sh` — environment setup script; delegates to `devinfra/claude/web_setup.sh`,
-  setting `DUCKTAPE_DEVTOOLS_OUTPUT=devtools-haku` so Haku's closure includes the
-  fastmcp MCP-client CLI (`fastmcp call <url> --auth <bearer>`) for `tana-mcp-ro`.
+  setting `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` so Haku installs `.#agent-haku`
+  (the shared `.#devtools` plus the fastmcp MCP-client CLI, `fastmcp call <url>
+--auth <bearer>`) for `tana-mcp-ro`.
 - `profile.yaml` — the claude-hook profile. Sets the `K8S_*` overrides (→ group
   `haku` / `haku-sandbox`) and runs `bootstrap.sh` as its background command.
 - `bootstrap.sh` — profile background command: materializes `~/.kube/config`
@@ -37,8 +38,8 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 ## How a session boots
 
-1. `setup.sh` (env creation) → shared web setup: devtools (the `devtools-haku`
-   variant, which adds the fastmcp MCP-client CLI), claude-hook daemon, certs,
+1. `setup.sh` (env creation) → shared web setup installing `.#agent-haku`
+   (`.#devtools` plus the fastmcp MCP-client CLI), claude-hook daemon, certs,
    git remotes.
 2. `profile.yaml` runs `bootstrap.sh` (each session start): it materializes
    `~/.kube/config` from the SOPS-encrypted haku JWT, then — with cluster access

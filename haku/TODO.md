@@ -11,35 +11,20 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
 - **CPAP data** — read-only access to daily summaries / AHI / compliance (see
   `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and
   add a `cpap` playbook (compliance dips, AHI spikes, mask-leak trends).
-- **Tana workspace** — read-only Tana access. The cluster-internal read-only
-  facade is **built**: `tana-mcp-ro` (in the `tana-mcp` namespace) fronts the
-  Tana MCP, exposes only read tools (default-deny allowlist via the generic
-  facade's `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side so
-  callers never see it, and is gated by a static bearer `haku-tana-ro-token`
-  reflected into `haku-sandbox`, and the `tana_review` playbook + the
-  `haku-tana-ro-token` credentials row are wired into `base/`. Remaining:
-  - **MCP client: done** — Haku's devtools closure now bakes in the fastmcp CLI
-    (flake `.#devtools-haku`), so the client is turnkey:
-    `fastmcp call <url> <tool> key=value --auth <bearer> --transport http`
-    (and `fastmcp list <url> --auth <bearer>`) — no runtime `pip install` or
-    hand-rolled JSON-RPC handshake.
-  - Decide how Haku reaches the facade with that client: `kubectl port-forward`
-    to `tana-mcp-ro` from the web home + `fastmcp call http://localhost:PORT/mcp`
-    (needs a port-forward RoleBinding for group `haku` in the `tana-mcp` ns —
-    Haku is admin only in `haku-sandbox`), vs. exposing `tana-mcp-ro` behind a
-    bearer-gated `*.allegedly.works` route so the web home reaches it directly
-    (the PLAN north star below). Read the bearer from the reflected
-    `haku-tana-ro-token` secret in `haku-sandbox` either way.
-  - Cluster-internal reach is already permitted by the `haku-sandbox` CCNP
-    `toEntities: cluster`; no new CNP needed for that hop.
+- **Tana workspace** — read-only Tana access. **Built + wired:** the `tana-mcp-ro`
+  facade (in `tana-mcp`) fronts the Tana MCP, exposes only read tools (default-deny
+  allowlist via `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side
+  (callers never see it), and is gated by the static bearer `haku-tana-ro-token`
+  (reflected into `haku-sandbox`). It's published at the bearer-gated route
+  `tana-mcp-ro.allegedly.works`, Haku's closure carries the `fastmcp` client, and
+  the `tana_review` playbook + the `haku-tana-ro-token` credentials row use it.
+  Remaining:
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
-  - **Future (PLAN north star):** retire the pod dance by wiring Tana into the
-    harness — expose `tana-mcp-ro` behind a bearer-gated route and give Haku
-    `mcp__tana_ro__*` tools natively (the `kubectl-local` stdio-MCP pattern, but
-    the facade is already HTTP so a `.mcp.json` `http` entry suffices), with the
-    bearer threaded from the reflected secret. Then `tana_review` drops its
-    connection section.
+  - **Future (PLAN north star):** give Haku `mcp__tana_ro__*` tools natively via a
+    `.mcp.json` `http` entry to the route (bearer threaded from the reflected
+    secret), so `tana_review` can drop its connection section and the explicit
+    `fastmcp` step entirely.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
   Forgejo user read, add a repo-activity playbook (open PRs/issues/review

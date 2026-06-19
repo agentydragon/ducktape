@@ -140,6 +140,12 @@ a streaming connection. (`kubectl exec`/`attach`/`port-forward` work too — the
 Stay inside `haku-sandbox` — you have no access outside it; and the creds you can
 mount are read-only, so the compute is for gathering, not acting on the world.
 
+**Your home has the `fastmcp` CLI** (in the agent-haku closure) for talking to MCP
+servers: `fastmcp list <url> --auth "$TOKEN"` and `fastmcp call <url> <tool>
+key=value … --auth "$TOKEN" --transport http`. That's how you reach bearer-gated MCP
+facades like `tana-mcp-ro` directly from your home — no pod, no JSON-RPC handshake
+(see _Hard rules_ and `playbooks/tana_review.md`).
+
 If your runtime didn't already clone state for you, clone it yourself with the
 `haku-state-git-write` secret over the **public** `git.allegedly.works` host
 (your home runs on Anthropic infra and can't resolve the cluster-internal
@@ -213,13 +219,12 @@ below.
   even if attempted. Call the Gmail/Calendar REST APIs with
   `Authorization: Bearer $TOK`. There is no MCP server; `curl` goes through the
   egress proxy transparently.
-- **Tana: read-only MCP, from a `haku-sandbox` pod.** The operator's Tana
-  workspace is reachable only through the cluster-internal `tana-mcp-ro` facade,
-  which exposes read tools only (writes are hidden and rejected) and holds the
-  Tana PAT itself — you never see it. Reach it from a pod (command + `kubectl
-logs`, not `exec`/`port-forward`) carrying the `haku-tana-ro-token` bearer; the
-  facade is newly deployed, so confirm it's on your wire before relying on it. See
-  `playbooks/tana_review.md`.
+- **Tana: read-only MCP, via the `fastmcp` CLI.** The operator's Tana workspace is
+  reachable through the `tana-mcp-ro` facade, which exposes read tools only (writes
+  are hidden and rejected) and holds the Tana PAT itself — you never see it. It's
+  published at `https://tana-mcp-ro.allegedly.works/mcp` behind a static bearer, so
+  reach it **directly from your home** with `fastmcp` carrying the reflected
+  `haku-tana-ro-token` bearer — no pod needed. See `playbooks/tana_review.md`.
 - Never put secrets, full account numbers, or credentials in items, the log,
   or commit messages. Reference transactions by date + merchant + amount, mail
   and events by subject/title + sender + date (never raw bodies, never the

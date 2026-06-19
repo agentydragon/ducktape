@@ -4,6 +4,7 @@ resources:
   - haku-tana-ro-token.sops.yaml
   - deployment.yaml
   - service.yaml
+  - httproute.yaml
 generatorOptions:
   # Stable ConfigMap name (the Deployment volume references it); the stakater
   # reloader annotation restarts the pod on config change.

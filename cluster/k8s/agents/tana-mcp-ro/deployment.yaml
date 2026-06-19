@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: tana-mcp-ro
   annotations:
-    description: "Cluster-internal read-only Tana MCP facade for background agents (haku). Exposes only read tools (config.yaml tools allowlist) and injects the full Tana PAT server-side, so callers never see it. Client auth is a static bearer (haku-tana-ro-token, reflected into haku-sandbox), not Authentik — there is no public HTTPRoute."
+    description: "Cluster-internal read-only Tana MCP facade for background agents (haku). Exposes only read tools (config.yaml tools allowlist) and injects the full Tana PAT server-side, so callers never see it. Client auth is a static bearer (haku-tana-ro-token, reflected into haku-sandbox), not Authentik. Exposed publicly via a bearer-gated HTTPRoute (tana-mcp-ro.allegedly.works, see httproute.yaml) so Haku's web home can reach it with fastmcp; the static bearer is the only gate."
     reloader.stakater.com/auto: "true"
     # CPU: VPA manages requests only — no CPU limit so fastmcp's ~6 CPU-second
     # import isn't throttled (see tana-mcp-facade for the full rationale).

@@ -9,20 +9,31 @@ the Tana PAT stays server-side, so you never see it.
 
 ## Reaching it
 
-`tana-mcp-ro` is cluster-internal
-(`tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp`), so your home can't reach it —
-drive it from a `haku-sandbox` pod the way you query Plaid: bake the work into the
-pod's **command** and read results from `kubectl logs` (`exec`/`port-forward` don't
-work through the API gateway). Mount the bearer from the `haku-tana-ro-token` secret
-as an env var (`secretKeyRef`, so it never lands on a command line) and have the pod
-speak MCP over Streamable HTTP with `Authorization: Bearer $TOKEN` — e.g. a `python`
-pod running a small `fastmcp` client, or a script doing the JSON-RPC `initialize` →
-`tools/call` handshake.
+`tana-mcp-ro` is exposed at `https://tana-mcp-ro.allegedly.works/mcp`, gated by a
+static bearer. Your home has the `fastmcp` CLI (baked into the agent-haku closure —
+see `haku/claude_web_env/`), so talk to it **directly** — no pod, no JSON-RPC
+handshake. Read the bearer from the reflected `haku-tana-ro-token` secret into a
+shell variable (reference `"$TOKEN"`, never the literal, so the secret stays out of
+your transcript), then list and call:
 
-This connection isn't paved yet — `tana-mcp-ro` is newly deployed. On first use,
-confirm it's on your wire (the secret exists, the tools list is non-empty); if not,
-note the gap in your log and move on. Once you find a pod recipe that works, record
-it in `memory/` so later runs reuse it.
+```bash
+TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token \
+  -o jsonpath='{.data.token}' | base64 -d)
+URL=https://tana-mcp-ro.allegedly.works/mcp
+
+# What's exposed, with each tool's argument schema:
+fastmcp list "$URL" --auth "$TOKEN" --transport http --input-schema
+
+# Call a tool — args are key=value pairs per the schema above (or
+# --input-json '{…}' for nested); add --json for machine-readable output:
+fastmcp call "$URL" search_nodes query="follow up" --auth "$TOKEN" --transport http
+fastmcp call "$URL" read_node nodeId="<id>" --auth "$TOKEN" --transport http
+```
+
+Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
+`list_tags`, `list_workspaces`, `get_tag_schema`; writes are hidden and rejected. If
+`list` is empty or a call 401s, note the gap in your log and move on (the facade
+flips NotReady on a bad upstream, and the bearer must be the reflected one).
 
 ## What to mine
 
