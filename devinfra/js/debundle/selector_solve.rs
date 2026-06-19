@@ -61,6 +61,14 @@ ascent! {
     aliases(*o, b.clone()) <--
         stmt_kind(o, sk), uses(o, b, k),
         if sk.as_str() == "var_decl", if k.as_str() == "eager_use";
+
+    // ---- the cross-reference primitive: an owner references a binding (any edge
+    // kind). This is `resolves_to` projected to owner granularity — the join a
+    // `@Name` anchor rides ("the owner that uses @Name"). An AST-level `calls`
+    // (reference that is specifically a call) is a phase-2 refinement over the
+    // parsed chunk; at owner granularity `references` is the honest primitive. ----
+    relation references(u32, String);
+    references(*o, b.clone()) <-- uses(o, b, _k);
 }
 
 /// Outcome of a phase-1 solve.
@@ -69,6 +77,9 @@ pub struct Resolution {
     pub name_to_owners: HashMap<String, Vec<u32>>,
     /// (owner, aliased binding) pairs from the `aliases` predicate.
     pub aliases: Vec<(u32, String)>,
+    /// binding name -> owners that reference it (the `references` cross-ref
+    /// primitive, indexed for `@Name`-anchor resolution).
+    pub referencers: HashMap<String, Vec<u32>>,
     pub edb_declares: usize,
     pub edb_uses: usize,
 }
@@ -90,6 +101,35 @@ impl Resolution {
     /// ambiguous (the categoricity check, per target).
     pub fn owner_for(&self, name: &str) -> Option<u32> {
         match self.name_to_owners.get(name)?.as_slice() {
+            [o] => Some(*o),
+            _ => None,
+        }
+    }
+
+    /// Resolve a `@Name` **cross-reference** anchor: the unique owner that
+    /// references `anchor`, `None` if zero or several (per-target categoricity).
+    /// This is the relational anchor the model is built for — it pins a target by
+    /// an invariant edge (`resolves_to`) to a separately-identified entity, so a
+    /// shapeless delegator like `function UBt(x){ return EBt(x) }` is pinned as
+    /// "the owner that references @EBt" without riding the minified name `UBt`.
+    pub fn referencer_for(&self, anchor: &str) -> Option<u32> {
+        match self.referencers.get(anchor)?.as_slice() {
+            [o] => Some(*o),
+            _ => None,
+        }
+    }
+
+    /// Resolve a `@Name` **alias** anchor: the unique var-decl owner aliasing
+    /// `anchor` (`const X = @anchor`), `None` if zero or several. Pins a
+    /// re-export/alias by the class it aliases, not by its own minified name.
+    pub fn alias_owner_for(&self, anchor: &str) -> Option<u32> {
+        let owners: Vec<u32> = self
+            .aliases
+            .iter()
+            .filter(|(_, b)| b == anchor)
+            .map(|(o, _)| *o)
+            .collect();
+        match owners.as_slice() {
             [o] => Some(*o),
             _ => None,
         }
@@ -153,9 +193,14 @@ pub fn solve(graph: &OwnerGraph) -> Resolution {
     for (b, o) in prog.name_owner {
         name_to_owners.entry(b).or_default().push(o);
     }
+    let mut referencers: HashMap<String, Vec<u32>> = HashMap::new();
+    for (o, b) in prog.references {
+        referencers.entry(b).or_default().push(o);
+    }
     Resolution {
         name_to_owners,
         aliases: prog.aliases,
+        referencers,
         edb_declares,
         edb_uses,
     }
@@ -193,6 +238,76 @@ mod tests {
         assert_eq!(r.owner_for("b"), Some(1));
         // c is the var_decl aliasing b via eager_use -> cross-ref predicate fires.
         assert_eq!(r.aliases, vec![(2, "b".to_string())]);
+    }
+
+    #[test]
+    fn cross_reference_anchor_resolves_to_the_referencer() {
+        // The `isMeetingTranscriptionProvider` shape from the metaNode pass: a
+        // shapeless delegator `function UBt(x){ return EBt(x) }` whose only stable
+        // identity is that it references EBt. `@EBt` is pinned by name; the target
+        // is "the owner that references @EBt" — no reliance on the minified `UBt`.
+        let r = solve_str(
+            r#"{
+              "nodes": [
+                {"id":"owner:5","statement_kind":"function_declaration",
+                 "declared_bindings":[{"binding":"UBt"}]},
+                {"id":"owner:9","statement_kind":"function_declaration",
+                 "declared_bindings":[{"binding":"EBt"}]}
+              ],
+              "edges": [
+                {"source":"owner:5","binding":"EBt","edge_kind":"eager_use"}
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(r.owner_for("EBt"), Some(9)); // the anchor pins by name
+        assert_eq!(r.referencer_for("EBt"), Some(5)); // the target pins by edge
+        assert_eq!(r.referencer_for("absent"), None);
+    }
+
+    #[test]
+    fn cross_reference_anchor_is_categorical() {
+        // Two owners reference the anchor -> ambiguous -> no resolution.
+        let r = solve_str(
+            r#"{
+              "nodes": [
+                {"id":"owner:0","statement_kind":"function_declaration",
+                 "declared_bindings":[{"binding":"a"}]},
+                {"id":"owner:1","statement_kind":"function_declaration",
+                 "declared_bindings":[{"binding":"b"}]},
+                {"id":"owner:2","statement_kind":"function_declaration",
+                 "declared_bindings":[{"binding":"shared"}]}
+              ],
+              "edges": [
+                {"source":"owner:0","binding":"shared","edge_kind":"eager_use"},
+                {"source":"owner:1","binding":"shared","edge_kind":"eager_use"}
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(r.referencer_for("shared"), None);
+    }
+
+    #[test]
+    fn alias_anchor_resolves_to_the_aliasing_owner() {
+        // `let HI = UJ` — a re-export alias whose identity is the class it aliases.
+        // Pinned as "the var-decl aliasing @UJ", not by the minified `HI`.
+        let r = solve_str(
+            r#"{
+              "nodes": [
+                {"id":"owner:1","statement_kind":"class_declaration",
+                 "declared_bindings":[{"binding":"UJ"}]},
+                {"id":"owner:2","statement_kind":"var_decl",
+                 "declared_bindings":[{"binding":"HI"}]}
+              ],
+              "edges": [
+                {"source":"owner:2","binding":"UJ","edge_kind":"eager_use"}
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(r.alias_owner_for("UJ"), Some(2));
+        assert_eq!(r.alias_owner_for("absent"), None);
     }
 
     #[test]
