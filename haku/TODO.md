@@ -18,14 +18,14 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   callers never see it, and is gated by a static bearer `haku-tana-ro-token`
   reflected into `haku-sandbox`, and the `tana_review` playbook + the
   `haku-tana-ro-token` credentials row are wired into `base/`. Remaining:
-  - Decide how Haku reaches it: an in-cluster MCP client / `kubectl
-port-forward` from a sandbox pod using the reflected `haku-tana-ro-token`,
-    vs. threading the Claude Code harness's MCP client to
-    `tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp` (needs the bearer wired
-    through the web env alongside the SOPS→kubectl path). The user prefers
-    starting simple (talk to it from a pod) over harness MCP wiring.
-  - Cluster-internal reach is already permitted by the `haku-sandbox` CCNP
-    `toEntities: cluster`; no new CNP needed for that hop.
+  - **Connection paved + verified:** a sandbox pod reaches
+    `tana-mcp-ro.tana-mcp.svc.cluster.local:8765` directly (the `.svc.cluster.local`
+    target is in the pod's injected `NO_PROXY`; the `haku-sandbox` CCNP already
+    permits `toEntities: cluster`) — confirmed live from `claude-sandbox`:
+    `GET /healthz` → 200, `POST /mcp` without the bearer → 401. The `tana_review`
+    playbook carries a stdlib `python:3-slim` MCP-client recipe (no `pip` in the
+    sandbox). Haku still needs one real run to confirm the **authenticated**
+    `tools/list` (needs its reflected bearer) and record the recipe in `memory/`.
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
   - **Future (PLAN north star):** retire the pod dance by wiring Tana into the

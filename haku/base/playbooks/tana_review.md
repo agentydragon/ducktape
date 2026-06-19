@@ -9,20 +9,60 @@ the Tana PAT stays server-side, so you never see it.
 
 ## Reaching it
 
-`tana-mcp-ro` is cluster-internal
-(`tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp`), so your home can't reach it —
-drive it from a `haku-sandbox` pod the way you query Plaid: bake the work into the
-pod's **command** and read results from `kubectl logs` (`exec`/`port-forward` don't
-work through the API gateway). Mount the bearer from the `haku-tana-ro-token` secret
-as an env var (`secretKeyRef`, so it never lands on a command line) and have the pod
-speak MCP over Streamable HTTP with `Authorization: Bearer $TOKEN` — e.g. a `python`
-pod running a small `fastmcp` client, or a script doing the JSON-RPC `initialize` →
-`tools/call` handshake.
+`tana-mcp-ro` is cluster-internal (`tana-mcp-ro.tana-mcp.svc.cluster.local:8765`),
+so your home can't reach it — drive it from a `haku-sandbox` pod the way you query
+Plaid: bake the work into the pod's **command** (or a ConfigMap-mounted script) and
+read results from `kubectl logs` (`exec`/`port-forward` don't work through the API
+gateway). **Verified** from a sandbox pod: `GET /healthz` → `200`, and `POST /mcp`
+without the bearer → `401` — the path and the bearer gate both work, you just need
+the token. Two things that save time:
 
-This connection isn't paved yet — `tana-mcp-ro` is newly deployed. On first use,
-confirm it's on your wire (the secret exists, the tools list is non-empty); if not,
-note the gap in your log and move on. Once you find a pod recipe that works, record
-it in `memory/` so later runs reuse it.
+- The endpoint is under `.svc.cluster.local`, which your pod's injected `NO_PROXY`
+  already covers, so the call goes **direct**, not through the mitmproxy.
+- You can't `pip install` in the sandbox (egress allowlist), so use a stock
+  `python:3-slim` image with a **stdlib** client — not `fastmcp`.
+
+Mount the bearer from `haku-tana-ro-token` as an env var (`secretKeyRef`, so it
+never lands on a command line), then speak Streamable-HTTP MCP: `initialize` (keep
+the `Mcp-Session-Id` response header), `notifications/initialized`, then `tools/list`
+/ `tools/call` — responses may be SSE, so read the `data:` line:
+
+```python
+import json, os, urllib.request
+
+BASE = "http://tana-mcp-ro.tana-mcp.svc.cluster.local:8765/mcp"
+HDR = {"Authorization": f"Bearer {os.environ['TANA_RO_TOKEN']}",
+       "Content-Type": "application/json",
+       "Accept": "application/json, text/event-stream"}
+sid = {}
+
+def rpc(method, params=None, notify=False):
+    msg = {"jsonrpc": "2.0", "method": method}
+    if not notify:
+        msg["id"] = 1
+    if params:
+        msg["params"] = params
+    headers = dict(HDR, **({"Mcp-Session-Id": sid["v"]} if sid else {}))
+    req = urllib.request.Request(BASE, method="POST", headers=headers, data=json.dumps(msg).encode())
+    with urllib.request.urlopen(req, timeout=30) as r:
+        if r.headers.get("Mcp-Session-Id"):
+            sid["v"] = r.headers["Mcp-Session-Id"]
+        ctype, raw = r.headers.get("Content-Type", ""), r.read().decode()
+    if notify:
+        return None
+    if "text/event-stream" in ctype:  # SSE: the JSON-RPC response is the data: line
+        raw = next(line[5:] for line in raw.splitlines() if line.startswith("data:"))
+    return json.loads(raw)
+
+rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "haku", "version": "0"}})
+rpc("notifications/initialized", notify=True)
+print([t["name"] for t in rpc("tools/list")["result"]["tools"]])
+```
+
+Then add `tools/call` for `search_nodes` etc. The reach and bearer gate are
+confirmed; verify the authenticated `tools/list` on your first run, and record the
+working pod recipe in `memory/` so later runs reuse it.
 
 ## What to mine
 
