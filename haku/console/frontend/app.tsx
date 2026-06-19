@@ -1,0 +1,131 @@
+import { type FormEvent, useEffect, useState } from "react";
+
+import {
+  type DashboardResponse,
+  type Item,
+  clickAction,
+  fetchDashboard,
+  sendFeedback,
+  unclickAction,
+} from "./client.ts";
+import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
+import { TaskCard, clickKey } from "./task.tsx";
+
+function statusCounts(items: Item[]): string {
+  const counts: Record<string, number> = {};
+  for (const item of items) counts[item.status] = (counts[item.status] ?? 0) + 1;
+  return Object.keys(counts)
+    .sort()
+    .map((status) => `${status}: ${counts[status]}`)
+    .join(" · ");
+}
+
+function FeedbackBox() {
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState(false);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!text.trim()) return;
+    void (async () => {
+      await sendFeedback(text);
+      setText("");
+      setSent(true);
+    })();
+  }
+
+  return (
+    <section className="feedback">
+      <h2>Note to Haku</h2>
+      <form onSubmit={submit}>
+        <textarea
+          rows={3}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setSent(false);
+          }}
+          placeholder="Anything for Haku to fold into its next run…"
+          required
+        />
+        <button type="submit">{sent ? "Sent ✓" : "Send to Haku"}</button>
+      </form>
+    </section>
+  );
+}
+
+export default function App() {
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
+
+  useEffect(() => {
+    let alive = true;
+    fetchDashboard()
+      .then((dashboard) => {
+        if (!alive) return;
+        setData(dashboard);
+        setClicked(new Set(dashboard.clicks.map((c) => clickKey(c.item_id, c.action_id))));
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  function onToggle(itemId: string, actionId: string) {
+    const key = clickKey(itemId, actionId);
+    const wasClicked = clicked.has(key);
+    const next = new Set(clicked);
+    if (wasClicked) next.delete(key);
+    else next.add(key);
+    setClicked(next); // optimistic; reverted below on failure
+    void (wasClicked ? unclickAction(itemId, actionId) : clickAction(itemId, actionId)).catch(() => {
+      const reverted = new Set(next);
+      if (wasClicked) reverted.add(key);
+      else reverted.delete(key);
+      setClicked(reverted);
+    });
+  }
+
+  if (error) return <p>Failed to load: {error}</p>;
+  if (!data) return <p>Loading…</p>;
+
+  const open = data.items.filter((item) => item.status === "open").sort((a, b) => b.value - a.value);
+  const upNext = open.slice(0, UP_NEXT);
+  const backlog = open.slice(UP_NEXT);
+
+  return (
+    <>
+      <h1>Haku</h1>
+      <p className="sub">
+        Your value-ranked backlog · <a href={INTAKE_NEW}>+ Add intake note</a>
+      </p>
+
+      <h2>Up next</h2>
+      {upNext.length > 0 ? (
+        upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />)
+      ) : (
+        <p>No open items.</p>
+      )}
+      {backlog.length > 0 && (
+        <details className="backlog">
+          <summary>Backlog — {backlog.length} more open item(s)</summary>
+          {backlog.map((item) => (
+            <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />
+          ))}
+        </details>
+      )}
+
+      <FeedbackBox />
+
+      <footer className="page">
+        {open.length} open · {statusCounts(data.items)}
+        <br />
+        Last scan: {data.scan_time}
+      </footer>
+    </>
+  );
+}

@@ -563,15 +563,15 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
      Authentik (agentydragon-only). Cut over to the console in place and deleted — the
      `haku-dashboard` Authentik provider was repointed to the console Service, and Haku no
      longer generates `index.html`.
-  2. **Interactive console backend (DONE — `haku/console/`):** the ladder skipped the
-     Svelte/client-side rung. A tested FastAPI engine in ducktape (Bazel
+  2. **Interactive console (DONE — `haku/console/`):** a tested ducktape app (Bazel
      `oci_image` → `push-images.yml` → Flux image automation, deployed in
-     `haku-sandbox`, the standard <../cluster/docs/container-images.md> path)
-     **server-renders** the dashboard from a pygit2 clone of `haku-state` and owns
-     its **own** write path (a `haku-console` git identity), rather than calling the
-     Forgejo API with my session. It runs at **exactly Haku's perimeter** and is
-     driven by `haku-state` at runtime (templates + per-item `actions[]`), so Haku
-     evolves the look and the action surface without an image rebuild. Operator
+     `haku-sandbox`, the standard <../cluster/docs/container-images.md> path) serves
+     the dashboard as a **React SPA over a JSON API** from a pygit2 clone of
+     `haku-state` and owns its **own** write path (a `haku-console` git identity),
+     rather than calling the Forgejo API with my session. It runs at **exactly Haku's
+     perimeter** and is driven by `haku-state` at runtime (items + per-item
+     `actions[]`), so Haku evolves the content and the action surface without an image
+     rebuild. Operator
      clicks are recorded as a generic `clicks/<item>/<action>` overlay (plus a
      free-form `intake/` feedback box); Haku reduces the overlay on its next run.
      **Takes over `haku.allegedly.works` in place** — the `haku-dashboard` Authentik

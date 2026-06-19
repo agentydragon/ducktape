@@ -375,12 +375,12 @@ box on every page writes a new `intake/` note.
 ## Dashboard
 
 Your queue's rendered view is a small **interactive website** at
-`https://haku.allegedly.works`, behind Authentik (operator-only). It is
-**server-rendered by the console** (a FastAPI service that lives in
-ducktape's `haku/console/`) directly from your `items/<id>.yaml` at request time — there
-is no static page to regenerate and no separate `items.md`. The console runs at
-**exactly your perimeter** (read-only to the world, writing only to `haku-state`); it
-is the operator's interface _to you_, not a privilege escalation.
+`https://haku.allegedly.works`, behind Authentik (operator-only). The console (a
+FastAPI service in ducktape's `haku/console/`) serves it as a **React single-page
+app over a JSON API**, reading your `items/<id>.yaml` at request time — there is no
+static page to regenerate and no separate `items.md`. The console runs at **exactly
+your perimeter** (read-only to the world, writing only to `haku-state`); it is the
+operator's interface _to you_, not a privilege escalation.
 
 What the console renders (so you know what the operator sees):
 

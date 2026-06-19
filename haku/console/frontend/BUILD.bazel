@@ -1,0 +1,135 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+
+package(default_visibility = ["//visibility:public"])
+
+# TypeScript types generated from the backend's OpenAPI schema (reuses the Item
+# Pydantic models as the wire contract). Not checked in; regenerated each build.
+js_openapi_schema(
+    name = "schema",
+    generator = "//haku/console:export_schema_bin",
+)
+
+js_library(
+    name = "constants",
+    srcs = ["constants.ts"],
+)
+
+js_library(
+    name = "markdown",
+    srcs = ["markdown.ts"],
+    deps = [
+        "//:node_modules/dompurify",
+        "//:node_modules/marked",
+    ],
+)
+
+js_library(
+    name = "client",
+    srcs = ["client.ts"],
+    deps = [
+        ":schema",
+        "//:node_modules/openapi-fetch",
+    ],
+)
+
+js_library(
+    name = "task",
+    srcs = ["task.tsx"],
+    deps = [
+        ":client",
+        ":constants",
+        ":markdown",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    deps = [
+        ":client",
+        ":constants",
+        ":task",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "main_lib",
+    srcs = ["main.tsx"],
+    deps = [
+        ":app",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+esbuild(
+    name = "main_bundle",
+    config = {"jsx": "automatic"},
+    entry_point = "main.tsx",
+    format = "esm",
+    output = "dist/main.js",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":main_lib"],
+)
+
+copy_file(
+    name = "bundle_index_html",
+    src = "index.html",
+    out = "dist/index.html",
+)
+
+copy_file(
+    name = "bundle_styles_css",
+    src = "styles.css",
+    out = "dist/styles.css",
+)
+
+# Everything the backend serves as the SPA docroot (index.html + main.js + styles.css).
+filegroup(
+    name = "bundle",
+    srcs = [
+        ":bundle_index_html",
+        ":bundle_styles_css",
+        ":main_bundle",
+    ],
+)
+
+# Full TypeScript type-check (the correctness gate esbuild bundling skips).
+tsc_bin.tsc_test(
+    name = "tsc_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "markdown.test.ts",
+        "tsconfig.json",
+        ":main_lib",
+        ":schema",
+        "//:node_modules",
+    ],
+    tags = ["lint"],
+)
+
+vitest_bin.vitest_test(
+    name = "markdown_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "markdown.test.ts",
+        "vitest.config.ts",
+        ":markdown",
+        "//:node_modules",
+    ],
+)
