@@ -169,6 +169,10 @@ pub struct Index {
     prop_name: Vec<Option<Box<str>>>,
     operator: Vec<Option<Box<str>>>,
     regex: Vec<Option<(Box<str>, Box<str>)>>,
+    /// A `Class` node's superclass expression node (the `extends` clause), kept
+    /// as a separate relation because it is not a child member. `homo` compares
+    /// it for `Class` nodes (mirrors production's `match_class` super_class arm).
+    super_class: Vec<Option<NodeId>>,
     roots: Vec<NodeId>,
 }
 
@@ -201,6 +205,10 @@ impl Index {
         for (id, exp, flags) in &facts.regex {
             regex[*id as usize] = Some((exp.as_str().into(), flags.as_str().into()));
         }
+        let mut super_class = vec![None; n];
+        for (class, super_node) in &facts.super_class {
+            super_class[*class as usize] = Some(*super_node);
+        }
         Index {
             kind,
             children,
@@ -211,6 +219,7 @@ impl Index {
             prop_name: label(&facts.prop_name),
             operator: label(&facts.operator),
             regex,
+            super_class,
             roots: facts.top_level.iter().map(|(id, _)| *id).collect(),
         }
     }
@@ -260,6 +269,10 @@ impl Index {
             .get(id as usize)
             .and_then(|slot| slot.as_ref())
             .map(|(exp, flags)| (&**exp, &**flags))
+    }
+
+    fn super_class_of(&self, id: NodeId) -> Option<NodeId> {
+        self.super_class.get(id as usize).copied().flatten()
     }
 }
 
@@ -484,6 +497,23 @@ fn homo(
         }
         (None, None) => {}
         _ => return Ok(false),
+    }
+
+    // A `Class` node's superclass (`extends`) is a separate relation, not a child
+    // member, so compare it explicitly before the body — both present or both
+    // absent, and a present pair matched (mirrors production's `match_class`
+    // `match_option_box_expr(super_class)` arm). `Class` introduces no alpha
+    // frame, so the superclass reference resolves against the enclosing scope.
+    if nkind == "Class" {
+        match (needle.super_class_of(nid), subject.super_class_of(sid)) {
+            (Some(n_super), Some(s_super)) => {
+                if !homo(needle, n_super, subject, s_super, mode, bindings)? {
+                    return Ok(false);
+                }
+            }
+            (None, None) => {}
+            _ => return Ok(false),
+        }
     }
 
     // A function/arrow/constructor/setter/catch node scopes its params + body, so

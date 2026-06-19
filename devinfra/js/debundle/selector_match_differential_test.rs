@@ -293,6 +293,29 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: true,
                 expected: false,
             },
+            // A class's superclass (`extends`) is part of its identity: present in
+            // both (alpha-matched), or absent in both. A no-`extends` needle must
+            // NOT match an `extends`-bearing class, and vice versa (mirrors
+            // production's `match_class` `super_class` arm) — the gap that made the
+            // `extends X { CLASS_REST; }` class lists over-match.
+            Case {
+                selector: "class A extends B { CLASS_REST; }",
+                subject: "class C extends D { m() {} }",
+                alpha: true,
+                expected: true,
+            },
+            Case {
+                selector: "class A extends B { CLASS_REST; }",
+                subject: "class C { m() {} }",
+                alpha: true,
+                expected: false,
+            },
+            Case {
+                selector: "class A { CLASS_REST; }",
+                subject: "class C extends D { m() {} }",
+                alpha: true,
+                expected: false,
+            },
             // STR_LITERAL_MATCHING_RE matches a string literal whose value matches
             // the pattern — by regex, not by structure.
             Case {
