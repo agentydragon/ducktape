@@ -40,6 +40,18 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # Package registries for ad-hoc tooling installs inside sandbox pods
+    # (e.g. `pip install fastmcp`, `npx <mcp-server>`). PyPI: `pypi.org`
+    # (index/metadata) + `files.pythonhosted.org` (wheels/sdists); npm:
+    # `registry.npmjs.org`.
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
     # Allow forwarding to any in-cluster Service. Sandbox workloads keep
     # mitmproxy in-path even when targeting cluster endpoints; NO_PROXY in the
     # inject policy still permits explicit bypass for Service FQDNs that already
