@@ -819,25 +819,28 @@ selectors; **0 over-resolved / 0 value-disagreements** at bounded scale) was nec
 sufficient**: it never ran the fact matcher against a real chunk's full statement population with
 nested-body needles. Running the per-target-chunk gate against the **real minified source** (not the
 debundled `entry.js`) surfaced what the capped runs could not — see
-<../debug/2026_06_18_per_chunk_gate_real_source.md>. Both prerequisites it exposed have since
-**landed**, and the gate is now **green over every measured selector** (fail-closed 0 / over-resolved
-0 / value-disagree 0 — "every selector resolves to the same owner as production"):
+<../debug/2026_06_18_per_chunk_gate_real_source.md>. Several real bugs were fixed (below), but a
+**correction**: the budget-limited runs only reached the alphabetical module prefix (`app/auth`,
+`app/bootstrap/*`), which is clean — the **full 8306-selector corpus is NOT green**, so the matcher
+is **not yet switch-ready**.
 
-- **Throughput / measurability — done (commit `dc1aa695`).** `Index` now owns its labels so
-  `ChunkResolver` caches each body item's index once (plus one synthetic single-declarator index per
-  var-decl declarator); every matcher entry point has a prebuilt-index variant. Pure memoization, no
-  verdict change. Per-selector resolve on the main chunk 1.83 s → 0.34 s (~5.4×); a full
-  8306-selector pass is now tractable (~50–60 min), so corpus-wide parity is provable, not just
-  spot-checkable.
-- **Faithful nested-body matching — done.** The 4 fail-closed were two distinct EDB/matcher
-  faithfulness bugs, both fixed: async/generator were dropped from the function/arrow facts (commit
-  `a89a58be`; folded into the node kind), and the alpha bijection was scope-blind — a flat
-  spelling-keyed map that conflated same-spelled params in sibling function scopes (commit
-  `23414587`; `Bindings` is now a scope stack mirroring production's `alpha_scopes`).
+Landed so far:
 
-What remains is the wiring + soak (production still calls the old matcher directly; no in-production
-shadow run) and the standing corpus-wide proof (the full uncapped pass over all 8306 selectors). The
-matcher/resolver themselves are now **switch-ready**.
+- **Throughput (commits `dc1aa695`, `5e65ae73`, `3c9151c9`).** `Index` owns its labels and is cached
+  per body item (+ one synthetic single-declarator index per var-decl declarator); dense `Vec`-indexed
+  `Index`; the corpus differential parallelized over modules. Pure-perf, no verdict change. Net: a
+  full pass went from impractical (~5 h) to ~36 min wall (~137 min single-threaded). Still too slow to
+  iterate — the declarator-hole hot path needs a **candidate index** (algorithmic), not more constant
+  factors.
+- **Two faithfulness bugs fixed** (drove the prefix to 0): async/generator dropped from function/arrow
+  facts (`a89a58be`; folded into the node kind), and a scope-blind alpha bijection (`23414587`; now a
+  scope stack mirroring production's `alpha_scopes`).
+
+**Full-corpus state (NOT green).** Over all 8306 selectors: **9 over-resolved** (genuine — datalog
+resolves where production rejects) + **44 fail-closed** (more faithfulness gaps, e.g.
+`domains/transcript/pdfExtraction`). Verified real, not parallel-harness artifacts
+(`production_match_is_globals_independent`). These must reach zero before the matcher is switch-ready —
+and the pass must first be fast enough to iterate.
 
 **Migration plan (strangler-fig: shadow → flip → delete).**
 
@@ -845,15 +848,15 @@ matcher/resolver themselves are now **switch-ready**.
    minified snapshot source (commits on `claude/lucid-mendel-178j6q`). It now streams per-chunk with
    a budget and separates datalog/production timing. Result + findings:
    <../debug/2026_06_18_per_chunk_gate_real_source.md>.
-2. ✅ **Make a corpus pass tractable** — done. The root-kind prefilter (commit `954d3525`) bought
-   only ~15%; the real lever was caching each body item's `Index` once in `ChunkResolver` + a
-   prebuilt-index variant of every matcher entry point (commit `dc1aa695`): per-selector resolve
-   1.83 s → 0.34 s (~5.4×), a full pass now ~50–60 min. Numbers: <../debug/2026_06_18_per_chunk_gate_real_source.md>.
-3. ✅ **Close the fail-closed faithfulness gaps** — done. The 4 gaps were two bugs: async/generator
-   dropped from function/arrow facts (commit `a89a58be`) and a scope-blind alpha bijection (commit
-   `23414587`; now a scope stack mirroring production's `alpha_scopes`). The real-source gate is green
-   over every measured selector (0 fail-closed / 0 disagreements); the full uncapped pass over all
-   8306 is the standing corpus-wide proof.
+2. 🔶 **Make a corpus pass fast enough to iterate** — partial. Caching + dense `Vec` `Index` +
+   module-parallelism (commits `dc1aa695`, `5e65ae73`, `3c9151c9`) took it from ~5 h to ~36 min wall,
+   but that is still too slow. **Open: a candidate index for the declarator-hole path** (its cost is
+   per-candidate deep init-homo over a giant `initBundle` var-decl owner) — algorithmic, the real
+   lever. Numbers: <../debug/2026_06_18_per_chunk_gate_real_source.md>.
+3. 🔶 **Close the fail-closed + over-resolved gaps** — partial. Two bugs fixed (async/generator in
+   facts `a89a58be`; scope-blind alpha `23414587`) cleared the alphabetical prefix, but the **full
+   corpus still has 44 fail-closed + 9 over-resolved** (genuine). Each needs diagnosis (the
+   over-resolved especially — datalog too permissive somewhere) until the full-corpus gate is 0/0.
 4. **Route the three production call sites through `SelectorResolver`** — pass a resolver in, default
    `AstWildcardResolver` (no behavior change; the trait method bodies already delegate to the same
    free functions). Mechanical, atomic, keeps all tests green.
@@ -865,10 +868,11 @@ matcher/resolver themselves are now **switch-ready**.
    `DatalogResolver` (AstWildcard becomes the shadow, or is dropped). One-line change per call site.
 7. **Delete `AstWildcardMatcher`** and the now-unused free functions once nothing references them.
 
-**Distance to switch:** the matcher/resolver are **switch-ready**. Steps 2–3 (throughput + the
-nested-body faithfulness gaps the real source exposed) are done and the real-source gate is green
-over every measured selector; only the mechanical wiring + soak + cleanup (steps 4–7) remain, plus
-the standing full-corpus proof. No further matcher capability is required to flip.
+**Distance to switch:** further than the alphabetical-prefix sample implied — the matcher is **not**
+switch-ready. Steps 2–3 are only partial: the full 8306-selector corpus still has 44 fail-closed + 9
+over-resolved disagreements, and the pass is still ~36 min (needs the declarator-hole candidate
+index to be iterable). Both must be closed — gate 0/0 over the full corpus, pass fast enough to
+re-run — before the mechanical wiring + soak + cleanup (steps 4–7) apply.
 
 ### What the matcher cannot do that the query model can
 

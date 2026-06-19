@@ -149,7 +149,36 @@ chunk dropped 1.83 s → 0.34 s (~5.4×); the worst path (declarator-hole member
    frame; function/arrow/constructor/setter/catch nodes push a frame). Closed the
    last gap (boot_progress/state).
 
-**Result.** The per-target-chunk gate is **green** over every measured selector:
-`fail-closed 0 / over-resolved 0 / value-disagree 0` (347 selectors under a 150 s
-budget — "every selector resolves to the same owner as production"). The full
-uncapped pass over all 8306 selectors is the standing corpus-wide proof.
+**Result over the budget-limited prefix.** The gate was green over the 347
+selectors a 150 s budget reached: `fail-closed 0 / over-resolved 0 /
+value-disagree 0`.
+
+## Correction — the full corpus is NOT green (the prefix was unrepresentative)
+
+The budget-limited runs only ever reached the **alphabetical prefix** of the
+modules tree (`app/auth`, `app/bootstrap/*`), which is clean. Running the
+**full uncapped 8306-selector pass** (commit `3c9151c9`, parallelized over
+modules) tells a different story:
+
+```
+member         resolved-parity 6814 | reject-parity 7 | fail-closed 43 | over-resolved 9 | value-disagree 0
+anonymous      resolved-parity  619 | reject-parity 0 | fail-closed  0 | over-resolved 0 | value-disagree 0
+binding-group  resolved-parity  813 | reject-parity 0 | fail-closed  1 | over-resolved 0 | value-disagree 0
+```
+
+So corpus-wide there are **9 genuine over-resolved disagreements** (datalog
+resolves a unique owner where production rejects — the matcher is too permissive
+on some shape) and **44 fail-closed** (more faithfulness gaps, e.g.
+`domains/transcript/pdfExtraction`'s `async function …(ANYTHING)` resolving to 0).
+These are **real**, not parallelism artifacts — `production_match_is_globals_independent`
+proves the per-task-globals harness does not change production's verdict. The
+earlier "switch-ready / gate green" conclusion was **premature**: it generalized
+from an unrepresentative prefix. The matcher is **not** at corpus-wide parity.
+
+**Performance.** The full pass is ~137 min single-threaded; dense-`Vec` `Index`
+(~3×) + 4-core parallelism (~3.85×) bring it to ~36 min wall — still too slow to
+iterate on. The cost concentrates in expensive shapes (declarator-hole members
+scanning a giant `initBundle` var-decl owner: per-candidate deep init-homo). The
+next lever is **algorithmic** — a candidate index for that path — not more
+constant-factor or core-count wins. Only once the pass is fast enough to iterate
+can the 44 fail-closed + 9 over-resolved be driven to zero (the actual gate).

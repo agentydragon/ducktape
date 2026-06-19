@@ -72,20 +72,19 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
   menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
   playbook with tested fixtures (M2) and port-based evaluation (M3).
-- <plans/selector_constraint_model.md> — **matcher/resolver switch-ready; real-source gate green
+- <plans/selector_constraint_model.md> — **resolver works; NOT switch-ready — full corpus still red
   (2026-06-18).** A fact-based selector resolver (`chunk_facts` EDB + `selector_match` homomorphism +
-  `ChunkResolver`, build-the-model-once). The `PER_CHUNK_JS_ROOT` gate runs against the **real
-  minified snapshot** and is green over every measured selector (0 fail-closed / 0 over-resolved / 0
-  value-disagree). Getting there closed everything the real source exposed: throughput (cache each
-  body item's `Index` once + prebuilt-index matcher entry points, ~5.4× → full pass ~50–60 min,
-  `dc1aa695`) and two faithfulness bugs — async/generator dropped from function/arrow facts
-  (`a89a58be`) and a scope-blind alpha bijection now a scope stack mirroring production's
-  `alpha_scopes` (`23414587`). Findings: <debug/2026_06_18_per_chunk_gate_real_source.md>. **Next (to
-  actually switch off `AstWildcardMatcher`):** (1) the standing full-corpus proof (uncapped pass over
-  all 8306); (2) route the three production call sites (`lowering/plans.rs`,
-  `lowering/materialize/plan_builder.rs`, `anonymous_resolution.rs`) through `SelectorResolver`;
-  (3) shadow `DifferentialResolver<AstWildcard, Datalog>` in real runs; (4) flip; (5) delete
-  `AstWildcardMatcher`. See the plan's "Switching from `AstWildcardMatcher`" section.
+  `ChunkResolver`). The `PER_CHUNK_JS_ROOT` gate runs against the **real minified snapshot**. Fixes
+  landed: throughput (cached/dense `Index` + module-parallelism, `dc1aa695`/`5e65ae73`/`3c9151c9`,
+  ~5 h → ~36 min) and two faithfulness bugs (async/generator in facts `a89a58be`; scope-blind alpha
+  `23414587`). These cleared the alphabetical prefix, but the **full 8306-selector corpus is not
+  green**: 44 fail-closed + 9 over-resolved (genuine, verified not parallel-harness artifacts).
+  Findings: <debug/2026_06_18_per_chunk_gate_real_source.md>. **Next (ordered):** (1) candidate index
+  for the declarator-hole hot path so the pass is fast enough to iterate (still ~36 min); (2) drive
+  the 44 fail-closed + 9 over-resolved to zero over the full corpus; then the mechanical (3) route the
+  three call sites (`lowering/plans.rs`, `lowering/materialize/plan_builder.rs`,
+  `anonymous_resolution.rs`) through `SelectorResolver`; (4) shadow; (5) flip; (6) delete
+  `AstWildcardMatcher`.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
