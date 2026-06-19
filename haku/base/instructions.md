@@ -370,41 +370,39 @@ the standard set (`snooze`/`reject`/`done`/`raise`/`lower`, all `kind: command` 
 `intent` you interpret into a status/score change) plus item-specific ones ("compare
 cleaner options"). `kind: claude_handoff` actions carry a `prompt` and render as an
 inline `claude.ai/new` deep-link instead (no click state). A free-form **feedback**
-box on every page writes a new `intake/` note. (Until the arm is cut over, the static
-`dashboard/generate.py` still renders; `actions[]` is inert there.)
+box on every page writes a new `intake/` note.
 
 ## Dashboard
 
-Your queue's rendered view is a small **read-only website** at
-`https://haku.allegedly.works`: an in-cluster nginx git-syncs your state repo and
-serves **only** its `dashboard/` directory, behind Authentik (operator-only). The
-`items/<id>.yaml` files are the data; `dashboard/index.html` is the **single
-rendered view** — there is no separate `items.md`. Keep it current every run:
+Your queue's rendered view is a small **interactive website** at
+`https://haku.allegedly.works`, behind Authentik (operator-only). It is
+**server-rendered by the dashboard "arm"** (a FastAPI service that lives in
+ducktape's `haku/arm/`) directly from your `items/<id>.yaml` at request time — there
+is no static page to regenerate and no separate `items.md`. The arm runs at
+**exactly your perimeter** (read-only to the world, writing only to `haku-state`); it
+is the operator's interface _to you_, not a privilege escalation.
 
-- Maintain `dashboard/index.html` with a **generator you author and keep in your
-  state** (e.g. `dashboard/generate.py`) that reads `items/` and renders a
-  self-contained HTML page. Treat the generator as part of your knowledge garden —
-  version it and improve it over time. Run it whenever items change and commit the
-  result (you may wire it as a git pre-commit hook so it can't drift from the
-  items); pushing is what updates the live site.
-- Render all `open` items, sorted by `value` descending, scannable by **tiering**
-  the deep backlog rather than dropping items. Each task is a **collapsible
-  `<details>`**: the `<summary>` is a compact row (value, title, deadline, kind),
-  and the task's full **`body` — compiled from Markdown to HTML** — plus its action
-  button live **only inside that task's own expanded details view**; nothing about a
-  task is shown on the page until you open it. The layout must stay readable on
-  mobile (don't let the deadline/kind squeeze the title; let long tokens/URLs wrap).
-  - **Up next**: the top items (≤7) to act on now; expanding a `prepared_prompt` item
-    reveals a `claude.ai/new?q=<url-encoded prompt>` deep-link button (fall back to a
-    link to the item file when the encoded prompt would exceed ~2000 characters).
-  - **Backlog**: everything else inside a collapsible `<details>` section — each
-    still its own collapsible task, however long the list.
-  - A standing **"Add intake note"** link to Forgejo's new-file editor,
-    `https://git.allegedly.works/haku/haku-state/_new/main/intake/`, plus a footer
-    with counts by status and the last-scan time.
-- Only `dashboard/` is web-served. Put only publishable content there, don't rely
-  on anything outside it being visible, and never include secrets (the item rules
-  already forbid this).
+What the arm renders (so you know what the operator sees):
+
+- All `open` items, ranked by `value`, **tiered** so the deep backlog stays scannable:
+  **Up next** (top ≤7) and a collapsible **Backlog**. Each task is a collapsible
+  `<details>` whose `<summary>` is a compact row (value, title, deadline, kind); the
+  full **`body` (Markdown→HTML)**, the action toggles, and the primary action button
+  live **only inside that task's expanded view**. A `prepared_prompt` item exposes a
+  `claude.ai/new?q=<url-encoded prompt>` deep-link (falling back to the item file once
+  the encoded prompt would exceed ~2000 characters).
+- The **`actions[]`** you attach (rendered as click/un-click toggles), a global
+  **feedback** box, an **"Add intake note"** link to Forgejo, and a status +
+  last-scan footer. The operator's clicks and feedback return to you as commits — the
+  `clicks/` overlay and `intake/` notes (see the _Item contract_) — which you reduce
+  each run.
+
+You shape **content** by writing good items; you shape **look** by _optionally_
+committing `dashboard/templates/{page.html.j2,style.css}` overrides, which the arm
+loads in place of its baked defaults (and **fails safe** to those defaults if an
+override is missing or broken, so a bad commit can't take the dashboard down). You no
+longer author a generator or commit `dashboard/index.html` — the arm renders. Never
+put secrets in items or templates (the item rules already forbid this).
 
 ## Playbooks
 

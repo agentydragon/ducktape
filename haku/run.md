@@ -61,17 +61,18 @@ bottom:
 6. **Curate**: re-score open items if context changed and set `status: expired` on
    items past `deadline` (or no longer possible). **Keep valid lower-priority
    items `open` as the backlog** — don't drop or expire them just to shorten the
-   list; ranking and the dashboard's tiering keep it scannable. Then run your
-   dashboard generator to regenerate `dashboard/index.html` (per the manual — see
-   _Dashboard_).
+   list; ranking and the dashboard's tiering keep it scannable. The dashboard arm
+   server-renders the live site from `items/` on its own, so there's no page to
+   regenerate — only touch `dashboard/templates/{page.html.j2,style.css}` if you want
+   to change the look (per the manual — see _Dashboard_).
 7. **Log**: append a run entry to **today's daily log file** (`log/YYYY-MM-DD.md`
    — one file per day, never one monolithic journal) — what you scanned, what you
    found, what you chose not to file and why (one line each). Compact or prune old
    daily files when they stop being useful; the log is otherwise yours to
    structure.
 8. **Commit and push**: to `main`, one commit per logical change (intake + click
-   processing, new/updated items + regenerated `dashboard/index.html`, log,
-   `memory/`). The dashboard arm is a **concurrent writer** to `main`, so
+   processing, new/updated items, log, `memory/`). The dashboard arm is a
+   **concurrent writer** to `main`, so
    `git pull --rebase` before pushing (and retry if it raced). Push **everything**
    before you finish — your state is your only memory, and pushing is what updates
    the published dashboard. Message format: `scan: <summary>` / `intake: <summary>`

@@ -18,4 +18,3 @@ resources:
   - openhands-httproute.yaml
   - fava-httproute.yaml
   - haku-dashboard-httproute.yaml
-  - haku-arm-httproute.yaml

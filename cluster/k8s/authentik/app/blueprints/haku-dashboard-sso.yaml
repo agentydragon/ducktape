@@ -12,7 +12,7 @@ entries:
       name: haku-dashboard
     attrs:
       external_host: "https://haku.allegedly.works"
-      internal_host: "http://haku-dashboard.haku-sandbox.svc.cluster.local:8080"
+      internal_host: "http://haku-arm.haku-sandbox.svc.cluster.local:8080"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
@@ -27,7 +27,7 @@ entries:
     attrs:
       name: Haku
       provider: !KeyOf haku-dashboard-provider
-      meta_description: "Haku's value-ranked item dashboard (read-only)"
+      meta_description: "Haku's interactive value-ranked item dashboard"
       meta_launch_url: "https://haku.allegedly.works"
       open_in_new_tab: true
 

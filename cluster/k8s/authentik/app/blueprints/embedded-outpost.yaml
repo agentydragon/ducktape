@@ -37,5 +37,4 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, openhands]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-dashboard]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, haku-arm]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, tandoor]]
