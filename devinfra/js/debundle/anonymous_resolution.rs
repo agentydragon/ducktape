@@ -291,7 +291,7 @@ fn resolve_anonymous_statement_claims_in_globals(
         .map(|(source_path, parsed)| {
             (
                 source_path.clone(),
-                source_match::AstWildcardResolver::new(&parsed.module),
+                source_match::ChunkResolver::new(&parsed.module),
             )
         })
         .collect();

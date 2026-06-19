@@ -201,6 +201,9 @@ the categorical seam does **not** cover, so deleting it is materially larger:
      from `source_match::member_binding_candidates` to the per-source fact resolver's
      `member_candidates` (build one `ChunkResolver` per source, like fn 2).
   3. **Flip fn 2** (co-move anonymous) from `AstWildcardResolver` to `ChunkResolver`.
+     ✅ done (`edit_gate_source_match` + `peel_factorize_{extend_anonymous,landability}`
+     - `gate` e2e green). Steps 1–2 (the `member_candidates` refactor + fn 1 reroute)
+       remain — the semantics-sensitive part, to be done carefully (not rushed).
   4. Now the matcher (`AstWildcardMatcher` + `find_member_binding_matches` +
      `find_anonymous_statement_body_index_groups` + `source_match_body_debt`) is reached
      ONLY by: `source_match_body_debt` diagnostics (`plan_builder` + `selector_debt.rs`
@@ -272,4 +275,5 @@ data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 | F     | F2-wire-anon-comove: per-source co-move anonymous path through the seam     | b3406173          | 4 e2e cli gates pass (local bazelisk)                                                 |
 | F     | F4: flip main lowering pipeline to the fact resolver (ChunkResolver)        | fe6e8d60          | `lowering_test` + 6 e2e cli output gates pass; corpus parity proven (unchanged logic) |
 | F     | record concrete F5 (matcher-deletion) fork from reading body_debt           | 376aa511          | doc only                                                                              |
-| F     | record chosen F5 direction (diagnostics-only residual) + impl plan          | (this)            | doc only                                                                              |
+| F     | record chosen F5 direction (diagnostics-only residual) + impl plan          | 835c2eeb          | doc only                                                                              |
+| F     | F5 step 3: flip co-move anonymous fn 2 to the fact resolver                 | (this)            | 4 e2e cli gates pass (local bazelisk)                                                 |
