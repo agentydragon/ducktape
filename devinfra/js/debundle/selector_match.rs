@@ -57,6 +57,21 @@ pub enum Mode {
     AlphaAll,
 }
 
+/// An invariant token — a label `homo` always compares **exactly**, even in
+/// alpha mode (string/number literals, member/property names, regex literals).
+/// Any structural match must carry every invariant token the needle pins, so a
+/// token → containing-statements index lets a selector skip straight to the
+/// candidates that share its rarest token instead of scanning the whole chunk.
+/// (Identifiers are renamable in alpha mode, so they are *not* invariant; the
+/// `var`/`let`/`const` keyword is invariant but too common to discriminate.)
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum Token {
+    Str(Box<str>),
+    Num(Box<str>),
+    Prop(Box<str>),
+    Regex(Box<str>, Box<str>),
+}
+
 /// One lexical frame's bijective needle↔subject identifier map.
 #[derive(Default, Clone)]
 struct AlphaScope {
@@ -347,6 +362,27 @@ const RUN_HOLE_KEYWORDS: [&str; 6] = [
 /// rather than treating the keyword as an ordinary identifier.
 fn is_run_hole_keyword(name: &str) -> bool {
     RUN_HOLE_KEYWORDS
+        .iter()
+        .any(|kw| hole_name_for(name, kw).is_some())
+}
+
+/// Whether `name` is any hole/placeholder keyword (single-node or run). Used to
+/// keep hole markers out of the invariant-token index: a `CLASS_REST` class-field
+/// hole, for instance, projects to a `prop_name` fact, but it matches *absence*
+/// of members, not a real `CLASS_REST`-named property — indexing it would require
+/// a token no real subject carries.
+fn is_hole_keyword(name: &str) -> bool {
+    name == ANYTHING_HOLE_KEYWORD
+        || name == CASE_REST_HOLE_KEYWORD
+        || [
+            EXPR_HOLE_KEYWORD,
+            STMT_HOLE_KEYWORD,
+            STMT_LIST_HOLE_KEYWORD,
+            ARGS_HOLE_KEYWORD,
+            OBJECT_PROPS_HOLE_KEYWORD,
+            DECLARATORS_HOLE_KEYWORD,
+            CLASS_REST_HOLE_KEYWORD,
+        ]
         .iter()
         .any(|kw| hole_name_for(name, kw).is_some())
 }
@@ -1045,6 +1081,39 @@ pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<
         return Some("StrLit");
     }
     Some(index.kind_of(init))
+}
+
+/// The deduplicated invariant tokens (see [`Token`]) a statement's index carries.
+/// For a body item these are indexed for candidate lookup; for a needle they are
+/// the tokens any match must also carry. A `STR_LITERAL_MATCHING_RE(...)`
+/// predicate's pattern argument is excluded — it matches varying string values
+/// by regex, not by literal equality, so it pins no specific token.
+pub fn invariant_tokens(index: &Index) -> Vec<Token> {
+    let node_count = index.kind.len() as NodeId;
+    let predicate_args: HashSet<NodeId> = (0..node_count)
+        .filter(|&node| regex_predicate_pattern(index, node).is_some())
+        .filter_map(|node| index.children_of(node).get(1).copied())
+        .collect();
+    let mut tokens: HashSet<Token> = HashSet::new();
+    for node in 0..node_count {
+        if !predicate_args.contains(&node)
+            && let Some(value) = index.str_lit_of(node)
+        {
+            tokens.insert(Token::Str(value.into()));
+        }
+        if let Some(value) = index.num_lit_of(node) {
+            tokens.insert(Token::Num(value.into()));
+        }
+        if let Some(name) = index.prop_name_of(node)
+            && !is_hole_keyword(name)
+        {
+            tokens.insert(Token::Prop(name.into()));
+        }
+        if let Some((pattern, flags)) = index.regex_of(node) {
+            tokens.insert(Token::Regex(pattern.into(), flags.into()));
+        }
+    }
+    tokens.into_iter().collect()
 }
 
 /// The init node of a single-declarator var-decl statement: `var_decl_node` →

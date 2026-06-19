@@ -62,6 +62,19 @@ pub struct ChunkResolver<'m> {
     /// the item and re-extracts facts for every declarator on every such selector
     /// (the second-worst per-selector cost after declarator holes).
     var_declarator_subjects: Vec<VarDeclaratorSubject>,
+    /// Inverted index: an invariant token → the (ascending) body indices whose
+    /// statement carries it. A needle can only match a statement that carries
+    /// every token the needle pins, so the single-statement scan visits just the
+    /// rarest required token's postings instead of every body item. Needles that
+    /// pin no token (pure structural, or a bare regex predicate) fall back to the
+    /// root-kind-prefiltered full scan.
+    body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
+    /// Like `body_tokens`, but keyed to indices into `var_declarator_subjects`:
+    /// a single-declarator member/group needle only matches a declarator that
+    /// carries its tokens, so the declarator scan visits just the rarest token's
+    /// postings. CSS-module regex-predicate needles pin no token and fall back to
+    /// the init-kind-prefiltered scan (cheap now that the regex is precompiled).
+    declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
 }
 
 /// A var-decl owner's single declarator, projected once to a synthetic
@@ -87,22 +100,39 @@ impl<'m> ChunkResolver<'m> {
             .iter()
             .map(selector_match::subject_root_kind)
             .collect();
-        let body_indices = body_facts
+        let body_indices: Vec<selector_match::Index> = body_facts
             .iter()
             .map(selector_match::Index::build)
             .collect();
+        let mut body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (body_idx, index) in body_indices.iter().enumerate() {
+            for token in selector_match::invariant_tokens(index) {
+                body_tokens.entry(token).or_default().push(body_idx);
+            }
+        }
         let mut var_declarator_subjects = Vec::new();
+        let mut declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>> =
+            std::collections::HashMap::new();
         for (body_idx, item) in module.body.iter().enumerate() {
             let Some(var) = item_var_decl(item) else {
                 continue;
             };
             for (declarator_idx, declarator) in var.decls.iter().enumerate() {
                 if let Some(facts) = item_facts(&single_declarator_item(item, declarator)) {
+                    let index = selector_match::Index::build(&facts);
+                    let subject_idx = var_declarator_subjects.len();
+                    for token in selector_match::invariant_tokens(&index) {
+                        declarator_tokens
+                            .entry(token)
+                            .or_default()
+                            .push(subject_idx);
+                    }
                     var_declarator_subjects.push(VarDeclaratorSubject {
                         body_idx,
                         declarator_idx,
                         init_kind: selector_match::var_declarator_init_kind(&facts),
-                        index: selector_match::Index::build(&facts),
+                        index,
                     });
                 }
             }
@@ -112,7 +142,51 @@ impl<'m> ChunkResolver<'m> {
             body_root_kinds,
             body_indices,
             var_declarator_subjects,
+            body_tokens,
+            declarator_tokens,
         }
+    }
+
+    /// Indices into `var_declarator_subjects` a single-declarator needle could
+    /// match — the rarest required-token postings (sound superset), or all
+    /// declarators when the needle pins no invariant token. Mirrors
+    /// [`Self::candidate_bodies`] for the declarator scan.
+    fn candidate_declarators(&self, needle_index: &selector_match::Index) -> Vec<usize> {
+        let tokens = selector_match::invariant_tokens(needle_index);
+        if tokens.is_empty() {
+            return (0..self.var_declarator_subjects.len()).collect();
+        }
+        let mut rarest: Option<&Vec<usize>> = None;
+        for token in &tokens {
+            let Some(postings) = self.declarator_tokens.get(token) else {
+                return Vec::new();
+            };
+            if rarest.is_none_or(|current| postings.len() < current.len()) {
+                rarest = Some(postings);
+            }
+        }
+        rarest.cloned().unwrap_or_default()
+    }
+
+    /// Body indices a needle could match: the rarest required-token postings list
+    /// (a sound superset — every match carries that token), or every body index
+    /// when the needle pins no invariant token. If any required token is absent
+    /// from the chunk, nothing can match.
+    fn candidate_bodies(&self, needle_index: &selector_match::Index) -> Vec<usize> {
+        let tokens = selector_match::invariant_tokens(needle_index);
+        if tokens.is_empty() {
+            return (0..self.body_indices.len()).collect();
+        }
+        let mut rarest: Option<&Vec<usize>> = None;
+        for token in &tokens {
+            let Some(postings) = self.body_tokens.get(token) else {
+                return Vec::new();
+            };
+            if rarest.is_none_or(|current| postings.len() < current.len()) {
+                rarest = Some(postings);
+            }
+        }
+        rarest.cloned().unwrap_or_default()
     }
 }
 
@@ -134,16 +208,17 @@ fn matching_body_indices(
     // subject kind` gate in the matcher), so skip it without matching.
     let prefilter = selector_match::needle_root_kind_prefilter(needle_facts);
     let mut indices = Vec::new();
-    // A non-extractable statement projects to empty facts (no root) and so
-    // matches nothing — the same outcome as the old skip; any divergence would
-    // surface in the differential.
-    for (body_idx, subject_index) in chunk.body_indices.iter().enumerate() {
+    // Token index narrows the scan to statements that carry the needle's invariant
+    // tokens (a sound superset); the root-kind prefilter and full match then
+    // filter. A non-extractable statement projects to empty facts (no root, no
+    // tokens) and so matches nothing — the same outcome as the old skip.
+    for body_idx in chunk.candidate_bodies(&needle_index) {
         if let Some(kind) = prefilter
             && chunk.body_root_kinds[body_idx] != Some(kind)
         {
             continue;
         }
-        if selector_match::matches_indexed(&needle_index, subject_index, mode)
+        if selector_match::matches_indexed(&needle_index, &chunk.body_indices[body_idx], mode)
             .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
         {
             indices.push(body_idx);
@@ -215,14 +290,16 @@ fn resolve_var_declarator_member(
         }
         None => 0,
     };
-    // Match the needle against each var-decl owner's declarator via the cached
+    // Match the needle against each candidate var-decl declarator via the cached
     // synthetic single-declarator indices (built once for the chunk), so this
-    // scan is index-build-free. A sound init-kind prefilter skips declarators
-    // whose initializer kind cannot match the needle's, without a full match.
+    // scan is index-build-free. The token index narrows to declarators carrying
+    // the needle's invariant tokens; a sound init-kind prefilter then skips
+    // declarators whose initializer kind cannot match, before the full match.
     let needle_index = selector_match::Index::build(&needle_facts);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
-    for subject in &chunk.var_declarator_subjects {
+    for subject_idx in chunk.candidate_declarators(&needle_index) {
+        let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)
         {
@@ -655,7 +732,8 @@ fn resolve_group_single_declarator(
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
-    for subject in &chunk.var_declarator_subjects {
+    for subject_idx in chunk.candidate_declarators(&needle_index) {
+        let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)
         {
