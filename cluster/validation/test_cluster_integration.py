@@ -22,6 +22,7 @@ import yaml
 from cluster.validation.checks import (
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
+    check_proxy_provider_outpost_assignment,
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
@@ -153,6 +154,17 @@ def test_blueprint_completeness(k8s_dir: Path) -> None:
     assert not unlisted, "Add to authentik-sso-blueprints files list: " + ", ".join(
         f"blueprints/{name}" for name in unlisted
     )
+
+
+def test_proxy_providers_assigned_to_outpost(k8s_dir: Path) -> None:
+    """Every present authentik proxy provider must be assigned to an outpost.
+
+    An unassigned proxy provider (HTTPRoute present, but not on the embedded outpost)
+    302s to a login flow served on its own host, breaking Google SSO with
+    redirect_uri_mismatch — the haku.allegedly.works failure mode.
+    """
+    errors = check_proxy_provider_outpost_assignment(k8s_dir)
+    assert not errors, "\n".join(errors)
 
 
 if __name__ == "__main__":

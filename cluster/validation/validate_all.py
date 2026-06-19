@@ -14,11 +14,13 @@ Checks:
 8. Helm template rendering: Cilium values files render without errors (Bazel test only,
    enable in pre-commit with DUCKTAPE_HELM_VALIDATE=1)
 9. Blueprint completeness: All authentik blueprint files must be listed in configMapGenerator
-10. Goldilocks explicit decision: Namespaces with workloads must explicitly set goldilocks enabled label
-11. Image automation <-> webhook: every ImageRepository is listed in the GitHub webhook
+10. Proxy provider outpost assignment: every present authentik proxy provider must be assigned to an
+    outpost, else its host 302s to a login flow served on itself and Google SSO redirect_uri_mismatch
+11. Goldilocks explicit decision: Namespaces with workloads must explicitly set goldilocks enabled label
+12. Image automation <-> webhook: every ImageRepository is listed in the GitHub webhook
     receiver (so pushes reconcile immediately, not just on the 5m poll), and every ImagePolicy
     references a defined ImageRepository
-12. Terraform backends: tofu-controller Terraform CRs must not store state in Kubernetes Secrets
+13. Terraform backends: tofu-controller Terraform CRs must not store state in Kubernetes Secrets
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 """
@@ -34,6 +36,7 @@ from cluster.validation.checks import (
     check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
+    check_proxy_provider_outpost_assignment,
     find_orphaned_files,
 )
 from cluster.validation.cluster import parse_cluster
@@ -84,6 +87,7 @@ async def validate(
 
     errors.extend(find_orphaned_files(cluster, root, candidates=orphan_candidates))
     errors.extend(check_blueprint_completeness(root))
+    errors.extend(check_proxy_provider_outpost_assignment(root))
     errors.extend(check_goldilocks_namespace_labels(cluster))
     errors.extend(check_goldilocks_explicit_decision(cluster))
     errors.extend(validate_dependencies(cluster, root))

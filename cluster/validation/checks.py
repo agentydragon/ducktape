@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections import defaultdict
 from pathlib import Path
 
@@ -156,3 +157,111 @@ def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
         ]
 
     return []
+
+
+@dataclasses.dataclass(frozen=True)
+class _BlueprintTag:
+    """An authentik blueprint custom YAML tag (e.g. !Find, !KeyOf) and its constructed argument.
+
+    Authentik blueprints use local `!`-tags that `yaml.SafeLoader` rejects; `_BlueprintLoader`
+    constructs them into these inert wrappers so the documents parse for static inspection.
+    """
+
+    tag: str
+    value: object
+
+
+class _BlueprintLoader(yaml.SafeLoader):
+    """SafeLoader that tolerates authentik's custom `!`-tags rather than erroring on them."""
+
+
+def _construct_blueprint_tag(loader: yaml.SafeLoader, tag_suffix: str, node: yaml.Node) -> _BlueprintTag:
+    # Construct the node's children by type — never re-dispatch this node's tag (would recurse forever).
+    if isinstance(node, yaml.ScalarNode):
+        value: object = loader.construct_scalar(node)
+    elif isinstance(node, yaml.SequenceNode):
+        value = loader.construct_sequence(node, deep=True)
+    elif isinstance(node, yaml.MappingNode):
+        value = loader.construct_mapping(node, deep=True)
+    else:
+        raise TypeError(f"unexpected YAML node type: {type(node)}")
+    return _BlueprintTag(tag_suffix, value)
+
+
+_BlueprintLoader.add_multi_constructor("!", _construct_blueprint_tag)
+
+
+def _outpost_provider_name(item: object, id_to_name: dict[str, str]) -> str | None:
+    """Resolve one outpost `providers` entry to its proxy-provider name.
+
+    Entries are `!KeyOf <blueprint-id>` (same-document reference) or
+    `!Find [authentik_providers_proxy.proxyprovider, [name, <name>]]`.
+    """
+    if not isinstance(item, _BlueprintTag):
+        return None
+    if item.tag == "KeyOf" and isinstance(item.value, str):
+        return id_to_name.get(item.value)
+    if item.tag == "Find" and isinstance(item.value, list) and len(item.value) == 2:
+        model, query = item.value
+        if (
+            model == "authentik_providers_proxy.proxyprovider"
+            and isinstance(query, list)
+            and len(query) == 2
+            and query[0] == "name"
+            and isinstance(query[1], str)
+        ):
+            return query[1]
+    return None
+
+
+def check_proxy_provider_outpost_assignment(k8s_dir: Path) -> list[str]:
+    """Every `present` authentik proxy provider must be assigned to an outpost.
+
+    A proxy provider that exists but is on no outpost has no host->backend mapping: the
+    embedded outpost doesn't recognise its `external_host` and 302s to the Authentik login
+    flow served *on that host*, so "Sign in with Google" builds the OAuth callback against
+    the wrong host and Google rejects it with `redirect_uri_mismatch`. This guards the
+    wiring that broke `haku.allegedly.works` (and, latently, `tandoor.allegedly.works`).
+    """
+    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
+    if not blueprints_dir.exists():
+        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
+
+    entries = [
+        entry
+        for path in sorted(blueprints_dir.glob("*.yaml"))
+        for doc in yaml.load_all(path.read_text(), Loader=_BlueprintLoader)
+        if isinstance(doc, dict)
+        for entry in doc.get("entries", [])
+        if isinstance(entry, dict)
+    ]
+
+    # Map blueprint id -> provider name (for !KeyOf), and collect present providers.
+    id_to_name: dict[str, str] = {}
+    present_providers: set[str] = set()
+    for entry in entries:
+        if entry.get("model") != "authentik_providers_proxy.proxyprovider":
+            continue
+        name = entry.get("identifiers", {}).get("name")
+        if not isinstance(name, str):
+            continue
+        if isinstance(entry.get("id"), str):
+            id_to_name[entry["id"]] = name
+        if entry.get("state", "present") == "present":
+            present_providers.add(name)
+
+    assigned: set[str] = set()
+    for entry in entries:
+        if entry.get("model") != "authentik_outposts.outpost" or entry.get("state", "present") != "present":
+            continue
+        for item in entry.get("attrs", {}).get("providers", []):
+            if (name := _outpost_provider_name(item, id_to_name)) is not None:
+                assigned.add(name)
+
+    return [
+        f"Authentik proxy provider '{name}' is defined but assigned to no outpost. Add it to the "
+        f"embedded outpost's providers in blueprints/embedded-outpost.yaml (see fava/haku-dashboard); "
+        f"otherwise its host 302s to a login flow served on itself and Google SSO fails with "
+        f"redirect_uri_mismatch."
+        for name in sorted(present_providers - assigned)
+    ]
