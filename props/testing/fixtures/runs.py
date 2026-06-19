@@ -20,10 +20,12 @@ from props.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
+    FileSetMember,
     GradingEdge,
     ReportedIssue,
     ReportedIssueOccurrence,
     Snapshot,
+    TruePositiveOccurrenceORM,
 )
 from props.db.snapshots import LocationAnchor
 from props.testing.constants import DEFAULT_TEST_MODEL
@@ -108,6 +110,30 @@ def make_fake_grader_run(
     )
 
 
+def overlap_file_for_occurrence(
+    session: Session, snapshot_slug: SnapshotSlug, tp_id: str, occurrence_id: str, *, default: str = "subtract.py"
+) -> str:
+    """A reported-issue file that satisfies a TP occurrence's match_file_restriction.
+
+    The grading-edge trigger (and the grading_pending view) only credit a critique
+    against a restricted occurrence when the critique flagged a file overlapping the
+    restriction set. Fixtures that match restricted occurrences must therefore report
+    a file inside the restriction; for unrestricted occurrences any file works.
+    """
+    occ = session.get(TruePositiveOccurrenceORM, (snapshot_slug, tp_id, occurrence_id))
+    assert occ is not None, f"No TP occurrence {tp_id}/{occurrence_id} for {snapshot_slug}"
+    if occ.match_file_restriction is None:
+        return default
+    member = (
+        session.query(FileSetMember)
+        .filter_by(snapshot_slug=snapshot_slug, files_hash=occ.match_file_restriction)
+        .order_by(FileSetMember.file_path)
+        .first()
+    )
+    assert member is not None, f"Empty match_file_restriction file set for {tp_id}/{occurrence_id}"
+    return member.file_path
+
+
 def make_reported_issues(
     *, agent_run_id: UUID, issue_ids: list[str], session: Session, location_file: str | None = "subtract.py"
 ) -> list[ReportedIssue]:
@@ -146,18 +172,21 @@ def make_fake_critic_and_grader_run(
     session.flush()
 
     if credit > 0.0:
-        location_file = None if example.kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
-        for i in range(1, len(tp_occurrences) + 1):
+        for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1):
             issue_id = f"issue-{i:03d}"
             issue = ReportedIssue(agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test issue {i}")
             session.add(issue)
-            if location_file:
-                occ = ReportedIssueOccurrence(
-                    agent_run_id=critic_run.agent_run_id,
-                    reported_issue_id=issue_id,
-                    locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
-                )
-                session.add(occ)
+            # Report a file overlapping this occurrence's match_file_restriction so the
+            # grading edge below is creditable (the trigger and grading_pending view both
+            # require overlap). A no-file/non-overlapping critique cannot match a
+            # restricted occurrence.
+            location_file = overlap_file_for_occurrence(session, example.snapshot_slug, tp_id, occ_id)
+            occ = ReportedIssueOccurrence(
+                agent_run_id=critic_run.agent_run_id,
+                reported_issue_id=issue_id,
+                locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
+            )
+            session.add(occ)
 
         # Flush reported issues before adding grading edges (FK constraint)
         session.flush()
@@ -193,17 +222,20 @@ def make_fake_grader_run_with_credit(
     """Create grader run + grading_edge for a critic run using real TP occurrence IDs."""
     tp_id, occ_id = tp_occurrence
     issue_id = f"input-{input_idx}"
+    snapshot_slug = critic_run.critic_config().example.snapshot_slug
 
     issue = ReportedIssue(agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test issue {input_idx}")
     session.add(issue)
+    # Report a file overlapping the occurrence's match_file_restriction (see
+    # overlap_file_for_occurrence) so the grading edge below is creditable.
+    location_file = overlap_file_for_occurrence(session, snapshot_slug, tp_id, occ_id)
     occ = ReportedIssueOccurrence(
         agent_run_id=critic_run.agent_run_id,
         reported_issue_id=issue_id,
-        locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
+        locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
     )
     session.add(occ)
 
-    snapshot_slug = critic_run.critic_config().example.snapshot_slug
     grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, model=model)
     session.add(grader_run)
     session.flush()
