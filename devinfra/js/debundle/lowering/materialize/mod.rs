@@ -167,10 +167,11 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     // One selector resolver for the whole chunk, shared across every request's
     // member and binding-group resolution (built once — see the seam contract in
-    // `source_match::SelectorResolver`). Production stays on the hand-rolled
-    // matcher here; the fact resolver swaps in at the flip without touching this
-    // wiring.
-    let selector_resolver = source_match::AstWildcardResolver::new(&runtime_ast.module);
+    // `source_match::SelectorResolver`). The fact-based `ChunkResolver` is the
+    // production resolver: it builds the chunk's EDB once and resolves every
+    // selector against it, at parity with the former hand-rolled matcher (proven
+    // by the corpus differential, <debug/2026_06_18_per_chunk_gate_real_source.md>).
+    let selector_resolver = source_match::ChunkResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
         runtime_module: &runtime_ast.module,
         selector_resolver: &selector_resolver,

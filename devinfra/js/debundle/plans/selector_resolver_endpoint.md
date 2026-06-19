@@ -165,16 +165,25 @@ the categorical seam does **not** cover, so deleting it is materially larger:
 - **F3 (GATE):** corpus differential = **0** over the real spec — already green
   standalone; re-confirm after the wiring touches the dispatch. Non-zero ⇒ fix the
   fact matcher **faithfully**; an unencodable construct ⇒ **ABORT + write-up**.
-- **F4 (irreversible; gated on F3 = 0 + output byte-identical):** flip the
-  production resolver construction from `AstWildcardResolver` to `ChunkResolver`
-  (Datalog). **Deviation from the original runbook:** flip _directly_ rather than
-  via a permanent production `DifferentialResolver` — parity is already corpus-proven
-  and the byte-identical-output gate across the flip is a stronger proof than
-  doubling production cost forever. The differential stays the gate (corpus binary +
-  tests), not a hot-path fixture.
+- **F4 ✅ (main lowering pipeline flipped this run):** the single construction site
+  in `materialize_chunk` now builds `ChunkResolver` (the fact resolver) instead of
+  `AstWildcardResolver`, so the whole lowering pipeline (member, binding-group,
+  anonymous-ordinals) resolves selectors via facts. Gated on: resolver parity proven
+  over the real corpus (the match logic is byte-identical since the green run — these
+  commits only changed the trait signature + wiring) + 6 e2e cli output gates green
+  (`{edit_gate_source_match,binding_name_resolution,gate,module_merge,peel_factorize_landability,peel_factorize_extend_anonymous}`).
+  **Deviation from the original runbook:** flipped _directly_, not via a permanent
+  production `DifferentialResolver` — the differential stays the gate (corpus binary +
+  tests), not a hot-path fixture. **Remaining:** the per-source co-move path
+  (`anonymous_resolution.rs` fn 2) still constructs `AstWildcardResolver` — flip it
+  too (trivial) once its e2e coverage is confirmed; harmless mixed state until then
+  (both resolvers are parity-proven).
 - **F5 (irreversible; gated):** delete `AstWildcardMatcher`, the `AstWildcardResolver`
   wrapper, and the `binding_resolution` free functions that only it backed — atomic,
-  all references updated. Keep the corpus differential as the standing regression.
+  all references updated. **Blocked on the scope finding above**: first serve
+  `member_binding_candidates` + `source_match_body_debt` from the fact resolver (or
+  keep a residual matcher surface), migrate codemod/soundness. `body_debt` near-miss
+  diagnostics are the faithful-encoding risk — abort+report if they can't be reproduced.
 
 ### Phase X1 — `@Name` cross-references live (P4 step 1)
 
@@ -224,11 +233,12 @@ the categorical seam does **not** cover, so deleting it is materially larger:
 Append a row per verified commit. (Pre-run state: kernel complete + proven on real
 data; `cross_ref` surface landed fail-closed; commits `8c1afd4d`…`6235d751`.)
 
-| phase | step                                                                        | commit            | gate result                                                                    |
-| ----- | --------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
-| (pre) | kernel + surface + plan                                                     | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                             |
-| F     | runbook + state correct                                                     | 7cf02821          | doc only                                                                       |
-| F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver                  | 7306ce37          | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk) |
-| F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | 40f34b9b          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
-| F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | 0220695a          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                        |
-| F     | F2-wire-anon-comove: per-source co-move anonymous path through the seam     | (this)            | 4 e2e cli gates pass (local bazelisk)                                          |
+| phase | step                                                                        | commit            | gate result                                                                           |
+| ----- | --------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| (pre) | kernel + surface + plan                                                     | 8c1afd4d…6235d751 | green; corpus differential 0 standalone (worklist)                                    |
+| F     | runbook + state correct                                                     | 7cf02821          | doc only                                                                              |
+| F     | F2-seam: chunk-bound seam, delete per-call DatalogResolver                  | 7306ce37          | `source_match_test` pass + `corpus_match_differential` builds (local bazelisk)        |
+| F     | F2-wire-member-group: build-once resolver threaded (member + binding-group) | 40f34b9b          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                               |
+| F     | F2-wire-anon-ordinals: chunk-bound anonymous path through the seam          | 0220695a          | `lowering_test` + 3 e2e cli gates pass (local bazelisk)                               |
+| F     | F2-wire-anon-comove: per-source co-move anonymous path through the seam     | b3406173          | 4 e2e cli gates pass (local bazelisk)                                                 |
+| F     | F4: flip main lowering pipeline to the fact resolver (ChunkResolver)        | (this)            | `lowering_test` + 6 e2e cli output gates pass; corpus parity proven (unchanged logic) |
