@@ -57,6 +57,11 @@ export { EBt, UBt, UJ, HI };
     // categoricity gate would otherwise see two referencers and resolve nothing.
     assert_eq!(r.referencer_for("EBt"), Some(owner("UBt")));
 
+    // The same pin disambiguated by kind, as a real selector would write it
+    // ("the *function* that calls @EBt"); a wrong kind resolves nothing.
+    assert_eq!(r.referencer_of_kind("EBt", "fn_decl"), Some(owner("UBt")));
+    assert_eq!(r.referencer_of_kind("EBt", "class_decl"), None);
+
     // The re-export is pinned by what it aliases: HI is the unique var-decl
     // aliasing UJ.
     assert_eq!(r.alias_owner_for("UJ"), Some(owner("HI")));
