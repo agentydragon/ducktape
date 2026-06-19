@@ -253,16 +253,19 @@ fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> Modu
     cloned
 }
 
-/// Resolve a single-declarator var-decl member selector by matching its
+/// Collect every single-declarator var-decl member match: the needle's
 /// declarator against every declarator of every var-decl owner (production's
 /// per-declarator path), so the match count — hence categoricity — is faithful.
-fn resolve_var_declarator_member(
+/// Returns one `MemberBindingMatch` per matched declarator, body-index ascending
+/// (the cached `var_declarator_subjects` are built in body order). Mirrors
+/// `find_matching_target_var_declarators` / `find_matching_var_declarators`.
+fn member_matches_var_declarator(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
     export_name: &str,
     selector: &AnonymousStatementSelector,
-) -> Result<ResolvedMemberBinding> {
+) -> Result<Vec<MemberBindingMatch>> {
     let needle_facts = item_facts(needle)
         .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
     let mode = datalog_mode(selector);
@@ -301,7 +304,7 @@ fn resolve_var_declarator_member(
     // declarators whose initializer kind cannot match, before the full match.
     let needle_index = selector_match::Index::build(&needle_facts);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
-    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for subject_idx in chunk.candidate_declarators(&needle_index) {
         let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
@@ -329,37 +332,29 @@ fn resolve_var_declarator_member(
         let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
             bail!("datalog resolver: target binding index out of range for matched declarator");
         };
-        matches.push(binding);
+        matches.push(MemberBindingMatch {
+            body_idx: subject.body_idx,
+            binding,
+        });
     }
-    match matches.as_slice() {
-        [single] => Ok(single.clone()),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` did not match any declarator in the chunk"
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` is ambiguous — matched {} declarators",
-            multiple.len(),
-        ),
-    }
+    Ok(matches)
 }
 
-/// Resolve a declarator-hole member selector (`const DECLARATORS, x = …,
+/// Collect every declarator-hole member match (`const DECLARATORS, x = …,
 /// DECLARATORS;` with a `target_binding`): for each var-decl owner in the chunk,
 /// try each candidate binding name at the target's declarator position —
 /// prebinding it so the alpha bijection pins the target's identity — and take
 /// the greedy-leftmost declarator alignment. `alignment[target_decl_idx]` names
 /// the subject declarator the target pinned, whose binding is the resolved
-/// owner. Categoricity is at the owner level (one matched owner = unique).
+/// owner. One `MemberBindingMatch` per matched owner, body-index ascending.
 /// Mirrors production's `find_matching_target_var_decl_with_declarator_holes`.
-fn resolve_declarator_hole_member(
+fn member_matches_declarator_hole(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
     export_name: &str,
     selector: &AnonymousStatementSelector,
-) -> Result<ResolvedMemberBinding> {
+) -> Result<Vec<MemberBindingMatch>> {
     let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
         anyhow::anyhow!("datalog resolver: declarator-hole member selector needs target_binding")
     })?;
@@ -377,7 +372,7 @@ fn resolve_declarator_hole_member(
     // needle construct, invariant across subjects and prebindings).
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    let mut matches: Vec<MemberBindingMatch> = Vec::new();
     // The fixed (non-hole) declarators pin invariant tokens any matching owner
     // must carry, so the token index narrows the owner scan (the giant
     // `initBundle` var-decl is the worst case). The `DECLARATORS` holes pin none.
@@ -419,20 +414,9 @@ fn resolve_declarator_hole_member(
         else {
             bail!("datalog resolver: target binding index out of range for matched declarator");
         };
-        matches.push(binding);
+        matches.push(MemberBindingMatch { body_idx, binding });
     }
-    match matches.as_slice() {
-        [single] => Ok(single.clone()),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` did not match any declarator-hole variable-declaration owner"
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` is ambiguous — matched {} owners",
-            multiple.len(),
-        ),
-    }
+    Ok(matches)
 }
 
 /// Parse a selector's `match_source` to its top-level statements (any count).
@@ -447,20 +431,19 @@ fn parse_needles(
     .body)
 }
 
-/// Multi-statement member whose target item is a single-declarator var-decl:
-/// resolve it per-declarator across contiguous windows (the target may live in a
-/// declarator of a multi-declarator owner), reading the matched declarator's
-/// binding at `target_binding_idx`. Owner-level categoricity: exactly one
-/// match. Mirrors `find_matching_target_binding_ranges_with_single_declarator`.
-fn resolve_single_declarator_target_window(
+/// Collect every multi-statement member match whose target item is a
+/// single-declarator var-decl: per-declarator across contiguous windows (the
+/// target may live in a declarator of a multi-declarator owner), reading the
+/// matched declarator's binding at `target_binding_idx`. One `MemberBindingMatch`
+/// per matched window (`body_idx` is the target item's position, ascending).
+/// Mirrors `find_matching_target_binding_ranges_with_single_declarator`.
+fn member_matches_single_declarator_target_window(
     chunk: &ChunkResolver,
     needles: &[ModuleItem],
-    request_id: &str,
-    export_name: &str,
     selector: &AnonymousStatementSelector,
     target_item_idx: usize,
     target_binding_idx: usize,
-) -> Result<ResolvedMemberBinding> {
+) -> Result<Vec<MemberBindingMatch>> {
     let needle_facts = needles
         .iter()
         .map(item_facts)
@@ -477,7 +460,7 @@ fn resolve_single_declarator_target_window(
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for (target_body_idx, subject_decl_idx) in windows {
         let Some(candidate_var) = item_var_decl(&chunk.module.body[target_body_idx]) else {
             bail!("datalog resolver: matched window target is not a variable declaration");
@@ -491,35 +474,28 @@ fn resolve_single_declarator_target_window(
         else {
             bail!("datalog resolver: target binding index out of range for matched declarator");
         };
-        matches.push(binding);
+        matches.push(MemberBindingMatch {
+            body_idx: target_body_idx,
+            binding,
+        });
     }
-    match matches.as_slice() {
-        [single] => Ok(single.clone()),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` did not match any single-declarator target window"
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` is ambiguous — {} single-declarator target windows",
-            multiple.len(),
-        ),
-    }
+    Ok(matches)
 }
 
-/// Multi-statement member: align the needle statements against the chunk body as
-/// a fixed contiguous window, then read the target binding from the body
-/// statement at the window's target offset. Mirrors production's member path
+/// Collect every multi-statement member match: align the needle statements
+/// against the chunk body as a fixed contiguous window, then read the target
+/// binding from the body statement at the window's target offset. One
+/// `MemberBindingMatch` per matched window (`body_idx` is the target item's
+/// position, ascending). Mirrors production's member path
 /// (`find_matching_target_bindings` → `find_matching_body_ranges`), which is
 /// fixed-window — **not** the gapped module-level `STMT_LIST` subsequence the
 /// anonymous/group paths use.
-fn resolve_member_multi(
+fn member_matches_multi(
     chunk: &ChunkResolver,
     needles: &[ModuleItem],
     request_id: &str,
-    export_name: &str,
     selector: &AnonymousStatementSelector,
-) -> Result<ResolvedMemberBinding> {
+) -> Result<Vec<MemberBindingMatch>> {
     let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
         anyhow::anyhow!("datalog resolver: multi-statement member selector needs target_binding")
     })?;
@@ -529,15 +505,30 @@ fn resolve_member_multi(
     // contiguous window (so a target inside a multi-declarator owner is found),
     // mirroring production's `find_matching_target_binding_ranges_with_single_declarator`.
     if selector_single_var_declarator(&needles[target_item_idx]).is_some() {
-        return resolve_single_declarator_target_window(
+        return member_matches_single_declarator_target_window(
             chunk,
             needles,
-            request_id,
-            export_name,
             selector,
             target_item_idx,
             target_binding_idx,
         );
+    }
+    // A module-level run-hole statement (a bare `STMT_LIST;`) is not a valid
+    // list-position carrier in a fixed contiguous window: production's member path
+    // (`find_matching_body_ranges`, multi-needle) runs each needle item through
+    // `AstWildcardMatcher::match_module_item`, which treats `STMT_LIST;` as a
+    // literal expression statement that no real statement equals — so the window
+    // never matches and production returns an **empty** candidate list. The fact
+    // matcher's `match_fixed_window_sequence_indexed` instead fails closed
+    // (`Unsupported`: "run-hole keyword outside a list position") on such a needle.
+    // Mirror production's no-match (not the conservative error) so the candidate
+    // list agrees; the categorical `resolve_member` still rejects (empty → bail),
+    // staying reject-parity with production's own no-match bail.
+    if needles
+        .iter()
+        .any(|item| module_item_list_hole_name(item).is_some())
+    {
+        return Ok(Vec::new());
     }
     // A declarator-**hole** target inside a multi-statement window takes the same
     // general path: production does not special-case it (`find_matching_target_bindings`
@@ -560,7 +551,7 @@ fn resolve_member_multi(
         datalog_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut matches: Vec<ResolvedMemberBinding> = Vec::new();
+    let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
         let body_idx = start + target_item_idx;
         let Some(binding) = declared_bindings(&chunk.module.body[body_idx])
@@ -569,20 +560,9 @@ fn resolve_member_multi(
         else {
             bail!("datalog resolver: target binding index out of range");
         };
-        matches.push(binding);
+        matches.push(MemberBindingMatch { body_idx, binding });
     }
-    match matches.as_slice() {
-        [single] => Ok(single.clone()),
-        [] => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` did not match any top-level statement range"
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: members[].selector.source_match for export \
-             `{export_name}` is ambiguous — {} ranges",
-            multiple.len(),
-        ),
-    }
+    Ok(matches)
 }
 
 /// Multi-statement anonymous selector: align the needle statements against the
@@ -836,6 +816,30 @@ fn resolve_group_general(
     })
 }
 
+/// Member-level categoricity: exactly one candidate must match (production
+/// rejects zero or several). The single place the `[single]/[]/multiple` collapse
+/// lives, mirroring [`one_group_match`]; `resolve_member` wraps each collector in
+/// this while `member_candidates` returns the raw list. `body_idx` is discarded —
+/// only the claimed binding is the categorical answer.
+fn one_member_match(
+    matches: Vec<MemberBindingMatch>,
+    request_id: &str,
+    export_name: &str,
+) -> Result<ResolvedMemberBinding> {
+    match matches.as_slice() {
+        [single] => Ok(single.binding.clone()),
+        [] => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` did not match any declaration in the chunk"
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: members[].selector.source_match for export \
+             `{export_name}` is ambiguous — matched {} declarations",
+            multiple.len(),
+        ),
+    }
+}
+
 /// Owner-level categoricity for the per-owner group branches: exactly one owner
 /// must match (production rejects zero or several).
 fn one_group_match(
@@ -856,6 +860,103 @@ fn one_group_match(
     }
 }
 
+/// Collect every single-statement member match: scan the chunk body for
+/// statements the needle matches, then read the claimed binding per matched item.
+/// Mirrors the single-needle dispatch of `find_member_binding_matches`:
+/// - **with `target_binding`** (a non-var-declarator needle): production routes
+///   to `find_matching_target_bindings` → `find_matching_body_ranges` (window
+///   length 1), reading `declared_bindings[target_binding_idx]` per match and
+///   erroring only when that index is out of range. It does **not** require a
+///   single declared binding.
+/// - **without `target_binding`**: production routes to the
+///   `find_matching_body_indices` loop, which pushes the lone declared binding,
+///   skips a statement that declares nothing, and bails when one declares more
+///   than one (the categorical-position bail every candidate accessor preserves).
+///
+/// One `MemberBindingMatch` per matched statement, body-index ascending
+/// (`matching_body_indices` returns the postings intersection in ascending order).
+fn member_matches_single_statement(
+    chunk: &ChunkResolver,
+    needle: &ModuleItem,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<MemberBindingMatch>> {
+    let needle_facts = item_facts(needle)
+        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+    let indices = matching_body_indices(chunk, &needle_facts, datalog_mode(selector))?;
+    let mut matches: Vec<MemberBindingMatch> = Vec::new();
+    match &selector.target_binding {
+        Some(target_binding) => {
+            let (target_item_idx, target_binding_idx) = selector_binding_location(
+                std::slice::from_ref(needle),
+                request_id,
+                selector,
+                target_binding,
+            )?;
+            debug_assert_eq!(target_item_idx, 0, "single-statement needle");
+            for body_idx in indices {
+                let declared = declared_bindings(&chunk.module.body[body_idx]);
+                let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
+                    bail!(
+                        "logical_module {request_id}: members[].selector.source_match \
+                         target_binding `{target_binding}` matched top-level statement at body \
+                         index {body_idx}, but that statement declares too few bindings"
+                    );
+                };
+                matches.push(MemberBindingMatch { body_idx, binding });
+            }
+        }
+        None => {
+            for body_idx in indices {
+                let declared = declared_bindings(&chunk.module.body[body_idx]);
+                match declared.as_slice() {
+                    [single] => matches.push(MemberBindingMatch {
+                        body_idx,
+                        binding: single.clone(),
+                    }),
+                    [] => {}
+                    multiple => bail!(
+                        "logical_module {request_id}: members[].selector.source_match matched \
+                         top-level statement at body index {body_idx}, but that statement \
+                         declares {} bindings. Use a single-declarator selector or refine the \
+                         match.",
+                        multiple.len(),
+                    ),
+                }
+            }
+        }
+    }
+    Ok(matches)
+}
+
+impl ChunkResolver<'_> {
+    /// The non-categorical member match list — the fact-side twin of
+    /// `source_match::member_binding_candidate_matches`. Shares the per-path match
+    /// collection with [`SelectorResolver::resolve_member`]; the only difference is
+    /// this returns the whole list (each carrying `body_idx` + binding) instead of
+    /// collapsing to the unique winner. Used by cross-source consumers that
+    /// aggregate matches before deciding uniqueness (the CLI edit gate).
+    pub fn member_candidates(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<MemberBindingMatch>> {
+        // Diagnostics-only: the matcher free fn takes no export name either.
+        let export_name = "candidate";
+        let needles = parse_needles(request_id, selector)?;
+        let [needle] = needles.as_slice() else {
+            return member_matches_multi(self, &needles, request_id, selector);
+        };
+        if selector_var_decl_has_declarator_holes(needle) {
+            return member_matches_declarator_hole(self, needle, request_id, export_name, selector);
+        }
+        if selector_single_var_declarator(needle).is_some() {
+            return member_matches_var_declarator(self, needle, request_id, export_name, selector);
+        }
+        member_matches_single_statement(self, needle, request_id, selector)
+    }
+}
+
 impl SelectorResolver for ChunkResolver<'_> {
     fn resolve_member(
         &self,
@@ -864,56 +965,24 @@ impl SelectorResolver for ChunkResolver<'_> {
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
         let needles = parse_needles(request_id, selector)?;
-        let [needle] = needles.as_slice() else {
-            return resolve_member_multi(self, &needles, request_id, export_name, selector);
-        };
-        // Declarator-hole var-decls need alignment-aware extraction: a DECLARATORS
-        // run hole absorbs declarators, so the owner's binding index no longer
-        // lines up with the needle's. Resolve via the greedy-leftmost declarator
-        // alignment (production's `find_matching_target_var_decl_with_declarator_holes`).
-        if selector_var_decl_has_declarator_holes(needle) {
-            return resolve_declarator_hole_member(self, needle, request_id, export_name, selector);
-        }
-        // A single-declarator var-decl resolves at declarator granularity (so a
-        // match inside a multi-declarator owner is counted) — production's path.
-        if selector_single_var_declarator(needle).is_some() {
-            return resolve_var_declarator_member(self, needle, request_id, export_name, selector);
-        }
-        let target_binding_idx = match &selector.target_binding {
-            Some(target_binding) => {
-                let (target_item_idx, binding_idx) = selector_binding_location(
-                    std::slice::from_ref(needle),
-                    request_id,
-                    selector,
-                    target_binding,
-                )?;
-                debug_assert_eq!(target_item_idx, 0, "single-statement needle");
-                binding_idx
+        let matches = match needles.as_slice() {
+            [needle] if selector_var_decl_has_declarator_holes(needle) => {
+                // Declarator-hole var-decls need alignment-aware extraction: a
+                // DECLARATORS run hole absorbs declarators, so the owner's binding
+                // index no longer lines up with the needle's. Resolve via the
+                // greedy-leftmost declarator alignment (production's
+                // `find_matching_target_var_decl_with_declarator_holes`).
+                member_matches_declarator_hole(self, needle, request_id, export_name, selector)?
             }
-            None => 0,
+            // A single-declarator var-decl resolves at declarator granularity (so a
+            // match inside a multi-declarator owner is counted) — production's path.
+            [needle] if selector_single_var_declarator(needle).is_some() => {
+                member_matches_var_declarator(self, needle, request_id, export_name, selector)?
+            }
+            [needle] => member_matches_single_statement(self, needle, request_id, selector)?,
+            _ => member_matches_multi(self, &needles, request_id, selector)?,
         };
-        let needle_facts = item_facts(needle)
-            .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-        let indices = matching_body_indices(self, &needle_facts, datalog_mode(selector))?;
-        let [body_idx] = indices.as_slice() else {
-            bail!(
-                "logical_module {request_id}: members[].selector.source_match for export \
-                 `{export_name}` resolved to {} top-level statements; expected exactly one",
-                indices.len(),
-            );
-        };
-        let declared = declared_bindings(&self.module.body[*body_idx]);
-        if selector.target_binding.is_none() && declared.len() != 1 {
-            bail!(
-                "datalog resolver: export `{export_name}` matched a statement declaring {} \
-                 bindings; needs a single-declarator selector or target_binding",
-                declared.len(),
-            );
-        }
-        declared
-            .into_iter()
-            .nth(target_binding_idx)
-            .ok_or_else(|| anyhow::anyhow!("datalog resolver: target binding index out of range"))
+        one_member_match(matches, request_id, export_name)
     }
 
     fn resolve_member_group(

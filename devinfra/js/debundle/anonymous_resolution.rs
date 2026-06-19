@@ -98,22 +98,35 @@ fn resolve_member_selector_claims_in_globals(
             read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
         parsed_by_source.insert(source_path.clone(), parsed);
     }
+    // One resolver per parsed source, built once and shared across the
+    // claims × selector loops below (the build-once seam contract; the fact
+    // resolver would rebuild a per-source EDB on every selector otherwise).
+    let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
+        .iter()
+        .map(|(source_path, parsed)| {
+            (
+                source_path.clone(),
+                source_match::ChunkResolver::new(&parsed.module),
+            )
+        })
+        .collect();
 
     for (module_idx, claims) in claims_by_module.iter().enumerate() {
         let request_id = claims.module_path.to_string_lossy();
         for selector in claims.selectors {
             let mut matches = Vec::new();
-            for parsed in parsed_by_source.values() {
-                matches.extend(source_match::member_binding_candidates(
-                    &parsed.module,
-                    &request_id,
-                    selector,
-                )?);
+            for source_path in parsed_by_source.keys() {
+                matches.extend(
+                    resolvers_by_source[source_path].member_candidates(&request_id, selector)?,
+                );
             }
             match matches.as_slice() {
                 [single] => {
-                    if !matches!(single.kind, Some(spec::BindingSourceKind::ImportSpecifier)) {
-                        out[module_idx].insert(single.binding_name.clone());
+                    if !matches!(
+                        single.binding.kind,
+                        Some(spec::BindingSourceKind::ImportSpecifier)
+                    ) {
+                        out[module_idx].insert(single.binding.binding_name.clone());
                     }
                 }
                 [] => bail!(
@@ -129,7 +142,7 @@ fn resolve_member_selector_claims_in_globals(
                     multiple.len(),
                     multiple
                         .iter()
-                        .map(|binding| binding.binding_name.as_str())
+                        .map(|matched| matched.binding.binding_name.as_str())
                         .collect::<Vec<_>>()
                         .join(", "),
                     selector.match_source,

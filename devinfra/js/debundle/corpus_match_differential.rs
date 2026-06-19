@@ -23,8 +23,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use source_match::{
-    AstWildcardResolver, ChunkResolver, SelectorResolver,
-    binding_group_anonymous_statement_selector, binding_group_member_selectors,
+    AstWildcardResolver, ChunkResolver, MemberBindingMatch, ResolvedMemberBinding,
+    SelectorResolver, binding_group_anonymous_statement_selector, binding_group_member_selectors,
+    member_binding_candidate_matches,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
@@ -134,6 +135,40 @@ fn classify_resolver<T: PartialEq>(
 ) {
     match (datalog, production) {
         (Ok(d), Ok(p)) if d == p => tally.resolved_parity += 1,
+        (Ok(_), Ok(_)) => tally.value_disagreements += 1,
+        (Err(_), Err(_)) => tally.reject_parity += 1,
+        (Err(_), Ok(_)) => tally.fail_closed += 1,
+        (Ok(_), Err(_)) => tally.over_resolved += 1,
+    }
+}
+
+/// The candidate-list equivalence the gate enforces: **ordered** `Vec` equality
+/// on `(binding_name, kind)` — the surface `member_binding_candidates` actually
+/// exposes (it discards `body_idx`, and the cross-source consumer reads only
+/// `binding_name`/`kind`). Sequence, not set: the consumer's
+/// `[single]/[]/multiple` decision is driven by the concatenated list length, so
+/// duplicate multiplicity (and order, free by construction since both sides emit
+/// ascending body-index order) is load-bearing.
+fn candidate_bindings(matches: &[MemberBindingMatch]) -> Vec<ResolvedMemberBinding> {
+    matches
+        .iter()
+        .map(|matched| matched.binding.clone())
+        .collect()
+}
+
+/// Classify a member candidate-LIST pair like [`classify_resolver`], comparing
+/// the whole `Vec` (excluding `body_idx`) rather than the categorical winner —
+/// the coverage the categorical differential lacks for count≠1 and
+/// duplicate-multiplicity cases.
+fn classify_candidate_lists(
+    tally: &mut ResolverTally,
+    fact: &anyhow::Result<Vec<MemberBindingMatch>>,
+    matcher: &anyhow::Result<Vec<MemberBindingMatch>>,
+) {
+    match (fact, matcher) {
+        (Ok(f), Ok(m)) if candidate_bindings(f) == candidate_bindings(m) => {
+            tally.resolved_parity += 1
+        }
         (Ok(_), Ok(_)) => tally.value_disagreements += 1,
         (Err(_), Err(_)) => tally.reject_parity += 1,
         (Err(_), Ok(_)) => tally.fail_closed += 1,
@@ -447,6 +482,11 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     // Genuine member disagreements (value-disagreement or over-resolved): the
     // claims diverge. These must be zero; print them so any are identifiable.
     let mut member_disagreements: Vec<(String, String, String)> = Vec::new();
+    // Candidate-LIST differential alongside the categorical member pass: the fact
+    // `member_candidates` list vs the matcher `member_binding_candidate_matches`
+    // list, compared on `(binding_name, kind)` ordered (F5 step 1 gate).
+    let mut candidates = ResolverTally::default();
+    let mut candidate_disagreements: Vec<(String, String, String)> = Vec::new();
     for selector in &selectors.members {
         if groups_only || (new_paths_only && !affects_new_path(selector)) {
             continue;
@@ -471,6 +511,26 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
             _ => {}
         }
         classify_resolver(&mut members, &datalog, &production);
+
+        let fact_candidates = chunk.member_candidates("corpus", selector);
+        let matcher_candidates =
+            member_binding_candidate_matches(&resolver_module, "corpus", selector);
+        match (&fact_candidates, &matcher_candidates) {
+            (Ok(f), Ok(m)) if candidate_bindings(f) != candidate_bindings(m) => {
+                candidate_disagreements.push((
+                    selector.match_source.clone(),
+                    format!("{:?}", candidate_bindings(f)),
+                    format!("{:?}", candidate_bindings(m)),
+                ))
+            }
+            (Ok(f), Err(m)) => candidate_disagreements.push((
+                selector.match_source.clone(),
+                format!("{:?}", candidate_bindings(f)),
+                format!("Err({m})"),
+            )),
+            _ => {}
+        }
+        classify_candidate_lists(&mut candidates, &fact_candidates, &matcher_candidates);
     }
     let mut anonymous = ResolverTally::default();
     // The anonymous-statement path is unchanged by this work and already proven
@@ -513,6 +573,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     }
     for (label, count, tally) in [
         ("member", selectors.members.len(), &members),
+        ("member-candidates", selectors.members.len(), &candidates),
         ("anonymous", selectors.anonymous.len(), &anonymous),
         ("binding-group", selectors.groups.len(), &groups),
     ] {
@@ -549,6 +610,7 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     }
     for (label, disagreements) in [
         ("member", &member_disagreements),
+        ("member-candidates", &candidate_disagreements),
         ("binding-group", &group_disagreements),
     ] {
         if !disagreements.is_empty() {
@@ -563,6 +625,8 @@ fn run(specs_root: &Path, chunk_paths: &[String]) -> Result<()> {
     }
     let genuine = members.value_disagreements
         + members.over_resolved
+        + candidates.value_disagreements
+        + candidates.over_resolved
         + anonymous.value_disagreements
         + anonymous.over_resolved
         + groups.value_disagreements
@@ -711,6 +775,10 @@ fn timed_classify<T: PartialEq + std::fmt::Debug>(
 #[derive(Default)]
 struct CaseTally {
     members: ResolverTally,
+    /// Candidate-LIST parity (fact `member_candidates` vs matcher
+    /// `member_binding_candidate_matches`) — the F5-step-1 gate, distinct from
+    /// the categorical `members` tally above.
+    candidates: ResolverTally,
     anonymous: ResolverTally,
     groups: ResolverTally,
     issues: Vec<Issue>,
@@ -722,6 +790,7 @@ struct CaseTally {
 impl CaseTally {
     fn merge(&mut self, other: CaseTally) {
         self.members.add(&other.members);
+        self.candidates.add(&other.candidates);
         self.anonymous.add(&other.anonymous);
         self.groups.add(&other.groups);
         self.issues.extend(other.issues);
@@ -758,6 +827,31 @@ fn resolve_case(resolver: &ChunkResolver, module: &Module, case: &ModuleCase) ->
                 },
                 &mut tally.datalog_time,
                 &mut tally.production_time,
+            );
+            // Candidate-LIST differential (F5 step 1 gate): the fact
+            // `member_candidates` list must equal the matcher's
+            // `member_binding_candidate_matches` list on `(binding_name, kind)`,
+            // ordered. This is the coverage the categorical pass above lacks for
+            // count≠1 / duplicate-multiplicity cases. Project each side to its
+            // binding sequence (dropping `body_idx`) so the compared value is the
+            // exact surface `member_binding_candidates` exposes.
+            let fact_candidates = resolver
+                .member_candidates(&case.module_path, selector)
+                .map(|m| candidate_bindings(&m));
+            let matcher_candidates =
+                member_binding_candidate_matches(module, &case.module_path, selector)
+                    .map(|m| candidate_bindings(&m));
+            classify_and_record(
+                &mut tally.candidates,
+                &mut tally.issues,
+                || {
+                    format!(
+                        "candidates {}\n      {}",
+                        case.module_path, selector.match_source
+                    )
+                },
+                &fact_candidates,
+                &matcher_candidates,
             );
             tally.measured += 1;
         }
@@ -852,6 +946,7 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     let chunk_count = chunks.len();
 
     let mut members = ResolverTally::default();
+    let mut candidates = ResolverTally::default();
     let mut anonymous = ResolverTally::default();
     let mut groups = ResolverTally::default();
     let mut issues: Vec<Issue> = Vec::new();
@@ -877,6 +972,7 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
                 acc
             });
         members.add(&chunk_tally.members);
+        candidates.add(&chunk_tally.candidates);
         anonymous.add(&chunk_tally.anonymous);
         groups.add(&chunk_tally.groups);
         issues.extend(chunk_tally.issues);
@@ -914,11 +1010,12 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     }
     for (label, tally) in [
         ("member", &members),
+        ("member-candidates", &candidates),
         ("anonymous", &anonymous),
         ("binding-group", &groups),
     ] {
         println!(
-            "  {label:<14} resolved-parity {} | reject-parity {} | fail-closed {} | over-resolved {} | value-disagree {}",
+            "  {label:<18} resolved-parity {} | reject-parity {} | fail-closed {} | over-resolved {} | value-disagree {}",
             tally.resolved_parity,
             tally.reject_parity,
             tally.fail_closed,
@@ -928,11 +1025,14 @@ fn run_per_chunk(modules_root: &Path, js_root: &Path, snapshot_root: &Path) -> R
     }
     let genuine = members.value_disagreements
         + members.over_resolved
+        + candidates.value_disagreements
+        + candidates.over_resolved
         + anonymous.value_disagreements
         + anonymous.over_resolved
         + groups.value_disagreements
         + groups.over_resolved;
-    let fail_closed = members.fail_closed + anonymous.fail_closed + groups.fail_closed;
+    let fail_closed =
+        members.fail_closed + candidates.fail_closed + anonymous.fail_closed + groups.fail_closed;
     if !issues.is_empty() {
         // Genuine disagreements (over-resolved / value-disagree) first — they are
         // the priority — then the fail-closed worklist. Print all, not a prefix.
