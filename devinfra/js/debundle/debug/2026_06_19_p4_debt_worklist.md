@@ -72,6 +72,31 @@ function_declaration | class_declaration | variable_declarator }`. Fail-closed
   and is a later refinement; owner-graph `references` + `kind` covers the MVP debt
   shapes.
 
+**Grounding (real metaNode cases).** A read-only sweep of the actual
+`metaNode.yaml` (gaffer-private) found the debt is **not monolithic** — the three
+explicitly-commented cases split into three resolution sub-patterns, only one of
+which the owner-graph-only MVP handles:
+
+| case (minified)                          | shape                              | anchor                                                         | MVP?                                                                                 |
+| ---------------------------------------- | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `isMeetingTranscriptionProvider` (`UBt`) | `function UBt(n){ return EBt(n) }` | `EBt` = spec member `isTranscriptionProvider` (another module) | ✅ delegator → spec member; `references @Name`, kind `function_declaration`          |
+| `CardsViewAccessor` (`Uee`)              | `class Uee extends Ye {}`          | `Ye` = spec member `NodeAttributeAccessor`                     | ⚠️ superclass ref **and** empty body — several children extend `Ye`, so needs Step 3 |
+| `generateUniqueId` (`ls`)                | `function ls(){ return rq() }`     | `rq` = **internal** binding, no spec member                    | ❌ no `@Name` until `rq` is lifted into the spec                                     |
+
+So the MVP cleanly retires the **delegator → spec member** sub-pattern (the
+canonical `UBt`/`EBt` case the kernel already tests). `@Name` is confirmed to be a
+cross-member reference by readable name; the anchor member can live in another
+module (the owner graph is global, so cross-module is free). The empty-class case
+needs cross-ref ∧ structural (the fact matcher); the internal-anchor case needs an
+internal handle or lifting the anchor into the spec — both out of the MVP.
+
+**Coupling with Track F (the flip).** Making `@Name` usable in production resolves
+anchor members first, then cross-ref members — so it sits on top of the existing
+per-member resolution and threads the owner graph through it. That is the same
+member-resolution pipeline Track F (seam-routing) touches, so X-wiring and F are
+**not independent**: F's `SelectorResolver` seam is the foundation a `CrossRef`
+resolver plugs into. This suggests F-then-X, not X-then-F.
+
 ### Step 2 — `reads_member`
 
 - **Impact:** 72 TS codegen helpers pinned by name today; their stable identity
