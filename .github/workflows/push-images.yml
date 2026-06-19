@@ -115,6 +115,7 @@ jobs:
               test_target: "//x/authentik_mcp_poc/...",
             }
           - { image: "//grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//grocy_mcp/..." }
+          - { image: "//haku/arm:server_image", image_name: haku-arm, test_target: "//haku/arm/..." }
           - {
               image: "//finance/plaid/link:server_image",
               image_name: plaid-mcp-server,

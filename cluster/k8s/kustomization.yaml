@@ -202,6 +202,7 @@ resources:
   - haku/namespace/flux-kustomization.yaml
   - haku/rbac/flux-kustomization.yaml
   - haku/dashboard/flux-kustomization.yaml
+  - haku/arm/flux-kustomization.yaml
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-arm
+  namespace: haku-sandbox
+  labels:
+    app.kubernetes.io/name: haku-arm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: haku-arm
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
