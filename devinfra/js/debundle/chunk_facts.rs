@@ -25,9 +25,9 @@ use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
-    MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, OptChainBase,
-    ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp,
-    Tpl, VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
+    MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp,
+    OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt,
+    SuperProp, Tpl, VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -835,6 +835,13 @@ impl Extractor {
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
             Expr::This(_) => Ok(self.node("This")),
+            // `import.meta` / `new.target`: fixed meta-properties with no
+            // renamable parts. The kind fully determines them (production compares
+            // the whole node), so fold it into the node tag.
+            Expr::MetaProp(meta) => Ok(self.node(match meta.kind {
+                MetaPropKind::ImportMeta => "MetaPropImportMeta",
+                MetaPropKind::NewTarget => "MetaPropNewTarget",
+            })),
             other => unsupported(expr_variant_name(other)),
         }
     }
@@ -1327,29 +1334,40 @@ mod tests {
 
     #[test]
     fn coverage_report_tallies_per_statement() {
-        // One extractable statement; one blocked by an unmodeled `import.meta`
-        // meta-property. One statement's gap does not abort the tally of the other.
+        // One extractable statement; one blocked by an unmodeled private class
+        // member. One statement's gap does not abort the tally of the other.
         let report = js_ast::with_swc_globals(|| {
             coverage_report(
-                &js_ast::parse_js_module_ast(
-                    "<test>",
-                    "const a = \"s\";\nconst b = import.meta;\n",
-                )
-                .unwrap(),
+                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\nclass C { #x = 1; }\n")
+                    .unwrap(),
             )
         });
         assert_eq!(report.total, 2);
         assert_eq!(report.covered, 1);
-        assert_eq!(report.unsupported.get("expr:meta_prop"), Some(&1));
+        assert_eq!(report.unsupported.get("class_member"), Some(&1));
     }
 
     #[test]
     fn unmodeled_construct_errors_loudly_not_silently() {
-        // `import.meta` (a meta-property) stays unmodeled. Fail-closed means a
-        // hard error here, never a silently-incomplete fact set that would let a
-        // query under-constrain.
-        let error = extract("const a = import.meta;").unwrap_err();
-        assert_eq!(error.context, "expr:meta_prop");
+        // A private class member stays unmodeled. Fail-closed means a hard error
+        // here, never a silently-incomplete fact set that would let a query
+        // under-constrain.
+        let error = extract("class C { #x = 1; }").unwrap_err();
+        assert_eq!(error.context, "class_member");
+    }
+
+    #[test]
+    fn extracts_meta_properties() {
+        // `import.meta` / `new.target` are fixed meta-properties: a subject
+        // statement using one must still project to facts (otherwise a needle
+        // whose `STMT_LIST` would absorb it could never match the owner).
+        let kinds: BTreeSet<&str> = extract("const a = import.meta;")
+            .expect("import.meta extracts")
+            .node_kind
+            .iter()
+            .map(|(_, k)| *k)
+            .collect();
+        assert!(kinds.contains("MetaPropImportMeta"), "kinds: {kinds:?}");
     }
 
     #[test]
