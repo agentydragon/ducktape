@@ -97,6 +97,33 @@ member-resolution pipeline Track F (seam-routing) touches, so X-wiring and F are
 **not independent**: F's `SelectorResolver` seam is the foundation a `CrossRef`
 resolver plugs into. This suggests F-then-X, not X-then-F.
 
+**Kernel complete + surface landed; only the wiring remains.** The owner-graph
+resolution is done and proven _end to end on a real emitted graph_ — including the
+readable-anchor chain (commit `5a25e06e`): `owner_for_export(@Name)` →
+`binding_for_owner` → `referencer_of_kind(_, kind)` / `alias_owner_for` →
+`binding_for_owner`, returning the target's binding with no minified name written
+anywhere. The `cross_ref` selector surface is landed and fail-closed (`f895c493`).
+The single remaining piece is the production wiring:
+
+- **Thread point:** `resolve_request_source_matches`
+  (`lowering/materialize/plan_builder.rs`) and `MemberRequest::resolve_source_match`
+  (`lowering/plans.rs`) currently receive only `runtime_module` (the chunk AST),
+  **not** the owner graph. A `&selector_solve::Resolution` must be threaded in; the
+  owner graph is already in scope in `materialize` (the precomputed
+  `OwnerGraphAndUnits` / emitted `OwnerGraphReport`). Add a `resolve_cross_ref`
+  step beside `resolve_source_match` and carry the `CrossRefTarget` on
+  `MemberRequest` (build_members currently fail-closes).
+- **Open ordering question to settle first:** are the owner graph's `export_name`s
+  (the readable→binding handle) populated at member-resolution time, or only at
+  emission? If not yet populated there, build the anchor readable→binding map from
+  the **already-resolved members** instead (the anchor-first global-solve order) —
+  the kernel's `referencer_of_kind` only needs the anchor's _binding_ plus the
+  owner graph's reference edges, which are present in the precomputed graph.
+- `Resolution` is built by `selector_solve::solve` from the lean `OwnerGraph`
+  (JSON); in-pipeline, either feed it the emitted JSON or add a `solve`-path over
+  the in-memory report (avoid coupling `selector_solve` to the `analysis` types if
+  possible).
+
 ### Step 2 — `reads_member`
 
 - **Impact:** 72 TS codegen helpers pinned by name today; their stable identity
