@@ -62,13 +62,20 @@ ascent! {
         stmt_kind(o, sk), uses(o, b, k),
         if sk.as_str() == "var_decl", if k.as_str() == "eager_use";
 
-    // ---- the cross-reference primitive: an owner references a binding (any edge
-    // kind). This is `resolves_to` projected to owner granularity — the join a
-    // `@Name` anchor rides ("the owner that uses @Name"). An AST-level `calls`
-    // (reference that is specifically a call) is a phase-2 refinement over the
-    // parsed chunk; at owner granularity `references` is the honest primitive. ----
+    // ---- the cross-reference primitive: a *declaring* owner references a binding.
+    // This is `resolves_to` projected to owner granularity — the join a `@Name`
+    // anchor rides ("the entity that references @Name"). The `declares(o, _d)`
+    // conjunct is load-bearing on real pipeline output: an `export { X }` or a
+    // `console.log(X)` statement is modelled as an owner with a `uses` edge to
+    // every binding it touches but no declared binding of its own, so without it
+    // every exported binding is referenced by the export owner and nothing
+    // resolves categorically. A `@Name` target has identity — it declares
+    // something — so an anonymous consumer is correctly not a referencer. An
+    // AST-level `calls` (reference that is specifically a call) is a later
+    // refinement over the parsed chunk; at owner granularity this is the honest
+    // primitive. ----
     relation references(u32, String);
-    references(*o, b.clone()) <-- uses(o, b, _k);
+    references(*o, b.clone()) <-- uses(o, b, _k), declares(o, _d);
 }
 
 /// Outcome of a phase-1 solve.

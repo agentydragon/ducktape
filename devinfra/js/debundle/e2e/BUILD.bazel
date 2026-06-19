@@ -225,6 +225,26 @@ rust_test(
     ],
 )
 
+# The @Name cross-reference primitive (selector_solve's referencer_for /
+# alias_owner_for) must resolve the metaNode debt shapes -- a shapeless
+# delegator pinned by what it calls, a re-export pinned by what it aliases --
+# on an owner_graph.json the real pipeline emits, not a synthetic EDB. P4
+# step 1; see plans/selector_constraint_model.md.
+rust_test(
+    name = "selector_solve_cross_reference_test",
+    srcs = ["selector_solve_cross_reference_test.rs"],
+    crate_root = "selector_solve_cross_reference_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:selector_solve",
+    ],
+)
+
 # CLI verb `debundle modules merge` (+ deprecated `debundle module
 # merge`): pure YAML splice with the new `--dry-run` flag. The
 # binary-shelling tests cover the new clap top-level node and the
