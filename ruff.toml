@@ -170,6 +170,7 @@ known-first-party = [
     "airlock",
     "augur",
     "cluster",
+    "haku",
     "mako_utils",
     "nix",
     "plaid_utils",
