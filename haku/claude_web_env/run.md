@@ -20,18 +20,11 @@ environment-neutral `haku/run.md`.
   ducktape repo you have checked out (`cluster/k8s/haku/rbac/` = your perimeter).
   See the credential table in `haku/base/instructions.md`.
 - Cluster-internal data (e.g. Plaid Postgres) isn't reachable from here — run a
-  pod **in `haku-sandbox`** to query it, as the manual describes. **Gotcha:**
-  `kubectl exec`/`attach` (and `kubectl run -i`) fail: the proxy in front of
-  `kubeapi.allegedly.works` rejects HTTP connection upgrades. kubectl 1.34 tries a
-  WebSocket upgrade first and gets `websocket: bad handshake (400)`, then falls back
-  to SPDY, which also fails — surfacing as an empty `Error from server:` (forcing
-  either protocol via `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` doesn't help).
-  `kubectl logs`/`get`/`apply`/`delete` are fine. So make the SQL
-  the pod's **command** and read results from logs: put the SQL in a `ConfigMap`,
-  run a `postgres:16` pod whose command is `psql "$DATABASE_URL" -f /sql/q.sql`
-  (DSN via `envFrom` the `plaid-mcp-db-readonly` secret, never on the command
-  line), `restartPolicy: Never`, poll `.status.phase` until `Succeeded`, then
-  `kubectl logs` it. Delete the pod after (20-pod quota).
+  pod **in `haku-sandbox`** to query it, as the manual describes (pod command +
+  `kubectl logs`, DSN from a secret via `secretKeyRef`). `kubectl exec`/`attach`/
+  `port-forward` work too — the `kubeapi-proxy` nginx forwards the WebSocket
+  upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
+  added. Clean up pods after (20-pod quota).
 
 ## Then run
 

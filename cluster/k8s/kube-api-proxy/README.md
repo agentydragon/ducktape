@@ -70,3 +70,12 @@ kubeapi-https Service → apiserver :6443
 | `service.yaml`            | Wrapper Service + EndpointSlice with `appProtocol: https` for backend re-encryption    |
 | `kustomization.yaml`      | Flux kustomization root                                                                |
 | `flux-kustomization.yaml` | Flux Kustomization (no `dependsOn`)                                                    |
+
+## kubectl exec / WebSocket
+
+`kubectl exec`/`attach`/`port-forward` open an HTTP `Upgrade` (WebSocket, or SPDY
+on older clients). The `kubeapi-proxy` nginx must forward that upgrade
+(`proxy_http_version 1.1` together with the `Upgrade`/`Connection` headers — see
+`service.yaml`); otherwise the apiserver returns `400 "Upgrade request required"`.
+Root cause and isolation method for when this broke:
+<../../docs/lessons_learned/2026_06_18_kubectl_exec_websocket_kubeapi_proxy.md>.
