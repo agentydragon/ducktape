@@ -190,7 +190,7 @@ fn source_match_report_details(
     selector: &spec::AnonymousStatementSelector,
     message: &str,
 ) -> SourceMatchReportDetails {
-    match source_match::source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
+    match source_match::fact_source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
         Ok(debt) => {
             let body_indices = debt
                 .exact_groups

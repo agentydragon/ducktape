@@ -310,6 +310,117 @@ impl Index {
     }
 }
 
+/// Read surface over a built [`Index`] for the fact-based near-miss diagnostics
+/// (`source_match::fact_near_miss`), which instruments this matcher's own
+/// first-divergence descent. These expose the same EDB relations `homo` consults
+/// — node kind, ordered children, identifier/property/operator labels, the
+/// superclass edge, and the top-level root — so the diagnostic walk reads exactly
+/// what the match walk reads, never re-walking ASTs.
+impl Index {
+    /// The single top-level (root) node of a one-statement index, or `None` for
+    /// an empty (non-extractable) statement.
+    pub fn root(&self) -> Option<NodeId> {
+        self.roots.first().copied()
+    }
+
+    pub fn kind(&self, id: NodeId) -> &'static str {
+        self.kind_of(id)
+    }
+
+    pub fn children(&self, id: NodeId) -> &[NodeId] {
+        self.children_of(id)
+    }
+
+    pub fn ident(&self, id: NodeId) -> Option<&str> {
+        self.ident_of(id)
+    }
+
+    pub fn prop_name(&self, id: NodeId) -> Option<&str> {
+        self.prop_name_of(id)
+    }
+
+    pub fn operator(&self, id: NodeId) -> Option<&str> {
+        self.operator_of(id)
+    }
+}
+
+/// Match two arbitrary sub-nodes (`nid` in `needle`, `sid` in `subject`) with a
+/// fresh [`Bindings`], the per-node match oracle the near-miss descent uses to
+/// decide whether one aligned pair (a class member, a declarator) matches. This
+/// is the *same* [`homo`] relation the whole-statement match runs, just rooted at
+/// a sub-node instead of the top-level statement. Sound to call on a sub-node of a
+/// needle that already passed [`matches_indexed`]/[`var_declarator_alignment_indexed`]:
+/// the only [`Unsupported`] sources (a misplaced run-hole keyword, a malformed
+/// predicate) are whole-needle properties already rejected up front, so a
+/// sub-node descent of a probed needle never newly errors.
+pub fn nodes_match(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+) -> Result<bool, Unsupported> {
+    let mut bindings = Bindings::default();
+    homo(needle, nid, subject, sid, mode, &mut bindings)
+}
+
+/// True iff `node` is a `CLASS_REST;` / `ANYTHING;` class-rest member hole under a
+/// `Class` parent (a class field whose key is the exact keyword and which has no
+/// initializer). The class-member near-miss scan skips these, mirroring
+/// `hints.rs::is_class_rest_hole` over facts.
+pub fn is_class_rest_member(index: &Index, node: NodeId) -> bool {
+    is_run_hole_carrier(index, "Class", node)
+}
+
+/// Greedy-leftmost in-order match of a needle var-decl's **pinned** (non-hole)
+/// declarators onto a subject var-decl's declarators, returning the matched
+/// `(needle_decl_idx, subject_decl_idx)` pairs in order. The fact-model twin of
+/// `hints.rs::pinned_var_declarator_matches_in_order` (the diagnostic greedy scan,
+/// *not* the segment placement of [`align_var_declarators`]): one [`Bindings`] is
+/// threaded across the whole scan with snapshot/restore, so an alpha binding
+/// committed by an earlier pin constrains a later one — exactly as the AST helper
+/// reuses a single `AstWildcardMatcher`. `ndecls`/`sdecls` are the two `VarDecl`
+/// nodes' declarator children (`index.children(var_decl_node)`).
+pub fn pinned_declarator_matches_in_order(
+    needle: &Index,
+    ndecls: &[NodeId],
+    subject: &Index,
+    sdecls: &[NodeId],
+    mode: Mode,
+) -> Result<Vec<(usize, usize)>, Unsupported> {
+    let mut bindings = Bindings::default();
+    let mut subject_start = 0;
+    let mut matches = Vec::new();
+    for (needle_idx, &ndecl) in ndecls.iter().enumerate() {
+        if is_run_hole_carrier(needle, "VarDecl", ndecl) {
+            continue;
+        }
+        let mut found = None;
+        for (subject_idx, &sdecl) in sdecls.iter().enumerate().skip(subject_start) {
+            let snapshot = bindings.clone();
+            if homo(needle, ndecl, subject, sdecl, mode, &mut bindings)? {
+                found = Some(subject_idx);
+                break;
+            }
+            bindings = snapshot;
+        }
+        let Some(subject_idx) = found else {
+            break;
+        };
+        matches.push((needle_idx, subject_idx));
+        subject_start = subject_idx + 1;
+    }
+    Ok(matches)
+}
+
+/// True iff `node` is a `DECLARATORS` / `ANYTHING` declarator run-hole carrier
+/// under a `VarDecl` parent (a declarator whose name binding is the keyword). The
+/// pinned-declarator near-miss alignment skips these, mirroring
+/// `hints.rs::declarator_list_hole_name` over facts.
+pub fn is_declarator_run_hole(index: &Index, node: NodeId) -> bool {
+    is_run_hole_carrier(index, "VarDecl", node)
+}
+
 /// `EXPR` (bare or named) or bare `ANYTHING`: a single-node hole in **expression**
 /// position (an `Ident`). Mirrors `holes.rs::expression_hole_name`.
 fn is_expr_single_hole(name: &str) -> bool {

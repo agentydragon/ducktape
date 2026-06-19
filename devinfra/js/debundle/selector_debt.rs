@@ -992,7 +992,7 @@ fn collect_source_aware_debt(
         return Ok(None);
     };
     *checked += 1;
-    let debt = source_match::source_match_body_debt(
+    let debt = source_match::fact_source_match_body_debt(
         runtime_module,
         module_path,
         selector,

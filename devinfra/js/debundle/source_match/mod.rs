@@ -54,6 +54,7 @@ mod binding_resolution;
 mod body_search;
 mod datalog_resolver;
 mod declared_bindings;
+mod fact_near_miss;
 mod hints;
 mod holes;
 mod matcher;
@@ -93,6 +94,7 @@ pub use binding_resolution::{
     source_match_declared_binding_names,
 };
 pub use datalog_resolver::ChunkResolver;
+pub use fact_near_miss::fact_source_match_body_debt;
 pub use resolver::{
     AstWildcardResolver, DifferentialResolver, DisagreementSink, ResolverDisagreement,
     ResolverOutcome, ResolverSite, SelectorResolver, needle_matches,
