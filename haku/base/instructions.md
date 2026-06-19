@@ -294,6 +294,7 @@ rendered view** — there is no separate `items.md`. Keep it current every run:
 `playbooks/` holds **example** playbooks — concrete starting points
 ([`plaid_anomalies`](playbooks/plaid_anomalies.md),
 [`gmail_triage`](playbooks/gmail_triage.md),
+[`inbox_cleanup`](playbooks/inbox_cleanup.md),
 [`calendar_prep`](playbooks/calendar_prep.md),
 [`drive_activity`](playbooks/drive_activity.md),
 [`tasks`](playbooks/tasks.md),

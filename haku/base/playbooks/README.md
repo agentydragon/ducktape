@@ -8,19 +8,20 @@ playbooks you develop in your state `memory/`, not here (this directory is
 read-only base).
 
 Available now: [`plaid_anomalies`](plaid_anomalies.md),
-[`gmail_triage`](gmail_triage.md), [`calendar_prep`](calendar_prep.md),
-[`drive_activity`](drive_activity.md), [`tasks`](tasks.md),
-[`keep_notes`](keep_notes.md), and
+[`gmail_triage`](gmail_triage.md), [`inbox_cleanup`](inbox_cleanup.md),
+[`calendar_prep`](calendar_prep.md), [`drive_activity`](drive_activity.md),
+[`tasks`](tasks.md), [`keep_notes`](keep_notes.md), and
 [`ducktape_git_review`](ducktape_git_review.md) (your ducktape checkout — always
 reachable). The Google ones share the read-only Google token; other Google
 products (Docs, Slides, …) are fair game the same way when the token carries their
-scope — if a call 403s, the scope isn't granted, so note the gap in your log and
-move on.
+scope — if a call 403s, the scope isn't granted (or the API isn't enabled on the
+project), so note the gap in your log and move on.
 
-[`tana_review`](tana_review.md) (read-only Tana via the cluster-internal
-`tana-mcp-ro` facade) is **newly deployed** — its `haku-tana-ro-token` secret and
-pod-based connection aren't paved yet, so confirm it's on your wire before relying
-on it (and record the working recipe in your `memory/`).
+[`tana_review`](tana_review.md) reads the operator's Tana (read-only) via the
+cluster-internal `tana-mcp-ro` facade — reached **directly from the web home**
+with the `fastmcp` CLI carrying the `haku-tana-ro-token` bearer (no pod). Confirm
+it's on your wire before relying on it and keep the working recipe in your
+`memory/`.
 
 Designed but **not yet wired** — the tools aren't on your wire; don't attempt
 them, just note the gap in your log if one appears: PostScanMail (unopened mail →
