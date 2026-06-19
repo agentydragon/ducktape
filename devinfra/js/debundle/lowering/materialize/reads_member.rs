@@ -31,8 +31,10 @@
 
 use analysis::OwnerGraph as FactOwnerGraph;
 use analysis::reports::owner_key;
-use spec::{BindingSourceKind, ReadsMemberTarget};
+use spec::ReadsMemberTarget;
 use swc_ecma_ast::Module;
+
+use super::kind_labels::{dep_kind_str, statement_kind_str, statement_kind_str_for_spec};
 
 /// Project the in-memory `analysis::OwnerGraph` + the chunk's AST member-reads
 /// onto the lean owner graph the `selector_solve` kernel consumes, then run the
@@ -115,49 +117,4 @@ pub(super) fn resolve_reads_member<'a>(
         (None, None) => resolution.reads_member_owner(&target.member),
     }?;
     resolution.binding_for_owner(owner)
-}
-
-/// Owner-graph statement-kind spelling the kernel matches on. Mirrors the
-/// `#[serde(rename_all = "snake_case")]` wire spelling of
-/// `analysis::StatementKind` — the kernel reads the JSON owner graph, so the
-/// in-memory projection must produce the identical strings.
-fn statement_kind_str(kind: analysis::StatementKind) -> &'static str {
-    use analysis::StatementKind::*;
-    match kind {
-        VarDecl => "var_decl",
-        FnDecl => "fn_decl",
-        ClassDecl => "class_decl",
-        Export => "export",
-        Import => "import",
-        SideEffect => "side_effect",
-    }
-}
-
-/// The owner-graph statement kind a `kind:` selector constraint narrows to. The
-/// spec carries the source-declaration kind (`BindingSourceKind`); map it onto
-/// the owner-graph `statement_kind` the kernel filters by. `ImportSpecifier` has
-/// no owner-graph statement-kind counterpart, so it never matches a declaring
-/// reader — fail-closed.
-fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
-    match kind {
-        BindingSourceKind::VariableDeclarator => "var_decl",
-        BindingSourceKind::FunctionDeclaration => "fn_decl",
-        BindingSourceKind::ClassDeclaration => "class_decl",
-        BindingSourceKind::ImportSpecifier => "import",
-    }
-}
-
-/// Owner-graph edge-kind spelling the kernel matches on. Mirrors
-/// `analysis::DepKind`'s snake_case wire spelling.
-fn dep_kind_str(kind: analysis::DepKind) -> &'static str {
-    use analysis::DepKind::*;
-    match kind {
-        EagerUse => "eager_use",
-        LazyUse => "lazy_use",
-        EagerRebind => "eager_rebind",
-        LazyRebind => "lazy_rebind",
-        DeferredRebind => "deferred_rebind",
-        Sequenced => "sequenced",
-        LocalEffect => "local_effect",
-    }
 }

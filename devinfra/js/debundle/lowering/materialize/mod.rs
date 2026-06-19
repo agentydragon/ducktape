@@ -5,6 +5,7 @@
 
 mod apply;
 mod cross_ref;
+mod kind_labels;
 mod member_of_module;
 mod plan_builder;
 mod reads_member;

@@ -814,6 +814,7 @@ rust_library(
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
         "lowering/materialize/cross_ref.rs",
+        "lowering/materialize/kind_labels.rs",
         "lowering/materialize/member_of_module.rs",
         "lowering/materialize/mod.rs",
         "lowering/materialize/plan_builder.rs",
@@ -1062,24 +1063,6 @@ rust_binary(
     srcs = ["selector_solve_bin.rs"],
     edition = "2024",
     deps = [":selector_solve"],
-)
-
-# Feasibility spike: the six capability-delta examples from
-# plans/selector_constraint_model.md, each encoded as Ascent rules over a
-# synthetic EDB and proven to resolve. Demonstrates that stratified negation,
-# aggregation, recursion, and cross-reference joins are all expressible in the
-# engine we picked — i.e., the promised queries are implementable, not aspirational.
-rust_library(
-    name = "selector_query_examples",
-    srcs = ["selector_query_examples.rs"],
-    edition = "2024",
-    deps = ["@crates//:ascent"],
-)
-
-rust_test(
-    name = "selector_query_examples_test",
-    crate = ":selector_query_examples",
-    edition = "2024",
 )
 
 # P1 of the Datalog selector resolver: a faithful, fail-closed projection of a

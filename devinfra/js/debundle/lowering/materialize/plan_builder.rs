@@ -98,6 +98,35 @@ fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> Stri
     report
 }
 
+/// `export_name → minified binding` over the members already resolved by
+/// `add_explicit_request` — the anchor-first handle a post-Stage-A selector pass
+/// uses to resolve a `@Anchor` reference (`cross_ref`'s anchor, `reads_member`'s
+/// `object:`) to a minified binding. The owner graph's `export_name` is not
+/// populated at member-resolution time, so the readable→binding map is rebuilt
+/// from the resolved members instead (see `materialize::cross_ref`).
+///
+/// Members still unresolved at this point (the post-Stage-A selectors themselves)
+/// have an empty `binding` and are skipped. An export name claimed by two
+/// resolved members maps to `None` so it cannot anchor ambiguously — resolution
+/// stays categorical, and a missing/ambiguous anchor fails closed at the use site.
+fn resolved_anchor_bindings(
+    explicit_requests: &[LogicalRequest],
+) -> HashMap<String, Option<String>> {
+    let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
+    for request in explicit_requests {
+        for member in &request.members {
+            if member.binding.is_empty() {
+                continue;
+            }
+            anchor_binding
+                .entry(member.export_name.clone())
+                .and_modify(|slot| *slot = None)
+                .or_insert_with(|| Some(member.binding.clone()));
+        }
+    }
+    anchor_binding
+}
+
 #[derive(Debug, Clone)]
 struct SourceMatchDiagnostic {
     module_id: String,
@@ -851,23 +880,7 @@ impl ChunkPlanBuilder {
         // Built once per chunk, only when a cross-ref member exists.
         let resolution = cross_ref::build_resolution(owner_graph);
 
-        // export_name -> minified binding, over the members already resolved by
-        // `add_explicit_request`. Cross-ref members (still unresolved) are excluded
-        // by the empty-binding guard; an export name claimed by two resolved
-        // members can't anchor unambiguously, so it's dropped (resolution stays
-        // categorical — a missing anchor fails closed at the use site).
-        let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
-        for request in explicit_requests {
-            for member in &request.members {
-                if member.binding.is_empty() {
-                    continue;
-                }
-                anchor_binding
-                    .entry(member.export_name.clone())
-                    .and_modify(|slot| *slot = None)
-                    .or_insert_with(|| Some(member.binding.clone()));
-            }
-        }
+        let anchor_binding = resolved_anchor_bindings(explicit_requests);
 
         // Resolution itself is fail-closed in both modes: an unresolvable
         // cross-ref (unknown/ambiguous anchor, or a relational edge that doesn't
@@ -943,58 +956,19 @@ impl ChunkPlanBuilder {
                     anchor_readable = target.anchor,
                 )
             })?;
-        let binding_id = top_level_id(binding, chunk_top_level_mark);
-        if !declaration_by_name.contains_key(&binding_id) {
-            // Mirror the named-member path: a resolved binding with no top-level
-            // declaration in this chunk is recorded and the pipeline fails at the
-            // end with the full list, rather than half-claiming it here.
-            self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
-                chunk_id: chunk_id.to_string(),
-                module_path: spec::ModulePath::parse(&request.target_path, "")
-                    .expect("request target_path is a canonical module path"),
-                binding_name: binding.to_string(),
-                export_name: member.export_name.clone(),
-            });
-            return Ok(());
-        }
-        let module_id = ModuleId(LogicalModuleIndex(index));
-        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
-            let duplicate =
-                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
-            if !self.keep_going {
-                bail!("{}", render_duplicate_binding_claims(&[duplicate]));
-            }
-            self.duplicate_binding_claims.push(duplicate);
-            return Ok(());
-        }
-        // The residual sweep ran before Stage A (before this cross-ref pass), so
-        // the target binding — unclaimed at sweep time — was parked at the residual
-        // plan. Move it out: overwrite its assignment and prune the residual plan's
-        // export list, exactly as `apply_rebind_folds` / `synthesize_mini_factors`
-        // do, so the residual module doesn't keep `export { <binding> }` for a
-        // declaration that now lives in the explicit module (a Node load-time
-        // `Export 'X' is not defined` otherwise).
-        if let Some(prev) = self.binding_assignment.get(&binding_id).copied()
-            && Some(prev) == self.residual_plan_index
-            && let Some(residual_idx) = self.residual_plan_index
-        {
-            self.module_plans[residual_idx].bindings.remove(binding);
-        }
-        self.binding_assignment.insert(binding_id.clone(), index);
-        let kind = BindingKind::Owned { module: module_id };
-        self.catalogue_index_by_name
-            .insert(binding.to_string(), kind.clone());
-        self.bindings_catalogue.insert(binding_id, kind);
-        let plan = &mut self.module_plans[index];
-        plan.bindings
-            .insert(binding.to_string(), member.export_name.clone());
-        plan.binding_claim_origins
-            .insert(binding.to_string(), member.claim_origin.clone());
-        if let Some(comment) = &member.comment {
-            plan.binding_comments
-                .insert(binding.to_string(), comment.clone());
-        }
-        Ok(())
+        // The cross-ref residual-move citation: the binding was parked at the
+        // residual plan by the pre-Stage-A sweep, exactly as `apply_rebind_folds`
+        // / `synthesize_mini_factors` handle their late claims; the shared tail
+        // moves it out.
+        self.claim_post_stage_a_binding(
+            request,
+            member,
+            binding,
+            index,
+            chunk_top_level_mark,
+            chunk_id,
+            declaration_by_name,
+        )
     }
 
     /// Build a `DuplicateBindingClaim` describing a clash between an
@@ -1094,24 +1068,7 @@ impl ChunkPlanBuilder {
         // only when a reads-member member exists.
         let resolution = reads_member::build_resolution(owner_graph, module);
 
-        // export_name -> minified binding, over the members already resolved by
-        // `add_explicit_request`. Reads-member members (still unresolved) are
-        // excluded by the empty-binding guard; an export name claimed by two
-        // resolved members can't anchor an `object:` unambiguously, so it's
-        // dropped (resolution stays categorical — a missing object anchor fails
-        // closed at the use site).
-        let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
-        for request in explicit_requests {
-            for member in &request.members {
-                if member.binding.is_empty() {
-                    continue;
-                }
-                anchor_binding
-                    .entry(member.export_name.clone())
-                    .and_modify(|slot| *slot = None)
-                    .or_insert_with(|| Some(member.binding.clone()));
-            }
-        }
+        let anchor_binding = resolved_anchor_bindings(explicit_requests);
 
         for (index, request) in explicit_requests.iter().enumerate() {
             for member in &request.members {
