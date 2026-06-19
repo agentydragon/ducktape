@@ -79,6 +79,50 @@ JWTs auto-rotated by the cluster (1-year validity, mint-on-staleness):
 Both files are encrypted with the CI age key, already on both repos as
 `SOPS_AGE_KEY` (synced by `tf/gitops/github-secrets-sync/main.tf`).
 
+## Private-binary isolation (drivefs)
+
+`drivefs` (the Google Drive binary) must stay in the restricted `gaffer` cache
+and **never** land in the broadly-readable `main` cache. The boundary that
+enforces this is the **narinfo**: each cache signs and serves its own narinfos,
+gated by per-cache JWT scope. `main` and `gaffer` physically share the one
+`attic` S3 bucket of content-addressed chunks, but chunks are useless without
+the gaffer narinfo (NAR hash → ordered chunk list), so narinfo scoping is the
+real access boundary even though chunk bytes coexist.
+
+The leak it guards against: `nix/home/modules/google-drive.nix`, when
+`services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` via
+`builtins.fetchClosure` from `gaffer` into the local store **at eval time**. If a
+closure containing it were pushed to `main`, `drivefs`'s narinfo would land in
+`main`, pullable by anyone with `main:pull`.
+
+So `devinfra/ci/nix_attic_build_and_push.sh` builds every config with
+google-drive **forced off** before pushing to `main`:
+
+- NixOS hosts: `extendModules` injects
+  `home-manager.sharedModules += { services.google-drive.enable = mkForce false; }`,
+  probed per host (hosts without home-manager — e.g. `bootstrap`,
+  `nix-rbe-worker` — build as-is).
+- Home configs: `extendModules` injects `services.google-drive.enable = false`
+  (the standalone `claude-web` profile doesn't import the module and is skipped —
+  injecting an undeclared option errors, and a guard conditioned on `options`
+  recurses in the module fixpoint).
+
+With it off, `config = lib.mkIf cfg.enable {…}` never references `drivefs`, so it
+is never fetched and never enters a pushed closure. Real hosts deploy with
+google-drive **on**: `nixos-rebuild switch` pulls `drivefs` straight from
+`gaffer` (their reader JWT carries `--pull gaffer`) and rebuilds only the cheap
+home-manager generation diff.
+
+**Invariant:** any config that sets `services.google-drive.enable = true` must be
+covered by the CI override, or `drivefs` leaks into `main`. The NixOS loop forces
+it off generically (probe + `extendModules`), so new hosts are covered
+automatically; the only manual case is a home profile that _lacks_ the module.
+
+**Storage-layer follow-up (not done):** for defense-in-depth — so even a broad
+`attic`-bucket reader key (SeaweedFS `claude-reader`, which holds `Read:attic`)
+can't touch `drivefs` chunks — `gaffer` would need its **own S3 bucket** with
+separate credentials. The narinfo boundary above is the current line of defense.
+
 ## Pulling (NixOS Hosts)
 
 Substituter wiring is via `ducktape.attic-substituter.enable` in

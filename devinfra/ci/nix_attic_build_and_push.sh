@@ -20,11 +20,35 @@ trap 'kill -TERM "$watcher_pid" 2>/dev/null || true; wait "$watcher_pid" 2>/dev/
 
 out_paths=$(mktemp)
 
-# NixOS configurations
+# NixOS configurations.
+#
+# Force services.google-drive off for each system's home-manager users so the
+# private gaffer `drivefs` closure is never pulled into a closure we push to the
+# broadly-readable `main` cache. Only the workstation hosts (wyrm2, rugged)
+# enable it; they pull drivefs straight from the restricted `gaffer` cache at
+# `nixos-rebuild switch` and rebuild only the cheap home-manager generation
+# diff. Keeping drivefs out of `main` is the whole point of the separate gaffer
+# cache — see cluster/docs/nix_cache.md "Private-binary isolation (drivefs)".
+#
+# Probe for home-manager rather than hardcoding a host list: hosts without it
+# (e.g. bootstrap) have no such option and are built as-is. A guard *inside* the
+# module — conditioning config on whether the option exists — is not possible:
+# referencing `options` triggers infinite recursion in the module fixpoint.
 for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-  nix build --impure \
-    ".#nixosConfigurations.$host.config.system.build.toplevel" \
-    --no-link --print-out-paths >>"$out_paths"
+  if nix eval --impure ".#nixosConfigurations.$host.config.home-manager.users" \
+    --apply builtins.attrNames >/dev/null 2>&1; then
+    target="(flake.nixosConfigurations.$host.extendModules {
+      modules = [
+        { home-manager.sharedModules = [ ({ lib, ... }: { services.google-drive.enable = lib.mkForce false; }) ]; }
+      ];
+    }).config.system.build.toplevel"
+  else
+    target="flake.nixosConfigurations.$host.config.system.build.toplevel"
+  fi
+  nix build --impure --expr "
+    let flake = builtins.getFlake \"path:$(pwd)\";
+    in $target
+  " --no-link --print-out-paths >>"$out_paths"
 done
 
 # Home configurations: disable google-drive via extendModules so the private
