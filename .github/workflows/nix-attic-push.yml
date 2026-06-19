@@ -51,6 +51,14 @@ jobs:
             # still wins for the shared base; attic is only hit for paths it
             # alone has.
             extra-substituters = https://cache.allegedly.works/main
+            # Build from source if a substitution fails instead of hard-erroring.
+            # Required now that we pull from cache.allegedly.works/main: earlier
+            # runs were killed mid-upload, leaving dangling narinfos (present
+            # metadata, missing/partial NAR). Without fallback, nix aborts the
+            # whole job on the first such path ("could not be realised"); with
+            # it, nix rebuilds and watch-store re-pushes the good NAR, self-
+            # healing the cache.
+            fallback = true
 
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client
