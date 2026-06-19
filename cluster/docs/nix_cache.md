@@ -95,17 +95,21 @@ The leak it guards against: `nix/home/modules/google-drive.nix`, when
 closure containing it were pushed to `main`, `drivefs`'s narinfo would land in
 `main`, pullable by anyone with `main:pull`.
 
-So `devinfra/ci/nix_attic_build_and_push.sh` builds every config with
-google-drive **forced off** before pushing to `main`:
+So `devinfra/ci/nix_attic_build_and_push.sh` forces google-drive **off** for any
+config that enables it before pushing to `main`, detected by reading the
+`services.google-drive.enable` bool (cheap; it does not fetch `drivefs`, which
+lives behind `config = lib.mkIf cfg.enable`):
 
-- NixOS hosts: `extendModules` injects
-  `home-manager.sharedModules += { services.google-drive.enable = mkForce false; }`,
-  probed per host (hosts without home-manager — e.g. `bootstrap`,
-  `nix-rbe-worker` — build as-is).
-- Home configs: `extendModules` injects `services.google-drive.enable = false`
-  (the standalone `claude-web` profile doesn't import the module and is skipped —
-  injecting an undeclared option errors, and a guard conditioned on `options`
-  recurses in the module fixpoint).
+- NixOS hosts: for each home-manager user reading `enable = true` (wyrm2,
+  rugged), `extendModules` injects
+  `home-manager.sharedModules += { services.google-drive.enable = mkForce false; }`.
+- Home configs: the same check on the config directly (none enable it today).
+
+Configs where the option is absent or false build as-is — they can't reference
+`drivefs`, and injecting an undeclared option would error. Crucially this covers
+configs that have **home-manager but not the google-drive module** (`bazel-test`'s
+`root` user; the standalone `claude-web` profile): the bool read errors → treated
+as not-enabled → built untouched.
 
 With it off, `config = lib.mkIf cfg.enable {…}` never references `drivefs`, so it
 is never fetched and never enters a pushed closure. Real hosts deploy with
@@ -113,10 +117,11 @@ google-drive **on**: `nixos-rebuild switch` pulls `drivefs` straight from
 `gaffer` (their reader JWT carries `--pull gaffer`) and rebuilds only the cheap
 home-manager generation diff.
 
-**Invariant:** any config that sets `services.google-drive.enable = true` must be
-covered by the CI override, or `drivefs` leaks into `main`. The NixOS loop forces
-it off generically (probe + `extendModules`), so new hosts are covered
-automatically; the only manual case is a home profile that _lacks_ the module.
+**Invariant:** the override targets exactly the configs whose
+`services.google-drive.enable` reads `true`, so a new google-drive host is covered
+automatically and a config that lacks the module is never mis-targeted (the bug
+that the earlier "force off everywhere with home-manager" approach hit on
+`bazel-test`).
 
 **Storage-layer follow-up (not done):** for defense-in-depth — so even a broad
 `attic`-bucket reader key (SeaweedFS `claude-reader`, which holds `Read:attic`)

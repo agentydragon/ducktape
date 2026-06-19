@@ -22,21 +22,29 @@ out_paths=$(mktemp)
 
 # NixOS configurations.
 #
-# Force services.google-drive off for each system's home-manager users so the
-# private gaffer `drivefs` closure is never pulled into a closure we push to the
-# broadly-readable `main` cache. Only the workstation hosts (wyrm2, rugged)
-# enable it; they pull drivefs straight from the restricted `gaffer` cache at
-# `nixos-rebuild switch` and rebuild only the cheap home-manager generation
-# diff. Keeping drivefs out of `main` is the whole point of the separate gaffer
-# cache — see cluster/docs/nix_cache.md "Private-binary isolation (drivefs)".
+# Force services.google-drive off for any home-manager user that has it ENABLED
+# (currently wyrm2, rugged) so the private gaffer `drivefs` closure never enters
+# a closure we push to the broadly-readable `main` cache. Those hosts pull
+# drivefs straight from the restricted `gaffer` cache at `nixos-rebuild switch`.
+# See cluster/docs/nix_cache.md "Private-binary isolation (drivefs)".
 #
-# Probe for home-manager rather than hardcoding a host list: hosts without it
-# (e.g. bootstrap) have no such option and are built as-is. A guard *inside* the
-# module — conditioning config on whether the option exists — is not possible:
-# referencing `options` triggers infinite recursion in the module fixpoint.
+# Detect by reading the enable bool per HM user — cheap, and it does not fetch
+# drivefs (that lives behind `config = lib.mkIf cfg.enable`). Hosts where the
+# option is absent (e.g. bazel-test's `root` user has home-manager but not the
+# google-drive module) or false are built as-is: they can't leak drivefs, and
+# injecting an undeclared option would error. Reading the bool this way avoids
+# the infinite recursion an in-module options-existence guard would cause.
 for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-  if nix eval --impure ".#nixosConfigurations.$host.config.home-manager.users" \
-    --apply builtins.attrNames >/dev/null 2>&1; then
+  override=
+  for u in $(nix eval --impure --json ".#nixosConfigurations.$host.config.home-manager.users" \
+    --apply builtins.attrNames 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+    if [ "$(nix eval --impure \
+      ".#nixosConfigurations.$host.config.home-manager.users.$u.services.google-drive.enable" \
+      2>/dev/null)" = true ]; then
+      override=1
+    fi
+  done
+  if [ -n "$override" ]; then
     target="(flake.nixosConfigurations.$host.extendModules {
       modules = [
         { home-manager.sharedModules = [ ({ lib, ... }: { services.google-drive.enable = lib.mkForce false; }) ]; }
@@ -51,21 +59,17 @@ for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames |
   " --no-link --print-out-paths >>"$out_paths"
 done
 
-# Home configurations: disable google-drive via extendModules so the private
-# gaffer-private binary is never fetched at eval time.
-#
-# claude-web is a minimal standalone profile that does NOT import the
-# google-drive module, so injecting the option there fails with "The option
-# services.google-drive does not exist". Skip the override for it. (A generic
-# guard on whether the option exists is not possible: referencing `options`
-# from a module's config triggers infinite recursion in the module fixpoint.)
+# Home configurations — same rule: force google-drive off only where a config
+# actually enables it (none today). The standalone claude-web profile doesn't
+# import the module, so the option read errors and it is built as-is.
 for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-  if [ "$host" = claude-web ]; then
-    target="flake.homeConfigurations.$host.activationPackage"
-  else
+  if [ "$(nix eval --impure \
+    ".#homeConfigurations.$host.config.services.google-drive.enable" 2>/dev/null)" = true ]; then
     target="(flake.homeConfigurations.$host.extendModules {
-      modules = [ { services.google-drive.enable = false; } ];
+      modules = [ ({ lib, ... }: { services.google-drive.enable = lib.mkForce false; }) ];
     }).activationPackage"
+  else
+    target="flake.homeConfigurations.$host.activationPackage"
   fi
   nix build --impure --expr "
     let flake = builtins.getFlake \"path:$(pwd)\";
