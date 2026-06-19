@@ -182,3 +182,59 @@ scanning a giant `initBundle` var-decl owner: per-candidate deep init-homo). The
 next lever is **algorithmic** — a candidate index for that path — not more
 constant-factor or core-count wins. Only once the pass is fast enough to iterate
 can the 44 fail-closed + 9 over-resolved be driven to zero (the actual gate).
+
+## Resolution — gate GREEN over the full 8306-selector corpus (2026-06-19)
+
+The full per-chunk gate is now **green** — every selector resolves to the same
+owner as production, zero disagreements, zero fail-closed:
+
+```
+member         resolved-parity 6857 | reject-parity 16 | fail-closed 0 | over-resolved 0 | value-disagree 0
+anonymous      resolved-parity  619 | reject-parity  0 | fail-closed 0 | over-resolved 0 | value-disagree 0
+binding-group  resolved-parity  814 | reject-parity  0 | fail-closed 0 | over-resolved 0 | value-disagree 0
+```
+
+Four faithfulness fixes closed the 9 over-resolved + (the prefilter-inflated)
+fail-closed worklist. Each was a principled, general encoding fix — no
+special-casing:
+
+1. **Member path used gapped alignment, not fixed-window** (the 9 over-resolved).
+   `resolve_member_multi` mirrored `find_matching_body_group_alignments` (gapped
+   module-level `STMT_LIST` subsequence) when production's member path is
+   `find_matching_target_bindings` → `find_matching_body_ranges` (fixed
+   `body.windows(n)`). Added `match_fixed_window_sequence_indexed`; a module-level
+   `STMT_LIST` member needle now fails closed (production registers `STMT_LIST` in
+   `statement_lists`, not the single-statement-wildcard `statements`, so its fixed
+   window also finds zero → reject-parity).
+
+2. **Unsound init-kind prefilter for `STR_LITERAL_MATCHING_RE`** (76 false
+   fail-closed introduced by the prefilter, never caught until the full pass).
+   `needle_var_declarator_init_kind_prefilter` skipped string-literal declarators
+   for a regex-predicate needle (a `Call` matching a `StrLit` — a deliberate
+   cross-kind match). Added the same regex-predicate carve-out the root-kind
+   prefilter already had.
+
+3. **Superclass (`extends`) invisible to the fact matcher** (the `changeTypes`
+   ~41-member/group over-match → ambiguous fail-closed). `super_class` was a
+   `chunk_facts` relation but `Index`/`homo` never compared it, so a no-`extends`
+   needle class matched an `extends`-bearing subject and the "all extend the same
+   base" alpha constraint went unenforced. `homo` now compares `super_class` for
+   `Class` nodes (production's `match_class` `match_option_box_expr` arm).
+
+4. **`import.meta` / `new.target` unextractable** (the `pdfExtraction` and
+   `listElementWithSuspense` under-matches). A subject statement containing a
+   `MetaProp` projected to empty facts and was invisible — even when a needle's
+   `STMT_LIST`/`DECLARATORS` hole would absorb the offending region (production
+   never inspects an absorbed region on the AST, so it matched the owner fine).
+   This is the architectural asymmetry: the fact EDB must extract the _whole_
+   subject, so extractor coverage gates matchability. `chunk_facts` now extracts
+   meta-properties (kind folded into the node tag); the chunk extracts 100% of its
+   5316 top-level statements with zero `Unsupported`.
+
+**Reject-parity 16** = selectors where both resolvers error (genuine
+non-resolution on this snapshot), which is agreement. The gate counts only
+`(Ok,Ok)`-different / `(Ok,Err)` / `(Err,Ok)` as violations; there are none.
+
+Parity is now **proven** over the corpus, the goal's bar. Perf remains the
+~36 min/pass cost (Track 1) — fine for a gate, still worth the algorithmic
+candidate-index lever before this is a routine pre-commit check.
