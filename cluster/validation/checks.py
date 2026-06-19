@@ -10,16 +10,8 @@ from cluster.validation.k8s import HelmReleaseResource, K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path, candidates: set[Path] | None = None) -> list[str]:
-    """Find YAML files not referenced by any kustomization.
-
-    When `candidates` is provided (pre-commit invocation), only files in that
-    set are checked — keeps a clean diff from being blocked by orphans a
-    parallel agent left on disk but hasn't staged yet. When `candidates` is
-    None (CI / Bazel integration test) every YAML under `k8s_dir` is checked.
-
-    Paths in `candidates` must be resolved/absolute to match `all_yaml_files`.
-    """
+def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+    """Find YAML files not referenced by any kustomization."""
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
         referenced.update(kust.all_referenced_files)
@@ -30,8 +22,6 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path, candidates: set[P
     errors = []
     for yaml_file in cluster.all_yaml_files:
         if yaml_file.name == "kustomization.yaml":
-            continue
-        if candidates is not None and yaml_file not in candidates:
             continue
         if yaml_file not in referenced:
             relative = yaml_file.relative_to(k8s_dir)

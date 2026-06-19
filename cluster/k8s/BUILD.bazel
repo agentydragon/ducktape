@@ -10,6 +10,15 @@ filegroup(
     ],
 )
 
+# Whole flux-system overlay (kustomization.yaml + the GitHub App Secret it
+# references), which cluster_all_files excludes. cluster/validation's flux-build
+# test needs it because the root kustomization lists flux-system/ as a resource.
+filegroup(
+    name = "flux_system_files",
+    srcs = glob(["flux-system/**"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 filegroup(
     name = "cluster_yaml_files",
     srcs = glob(

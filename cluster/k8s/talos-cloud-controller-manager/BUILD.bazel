@@ -2,3 +2,17 @@ exports_files(
     ["helmrelease.yaml"],
     visibility = ["//cluster/terraform/main:__pkg__"],
 )
+
+# Cluster manifests for cluster/validation's flux-build test (the
+# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+filegroup(
+    name = "manifests",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "BUILD.bazel",
+            "test_*.py",
+        ],
+    ),
+    visibility = ["//cluster/validation:__pkg__"],
+)

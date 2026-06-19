@@ -143,25 +143,6 @@ py_library(
 )
 
 py_library(
-    name = "validate_all",
-    srcs = ["validate_all.py"],
-    deps = [
-        ":authentik_blueprints",
-        ":checks",
-        ":cluster",
-        ":crd_layering",
-        ":dependencies",
-        ":flux",
-        ":flux_bootstrap_auth",
-        ":health_checks",
-        ":helm_templates",
-        ":image_automation",
-        ":kustomize",
-        ":terraform_backends",
-    ],
-)
-
-py_library(
     name = "kustomize_build_all_lib",
     srcs = ["kustomize_build_all.py"],
     deps = [
@@ -350,16 +331,41 @@ py_test(
         ":authentik_blueprints",
         ":checks",
         ":cluster",
+        ":crd_layering",
         ":dependencies",
         ":flux",
         ":flux_bootstrap_auth",
         ":health_checks",
         ":image_automation",
         ":kustomize",
+        ":terraform_backends",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_flux_build",
+    srcs = ["test_flux_build.py"],
+    # validate_flux_build needs the whole tree the root kustomization references.
+    # cluster_all_files' glob stops at sub-package boundaries, so the cluster/k8s
+    # sub-packages contribute their manifests via :manifests filegroups. :flux
+    # carries the flux CLI as runfiles.
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agents/attic-jwt-rotation:manifests",
+        "//cluster/k8s/agents/authentik-jwt-rotation:manifests",
+        "//cluster/k8s/inventree/token-provisioner:manifests",
+        "//cluster/k8s/litellm/app:manifests",
+        "//cluster/k8s/litellm/tana:manifests",
+        "//cluster/k8s/talos-cloud-controller-manager:manifests",
+    ],
+    deps = [
+        ":flux",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
     ],
 )
 

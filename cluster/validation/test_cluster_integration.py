@@ -17,20 +17,25 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-import yaml
 
-from cluster.validation.authentik_blueprints import check_proxy_provider_outpost_assignment
+from cluster.validation.authentik_blueprints import (
+    check_blueprint_completeness,
+    check_proxy_provider_outpost_assignment,
+)
 from cluster.validation.checks import (
+    check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
+from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
+from cluster.validation.terraform_backends import check_terraform_backends
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -79,6 +84,32 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
 
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_controller_health_checks(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_no_crd_layering_violations(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Active kustomizations must not mix HelmReleases with external-operator CRD instances."""
+    active_dirs = {spec.local_dir(k8s_dir) for spec in cluster.active_flux_kustomizations.values()}
+    errors: list[str] = []
+    for result in cluster.build_results:
+        if result.kustomization_path.parent.resolve() not in active_dirs:
+            continue
+        try:
+            check_crd_layering(result)
+        except CrdLayeringViolationError as e:
+            errors.append(str(e))
+    assert not errors, "\n".join(errors)
+
+
+def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
+    """Exactly one external-secrets HelmRelease across the cluster."""
+    errors = check_duplicate_external_secrets(cluster.build_results)
+    assert not errors, "\n".join(errors)
+
+
+def test_terraform_backends_not_kubernetes(cluster: ParsedCluster) -> None:
+    """tofu-controller Terraform CRs must use the pg backend, not kubernetes Secrets."""
+    errors = check_terraform_backends(cluster)
     assert not errors, "\n".join(errors)
 
 
@@ -136,24 +167,8 @@ def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
 
 def test_blueprint_completeness(k8s_dir: Path) -> None:
     """All authentik blueprint YAML files must be listed in configMapGenerator."""
-    authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
-
-    with authentik_kust.open() as f:
-        doc = yaml.safe_load(f)
-
-    listed_files: set[str] = set()
-    for generator in doc.get("configMapGenerator", []):
-        if generator.get("name") == "authentik-sso-blueprints":
-            listed_files = {Path(f).name for f in generator.get("files", [])}
-            break
-
-    on_disk = {p.name for p in blueprints_dir.glob("*.yaml")}
-    unlisted = sorted(on_disk - listed_files)
-
-    assert not unlisted, "Add to authentik-sso-blueprints files list: " + ", ".join(
-        f"blueprints/{name}" for name in unlisted
-    )
+    errors = check_blueprint_completeness(k8s_dir)
+    assert not errors, "\n".join(errors)
 
 
 def test_proxy_providers_assigned_to_outpost(k8s_dir: Path) -> None:
