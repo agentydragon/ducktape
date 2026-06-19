@@ -464,6 +464,22 @@ fn alpha_scopes_per_function_so_reused_param_names_stay_independent() {
 }
 
 #[test]
+fn production_match_is_globals_independent() {
+    // The parallel corpus harness runs each case in its own `with_swc_globals`,
+    // while the subject module was parsed under a different (outer) globals. The
+    // production match must be invariant to that — otherwise parallel measurements
+    // would be harness artifacts rather than real disagreements.
+    js_ast::with_swc_globals(|| {
+        let module = js_ast::parse_js_module_ast("<t>", "function g(x){ return x; }").unwrap();
+        let sel = selector("function f(a){ return a; }", true);
+        let direct = source_match::needle_matches(&sel, &module.body[0]);
+        let nested =
+            js_ast::with_swc_globals(|| source_match::needle_matches(&sel, &module.body[0]));
+        assert_eq!(direct, nested);
+    });
+}
+
+#[test]
 fn fail_closed_on_misplaced_run_hole() {
     js_ast::with_swc_globals(|| {
         // `ARGS` in expression position (not an argument list) is a misplaced run

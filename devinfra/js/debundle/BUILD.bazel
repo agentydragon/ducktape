@@ -1162,6 +1162,7 @@ rust_binary(
         ":spec",
         ":spec_modules",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
     ],
