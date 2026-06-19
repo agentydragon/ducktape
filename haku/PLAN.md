@@ -562,13 +562,19 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
      budget/Fava app) serves only that directory at `haku.allegedly.works` behind
      Authentik (agentydragon-only). Affordances are plain links: `claude.ai/new?q=`
      handoff buttons and a Forgejo new-file deep link for adding intake notes.
-  2. **Pretty dashboard, still no backend**: a real web app (Svelte) whose
-     build reads the repo from a git-sync volume and renders client-side;
-     archive/feedback buttons call the Forgejo API with my Authentik session.
-  3. **Proper app image**: Bazel `oci_image` → `push-images.yml` → Flux image
-     automation (the standard <../cluster/docs/container-images.md> path),
-     deployed in the `haku-sandbox` namespace, reading the repo via git-sync or
-     Forgejo API. Only if rung 2's client-side-only model runs out of road.
+  2. **Interactive "arm" backend (DONE — `haku/arm/`):** the ladder skipped the
+     Svelte/client-side rung. A tested FastAPI engine in ducktape (Bazel
+     `oci_image` → `push-images.yml` → Flux image automation, deployed in
+     `haku-sandbox`, the standard <../cluster/docs/container-images.md> path)
+     **server-renders** the dashboard from a pygit2 clone of `haku-state` and owns
+     its **own** write path (a `haku-arm` git identity), rather than calling the
+     Forgejo API with my session. It runs at **exactly Haku's perimeter** and is
+     driven by `haku-state` at runtime (templates + per-item `actions[]`), so Haku
+     evolves the look and the action surface without an image rebuild. Operator
+     clicks are recorded as a generic `clicks/<item>/<action>` overlay (plus a
+     free-form `intake/` feedback box); Haku reduces the overlay on its next run.
+     Retires the rung-1 nginx dashboard at cutover. Design:
+     `haku-state` repo's `plans/dashboard-arm.md`.
 
 ### Phase 3 — later, maybe
 
