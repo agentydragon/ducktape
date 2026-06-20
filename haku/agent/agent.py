@@ -6,9 +6,9 @@ and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
 is the trust boundary — see <../PLAN.md>) plus remote MCP toolsets (Tana to start).
 Behavior is the baked `haku/base/` manual + `haku/run.md`, read at runtime, so it
-stays single-sourced in ducktape. Thread history persists across restarts via
-`FileHistoryProvider` keyed by a stable session id; `SlidingWindowStrategy` keeps the
-instruction prefix and bounds the history.
+stays single-sourced in ducktape. History is in-memory for now — cross-restart
+persistence is a pending increment (Agent Framework ships no prebuilt Postgres
+provider); `SlidingWindowStrategy` keeps the instruction prefix and bounds history.
 """
 
 from __future__ import annotations
@@ -71,8 +71,9 @@ def _instructions(settings: Settings) -> str:
 def _mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
     tools: list[MCPStreamableHTTPTool] = []
     if settings.tana_ro_token:
-        # MCPStreamableHTTPTool ignores a `headers=` kwarg (verified against
-        # agent-framework-core 1.9.0); the bearer must ride a pre-built http_client.
+        # Bearer auth rides a pre-built http_client; the `headers=` kwarg is ignored in
+        # later releases. Verify http_client against the pinned 1.0.0 before wiring Tana
+        # for real — in-repo MCPStreamableHTTPTool usage so far is name+url only.
         tools.append(
             MCPStreamableHTTPTool(
                 name="tana_ro",
