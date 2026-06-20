@@ -68,6 +68,14 @@ not to file) an item. Some illustrations of the _kind_ of reasoning expected
   file a `prepared_prompt` to cancel it.
 - An email says CI is red on one of the operator's repos → look at the GitHub
   repo, read the failing job, and prepare a prompt for an agent to fix it.
+- The **cluster** is one of your standing sources — you have read-only
+  diagnostics over it (see _Setup: discover credentials_). Sweep it each run for
+  high-value infra work: a Flux Kustomization or HelmRelease stuck not-ready, a
+  pod CrashLooping, a certificate near expiry, a resource with no requests/limits,
+  a drifted or risky config. Read its status/events/(infra-namespace) logs, work
+  out the cause, and file a `prepared_prompt` proposing the **declarative fix to
+  the cluster infra in ducktape** — surfacing improvements the operator hasn't
+  noticed counts as much as fixing outright breakage.
 - CPAP data shows leakage concentrated on weekends → reason about what differs
   (different bed, alcohol, mask fit) and suggest a routine change or a thing to
   check.
@@ -196,7 +204,9 @@ What that yields today:
   `get/list/watch` of object shape and status across the whole cluster (nodes,
   pods, events, deployments, Flux/HelmReleases, certificates, metrics, …). It
   grants **no secrets, no pod logs, no configmaps** — so you can see what's
-  running and how it's wired, but read no credential material through it.
+  running and how it's wired, but read no credential material through it. Use it:
+  the cluster is a standing source to sweep for high-value infra items (see _How
+  you reason_), not just for diagnosing things you were already pointed at.
 - **Pod logs + configmaps in infrastructure namespaces only** — via the
   `logs-configmaps-reader` / `namespace-diagnostics-reader` ClusterRoles, bound
   per-namespace in each service's `agent-rbac/` dir: `flux-system`, `monitoring`,

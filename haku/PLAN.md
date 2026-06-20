@@ -337,8 +337,8 @@ k8s at runtime**. The model: tell Haku "to use service X, call facade Y
   infrastructure namespaces only), which expose object status but **no secrets,
   pod logs, or configmaps** outside the safe infra set. The perimeter is
   structural: scoped RBAC, the dedicated mitmproxy egress allowlist, and a
-  ResourceQuota/LimitRange — none relying on the agent's restraint. The Ember invariant still holds: Haku can
-  fully use any secret it can read, so **every credential reflected into
+  ResourceQuota/LimitRange — none relying on the agent's restraint. Because Haku
+  can fully use any secret it can read, **every credential reflected into
   `haku-sandbox` must be read-only/scoped** (the `plaid_ro` DSN, the read-only
   Google token, Haku's own git / LLM keys) — never a write-capable upstream token.
 - **Credential discovery.** v0 does this ad-hoc per `instructions.md`: Haku
