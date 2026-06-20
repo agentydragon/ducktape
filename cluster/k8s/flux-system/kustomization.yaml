@@ -17,3 +17,21 @@ patches:
       - op: add
         path: /metadata/labels/goldilocks.fairwinds.com~1enabled
         value: "false"
+  # Keep flux controller disk I/O (git clones, artifacts, image automation — all on
+  # emptyDir, i.e. the host disk) off the control-plane nodes, whose etcd lives on slow
+  # rotational HDDs. Soft (preferred) so these system-cluster-critical controllers keep a
+  # scheduling fallback if both NVMe workers are down. See
+  # cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md
+  - target:
+      kind: Deployment
+    patch: |
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist

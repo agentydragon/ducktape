@@ -62,6 +62,13 @@ returns (not independently parked):
 
 ## Next Actions
 
+- [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
+      rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
+      KS-GAME workers). Defrag + flux-controller pinning applied 2026-06-19; remaining:
+      pin the tofu-controller runners (blocked on centralizing the ~22 copy-pasted
+      `runnerPodTemplate`s) and the cross-repo augur ingest job, then the structural
+      etcd-on-NVMe move. Full RCA + remediation tracking:
+      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
