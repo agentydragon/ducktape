@@ -1,0 +1,43 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    deps = [
+        ":config",
+        "@pypi//httpx",
+        # agent_framework core's __init__ references the openai/anthropic/claude stub
+        # modules, so all four packages must be present even though we import only
+        # core + openai (see skills/info_gathering/evals/.../agent_framework/BUILD.bazel).
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":agent",
+        ":config",
+    ],
+)
+
+py_binary(
+    name = "scan",
+    main_module = "haku.agent.main",
+    deps = [":main"],
+)
