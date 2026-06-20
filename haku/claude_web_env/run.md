@@ -16,9 +16,12 @@ environment-neutral `haku/run.md`.
   for `git.allegedly.works`, so you can `git -C ~/haku-state pull/commit/push`
   with no credentials to manage. (If `~/haku-state` is somehow missing, re-run
   `haku/claude_web_env/bootstrap.sh`.)
-- Discover your other credentials from `haku-sandbox` secrets and from the
-  ducktape repo you have checked out (`cluster/k8s/haku/rbac/` = your perimeter).
-  See the credential table in `haku/base/instructions.md`.
+- Discover your other credentials from `haku-sandbox` secrets and your full
+  cluster perimeter from the ducktape repo you have checked out — grep
+  `oidc-ksbx-groups:haku` under `cluster/k8s` for every binding (write CRUD in
+  `haku-sandbox`, plus cluster-wide read-only diagnostics and infra-namespace
+  logs). See the credential table and perimeter discovery in
+  `haku/base/instructions.md`.
 - Cluster-internal data (e.g. Plaid Postgres) isn't reachable from here — run a
   pod **in `haku-sandbox`** to query it, as the manual describes (pod command +
   `kubectl logs`, DSN from a secret via `secretKeyRef`). `kubectl exec`/`attach`/

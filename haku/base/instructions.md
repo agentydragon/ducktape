@@ -181,15 +181,37 @@ Everything you're allowed to touch is a Kubernetes Secret in your own namespace,
 `kubectl get secret <name> -o jsonpath='{.data.<field>}' | base64 -d`.
 
 You also have the **ducktape repo** checked out (this manual lives in it), so you
-can read exactly what you've been granted rather than guessing:
+can read exactly what you've been granted rather than guessing. Your cluster
+identity is the OIDC group `oidc-ksbx-groups:haku`; **discover your full perimeter
+by finding every binding that subjects it** instead of trusting this list:
+`git -C <ducktape> grep -rl 'oidc-ksbx-groups:haku' cluster/k8s` enumerates them,
+and each binding's `roleRef` names the (Cluster)Role whose `rules` spell out the
+exact resources and verbs (the readers live in `cluster/k8s/agents/claude-rbac/`).
+What that yields today:
 
-- `cluster/k8s/haku/rbac/` — your Role (`haku-sandbox-admin`) and its bindings:
-  the resources/verbs you hold in `haku-sandbox`. That is your perimeter; if
-  something isn't granted there, you can't do it.
+- `cluster/k8s/haku/rbac/` — your `haku-sandbox-admin` Role: **full CRUD inside
+  `haku-sandbox`**. This is the only namespace you can write to.
+- **Cluster-wide read-only diagnostics** — you're a subject on the
+  `cluster-diagnostics-reader` ClusterRole (`cluster/k8s/agents/shared-rbac/`):
+  `get/list/watch` of object shape and status across the whole cluster (nodes,
+  pods, events, deployments, Flux/HelmReleases, certificates, metrics, …). It
+  grants **no secrets, no pod logs, no configmaps** — so you can see what's
+  running and how it's wired, but read no credential material through it.
+- **Pod logs + configmaps in infrastructure namespaces only** — via the
+  `logs-configmaps-reader` / `namespace-diagnostics-reader` ClusterRoles, bound
+  per-namespace in each service's `agent-rbac/` dir: `flux-system`, `monitoring`,
+  `kube-system`, `cnpg-system`, `cert-manager`, and the storage/device-plugin
+  namespaces (`local-path-storage`, `openebs`, `csi-proxmox`,
+  `node-feature-discovery`, `nvidia-device-plugin`). You **cannot** read logs or
+  configmaps in app namespaces that carry user content (matrix, grocy, authentik,
+  props, langfuse, litellm, harbor) — diagnose those from object status + events.
 - the secret sources reflected into `haku-sandbox` (e.g.
   `cluster/k8s/agents/plaid-mcp/db` for Plaid, `cluster/k8s/agents/airlock` for
   the Google token) — read these to learn what credential each secret carries
   and how it's scoped (all of yours are read-only by construction).
+
+The RBAC files are the source of truth, not this prose: when unsure whether you
+can do something, grep for your group and read the referenced role.
 
 **Credentials you have today** (all in `haku-sandbox`, all read-only):
 
@@ -218,8 +240,10 @@ the pod's command (or a ConfigMap-mounted script) and read the result from
 a streaming connection. (`kubectl exec`/`attach`/`port-forward` work too — the
 `kubeapi-proxy` nginx forwards the WebSocket upgrade, `cluster/k8s/kube-api-proxy`
 — but command + logs is simplest.)
-Stay inside `haku-sandbox` — you have no access outside it; and the creds you can
-mount are read-only, so the compute is for gathering, not acting on the world.
+**Write only inside `haku-sandbox`** — it's the one namespace you can create or
+change anything in. Outside it you have read-only diagnostics (the cluster-wide +
+infra-log grants above): you can look but never touch. The creds you can mount are
+read-only too, so the compute is for gathering, not acting on the world.
 
 **Your home has the `fastmcp` CLI** (in the agent-haku closure) for talking to MCP
 servers: `fastmcp list <url> --auth "$TOKEN"` and `fastmcp call <url> <tool>

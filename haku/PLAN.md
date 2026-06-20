@@ -330,11 +330,14 @@ k8s at runtime**. The model: tell Haku "to use service X, call facade Y
 - **`haku-sandbox` is a claude-sandbox-style sandbox.** The CronJob's
   ServiceAccount and the OIDC group `oidc-ksbx-groups:haku` get a Role with full
   CRUD **inside the `haku-sandbox` namespace** (pods/jobs/configmaps/secrets/…),
-  so Haku can run workloads and read the creds mounted to it — but **nothing
-  outside the namespace** (deliberately _not_ the broad `kubectl-sandbox-users`
-  diagnostics group). The perimeter is structural: namespace-scoped RBAC, the
-  dedicated mitmproxy egress allowlist, and a ResourceQuota/LimitRange — none
-  relying on the agent's restraint. The Ember invariant still holds: Haku can
+  so Haku can run workloads and read the creds mounted to it — but **write only
+  inside the namespace**. Beyond it Haku holds **read-only diagnostics**: it is a
+  subject on the `claude-rbac` reader ClusterRoles (`cluster-diagnostics-reader`
+  cluster-wide, plus `logs-configmaps-reader`/`namespace-diagnostics-reader` in
+  infrastructure namespaces only), which expose object status but **no secrets,
+  pod logs, or configmaps** outside the safe infra set. The perimeter is
+  structural: scoped RBAC, the dedicated mitmproxy egress allowlist, and a
+  ResourceQuota/LimitRange — none relying on the agent's restraint. The Ember invariant still holds: Haku can
   fully use any secret it can read, so **every credential reflected into
   `haku-sandbox` must be read-only/scoped** (the `plaid_ro` DSN, the read-only
   Google token, Haku's own git / LLM keys) — never a write-capable upstream token.
