@@ -1,7 +1,7 @@
 # Artifact drafts: Haku on Managed Agents (self-hosted)
 
-First-cut, copy-pasteable drafts of the artifacts listed in
-<managed*agents.md> → \_Artifacts to build*. **Status: sketches**, not landed
+First-cut, copy-pasteable drafts of the artifacts in the
+[migration plan](managed_agents.md) (its "Artifacts to build" section). **Status: sketches**, not landed
 code — they graduate into a real `haku/managed_agents/` component (with Bazel
 `oci_image` + `py_binary` targets) once the runtime is chosen. Field names marked
 _(verify)_ are not fully pinned in the skill docs — confirm against the
