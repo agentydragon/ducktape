@@ -13,3 +13,10 @@ subjects:
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
+  # Haku background agent: secret-free cluster-wide diagnostics. This class grants
+  # no secrets/pods-log/configmaps, so it preserves the Ember invariant (Haku reads
+  # no new credential material). Log/configmap reads are granted separately per
+  # infra namespace, not here.
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io

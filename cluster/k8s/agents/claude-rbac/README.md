@@ -76,6 +76,27 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
 Flux kustomization that depends only on the target namespace + `claude-rbac`.
 
+### 4. Haku background agent — diagnostics subset
+
+The Haku agent authenticates as group `oidc-ksbx-groups:haku` (see Authentication below) and,
+beyond its full-CRUD `haku-sandbox` Role, is **co-subjected** onto the existing reader bindings
+to give it general cluster diagnostics plus safe log reading. No Haku-specific roles exist — it
+reuses the same three ClusterRoles:
+
+- **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
+  ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it preserves the
+  Ember invariant (Haku can fully use any secret it reads → it must read none here).
+- **Logs/configmaps in infrastructure namespaces only** (co-subjected on the per-namespace
+  bindings): `flux-system`, `monitoring`, `kube-system`, `cnpg-system`, `cert-manager`,
+  `local-path-storage`, `openebs`, `csi-proxmox`, `node-feature-discovery`,
+  `nvidia-device-plugin`. These carry controller diagnostics, not user content. Haku is
+  deliberately **not** added to user-content/credential-bearing namespaces (`matrix`, `grocy`,
+  `authentik`, `props`, `langfuse`, `litellm`, `harbor`).
+
+This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
+diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
+unchanged.
+
 @permissions.md
 
 ## Adding Agent RBAC for a New Service
