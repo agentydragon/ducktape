@@ -1,34 +1,44 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ntfy-webhook
-  namespace: flux-system
-  annotations:
-    description: ntfy.sh webhook for Flux failure notifications
+    name: ntfy-webhook
+    namespace: flux-system
+    annotations:
+        description: ntfy.sh webhook for Flux failure notifications
 type: Opaque
 stringData:
-  address: ENC[AES256_GCM,data:Z5OLbPAlqQyXKuoEK2EO6Wlzaa/nM2w1snGALehetojVnnu26S26Q7Fokt/eFQ==,iv:t9356AlFxPjCCAUWn/4wTXvVJAVFAPxvNsvsNqGJtWw=,tag:HYqa6FqQK8WeXUydGqSXlA==,type:str]
+    address: ENC[AES256_GCM,data:szI+rMWSSfVSzW6GySklYS3P/v/zXmBbYDemG28U+bgkkyeoQ77QiJeHEhQCwg==,iv:U1YglRfcjGJMmDZpSzNGXPlAhPyCvL5I7itC3KX97S0=,tag:hcaoygzHA4gPV5SWnAaAxw==,type:str]
+    # ntfy inline message templating (Template: yes makes Title/Message Go
+    # templates over the Flux event JSON body) so previews show a readable
+    # title + body instead of the raw event JSON. Non-secret presentation
+    # config: left plaintext and excluded from the MAC (see .sops.yaml).
+    headers: |
+        Template: yes
+        X-Title: {{.involvedObject.kind}} {{.involvedObject.name}}
+        X-Message: {{.severity}}: {{.reason}} - {{.message}}
+        X-Tags: rotating_light
 sops:
-  age:
-    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
-      enc: |
-        -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmOEJNQnM1ZGxEY3BPa1FK
-        Wk5rNVM5c0U2KzBKRzcwVWszMUZJZXdQbzJzCkhBZkFCWmJLWXFycU5kUThWa1Za
-        d2tMT25xNVZjSUpDRHdRQ1hOaDRnSUUKLS0tIFJzNXRvMHloM2h0bmRvaHNib002
-        a0VvQ1BwLzdvUVJOWER1UDhiYldlMHcKTkjHz9CnCve7TXwhIfPHMG/IDVErpxD8
-        T8WpQUQpmGIvMZG9iy0G4qOEmgG6h2RgUxVmym6TWP0oF6RUS8fsTA==
-        -----END AGE ENCRYPTED FILE-----
-    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
-      enc: |
-        -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB1YTBJL3BUSGJUd2RTQTlm
-        OHdibkZJNkZBd21kOUVXRjVuLytveXQxNFhVCnd6ejIvcS9oWlBrREJ5SHJlYWc2
-        RHpWa2hMcy9XNFBTYU9sMGg5dnllUDQKLS0tIFpGNk5Fd2R6Q29GQkllTlRicDg1
-        WmxXSjJsMGFlcUNzVDQ0cGI4YTJqUXMKZiC3DqmRgx94pXvUwWczFhSvhZ2VQRwB
-        AtgDLzC1kNAhSiSGB6A1P4b2tZkzWgiJhqtxTn4PBTuy3IrWNUYM6A==
-        -----END AGE ENCRYPTED FILE-----
-  lastmodified: "2026-04-05T19:50:18Z"
-  mac: ENC[AES256_GCM,data:r1V0/KgvuHbLioibOxCnbpWqybeJQIpDRhZhqrha5GuPUn/+6qjtE41T7vkEqiLLI5JI10fGkSF3tNXkaJ8BVzqfifvCTwJK31vWNrdJcZl9uEmRKtPWXwOuqwcMwUO8KkgDaMPQ6tcS+bkAit5SjVXwUYq6DfDZVHBgmAtAzJY=,iv:SO4KRibr/DE8/tnYIXrYP7iXrU1ZbXs0wSYAC2v8tPw=,tag:Wv68tC3okLL+XtB+q9CIrQ==,type:str]
-  encrypted_regex: ^(data|stringData)$
-  version: 3.12.1
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvSGM4R1ZzZkxRamJ2Um1T
+            RkpRVnExMHF5ZElwVEgrcVJsbDN6bGRvNW0wCm5OYzR0Uzh1bHdiYzdsTkRNbXov
+            ZE9YQTFuZ3NCUmJWRkM4MUd3Y0JkYU0KLS0tIEd3clVuMWRVRlhWdnl0aENRTXZk
+            bk50YTRQQ3VManNLN3BiUmpTMGdETWcKRpw4ZGm3ILiLXFaRaNPj24SCpgskOgEH
+            FYnB8eVEt15dA2Tq3wDtY1cmv2KeWqDXYYnrpHAF9zeqxH+yo0hJnw==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOY1BTc0VMZzl2eVFhak1C
+            c0x0UlpZeVVYZktPNFpKU29IbFJuaytRelNVCm1DN2JXbjlJUTN2ZXVGNm5zY0tL
+            SW9hVEZ3SHVLcTF0Q01LK09sMkFPS1EKLS0tIEg1YkxYMWhOQUZVdWpHR0hGMG01
+            eTRRbHpvU0d5dDlEWnRobVBoUlZQbjgK42U8MdAMJQwjCQTAfgGqAe67FbbwAYnM
+            SryiZD4VTfmW4LQyjGe++ZghKR7oOfabCMUAQIq6OaTFIOgj4k0txQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-20T05:03:11Z"
+    mac: ENC[AES256_GCM,data:9VM1BfLRCiU0rX8qe71VJFBgC7HPre9+xzIswQ9BpRMnmcqxL3l5dG7lAlL0bYM1RWyl/QMJJfDuGx/2YbVWEuxiYygK4G8iJAXZuiLln0m/oLzQUhy997rZgfD53nr751wLx1GPpTXhawR9GBRJldogfATkx2AlU+Q9G5VgkSM=,iv:5Ov7+yIZAgeg5ws9j13s9psox7D3gNfv4jZeneEIaqQ=,tag:kME80wsIWvK5xjbcwFC+zQ==,type:str]
+    encrypted_regex: ^address$
+    mac_only_encrypted: true
+    version: 3.12.1

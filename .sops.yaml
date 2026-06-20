@@ -100,6 +100,20 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
+  # Flux ntfy webhook: only the topic URL (address) is a capability/secret. The
+  # ntfy message-template headers are non-secret presentation config, so keep
+  # them plaintext (encrypted_regex matches address only) and out of the MAC
+  # (mac_only_encrypted). Template tweaks can then be made without the age key
+  # (agents/CI) while `address` stays encrypted. More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/flux-webhook/ntfy-webhook\.sops\.yaml$
+    encrypted_regex: ^address$
+    mac_only_encrypted: true
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # Cluster k8s secrets (Flux + admin can decrypt)
   - path_regex: cluster/k8s/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
