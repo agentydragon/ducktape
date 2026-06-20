@@ -134,6 +134,19 @@ victim) and below their memory request (kubelet node-pressure eviction ranks
 over-request pods first), and it deprioritizes them in the descheduler's QoS tiebreak.
 Same gap exists on every CNPG cluster — worth a cluster-wide convention.
 
+> **Follow-up (2026-06-19, later): the s3 `limit` from A. caused a self-OOM loop.**
+> PR #2402 set `limits.memory: 512Mi` on the s3 gateway. That is the upstream Helm
+> chart's _lightweight-gateway_ default, but our s3 is read-heavy (Mimir TSDB block
+> range-GETs dominate) and runs the in-process Iceberg REST catalog. Our own Mimir
+> history shows the **pre-limit** s3 pods peaked at ~1.7Gi under query/compaction
+> bursts, so the 512Mi cap hard-OOM-killed (exit 137) every ~10min in lockstep across
+> both replicas. Fix: request 512Mi (above ~400Mi steady-state), limit 2Gi (above the
+> ~1.7Gi peak), and `GOMEMLIMIT=1800MiB` so the runtime treats the cap as a soft
+> ceiling and GCs harder instead of dying — this is the "avoid
+> container-OOM-on-own-limit" caveat above, applied correctly. The chunk cache
+> (`-cacheCapacityMB`) is off by default, so s3 memory is load-driven, not a cappable
+> fixed footprint.
+
 ### B. PodDisruptionBudget for the raft/quorum sets (the real descheduler lever) — IMPLEMENTED
 
 The descheduler honors PDBs unconditionally. SeaweedFS master is a 3-node raft set →

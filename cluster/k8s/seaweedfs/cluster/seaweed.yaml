@@ -178,14 +178,35 @@ spec:
     annotations:
       reloader.stakater.com/auto: "true"
     metricsPort: 9327
-    # QoS / eviction protection (stateless gateway, low usage). No PDB: it is
-    # stateless and freely reschedulable, so descheduler moves are harmless.
+    # QoS / eviction protection. No PDB: it is stateless and freely
+    # reschedulable, so descheduler moves are harmless.
+    #
+    # Memory is load-driven, NOT a fixed footprint: it tracks concurrent
+    # in-flight transfers (our load is dominated by Mimir TSDB block range-GETs
+    # — verified via SeaweedFS_s3_request_total) plus the in-process Iceberg
+    # REST catalog. The in-memory chunk cache (-cacheCapacityMB) is off
+    # (default 0), so there is nothing to cap there. The upstream Helm chart's
+    # 128Mi/512Mi is sized for a *lightweight* gateway; ours is not. Mimir
+    # query/compaction bursts drove the pre-limit pods to ~1.7Gi peak (observed
+    # in our own Mimir history), so a 512Mi limit hard-OOM-looped the pod every
+    # ~10min (exit 137). Sizing, on data:
+    #   - request 512Mi: above steady-state (~400Mi) so kubelet node-pressure
+    #     eviction ranks it last (same logic as the volume servers above).
+    #   - limit 2Gi: comfortably above the observed ~1.7Gi burst peak.
+    #   - GOMEMLIMIT=1800MiB: soft ceiling ~90% of the limit. Go's GC otherwise
+    #     ignores the cgroup limit (GOGC=100 lets the heap overshoot before the
+    #     next GC → kernel OOM-kill). This makes the runtime trade CPU to stay
+    #     under the cap instead of dying — the "avoid container-OOM-on-own-limit"
+    #     caveat from the 2026_06_19 descheduler RCA, done properly for s3.
     priorityClassName: stateful-infra
+    env:
+      - name: GOMEMLIMIT
+        value: "1800MiB"
     requests:
       cpu: 50m
-      memory: 128Mi
-    limits:
       memory: 512Mi
+    limits:
+      memory: 2Gi
     # weed s3 defaults -ip.bind to localhost — kubelet's readiness probe from
     # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes
     # (and the Service ClusterIP) reach the API.
