@@ -21,7 +21,7 @@
     },
     "body": {
       "type": "string",
-      "description": "Rationale + evidence references (dates, merchants, amounts, item ids)"
+      "description": "Operator-facing rationale + evidence (dates, merchants, amounts, item ids); must stand alone \u2014 the operator may never open the prompt"
     },
     "value": {
       "type": "integer",
@@ -41,7 +41,9 @@
           "additionalProperties": false,
           "required": ["kind"],
           "properties": {
-            "kind": { "const": "suggestion" }
+            "kind": {
+              "const": "suggestion"
+            }
           }
         },
         {
@@ -49,10 +51,12 @@
           "additionalProperties": false,
           "required": ["kind", "prompt"],
           "properties": {
-            "kind": { "const": "prepared_prompt" },
+            "kind": {
+              "const": "prepared_prompt"
+            },
             "prompt": {
               "type": "string",
-              "description": "Self-contained prompt for an executor agent session"
+              "description": "Self-contained prompt for an executor agent session; embeds its own evidence and never refers back to the body"
             }
           }
         }
@@ -60,7 +64,7 @@
     },
     "source": {
       "type": "string",
-      "description": "What produced the item — a playbook name (e.g. plaid_anomalies) or a short tag for a self-directed finding"
+      "description": "What produced the item \u2014 a playbook name (e.g. plaid_anomalies) or a short tag for a self-directed finding"
     },
     "status": {
       "enum": ["open", "in_progress", "done", "rejected", "snoozed", "expired"]
@@ -76,7 +80,7 @@
     },
     "actions": {
       "type": "array",
-      "description": "Operator-facing buttons you attach to the item. The dashboard renders each as a click/un-click toggle; the click state is recorded by the console under clicks/<item-id>/<action-id> (NOT here). You reduce clicked actions on your next run — interpret the label/intent, do it, then clear the click. Include whatever fits: standard ones (snooze/reject/done) are just commands you interpret, plus item-specific ones.",
+      "description": "Operator-facing buttons you attach to the item. The dashboard renders each as a click/un-click toggle; the click state is recorded by the console under clicks/<item-id>/<action-id> (NOT here). You reduce clicked actions on your next run \u2014 interpret the label/intent, do it, then clear the click. Include whatever fits: standard ones (snooze/reject/done) are just commands you interpret, plus item-specific ones.",
       "items": {
         "oneOf": [
           {
@@ -84,8 +88,14 @@
             "additionalProperties": false,
             "required": ["id", "label", "kind", "intent"],
             "properties": {
-              "id": { "type": "string", "description": "Stable id within the item (used in the click path)" },
-              "label": { "type": "string", "description": "Button text shown to the operator" },
+              "id": {
+                "type": "string",
+                "description": "Stable id within the item (used in the click path)"
+              },
+              "label": {
+                "type": "string",
+                "description": "Button text shown to the operator"
+              },
               "kind": {
                 "const": "command",
                 "description": "A request you execute next run when clicked (toggle)"
@@ -101,8 +111,14 @@
             "additionalProperties": false,
             "required": ["id", "label", "kind", "prompt"],
             "properties": {
-              "id": { "type": "string", "description": "Stable id within the item (used in the click path)" },
-              "label": { "type": "string", "description": "Button text shown to the operator" },
+              "id": {
+                "type": "string",
+                "description": "Stable id within the item (used in the click path)"
+              },
+              "label": {
+                "type": "string",
+                "description": "Button text shown to the operator"
+              },
               "kind": {
                 "const": "claude_handoff",
                 "description": "A claude.ai/new deep-link rendered inline (no click state)"

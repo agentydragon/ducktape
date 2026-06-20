@@ -403,6 +403,17 @@ Action kinds (only these two):
   and the evidence, and let it work out the how; don't shrink the ask to one
   mechanical step when the real win is bigger.
 
+**`body` and `prompt` each stand alone — neither may lean on the other.** They serve
+two audiences that never see each other's text. The **`body`** is what the operator
+reads on the console: it must convey the finding, the evidence, and what to do entirely
+on its own (the operator may never open the prompt). The **`prompt`** is what an
+executor agent reads: it must embed all its own evidence (ids, dates, amounts, links)
+and never refer back to the body. So don't split one thing across the boundary — e.g.
+don't bury an inbox-cleanup cluster table only in the `prompt` when the operator would
+want to see and click it; put it in the `body` too. Repetition between the two is
+expected and fine; a dangling cross-reference ("see the clusters above", "as the body
+explains") is not.
+
 **Links as affordances — give the operator the door, not directions to it.** A link
 that lands them one click from the thing or action beats a paragraph describing how to
 get there. So whenever you reference something addressable, link the most direct URL you
