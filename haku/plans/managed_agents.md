@@ -149,6 +149,9 @@ none of it relying on agent restraint. Egress is ours in self-hosted, which the
 
 ## Artifacts to build
 
+First-cut, copy-pasteable drafts of every item below are in
+<managed_agents_artifacts.md>.
+
 1. **`haku.agent.yaml`** (control plane, version-controlled, applied via `ant
 beta:agents create|update`): `model: claude-opus-4-8`, thin pointer `system`,
    `tools: [agent_toolset_20260401, mcp_toolset…]`, `mcp_servers: […]`,
