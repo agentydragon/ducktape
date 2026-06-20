@@ -36,7 +36,13 @@ bottom:
    (`git -C <ducktape> rev-parse HEAD`) to the pin in `memory/base-sync.md`. If it
    advanced, diff `haku/base` + `haku/run.md` since the pin, migrate your state to
    match (per the manual's _Adopting base updates_ — e.g. delete a dropped
-   `items.md`), update the pin, and log what you reconciled.
+   `items.md`), update the pin, and log what you reconciled. **For each commit that
+   changes an item convention** (how bodies are written, link formatting, actionability
+   rules, tone, the item contract) — as opposed to structural migrations (deleted files,
+   renamed directories) — **note it as a retroactive obligation to apply to every open
+   item in Step 6.** Commit-message migration notes are examples of what the author
+   happened to fix; they are not an exhaustive list of where the new convention applies.
+   The diff is the spec; your open items are the scope.
 3. **Process intake**: for each file in `intake/` (not `intake/processed/`):
    fold any standing guidance into your `memory/` in whatever form future runs
    will naturally act on (note when it expires if it's time-bound), then move the
@@ -72,7 +78,11 @@ bottom:
    into conformance with the manual** — the conventions evolve, so each pass check that
    open items still follow the current contract (e.g. _Links as affordances_: inline
    links, search/deep-link affordances; the actionability gate) and fix any that have
-   drifted, prioritising the top of the queue and any item you touch. The dashboard
+   drifted, prioritising the top of the queue and any item you touch. **When a base
+   update was adopted this run, the conformance sweep is mandatory and must cover every
+   open item** — not only those you touched for other reasons. For each convention change
+   noted in Step 2, read every open item and apply the new convention wherever it
+   applies; don't stop at the examples named in the commit message. The dashboard
    console renders the live site from `items/` on its own, so there's no page to
    regenerate and no templates to maintain — the look lives in the console's bundle (see
    _Dashboard_).
