@@ -66,6 +66,9 @@ Framework shortlist, all on the LiteLLM keystone:
 - **LangGraph or Microsoft Agent Framework** — durable, resumable sessions
   (checkpointer/threads), heavier abstraction.
 
+Concrete drafts (Pydantic AI agent + supervisor + k8s wiring):
+[runtime_c_artifacts.md](runtime_c_artifacts.md).
+
 ## What Runtime C gives up — the Anthropic surfaces
 
 The Claude harness isn't a thin `/v1/messages` client; it assumes Anthropic
