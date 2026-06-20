@@ -6,6 +6,7 @@ metadata:
   annotations:
     description: Agent RBAC for openclaw-gateway namespace. Lightweight — only RoleBindings. Depends on namespace existing + gateway for the openclaw-reader Role.
 spec:
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/agents/openclaw/gateway-agent-rbac
   prune: true

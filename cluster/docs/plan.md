@@ -37,8 +37,17 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **kagent**: `kagent-{crds,db,secrets}` — parked 2026-05-08; too fragile (sessions die on
   large MCP outputs, z.ai error 1261). Resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **Matrix**: `matrix`, `matrix-{db,secrets,namespace}` — parked.
-- **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`) —
-  experimental, parked.
+- **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`,
+  `gateway-agent-rbac`) — experimental, parked. **Cluster objects deleted 2026-06-19**:
+  the `openclaw-{operator,mitmproxy}` namespaces (operator Deployment/HelmRelease/pod) and
+  the `openclaw-operator-manager-{role,binding}` ClusterRole/ClusterRoleBinding. The
+  operator was already broken before teardown — its HelmChart had no artifact and the
+  operator image `ghcr.io/openclaw-rocks/openclaw-operator:v0.11.1` was in
+  `ImagePullBackOff` — so it sat firing `FluxHelmReleaseNotReady` /
+  `KubeDeploymentReplicasMismatch`. **To revive: fix the operator HelmChart/image pull
+  first, then un-suspend the kustomizations** (the git manifests are intact). The
+  `authentik/openclaw` HTTPRoute is left in place (owned by the active authentik
+  proxy-routes kustomization, backend is the authentik outpost) and will 502 until revived.
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
   currently used.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
