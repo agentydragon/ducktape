@@ -123,14 +123,16 @@ identical`runnerPodTemplate.spec.env`with the`tofu-state-db-credentials`
 The ~22 GitOps `Terraform` CRs each hand-repeat the same `runnerPodTemplate` (PGPASSWORD
 env today; runner affinity/resources tomorrow). Options, best-first:
 
-1. **Global default at the controller** — if tofu-controller supports a cluster-wide
-   default runner pod template (chart value or controller flag), every CR could drop
-   `runnerPodTemplate` entirely and the env + affinity would live once in the
-   tofu-controller `HelmRelease` values (<../../k8s/tofu-controller/tofu-controller.yaml>).
-   0.16.1's deployment args expose only `--runner-creation-timeout` and
-   `--runner-grpc-max-message-size`; verify upstream whether a default-template knob
-   exists (or is available in a newer chart) before the larger refactor.
-2. **Shared kustomize component** — put the `runnerPodTemplate` patch in one
+1. **Global default at the controller** — **ruled out (verified 2026-06-19, v0.16.1).**
+   There is no cluster-wide default runner pod template. The controller's `runnerPodSpec`
+   builder reads `NodeSelector`/`Affinity`/`Tolerations` _exclusively_ from
+   `Terraform.spec.runnerPodTemplate.spec.*` with no fallback
+   (`controllers/tf_controller_runner.go`); the only global runner knob is the
+   `RUNNER_POD_IMAGE` env (image only). The chart's `runner:` block exposes only
+   `image`/`grpc`/`creationTimeout`/`serviceAccount`, and the controller flags only
+   `--runner-creation-timeout` / `--runner-grpc-max-message-size`. So every CR must keep
+   its own `runnerPodTemplate` — use option 2 or 3.
+2. **Shared kustomize component** (recommended) — put the `runnerPodTemplate` patch in one
    `components/` dir targeting `kind: Terraform`; each flux kustomization adds a single
    `components:` line. Content lives once; works today regardless of controller support.
 3. **Bazel codegen** — generate the `Terraform` CRs from a minimal per-module spec with
