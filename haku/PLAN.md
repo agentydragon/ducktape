@@ -428,7 +428,10 @@ vault env-var credential either way.
 Verdict: not the plan of record — the Claude Code CronJob keeps everything
 self-hosted and is fully specced above — but revisit if the
 client_credentials spike or scanner-image upkeep proves painful; scheduled
-deployments + vaults remove exactly those two work items.
+deployments + vaults remove exactly those two work items. A detailed migration
+design — a self-hosted worker in `haku-sandbox`, **one long-lived session woken
+by events** (not a session per run), and MCP auth via vaults — is being worked
+out in <plans/managed_agents.md>.
 
 ## MVP plan
 
