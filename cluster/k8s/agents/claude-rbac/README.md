@@ -84,8 +84,9 @@ to give it general cluster diagnostics plus safe log reading. No Haku-specific r
 reuses the same three ClusterRoles:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
-  ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it preserves the
-  Ember invariant (Haku can fully use any secret it reads → it must read none here).
+  ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
+  readable credential material — it can see what's running and how it's wired, nothing it could
+  exfiltrate.
 - **Logs/configmaps in infrastructure namespaces only** (co-subjected on the per-namespace
   bindings): `flux-system`, `monitoring`, `kube-system`, `cnpg-system`, `cert-manager`,
   `local-path-storage`, `openebs`, `csi-proxmox`, `node-feature-discovery`,
