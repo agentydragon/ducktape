@@ -788,6 +788,34 @@ Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
 (DNS/ingress/Authentik), `important` (Forgejo/Harbor/monitoring), `batch`
 (OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
+**TODO (basic-infra reliability sweep)**: do a deliberate pass over the core
+stateful/infra workloads and check whether more tuning is warranted — don't wait
+for the next incident. Surfaced by the 2026-06-19 SeaweedFS descheduler→DNS
+crash-loop (see <lessons_learned/2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md>),
+which exposed cluster-wide BestEffort hygiene gaps:
+
+- **BestEffort is cluster-wide, not SeaweedFS-only.** Every operator-managed
+  stateful pod with no resource config is BestEffort — notably **all CNPG DB
+  pods** (props-db, langfuse-db, authentik, forgejo, grafana, matrix, …) and the
+  CNPG operator itself. They survive the descheduler only via CNPG's auto-PDB;
+  they're still first OOM/node-pressure victims. Decide on a CNPG `resources`
+  convention (see <cnpg_conventions.md>) so DBs leave BestEffort.
+- **Generalize the `stateful-infra` PriorityClass** (added for SeaweedFS in
+  `k8s/seaweedfs/cluster/priorityclass.yaml`, value 1_000_000) into the tiered
+  set above, and apply it to the stateful workloads that need it.
+- **Review the descheduler config** (`k8s/descheduler/helmrelease.yaml`):
+  `LowNodeUtilization` is metrics/usage-based and evicts BestEffort first;
+  consider `ignorePvcPods` and/or requests-based utilization so transient CPU
+  bursts (e.g. a runaway agent) don't trigger eviction of stateful pods.
+- **SeaweedFS DNS init-wait (deferred §E in the RCA note):** the operator binds
+  `-ip=<self-FQDN>` and fatal-crashes if it doesn't resolve at startup; an
+  init-wait sidecar would harden against _involuntary_ restarts (node crash,
+  OOM, drains) that the QoS/PDB fix doesn't cover.
+
+Broaden from there: walk the rest of basic infra (CNI, CoreDNS HA, storage
+provisioners, control-plane etcd, ingress) and note anywhere a single transient
+fault can cascade.
+
 ### VPA + Goldilocks
 
 VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
