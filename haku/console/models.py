@@ -104,3 +104,7 @@ class DashboardResponse(BaseModel):
 
 class FeedbackRequest(BaseModel):
     text: str
+    item_id: str | None = Field(
+        default=None,
+        description="If set, the item this feedback is about (tagged in the intake note); else a global note",
+    )

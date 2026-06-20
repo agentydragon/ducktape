@@ -18,8 +18,10 @@ un-clicking removes it (`DELETE`) — each a commit by the `haku-console` identi
 **Haku reduces the overlay on its next run**: it reads the clicked actions, carries
 out each one's intent, and clears the click. So new verbs need no backend change —
 Haku invents the action and its meaning; the console only records the click.
-`claude_handoff` actions are stateless `claude.ai/new` deep-links (no commit). The
-global feedback box appends to `intake/`.
+`claude_handoff` actions are stateless `claude.ai/new` deep-links (no commit).
+Feedback — the global box, or a per-item box on each card — appends to `intake/`;
+per-item notes are tagged with the item id, which Haku reduces as feedback on that
+item.
 
 ## Boundary
 

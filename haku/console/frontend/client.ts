@@ -31,7 +31,7 @@ export async function unclickAction(itemId: string, actionId: string): Promise<v
   if (error) throw new Error("Failed to retract click");
 }
 
-export async function sendFeedback(text: string): Promise<void> {
-  const { error } = await api.POST("/api/feedback", { body: { text } });
+export async function sendFeedback(text: string, itemId?: string): Promise<void> {
+  const { error } = await api.POST("/api/feedback", { body: { text, item_id: itemId } });
   if (error) throw new Error("Failed to send feedback");
 }

@@ -1,14 +1,8 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import {
-  type DashboardResponse,
-  type Item,
-  clickAction,
-  fetchDashboard,
-  sendFeedback,
-  unclickAction,
-} from "./client.ts";
+import { type DashboardResponse, type Item, clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
+import { FeedbackForm } from "./feedback.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
 
 function statusCounts(items: Item[]): string {
@@ -18,40 +12,6 @@ function statusCounts(items: Item[]): string {
     .sort()
     .map((status) => `${status}: ${counts[status]}`)
     .join(" · ");
-}
-
-function FeedbackBox() {
-  const [text, setText] = useState("");
-  const [sent, setSent] = useState(false);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!text.trim()) return;
-    void (async () => {
-      await sendFeedback(text);
-      setText("");
-      setSent(true);
-    })();
-  }
-
-  return (
-    <section className="feedback">
-      <h2>Note to Haku</h2>
-      <form onSubmit={submit}>
-        <textarea
-          rows={3}
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value);
-            setSent(false);
-          }}
-          placeholder="Anything for Haku to fold into its next run…"
-          required
-        />
-        <button type="submit">{sent ? "Sent ✓" : "Send to Haku"}</button>
-      </form>
-    </section>
-  );
 }
 
 export default function App() {
@@ -119,7 +79,10 @@ export default function App() {
         </details>
       )}
 
-      <FeedbackBox />
+      <section className="feedback">
+        <h2>Note to Haku</h2>
+        <FeedbackForm rows={3} placeholder="Anything for Haku to fold into its next run…" submitLabel="Send to Haku" />
+      </section>
 
       <footer className="page">
         {open.length} open · {statusCounts(data.items)}

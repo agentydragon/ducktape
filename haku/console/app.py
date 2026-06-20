@@ -4,7 +4,8 @@ The dashboard is a React single-page app (static bundle) served same-origin with
 JSON API under ``/api``. The write endpoints are **generic**: clicking an action
 records ``clicks/<item>/<action>`` and un-clicking removes it — the backend never
 interprets what an action *means* (snooze, reject, research…); Haku reduces the
-clicks overlay on its next run. Free-form feedback appends to ``intake/``.
+clicks overlay on its next run. Free-form feedback (global, or tagged to an item)
+appends to ``intake/``.
 """
 
 from __future__ import annotations
@@ -82,7 +83,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     @app.post("/api/feedback")
     async def feedback(req: FeedbackRequest) -> dict[str, str]:
         async with git_state.lock:
-            await asyncio.to_thread(git_state.write_feedback, req.text)
+            await asyncio.to_thread(git_state.write_feedback, req.text, req.item_id)
         return {"status": "ok"}
 
     # The built React SPA is served same-origin for everything else. Mounted last so the

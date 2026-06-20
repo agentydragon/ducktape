@@ -158,7 +158,15 @@ class GitState:
     def clear_click(self, item_id: str, action_id: str) -> None:
         self.commit_push({self._click_path(item_id, action_id): None}, f"console: unclick {action_id} on {item_id}")
 
-    def write_feedback(self, text: str) -> None:
+    def write_feedback(self, text: str, item_id: str | None = None) -> None:
+        # Per-item feedback names the item id in the note (and filename); Haku's run
+        # contract treats an intake note referencing an item id as feedback on it.
         stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-        body = f"# Operator feedback ({stamp})\n\n{text.strip()}\n"
-        self.commit_push({f"intake/{stamp}-feedback.md": body.encode()}, "console: feedback")
+        if item_id is None:
+            path, heading, message = f"intake/{stamp}-feedback.md", "Operator feedback", "console: feedback"
+        else:
+            path = f"intake/{stamp}-feedback-{item_id}.md"
+            heading = f"Operator feedback on {item_id}"
+            message = f"console: feedback on {item_id}"
+        body = f"# {heading} ({stamp})\n\n{text.strip()}\n"
+        self.commit_push({path: body.encode()}, message)

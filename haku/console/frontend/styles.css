@@ -192,8 +192,9 @@ details.backlog > summary {
   margin: 1.5rem 0 0.5rem;
 }
 
-/* Global free-form note → appended to intake/ as a commit. */
-section.feedback textarea {
+/* Free-form note → appended to intake/ as a commit. Shared by the global "Note to
+   Haku" box and the per-item box (.feedback-form.item). */
+.feedback-form textarea {
   width: 100%;
   box-sizing: border-box;
   font: inherit;
@@ -203,7 +204,7 @@ section.feedback textarea {
   background: transparent;
   color: inherit;
 }
-section.feedback button {
+.feedback-form button {
   font: inherit;
   cursor: pointer;
   margin-top: 0.5rem;
@@ -212,6 +213,49 @@ section.feedback button {
   border-radius: 6px;
   background: #2a7;
   color: #fff;
+}
+.feedback-form button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.feedback-error {
+  display: block;
+  margin-top: 0.4rem;
+  color: #c33;
+  font-size: 0.85rem;
+}
+
+/* Per-item box: a compact textbox set off from the action row above. */
+.feedback-form.item {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed #8884;
+}
+.feedback-form.item textarea {
+  font-size: 0.9rem;
+}
+.feedback-form.item button {
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+/* In-flight spinner shown in the submit button while the commit-push lands. */
+.spinner {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.4em;
+  vertical-align: -0.1em;
+  border: 2px solid #fff6;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 footer.page {
   margin-top: 2.5rem;

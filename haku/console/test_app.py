@@ -57,5 +57,21 @@ def test_feedback_appends_intake_note(client, seeded) -> None:
     assert "please prioritize taxes" in notes[0].read_text()
 
 
+def test_item_feedback_appends_tagged_intake_note(client, seeded) -> None:
+    item_id = seeded.ids[0]
+    assert client.post("/api/feedback", json={"text": "this one is urgent", "item_id": item_id}).json() == {
+        "status": "ok"
+    }
+    tip = _remote_tip(seeded.bare)
+    assert tip.author.name == "haku-console"
+    assert tip.message == f"console: feedback on {item_id}"
+    # The note references the item id so Haku reduces it as feedback on that item.
+    notes = list((seeded.settings.clone_dir / "intake").glob(f"*-feedback-{item_id}.md"))
+    assert len(notes) == 1
+    body = notes[0].read_text()
+    assert "this one is urgent" in body
+    assert item_id in body
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

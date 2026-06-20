@@ -38,11 +38,21 @@ js_library(
 )
 
 js_library(
+    name = "feedback",
+    srcs = ["feedback.tsx"],
+    deps = [
+        ":client",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "task",
     srcs = ["task.tsx"],
     deps = [
         ":client",
         ":constants",
+        ":feedback",
         ":markdown",
         "//:node_modules/react",
     ],
@@ -54,6 +64,7 @@ js_library(
     deps = [
         ":client",
         ":constants",
+        ":feedback",
         ":task",
         "//:node_modules/react",
     ],
