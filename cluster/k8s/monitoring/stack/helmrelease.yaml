@@ -115,6 +115,16 @@ spec:
             webhook_configs:
               - send_resolved: true
                 url_file: /etc/alertmanager/secrets/alertmanager-ntfy-webhook/address
+                # Select ntfy's built-in alertmanager message template (firing/
+                # resolved formatting) so previews show a readable title + body
+                # instead of the raw webhook JSON. Sent as a header rather than a
+                # URL query param to keep the ntfy topic URL fully inside the
+                # SOPS secret. Rendered into Alertmanager's native config (not the
+                # AlertmanagerConfig CRD), so http_headers is supported.
+                http_config:
+                  http_headers:
+                    X-Template:
+                      values: ["alertmanager"]
         templates:
           - /etc/alertmanager/config/*.tmpl
       ingress:
