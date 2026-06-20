@@ -498,3 +498,11 @@ log. See [`playbooks/`](playbooks/README.md).
 
 Titles ≤80 chars, imperative ("Kill $14.99 Hooli subscription"). Bodies
 short: evidence, why it matters, what to do. No filler, no hedging stacks.
+
+**Rewrite items to current state — don't accrete patches.** When a later pass folds in
+new evidence, **rewrite the whole body to read as if written fresh today**: integrate
+the new information into the natural flow, re-order as needed, and **trim anything that's
+no longer needed or true**. Do **not** prepend/append a dated `**Update <date>:**` block
+or demote the prior text to `**Background**:` — the body is the current state, not a
+changelog (git holds the history; the dashboard shows the last-scan time). Structure
+(short headings, bullets) is fine; lazily layering each pass's edit on top is not.
