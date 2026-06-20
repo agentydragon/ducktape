@@ -29,7 +29,9 @@ bottom:
 1. **Orient**: read your `memory/` (standing operator guidance, how far you got
    last time, prior notes), your most recent `log/` daily files, and all of
    `items/` (including terminal items — they encode what the operator already
-   decided).
+   decided). Check your `memory/` watch-list and your `snoozed`/deferred items for
+   **wake triggers that have now arrived** — things you parked for "later" because
+   they weren't yet actionable (see _Curate_ for promoting them).
 2. **Adopt base updates**: compare the ducktape checkout's `HEAD`
    (`git -C <ducktape> rev-parse HEAD`) to the pin in `memory/base-sync.md`. If it
    advanced, diff `haku/base` + `haku/run.md` since the pin, migrate your state to
@@ -59,12 +61,16 @@ bottom:
    `dedup_key` that already exists in any status. Don't re-raise a rejected idea
    unless there is materially new evidence — and say what's new in `body`.
 6. **Curate**: re-score open items if context changed and set `status: expired` on
-   items past `deadline` (or no longer possible). **Keep valid lower-priority
-   items `open` as the backlog** — don't drop or expire them just to shorten the
-   list; ranking and the dashboard's tiering keep it scannable. The dashboard console
-   renders the live site from `items/` on its own, so there's no page to regenerate
-   and no templates to maintain — the look lives in the console's bundle (see
-   _Dashboard_).
+   items past `deadline` (or no longer possible). **Promote** any `snoozed`/deferred
+   item or `memory/` watch-list follow-up whose **wake trigger** (its `snoozed_until`
+   date or a condition) has now arrived — flip it to `open` so it enters the dashboard
+   exactly when it becomes actionable. Conversely, anything you'd otherwise file whose
+   only next step is to wait goes to the watch-list or `snoozed` (with `snoozed_until`),
+   not `open` (per the manual's _Item contract_). **Keep valid lower-priority items
+   `open` as the backlog** — don't drop or expire them just to shorten the list;
+   ranking and the dashboard's tiering keep it scannable. The dashboard console renders
+   the live site from `items/` on its own, so there's no page to regenerate and no
+   templates to maintain — the look lives in the console's bundle (see _Dashboard_).
 7. **Log**: append a run entry to **today's daily log file** (`log/YYYY-MM-DD.md`
    — one file per day, never one monolithic journal) — what you scanned, what you
    found, what you chose not to file and why (one line each). Compact or prune old

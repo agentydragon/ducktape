@@ -356,10 +356,30 @@ below.
 One file per item: `items/<id>.yaml` where `<id>` is a ULID you generate.
 Files must validate against `schema/item.json`. Statuses:
 
-- `open` — awaiting the operator. Only you create these.
-- `in_progress`, `done`, `rejected`, `snoozed` — set by the operator (you may
-  set them when intake says so).
+- `open` — awaiting the operator **and actionable now or soon**. Only you create these.
+- `snoozed` — deferred until a future date or condition (its **wake trigger**), and
+  hidden from the active dashboard. Set by the operator, **or by you** when an item
+  isn't yet actionable (its only next step is to wait) or to park a lower-priority
+  item; set `snoozed_until` to the wake date (the run procedure checks it each pass)
+  and note the trigger in your `memory/` watch-list.
+- `in_progress`, `done`, `rejected` — set by the operator (you may set them when
+  intake says so).
 - `expired` — set by you when `deadline` passes.
+
+**Gate by actionability, then rank by value.** The dashboard answers "what's worth
+doing now or soon" — not "here's a thing that exists." An item earns the **active
+queue only if the operator's next step is something to do now or in the near term**.
+If the next step is merely to **wait** — for a future date, a far-off deadline, or an
+external event outside their control — it is _not yet actionable_, however large the
+eventual payoff (a $4k refund you can only confirm next month; a passport that expires
+in four years). Don't surface those on the front page: either keep them as a dated
+entry in your `memory/` watch-list (no item needed), or, if they're substantial enough
+to be an item, file them `snoozed` from the start with `snoozed_until` set — never
+`open`. Value and actionability are independent axes: a high-value item can be
+not-yet-actionable, so never let a big payoff float a wait-item onto the front page. A
+future `deadline` does **not** by itself make an item a wait-item — the OpenAI tender
+has a hard deadline yet is intensely actionable now; the test is whether there's a
+useful next action in the near term, or only waiting.
 
 `value` is 0–100, ranking **impact against the operator's effort** — what tops
 the dashboard is high payoff for little of their time. Anchors: 90+ = money or a
@@ -418,13 +438,14 @@ operator's interface _to you_, not a privilege escalation.
 
 What the console renders (so you know what the operator sees):
 
-- All `open` items, ranked by `value`, **tiered** so the deep backlog stays scannable:
-  **Up next** (top ≤7) and a collapsible **Backlog**. Each task is a collapsible
-  `<details>` whose `<summary>` is a compact row (value, title, deadline, kind); the
-  full **`body` (Markdown→HTML)**, the action toggles, and the primary action button
-  live **only inside that task's expanded view**. A `prepared_prompt` item exposes a
-  `claude.ai/new?q=<url-encoded prompt>` deep-link (falling back to the item file once
-  the encoded prompt would exceed ~2000 characters).
+- All `open` items — your **actionable-now/soon** set; deferred `snoozed` items aren't
+  rendered (see the _Item contract_'s actionability gate) — ranked by `value`, **tiered**
+  so the deep backlog stays scannable: **Up next** (top ≤7) and a collapsible **Backlog**.
+  Each task is a collapsible `<details>` whose `<summary>` is a compact row (value, title,
+  deadline, kind); the full **`body` (Markdown→HTML)**, the action toggles, and the primary
+  action button live **only inside that task's expanded view**. A `prepared_prompt` item
+  exposes a `claude.ai/new?q=<url-encoded prompt>` deep-link (falling back to the item file
+  once the encoded prompt would exceed ~2000 characters).
 - The **`actions[]`** you attach (rendered as click/un-click toggles), a global
   **feedback** box, an **"Add intake note"** link to Forgejo, and a status +
   last-scan footer. The operator's clicks and feedback return to you as commits — the
