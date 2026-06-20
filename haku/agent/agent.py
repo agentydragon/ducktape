@@ -68,7 +68,7 @@ def _instructions(settings: Settings) -> str:
     )
 
 
-def _mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
+def build_mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
     tools: list[MCPStreamableHTTPTool] = []
     if settings.tana_ro_token:
         # Bearer auth rides a pre-built http_client; the `headers=` kwarg is ignored in
@@ -117,7 +117,7 @@ def build_agent(settings: Settings, mcp_tools: list[MCPStreamableHTTPTool]) -> A
 
 async def run_scan(settings: Settings, *, message: str = WAKE) -> str:
     """Run one scan pass, resuming the persisted thread for `settings.session_id`."""
-    mcp_tools = _mcp_tools(settings)
+    mcp_tools = build_mcp_tools(settings)
     async with contextlib.AsyncExitStack() as stack:
         for tool in mcp_tools:
             await stack.enter_async_context(tool)

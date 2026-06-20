@@ -21,9 +21,11 @@ identity.
   Today the scan runs stateless and re-orients from `haku-state` each run (git is the
   durable memory); the persistence backend is a pending choice.
 
-`main.py` (the `:scan` binary) runs one scan — manual or scheduled. The event-driven
-supervisor (FastAPI `/wake` + scheduler), the `oci_image`, and the k8s wiring (with a
-history PVC) are the next increments.
+`main.py` (`:scan`) runs one scan — manual or scheduled. `supervisor.py` (`:serve`) is
+the long-lived service: it holds one warm `AgentSession` (so the manual + run procedure
+aren't re-read each wake), exposes `POST /wake` + `GET /healthz`, and self-wakes every
+`HAKU_WAKE_INTERVAL_SECONDS` (0 disables). The `oci_image` and k8s wiring are the
+remaining increments.
 
 ## Build / run
 
@@ -33,6 +35,6 @@ bbr build //haku/agent:scan
 
 Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
 `HAKU_LITELLM_API_KEY`, optional `HAKU_TANA_RO_TOKEN`, `HAKU_SESSION_ID`,
-`HAKU_STATE_DIR`, `HAKU_BASE_DIR`.
+`HAKU_WAKE_INTERVAL_SECONDS`, `HAKU_STATE_DIR`, `HAKU_BASE_DIR`.
 
 Design + tradeoffs vs. the other runtimes: <../plans/runtime_options.md>.

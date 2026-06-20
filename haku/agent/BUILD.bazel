@@ -41,3 +41,25 @@ py_binary(
     main_module = "haku.agent.main",
     deps = [":main"],
 )
+
+py_library(
+    name = "supervisor",
+    srcs = ["supervisor.py"],
+    deps = [
+        ":agent",
+        ":config",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//apscheduler",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "serve",
+    main_module = "haku.agent.supervisor",
+    deps = [":supervisor"],
+)

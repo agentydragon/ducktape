@@ -19,3 +19,6 @@ class Settings(BaseSettings):
     state_dir: Path = Field(default=Path("/workspace/haku-state"), description="haku-state checkout (Haku's memory).")
     session_id: str = Field(default="haku-main", description="Stable session id; the same id resumes the thread.")
     keep_last_groups: int = Field(default=50, description="SlidingWindow compaction: recent message groups to keep.")
+    host: str = Field(default="0.0.0.0", description="Supervisor HTTP bind host.")
+    port: int = Field(default=8080, description="Supervisor HTTP bind port.")
+    wake_interval_seconds: int = Field(default=0, description="Scheduler wake interval in seconds; 0 disables it.")
