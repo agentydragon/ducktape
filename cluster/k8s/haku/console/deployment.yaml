@@ -26,6 +26,10 @@ spec:
         app.kubernetes.io/name: haku-console
     spec:
       automountServiceAccountToken: false
+      # Don't inject the kubelet's {SVCNAME}_* service-link env vars: the haku-console
+      # Service's HAKU_CONSOLE_PORT=tcp://<clusterIP>:8080 collides with the app's
+      # HAKU_CONSOLE_ settings prefix (it parsed into the port:int field → crash).
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

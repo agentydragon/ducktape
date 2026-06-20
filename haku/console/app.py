@@ -104,7 +104,10 @@ def main() -> None:
         branch=settings.branch,
     )
     app = create_app(settings, git_state=git_state)
-    uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
+    # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
+    # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
+    # not an int. The deployment also disables service links (enableServiceLinks: false).
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
 
 
 if __name__ == "__main__":
