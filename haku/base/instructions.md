@@ -401,18 +401,23 @@ Action kinds (only these two):
   and the evidence, and let it work out the how; don't shrink the ask to one
   mechanical step when the real win is bigger.
 
-**Interlink entities by their natural URL.** Where an item references an addressable
-entity, link it so the operator (and executors) can click straight through. The
+**Interlink entities by their natural URL — inline, in the prose.** Where an item
+references an addressable entity, anchor the link on the natural words where it's
+mentioned, so it reads as prose: write "[Ivan's reply](…)", "[the failing CI run](…)",
+"[the COI request email](…)" as the link text — **not** a separate `**Links**:` block
+at the bottom. Link each entity once, at its first or most natural mention; fall back
+to a trailing list only for an entity that isn't named anywhere in the prose. The
 dashboard renders Markdown, so use `[text](url)` in `body` (and ``[`code`](url)``
 for file paths, which renders as a code-styled link); put plain URLs in
 `prepared_prompt` text. Natural URLs by source: **ducktape files** →
 `github.com/agentydragon/ducktape/blob/devel/<path>`; **GitHub PRs / commits / CI
 runs** → their `…/pull/<n>`, `…/commit/<sha>`, `…/actions/runs/<id>` URLs; **Gmail
 messages** → `mail.google.com/mail/u/0/#all/<messageId>`; **Tana nodes** → their Tana
-URL; **Drive files** → `drive.google.com/file/d/<fileId>/view`; **Calendar events** →
-their `htmlLink`. Plaid transactions have no public URL — keep referencing them by
-date + merchant + amount. Never put a secret or token in a URL (the hard rules
-already forbid this).
+URL; **Drive files** → `drive.google.com/file/d/<fileId>/view` (the `id` /
+`webViewLink` comes free from the same `files.list`/`files.get` call you used to find
+the file — no excuse to skip it); **Calendar events** → their `htmlLink`. Plaid
+transactions have no public URL — keep referencing them by date + merchant + amount.
+Never put a secret or token in a URL (the hard rules already forbid this).
 
 **Attach operator action buttons (`actions[]`).** An item may carry an `actions`
 list — buttons the dashboard console renders as **click / un-click toggles**. The
