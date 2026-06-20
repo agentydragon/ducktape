@@ -304,3 +304,132 @@ Desired behavior:
 - Include declaration kind and source location in duplicate-claim diagnostics.
   The current duplicate message is hard to evaluate when minified names are
   reused.
+
+## Name-Pin Conversion Gaps Found Stabilizing The Spec
+
+The following gaps block converting fragile minified-name pins
+(`binding.name`) into stable `source_match` selectors. Each is a shape that
+recurs in real entities but cannot be expressed today, so the entity stays
+name-pinned.
+
+### Arrow Whose Body Is A Parenthesized Object Literal
+
+A concise arrow that returns an object literal — `() => ({ ... })` — cannot be
+written as a selector. The selector grammar reads the leading `{` of the body
+as a block statement, not as a parenthesized object expression, so the object
+fields are never parsed as an expression.
+
+Observed pattern:
+
+```js
+const makeWidget = (props) => ({
+  kind: "widget",
+  render: () => props.label,
+  dispose() {},
+});
+```
+
+This is the idiomatic shape for components/factories defined as
+`const X = (props) => ({ ...stable copy string... })`, where the returned object
+is a distinctive, re-minify-stable anchor. Because the body cannot be parsed as
+an object, the function can only be pinned by its minified name.
+
+Desired capability:
+
+- Parse a parenthesized arrow body (`=> ( expr )`) as an expression body, so an
+  object-literal-returning arrow is expressible and its object fields are
+  available as anchors.
+
+### Parenthesized Sequence Or Assignment Expression Body
+
+A `return` (or arrow body) of a parenthesized sequence expression loses its
+inner parentheses in the `source_match` JS parser, so the assignment inside it
+cannot be matched structurally.
+
+Observed patterns:
+
+```js
+function decorate(target, decorators) {
+  return (applyDecorators(target, decorators), target);
+}
+
+function getSingleton() {
+  return (instance || (instance = build()), instance);
+}
+```
+
+The first is the esbuild/TypeScript decorate-helper shape; the second is the
+memoized-singleton (lazy accessor) idiom. Both rely on the parenthesized
+`(a, b)` / `(a || (a = b()), a)` sequence as their distinctive body, but the
+inner assignment parens are dropped, so the selector cannot assert the structure
+and the helper/accessor stays name-pinned.
+
+Desired capability:
+
+- Preserve parenthesized sequence/assignment expressions in the selector parser
+  so `(seq, expr)` and `(a || (a = b()), a)` bodies match structurally.
+
+### No Array-Element-Run Hole
+
+There are run holes for object-property runs (`OBJECT_PROPS`) and class-member
+runs (`CLASS_REST`), but no analogous hole for a run of **array elements**. A
+long array-literal initializer can therefore only be pinned by spelling the
+whole array, which over-pins on every element's incidental content.
+
+Observed patterns:
+
+```js
+const catalog = [
+  /* ~50 distinct entries */
+];
+
+const withExtras = [...base, EXTRA];
+```
+
+A ~50-entry catalog or a `[...spread, X]` initializer has no way to anchor on
+the one or two elements that matter while leaving the rest as a hole.
+
+Desired capability:
+
+- An `ARRAY_ELEMENTS` / `ELEMENTS` run hole that matches zero or more array
+  elements, so an array initializer can be anchored on its stable elements
+  without spelling the whole literal.
+
+### Comma-List Sibling Disambiguation By Nested Body
+
+Same-arity declarators in one `const a = …, b = …` comma-list that differ only
+in a deeply-nested property or value cannot be disambiguated: the matcher
+reports both declarators as candidates.
+
+Observed pattern:
+
+```js
+const handlerA = makeHandler({ route: { method: "GET" } }),
+  handlerB = makeHandler({ route: { method: "POST" } });
+```
+
+Both declarators have identical shape and arity; they differ only in the nested
+`method` value. A declarator-run selector matches both, so neither can be pinned
+structurally.
+
+Desired capability:
+
+- A per-declarator nested-equality constraint, or a single-declarator window
+  that can assert a nested anchor, so two same-arity siblings are distinguished
+  by a deeply-nested property/value.
+
+### No Non-Emitting Member Annotation
+
+There is no way to attach a reviewer-facing reason to a member pin without
+changing the generated JS. Member `comment:` **emits** into the generated
+output (breaking a byte-identical gate unless the JS snapshot is regenerated),
+and `note:` is rejected by the spec parser (the valid member keys are `name`,
+`selector`, `purity`, `effect`, `pure_members`, `no_sync_callback_members`,
+`comment`). A pin left as debt — e.g. one blocked by a gap above — therefore
+cannot carry an explanation of why it is still a name pin.
+
+Desired capability:
+
+- A non-emitting member annotation field for reviewer-facing rationale, or make
+  a blocker `comment:` non-emitting, so left-as-debt pins can record why without
+  altering output.
