@@ -30,61 +30,37 @@
 //! minified binding comes from the already-resolved members of the same chunk.
 
 use analysis::OwnerGraph as FactOwnerGraph;
-use analysis::reports::owner_key;
 use spec::ReadsMemberTarget;
 use swc_ecma_ast::Module;
 
-use super::kind_labels::{dep_kind_str, statement_kind_str, statement_kind_str_for_spec};
+use super::kind_labels::statement_kind_str_for_spec;
+use super::owner_graph_projection::solve_projected;
 
 /// Project the in-memory `analysis::OwnerGraph` + the chunk's AST member-reads
 /// onto the lean owner graph the `selector_solve` kernel consumes, then run the
 /// phase-1 solve. Each owner node's `member_reads` come from
 /// `chunk_facts::member_reads_by_ordinal` joined by statement ordinal — the
-/// `reads_member` EDB rows the owner graph alone cannot supply.
+/// `reads_member` EDB rows the owner graph alone cannot supply. The
+/// `member_of_module` use-site EDB is unused by the `reads_member` resolvers, so
+/// it stays empty. The shared skeleton lives in
+/// `owner_graph_projection::solve_projected`.
 pub(super) fn build_resolution(
     graph: &FactOwnerGraph,
     module: &Module,
 ) -> selector_solve::Resolution {
     let reads_by_ordinal = chunk_facts::member_reads_by_ordinal(module);
-    let nodes = graph
-        .iter_nodes()
-        .map(|node| selector_solve::OwnerNode {
-            id: owner_key(node.id),
-            statement_kind: statement_kind_str(node.kind).to_string(),
-            declared_bindings: node
-                .declared
-                .iter()
-                .map(|id| selector_solve::DeclaredBinding {
-                    binding: id.0.as_str().to_string(),
-                    export_name: None,
-                })
-                .collect(),
-            member_reads: reads_by_ordinal
-                .get(&node.statement_ordinal.0)
-                .into_iter()
-                .flatten()
-                .map(|read| selector_solve::MemberRead {
-                    object: read.object.clone(),
-                    member: read.member.clone(),
-                })
-                .collect(),
-            // The `member_of_module` use-site EDB is unused by the `reads_member`
-            // resolvers; leave it empty.
-            module_member_uses: Vec::new(),
-        })
-        .collect();
-    // Edges are unused by the `reads_member` resolvers, but the lean graph the
-    // kernel solves is whole-owner-graph shaped; project them so the same
-    // `Resolution` could serve other primitives and `declares` stays correct.
-    let edges = graph
-        .iter_edges()
-        .map(|edge| selector_solve::OwnerEdge {
-            source: owner_key(edge.from),
-            binding: edge.reason.binding().map(|id| id.0.as_str().to_string()),
-            edge_kind: dep_kind_str(edge.reason.kind()).to_string(),
-        })
-        .collect();
-    selector_solve::solve(&selector_solve::OwnerGraph { nodes, edges })
+    solve_projected(graph, |node| {
+        let member_reads = reads_by_ordinal
+            .get(&node.statement_ordinal.0)
+            .into_iter()
+            .flatten()
+            .map(|read| selector_solve::MemberRead {
+                object: read.object.clone(),
+                member: read.member.clone(),
+            })
+            .collect();
+        (member_reads, Vec::new())
+    })
 }
 
 /// The minified binding the `reads_member` target resolves to, or `None`

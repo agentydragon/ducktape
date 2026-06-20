@@ -31,50 +31,20 @@
 //! `e2e/cross_ref_lowering_test.rs` pins this down.
 
 use analysis::OwnerGraph as FactOwnerGraph;
-use analysis::reports::owner_key;
 use spec::{CrossRefRelation, CrossRefTarget};
 
-use super::kind_labels::{dep_kind_str, statement_kind_str, statement_kind_str_for_spec};
+use super::kind_labels::statement_kind_str_for_spec;
+use super::owner_graph_projection::solve_projected;
 
 /// Project the in-memory `analysis::OwnerGraph` onto the lean owner graph the
-/// `selector_solve` kernel consumes, then run the phase-1 solve. The kernel is
-/// deliberately decoupled from the `analysis` crate's rich types (it deserializes
-/// the JSON wire shape), so the projection happens here, in the lowering crate
-/// that depends on both.
+/// `selector_solve` kernel consumes, then run the phase-1 solve.
 ///
-/// The lean graph carries no `export_name`: the spec's readable names are not on
-/// the owner graph at member-resolution time (see the module doc), so the kernel
-/// is used through its anchor-first handles only.
+/// The shared skeleton lives in `owner_graph_projection::solve_projected`; this
+/// bridge supplies empty per-node EDB rows because cross-ref resolution rides
+/// reference/alias edges, not member-read or module-member-use facts, so its
+/// lean graph carries neither the `reads_member` nor the `member_of_module` EDB.
 pub(super) fn build_resolution(graph: &FactOwnerGraph) -> selector_solve::Resolution {
-    let nodes = graph
-        .iter_nodes()
-        .map(|node| selector_solve::OwnerNode {
-            id: owner_key(node.id),
-            statement_kind: statement_kind_str(node.kind).to_string(),
-            declared_bindings: node
-                .declared
-                .iter()
-                .map(|id| selector_solve::DeclaredBinding {
-                    binding: id.0.as_str().to_string(),
-                    export_name: None,
-                })
-                .collect(),
-            // Cross-ref resolution rides reference/alias edges, not member-read
-            // or module-member-use facts, so its lean graph carries neither the
-            // `reads_member` nor the `member_of_module` EDB.
-            member_reads: Vec::new(),
-            module_member_uses: Vec::new(),
-        })
-        .collect();
-    let edges = graph
-        .iter_edges()
-        .map(|edge| selector_solve::OwnerEdge {
-            source: owner_key(edge.from),
-            binding: edge.reason.binding().map(|id| id.0.as_str().to_string()),
-            edge_kind: dep_kind_str(edge.reason.kind()).to_string(),
-        })
-        .collect();
-    selector_solve::solve(&selector_solve::OwnerGraph { nodes, edges })
+    solve_projected(graph, |_node| (Vec::new(), Vec::new()))
 }
 
 /// The minified binding the `cross_ref` target resolves to, or `None` (fail-closed)

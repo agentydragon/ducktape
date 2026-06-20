@@ -817,6 +817,7 @@ rust_library(
         "lowering/materialize/kind_labels.rs",
         "lowering/materialize/member_of_module.rs",
         "lowering/materialize/mod.rs",
+        "lowering/materialize/owner_graph_projection.rs",
         "lowering/materialize/plan_builder.rs",
         "lowering/materialize/reads_member.rs",
         "lowering/mod.rs",

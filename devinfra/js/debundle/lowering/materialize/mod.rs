@@ -7,6 +7,7 @@ mod apply;
 mod cross_ref;
 mod kind_labels;
 mod member_of_module;
+mod owner_graph_projection;
 mod plan_builder;
 mod reads_member;
 
