@@ -1,3 +1,10 @@
+# Expose the Prometheus /metrics endpoint on the web port. The gatus
+# ServiceMonitor (k8s/gatus/servicemonitor/) scrapes /metrics; without this
+# gatus never registers that handler, so the scrape 404s and
+# TargetDown{service=gatus} fires (gatus itself stays healthy — the readiness
+# probe hits /health, which always serves).
+metrics: true
+
 security:
   oidc:
     issuer-url: https://auth.allegedly.works/application/o/gatus/
