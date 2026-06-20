@@ -1,5 +1,7 @@
-import { CLAUDE_NEW, ITEM_SRC, MAX_DEEPLINK } from "./constants.ts";
+import { Anchor, Badge, Button, Group } from "@mantine/core";
+
 import type { Item, OperatorAction } from "./client.ts";
+import { CLAUDE_NEW, ITEM_SRC, MAX_DEEPLINK } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
 import { renderMarkdown } from "./markdown.ts";
 
@@ -32,16 +34,21 @@ function ActionButton({ item, action, clicked, onToggle }: ActionProps) {
     const encoded = encodeURIComponent(action.prompt);
     const href = encoded.length <= MAX_DEEPLINK ? CLAUDE_NEW + encoded : `${ITEM_SRC}/${item.id}.yaml`;
     return (
-      <a className="act handoff" href={href}>
+      <Button component="a" href={href} variant="default" size="xs" style={{ borderStyle: "dashed" }}>
         {action.label} →
-      </a>
+      </Button>
     );
   }
   const isClicked = clicked.has(clickKey(item.id, action.id));
   return (
-    <button className={isClicked ? "act clicked" : "act"} type="button" onClick={() => onToggle(item.id, action.id)}>
-      {action.label}
-    </button>
+    <Button
+      variant={isClicked ? "filled" : "outline"}
+      color="teal"
+      size="xs"
+      onClick={() => onToggle(item.id, action.id)}
+    >
+      {isClicked ? `✓ ${action.label}` : action.label}
+    </Button>
   );
 }
 
@@ -52,40 +59,55 @@ interface TaskProps {
 }
 
 // One collapsible task. Summary = compact row; the body (Markdown→HTML), operator
-// action toggles, and primary action button live only inside the expanded view.
+// action toggles, the primary action button, and a per-item feedback box live only
+// inside the expanded view.
 export function TaskCard({ item, clicked, onToggle }: TaskProps) {
   const [href, label] = primaryDeeplink(item);
   const deadline = item.deadline ? item.deadline.slice(0, 10) : null;
   const actions = item.actions ?? [];
   return (
-    <details className="task">
-      <summary>
-        <span className="val">{item.value}</span>
-        <span className="title">{item.title}</span>
-        <span className="meta">
-          {deadline && <span className="deadline">⏳ {deadline}</span>}
-          <span className="kind">{item.action.kind}</span>
+    <details className="group my-2 rounded-lg border border-slate-200 px-3 open:bg-slate-50 dark:border-slate-700 dark:open:bg-slate-800/40 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 gap-y-1 py-2">
+        <span
+          aria-hidden="true"
+          className="self-start text-xs text-slate-400 transition-transform group-open:rotate-90"
+        >
+          ▸
+        </span>
+        <span className="text-lg font-bold text-teal-600 dark:text-teal-400">{item.value}</span>
+        <span className="min-w-0 flex-1 font-semibold break-words">{item.title}</span>
+        <span className="flex basis-full flex-wrap items-baseline gap-2 pl-5">
+          {deadline && (
+            <Badge color="orange" variant="light" size="sm">
+              ⏳ {deadline}
+            </Badge>
+          )}
+          <Badge color="gray" variant="light" size="sm">
+            {item.action.kind}
+          </Badge>
         </span>
       </summary>
-      <div className="detail">
-        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(item.body) }} />
+      <div className="flex flex-col gap-3 py-2 pl-5">
+        <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.body) }} />
         {actions.length > 0 && (
-          <div className="acts">
+          <Group gap="xs">
             {actions.map((action) => (
               <ActionButton key={action.id} item={item} action={action} clicked={clicked} onToggle={onToggle} />
             ))}
-          </div>
+          </Group>
         )}
-        <p className="actions">
-          <a className="btn" href={href}>
+        <Group gap="md" align="center">
+          <Button component="a" href={href} color="teal" size="xs">
             {label}
-          </a>
-          <span className="src">{item.source}</span>
-          <a className="srclink" href={`${ITEM_SRC}/${item.id}.yaml`}>
+          </Button>
+          <Badge color="gray" variant="light">
+            {item.source}
+          </Badge>
+          <Anchor href={`${ITEM_SRC}/${item.id}.yaml`} c="dimmed" size="sm">
             item source →
-          </a>
-        </p>
-        <FeedbackForm itemId={item.id} rows={2} placeholder="Feedback on this item…" submitLabel="Send" />
+          </Anchor>
+        </Group>
+        <FeedbackForm itemId={item.id} minRows={2} placeholder="Feedback on this item…" submitLabel="Send" />
       </div>
     </details>
   );
