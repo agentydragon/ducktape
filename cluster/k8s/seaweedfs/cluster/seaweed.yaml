@@ -141,6 +141,11 @@ spec:
     # env-var binding (WEED_<key>, dot→underscore). CNPG auto-generates the
     # Secret seaweedfs-filer-db-app at cluster bootstrap.
     env:
+      # Soft heap ceiling ~90% of the memory limit below; see the sizing note
+      # at requests/limits. Go's GC (GOGC=100) otherwise ignores the cgroup
+      # limit and overshoots → kernel OOM-kill.
+      - name: GOMEMLIMIT
+        value: "700MiB"
       - name: WEED_POSTGRES2_USERNAME
         valueFrom:
           secretKeyRef:
@@ -152,15 +157,30 @@ spec:
             name: seaweedfs-filer-db-app
             key: password
     metricsPort: 9326
-    # QoS / eviction protection as on master (metadata gateway to postgres,
-    # ~172Mi observed). Singleton, so deliberately NO PodDisruptionBudget —
-    # a maxUnavailable:0 PDB on a 1-replica set would wedge node drains.
+    # QoS / eviction protection as on master. Singleton, so deliberately NO
+    # PodDisruptionBudget — a maxUnavailable:0 PDB on a 1-replica set would
+    # wedge node drains.
+    #
+    # Memory sizing: the filer is a metadata gateway to Postgres (postgres2
+    # backend — metadata lives in the DB, not in-pod), so steady-state is
+    # modest (~190Mi peak / ~136Mi current in our Mimir history). BUT the filer
+    # idle floor jumped in SeaweedFS 4.18+: per upstream
+    # https://github.com/seaweedfs/seaweedfs/issues/9035 the filer now uses
+    # 250–360Mi idle (vs 80–90Mi in 4.17), and that issue's reporter OOM-loops
+    # a 256Mi-limited filer every 3–5min. We run 4.29, and the old 256Mi
+    # *request* sat exactly on that regression's floor. Sized on data, same
+    # pattern as the s3 gateway below:
+    #   - request 384Mi: above the 360Mi reported idle ceiling, so kubelet
+    #     node-pressure eviction ranks it last.
+    #   - limit 768Mi: ~2× the reported idle ceiling, ~4× our observed peak.
+    #   - GOMEMLIMIT=700MiB (set in env above): soft ceiling so Go GCs harder
+    #     instead of being OOM-killed at the cap.
     priorityClassName: stateful-infra
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 384Mi
     limits:
-      memory: 512Mi
+      memory: 768Mi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
 
