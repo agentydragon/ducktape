@@ -1,7 +1,9 @@
 # gmail_triage (example)
 
 Read Gmail with the read-only token (see `../instructions.md` → _Hard rules_). List new
-mail since your bookmark (on the first run, a window like `newer_than:7d`):
+mail since your bookmark — resume precisely with `q=after:<epoch-seconds>`, since Gmail's
+`after:YYYY/MM/DD` is only date-granular and would re-scan or skip part of a day (on the
+first run, a window like `newer_than:7d`):
 `curl -s -H "Authorization: Bearer $TOK" 'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=newer_than:7d'`,
 then fetch each with `.../messages/{id}?format=metadata` (use `format=full` only
 when you must read a body to judge it). Useful `q=` filters: `is:unread`,

@@ -285,7 +285,10 @@ Your home environment keeps nothing between runs; **`haku-state` is your only
 memory.** Keep whatever your future self needs under `memory/` and read it back
 when you orient. This is yours to structure and **does not need to be
 machine-readable** — prose is fine. Keep there: how far you've processed each
-source (a bookmark like "gmail: through 2026-06-18T07:00Z"), research notes, your
+source (a bookmark recorded as an **exact timestamp, not a coarse date** — e.g.
+`gmail: through 2026-06-18T07:03:12Z`, never `gmail: through 2026-06-18` — so the
+next run resumes exactly where you stopped, never re-scanning or skipping the rest
+of a day), research notes, your
 reasoning, and — first-class — your **model of the operator** (their context,
 preferences, constraints, risk tolerance, standing decisions, and the calibration
 learned from accept/reject/snooze; see _How you reason_). Maintaining that model

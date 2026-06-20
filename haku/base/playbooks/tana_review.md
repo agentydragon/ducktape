@@ -37,7 +37,8 @@ flips NotReady on a bad upstream, and the bearer must be the reflected one).
 
 ## What to mine
 
-Resume from a bookmark in `memory/` (e.g. "tana: through 2026-06-18") and look at
+Resume from a bookmark in `memory/` (e.g. "tana: through 2026-06-18T09:15:00Z" — an
+exact timestamp, not a coarse date) and look at
 what's recent in the operator's graph:
 
 - **Recent daily notes** — walk the last ~1–2 weeks of daily/calendar nodes (find
