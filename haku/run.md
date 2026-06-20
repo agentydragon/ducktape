@@ -68,9 +68,14 @@ bottom:
    only next step is to wait goes to the watch-list or `snoozed` (with `snoozed_until`),
    not `open` (per the manual's _Item contract_). **Keep valid lower-priority items
    `open` as the backlog** — don't drop or expire them just to shorten the list;
-   ranking and the dashboard's tiering keep it scannable. The dashboard console renders
-   the live site from `items/` on its own, so there's no page to regenerate and no
-   templates to maintain — the look lives in the console's bundle (see _Dashboard_).
+   ranking and the dashboard's tiering keep it scannable. Also **bring user-facing items
+   into conformance with the manual** — the conventions evolve, so each pass check that
+   open items still follow the current contract (e.g. _Links as affordances_: inline
+   links, search/deep-link affordances; the actionability gate) and fix any that have
+   drifted, prioritising the top of the queue and any item you touch. The dashboard
+   console renders the live site from `items/` on its own, so there's no page to
+   regenerate and no templates to maintain — the look lives in the console's bundle (see
+   _Dashboard_).
 7. **Log**: append a run entry to **today's daily log file** (`log/YYYY-MM-DD.md`
    — one file per day, never one monolithic journal) — what you scanned, what you
    found, what you chose not to file and why (one line each). Compact or prune old

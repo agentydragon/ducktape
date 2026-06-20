@@ -346,7 +346,9 @@ below.
 - Never put secrets, full account numbers, or credentials in items, the log,
   or commit messages. Reference transactions by date + merchant + amount, mail
   and events by subject/title + sender + date (never raw bodies, never the
-  access token).
+  access token). **Exception:** a token embedded in a **URL** is fine when it's
+  the direct affordance (the console is operator-only behind Authentik — see
+  _Links as affordances_); this covers links only, not raw credentials in prose.
 - **You cannot change your own base.** To change this manual, the schema, or
   your config, the operator edits `haku/base/` in ducktape — it is not in your
   write scope.
@@ -401,23 +403,35 @@ Action kinds (only these two):
   and the evidence, and let it work out the how; don't shrink the ask to one
   mechanical step when the real win is bigger.
 
-**Interlink entities by their natural URL — inline, in the prose.** Where an item
-references an addressable entity, anchor the link on the natural words where it's
-mentioned, so it reads as prose: write "[Ivan's reply](…)", "[the failing CI run](…)",
-"[the COI request email](…)" as the link text — **not** a separate `**Links**:` block
-at the bottom. Link each entity once, at its first or most natural mention; fall back
-to a trailing list only for an entity that isn't named anywhere in the prose. The
-dashboard renders Markdown, so use `[text](url)` in `body` (and ``[`code`](url)``
-for file paths, which renders as a code-styled link); put plain URLs in
-`prepared_prompt` text. Natural URLs by source: **ducktape files** →
-`github.com/agentydragon/ducktape/blob/devel/<path>`; **GitHub PRs / commits / CI
-runs** → their `…/pull/<n>`, `…/commit/<sha>`, `…/actions/runs/<id>` URLs; **Gmail
-messages** → `mail.google.com/mail/u/0/#all/<messageId>`; **Tana nodes** → their Tana
-URL; **Drive files** → `drive.google.com/file/d/<fileId>/view` (the `id` /
-`webViewLink` comes free from the same `files.list`/`files.get` call you used to find
-the file — no excuse to skip it); **Calendar events** → their `htmlLink`. Plaid
-transactions have no public URL — keep referencing them by date + merchant + amount.
-Never put a secret or token in a URL (the hard rules already forbid this).
+**Links as affordances — give the operator the door, not directions to it.** A link
+that lands them one click from the thing or action beats a paragraph describing how to
+get there. So whenever you reference something addressable, link the most direct URL you
+can — **inline on the natural words** in the `body` (plain URLs in `prepared_prompt`
+text). The dashboard renders Markdown, so use `[text](url)` (and ``[`code`](url)`` for
+file paths, which renders as a code-styled link). Three kinds:
+
+- **Entities** → natural URL, anchored on the words where it's named ("[Ivan's
+  reply](…)", "[the refund PDF](…)") — **not** a trailing `**Links**:` block (fallback
+  only for an entity never named in prose); link each once, at its first or most natural
+  mention. By source: **ducktape files** → `github.com/agentydragon/ducktape/blob/devel/<path>`;
+  **GitHub PRs / commits / CI runs** → their `…/pull/<n>`, `…/commit/<sha>`,
+  `…/actions/runs/<id>` URLs; **Gmail messages** → `mail.google.com/mail/u/0/#all/<messageId>`;
+  **Tana nodes** → their Tana URL; **Drive files** → `drive.google.com/file/d/<fileId>/view`
+  (the `id` / `webViewLink` comes free from the same `files.list`/`files.get` call you
+  used to find the file — no excuse to skip it); **Calendar events** → their `htmlLink`.
+  Plaid transactions have no public URL — reference them by date + merchant + amount.
+- **Searches / views over a set** → when an item points at a _set_ the operator might
+  work through (an inbox cluster, a category of charges, a label), link the **search URL
+  that surfaces exactly that set**: Gmail `mail.google.com/mail/u/0/#search/<url-encoded
+query>` (e.g. one per cluster, `in:inbox from:(a.com OR b.com …)`).
+- **Actions / settings** → if you tell them to change a setting or do something on a
+  platform, **deep-link straight to that page** when you know it (`foobar.com/account/settings/<x>`)
+  instead of describing the click-path — one click beats five. Same for an executor in a
+  `prepared_prompt`.
+
+A URL **may include a token** if that's the direct path — the console is operator-only
+(behind Authentik) — but that's the only exception: never write a raw credential into an
+item's prose, the log, or a commit message (see _Hard rules_).
 
 **Attach operator action buttons (`actions[]`).** An item may carry an `actions`
 list — buttons the dashboard console renders as **click / un-click toggles**. The
