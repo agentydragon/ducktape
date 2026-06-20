@@ -83,3 +83,9 @@ x/k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
+
+# haku/console/frontend/task.tsx carried a stray NUL byte (removed in this branch).
+# Force git to diff it as text so `bb remote` (CI) ships an applyable text patch
+# instead of a binary one against devel's still-binary copy. Redundant once devel's
+# copy is plain text (after this lands) — safe to drop then.
+haku/console/frontend/task.tsx diff
