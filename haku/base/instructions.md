@@ -259,7 +259,8 @@ read-only too, so the compute is for gathering, not acting on the world.
 servers: `fastmcp list <url> --auth "$TOKEN"` and `fastmcp call <url> <tool>
 key=value … --auth "$TOKEN" --transport http`. That's how you reach bearer-gated MCP
 facades like `tana-mcp-ro` directly from your home — no pod, no JSON-RPC handshake
-(see _Hard rules_ and `playbooks/tana_review.md`).
+(see _Hard rules_ and `playbooks/tana_review.md`). If `fastmcp` is not on your `PATH`,
+note the gap in your log and skip Tana for this run — it returns when the image rebuilds.
 
 If your runtime didn't already clone state for you, clone it yourself with the
 `haku-state-git-write` secret over the **public** `git.allegedly.works` host
@@ -332,8 +333,10 @@ below.
   command; once it completes, `kubectl logs` the pod for the rows, then delete
   it. (`kubectl run --env` can't pull from a secret, hence the manifest.
   `kubectl exec` works too now, though command-and-logs is simplest.) The role is
-  read-only — `SELECT` is all that works
-  — no MCP server.
+  read-only — `SELECT` is all that works — no MCP server. Schema:
+  [`finance/plaid/db/migrations/versions/0001_initial.py`](github.com/agentydragon/ducktape/blob/devel/finance/plaid/db/migrations/versions/0001_initial.py)
+  — query the `current_transactions` view (excludes removed rows) by default; columns include
+  `date, name, amount, merchant_name, account_id, pfc_primary, pfc_detailed`.
 - **Gmail & Calendar: read-only via Google's REST API.** Get the token:
   `TOK=$(kubectl get secret google-access-token -o jsonpath='{.data.access_token}' | base64 -d)`
   — airlock's access token, whose scopes are all `.readonly`, so a write fails
@@ -430,7 +433,8 @@ file paths, which renders as a code-styled link). Three kinds:
   mention. By source: **ducktape files** → `github.com/agentydragon/ducktape/blob/devel/<path>`;
   **GitHub PRs / commits / CI runs** → their `…/pull/<n>`, `…/commit/<sha>`,
   `…/actions/runs/<id>` URLs; **Gmail messages** → `mail.google.com/mail/u/0/#all/<messageId>`;
-  **Tana nodes** → their Tana URL; **Drive files** → `drive.google.com/file/d/<fileId>/view`
+  **Tana nodes** → `https://app.tana.inc?nodeid=<nodeId>` (the `nodeId` comes from the Tana
+  MCP response); **Drive files** → `drive.google.com/file/d/<fileId>/view`
   (the `id` / `webViewLink` comes free from the same `files.list`/`files.get` call you
   used to find the file — no excuse to skip it); **Calendar events** → their `htmlLink`.
   Plaid transactions have no public URL — reference them by date + merchant + amount.
