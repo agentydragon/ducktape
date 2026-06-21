@@ -424,56 +424,13 @@ layout.
 
 ## Comments
 
-The spec carries reverse-engineering annotations as `comment:`
-fields on members, modules, and anonymous statements. Those comments
-live in YAML and emit into generated JS on every rebuild, so RE notes
-survive `debundle run` invocations.
-
-`anonymous_statements:` entries may carry `comment:` or `note:`. They
-are preserved on round-trip. Anonymous statement comments are not
-edited by a dedicated CLI command. `comment:` emits before the matched
-anonymous statement; `note:` does not emit.
-
-Debundle's output is meant to turn minified compiled chunks into nice
-human-readable code. Use emitted `comment:` text as part of that
-readability surface: explain intent, invariants, and module
-relationships. Keep provenance, owner IDs, and source-call trivia in
-`note:` or omit them. Use `note:` for scratch reverse-engineering
-notes that should survive debundle edits but should not appear in
-generated JS, including uncertainty, provenance, and call-site
-observations.
-
-Current state:
-
-- **CLI editing**: `debundle bindings comment <sym>`
-  and `debundle modules comment <module>` set / read / `--edit` /
-  `--clear` the field.
-- **Spec + lowering**: module comments emit at the top of the
-  generated module file; member comments emit immediately above the
-  binding's owner statement; anonymous-statement comments emit
-  immediately above the matched statement. Empty comments emit
-  nothing.
-
-Move semantics (these are properties of the existing CLI surface,
-not separate features):
-
-- `bindings assign` carries member comments with the member as it
-  moves between modules. The comment is part of the member entry;
-  the move is a YAML splice, so it round-trips.
-- `bindings assign` auto-deletes a drained source module only when
-  its module-level `comment:` is empty/absent. A module with a
-  module-level doc but no remaining members is kept as a
-  `members: []` shell.
-- `modules merge` concatenates source-module comments into the
-  target's module-level `comment:` (with a `--- from <source>:`
-  divider) when sources have non-empty comments.
-- `modules merge` records `merged from: <sources>` provenance in the
-  target's module-level `note:` (composing with any existing note),
-  never a `#` YAML comment — the rewriters drop `#` comments, but
-  `note:` is durable and non-emitting.
-
-See `guide.md` → "Workflow: authoring `comment:` fields" for the
-YAML schema and worked CLI examples.
+The `comment:` / `note:` schema (which levels carry them, what emits
+into generated JS vs. stays YAML-only, the no-`#`-comments rule, and
+the `modules merge` → `note:` provenance) is documented once in
+<../README.md> → "Comments". The CLI surface for editing them is the
+`bindings comment` / `modules comment` rows in the command table above;
+their comment/`note:` round-trip and auto-delete move semantics are in
+`spec_editing.md` → "Workflow: authoring `comment:` fields".
 
 ## See also
 
