@@ -5,12 +5,20 @@ Complement to <../plans/selector_constraint_model.md> (design narrative) and
 construct-by-construct work to drive the spec's `binding.name` debt toward zero,
 ordered by impact-per-unit-effort.
 
-## Where the debt is (measured 2026-06-20, gaffer `78d928dca7`)
+## Where the debt is (measured 2026-06-21, gaffer `78d928dca7`, post round-2)
 
-`spec selector-debt`: **1665** fragile `binding.name` pins remain (down from ~2198),
-against ~5599 structural `source_match` selectors. By layer: features 790, domains 413,
-app 309, shared 106, integrations 49, infra 5. The dominant remaining debt is **two
-concentrated clusters that X1–X3 cannot reach**, plus a distributed long tail.
+`spec selector-debt`: **989** fragile `binding.name` pins remain (down from ~2198
+original / 1665 on 2026-06-20), against **6156** structural `source_match` selectors.
+The drop came from round-1 (`domains/*`) + round-2's four lanes (`shared/ui`,
+`features/{media,node_selection,tuples,workspace,billing,editor,tags,crm}`,
+`app/{shell,state,panel}`). By layer: features 397, domains 275, app 203, shared 64,
+integrations 46, infra 4.
+
+The single dominant module is **`app/bootstrap` (99 pins, all score-100)** — the fused
+at-init megamodule, an X5 concern (below), not a lane. The rest is a distributed tail
+across ~150 families; the ~72 esbuild decorate-trio pins (next section) are scattered
+through it. (Name-only census; the source-aware near-ambiguous second-half backlog
+needs a separate `--source-file` run.)
 
 ## Remaining worklist (impact-ordered)
 
@@ -31,13 +39,25 @@ through `resolves_to`, plus the optional member literal); the two companions rid
 primitives are landed and fail-closed / re-minify-proof — only the spec conversion
 remains.
 
-### Lane sweeps on the distributed tail (~1330 across families)
+### Round-3 lane sweeps (recommended)
 
-Self-anchorable name-pins spread across families (top: domains/graph 159, features/nodes
-141, features/transcription 64, features/search 58, shared/ui 50, features/navigation 47).
-Convert via self-emitted-literal / rich-signature anchors (the `debundle_stabilize` skill +
-the lane recipe <2026_06_20_gaffer_phaseA_lane_recipe.md>); ~25–40% convertible, honest debt
-for the rest.
+The convertible distributed tail, grouped into coherent ~60–90-pin lanes (excluding
+`app/bootstrap` and the round-1/round-2 families' honest-debt residue). Convert via
+self-emitted-literal / rich-signature anchors (the `debundle_stabilize` skill + the lane
+recipe <2026_06_20_gaffer_phaseA_lane_recipe.md>); ~25–40% convertible, honest debt for the
+rest.
+
+| lane                | families                                                                                                                       | ~pins |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| R3-domains-graph    | `domains/graph` (50) + `domains/search` (17) + `domains/ai` (22)                                                               | 89    |
+| R3-domains-tail     | `domains/{template,paste,local_api,focus,calendar}` (14 each)                                                                  | 70    |
+| R3-features-nodes   | `features/nodes` (38) + `features/sidebar` (15) + `features/transcription` (14) + `features/publish` (14)                      | 81    |
+| R3-features-surface | `features/public_pages` (17) + `features/calendar` (17) + `features/onboarding` (14) + `shared/dom` (15) + `app/commands` (13) | 76    |
+| R3-integrations     | `integrations/google` (19) + `integrations/firebase` (12) + the integrations tail                                              | ~46   |
+
+~362 pins targeted. The round-2 lanes' residual (e.g. `features/{media,node_selection,
+tuples,workspace}` at 11–14 each) is mostly proven honest debt — not worth re-sweeping
+until the decorate-trio application (above) and X4/X5 land.
 
 ### X4 — counting / uniqueness
 
@@ -48,7 +68,7 @@ rather than a post-hoc check. Most useful atop the global solve (X5).
 
 Shift from per-selector solves to a single CSP over the whole spec (shared logic variables
 for `@Name`, `all_different` across targets). The architectural capstone for the fused
-`app/bootstrap/initBundle` megamodule (103 pins, all score-100); the conversions and X4 fold
+`app/bootstrap` megamodule (99 pins, all score-100); the conversions and X4 fold
 into it.
 
 ## Primitive reach (measured against this bundle)
@@ -82,7 +102,7 @@ into it.
 n.getNodeOrPlaceholder(systemIds.coreTemplateId); }, … })`). The spec pins the _whole
   factory_ as one member (`SystemNodesAccessor` → `binding: { name: sOe }`); the getters
   are **not** separate spec members and **not** separate owners, so they are **not** part
-  of the 1665 `binding.name` debt — the factory is one pin, not 226. The whole selector
+  of the 989 `binding.name` debt — the factory is one pin, not 226. The whole selector
   resolution layer (X1–X3 and `passed_to_call` alike) resolves at _owner_ (top-level
   statement) granularity via `binding_for_owner`, so "pin getter `coreTemplate` by its
   `systemIds.coreTemplateId` argument" has no representable target: there is no owner to
