@@ -245,14 +245,8 @@ preserved on round-trip. The materializer resolves statements from
 in generated JS; `note:` remains YAML metadata. Graph-backed CLI
 checks resolve the same selector against source and map the matched
 statement back to the owner graph, so the spec stays selector-based.
-Debundle's output is meant to turn minified compiled chunks into nice
-human-readable code. Use emitted `comment:` text as part of that
-readability surface: explain intent, invariants, and module
-relationships. Keep provenance, owner IDs, and source-call trivia in
-`note:` or omit them. Use `note:` for scratch reverse-engineering
-notes that should survive debundle edits but should not appear in
-generated JS, including uncertainty, provenance, and call-site
-observations.
+For what to put in `comment:` vs. `note:`, see <../README.md> →
+"Comments".
 
 ```yaml
 anonymous_statements:
@@ -346,15 +340,14 @@ Move semantics (CLI surface, not a separate feature):
   it moves between modules.
 - `bindings assign` auto-deletes a drained source module only when its
   module-level `comment:` is empty/absent.
-- `modules merge` concatenates source-module comments into the target.
-- `modules merge` records `merged from: <sources>` provenance in the
-  target's module-level `note:` (composing with any existing note),
-  not a `#` YAML comment.
+- `modules merge` concatenates source-module comments into the target's
+  module-level `comment:` (with a `--- from <source>:` divider) when
+  sources have non-empty comments, and records `merged from: <sources>`
+  provenance in the target's module-level `note:` (see <../README.md> →
+  "Comments").
 
 CLI editing is live for module and member comments; anonymous
-statement comments are authored directly in YAML. Module, member, and
-anonymous-statement `comment:` fields emit into generated JS. `note:`
-does not emit.
+statement comments are authored directly in YAML.
 
 When a binding cannot yet be stabilized because the selector language lacks a
 concise matcher, leave a member `comment:` naming the concrete matcher/tooling
