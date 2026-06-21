@@ -9,7 +9,8 @@ python3 devinfra/js/debundle/perf/gen_synth_corpus.py \
   --out /tmp/synth62 --statements 10000 --seed 1 --claim-blocks 62
 # 2. Rewrite member selectors binding-name -> source_match so the production
 #    fact-based ChunkResolver (chunk_facts EDB + selector_match homomorphism)
-#    is exercised. (/tmp/make_source_match_spec.py — see perf note.)
+#    is exercised. One-off harness (not checked in); the transformation is
+#    described in perf/fact_resolver.md "The rewrite".
 python3 /tmp/make_source_match_spec.py /tmp/synth62
 # 3. Callgrind, Ir-only:
 valgrind --tool=callgrind --callgrind-out-file=callgrind.source_match_run.out \
