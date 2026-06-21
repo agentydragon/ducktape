@@ -83,18 +83,35 @@ pub(crate) fn target_binding_candidate_names(
         .collect()
 }
 
-/// `target_binding` names a binding the selector source never declares. Shared by
-/// the statement-level and declarator-level target-binding location resolvers,
-/// which reject this case identically.
+/// A `target_binding` rejection: the shared `logical_module … target_binding
+/// `{target_binding}` ` prefix and the `:\n{match_source}` selector-source suffix
+/// written once, with `problem` carrying the varying middle (why this binding is
+/// unusable). Both the statement-level and declarator-level resolvers report
+/// through here.
+fn target_binding_error(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+    problem: &str,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "logical_module {request_id}: members[].selector.source_match target_binding \
+         `{target_binding}` {problem}:\n{match_source}",
+        match_source = selector.match_source,
+    )
+}
+
+/// `target_binding` names a binding the selector source never declares.
 fn target_binding_not_declared(
     request_id: &str,
     selector: &AnonymousStatementSelector,
     target_binding: &str,
 ) -> anyhow::Error {
-    anyhow::anyhow!(
-        "logical_module {request_id}: members[].selector.source_match target_binding \
-         `{target_binding}` is not declared by the selector source:\n{match_source}",
-        match_source = selector.match_source,
+    target_binding_error(
+        request_id,
+        selector,
+        target_binding,
+        "is not declared by the selector source",
     )
 }
 
@@ -109,11 +126,14 @@ fn target_binding_ambiguous(
     index_kind: &str,
     indices: impl std::fmt::Debug,
 ) -> anyhow::Error {
-    anyhow::anyhow!(
-        "logical_module {request_id}: members[].selector.source_match target_binding \
-         `{target_binding}` is ambiguous within the selector source at {index_kind} \
-         indices {indices:?}. Refine the selector source:\n{match_source}",
-        match_source = selector.match_source,
+    target_binding_error(
+        request_id,
+        selector,
+        target_binding,
+        &format!(
+            "is ambiguous within the selector source at {index_kind} indices \
+             {indices:?}. Refine the selector source"
+        ),
     )
 }
 
