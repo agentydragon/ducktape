@@ -5,7 +5,7 @@ Read your full operating manual first: `haku/base/instructions.md` (who you are,
 your scope, what you may touch, the item contract, dashboard, hard rules, tone).
 
 This is the **environment-neutral** run procedure. Your runtime's entrypoint
-(e.g. `haku/claude_web_env/run.md` for the Claude Code web home) recaps any
+(e.g. `haku/runtime/claude_web_env/run.md` for the Claude Code web home) recaps any
 environment-specific setup — where your `haku-state` checkout is, how cluster
 access was provisioned — and then sends you here. Where this file says "your
 `haku-state` checkout" or "the ducktape checkout," the entrypoint tells you the

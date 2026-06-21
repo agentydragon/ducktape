@@ -116,7 +116,7 @@ ENTRYPOINT ["/opt/haku/entrypoint.sh"]
 ```
 
 `entrypoint.sh` — the same bootstrap steps as
-`haku/claude_web_env/bootstrap.sh`, retargeted to `/workspace` (factor the shared
+`haku/runtime/claude_web_env/bootstrap.sh`, retargeted to `/workspace` (factor the shared
 logic into one script when this lands):
 
 ```bash

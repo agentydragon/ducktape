@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pygit2
 
-from haku.agent.config import Settings
+from haku.runtime.agent.config import Settings
 
 logger = logging.getLogger(__name__)
 

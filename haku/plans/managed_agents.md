@@ -9,7 +9,7 @@ _Later_). Delete or tombstone once Haku's runtime is decided.
 ## Why
 
 v0 runs Haku as a **manually-started, ephemeral Claude Code web session** on
-Anthropic infra (`haku/claude_web_env/`). Two wants motivate moving off it:
+Anthropic infra (`haku/runtime/claude_web_env/`). Two wants motivate moving off it:
 
 1. **Trigger Haku on events / on demand** (a push to `haku-state`, a schedule, a
    button) — without a human opening a web session.
@@ -131,16 +131,16 @@ secrets.**
 
 ## Component mapping
 
-| Today (Claude Code web)                                                 | Self-hosted Managed Agent                                                                                                                                                      |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Session start hook + `web_setup.sh` provisions the env                  | A **worker image** running `EnvironmentWorker` (Python/Go SDK) or `ant beta:worker poll` in `haku-sandbox`                                                                     |
-| `haku/claude_web_env/bootstrap.sh` (kubeconfig, `.netrc`, clone state)  | **Same script** as the worker entrypoint — self-hosted does _not_ auto-mount repos, so our existing bootstrap _is_ the mount                                                   |
-| `Execute haku/claude_web_env/run.md` prompt                             | A `user.message` wake event                                                                                                                                                    |
-| `--dangerously-skip-permissions` (Pod = trust boundary)                 | `permission_policy: always_allow` (same reasoning)                                                                                                                             |
-| Cluster access via `kubeapi.allegedly.works` proxy                      | **Direct in-cluster access** (worker runs in `haku-sandbox`)                                                                                                                   |
-| Claude Code native tools (mostly bash)                                  | `agent_toolset_20260401` (bash/read/write/edit/glob/grep) + `mcp_toolset`s                                                                                                     |
-| `haku-state` git repo as durable memory                                 | unchanged                                                                                                                                                                      |
-| base read from the ducktape checkout, reconciled via `memory/base-sync` | unchanged — worker clones ducktape; agent `system` is a thin pointer ("read the manual + run procedure, then run") so base stays single-sourced and reconciliation still works |
+| Today (Claude Code web)                                                        | Self-hosted Managed Agent                                                                                                                                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Session start hook + `web_setup.sh` provisions the env                         | A **worker image** running `EnvironmentWorker` (Python/Go SDK) or `ant beta:worker poll` in `haku-sandbox`                                                                     |
+| `haku/runtime/claude_web_env/bootstrap.sh` (kubeconfig, `.netrc`, clone state) | **Same script** as the worker entrypoint — self-hosted does _not_ auto-mount repos, so our existing bootstrap _is_ the mount                                                   |
+| `Execute haku/runtime/claude_web_env/run.md` prompt                            | A `user.message` wake event                                                                                                                                                    |
+| `--dangerously-skip-permissions` (Pod = trust boundary)                        | `permission_policy: always_allow` (same reasoning)                                                                                                                             |
+| Cluster access via `kubeapi.allegedly.works` proxy                             | **Direct in-cluster access** (worker runs in `haku-sandbox`)                                                                                                                   |
+| Claude Code native tools (mostly bash)                                         | `agent_toolset_20260401` (bash/read/write/edit/glob/grep) + `mcp_toolset`s                                                                                                     |
+| `haku-state` git repo as durable memory                                        | unchanged                                                                                                                                                                      |
+| base read from the ducktape checkout, reconciled via `memory/base-sync`        | unchanged — worker clones ducktape; agent `system` is a thin pointer ("read the manual + run procedure, then run") so base stays single-sourced and reconciliation still works |
 
 The worker pod keeps the Ember posture intact: non-root, behind the existing
 dedicated `haku-mitmproxy` egress, scoped `haku-sandbox` RBAC, ResourceQuota —

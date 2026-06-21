@@ -1,4 +1,4 @@
-# Deb packages for the Haku agent (haku/agent) image, on debian:trixie-slim.
+# Deb packages for the Haku agent (haku/runtime/agent) image, on debian:trixie-slim.
 #
 # Haku's `run_command` shell tool uses these to reach sources and write haku-state:
 #   - git (+ ca-certificates) to clone/commit/push haku-state and hit HTTPS endpoints

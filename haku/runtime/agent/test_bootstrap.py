@@ -5,7 +5,7 @@ from pathlib import Path
 import pygit2
 import pytest_bazel
 
-from haku.agent.bootstrap import clone_or_refresh, write_netrc
+from haku.runtime.agent.bootstrap import clone_or_refresh, write_netrc
 
 
 def test_write_netrc_format_and_mode(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
-# haku/agent — Haku's Agent Framework runtime
+# haku/runtime/agent — Haku's Agent Framework runtime
 
-Runtime C from <../plans/runtime_options.md>: a provider-agnostic, self-hosted agent
+Runtime C from <../../plans/runtime_options.md>: a provider-agnostic, self-hosted agent
 loop for Haku, built on **Microsoft Agent Framework**. Separate component from
 `haku/console/` (the dashboard) — different image, dependencies, and git write
 identity.
@@ -9,7 +9,7 @@ identity.
   (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM config knob (`HAKU_MODEL`), not code.
   Only LiteLLM holds provider keys.
 - **Tools**: a `run_command` shell tool (the Pod is the trust boundary — see
-  <../PLAN.md>) plus remote MCP toolsets (Tana to start). Bearer auth rides a
+  <../../PLAN.md>) plus remote MCP toolsets (Tana to start). Bearer auth rides a
   pre-built `http_client` because `MCPStreamableHTTPTool` ignores `headers=`.
 - **Behavior** is `haku/base/` + `haku/run.md` from the **ducktape clone** (the agent
   clones ducktape + haku-state at startup via pygit2; see `bootstrap.py`), read at
@@ -34,7 +34,7 @@ remaining increments.
 ## Build / run
 
 ```bash
-bbr build //haku/agent:scan
+bbr build //haku/runtime/agent:scan
 ```
 
 Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
@@ -43,4 +43,4 @@ Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
 optional `HAKU_REDIS_URL`, `HAKU_TANA_RO_TOKEN`, `HAKU_SESSION_ID`,
 `HAKU_WAKE_INTERVAL_SECONDS`.
 
-Design + tradeoffs vs. the other runtimes: <../plans/runtime_options.md>.
+Design + tradeoffs vs. the other runtimes: <../../plans/runtime_options.md>.

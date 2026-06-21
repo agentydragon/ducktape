@@ -12,7 +12,7 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   what it must honor" level.
 - The **run procedure** (the imperative step-by-step a session executes) lives
   in `haku/run.md` (environment-neutral); per-environment entrypoints like
-  `haku/claude_web_env/run.md` only layer setup and defer to it. Neither belongs
+  `haku/runtime/claude_web_env/run.md` only layer setup and defer to it. Neither belongs
   in `base/` — if you find yourself writing "step 1, step 2…" here, it belongs in
   `haku/run.md`.
 - `schema/item.json` — the item schema, validated at write time. Changing item

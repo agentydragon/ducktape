@@ -11,7 +11,7 @@ the Tana PAT stays server-side, so you never see it.
 
 `tana-mcp-ro` is exposed at `https://tana-mcp-ro.allegedly.works/mcp`, gated by a
 static bearer. Your home has the `fastmcp` CLI (baked into the agent-haku closure —
-see `haku/claude_web_env/`), so talk to it **directly** — no pod, no JSON-RPC
+see `haku/runtime/claude_web_env/`), so talk to it **directly** — no pod, no JSON-RPC
 handshake. Read the bearer from the reflected `haku-tana-ro-token` secret into a
 shell variable (reference `"$TOKEN"`, never the literal, so the secret stays out of
 your transcript), then list and call:

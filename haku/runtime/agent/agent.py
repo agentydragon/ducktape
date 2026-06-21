@@ -1,10 +1,10 @@
 """Assemble Haku's Microsoft Agent Framework agent and run one scan pass.
 
-Runtime C (see <../plans/runtime_options.md>): the agent loop runs here, in-process
+Runtime C (see <../../plans/runtime_options.md>): the agent loop runs here, in-process
 and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 (OpenAI-compatible), so the provider (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
-is the trust boundary — see <../PLAN.md>) plus remote MCP toolsets (Tana to start).
+is the trust boundary — see <../../PLAN.md>) plus remote MCP toolsets (Tana to start).
 Behavior is `haku/base/` + `haku/run.md` from the ducktape clone (bootstrap.py clones it
 at startup), read at runtime, so it stays single-sourced and live-editable. Session
 history persists in Valkey/Redis
@@ -32,7 +32,7 @@ from agent_framework import (
 from agent_framework.openai import OpenAIChatCompletionClient
 from agent_framework_redis import RedisHistoryProvider
 
-from haku.agent.config import Settings
+from haku.runtime.agent.config import Settings
 
 # Tail tool output so a chatty command can't blow the context window.
 _MAX_TOOL_OUTPUT = 20_000

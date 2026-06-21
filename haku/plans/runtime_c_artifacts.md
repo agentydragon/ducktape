@@ -4,7 +4,7 @@ Status: **sketches**, not landed code. Companion to
 [runtime_options.md](runtime_options.md) (Runtime C); pairs with
 [managed_agents_artifacts.md](managed_agents_artifacts.md) (Runtime B) so both
 runtimes are equally concrete before choosing. Framework shown: **Pydantic AI**
-on the in-cluster **LiteLLM**. Graduates into a real `haku/agent/` component once
+on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/agent/` component once
 chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
 releases — pin a version and check.
 
@@ -171,9 +171,9 @@ RUN pip install --no-cache-dir pydantic-ai fastapi uvicorn httpx fastmcp
 COPY haku/base /opt/haku/base
 COPY haku/run.md /opt/haku/run.md
 COPY devinfra/k8s/kubeconfig.py /opt/haku/kubeconfig.py
-COPY haku/agent/entrypoint.sh /opt/haku/entrypoint.sh
-COPY haku/agent/haku_agent.py /opt/haku/haku_agent.py
-COPY haku/agent/supervisor.py /opt/haku/supervisor.py
+COPY haku/runtime/agent/entrypoint.sh /opt/haku/entrypoint.sh
+COPY haku/runtime/agent/haku_agent.py /opt/haku/haku_agent.py
+COPY haku/runtime/agent/supervisor.py /opt/haku/supervisor.py
 USER 1000
 WORKDIR /workspace
 ENTRYPOINT ["/opt/haku/entrypoint.sh"]

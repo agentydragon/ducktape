@@ -10,9 +10,9 @@ thread rather than re-reading everything cold.
 import asyncio
 import logging
 
-from haku.agent.agent import run_scan
-from haku.agent.bootstrap import bootstrap
-from haku.agent.config import Settings
+from haku.runtime.agent.agent import run_scan
+from haku.runtime.agent.bootstrap import bootstrap
+from haku.runtime.agent.config import Settings
 
 logger = logging.getLogger(__name__)
 

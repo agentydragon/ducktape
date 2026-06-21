@@ -3,9 +3,9 @@
 #
 # Wire it as the web environment's setup script (the setup command runs from the
 # parent of the repo checkout, hence the ducktape/ prefix):
-#   bash ducktape/haku/claude_web_env/setup.sh
+#   bash ducktape/haku/runtime/claude_web_env/setup.sh
 # paired with these environment settings:
-#   DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml
+#   DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/runtime/claude_web_env/profile.yaml
 #   SOPS_AGE_KEY=<the haku age key from secrets/haku-age-key.sops.yaml>
 #
 # It delegates to the shared web setup (devtools, claude-hook daemon, certs, git

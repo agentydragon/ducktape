@@ -85,7 +85,7 @@ case "$MODE" in
 esac
 # Which flake output to `nix profile install`. Default is the lean `.#devtools`
 # (Claude web). Haku sets DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku (in
-# haku/claude_web_env/setup.sh) to get `.#agent-haku`, which composes `.#devtools`
+# haku/runtime/claude_web_env/setup.sh) to get `.#agent-haku`, which composes `.#devtools`
 # and adds the fastmcp MCP-client CLI. Only honored in `profile` install mode.
 WEB_SETUP_OUTPUT="${DUCKTAPE_WEB_SETUP_OUTPUT:-devtools}"
 

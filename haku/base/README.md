@@ -16,7 +16,7 @@ and letting the image rebuild (Flux image automation bumps the CronJob tag).
 - `schema/item.json` — JSON Schema for items, validated at write time.
 
 The step-by-step run procedure lives in `haku/run.md` (environment-neutral;
-per-environment entrypoints like `haku/claude_web_env/run.md` just layer setup
+per-environment entrypoints like `haku/runtime/claude_web_env/run.md` just layer setup
 and defer to it), which reads this manual; `base/` holds the durable contracts,
 not the imperative steps.
 
