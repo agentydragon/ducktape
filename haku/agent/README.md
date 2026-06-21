@@ -18,7 +18,8 @@ identity.
   `HAKU_REDIS_URL` is set — otherwise in-memory. `SummarizationStrategy` keeps the
   instruction prefix and, once history fills (`HAKU_SUMMARIZE_TARGET_COUNT` +
   `HAKU_SUMMARIZE_THRESHOLD` groups), LLM-summarizes the oldest turns into a running
-  summary rather than dropping them; `HAKU_REDIS_MAX_MESSAGES` bounds the stored list.
+  summary (using `HAKU_SUMMARIZE_MODEL` if set, else `HAKU_MODEL`) rather than dropping
+  them; `HAKU_REDIS_MAX_MESSAGES` bounds the stored list.
   git (`haku-state`) remains the durable memory, so a lost cache just re-orients.
   (`agent-framework-redis` is pinned to `1.0.0b260402`, the newest beta whose core floor
   keeps `agent-framework-core` at 1.0.0.)

@@ -61,8 +61,8 @@ Mirror the console's perimeter, plus what this runtime additionally needs:
    route runs with **no** service-account token, same as the console.
 2. **Egress**: the existing `haku-sandbox` mitmproxy policy, or additions for the
    endpoints the MCP toolsets call?
-3. **Model**: `HAKU_MODEL` + the virtual key's budget — and a **separate, cheaper model
-   for summarization** (`SummarizationStrategy` currently reuses `HAKU_MODEL`)?
+3. **Model**: `HAKU_MODEL` + the virtual key's budget. (Summarization can use a cheaper
+   model via `HAKU_SUMMARIZE_MODEL`; it reuses `HAKU_MODEL` when unset.)
 4. **Valkey**: dedicated vs. reuse; AOF settings; PVC size.
 
 ## Blocked in this sandbox (need CI / a full-network machine)

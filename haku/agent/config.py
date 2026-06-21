@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     summarize_threshold: int = Field(
         default=10, description="Compaction: summarize once group count exceeds target + this."
     )
+    summarize_model: str | None = Field(
+        default=None, description="LiteLLM model for SummarizationStrategy; None reuses HAKU_MODEL."
+    )
     host: str = Field(default="0.0.0.0", description="Supervisor HTTP bind host.")
     port: int = Field(default=8080, description="Supervisor HTTP bind port.")
     wake_interval_seconds: int = Field(default=0, description="Scheduler wake interval in seconds; 0 disables it.")

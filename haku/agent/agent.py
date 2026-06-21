@@ -93,9 +93,9 @@ def build_mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
     return tools
 
 
-def build_client(settings: Settings) -> OpenAIChatCompletionClient:
+def build_client(settings: Settings, *, model: str | None = None) -> OpenAIChatCompletionClient:
     return OpenAIChatCompletionClient(
-        model=settings.model,
+        model=model or settings.model,
         api_key=settings.litellm_api_key,
         base_url=settings.litellm_base_url,
         # Surface tool errors back to the model (it reads and retries) rather than aborting; raise
@@ -126,6 +126,8 @@ def build_agent(
     settings: Settings, mcp_tools: list[MCPStreamableHTTPTool], history: InMemoryHistoryProvider | RedisHistoryProvider
 ) -> Agent:
     client = build_client(settings)
+    # Summarize with a cheaper model when HAKU_SUMMARIZE_MODEL is set, else reuse the client.
+    summarizer = build_client(settings, model=settings.summarize_model) if settings.summarize_model else client
     tools: list[FunctionTool | MCPStreamableHTTPTool] = [_run_command_tool(settings), *mcp_tools]
     return Agent(
         client=client,
@@ -137,7 +139,7 @@ def build_agent(
         # target+threshold groups, LLM-summarize the oldest into a running summary and
         # continue — rather than hard-dropping old turns.
         compaction_strategy=SummarizationStrategy(
-            client=client, target_count=settings.summarize_target_count, threshold=settings.summarize_threshold
+            client=summarizer, target_count=settings.summarize_target_count, threshold=settings.summarize_threshold
         ),
     )
 
