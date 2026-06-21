@@ -197,13 +197,3 @@ Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The
 ### Two distinct `LogicalModule` types share a name
 
 `spec::LogicalModule` (the authoring-spec module: `members` / `binding_groups` / `anonymous_statements` / `comment`) and the graph/analysis `LogicalModule` (`id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`, used in `graph/tests.rs` and `analysis_tests/factorization_validation.rs`) are unrelated structs with the same name. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition (adding `note:` to the spec-side `Member` / `BindingGroup`). Rename one (e.g. the graph one to `PlannedModule` / `OutputModule`) to disambiguate. Not blocking.
-
-### Module-top `note:` plumbed through the spec-tree loader (DONE 2026-06)
-
-`spec::LogicalModule.note` now exists and is threaded through the three carries —
-`spec_modules::ModuleFile.note` → `spec_tree::ModuleSource.note` → `spec::LogicalModule.note`
-(mirroring `comment:` in `load_main_chunk_modules` + `logical_modules_map`). It is
-non-emitting (absent from every lowering plan struct, so it never reaches generated JS)
-and round-trips. `modules merge` writes its `merged from: <sources>` provenance here
-instead of a `#` YAML comment (which the rewriters drop). Same STYLE.md local exemption
-as `Member.note` / `BindingGroup.note` (AGENTS.md "Spec `note:` field").
