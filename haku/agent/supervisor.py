@@ -2,12 +2,11 @@
 
 A single in-process `AgentSession` stays warm across wakes for the pod's lifetime, so
 the manual + run procedure the agent reads on the first wake stay in context and aren't
-re-read each wake (the expensive part); `SlidingWindowStrategy` bounds the history. On
-pod restart the session resets and re-orients from haku-state — git is the durable
-memory. Wakes fire from a scheduler tick or `POST /wake`, one at a time.
-
-Cross-restart history persistence (Postgres/Redis) would slot into the session
-load/save here; Agent Framework ships no prebuilt Postgres provider, so it's deferred.
+re-read each wake (the expensive part); `SlidingWindowStrategy` bounds the history. When
+`HAKU_REDIS_URL` is set, session history persists in Valkey keyed by the session id, so
+it survives pod restarts too; otherwise a restart re-orients from haku-state (git is the
+durable memory regardless). Wakes fire from a scheduler tick or `POST /wake`, one at a
+time.
 """
 
 from __future__ import annotations

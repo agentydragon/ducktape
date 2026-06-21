@@ -6,9 +6,9 @@ and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
 is the trust boundary — see <../PLAN.md>) plus remote MCP toolsets (Tana to start).
 Behavior is the baked `haku/base/` manual + `haku/run.md`, read at runtime, so it
-stays single-sourced in ducktape. History is in-memory for now — cross-restart
-persistence is a pending increment (Agent Framework ships no prebuilt Postgres
-provider); `SlidingWindowStrategy` keeps the instruction prefix and bounds history.
+stays single-sourced in ducktape. Session history persists in Valkey/Redis
+(`RedisHistoryProvider`) when `HAKU_REDIS_URL` is set, else in-memory;
+`SlidingWindowStrategy` keeps the instruction prefix and bounds the context window.
 """
 
 from __future__ import annotations
