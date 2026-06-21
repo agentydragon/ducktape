@@ -1004,6 +1004,21 @@ mod tests {
         set.body_indices().collect()
     }
 
+    /// The exact top-level body indices a selector resolves to, via the fact
+    /// `ChunkResolver` — the correctness ground truth the candidate-index
+    /// prefilter must be a sound superset of.
+    fn exact_matches(runtime: &Module, selector: &AnonymousStatementSelector) -> Vec<usize> {
+        use source_match::SelectorResolver;
+        js_ast::with_swc_globals(|| {
+            source_match::ChunkResolver::new(runtime)
+                .resolve_anonymous_groups("<test>", selector)
+                .unwrap()
+                .into_iter()
+                .flatten()
+                .collect()
+        })
+    }
+
     #[test]
     fn indexes_top_level_statement_features_for_intersection() {
         let runtime = parse_module(
@@ -1044,10 +1059,7 @@ function render(value) { return value; }"#,
         let index = SelectorCandidateIndex::new(&runtime);
         let selector = selector("class ReadableName {\n  render() {}\n  CLASS_REST;\n}");
 
-        let exact = js_ast::with_swc_globals(|| {
-            source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
-                .unwrap()
-        });
+        let exact = exact_matches(&runtime, &selector);
         let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
 
         assert_eq!(exact, vec![0]);
@@ -1070,10 +1082,7 @@ function unrelated() { return 1; }"#,
             "switch (ANYTHING) {\n  case CASE_REST:\n  case \"x\":\n    STMT_LIST;\n  case CASE_REST:\n}",
         );
 
-        let exact = js_ast::with_swc_globals(|| {
-            source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
-                .unwrap()
-        });
+        let exact = exact_matches(&runtime, &selector);
         let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
 
         assert_eq!(exact, vec![0]);
@@ -1102,10 +1111,7 @@ const delta = make(123);"#,
             r#"const readable = make(123, { enabled: false });"#,
         ] {
             let selector = selector(selector_source);
-            let matched = js_ast::with_swc_globals(|| {
-                source_match::find_anonymous_statement_body_indices(&runtime, "<test>", &selector)
-                    .unwrap()
-            });
+            let matched = exact_matches(&runtime, &selector);
             let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();
             assert!(
                 matched.iter().all(|idx| candidate_set.contains(*idx)),

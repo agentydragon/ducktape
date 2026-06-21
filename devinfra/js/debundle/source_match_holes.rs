@@ -14,17 +14,24 @@
 //! subtree/statement everywhere it appears.
 //!
 //! `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-//! statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`,
-//! `CASE_REST`, and `DECLARATORS` are variable-length list holes: `ARGS`
-//! absorbs a run of call/new arguments, `STMT_LIST` absorbs a run of block
+//! statement. `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `ARRAY_ELEMENTS`,
+//! `CLASS_REST`, `CASE_REST`, and `DECLARATORS` are variable-length list holes:
+//! `ARGS` absorbs a run of call/new arguments, `STMT_LIST` absorbs a run of block
 //! statements (or top-level anonymous selector statements), `OBJECT_PROPS`
 //! absorbs a run of object literal properties/spreads (or destructured
-//! properties in an object binding/assignment pattern), `CLASS_REST` absorbs a
-//! run of class members, `CASE_REST` absorbs a run of `case`/`default`
+//! properties in an object binding/assignment pattern), `ARRAY_ELEMENTS` absorbs
+//! a run of array-literal elements (including spreads/elisions), `CLASS_REST`
+//! absorbs a run of class members, `CASE_REST` absorbs a run of `case`/`default`
 //! clauses inside one `switch` statement, and `DECLARATORS` absorbs a run of
 //! variable declarators inside one `var`/`let`/`const` declaration.
 //! List-hole suffixes are labels for readability; they do not bind the
 //! absorbed sequence for cross-occurrence equality.
+//!
+//! `ARRAY_ELEMENTS` is spelled as a bare identifier element
+//! (`[firstStable, ARRAY_ELEMENTS, lastStable]`): unlike `OBJECT_PROPS`, an array
+//! has no shorthand-property form, and `ANYTHING` in array-element position is one
+//! `EXPR` (a single element), not a run — so the array-run hole has only its typed
+//! `ARRAY_ELEMENTS` spelling, no `ANYTHING` sugar.
 //!
 //! The `CASE_REST` list hole is spelled as a `case CASE_REST:` clause with no
 //! body (the switch analog of the `CLASS_REST;` class field): a selector like
@@ -54,6 +61,7 @@ pub const CASE_REST_HOLE_KEYWORD: &str = "CASE_REST";
 pub const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 pub const ARGS_HOLE_KEYWORD: &str = "ARGS";
 pub const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
+pub const ARRAY_ELEMENTS_HOLE_KEYWORD: &str = "ARRAY_ELEMENTS";
 
 /// Callee name of the string-literal regex predicate sugar
 /// `STR_LITERAL_MATCHING_RE("<pattern>")`, which matches a string literal

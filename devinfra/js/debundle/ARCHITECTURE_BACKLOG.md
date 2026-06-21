@@ -193,3 +193,7 @@ docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 
 Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId. The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` in `validation.rs`. This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
+
+### Two distinct `LogicalModule` types share a name
+
+`spec::LogicalModule` (the authoring-spec module: `members` / `binding_groups` / `anonymous_statements` / `comment`) and the graph/analysis `LogicalModule` (`id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`, used in `graph/tests.rs` and `analysis_tests/factorization_validation.rs`) are unrelated structs with the same name. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition (adding `note:` to the spec-side `Member` / `BindingGroup`). Rename one (e.g. the graph one to `PlannedModule` / `OutputModule`) to disambiguate. Not blocking.

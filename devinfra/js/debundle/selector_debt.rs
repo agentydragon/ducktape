@@ -460,6 +460,18 @@ fn compute_selector_debt_impl(
                         .or_default()
                         .push(occurrence);
                 }
+                MemberSelectorSpec::CrossRef(_)
+                | MemberSelectorSpec::ReadsMember(_)
+                | MemberSelectorSpec::MemberOfModule(_)
+                | MemberSelectorSpec::PassedToCall(_)
+                | MemberSelectorSpec::MakesDecorateCall(_)
+                | MemberSelectorSpec::IntrinsicAlias(_) => {
+                    // Relational selectors are re-minify-proof by construction —
+                    // each rides an invariant identity (property name, import
+                    // source, callee identity, decorated class, intrinsic method)
+                    // rather than the minified binding. They are the debt solution,
+                    // not name-pin debt, so they contribute nothing to the tallies.
+                }
             }
         }
 
@@ -790,7 +802,7 @@ fn build_binding_group_suggestion(
     SourceAwareBindingGroupSuggestion {
         module: first.key.module.clone(),
         body_idx: first.key.body_idx,
-        declaration_kind: var_decl_kind_label(first.declaration_kind).to_string(),
+        declaration_kind: js_ast::var_decl_kind_str(first.declaration_kind).to_string(),
         selectors,
         candidate_yaml,
     }
@@ -820,7 +832,7 @@ fn render_var_source_match_template(
 ) -> String {
     let mut lines = vec![format!(
         "{} DECLARATORS_BEFORE = null,",
-        var_decl_kind_label(kind)
+        js_ast::var_decl_kind_str(kind)
     )];
     let mut previous_declarator_idx = None;
     for (target_idx, target) in targets.iter().enumerate() {
@@ -963,14 +975,6 @@ fn simple_declarator_binding_name(declarator: &VarDeclarator) -> Option<String> 
     }
 }
 
-fn var_decl_kind_label(kind: VarDeclKind) -> &'static str {
-    match kind {
-        VarDeclKind::Var => "var",
-        VarDeclKind::Let => "let",
-        VarDeclKind::Const => "const",
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn collect_source_aware_debt(
     checked: &mut usize,
@@ -987,7 +991,7 @@ fn collect_source_aware_debt(
         return Ok(None);
     };
     *checked += 1;
-    let debt = source_match::source_match_body_debt(
+    let debt = source_match::fact_source_match_body_debt(
         runtime_module,
         module_path,
         selector,

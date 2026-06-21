@@ -166,11 +166,32 @@ available.
 Module YAMLs, `members:` entries, and `anonymous_statements:` entries
 may carry an optional `comment:` field for reverse-engineering
 annotations; these emit into generated JS on every rebuild, so RE
-notes survive `debundle run` invocations. `note:` is YAML-only
-scratch metadata that never emits. Edit module and member comments
-via `debundle bindings comment` / `debundle modules comment`. See
-`docs/guide.md` → "Workflow: authoring `comment:` fields" for the
-YAML schema and worked CLI examples.
+notes survive `debundle run` invocations. The same four levels —
+module top, `members:`, `binding_groups:`, and `anonymous_statements:`
+— also accept a `note:` field: YAML-only scratch metadata that never
+emits (debt rationale, provenance; `modules merge` writes its
+`merged from: <sources>` provenance into the module-level `note:`,
+composing with any existing note). Edit module and member comments via
+`debundle bindings comment` / `debundle modules comment`. See
+`docs/spec_editing.md` → "Workflow: authoring `comment:` fields" for the
+YAML schema, worked CLI examples, and the comment/`note:` move semantics.
+
+A module-top `comment:` emits at the top of the generated module file,
+a member `comment:` immediately above the binding's owner statement, and
+an anonymous-statement `comment:` immediately above the matched
+statement; an empty `comment:` emits nothing.
+
+`comment:` text is part of debundle's readability surface — the point of
+the tool is to turn minified chunks into legible code, so use comments to
+explain intent, invariants, and module relationships. Keep provenance,
+owner IDs, and source-call trivia in `note:` (or omit them), not in
+emitted `comment:` text.
+
+**Do not use `#` YAML comments in spec files.** The rewriters (`bindings
+assign`, `synthesize --apply`, `modules merge`, …) re-emit the YAML and drop
+every `#` comment, so any `#` annotation is silently lost on the next automated
+edit. Anything that must persist belongs in a schema field — `comment:`
+(emitting) or `note:` (non-emitting) — which the rewriters preserve explicitly.
 
 ## Conditionally-correct optimizations
 

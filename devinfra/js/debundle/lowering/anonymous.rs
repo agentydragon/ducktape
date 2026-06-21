@@ -25,23 +25,49 @@ impl AnonymousStatementDiagnostic {
     }
 }
 
-/// Resolve every anonymous statement entry on `request` to a
-/// pre-split body index in `runtime_module`'s top-level body. The
-/// resolver requires exactly one match per entry — a 0-match or
-/// ambiguous-match selector is a spec error.
+/// Categorical reduction of the seam's matched groups to one group's body
+/// indices: an `anonymous_statements[]` entry must match exactly one top-level
+/// group (mirrors the former `source_match::resolve_anonymous_statement_body_indices`,
+/// now reached through the resolver seam so the matcher flip carries this path too).
+fn one_anonymous_group(
+    request_id: &str,
+    selector: &spec::AnonymousStatementSelector,
+    groups: Vec<Vec<usize>>,
+) -> Result<Vec<usize>> {
+    match groups.as_slice() {
+        [single] => Ok(single.clone()),
+        [] => bail!(
+            "logical_module {request_id}: anonymous_statements[].match did not match any \
+             top-level statement group in the chunk. Selector:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: anonymous_statements[].match is ambiguous — \
+             matched {} top-level statement groups at body indices {:?}. Refine the selector. \
+             Source:\n{match_source}",
+            multiple.len(),
+            multiple,
+            match_source = selector.match_source,
+        ),
+    }
+}
+
+/// Resolve every anonymous statement entry on `request` to a pre-split body
+/// index in the chunk's top-level body, via the selector resolver seam. The
+/// resolver requires exactly one match per entry — a 0-match or ambiguous-match
+/// selector is a spec error.
 pub(super) fn resolve_anonymous_statement_ordinals(
     request: &LogicalRequest,
-    runtime_module: &Module,
+    resolver: &dyn source_match::SelectorResolver,
     keep_going: bool,
     diagnostics: &mut Vec<AnonymousStatementDiagnostic>,
 ) -> Result<Vec<ResolvedAnonymousStatement>> {
     let mut resolved = Vec::new();
     for statement in &request.anonymous_statements {
-        let ordinals = match source_match::resolve_anonymous_statement_body_indices(
-            runtime_module,
-            &request.id,
-            &statement.selector,
-        ) {
+        let ordinals = match resolver
+            .resolve_anonymous_groups(&request.id, &statement.selector)
+            .and_then(|groups| one_anonymous_group(&request.id, &statement.selector, groups))
+        {
             Ok(ordinals) => ordinals,
             Err(error) if keep_going => {
                 diagnostics.push(AnonymousStatementDiagnostic {

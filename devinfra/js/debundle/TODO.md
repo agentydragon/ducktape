@@ -72,6 +72,13 @@ One-line status for each `plans/` design doc; this is the discovery index.
   (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
   menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
   playbook with tested fixtures (M2) and port-based evaluation (M3).
+- <plans/selector_constraint_model.md> + <plans/selector_resolver_endpoint.md> — **active
+  (P4 expressivity).** The fact-based resolver is the sole selector resolver and the
+  X1–X3 relational primitives (`cross_ref` / `reads_member` / `member_of_module`) are in
+  place. Remaining: the real-spec **conversions** (delegators → `cross_ref`, codegen
+  helpers → `reads_member`, empty-classes → `member_of_module`), X4/X5
+  (counting/uniqueness + one global solve), and push-to-zero — see
+  <debug/2026_06_19_p4_debt_worklist.md>.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
@@ -143,10 +150,26 @@ propose`.
 
 ### P2 — pipeline performance and architecture cleanup
 
-1. Use actual profiles to prioritize selector matching/index work. The expected
-   direction is one parse/index per chunk, prepared selector reuse, inverted
-   indexes for stable anchors, and memoized selector-body resolution; validate
-   each major change in <perf/>.
+1. **Selector matching was the measured hot path — fixed 2026-06-21**
+   (<perf/fact_resolver.md>). The fact-based `ChunkResolver` → `selector_match`
+   homomorphism was ~92% of a source_match-selector `run`/`validate` and ≈O(n²) in
+   selector count (4x selectors → ~15x wall; 40k statements breached the 60s
+   blocker). Both fixes landed, behavior-preserving (byte-identical output, 132
+   suite + e2e green): (a) the per-needle `unsupported_needle_construct` re-check
+   is hoisted out of the candidate loop (`matches_prepared` /
+   `var_declarator_alignment_prepared`, called after a one-time probe); (b) the
+   per-chunk token postings index now also keys on identifier spellings
+   (`Token::Ident` / `subject_tokens`), and an exact-mode no-prebind needle
+   requires its identifiers (`needle_required_tokens`), pruning the candidate scan
+   for the identifier-only `const NAME = …;` shape that pinned no literal token —
+   the source of the quadratic. Result: 10k 4.25s→0.45s, 40k 80.3s→2.76s; scaling
+   exponent ≈2.1 → ≈1.3 (quadratic gone), both interactive (<10s) and blocker
+   (<60s) budgets met at 40k. `chunk_facts` EDB extraction and `selector_solve`
+   (Ascent) were confirmed not hot; items #5/#6 (`JsChunk` scans,
+   `split_entry_body` clone) were checked and are not hot. Follow-up (optional):
+   the third profile lever (intern identifier atoms to drop the `__memcmp` exact-id
+   compares) is now largely subsumed by the shrunken candidate set; re-measure on a
+   real (non-synthetic) chunk before pursuing it.
 2. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
    expensive reports they do not need.
 3. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
@@ -193,6 +216,33 @@ cycle-detection between <peel/quotient.rs> and
 <realizability/condensation_order.rs>. They look parallel but encode different
 correctness invariants for the realizability gate; a shared impl risks hiding
 drift. Audit before attempting.
+
+## Cleanup backlog (post-#2398 review)
+
+Items surfaced by the post-#2398 debundler cleanup review that were **not**
+applied. The applied items (the empty-arm collapse, the `Resolution`
+`single_from_map`/`unique_owner` helpers, `chunk_facts` `build_children_map`, the
+`MemberRequest` `RelationalSelector` enum + `selector_kind_label`, and the
+`resolve_anchor` anchor-resolution helper) are done and intentionally omitted.
+
+- **C3 part 2 — data-drive the six relational resolution passes.**
+  <lowering/materialize/plan*builder.rs> has six near-parallel
+  `resolve_and_claim*\*` passes (`cross_ref`/`reads_member`/`member_of_module`/`passed_to_call`/`makes_decorate_call`/`intrinsic_alias`), each with a
+no-op-when-absent guard, a per-pass `Resolution`build, an anchor-map lookup, a
+per-member loop, and a`claim_post_stage_a_binding`tail; the six call sites in
+<lowering/materialize/mod.rs> mirror them. Part 1 (the shared`resolve_anchor`
+helper) landed. Part 2 — collapsing the passes themselves into one data-driven
+loop over the relational enum — was **deferred as too risky to do confidently**:
+the passes have genuinely different resolution-builder signatures
+(`member_of_module`needs`import_sources`; others don't), different anchor
+sources (`resolved_anchor_bindings`vs`claimed_member_bindings`vs none),
+different per-primitive kernel calls +`with_context`closures, and — load-bearing
+— each call site carries a distinct`time_phase!`timing label that is a side
+output. A uniform loop needs a heavy trait abstraction over genuinely-different
+code and would either drop or have to re-map the per-pass timing labels. If
+attempted, preserve every`time_phase!`label and keep the per-primitive bits
+legible (shared-helper route, not a code-gen macro). The per-resolver`#[allow(clippy::too_many_arguments)]`s only become removable once the standalone
+  resolvers disappear into the loop.
 
 ## Excalidraw live-browser smoke
 
@@ -337,9 +387,6 @@ workflows, and must use generic synthetic fixtures.
   multiple bindings into one logical module. Add or design a form for
   one matched declaration context whose bindings should land in
   different modules, without repeating the whole source selector.
-- **Matcher core cleanup.** Factor anonymous-statement and member-binding
-  `source_match` resolution through a shared parse/canonicalize/window
-  matcher before adding more selector variants.
 
 ## Logical materialization breadth
 

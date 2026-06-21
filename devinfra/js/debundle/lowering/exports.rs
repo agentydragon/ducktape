@@ -185,6 +185,18 @@ pub(super) fn reject_duplicate_export_names(
     })
 }
 
+/// Reject two members of one logical module claiming the same source binding.
+///
+/// Only members with a resolved (non-empty) `binding` participate: every selector
+/// form (`source_match`, `cross_ref`, `reads_member`, `member_of_module`,
+/// `passed_to_call`, `makes_decorate_call`) carries an empty `binding` until its
+/// dedicated resolution pass fills it in (see `MemberRequest`), and this gate runs
+/// before those passes. Grouping the still-empty bindings here would collapse every
+/// unresolved selector member in a module into one bogus `<unresolved>` claim —
+/// e.g. two `cross_ref` members anchored in their own module would falsely clash
+/// before either resolved. Duplicate claims among resolved selector members are
+/// caught later, against their real bindings, in
+/// `ChunkPlanBuilder::claim_post_stage_a_binding`.
 pub(super) fn reject_duplicate_member_bindings(
     operation: &str,
     id: &str,
@@ -192,7 +204,7 @@ pub(super) fn reject_duplicate_member_bindings(
 ) -> Result<()> {
     let mut by_binding = BTreeMap::<String, Vec<&MemberRequest>>::new();
     for member in members {
-        if member.source_match.is_some() {
+        if member.binding.is_empty() {
             continue;
         }
         by_binding
@@ -209,13 +221,8 @@ pub(super) fn reject_duplicate_member_bindings(
     }
     let mut report = format!("{operation} {id} has duplicate source binding claims:");
     for (binding, members) in duplicates {
-        let binding = if binding.is_empty() {
-            "<unresolved>".to_string()
-        } else {
-            format!("`{binding}`")
-        };
         report.push_str(&format!(
-            "\n- source binding {binding} claimed {} times:",
+            "\n- source binding `{binding}` claimed {} times:",
             members.len()
         ));
         for member in members {

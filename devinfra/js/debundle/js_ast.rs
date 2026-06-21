@@ -4,13 +4,15 @@ use anyhow::{Result, bail};
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
-use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
-use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
+use swc_common::{
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+};
+use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str, VarDeclKind};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use swc_ecma_transforms_base::resolver;
-use swc_ecma_visit::VisitMutWith;
+use swc_ecma_visit::{VisitMutWith, VisitWith};
 
 /// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
 /// entry point (`main.rs`) wraps the
@@ -272,22 +274,130 @@ pub fn emit_module_source(module: &Module) -> Result<String> {
     Ok(String::from_utf8(buf)?.trim_end().to_string())
 }
 
-/// Strip every `(expr)` parenthesization, replacing it with its inner expression.
-/// Parens are syntactically insignificant grouping, so removing them canonicalizes
-/// an AST: two expressions that differ only in redundant parens emit identically
-/// after this pass. Mirrors the source-match matcher, which sees through parens on
-/// both sides — use it to compare selector shapes paren-insensitively.
+/// Strip only **redundant** `(expr)` parenthesization, canonicalizing a module so
+/// two ASTs differing only in incidental grouping emit identically — without
+/// changing the parse of any **load-bearing** paren.
+///
+/// Most parens are syntactically insignificant grouping (`((a + b))` ⟹ `a + b`),
+/// but some are not: an arrow's concise object-literal body (`() => ({ … })` —
+/// dropping the paren reparses the `{` as a block), a precedence-protecting paren
+/// (`(a + b) * c` — dropping it rebinds `*` over `+`; `a || (a = b())` — dropping
+/// it rebinds `||` tighter than `=`). The naive "strip every `Expr::Paren`"
+/// corrupted exactly these, the shapes <devinfra/js/debundle/SELECTOR_BUGS.md>
+/// flagged (arrow-returns-object, parenthesized sequence/assignment bodies); SWC's
+/// codegen prints an explicit `Paren` node verbatim and does **not** re-insert a
+/// required one, so dropping a load-bearing paren silently changes the parse.
+///
+/// Removing an `Expr::Paren` node never changes the AST's *meaning* (it is a pure
+/// grouping marker) — only its *rendering*. So a paren is redundant iff dropping
+/// it, emitting, and reparsing yields the same meaning tree (the AST modulo
+/// grouping, which is exactly what the fact matcher compares — `chunk_facts` is
+/// paren-transparent). We strip parens one at a time, each verified by
+/// [`meaning_tree`] equality (`eq_ignore_span`, after clearing the per-parse
+/// hygiene `SyntaxContext`s so two independent parses compare structurally); a
+/// strip whose emit fails to reparse, or reparses to a different meaning tree, is a
+/// load-bearing paren and is kept. Selectors are small, so the per-paren round-trip
+/// is cheap.
 pub fn strip_parens(module: &mut Module) {
-    struct ParenStripper;
-    impl swc_ecma_visit::VisitMut for ParenStripper {
+    loop {
+        let mut progressed = false;
+        for paren_index in 0..count_paren_exprs(module) {
+            let mut candidate = module.clone();
+            strip_nth_paren_expr(&mut candidate, paren_index);
+            // A load-bearing strip either fails to reparse (it produced invalid
+            // syntax, e.g. `a || a = b()`) or reparses to a different meaning tree
+            // (e.g. `(a + b) * c` -> `a + b * c`), so the paren is kept.
+            let Ok(emitted) = emit_module_source(&candidate) else {
+                continue;
+            };
+            let Ok(reparsed) = parse_js_module_ast("<strip-parens>", &emitted) else {
+                continue;
+            };
+            if meaning_tree(&reparsed).eq_ignore_span(&meaning_tree(&candidate)) {
+                *module = candidate;
+                progressed = true;
+                break;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+}
+
+/// The **meaning tree** of `module`: its AST with all `Expr::Paren` grouping
+/// markers removed and per-parse hygiene `SyntaxContext`s cleared, so two trees
+/// that mean the same thing modulo grouping compare equal under `eq_ignore_span`
+/// regardless of how each was parsed. Removing a `Paren` node is meaning-preserving
+/// (it is pure grouping), so this is the equivalence [`strip_parens`] preserves —
+/// the same paren-insensitive view the fact matcher (`chunk_facts`) uses. Clearing
+/// `SyntaxContext` is required because `eq_ignore_span` still compares it, and the
+/// `resolver` pass mints fresh marks on every parse.
+fn meaning_tree(module: &Module) -> Module {
+    struct Normalizer;
+    impl swc_ecma_visit::VisitMut for Normalizer {
         fn visit_mut_expr(&mut self, expr: &mut Expr) {
             expr.visit_mut_children_with(self);
             if let Expr::Paren(paren) = expr {
                 *expr = (*paren.expr).clone();
             }
         }
+        fn visit_mut_syntax_context(&mut self, ctxt: &mut swc_common::SyntaxContext) {
+            *ctxt = swc_common::SyntaxContext::empty();
+        }
     }
-    module.visit_mut_with(&mut ParenStripper);
+    let mut stripped = module.clone();
+    stripped.visit_mut_with(&mut Normalizer);
+    stripped
+}
+
+/// Number of `Expr::Paren` nodes in `module` (the strip candidates).
+fn count_paren_exprs(module: &Module) -> usize {
+    struct Counter(usize);
+    impl swc_ecma_visit::Visit for Counter {
+        fn visit_expr(&mut self, expr: &Expr) {
+            if matches!(expr, Expr::Paren(_)) {
+                self.0 += 1;
+            }
+            expr.visit_children_with(self);
+        }
+    }
+    let mut counter = Counter(0);
+    module.visit_with(&mut counter);
+    counter.0
+}
+
+/// Unwrap the `target`-th `Expr::Paren` (preorder) in place, replacing it with its
+/// inner expression. A no-op if there are fewer than `target + 1` paren nodes.
+fn strip_nth_paren_expr(module: &mut Module, target: usize) {
+    struct Stripper {
+        index: usize,
+        target: usize,
+        done: bool,
+    }
+    impl swc_ecma_visit::VisitMut for Stripper {
+        fn visit_mut_expr(&mut self, expr: &mut Expr) {
+            if self.done {
+                return;
+            }
+            if matches!(expr, Expr::Paren(_)) {
+                if self.index == self.target {
+                    if let Expr::Paren(paren) = expr {
+                        *expr = (*paren.expr).clone();
+                    }
+                    self.done = true;
+                    return;
+                }
+                self.index += 1;
+            }
+            expr.visit_mut_children_with(self);
+        }
+    }
+    module.visit_mut_with(&mut Stripper {
+        index: 0,
+        target,
+        done: false,
+    });
 }
 
 /// Number of post-comma-list-split positions a top-level body item
@@ -307,6 +417,17 @@ pub fn post_split_top_level_count(item: &ModuleItem) -> usize {
             decl_count(&export_decl.decl)
         }
         _ => 1,
+    }
+}
+
+/// The source keyword for a `VarDeclKind` (`var` / `let` / `const`).
+/// SWC's `VarDeclKind` is a foreign type, so strum can't derive this;
+/// shared here so the spelling lives in one place.
+pub fn var_decl_kind_str(kind: VarDeclKind) -> &'static str {
+    match kind {
+        VarDeclKind::Var => "var",
+        VarDeclKind::Let => "let",
+        VarDeclKind::Const => "const",
     }
 }
 
@@ -730,5 +851,82 @@ mod tests {
                 "header must stay separated from code by one blank line:\n{source}",
             );
         });
+    }
+
+    /// Round-trip `source` through parse → `strip_parens` → emit, collapsing
+    /// whitespace so the assertion is on token content, not formatting.
+    fn strip_parens_emit(source: &str) -> String {
+        with_swc_globals(|| {
+            let mut module = parse_js_module_ast("<strip-parens-test>", source).unwrap();
+            strip_parens(&mut module);
+            let emitted = emit_module_source(&module).unwrap();
+            // The emitted selector must still be valid JS (a load-bearing strip
+            // would produce a syntax error or a different tree).
+            parse_js_module_ast("<strip-parens-reparse>", &emitted)
+                .expect("strip_parens output must reparse");
+            emitted.split_whitespace().collect::<Vec<_>>().join(" ")
+        })
+    }
+
+    #[test]
+    fn strip_parens_removes_redundant_grouping() {
+        // Parens that are pure grouping are dropped; the canonical form is the
+        // paren-free expression.
+        assert_eq!(
+            strip_parens_emit("const a = ((b + c));"),
+            "const a = b + c;"
+        );
+        assert_eq!(
+            strip_parens_emit("const a = (b + c) * d;"),
+            "const a = (b + c) * d;"
+        );
+        assert_eq!(strip_parens_emit("foo((x));"), "foo(x);");
+        assert_eq!(strip_parens_emit("const a = (obj).x;"), "const a = obj.x;");
+    }
+
+    // An arrow whose concise body is a parenthesized object literal
+    // (`() => ({ … })`) must keep that paren: dropping it reparses the leading
+    // `{` as a block, silently turning the object into a block body. The old
+    // unconditional stripper did exactly that, which is why
+    // SELECTOR_BUGS.md flagged arrow-returns-object selectors as un-writable —
+    // the slack/minimizer normalization corrupted them before the matcher saw
+    // them. Redundant parens *inside* the kept object body are still dropped.
+    #[test]
+    fn strip_parens_preserves_arrow_returned_object_literal() {
+        let stripped = strip_parens_emit("const X = () => ({ k: ((1 + 2)) });");
+        assert!(
+            stripped.contains("=>({") || stripped.contains("=> ({"),
+            "arrow object body paren must survive: {stripped}",
+        );
+        assert!(
+            stripped.contains("k: 1 + 2"),
+            "redundant inner paren must be dropped: {stripped}",
+        );
+        assert!(
+            !stripped.contains("((1"),
+            "no redundant inner paren should remain: {stripped}",
+        );
+    }
+
+    // The memoized-singleton body `(instance || (instance = build()), instance)`:
+    // the outer `return (…)` paren around the sequence is redundant (a `return`
+    // statement parses a bare sequence the same way), but the inner
+    // `(instance = build())` paren is load-bearing — dropping it rebinds `||`
+    // tighter than `=`, which is a syntax error. The old unconditional stripper
+    // dropped both and corrupted the body; SELECTOR_BUGS.md flagged this and the
+    // esbuild decorate-helper as un-pinnable for it.
+    #[test]
+    fn strip_parens_preserves_precedence_protecting_assignment_paren() {
+        let stripped = strip_parens_emit(
+            "function g() { return (instance || (instance = build()), instance); }",
+        );
+        assert!(
+            stripped.contains("(instance = build())"),
+            "the precedence-protecting inner assignment paren must survive: {stripped}",
+        );
+        assert!(
+            stripped.contains("return instance ||"),
+            "the redundant outer sequence paren must be dropped: {stripped}",
+        );
     }
 }

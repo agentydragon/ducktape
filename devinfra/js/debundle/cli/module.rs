@@ -14,10 +14,12 @@
 //! and exits non-zero without writing any file. `--no-verify` skips
 //! the gate; `--dry-run` runs the gate but doesn't write.
 //!
-//! The YAML splice itself operates on the generic `serde_yaml::Value`
-//! shape so the operation never has to understand binding semantics,
-//! only the `members:` and `anonymous_statements:` sequences that the
-//! spec authoring format publishes.
+//! The splice deserializes the target and each source into the typed
+//! [`spec::LogicalModule`] schema, concatenates their `members`,
+//! `anonymous_statements`, and `binding_groups`, composes the `comment` /
+//! `note` blocks, and reserializes. `deny_unknown_fields` makes that
+//! round-trip lossless, so the operation never navigates a raw
+//! `serde_yaml::Value` tree.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -26,11 +28,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::OutputFormat;
-use serde_yaml::{Mapping, Value};
+use spec::LogicalModule;
 
 use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
-use crate::yaml_edit::{read_yaml, write_yaml_body_if_semantic_changed};
+use crate::yaml_edit::write_yaml_body_if_semantic_changed;
 
 /// Top-level `debundle module ...` argument shape.
 #[derive(Debug, ClapArgs)]
@@ -291,13 +293,13 @@ fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Resul
         .iter()
         .map(|p| resolve_module_file(modules_root, p))
         .collect();
-    // Confirm every source + the target parse as YAML. This catches
-    // syntactically broken files before any write would happen in a
-    // non-dry-run. A missing target is valid: the apply path will
+    // Confirm every source + the target deserialize as the typed module
+    // schema. This catches malformed files before any write would happen
+    // in a non-dry-run. A missing target is valid: the apply path will
     // create it from the merged source claims.
-    let _ = read_yaml_or_empty(&target_abs)?;
+    read_module_or_default(&target_abs)?;
     for src in &source_abs {
-        let _ = read_yaml(src)?;
+        read_module(src)?;
     }
     Ok(MergeSummary {
         target: target_abs,
@@ -324,15 +326,14 @@ pub fn merge_modules(
         .map(|p| resolve_module_file(modules_root, p))
         .collect();
 
-    let mut target_doc = read_yaml_or_empty(&target_abs)?;
-    let mut existing_names = collect_member_names(&target_doc, &target_abs)?;
+    let mut target_module = read_module_or_default(&target_abs)?;
+    let mut existing_names = binding_names(&target_module, &target_abs)?;
     let mut merged_source_labels: Vec<String> = Vec::new();
     let mut merged_comments: Vec<String> = Vec::new();
 
     for src in &source_abs {
-        let src_doc = read_yaml(src)?;
-        let src_names = collect_member_names(&src_doc, src)?;
-        for name in &src_names {
+        let src_module = read_module(src)?;
+        for name in binding_names(&src_module, src)? {
             if !existing_names.insert(name.clone()) {
                 bail!(
                     "duplicate member name \"{}\" in {} and {}",
@@ -343,58 +344,59 @@ pub fn merge_modules(
             }
         }
         let label = display_relative(modules_root, src);
-        splice_sequence(&mut target_doc, "members", &src_doc, src)?;
-        splice_sequence(&mut target_doc, "anonymous_statements", &src_doc, src)?;
-        // `binding_groups:` entries are claims just like `members:` —
-        // deleting the source file without carrying them would
-        // silently unclaim their owners on the next `debundle run`.
-        splice_sequence(&mut target_doc, "binding_groups", &src_doc, src)?;
         // Source module comments concatenate into the target's
         // module-level `comment:` with a `--- from <source>:` divider
         // (docs/cli.md § "Comments").
-        if let Some(comment) = src_doc
-            .as_mapping()
-            .and_then(|m| m.get(Value::String("comment".into())))
-            .and_then(Value::as_str)
+        if let Some(comment) = src_module
+            .comment
+            .as_deref()
+            .map(str::trim_end)
             .filter(|comment| !comment.trim().is_empty())
         {
-            merged_comments.push(format!("--- from {label}:\n{}", comment.trim_end()));
+            merged_comments.push(format!("--- from {label}:\n{comment}"));
         }
+        // `members:`, `anonymous_statements:`, and `binding_groups:` are all
+        // claims; dropping any of them with the deleted source would silently
+        // unclaim their owners on the next `debundle run`.
+        target_module.members.extend(src_module.members);
+        target_module
+            .anonymous_statements
+            .extend(src_module.anonymous_statements);
+        target_module
+            .binding_groups
+            .extend(src_module.binding_groups);
         merged_source_labels.push(label);
     }
 
     if !merged_comments.is_empty() {
-        let mapping = target_doc
-            .as_mapping_mut()
-            .ok_or_else(|| anyhow!("target YAML is not a mapping; cannot merge comments"))?;
-        let combined: Vec<String> = mapping
-            .get(Value::String("comment".into()))
-            .and_then(Value::as_str)
-            .map(|existing| existing.trim_end().to_string())
-            .into_iter()
-            .chain(merged_comments)
-            .collect();
-        mapping.insert(
-            Value::String("comment".into()),
-            Value::String(combined.join("\n")),
-        );
+        target_module.comment = Some(compose_block(
+            target_module.comment.as_deref(),
+            merged_comments,
+        ));
     }
 
-    let mut body = String::new();
+    // Provenance lands in the module-level `note:` field, not a `#` YAML
+    // comment: the rewriters (`bindings assign`, `synthesize --apply`,
+    // `modules merge`) re-emit the YAML and drop every `#` comment, so a `#`
+    // provenance line would be silently lost on the next automated edit
+    // (README.md § "Comments"). `note:` is non-emitting and round-trips.
     if !merged_source_labels.is_empty() {
-        body.push_str("# merged from: ");
-        body.push_str(&merged_source_labels.join(", "));
-        body.push('\n');
+        let provenance = format!("merged from: {}", merged_source_labels.join(", "));
+        target_module.note = Some(compose_block(
+            target_module.note.as_deref(),
+            std::iter::once(provenance),
+        ));
     }
-    body.push_str(
-        &serde_yaml::to_string(&target_doc)
-            .with_context(|| format!("serializing merged {}", target_abs.display()))?,
-    );
+
+    let body = serde_yaml::to_string(&target_module)
+        .with_context(|| format!("serializing merged {}", target_abs.display()))?;
+    let doc = serde_yaml::to_value(&target_module)
+        .with_context(|| format!("re-encoding merged {}", target_abs.display()))?;
     if let Some(parent) = target_abs.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
-    write_yaml_body_if_semantic_changed(&target_abs, &target_doc, body)?;
+    write_yaml_body_if_semantic_changed(&target_abs, &doc, body)?;
 
     for src in &source_abs {
         fs::remove_file(src)
@@ -455,9 +457,9 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let mut non_empty: Vec<(PathBuf, usize, bool)> = Vec::new();
     let mut all_empty = true;
     for p in &paths_abs {
-        let doc = read_yaml(p)?;
-        let member_count = sequence_field(&doc, "members").map_or(0, Vec::len);
-        let has_anon = sequence_field(&doc, "anonymous_statements").is_some_and(|s| !s.is_empty());
+        let module = read_module(p)?;
+        let member_count = module.members.len();
+        let has_anon = !module.anonymous_statements.is_empty();
         if member_count > 0 || has_anon {
             all_empty = false;
             non_empty.push((p.clone(), member_count, has_anon));
@@ -570,11 +572,20 @@ fn resolve_module_file(root: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn read_yaml_or_empty(path: &Path) -> Result<Value> {
+/// Read a module YAML file into the typed [`LogicalModule`]. `deny_unknown_fields`
+/// makes this reject malformed modules up front — the same schema the pipeline loads.
+fn read_module(path: &Path) -> Result<LogicalModule> {
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+}
+
+/// Like [`read_module`] but a missing file is the empty module — the merge
+/// apply path creates the target from the merged source claims.
+fn read_module_or_default(path: &Path) -> Result<LogicalModule> {
     if path.exists() {
-        read_yaml(path)
+        read_module(path)
     } else {
-        Ok(Value::Mapping(Mapping::new()))
+        Ok(LogicalModule::default())
     }
 }
 
@@ -584,19 +595,20 @@ fn display_relative(root: &Path, abs: &Path) -> String {
         .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
 }
 
-fn collect_member_names(doc: &Value, path: &Path) -> Result<BTreeSet<String>> {
+/// Minified binding names pinned by `selector.binding.name` across a module's
+/// members. Members selected structurally (`source_match`, `cross_ref`, …)
+/// carry no `binding.name` and don't participate in the collision check.
+/// Errors on an intra-file duplicate.
+fn binding_names(module: &LogicalModule, path: &Path) -> Result<BTreeSet<String>> {
     let mut names = BTreeSet::new();
-    let Some(members) = sequence_field(doc, "members") else {
-        return Ok(names);
-    };
-    for (idx, member) in members.iter().enumerate() {
-        let Some(name) = member_name(member) else {
+    for (idx, member) in module.members.iter().enumerate() {
+        let Some(binding) = member.selector.binding.as_ref() else {
             continue;
         };
-        if !names.insert(name.clone()) {
+        if !names.insert(binding.name.clone()) {
             return Err(anyhow!(
                 "duplicate member name \"{}\" within {} (entry {})",
-                name,
+                binding.name,
                 path.display(),
                 idx
             ));
@@ -605,64 +617,22 @@ fn collect_member_names(doc: &Value, path: &Path) -> Result<BTreeSet<String>> {
     Ok(names)
 }
 
-fn member_name(member: &Value) -> Option<String> {
-    let mapping = member.as_mapping()?;
-    let selector = mapping
-        .get(Value::String("selector".into()))?
-        .as_mapping()?;
-    let binding = selector
-        .get(Value::String("binding".into()))?
-        .as_mapping()?;
-    let name = binding.get(Value::String("name".into()))?.as_str()?;
-    Some(name.to_string())
-}
-
-fn sequence_field<'a>(doc: &'a Value, key: &str) -> Option<&'a Vec<Value>> {
-    doc.as_mapping()
-        .and_then(|m| m.get(Value::String(key.into())))
-        .and_then(Value::as_sequence)
-}
-
-fn splice_sequence(
-    target: &mut Value,
-    key: &str,
-    source_doc: &Value,
-    source_path: &Path,
-) -> Result<()> {
-    let Some(extra) = sequence_field(source_doc, key) else {
-        return Ok(());
-    };
-    if extra.is_empty() {
-        return Ok(());
-    }
-    let extra = extra.clone();
-    let mapping = target.as_mapping_mut().ok_or_else(|| {
-        anyhow!(
-            "target YAML is not a mapping; cannot splice \"{}\" from {}",
-            key,
-            source_path.display()
-        )
-    })?;
-    let entry = mapping
-        .entry(Value::String(key.into()))
-        .or_insert_with(|| Value::Sequence(Vec::new()));
-    if entry.is_null() {
-        *entry = Value::Sequence(Vec::new());
-    }
-    let seq = entry.as_sequence_mut().ok_or_else(|| {
-        anyhow!(
-            "target field \"{}\" is not a sequence; cannot splice from {}",
-            key,
-            source_path.display()
-        )
-    })?;
-    seq.extend(extra);
-    Ok(())
+/// Compose an optional existing text block with appended blocks, one per line,
+/// trimming trailing whitespace on the existing block. Used for the merged
+/// `comment:` and the `merged from:` `note:` provenance.
+fn compose_block(existing: Option<&str>, additions: impl IntoIterator<Item = String>) -> String {
+    existing
+        .map(|existing| existing.trim_end().to_string())
+        .into_iter()
+        .chain(additions)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
     use tempfile::TempDir;
 
     fn write(root: &Path, rel: &str, body: &str) {
@@ -671,6 +641,22 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, body).unwrap();
+    }
+
+    /// Minified `selector.binding.name` of each member in the serialized
+    /// merge output, in order. Asserts the merge carried + ordered members.
+    fn member_names(doc: &Value) -> Vec<String> {
+        doc["members"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                m["selector"]["binding"]["name"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
     }
 
     #[test]
@@ -706,23 +692,29 @@ mod tests {
         assert!(!root.join("src2.yaml").exists());
 
         let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-        assert!(merged.contains("# merged from: src1.yaml, src2.yaml"));
+        assert!(!merged.contains("# merged from"), "merged={merged}");
         let doc: Value = serde_yaml::from_str(&merged).unwrap();
-        let names: Vec<String> = doc["members"]
-            .as_sequence()
-            .unwrap()
-            .iter()
-            .map(|m| member_name(m).unwrap())
-            .collect();
-        assert_eq!(names, vec!["a", "b", "c"]);
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: src1.yaml, src2.yaml"),
+            "merged={merged}",
+        );
+        assert_eq!(member_names(&doc), vec!["a", "b", "c"]);
     }
 
     #[test]
-    fn merge_with_semantically_empty_source_preserves_target_formatting() {
+    fn merge_records_provenance_note_and_preserves_members() {
+        // Even a member-empty source records `merged from:` provenance
+        // in the target's module-level `note:` (durable, non-emitting).
+        // The merge necessarily reserializes the target since `note:`
+        // is now real structure; the member content must round-trip.
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let target = "# hand formatted\nmembers: [ { selector: { binding: { name: a } } } ]\n";
-        write(root, "target.yaml", target);
+        write(
+            root,
+            "target.yaml",
+            "members: [ { selector: { binding: { name: a } } } ]\n",
+        );
         write(root, "empty.yaml", "members: []\n");
 
         let summary =
@@ -730,10 +722,16 @@ mod tests {
 
         assert_eq!(summary.merged_sources, vec![root.join("empty.yaml")]);
         assert!(!root.join("empty.yaml").exists());
+        let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+        let doc: Value = serde_yaml::from_str(&merged).unwrap();
         assert_eq!(
-            fs::read_to_string(root.join("target.yaml")).unwrap(),
-            target
+            doc["note"].as_str(),
+            Some("merged from: empty.yaml"),
+            "merged={merged}",
         );
+        assert_eq!(member_names(&doc), vec!["a"]);
+        // No `#` provenance comment is emitted anymore.
+        assert!(!merged.contains("# merged from"), "merged={merged}");
     }
 
     #[test]
@@ -765,7 +763,12 @@ mod tests {
         );
         assert!(!root.join("ai/models/pricing/lookup.yaml").exists());
         let merged = fs::read_to_string(root.join("ai/models/pricing.yaml")).unwrap();
-        assert!(merged.contains("# merged from: ai/models/pricing/lookup.yaml"));
+        let doc: Value = serde_yaml::from_str(&merged).unwrap();
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: ai/models/pricing/lookup.yaml"),
+            "merged={merged}",
+        );
     }
 
     #[test]
@@ -795,15 +798,13 @@ mod tests {
         assert!(!root.join("src/one.yaml").exists());
         assert!(!root.join("src/two.yaml").exists());
         let merged = fs::read_to_string(root.join("new/nested/target.yaml")).unwrap();
-        assert!(merged.contains("# merged from: src/one.yaml, src/two.yaml"));
         let doc: Value = serde_yaml::from_str(&merged).unwrap();
-        let names: Vec<String> = doc["members"]
-            .as_sequence()
-            .unwrap()
-            .iter()
-            .map(|m| member_name(m).unwrap())
-            .collect();
-        assert_eq!(names, vec!["a", "b"]);
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: src/one.yaml, src/two.yaml"),
+            "merged={merged}",
+        );
+        assert_eq!(member_names(&doc), vec!["a", "b"]);
     }
 
     #[test]
@@ -866,22 +867,22 @@ mod tests {
         write(
             root,
             "target.yaml",
-            "members: []\nanonymous_statements:\n  - { kind: A }\n",
+            "members: []\nanonymous_statements:\n  - { match: 'sideEffectA();' }\n",
         );
         write(
             root,
             "src.yaml",
-            "members: []\nanonymous_statements:\n  - { kind: B }\n",
+            "members: []\nanonymous_statements:\n  - { match: 'sideEffectB();' }\n",
         );
         merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
         let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
         let doc: Value = serde_yaml::from_str(&merged).unwrap();
-        let kinds: Vec<String> = doc["anonymous_statements"]
+        let matches: Vec<String> = doc["anonymous_statements"]
             .as_sequence()
             .unwrap()
             .iter()
-            .map(|s| s["kind"].as_str().unwrap().to_string())
+            .map(|s| s["match"].as_str().unwrap().to_string())
             .collect();
-        assert_eq!(kinds, vec!["A", "B"]);
+        assert_eq!(matches, vec!["sideEffectA();", "sideEffectB();"]);
     }
 }

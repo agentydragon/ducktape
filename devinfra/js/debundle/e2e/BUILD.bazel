@@ -107,6 +107,7 @@ _STANDARD_E2E_DEPS = [
         "selector_diagnostics_report_test",
         "spec_validate_cli_test",
         "syntactic_holes_test",
+        "cross_ref_lowering_test",
     ]
 ]
 
@@ -198,6 +199,152 @@ rust_test(
         "@crates//:serde",
         "@crates//:serde_json",
         "@rules_rust//tools/runfiles",
+    ],
+)
+
+# Bootstrap shadow gate: the in-process Datalog selector solver
+# (`:selector_solve`) must reproduce the production binding-name resolver
+# (`peel::resolve_binding_owners`) on the minified-name surface, over an
+# `owner_graph.json` the real pipeline emits. The equivalence check the
+# relational-selector bootstrap rests on; see
+# plans/selector_constraint_model.md.
+rust_test(
+    name = "selector_solve_shadow_test",
+    srcs = ["selector_solve_shadow_test.rs"],
+    crate_root = "selector_solve_shadow_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:selector_solve",
+        "@crates//:serde_json",
+    ],
+)
+
+# The @Name cross-reference primitive (selector_solve's referencer_for /
+# alias_owner_for) must resolve the metaNode debt shapes -- a shapeless
+# delegator pinned by what it calls, a re-export pinned by what it aliases --
+# on an owner_graph.json the real pipeline emits, not a synthetic EDB. P4
+# step 1; see plans/selector_constraint_model.md.
+rust_test(
+    name = "selector_solve_cross_reference_test",
+    srcs = ["selector_solve_cross_reference_test.rs"],
+    crate_root = "selector_solve_cross_reference_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:selector_solve",
+    ],
+)
+
+# The `reads_member` primitive (P4 step 2) through the full lowering pipeline:
+# a member pinned by the member it reads (`obj.X`) — the stable identity of the
+# ~72 TS codegen helpers — resolves to the correct binding, lands in the right
+# module, and runs under Node, with fail-closed ambiguous/zero/unknown-object
+# cases. See plans/selector_resolver_endpoint.md Phase X2.
+rust_test(
+    name = "reads_member_lowering_test",
+    srcs = ["reads_member_lowering_test.rs"],
+    crate_root = "reads_member_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+    ],
+)
+
+# The `member_of_module` primitive (P4 step 3) through the full lowering
+# pipeline: the first use-site selector — a member pinned by how it is consumed
+# (`mod.X`, `mod` an imported binding) — resolves to the correct binding, lands
+# in the right module, and runs under Node, including the empty-class/superclass
+# disambiguation and fail-closed ambiguous/zero/non-imported cases. See
+# plans/selector_resolver_endpoint.md Phase X3.
+rust_test(
+    name = "member_of_module_lowering_test",
+    srcs = ["member_of_module_lowering_test.rs"],
+    crate_root = "member_of_module_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+    ],
+)
+
+# The `passed_to_call` primitive (the `resolves_to`-of-argument edge) through the
+# full lowering pipeline: a member pinned by the target being passed as an
+# argument to a call of a known callee (`registry.register(Target)`) — the
+# registry-distinguished empty class the use-site primitives cannot reach —
+# resolves to the correct binding, lands in the right module, and runs under Node,
+# including object / arg-index disambiguation and fail-closed
+# ambiguous/zero/unknown-object/non-identifier cases.
+rust_test(
+    name = "passed_to_call_lowering_test",
+    srcs = ["passed_to_call_lowering_test.rs"],
+    crate_root = "passed_to_call_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+    ],
+)
+
+# `makes_decorate_call` member selectors end-to-end: the inverse-direction sibling
+# of `passed_to_call`. Pins the byte-identical esbuild `__decorate` helper copies by
+# the class each decorates (`__decorate([d], @Class.prototype, "m")`), retiring their
+# fragile name-pins. Covers class-anchored resolution, two-copy disambiguation by
+# class + member literal, and kind narrowing — emitted tree runs under Node with
+# decoration semantics intact.
+rust_test(
+    name = "makes_decorate_call_lowering_test",
+    srcs = ["makes_decorate_call_lowering_test.rs"],
+    crate_root = "makes_decorate_call_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+    ],
+)
+
+# `intrinsic_alias` member selectors end-to-end: the follow-on companion of
+# `makes_decorate_call`. Pins the esbuild decorate-trio's two intrinsic-alias
+# companions (`var X = Object.defineProperty` / `getOwnPropertyDescriptor`) by the
+# helper that references them (`referenced_by: @<decorateHelper>`) + the intrinsic
+# property, retiring their fragile name-pins. Covers helper-referenced resolution,
+# two-copy disambiguation by referencer, property narrowing, and fail-closed
+# zero/ambiguous/shadowed-Object cases — emitted tree runs under Node with
+# decoration semantics intact.
+rust_test(
+    name = "intrinsic_alias_lowering_test",
+    srcs = ["intrinsic_alias_lowering_test.rs"],
+    crate_root = "intrinsic_alias_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
     ],
 )
 

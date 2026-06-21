@@ -30,11 +30,51 @@ pub(super) struct AnonymousStatementRequest {
     pub(super) comment: Option<String>,
 }
 
+/// A relational member selector: pins a member's target by a re-minify-invariant
+/// relation to a separately-identified entity, not by the target's own minified
+/// name. At most one relation can apply to a member, so the variants are mutually
+/// exclusive (an enum, not sibling `Option`s). Each is resolved after the chunk's
+/// owner graph is built — the relational facts live there / are derived from the
+/// chunk AST and joined to it — by the matching post-Stage-A pass in
+/// `materialize::*`. A member carrying one has an empty `binding` and `None`
+/// `source_match` until its pass resolves the target into the plan.
+#[derive(Debug, Clone)]
+pub(super) enum RelationalSelector {
+    /// `@Name` cross-reference: a relational edge to a separately-identified anchor
+    /// member (`materialize::cross_ref`, resolved against the anchor's already-
+    /// resolved binding).
+    CrossRef(spec::CrossRefTarget),
+    /// The member it reads (`obj.X`); `materialize::reads_member`, resolved against
+    /// the owner-graph `reads_member` EDB.
+    ReadsMember(spec::ReadsMemberTarget),
+    /// **Use-site** consumption (`mod.X`, `mod` an imported binding → its source
+    /// module); `materialize::member_of_module`, resolved against the owner-graph
+    /// `member_of_module` EDB joined to the import table.
+    MemberOfModule(spec::MemberOfModuleTarget),
+    /// The `resolves_to`-of-argument primitive: passed as an argument to a call of a
+    /// known callee (`registry.register(Target)`); `materialize::passed_to_call`.
+    PassedToCall(spec::PassedToCallTarget),
+    /// The inverse-direction sibling of `PassedToCall`: the **callee** of an esbuild
+    /// `__decorate`-style application on a pinned class (`H([d], @Class.prototype,
+    /// "m")`); `materialize::makes_decorate_call`.
+    MakesDecorateCall(spec::MakesDecorateCallTarget),
+    /// The follow-on companion of `MakesDecorateCall`: an `Object.<property>`
+    /// intrinsic alias (`var X = Object.defineProperty`) referenced by a known
+    /// helper (`referenced_by: @<decorateHelper>`); `materialize::intrinsic_alias`,
+    /// the referencer edge riding the owner graph's own `references` edge.
+    IntrinsicAlias(spec::IntrinsicAliasTarget),
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct MemberRequest {
     pub(super) binding: String,
     pub(super) export_name: String,
     pub(super) source_match: Option<spec::AnonymousStatementSelector>,
+    /// The relational selector pinning this member's target, if any. Mutually
+    /// exclusive with `binding`/`source_match`: a member carrying one has an empty
+    /// `binding` until its post-Stage-A pass resolves the target. See
+    /// [`RelationalSelector`].
+    pub(super) relational: Option<RelationalSelector>,
     /// When `true`, the member's source is an import specifier in the
     /// source chunk (not a top-level decl). The materializer looks up
     /// the import statement by `binding` in the chunk body and rewrites
@@ -74,9 +114,57 @@ pub(super) struct MemberRequest {
 }
 
 impl MemberRequest {
+    /// Whether this member is pinned by a relational selector (and so resolves in a
+    /// post-Stage-A pass, with an empty `binding` until then).
+    pub(super) fn is_relational(&self) -> bool {
+        self.relational.is_some()
+    }
+
+    pub(super) fn cross_ref(&self) -> Option<&spec::CrossRefTarget> {
+        match &self.relational {
+            Some(RelationalSelector::CrossRef(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(super) fn reads_member(&self) -> Option<&spec::ReadsMemberTarget> {
+        match &self.relational {
+            Some(RelationalSelector::ReadsMember(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(super) fn member_of_module(&self) -> Option<&spec::MemberOfModuleTarget> {
+        match &self.relational {
+            Some(RelationalSelector::MemberOfModule(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(super) fn passed_to_call(&self) -> Option<&spec::PassedToCallTarget> {
+        match &self.relational {
+            Some(RelationalSelector::PassedToCall(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(super) fn makes_decorate_call(&self) -> Option<&spec::MakesDecorateCallTarget> {
+        match &self.relational {
+            Some(RelationalSelector::MakesDecorateCall(target)) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(super) fn intrinsic_alias(&self) -> Option<&spec::IntrinsicAliasTarget> {
+        match &self.relational {
+            Some(RelationalSelector::IntrinsicAlias(target)) => Some(target),
+            _ => None,
+        }
+    }
+
     pub(super) fn resolve_source_match(
         &mut self,
-        runtime_module: &Module,
+        resolver: &dyn source_match::SelectorResolver,
         request_id: &str,
         cache: &mut BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
     ) -> Result<()> {
@@ -86,12 +174,7 @@ impl MemberRequest {
         let resolved = match cache.get(&selector) {
             Some(resolved) => resolved.clone(),
             None => {
-                let resolved = source_match::resolve_member_binding(
-                    runtime_module,
-                    request_id,
-                    &self.export_name,
-                    &selector,
-                )?;
+                let resolved = resolver.resolve_member(request_id, &self.export_name, &selector)?;
                 cache.insert(selector, resolved.clone());
                 resolved
             }
@@ -283,47 +366,122 @@ pub(super) fn build_members(
         .iter()
         .map(|m| {
             let selected = m.selector.selected()?;
-            let (binding, export_name, source_match, is_import_specifier) = match selected {
-                spec::MemberSelectorSpec::Binding(binding) => {
-                    let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
-                    (
-                        binding.name,
-                        export_name,
-                        None,
-                        matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)),
+            let kind_label = selected.selector_kind_label();
+            // A relational / source-match member's public export name can't default
+            // to a binding name — the binding isn't known until the selector
+            // resolves — so `name:` is required. The kind label colors the message.
+            let require_name = || {
+                m.name.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "logical_module {request_id}: members[].selector.{kind_label} requires \
+                         `name:` because the public export name cannot default to a binding name \
+                         until the selector is resolved"
                     )
-                }
-                spec::MemberSelectorSpec::SourceMatch(selector) => {
-                    let export_name = m.name.clone().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "logical_module {request_id}: members[].selector.source_match \
-                             requires `name:` because the public export name cannot default \
-                             to a binding name until the selector is resolved"
-                        )
-                    })?;
-                    (String::new(), export_name, Some(selector), false)
-                }
+                })
             };
-            let claim_origin = match &m.selector.source_match {
-                Some(selector) => match selector.target_binding.as_deref() {
-                    Some(target) => format!(
-                        "members[].selector.source_match target_binding `{target}` as `{}`",
-                        m.name.as_deref().unwrap_or("<unnamed>")
-                    ),
+            let (binding, export_name, source_match, relational, is_import_specifier) =
+                match selected {
+                    spec::MemberSelectorSpec::Binding(binding) => {
+                        let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
+                        let is_import_specifier =
+                            matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier));
+                        (binding.name, export_name, None, None, is_import_specifier)
+                    }
+                    spec::MemberSelectorSpec::SourceMatch(selector) => {
+                        (String::new(), require_name()?, Some(selector), None, false)
+                    }
+                    spec::MemberSelectorSpec::CrossRef(target) => {
+                        let relational = RelationalSelector::CrossRef(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                    spec::MemberSelectorSpec::ReadsMember(target) => {
+                        let relational = RelationalSelector::ReadsMember(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                    spec::MemberSelectorSpec::MemberOfModule(target) => {
+                        let relational = RelationalSelector::MemberOfModule(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                    spec::MemberSelectorSpec::PassedToCall(target) => {
+                        let relational = RelationalSelector::PassedToCall(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                    spec::MemberSelectorSpec::MakesDecorateCall(target) => {
+                        let relational = RelationalSelector::MakesDecorateCall(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                    spec::MemberSelectorSpec::IntrinsicAlias(target) => {
+                        let relational = RelationalSelector::IntrinsicAlias(target);
+                        (
+                            String::new(),
+                            require_name()?,
+                            None,
+                            Some(relational),
+                            false,
+                        )
+                    }
+                };
+            // `source_match` with an explicit `target_binding` and a plain `binding`
+            // get richer origins; every other (relational / bare source_match) form
+            // is just its selector-kind label.
+            let claim_origin = if relational.is_some() {
+                format!(
+                    "members[].selector.{kind_label} as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                )
+            } else {
+                match &m.selector.source_match {
+                    Some(selector) => match selector.target_binding.as_deref() {
+                        Some(target) => format!(
+                            "members[].selector.source_match target_binding `{target}` as `{}`",
+                            m.name.as_deref().unwrap_or("<unnamed>")
+                        ),
+                        None => format!(
+                            "members[].selector.source_match as `{}`",
+                            m.name.as_deref().unwrap_or("<unnamed>")
+                        ),
+                    },
                     None => format!(
-                        "members[].selector.source_match as `{}`",
-                        m.name.as_deref().unwrap_or("<unnamed>")
+                        "members[].selector.binding as `{}`",
+                        m.name.as_deref().unwrap_or(&binding)
                     ),
-                },
-                None => format!(
-                    "members[].selector.binding as `{}`",
-                    m.name.as_deref().unwrap_or(&binding)
-                ),
+                }
             };
             Ok(MemberRequest {
                 binding,
                 export_name,
                 source_match,
+                relational,
                 is_import_specifier,
                 purity: m.purity,
                 effect: m.effect,
@@ -342,6 +500,7 @@ pub(super) fn build_members(
                 binding: String::new(),
                 export_name: expanded.export_name,
                 source_match: Some(expanded.selector),
+                relational: None,
                 is_import_specifier: false,
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,

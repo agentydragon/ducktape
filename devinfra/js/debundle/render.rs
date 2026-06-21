@@ -310,9 +310,11 @@ fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSp
 
 /// Prune the elements of an array literal, holing each non-anchor element to
 /// `ANYTHING` (an arity-exact `EXPR` hole) and recursing into the ones that
-/// carry an anchor. The matcher matches array elements element-wise (there is no
-/// array list hole, unlike `ARGS` for call arguments), so the holed array keeps
-/// the same length; elisions and spreads are preserved verbatim.
+/// carry an anchor. This pass holes element-wise (arity-exact), so the holed
+/// array keeps the same length; elisions and spreads are preserved verbatim.
+/// (The matcher does support an `ARRAY_ELEMENTS` run hole that would absorb a
+/// variable-length element run; emitting it from the minimizer instead of the
+/// arity-exact form is a separate, not-yet-implemented step.)
 fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
     let mut holed = array.clone();
     holed.elems = array

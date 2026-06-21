@@ -1,0 +1,59 @@
+--------------------------------------------------------------------------------
+Profile data file '/tmp/cg/callgrind.B.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache:
+D1 cache:
+LL cache:
+Timerange: Basic block 0 - 7426267859
+Trigger: Program termination
+Profiled target:  /home/user/ducktape/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle run --spec /tmp/synth62/spec_sourcematch.json (PID 23382, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       95
+Include dirs:
+User annotated:
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir
+--------------------------------------------------------------------------------
+34,948,137,981 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                      file:function
+--------------------------------------------------------------------------------
+5,285,889,234 (15.12%)  ???:selector_match::unsupported_needle_construct [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+4,242,689,529 (12.14%)  ???:selector_match::homo'2 [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+3,856,446,171 (11.03%)  ???:selector_match::is_run_hole_carrier [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+3,474,941,631 ( 9.94%)  ./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S:__memcmp_avx2_movbe [/usr/lib/x86_64-linux-gnu/libc.so.6]
+3,359,566,480 ( 9.61%)  ???:source_match_holes::hole_name_for [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+2,224,181,997 ( 6.36%)  ???:selector_match::homo [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+1,617,673,914 ( 4.63%)  ???:selector_match::shorthand_property_view [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+1,139,538,221 ( 3.26%)  ???:selector_match::match_children [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+1,086,070,908 ( 3.11%)  ???:selector_match::match_children'2 [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  916,460,957 ( 2.62%)  ???:selector_match::regex_predicate_pattern [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  757,194,654 ( 2.17%)  ???:<selector_match::Bindings as core::default::Default>::default [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  715,258,956 ( 2.05%)  ???:selector_match::is_single_node_hole [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  701,383,841 ( 2.01%)  ./malloc/./malloc/malloc.c:_int_free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  598,712,052 ( 1.71%)  ???:selector_match::matches_indexed [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  541,355,406 ( 1.55%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  477,858,718 ( 1.37%)  ???:<hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  418,670,681 ( 1.20%)  ???:source_match::datalog_resolver::member_matches_var_declarator [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  332,610,133 ( 0.95%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  296,334,045 ( 0.85%)  ???:selector_match::Bindings::match_binding [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  282,452,252 ( 0.81%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  228,919,930 ( 0.66%)  ???:selector_match::Bindings::resolve_unbound [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  152,384,319 ( 0.44%)  ???:serde_json::ser::format_escaped_str [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  135,643,463 ( 0.39%)  ???:core::ops::function::FnOnce::call_once [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  105,284,275 ( 0.30%)  ???:core::ops::function::impls::<impl core::ops::function::FnMut<A> for &mut F>::call_mut [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+  104,599,254 ( 0.30%)  ???:__rustc::__rdl_alloc [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+   93,277,739 ( 0.27%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   84,800,292 ( 0.24%)  ./malloc/./malloc/malloc.c:malloc_consolidate [/usr/lib/x86_64-linux-gnu/libc.so.6]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./malloc/./malloc/malloc.c
+  ./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S
+  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S
