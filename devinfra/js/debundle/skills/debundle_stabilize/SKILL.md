@@ -45,8 +45,10 @@ The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`
 
 ## The toolkit
 
-Four debundler subcommands, all reading the chunk + `modules/` tree directly (no
-pipeline build or owner graph needed for this loop). Treat the **minimizer as a
+Four debundler subcommands. The first three (`selector-debt`,
+`synthesize-selectors`, `match-selector`) read the chunk + `modules/` tree directly
+— no pipeline build, no owner graph. The fourth (`spec validate`) is the whole-spec
+gate and needs the full pipeline (see Setup). Treat the **minimizer as a
 first-class instrument**, not a last resort:
 
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
@@ -66,7 +68,8 @@ first-class instrument**, not a last resort:
 - **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
   unique-or-not, the colliding matches, and over-pin slack.
 - **`spec validate`** — the whole-spec keep-going sweep (`no-match` / `ambiguous` /
-  `duplicate-claim`).
+  `duplicate-claim`). Unlike the other three this runs the full pipeline (Bazel
+  `:debundle`, package roots), not the standalone binary — see Setup.
 
 Division of labor: the minimizer makes a selector **compact and unique today** by
 mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
@@ -82,35 +85,69 @@ near-ambiguous structural selectors from its `--source-file` pass.
 
 ## Setup
 
-Build the debundler and export the standard env vars (see `cli_basics.md` above for
-`DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` / `DEBUNDLE_OUT`). Use a per-agent
-Bazel output base under `/tmp` to avoid lock contention, exactly as the other
-debundle skills do. In a consuming repo the CLI label is `@ducktape//...`; inside
-the debundler repo, drop the prefix.
+The per-selector loop is **binary-only**: `selector-debt`, `synthesize-selectors`,
+and `match-selector` read the chunk + the `modules/` tree directly — no pipeline
+build, no owner graph, no `DEBUNDLE_GRAPH`/`DEBUNDLE_OUT`. A built `debundle` binary
+(or the pinned released one) plus the upstream snapshot is their whole toolchain.
+Export `DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` (see `cli_basics.md` above). Use a
+per-agent Bazel output base under `/tmp` to avoid lock contention, exactly as the
+other debundle skills do. In a consuming repo the CLI label is `@ducktape//...`;
+inside the debundler repo, drop the prefix.
+
+The whole-spec gate is the exception. `spec validate` (and `debundle run`) is the
+realizability/cycle pipeline in dry-run, so it needs the full `debundle` **pipeline
+target** — the Bazel `:debundle` target with its package roots and a repo-root
+source root — not the standalone binary against the snapshot dir. Run it through
+Bazel. On NixOS, `--server_javabase=…` is a **startup** option: it must precede
+`build`, not follow it.
 
 ## The worklist
 
-Rank fragile pins, most rebuild-fragile first:
+The backlog has two _enumerable_ halves. Run both before picking work — the second
+is invisible by default yet roughly as large as the first, so a top-down reader who
+skips it works only half the surface.
+
+**1. Name pins (default census).** Members still selected by their minified
+`binding.name`, most rebuild-fragile first:
 
 ```bash
 debundle spec selector-debt --modules "$DEBUNDLE_MODULES" --min-score 70 --format json
 ```
 
-The name-only section lists members still selected by their minified
-`binding.name`. With `--against <prior-spec-modules>` it also flags members whose
-readable `name:` held but whose minified `binding.name` **drifted** across a
-re-pin — those are proven unstable, so they are the highest-value to re-express
-structurally. Group with `--group-module-depth N` to take coherent module-family
-batches.
+With `--against <prior-spec-modules>` it also flags members whose readable `name:`
+held but whose minified `binding.name` **drifted** across a re-pin — those are proven
+unstable, so they are the highest-value to re-express structurally. Group with
+`--group-module-depth N` to take coherent module-family batches.
 
-This census is complete for name pins but blind to the other failure mode: a
-selector that is _already_ `source_match` yet pinned on an incidental anchor (the
-`{ name: ANYTHING }` shape). No command enumerates those — judging whether a pin is
-forward-stable is the same intelligence as authoring it, so you find them by reading
-source. `match-selector` (used in the loop below) reports **slack** as a starting
-heuristic — kept things that could be holed further without losing uniqueness — but a
-clean (zero-slack) selector can still be pinned on the wrong anchor, so slack only
-prioritizes; it never decides.
+**2. Near-ambiguous structural selectors (source-aware pass).** Add a source flag to
+the same command:
+
+```bash
+debundle spec selector-debt --modules "$DEBUNDLE_MODULES" \
+  --source-file <chunk> --format json
+```
+
+This adds **source-aware near-ambiguous** rows — existing `source_match` selectors
+that resolve uniquely today but have high-scoring sibling statements, i.e. one
+upstream edit from ambiguous — plus source-aware repeated-exact bodies and
+`binding_groups` collapse suggestions. Treat this run as routine, not a footnote:
+it is cheap (tens of seconds whole-spec) and surfaces a population about as large as
+the name-pin backlog that is otherwise invisible.
+
+**3. Re-check existing commented debt.** A name pin kept with a "blocked on X"
+comment (step 6) may have been unblocked since: tooling that has landed (new hole
+forms, declarator support, …) can make a previously-impossible selector convert
+cleanly now. The census lists the name pin but not whether its recorded blocker is
+still real, so periodically re-run the minimizer over commented debt and retire the
+comment where it now converts.
+
+A _third_ failure mode is **not** enumerable: a selector that is already
+`source_match` yet pinned on an _incidental_ anchor (the `{ name: ANYTHING }` shape).
+Judging whether a pin is forward-stable is the same intelligence as authoring it, so
+you find these by reading source. `match-selector` (used in the loop below) reports
+**slack** as a starting heuristic — kept things that could be holed further without
+losing uniqueness — but a clean (zero-slack) selector can still be pinned on the
+wrong anchor, so slack only prioritizes; it never decides.
 
 ## The loop (per member, or per cohesive cluster)
 
@@ -130,15 +167,21 @@ prioritizes; it never decides.
 
 3. **Choose a purpose anchor** (rubric below) and write the `source_match` into the
    member YAML — by hand, or by taking `synthesize-selectors --apply` output and
-   tightening it onto the anchor you picked.
+   tightening it onto the anchor you picked. After any `--apply`, run the repo
+   formatter (`pre-commit` / prettier) **before** reading the diff: `--apply`
+   re-emits the whole YAML in the debundler's canonical 0-space form, so a
+   pre-prettier `git diff` is unreviewable noise; the formatter reconciles it back to
+   exactly the semantic change.
 
 4. **Prove it.** Test the candidate with
    `debundle spec match-selector --source-file <chunk> --match '<selector>'
 --target-binding <name>`: it reports whether the selector resolves **uniquely** to
    the binding you mean, and its **slack** — the kept things you could still hole
-   without losing uniqueness (i.e. whether you over-pinned). For a whole-spec sweep,
-   `debundle spec validate` (keep-going) resolves every selector and reports
-   `no-match` / `ambiguous` / `duplicate-claim`.
+   without losing uniqueness (i.e. whether you over-pinned). The `--identifiers` flag
+   defaults to `alpha-all`; note the **hyphen** — the CLI flag spelling is
+   `alpha-all`, even though the spec YAML field is `identifiers: alpha_all`. For a
+   whole-spec sweep, `debundle spec validate` (keep-going) resolves every selector
+   and reports `no-match` / `ambiguous` / `duplicate-claim`.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into a
    `binding_group` rather than emitting N overlapping member selectors.
@@ -297,6 +340,13 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
 - **event emitters / reducers**: the event or action name strings.
 - **API clients**: the endpoint path or operation name and the stable method name;
   hole host / version / cache-busting parts of any URL.
+- **duplicated TS codegen helpers** (`__decorate` / `__defineProperty` /
+  `__getOwnPropertyDescriptor` aliases): the bundler emits a byte-identical copy per
+  module, so nothing but the minified name distinguishes the copies — there is no
+  sparse selector to author. **Not your job:** leave them as honest name-pin debt.
+  Recognizing and collapsing these is a debundler tooling concern (the
+  `effect: typescript_decorate_helper` annotation is the partial-awareness hook), not
+  selector authoring — don't burn effort hunting an anchor that cannot exist.
 
 ## Don't hand-transcribe long bodies
 
