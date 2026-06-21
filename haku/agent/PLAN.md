@@ -1,94 +1,112 @@
 # haku/agent — deployment plan
 
 Status: the **runtime is feature-complete and green** — agent (`:scan`), supervisor
-(`:serve`, warm session + `/wake` + scheduler), unit tests, Valkey durable history
-(`RedisHistoryProvider`), and `SummarizationStrategy` compaction. What remains is
-**deployment**, which is operator-owned perimeter and partly blocked in the Claude-web
-sandbox (apt + Go-SDK fetches return 403). This plan captures the design and the
-decisions that are yours.
+(`:serve`, warm session, `/wake`, scheduler), unit tests, Valkey durable history
+(`RedisHistoryProvider`), `SummarizationStrategy` compaction, and startup cloning of
+ducktape and haku-state (`bootstrap.py`). What remains is **deployment**: the loop/tools
+split below, the two images, and the operator-owned k8s perimeter. Some steps are blocked
+in the Claude-web sandbox (apt and Go-SDK 403) and must run on CI / a full-network
+machine.
 
-## The one architectural fork: how Haku reaches its sources
+## Execution model: loop and tools containers (`pods/exec`)
 
-Haku's sources — Tana, Grocy, Plaid-Postgres, Gmail, Calendar, Drive, PostScanMail —
-are **all already MCP servers**. Two ways to wire them, and the choice drives the image:
+One Pod in `haku-sandbox`, two containers sharing an `emptyDir` at `/workspace`:
 
-|                | Shell (`run_command` + binaries)              | MCP toolsets (recommended)                                   |
-| -------------- | --------------------------------------------- | ------------------------------------------------------------ |
-| How            | `bash`: kubectl / psql / curl / fastmcp       | one `MCPStreamableHTTPTool` per source (Tana done)           |
-| Image          | apt layer: git, curl, ca-certs, psql, kubectl | ≈ `haku/console`: debian-slim + Python + pygit2              |
-| apt block here | yes — blocks the image build in sandbox       | none                                                         |
-| Idiom          | shell-ish                                     | MAF-native (typed tools)                                     |
-| Cost           | manual already assumes it                     | rework manual's source access to tools; wire each MCP's auth |
+- **loop** — the `:serve` image: MAF agent and supervisor (`/wake`, scheduler). Lean,
+  like `haku/console` (debian-slim, Python, pygit2, **no apt**). Clones ducktape and
+  haku-state (pygit2, `bootstrap.py`) onto `/workspace`. `run_command` execs into the
+  tools container. **Buildable in this sandbox** (no apt — a `rules_py` `oci_image` like
+  the console).
+- **tools** — sidecar: the `trixie_haku_agent` apt image (git, curl, ca-certificates,
+  postgresql-client), a kubectl static binary, and the `fastmcp` CLI, kept alive with
+  `sleep infinity`. Mounts the same `/workspace`; its shell `git` / `kubectl` / `psql` /
+  `fastmcp` operate on the checkout. **CI-only build** (apt 403 in this sandbox).
 
-**Decision (chosen): the shell route.** Haku gets a real CLI toolbox (git, curl, psql,
-… via apt; python from the image base), so `run_command` reaches sources and commits
-`haku-state` with shell git — no pygit2 write-model needed. MCP toolsets stay a future
-per-source simplification (Tana is already wired as one). This is why the image takes a
-debian base + apt layer (next section).
+`run_command(cmd)` execs `sh -lc <cmd>` (cwd = the haku-state checkout) in the tools
+container of its own Pod via the k8s `pods/exec` API: the sync `kubernetes` client's
+`stream(connect_get_namespaced_pod_exec, …, STDOUT_CHANNEL / STDERR_CHANNEL)` wrapped in
+`asyncio.to_thread` (the `cluster/network_readiness.py` pattern), capturing
+stdout+stderr, tail-capped. Own Pod name via the downward API (`HAKU_POD_NAME`),
+container `tools`.
 
-## Image (`oci_image`, modeled on `finance/beancount_export` + `haku/console`)
+### Auth / RBAC — mostly already exists
 
-Apt manifest is written: <trixie_haku_agent.yaml> (ca-certificates, git, curl,
-postgresql-client; kubectl + the fastmcp CLI are not in trixie main — kubectl from an
-upstream static binary if needed, fastmcp from the `agent-haku` Python devshell). The
-lock + image **build on CI / a full-network machine** — debian repos are 403 in this
-sandbox, and an `apt.install` whose `.lock.json` is missing breaks MODULE.bazel eval, so
-none of the wiring below is committed yet. Turnkey steps where apt resolves:
+Haku already has a k8s identity: the `haku-k8s` machine principal maps to group `haku`,
+which holds a **full-CRUD `haku-sandbox` Role** plus cluster-diagnostics read (see
+`cluster/k8s/agents/claude-rbac`). The sandbox Role pattern includes `pods/exec` and
+`pods/attach` (verify the `haku-sandbox` Role lists it), so exec into the sidecar (same
+namespace) is **already within Haku's perimeter — no new RBAC**. The loop authenticates
+with the `haku-k8s` JWT, building its kubeconfig via `devinfra/k8s/kubeconfig.py` (the
+mechanism the console/web session already uses), targeting `kubeapi.allegedly.works`.
 
-1. Add to MODULE.bazel's `apt` extension (then add the name to `use_repo(apt, …)`):
+### Shared state and creds
 
-   ```
-   apt.install(
-       name = "trixie_haku_agent",
-       lock = "//haku/agent:trixie_haku_agent.lock.json",
-       manifest = "//haku/agent:trixie_haku_agent.yaml",
-   )
-   ```
+`/workspace` (`emptyDir`) holds the ducktape and haku-state checkouts, mounted in both
+containers. `bootstrap.py` (loop) clones onto it via pygit2. The `~/.netrc` it writes
+must land where the tools container's shell `git` reads it, so write `/workspace/.netrc`
+and set `HOME=/workspace` (or `GIT_CONFIG`) on the tools container — a small
+`bootstrap.py` tweak from the current `~/.netrc`.
 
-2. Generate the lock: `bazel run @trixie_haku_agent//:lock`.
-3. Add `oci_image` (+ `oci_load`) to `haku/agent/BUILD.bazel`: base
-   `@debian_trixie_slim_linux_amd64`; `tars` = the `:serve` `py_image_layer` +
-   `"@trixie_haku_agent//:flat"` (the apt layer, the `finance/beancount_export`
-   pattern); entrypoint runs `:serve`. No baked `haku/base` — the agent clones ducktape
-   at startup (`bootstrap.py`). (Pending the loop-vs-tools container split below, this
-   apt layer may move to a separate tools container instead.)
-4. `bbr build //haku/agent:image`, then GHCR push + Flux as for the console.
+## Images
 
-`ducktape` + `haku-state` checkout: the supervisor clones/pulls both at startup via
-pygit2 (`bootstrap.py`, hermetic — done), so the manual comes from the clone (no bake).
+- **loop** (`//haku/agent:image`, **buildable here**): a `rules_py` `oci_image` on
+  `@debian_*_slim`, like `haku/console` — the `:serve` `py_image_layer`, no apt, no baked
+  manual (cloned at startup); entrypoint runs `:serve`.
+- **tools** (CI-only): the apt manifest is written (<trixie_haku_agent.yaml>); its lock
+  and image build where apt resolves. An `apt.install` whose `.lock.json` is missing
+  breaks MODULE.bazel eval, so this is not committed yet.
 
-## Bootstrap / entrypoint contract
+Turnkey tools-image wiring where apt resolves — add to MODULE.bazel's `apt` extension
+(and the name to `use_repo(apt, …)`):
 
-At startup the supervisor needs: a writable `haku-state` checkout at `HAKU_STATE_DIR`
-(clone from the in-cluster Forgejo, git-write creds from a secret); `HAKU_LITELLM_*`;
-`HAKU_REDIS_URL`; per-source MCP creds (e.g. `HAKU_TANA_RO_TOKEN`). A kubeconfig only if
-the shell route needs kubectl. All via env / mounted secrets — the code already reads
-them, so the entrypoint is a thin bootstrap, not new behavior.
+```
+apt.install(
+    name = "trixie_haku_agent",
+    lock = "//haku/agent:trixie_haku_agent.lock.json",
+    manifest = "//haku/agent:trixie_haku_agent.yaml",
+)
+```
+
+Then `bazel run @trixie_haku_agent//:lock`, add an `oci_image` modeled on
+`finance/beancount_export` (base `@debian_trixie_slim_linux_amd64`, the
+`"@trixie_haku_agent//:flat"` apt layer, a kubectl static binary, fastmcp; command `sleep
+infinity`), and `bbr build` then GHCR push plus Flux.
 
 ## k8s wiring (`cluster/k8s/haku/agent/`) — operator-owned
 
-Mirror the console's perimeter, plus what this runtime additionally needs:
-
-- **Deployment** `haku-agent` in `haku-sandbox`, non-root, behind `haku-mitmproxy`.
+- **Deployment** `haku-agent` in `haku-sandbox`: two containers (loop, tools) sharing an
+  `emptyDir` at `/workspace`, non-root, behind `haku-mitmproxy`.
+- **haku-k8s kubeconfig** mounted in the loop (the existing JWT secret) so `run_command`
+  can exec — reuses the existing `haku` RBAC.
 - **Valkey** with **AOF (`appendonly yes`, `everysec`) on a PVC** for durable history;
-  `HAKU_REDIS_URL` → its Service. (Or reuse an existing durable Valkey.)
-- **Secrets**: `HAKU_REDIS_URL`, the LiteLLM virtual key, `haku-state-git-write`, and
-  each source's MCP token.
-- **Trigger**: Forgejo webhook on `haku-state` → `POST /wake` (+ optional
-  `HAKU_WAKE_INTERVAL_SECONDS` scheduler tick).
+  `HAKU_REDIS_URL` points at its Service. (Or reuse an existing durable Valkey.)
+- **Secrets**: `HAKU_REDIS_URL`, the LiteLLM virtual key, `haku-state-git-write`, the
+  `haku-k8s` JWT, each source's MCP token.
+- **Trigger**: Forgejo webhook on `haku-state` to `POST /wake` (plus optional
+  `HAKU_WAKE_INTERVAL_SECONDS` tick).
 
-### Decisions that are yours (perimeter is broader than the console's)
+### Open decisions (yours)
 
-1. **Cluster/kubectl access at all?** Only the shell route needs it; the MCP-toolset
-   route runs with **no** service-account token, same as the console.
-2. **Egress**: the existing `haku-sandbox` mitmproxy policy, or additions for the
-   endpoints the MCP toolsets call?
-3. **Model**: `HAKU_MODEL` + the virtual key's budget. (Summarization can use a cheaper
-   model via `HAKU_SUMMARIZE_MODEL`; it reuses `HAKU_MODEL` when unset.)
-4. **Valkey**: dedicated vs. reuse; AOF settings; PVC size.
+1. **Exec auth path**: the `haku-k8s` JWT via the `kubeapi` proxy (reuses existing wiring)
+   vs. an in-cluster ServiceAccount bound to the `haku` perimeter (no public hop, new RBAC
+   subjecting).
+2. **Egress**: the existing `haku-sandbox` mitmproxy policy, or additions for what the
+   tools container reaches.
+3. **Model**: `HAKU_MODEL` and the virtual-key budget (summarization can use a cheaper
+   `HAKU_SUMMARIZE_MODEL`).
+4. **Valkey**: dedicated vs. reuse; AOF; PVC size.
+
+## Code changes for the split (from today's in-process `run_command`)
+
+- `agent.py`: `run_command` becomes a k8s `pods/exec` into the tools container (sync exec
+  in `asyncio.to_thread`, output cap as today).
+- `config.py`: `HAKU_POD_NAME`, tools container name, namespace, kubeconfig path, netrc
+  path.
+- `bootstrap.py`: write `~/.netrc` onto the shared `/workspace`.
+- `BUILD.bazel`: the loop `oci_image` (buildable here) now; the tools image on CI.
 
 ## Blocked in this sandbox (need CI / a full-network machine)
 
-- `oci_image` apt layer — debian repos (snapshot.debian.org) 403.
+- The tools image apt layer — debian repos (snapshot.debian.org) 403.
 - `bazel run //devinfra:gazelle_python_manifest.update` — Go SDK (go.dev) 403; the Redis
-  lockfile add needs this run elsewhere, otherwise the manifest-sync CI test may go red.
+  lockfile add needs this run elsewhere, else the manifest-sync CI test may go red.
