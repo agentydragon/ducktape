@@ -16,6 +16,7 @@ pub(super) struct ResolvedAnonymousStatement {
 #[derive(Debug, Clone)]
 pub(super) struct AnonymousStatementDiagnostic {
     pub(super) module_id: String,
+    pub(super) selector: spec::AnonymousStatementSelector,
     pub(super) message: String,
 }
 
@@ -72,6 +73,7 @@ pub(super) fn resolve_anonymous_statement_ordinals(
             Err(error) if keep_going => {
                 diagnostics.push(AnonymousStatementDiagnostic {
                     module_id: request.id.clone(),
+                    selector: statement.selector.clone(),
                     message: format!("{error:#}"),
                 });
                 continue;

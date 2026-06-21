@@ -350,16 +350,19 @@ CLI editing is live for module and member comments; anonymous
 statement comments are authored directly in YAML.
 
 When a binding cannot yet be stabilized because the selector language lacks a
-concise matcher, leave a member `comment:` naming the concrete matcher/tooling
+concise matcher, leave a member `note:` recording the concrete matcher/tooling
 blocker and the desired future feature instead of silently keeping minified
-binding debt:
+binding debt. Use `note:`, **not** `comment:`: `note:` is inert (YAML-only, never
+emitted to generated JS), so it annotates the debt without changing byte-identical
+output, and the keep-going selector report surfaces noted name-pins as
+`annotated_debt` for a repair flow to route:
 
 ```yaml
-comment: |
+note: |
   blocked on Ducktape support for <specific matcher/tooling capability needed here>
 ```
 
-Do not leave blocker comments for selector patterns Ducktape now supports, such
+Do not leave blocker notes for selector patterns Ducktape now supports, such
 as matching one declarator inside a multi-declarator declaration or bracketing
 object literal properties with `ANYTHING` / `OBJECT_PROPS`.
 

@@ -89,9 +89,11 @@ neighbor-borrowed literals, and deeply-nested-only discriminators.
 
 - **Genuine stability only.** No faithful stable anchor today → **leave it a plain
   name-pin** and report the dead-end. Never fake an anchor.
-- **Do NOT add `comment:` to debt pins** — member `comment:` EMITS to the JS output and
-  breaks the byte-identical gate (unless you regen, which churns the snapshot). Leave debt
-  pins un-commented; the `selector-debt` count tracks them; explain dead-ends in the report.
+- **Annotate debt / dead-ends with `note:`, never `comment:`** — `note:` is inert (ignored
+  by the materializer, never emitted to JS, never churns the byte-identical snapshot), so it
+  is the right home for a blocker/dead-end rationale on a name-pin you cannot stabilize.
+  `comment:` EMITS and bakes RE-process text into the review JS — do not use it for debt.
+  The `selector-debt` count still tracks the pin; also explain the dead-end in your report.
 - Only edit spec YAML under your family's dir. NEVER edit `.../js/**` (pipeline output).
 
 ## Commit + push

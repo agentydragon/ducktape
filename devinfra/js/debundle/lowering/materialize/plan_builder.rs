@@ -2123,6 +2123,29 @@ impl ChunkPlanBuilder {
                     .to_string(),
             });
         }
+        for diagnostic in &self.anonymous_statement_diagnostics {
+            let category = classify_source_match_failure(&diagnostic.message);
+            diagnostics.push(SelectorDiagnosticEntry {
+                category: category.to_string(),
+                module_id: diagnostic.module_id.clone(),
+                module_path: module_path_from_id(&diagnostic.module_id),
+                export_name: None,
+                selector_kind: "anonymous_statements.source_match".to_string(),
+                target_binding: None,
+                claim_origin: None,
+                body_indices: Vec::new(),
+                first_mismatch: first_relevant_error_line(&diagnostic.message),
+                nearest_candidates: Vec::new(),
+                source_match_preview: Some(source_match::source_match_preview(
+                    &diagnostic.selector.match_source,
+                )),
+                source_match_hash: None,
+                source_match_body_hash: None,
+                duplicate_claim: None,
+                message: diagnostic.message.clone(),
+                recommended_next_action: recommended_source_match_action(category).to_string(),
+            });
+        }
         for duplicate in &self.duplicate_binding_claims {
             diagnostics.push(SelectorDiagnosticEntry {
                 category: "duplicate_claim".to_string(),
@@ -2175,7 +2198,9 @@ impl ChunkPlanBuilder {
             counts,
             diagnostics,
             coverage_notes: vec![
-                "TODO: anonymous_statement source_match failures and blocker-comment diagnostics still need normalized JSON entries."
+                "Name-pin debt annotated with note: is not yet surfaced as structured entries (note: is not plumbed through MemberRequest)."
+                    .to_string(),
+                "Free-readable-identifier failures (alpha_all readable names used as free references rather than local binders) are not yet classified — see TODO.md P1.5."
                     .to_string(),
             ],
         })

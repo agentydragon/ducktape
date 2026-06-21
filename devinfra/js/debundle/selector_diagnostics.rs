@@ -29,9 +29,16 @@
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
 //!
-//! Not yet classified here (deferred to the free-readable-identifier work in
-//! `TODO.md` P1.5): `alpha_all` readable names that are free references
-//! rather than local binders.
+//! The first three categories cover both member / binding-group `source_match`
+//! selectors and `anonymous_statements[].match` selectors;
+//! [`SelectorDiagnosticEntry::selector_kind`] distinguishes them
+//! (`members.source_match` / `binding_groups.source_match` /
+//! `anonymous_statements.source_match`).
+//!
+//! Not yet classified here: name-pin debt annotated with `note:` (surfacing it
+//! as structured entries needs `note:` plumbed through `MemberRequest`), and the
+//! free-readable-identifier class (`TODO.md` P1.5): `alpha_all` readable names
+//! that are free references rather than local binders.
 
 use std::collections::BTreeMap;
 

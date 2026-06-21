@@ -91,10 +91,12 @@ The orchestrator or project adapter provides:
    your new members show up as high-score name-only selectors, reach for a
    structural AST-shaped `source_match` instead. If a binding cannot yet be
    stabilized because Ducktape lacks a concise matcher, leave a member
-   `comment:` naming the concrete blocker and desired feature, and route that
-   blocker back to Ducktape tooling. Do not leave blocker comments for
-   one-declarator-in-comma-list selectors or object literal property gaps; use
-   the supported `target_binding`, `ANYTHING`, and `OBJECT_PROPS` patterns above.
+   `note:` (inert YAML-only, never emitted to JS — unlike `comment:`, which emits
+   and churns the byte-identical snapshot) naming the concrete blocker and desired
+   feature, and route that blocker back to Ducktape tooling. Do not leave blocker
+   notes for one-declarator-in-comma-list selectors or object literal property
+   gaps; use the supported `target_binding`, `ANYTHING`, and `OBJECT_PROPS`
+   patterns above.
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.

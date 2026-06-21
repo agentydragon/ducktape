@@ -1,7 +1,8 @@
 use std::fs;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, logical_module, run_keep_going_dry_run_rejection_fixture,
+    FixtureOpts, Member, logical_module, logical_module_with_anon,
+    run_keep_going_dry_run_rejection_fixture,
 };
 use serde_json::Value;
 
@@ -40,6 +41,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
                 "diagnostics/ambiguous",
                 &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
             ),
+            logical_module_with_anon("diagnostics/anon", &[], &["console.warn(\"absent\");"]),
         ],
     );
 
@@ -58,6 +60,13 @@ export { renderCard, decoratePrimary, decorateSecondary };
         "human duplicate diagnostics must remain intact:\n{}",
         rejected.stderr
     );
+    assert!(
+        rejected
+            .stderr
+            .contains("Anonymous statement selector diagnostic report"),
+        "human anonymous diagnostics must appear:\n{}",
+        rejected.stderr
+    );
 
     let report_path = rejected
         .report_root
@@ -70,14 +79,14 @@ export { renderCard, decoratePrimary, decorateSecondary };
     )
     .unwrap();
     assert_eq!(report["chunk_id"], "static/app");
-    assert_eq!(report["counts"]["unresolved_selector"], 1);
+    assert_eq!(report["counts"]["unresolved_selector"], 2);
     assert_eq!(report["counts"]["ambiguous_selector"], 1);
     assert_eq!(report["counts"]["duplicate_claim"], 1);
 
     let diagnostics = report["diagnostics"]
         .as_array()
         .expect("diagnostics must be an array");
-    assert_eq!(diagnostics.len(), 3, "{report:#}");
+    assert_eq!(diagnostics.len(), 4, "{report:#}");
 
     let missing = find_entry(diagnostics, "unresolved_selector", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
@@ -138,6 +147,21 @@ export { renderCard, decoratePrimary, decorateSecondary };
     ];
     assert!(duplicate_sites.contains(&"static/app::owners/card"));
     assert!(duplicate_sites.contains(&"static/app::duplicates/card"));
+
+    let anon = diagnostics
+        .iter()
+        .find(|entry| entry["selector_kind"] == "anonymous_statements.source_match")
+        .expect("anonymous statement diagnostic entry");
+    assert_eq!(anon["category"], "unresolved_selector");
+    assert_eq!(anon["module_path"], "diagnostics/anon");
+    assert!(anon["export_name"].is_null(), "{anon:#}");
+    assert!(
+        anon["source_match_preview"]
+            .as_str()
+            .unwrap()
+            .contains("console.warn"),
+        "{anon:#}"
+    );
 }
 
 fn find_entry<'a>(diagnostics: &'a [Value], category: &str, export_name: &str) -> &'a Value {
