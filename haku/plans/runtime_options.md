@@ -26,6 +26,22 @@ a manual web session).
   infra + model all Anthropic); in-cluster access only via the public
   `kubeapi.allegedly.works` proxy (as today); subscription/seat billing.
 
+### Runtime A variant — self-hosted Claude Code (Agent SDK)
+
+The **Claude Agent SDK** (`claude-agent-sdk`, formerly `claude-code-sdk`) is a
+client-side driver that subprocess-spawns the `claude` CLI binary: the same
+Claude Code harness as A, but **the loop runs in your process**, so it could run
+in `haku-sandbox` (BYOC) rather than Anthropic's cloud. It is **not** Managed
+Agents (B) — the Agent SDK runs the loop locally around the CLI, whereas B runs
+the loop server-side at Anthropic. The CLI honors `ANTHROPIC_BASE_URL` and
+`ANTHROPIC_AUTH_TOKEN`, so its model leg can point at LiteLLM's Anthropic-format
+passthrough — but the harness stays Anthropic-request-shaped (prompt-caching
+fidelity, beta param shapes, OAuth/subscription auth), so routing to a
+non-Anthropic provider through LiteLLM is lossy and the subscription benefit
+doesn't survive. Net: it collapses to "A's harness in front of LiteLLM →
+Anthropic" — self-hosted infra, same model lock-in — which is why it's a variant
+of A, not a peer of C.
+
 ## Runtime B — Anthropic Managed Agents (self-hosted sandbox)
 
 Loop at Anthropic; tools execute in **your** worker in `haku-sandbox`; **vaults**
