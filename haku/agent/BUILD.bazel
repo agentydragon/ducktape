@@ -24,6 +24,7 @@ py_library(
         "@pypi//agent_framework_claude",
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_redis",
     ],
 )
 
@@ -71,6 +72,12 @@ py_test(
         ":agent",
         ":config",
         "//:conftest",
+        # agent_framework's stub __init__ chains into the openai/anthropic/claude stubs,
+        # so mypy needs all four present to resolve `from agent_framework import ...`.
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

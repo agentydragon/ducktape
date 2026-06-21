@@ -25,7 +25,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
-from haku.agent.agent import WAKE, build_agent, build_mcp_tools
+from haku.agent.agent import WAKE, aclose_history, build_agent, build_history_provider, build_mcp_tools
 from haku.agent.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -52,12 +52,13 @@ class HakuRuntime:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings()
     mcp_tools = build_mcp_tools(settings)
+    history = build_history_provider(settings)
     async with contextlib.AsyncExitStack() as stack:
         # Open the remote MCP toolsets once, for the app's lifetime, rather than per wake.
         for tool in mcp_tools:
             await stack.enter_async_context(tool)
         runtime = HakuRuntime(
-            agent=build_agent(settings, mcp_tools), session=AgentSession(session_id=settings.session_id)
+            agent=build_agent(settings, mcp_tools, history), session=AgentSession(session_id=settings.session_id)
         )
         app.state.runtime = runtime
 
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         finally:
             if scheduler.running:
                 scheduler.shutdown(wait=False)
+            await aclose_history(history)
 
 
 def create_app() -> FastAPI:

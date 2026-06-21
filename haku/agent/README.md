@@ -13,13 +13,13 @@ identity.
   pre-built `http_client` because `MCPStreamableHTTPTool` ignores `headers=`.
 - **Behavior** is the baked `haku/base/` manual + `haku/run.md`, read at runtime — not
   inlined — so it stays single-sourced in ducktape and reconciled per run.
-- **Compaction**: `SlidingWindowStrategy` preserves the instruction prefix and bounds
-  the history, so re-reads reuse the cached prefix instead of re-processing the manual
-  cold. **Cross-restart persistence is the next increment** — Agent Framework (pinned
-  at 1.0.0 here) ships no prebuilt Postgres history provider; the prebuilt options are
-  `agent-framework-redis` and the in-core `FileHistoryProvider` (not exported in 1.0.0).
-  Today the scan runs stateless and re-orients from `haku-state` each run (git is the
-  durable memory); the persistence backend is a pending choice.
+- **Persistent threads + compaction**: history persists across restarts in
+  **Valkey/Redis** via `RedisHistoryProvider` (keyed by `HAKU_SESSION_ID`) when
+  `HAKU_REDIS_URL` is set — otherwise in-memory. `SlidingWindowStrategy` preserves the
+  instruction prefix and bounds the context window; `HAKU_REDIS_MAX_MESSAGES` bounds the
+  stored list. git (`haku-state`) remains the durable memory, so a lost cache just
+  re-orients. (`agent-framework-redis` is pinned to `1.0.0b260402`, the newest beta whose
+  core floor keeps `agent-framework-core` at 1.0.0.)
 
 `main.py` (`:scan`) runs one scan — manual or scheduled. `supervisor.py` (`:serve`) is
 the long-lived service: it holds one warm `AgentSession` (so the manual + run procedure
@@ -34,7 +34,7 @@ bbr build //haku/agent:scan
 ```
 
 Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
-`HAKU_LITELLM_API_KEY`, optional `HAKU_TANA_RO_TOKEN`, `HAKU_SESSION_ID`,
-`HAKU_WAKE_INTERVAL_SECONDS`, `HAKU_STATE_DIR`, `HAKU_BASE_DIR`.
+`HAKU_LITELLM_API_KEY`, optional `HAKU_REDIS_URL`, `HAKU_TANA_RO_TOKEN`,
+`HAKU_SESSION_ID`, `HAKU_WAKE_INTERVAL_SECONDS`, `HAKU_STATE_DIR`, `HAKU_BASE_DIR`.
 
 Design + tradeoffs vs. the other runtimes: <../plans/runtime_options.md>.

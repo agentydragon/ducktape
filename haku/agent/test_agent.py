@@ -3,14 +3,19 @@
 from pathlib import Path
 
 import pytest_bazel
+from agent_framework import InMemoryHistoryProvider
 
-from haku.agent.agent import _run_command, build_mcp_tools
+from haku.agent.agent import _run_command, aclose_history, build_history_provider, build_mcp_tools
 from haku.agent.config import Settings
 
 
-def _settings(*, tana_ro_token: str | None = None) -> Settings:
+def _settings(*, tana_ro_token: str | None = None, redis_url: str | None = None) -> Settings:
     return Settings(
-        model="prov/model", litellm_base_url="http://litellm/v1", litellm_api_key="k", tana_ro_token=tana_ro_token
+        model="prov/model",
+        litellm_base_url="http://litellm/v1",
+        litellm_api_key="k",
+        tana_ro_token=tana_ro_token,
+        redis_url=redis_url,
     )
 
 
@@ -20,6 +25,16 @@ def test_build_mcp_tools_omits_tana_without_token() -> None:
 
 def test_build_mcp_tools_includes_tana_with_token() -> None:
     assert [tool.name for tool in build_mcp_tools(_settings(tana_ro_token="secret"))] == ["tana_ro"]
+
+
+def test_history_provider_in_memory_without_redis_url() -> None:
+    assert isinstance(build_history_provider(_settings()), InMemoryHistoryProvider)
+
+
+async def test_history_provider_redis_with_url() -> None:
+    history = build_history_provider(_settings(redis_url="redis://localhost:6379"))
+    assert not isinstance(history, InMemoryHistoryProvider)
+    await aclose_history(history)
 
 
 async def test_run_command_returns_combined_output(tmp_path: Path) -> None:

@@ -22,3 +22,9 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Supervisor HTTP bind host.")
     port: int = Field(default=8080, description="Supervisor HTTP bind port.")
     wake_interval_seconds: int = Field(default=0, description="Scheduler wake interval in seconds; 0 disables it.")
+    redis_url: str | None = Field(
+        default=None, description="Valkey/Redis URL for durable session history; None = in-memory."
+    )
+    redis_max_messages: int = Field(
+        default=500, description="Max messages retained per session in Redis (auto-trims oldest)."
+    )

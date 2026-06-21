@@ -28,6 +28,7 @@ from agent_framework import (
     SlidingWindowStrategy,
 )
 from agent_framework.openai import OpenAIChatCompletionClient
+from agent_framework_redis import RedisHistoryProvider
 
 from haku.agent.config import Settings
 
@@ -104,18 +105,32 @@ def build_client(settings: Settings) -> OpenAIChatCompletionClient:
     )
 
 
-def build_agent(settings: Settings, mcp_tools: list[MCPStreamableHTTPTool]) -> Agent:
+def build_history_provider(settings: Settings) -> InMemoryHistoryProvider | RedisHistoryProvider:
+    """Durable session history in Valkey/Redis when HAKU_REDIS_URL is set, else in-memory.
+
+    The same session id keys the same Redis list, so history survives pod restarts; git
+    (haku-state) remains the durable memory regardless."""
+    if settings.redis_url:
+        return RedisHistoryProvider(redis_url=settings.redis_url, max_messages=settings.redis_max_messages)
+    return InMemoryHistoryProvider()
+
+
+async def aclose_history(history: InMemoryHistoryProvider | RedisHistoryProvider) -> None:
+    """Release the Redis connection; in-memory history needs no teardown."""
+    if isinstance(history, RedisHistoryProvider):
+        await history.aclose()
+
+
+def build_agent(
+    settings: Settings, mcp_tools: list[MCPStreamableHTTPTool], history: InMemoryHistoryProvider | RedisHistoryProvider
+) -> Agent:
     tools: list[FunctionTool | MCPStreamableHTTPTool] = [_run_command_tool(settings), *mcp_tools]
     return Agent(
         client=build_client(settings),
         name="haku",
         instructions=_instructions(settings),
         tools=tools,
-        # In-memory history for now (warm within a run). Cross-restart persistence
-        # (Postgres/Redis) is the next increment — Agent Framework ships no prebuilt
-        # Postgres provider, so the backend is a pending choice; git (haku-state) is the
-        # durable memory regardless.
-        context_providers=[InMemoryHistoryProvider()],
+        context_providers=[history],
         compaction_strategy=SlidingWindowStrategy(keep_last_groups=settings.keep_last_groups),
     )
 
@@ -123,9 +138,13 @@ def build_agent(settings: Settings, mcp_tools: list[MCPStreamableHTTPTool]) -> A
 async def run_scan(settings: Settings, *, message: str = WAKE) -> str:
     """Run one scan pass, resuming the persisted thread for `settings.session_id`."""
     mcp_tools = build_mcp_tools(settings)
-    async with contextlib.AsyncExitStack() as stack:
-        for tool in mcp_tools:
-            await stack.enter_async_context(tool)
-        agent = build_agent(settings, mcp_tools)
-        response = await agent.run(message, session=AgentSession(session_id=settings.session_id))
-    return response.text or ""
+    history = build_history_provider(settings)
+    try:
+        async with contextlib.AsyncExitStack() as stack:
+            for tool in mcp_tools:
+                await stack.enter_async_context(tool)
+            agent = build_agent(settings, mcp_tools, history)
+            response = await agent.run(message, session=AgentSession(session_id=settings.session_id))
+        return response.text or ""
+    finally:
+        await aclose_history(history)
