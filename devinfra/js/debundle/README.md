@@ -167,10 +167,16 @@ Module YAMLs, `members:` entries, and `anonymous_statements:` entries
 may carry an optional `comment:` field for reverse-engineering
 annotations; these emit into generated JS on every rebuild, so RE
 notes survive `debundle run` invocations. `note:` is YAML-only
-scratch metadata that never emits. Edit module and member comments
-via `debundle bindings comment` / `debundle modules comment`. See
-`docs/guide.md` → "Workflow: authoring `comment:` fields" for the
-YAML schema and worked CLI examples.
+scratch metadata that never emits (debt rationale, provenance). Edit
+module and member comments via `debundle bindings comment` /
+`debundle modules comment`. See `docs/guide.md` → "Workflow: authoring
+`comment:` fields" for the YAML schema and worked CLI examples.
+
+**Do not use `#` YAML comments in spec files.** The rewriters (`bindings
+assign`, `synthesize --apply`, `modules merge`, …) re-emit the YAML and drop
+every `#` comment, so any `#` annotation is silently lost on the next automated
+edit. Anything that must persist belongs in a schema field — `comment:`
+(emitting) or `note:` (non-emitting) — which the rewriters preserve explicitly.
 
 ## Conditionally-correct optimizations
 
