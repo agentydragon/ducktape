@@ -674,7 +674,7 @@ pub enum WrapperShape {
 
 // --- Logical modules -----------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogicalModule {
     #[serde(default)]
