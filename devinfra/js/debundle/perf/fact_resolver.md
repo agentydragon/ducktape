@@ -85,6 +85,57 @@ blocker threshold**. The largest known downstream chunk (6.9 MiB / 204k lines) i
 ~3.7x the 40k corpus again; a comparably selector-dense real spec on it would be
 far past the blocker.
 
+## Fix landed (2026-06-21) — both directions, quadratic killed
+
+Two behavior-preserving changes (byte-identical debundle output — the emitted JS
+tree `diff -r`s identically at 10k and 40k; the only `modules.json` delta is the
+self-reported `nanos`/`secs` timing fields; the full 132-test suite + e2e stay
+green):
+
+1. **Hoist per-needle validation out of the candidate loop.**
+   `matches_prepared` / `var_declarator_alignment_prepared` skip the needle-only
+   `unsupported_needle_construct` faithful-subset check (three needle-index passes
+   - `collect_subtree` recursion) that was re-run per candidate; the resolver
+     probes the needle once up front, before the candidate loop, so skipping it
+     per-candidate is sound. Removes the dominant self-cost (the profile's 15%
+     self / 38% inclusive entry).
+2. **Exact-mode identifier candidate index (kills the quadratic).** The existing
+   per-chunk token postings index (`body_tokens` / `declarator_tokens`) only keyed
+   on literals/property-names/regex, so an **identifier-only, exact-mode** needle
+   (`const NAME = a + b;` — the dominant corpus shape, and the realistic
+   minified-name exact pin) pinned **no** token and fell back to the full O(N)
+   candidate scan → O(selectors × statements). New `Token::Ident`: subjects are
+   indexed (`subject_tokens`) by every identifier spelling; a needle in
+   `Mode::Exact` **without** a `target_binding` prebind requires its non-hole,
+   non-absorbed identifier spellings (`needle_required_tokens`), so the postings
+   intersection prunes to the few structurally-compatible candidates. Soundness:
+   in exact mode `homo` compares those identifiers byte-for-byte
+   (`Bindings::resolve_unbound` ⟹ `needle == subject`), so any real match carries
+   them — the prune is over-inclusive, never under-inclusive. The prebind paths
+   (declarator-hole, which alpha-couples the target name to a candidate's) pass
+   `allow_exact_ident = false` and keep the literal-only candidate set; alpha-mode
+   needles never query an `Ident` token, so their behavior is unchanged.
+
+Warmed wall (`-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1`, median of 3,
+4-core VM — so the absolute baseline is a touch slower than the original ~67s
+measurement, but the **scaling** is the load-bearing result):
+
+| Statements | Selectors | Baseline | +#1 (hoist) | +#1+#2 (ident index) |
+| ---------: | --------: | -------: | ----------: | -------------------: |
+|        10k |      2462 |    4.25s |       3.12s |            **0.45s** |
+|        40k |     10018 |    80.3s |       42.7s |            **2.76s** |
+
+4.07x selectors → **6.2x** wall after the fix (scaling exponent
+log 6.2 / log 4.07 ≈ **1.30**, down from ≈2.1). The quadratic is gone — the
+remaining slope is the near-linear EDB build + O(matches) work, not the
+all-candidates scan. **Verdict: both interactive (<10s) and blocker (<60s) budgets
+are met with wide margin at 40k.** Extrapolating the 1.3 exponent, the 6.9 MiB /
+204k-line chunk (~5x the 40k statement count, comparably selector-dense) lands
+on the order of ~25s — inside the 60s blocker, though a follow-up re-measure on a
+real chunk is warranted (the synthetic statements are simpler; see the caveat
+above). Re-profile recipe unchanged:
+`debug/perf/2026_06_21_fact_resolver_source_match/command.sh`.
+
 ## Call-graph profile (callgrind, Ir-only)
 
 `perf` is unavailable in this environment, so the call-graph profile uses

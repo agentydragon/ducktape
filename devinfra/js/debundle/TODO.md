@@ -150,21 +150,26 @@ propose`.
 
 ### P2 — pipeline performance and architecture cleanup
 
-1. **Selector matching is the measured hot path** (<perf/fact_resolver.md>,
-   2026-06-21 callgrind): the fact-based `ChunkResolver` → `selector_match`
-   homomorphism is ~92% of a source_match-selector `run`/`validate`, and the path
-   is ≈O(n²) in selector count (4x selectors → ~15x wall; 40k statements already
-   breaches the 60s blocker). `chunk_facts` EDB extraction and `selector_solve`
-   (Ascent) are not hot. Two fixes, highest leverage first: (a) hoist the
-   per-needle `unsupported_needle_construct` / run-hole / `hole_name_for`
-   classification out of the candidate inner loop (it is needle-only work re-run
-   per candidate — ~35–40% of the profile, pure memoization); (b) build the
-   shared per-chunk candidate index (declaration kind + var/declarator shape +
-   literal/ident fingerprint) and intersect postings before recursive matching,
-   to cut the O(N) candidate scan to O(matches) and remove the quadratic. Items
-   #5/#6 below (`JsChunk` scans, `split_entry_body` clone) were checked in that
-   profile and are not hot. Validate each change against a fresh callgrind run on
-   the same workload.
+1. **Selector matching was the measured hot path — fixed 2026-06-21**
+   (<perf/fact_resolver.md>). The fact-based `ChunkResolver` → `selector_match`
+   homomorphism was ~92% of a source_match-selector `run`/`validate` and ≈O(n²) in
+   selector count (4x selectors → ~15x wall; 40k statements breached the 60s
+   blocker). Both fixes landed, behavior-preserving (byte-identical output, 132
+   suite + e2e green): (a) the per-needle `unsupported_needle_construct` re-check
+   is hoisted out of the candidate loop (`matches_prepared` /
+   `var_declarator_alignment_prepared`, called after a one-time probe); (b) the
+   per-chunk token postings index now also keys on identifier spellings
+   (`Token::Ident` / `subject_tokens`), and an exact-mode no-prebind needle
+   requires its identifiers (`needle_required_tokens`), pruning the candidate scan
+   for the identifier-only `const NAME = …;` shape that pinned no literal token —
+   the source of the quadratic. Result: 10k 4.25s→0.45s, 40k 80.3s→2.76s; scaling
+   exponent ≈2.1 → ≈1.3 (quadratic gone), both interactive (<10s) and blocker
+   (<60s) budgets met at 40k. `chunk_facts` EDB extraction and `selector_solve`
+   (Ascent) were confirmed not hot; items #5/#6 (`JsChunk` scans,
+   `split_entry_body` clone) were checked and are not hot. Follow-up (optional):
+   the third profile lever (intern identifier atoms to drop the `__memcmp` exact-id
+   compares) is now largely subsumed by the shrunken candidate set; re-measure on a
+   real (non-synthetic) chunk before pursuing it.
 2. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
    expensive reports they do not need.
 3. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,

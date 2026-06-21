@@ -64,18 +64,24 @@ pub struct ChunkResolver<'m> {
     /// the item and re-extracts facts for every declarator on every such selector
     /// (the second-worst per-selector cost after declarator holes).
     var_declarator_subjects: Vec<VarDeclaratorSubject>,
-    /// Inverted index: an invariant token → the (ascending) body indices whose
-    /// statement carries it. A needle can only match a statement that carries
-    /// every token the needle pins, so the single-statement scan visits just the
-    /// rarest required token's postings instead of every body item. Needles that
-    /// pin no token (pure structural, or a bare regex predicate) fall back to the
-    /// root-kind-prefiltered full scan.
+    /// Inverted index: a [`selector_match::subject_tokens`] token (literal /
+    /// property / regex, **plus** every identifier spelling) → the (ascending) body
+    /// indices whose statement carries it. A needle can only match a statement that
+    /// carries every token the needle requires, so the single-statement scan visits
+    /// just the rarest required token's postings instead of every body item.
+    /// Indexing identifiers lets an exact-mode needle prune by its identifier
+    /// spellings (the discriminator that removes the `O(selectors × statements)`
+    /// scan for identifier-only `const NAME = …;` selectors); an alpha-mode needle
+    /// never queries an `Ident` token, so its candidate set is unchanged. Needles
+    /// that require no token (pure-structural / alpha with no literal, or a bare
+    /// regex predicate) fall back to the root-kind-prefiltered full scan.
     body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
     /// Like `body_tokens`, but keyed to indices into `var_declarator_subjects`:
     /// a single-declarator member/group needle only matches a declarator that
     /// carries its tokens, so the declarator scan visits just the rarest token's
-    /// postings. CSS-module regex-predicate needles pin no token and fall back to
-    /// the init-kind-prefiltered scan (cheap now that the regex is precompiled).
+    /// postings. Exact-mode `const NAME = …;` needles now prune by identifier
+    /// spelling; CSS-module regex-predicate (alpha) needles pin no token and fall
+    /// back to the init-kind-prefiltered scan (cheap now that the regex is precompiled).
     declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
 }
 
@@ -109,7 +115,7 @@ impl<'m> ChunkResolver<'m> {
         let mut body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>> =
             std::collections::HashMap::new();
         for (body_idx, index) in body_indices.iter().enumerate() {
-            for token in selector_match::invariant_tokens(index) {
+            for token in selector_match::subject_tokens(index) {
                 body_tokens.entry(token).or_default().push(body_idx);
             }
         }
@@ -124,7 +130,7 @@ impl<'m> ChunkResolver<'m> {
                 if let Some(facts) = item_facts(&single_declarator_item(item, declarator)) {
                     let index = selector_match::Index::build(&facts);
                     let subject_idx = var_declarator_subjects.len();
-                    for token in selector_match::invariant_tokens(&index) {
+                    for token in selector_match::subject_tokens(&index) {
                         declarator_tokens
                             .entry(token)
                             .or_default()
@@ -151,25 +157,40 @@ impl<'m> ChunkResolver<'m> {
 
     /// Indices into `var_declarator_subjects` a single-declarator needle could
     /// match — the intersection of every required token's postings (sound
-    /// superset), or all declarators when the needle pins no invariant token.
-    /// Mirrors [`Self::candidate_bodies`] for the declarator scan.
-    fn candidate_declarators(&self, needle_index: &selector_match::Index) -> Vec<usize> {
+    /// superset), or all declarators when the needle pins no required token.
+    /// Mirrors [`Self::candidate_bodies`] for the declarator scan. `mode` /
+    /// `allow_exact_ident` gate the exact-mode identifier discriminator (see
+    /// [`selector_match::needle_required_tokens`]).
+    fn candidate_declarators(
+        &self,
+        needle_index: &selector_match::Index,
+        mode: selector_match::Mode,
+        allow_exact_ident: bool,
+    ) -> Vec<usize> {
         intersect_postings(
             &self.declarator_tokens,
-            &selector_match::invariant_tokens(needle_index),
+            &selector_match::needle_required_tokens(needle_index, mode, allow_exact_ident),
             self.var_declarator_subjects.len(),
         )
     }
 
     /// Body indices a needle could match: the **intersection** of every required
     /// token's postings (a sound superset — every match carries every token), or
-    /// every body index when the needle pins no invariant token. Intersecting
+    /// every body index when the needle pins no required token. Intersecting
     /// (not just taking the rarest list) is what shrinks the candidate set for
-    /// needles whose tokens are individually common but jointly rare.
-    fn candidate_bodies(&self, needle_index: &selector_match::Index) -> Vec<usize> {
+    /// needles whose tokens are individually common but jointly rare. `mode` /
+    /// `allow_exact_ident` gate the exact-mode identifier discriminator (see
+    /// [`selector_match::needle_required_tokens`]); a prebind path must pass
+    /// `allow_exact_ident = false`.
+    fn candidate_bodies(
+        &self,
+        needle_index: &selector_match::Index,
+        mode: selector_match::Mode,
+        allow_exact_ident: bool,
+    ) -> Vec<usize> {
         intersect_postings(
             &self.body_tokens,
-            &selector_match::invariant_tokens(needle_index),
+            &selector_match::needle_required_tokens(needle_index, mode, allow_exact_ident),
             self.body_indices.len(),
         )
     }
@@ -223,11 +244,13 @@ fn matching_body_indices(
     // subject kind` gate in the matcher), so skip it without matching.
     let prefilter = selector_match::needle_root_kind_prefilter(needle_facts);
     let mut indices = Vec::new();
-    // Token index narrows the scan to statements that carry the needle's invariant
+    // Token index narrows the scan to statements that carry the needle's required
     // tokens (a sound superset); the root-kind prefilter and full match then
-    // filter. A non-extractable statement projects to empty facts (no root, no
-    // tokens) and so matches nothing — the same outcome as the old skip.
-    for body_idx in chunk.candidate_bodies(&needle_index) {
+    // filter. This path matches without a prebind, so an exact-mode needle may also
+    // require its identifier spellings (`allow_exact_ident = true`). A non-extractable
+    // statement projects to empty facts (no root, no tokens) and so matches nothing —
+    // the same outcome as the old skip.
+    for body_idx in chunk.candidate_bodies(&needle_index, mode, true) {
         if let Some(kind) = prefilter
             && chunk.body_root_kinds[body_idx] != Some(kind)
         {
@@ -310,12 +333,16 @@ fn member_matches_var_declarator(
     // Match the needle against each candidate var-decl declarator via the cached
     // synthetic single-declarator indices (built once for the chunk), so this
     // scan is index-build-free. The token index narrows to declarators carrying
-    // the needle's invariant tokens; a sound init-kind prefilter then skips
-    // declarators whose initializer kind cannot match, before the full match.
+    // the needle's required tokens; this path matches without a prebind, so an
+    // exact-mode needle also requires its identifier spellings (the binding name
+    // plus any referenced names) — for `const NAME = …;` selectors that alone
+    // shrinks the scan from every declarator to the few sharing those names. A
+    // sound init-kind prefilter then skips declarators whose initializer kind
+    // cannot match, before the full match.
     let needle_index = selector_match::Index::build(&needle_facts);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
-    for subject_idx in chunk.candidate_declarators(&needle_index) {
+    for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
         let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)
@@ -384,7 +411,10 @@ fn member_matches_declarator_hole(
     // The fixed (non-hole) declarators pin invariant tokens any matching owner
     // must carry, so the token index narrows the owner scan (the giant
     // `initBundle` var-decl is the worst case). The `DECLARATORS` holes pin none.
-    for body_idx in chunk.candidate_bodies(&needle_index) {
+    // This path prebinds the `target_binding` (alpha-coupling the target name to a
+    // candidate's binding), so the needle's identifier spellings are **not** required
+    // of the subject — `allow_exact_ident = false` keeps the prefilter sound.
+    for body_idx in chunk.candidate_bodies(&needle_index, mode, false) {
         let item = &chunk.module.body[body_idx];
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
@@ -644,7 +674,10 @@ fn resolve_group_declarator_holes(
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
-    for body_idx in chunk.candidate_bodies(&needle_index) {
+    // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
+    // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
+    // declarator idents are absorbed and excluded by `needle_required_tokens`.
+    for body_idx in chunk.candidate_bodies(&needle_index, mode, true) {
         let item = &chunk.module.body[body_idx];
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
@@ -724,7 +757,9 @@ fn resolve_group_single_declarator(
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
     let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
-    for subject_idx in chunk.candidate_declarators(&needle_index) {
+    // No prebind (the declarator match is un-prebound); an exact-mode needle may
+    // require its identifier spellings.
+    for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
         let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)
@@ -1337,6 +1372,96 @@ mod tests {
                 .expect("datalog resolves the anonymous statement");
             // matches exactly the `register(widget);` statement at body index 1.
             assert_eq!(groups, vec![vec![1]]);
+        });
+    }
+
+    fn exact_member(
+        match_source: &str,
+        target_binding: Option<&str>,
+    ) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            identifiers: SourceMatchIdentifierMode::Exact,
+            ..member(match_source, target_binding)
+        }
+    }
+
+    // The exact-mode identifier candidate discriminator must stay a *sound*
+    // prefilter: it may prune only declarators/statements that provably cannot
+    // match. These tests exercise resolutions that go through the discriminator
+    // (exact mode, identifier-bearing needles) and assert the correct owner is
+    // still found — i.e. the discriminator never prunes a real match.
+
+    #[test]
+    fn datalog_resolver_exact_ident_discriminator_resolves_identifier_only_decl() {
+        js_ast::with_swc_globals(|| {
+            // The perf-corpus shape: identifier-only inits with no literal/prop token
+            // to pin, in exact mode, so *only* the exact-mode identifier discriminator
+            // narrows the declarator scan. The needle (binding `target` + referenced
+            // `dep_b`) must reach exactly the matching declarator, not be pruned away.
+            // (Exact mode compares the binding name too, so the needle names the real
+            // binding, exactly as the source_match rewrite does.)
+            let chunk = module(
+                "const dep_a = base();\nconst dep_b = base();\n\
+                 const target = wrap(dep_b);\nconst other = wrap(dep_a);\n",
+            );
+            let selector = exact_member("const target = wrap(dep_b);", Some("target"));
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "T", &selector)
+                .expect("exact-mode identifier-only needle resolves");
+            assert_eq!(datalog.binding_name, "target");
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_exact_ident_discriminator_keeps_match_when_referenced_name_is_decisive() {
+        js_ast::with_swc_globals(|| {
+            // Two declarators share the binding name shape but differ only in the
+            // referenced identifier; in exact mode the reference is compared
+            // byte-for-byte. The discriminator must keep the declarator whose
+            // reference matches (`dep_b`) and the resolution must be the unique one —
+            // a wrongful prune would surface as a no-match, not a wrong owner.
+            let chunk = module("const m = wrap(dep_a);\nconst m2 = wrap(dep_b);\n");
+            let selector = exact_member("const m2 = wrap(dep_b);", Some("m2"));
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "M2", &selector)
+                .expect("exact-mode needle resolves uniquely by referenced name");
+            assert_eq!(datalog.binding_name, "m2");
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_exact_ident_anonymous_statement_resolves() {
+        js_ast::with_swc_globals(|| {
+            // The no-prebind single-statement scan (anonymous) also uses the
+            // exact-mode identifier discriminator: `register(widget)` must reach
+            // the statement carrying both `register` and `widget`.
+            let chunk = module("init();\nregister(other);\nregister(widget);\n");
+            let selector = exact_member("register(widget);", None);
+            let groups = ChunkResolver::new(&chunk)
+                .resolve_anonymous_groups("test", &selector)
+                .expect("exact-mode anonymous needle resolves");
+            assert_eq!(groups, vec![vec![2]]);
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_exact_declarator_hole_resolves_despite_target_rename() {
+        js_ast::with_swc_globals(|| {
+            // The declarator-hole path *prebinds* the target name, alpha-coupling it
+            // to the candidate's binding — so the exact-mode discriminator must NOT
+            // require the needle's target identifier (`c`) of the subject. The owner
+            // binds `theClass`, not `c`; the prebind path passes
+            // `allow_exact_ident = false`, so the match is still found.
+            let chunk = module("const p = 1, theClass = \"abc\", q = 2;\nconst other = 5;\n");
+            let selector = exact_member(
+                "const DECLARATORS_BEFORE = null, c = STR_LITERAL_MATCHING_RE(\"^abc$\"), \
+                 DECLARATORS_AFTER = null;",
+                Some("c"),
+            );
+            let datalog = ChunkResolver::new(&chunk)
+                .resolve_member("test", "C", &selector)
+                .expect("exact-mode declarator-hole needle resolves despite target rename");
+            assert_eq!(datalog.binding_name, "theClass");
         });
     }
 }

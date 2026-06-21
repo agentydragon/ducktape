@@ -62,14 +62,23 @@ pub enum Mode {
 /// Any structural match must carry every invariant token the needle pins, so a
 /// token → containing-statements index lets a selector skip straight to the
 /// candidates that share its rarest token instead of scanning the whole chunk.
-/// (Identifiers are renamable in alpha mode, so they are *not* invariant; the
-/// `var`/`let`/`const` keyword is invariant but too common to discriminate.)
+/// The `var`/`let`/`const` keyword is invariant but too common to discriminate.
+///
+/// [`Ident`](Token::Ident) is the **exact-mode-only** discriminator: an identifier
+/// spelling is alpha-renamable (so *not* invariant) under [`Mode::AlphaAll`], but
+/// under [`Mode::Exact`] `homo` compares it byte-for-byte, so a needle identifier
+/// pins it — but **only** when the match runs without a `target_binding` prebind
+/// (a prebind alpha-couples one needle name to a candidate's, so that name's
+/// spelling is no longer required). Subjects are indexed with their identifiers so
+/// an exact-mode needle can require them; an alpha-mode (or prebind) query simply
+/// pins no `Ident`, leaving the existing behavior unchanged.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     Str(Box<str>),
     Num(Box<str>),
     Prop(Box<str>),
     Regex(Box<str>, Box<str>),
+    Ident(Box<str>),
 }
 
 /// One lexical frame's bijective needle↔subject identifier map.
@@ -1230,14 +1239,15 @@ fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
     }
 }
 
-/// Reject — **before** structural matching, so it can never be masked by an
-/// earlier kind/arity mismatch short-circuiting to `false` — any needle
-/// construct this matcher does not faithfully handle: a run-hole keyword not
-/// consumed as a list carrier (a misplaced hole), or a `STR_LITERAL_MATCHING_RE`
-/// occurrence that is not a well-formed predicate callee. A token is consumed
-/// iff it lies inside a run-hole carrier subtree or is a predicate's callee/arg,
-/// which mirrors exactly what the matcher's structural rules absorb.
-fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
+/// The needle nodes the matcher's structural rules **absorb** rather than compare
+/// node-for-node: every node inside a run-hole carrier subtree (consumed by list
+/// placement, never visited by [`homo`]) and every well-formed
+/// `STR_LITERAL_MATCHING_RE(...)` predicate's callee + argument (the matcher
+/// handles the whole `Call`, never the bare callee identifier). Shared by the
+/// faithful-subset guard ([`unsupported_needle_construct`]) and the exact-mode
+/// identifier discriminator ([`needle_required_tokens`]) so the two agree exactly
+/// on which identifiers are real comparisons versus absorbed placeholders.
+fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
     let mut consumed: HashSet<NodeId> = HashSet::new();
     for (parent, kids) in index.children.iter().enumerate() {
         let parent_kind = index.kind_of(parent as NodeId);
@@ -1247,13 +1257,23 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
             }
         }
     }
-    // A well-formed predicate consumes its own callee + string-literal argument
-    // (the matcher handles the whole `Call`, never the bare callee identifier).
     for node in 0..index.kind.len() as NodeId {
         if regex_predicate_pattern(index, node).is_some() {
             consumed.extend(index.children_of(node));
         }
     }
+    consumed
+}
+
+/// Reject — **before** structural matching, so it can never be masked by an
+/// earlier kind/arity mismatch short-circuiting to `false` — any needle
+/// construct this matcher does not faithfully handle: a run-hole keyword not
+/// consumed as a list carrier (a misplaced hole), or a `STR_LITERAL_MATCHING_RE`
+/// occurrence that is not a well-formed predicate callee. A token is consumed
+/// iff it lies inside a run-hole carrier subtree or is a predicate's callee/arg,
+/// which mirrors exactly what the matcher's structural rules absorb.
+fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
+    let consumed = consumed_nodes(index);
     for node in 0..index.kind.len() as NodeId {
         let Some(name) = index.ident_of(node).or_else(|| index.prop_name_of(node)) else {
             continue;
@@ -1413,6 +1433,65 @@ pub fn invariant_tokens(index: &Index) -> Vec<Token> {
         }
     }
     tokens.into_iter().collect()
+}
+
+/// The tokens to index a **subject** (chunk body item / declarator) under: every
+/// [`invariant_tokens`] token plus an [`Token::Ident`] for each identifier spelling
+/// the subject carries. The identifiers make the postings index answer
+/// "which subjects contain identifier `X`" so an exact-mode needle that pins `X`
+/// can prune to them; an alpha-mode needle simply never queries an `Ident` token,
+/// so its candidate set is unchanged. Real subject source carries no hole keywords,
+/// but they are excluded defensively to keep the index identical in spirit to the
+/// needle side.
+pub fn subject_tokens(index: &Index) -> Vec<Token> {
+    let mut tokens = invariant_tokens(index);
+    let mut seen: HashSet<Box<str>> = HashSet::new();
+    for node in 0..index.kind.len() as NodeId {
+        if let Some(name) = index.ident_of(node)
+            && !is_hole_keyword(name)
+            && seen.insert(name.into())
+        {
+            tokens.push(Token::Ident(name.into()));
+        }
+    }
+    tokens
+}
+
+/// The tokens a needle requires of any matching subject, for candidate pruning.
+///
+/// Always includes [`invariant_tokens`] (literals / property names / regex — these
+/// `homo` compares exactly in every mode). Under [`Mode::Exact`] **and** when the
+/// match runs without a `target_binding` prebind (`allow_exact_ident`), it also
+/// adds an [`Token::Ident`] for every identifier the matcher provably compares
+/// byte-for-byte: every `ident_name` node that is neither a hole keyword nor
+/// absorbed by a run-hole carrier / predicate (the [`consumed_nodes`] set, the same
+/// nodes [`homo`] never visits as a node-for-node identifier comparison).
+///
+/// **Soundness** (the candidate set must never miss a real match): in exact mode
+/// without a prebind, a non-consumed needle identifier `X` is matched via
+/// [`Bindings::resolve_unbound`], which under `Exact` requires `needle == subject`
+/// — so any matching subject carries identifier `X`, hence appears in the `Ident(X)`
+/// postings. Excluding the consumed nodes is essential: a `DECLARATORS`/`EXPR`/
+/// `ANYTHING` hole or a `STR_LITERAL_MATCHING_RE` callee imposes no spelling on the
+/// subject. A `target_binding` prebind alpha-couples one needle name to a
+/// candidate's, so its spelling is not required either — callers on a prebind path
+/// pass `allow_exact_ident = false` and fall back to invariant-only tokens.
+pub fn needle_required_tokens(index: &Index, mode: Mode, allow_exact_ident: bool) -> Vec<Token> {
+    let mut tokens = invariant_tokens(index);
+    if mode == Mode::Exact && allow_exact_ident {
+        let consumed = consumed_nodes(index);
+        let mut seen: HashSet<Box<str>> = HashSet::new();
+        for node in 0..index.kind.len() as NodeId {
+            if !consumed.contains(&node)
+                && let Some(name) = index.ident_of(node)
+                && !is_hole_keyword(name)
+                && seen.insert(name.into())
+            {
+                tokens.push(Token::Ident(name.into()));
+            }
+        }
+    }
+    tokens
 }
 
 /// The init node of a single-declarator var-decl statement: `var_decl_node` →
