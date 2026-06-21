@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -62,4 +62,16 @@ py_binary(
     name = "serve",
     main_module = "haku.agent.supervisor",
     deps = [":supervisor"],
+)
+
+py_test(
+    name = "test_agent",
+    srcs = ["test_agent.py"],
+    deps = [
+        ":agent",
+        ":config",
+        "//:conftest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
 )

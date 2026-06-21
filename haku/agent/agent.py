@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from pathlib import Path
 
 import httpx
 from agent_framework import (
@@ -36,13 +37,17 @@ _MAX_TOOL_OUTPUT = 20_000
 WAKE = "Wake: execute one scan pass per the run procedure, then commit, push, and stop."
 
 
+async def _run_command(command: str, *, cwd: Path) -> str:
+    proc = await asyncio.create_subprocess_shell(
+        command, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    out, _ = await proc.communicate()
+    return out.decode(errors="replace")[-_MAX_TOOL_OUTPUT:]
+
+
 def _run_command_tool(settings: Settings) -> FunctionTool:
     async def run_command(command: str) -> str:
-        proc = await asyncio.create_subprocess_shell(
-            command, cwd=settings.state_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-        )
-        out, _ = await proc.communicate()
-        return out.decode(errors="replace")[-_MAX_TOOL_OUTPUT:]
+        return await _run_command(command, cwd=settings.state_dir)
 
     return FunctionTool(
         name="run_command",
