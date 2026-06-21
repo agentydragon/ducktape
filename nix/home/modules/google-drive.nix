@@ -1,8 +1,8 @@
 # Google Drive File Stream as a home-manager systemd-user service.
 #
-# The drivefs binary is provided by gaffer-private's CI through the cluster
+# The drivefs and drivectl binaries are provided by gaffer-private's CI through the cluster
 # attic cache (cache.allegedly.works/gaffer); it lands in this config via
-# `gafferPkgs.drivefs`, which resolves to a `builtins.storePath` entry in
+# `gafferPkgs`, which resolves to `builtins.fetchClosure` entries in
 # `nix/packages/gaffer.nix` driven by `nix/gaffer-pins.json`. No
 # gaffer-private source is fetched on the consumer host.
 #
@@ -15,6 +15,10 @@
 }:
 let
   cfg = config.services.google-drive;
+  drivePackages = [
+    gafferPkgs.drivefs
+  ]
+  ++ lib.optionals (gafferPkgs ? drivectl) [ gafferPkgs.drivectl ];
 in
 {
   options.services.google-drive = {
@@ -28,7 +32,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ gafferPkgs.drivefs ];
+    home.packages = drivePackages;
 
     systemd.user.services.google-drive = {
       Unit = {

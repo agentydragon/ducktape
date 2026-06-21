@@ -14,11 +14,10 @@ The private-cache + JWT-rotation infra landed in commits
 - `nix/home/modules/google-drive.nix` ready to consume `gafferPkgs.drivefs`.
 - wyrm2 NixOS host wired as substituter consumer.
 
-Scope: **drivefs only** (the upstream Google Drive binary blob).
-gaffer-private's `drivefs/package.nix` already wraps it, and its
-`flake.nix` already exposes `packages.${system}.google-drive`. Nothing
-new on the gaffer-private nix side. drivectl (the Rust wrapper) is a
-separate followup.
+Original scope: **drivefs only** (the upstream Google Drive binary blob).
+Current scope also includes `drivectl`: gaffer-private wraps the Bazel-built
+Rust binary and descriptor as `packages.${system}.drivectl`, pushes it to the
+same private `gaffer` cache, and repins Ducktape alongside `drivefs`.
 
 ## Phase 1 — gaffer-private CI workflow
 
@@ -162,13 +161,12 @@ sudo curl -fI \
   https://cache.allegedly.works/gaffer/nix-cache-info
 ```
 
-## Followups (out of scope)
+## Followups
 
-- **drivectl**: same shape as drivefs but Bazel-built Rust binary, needs
-  a nix wrapper for the Bazel output (open question on Bazel→nix
-  bridging — stage Bazel output in source tree vs `--arg`-based impure
-  build). Add to `flake.nix` `packages.${system}.drivectl`, then
-  re-bump the pin to also include it.
+- **drivectl**: implemented in gaffer-private as the same cache path as
+  drivefs. CI builds the Bazel binary, stages the executable plus descriptor
+  file for Nix, pushes `packages.${system}.drivectl` to the `gaffer` cache, and
+  repins `nix/gaffer-pins.json` alongside `drivefs`.
 - Roll the wiring (`ducktape.attic-substituter.enable = true` +
   `services.google-drive.enable = true`) to rugged, iguana, atlas
   per-host. Each needs its own per-host SOPS reader file plus a parallel

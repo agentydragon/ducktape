@@ -79,10 +79,10 @@ JWTs auto-rotated by the cluster (1-year validity, mint-on-staleness):
 Both files are encrypted with the CI age key, already on both repos as
 `SOPS_AGE_KEY` (synced by `tf/gitops/github-secrets-sync/main.tf`).
 
-## Private-binary isolation (drivefs)
+## Private-binary isolation (drivefs/drivectl)
 
-`drivefs` (the Google Drive binary) must stay in the restricted `gaffer` cache
-and **never** land in the broadly-readable `main` cache. The boundary that
+`drivefs` (the Google Drive binary) and `drivectl` must stay in the restricted
+`gaffer` cache and **never** land in the broadly-readable `main` cache. The boundary that
 enforces this is the **narinfo**: each cache signs and serves its own narinfos,
 gated by per-cache JWT scope. `main` and `gaffer` physically share the one
 `attic` S3 bucket of content-addressed chunks, but chunks are useless without
@@ -90,9 +90,10 @@ the gaffer narinfo (NAR hash → ordered chunk list), so narinfo scoping is the
 real access boundary even though chunk bytes coexist.
 
 The leak it guards against: `nix/home/modules/google-drive.nix`, when
-`services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` via
+`services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` and
+`drivectl` via
 `builtins.fetchClosure` from `gaffer` into the local store **at eval time**. If a
-closure containing it were pushed to `main`, `drivefs`'s narinfo would land in
+closure containing them were pushed to `main`, their narinfos would land in
 `main`, pullable by anyone with `main:pull`.
 
 So `devinfra/ci/nix_attic_build_and_push.sh` forces google-drive **off** for any
@@ -111,11 +112,11 @@ configs that have **home-manager but not the google-drive module** (`bazel-test`
 `root` user; the standalone `claude-web` profile): the bool read errors → treated
 as not-enabled → built untouched.
 
-With it off, `config = lib.mkIf cfg.enable {…}` never references `drivefs`, so it
-is never fetched and never enters a pushed closure. Real hosts deploy with
-google-drive **on**: `nixos-rebuild switch` pulls `drivefs` straight from
-`gaffer` (their reader JWT carries `--pull gaffer`) and rebuilds only the cheap
-home-manager generation diff.
+With it off, `config = lib.mkIf cfg.enable {…}` never references those private
+packages, so they are never fetched and never enter a pushed closure. Real hosts
+deploy with google-drive **on**: `nixos-rebuild switch` pulls `drivefs` and
+`drivectl` straight from `gaffer` (their reader JWT carries `--pull gaffer`) and
+rebuilds only the cheap home-manager generation diff.
 
 **Invariant:** the override targets exactly the configs whose
 `services.google-drive.enable` reads `true`, so a new google-drive host is covered
