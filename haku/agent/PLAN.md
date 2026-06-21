@@ -20,20 +20,41 @@ are **all already MCP servers**. Two ways to wire them, and the choice drives th
 | Idiom          | shell-ish                                     | MAF-native (typed tools)                                     |
 | Cost           | manual already assumes it                     | rework manual's source access to tools; wire each MCP's auth |
 
-**Recommendation: MCP toolsets.** It sidesteps the apt block, is MAF-idiomatic, and
-in-cluster the loop reaches in-cluster MCP Services directly. Migrate sources
-incrementally (Tana wired; add Grocy / PostScanMail / Google / Plaid as toolsets), and
-keep a minimal `run_command` (haku-state git via pygit2, like the console) for commits.
-The shell route stays the fallback for any source without a usable MCP surface.
+**Decision (chosen): the shell route.** Haku gets a real CLI toolbox (git, curl, psql,
+… via apt; python from the image base), so `run_command` reaches sources and commits
+`haku-state` with shell git — no pygit2 write-model needed. MCP toolsets stay a future
+per-source simplification (Tana is already wired as one). This is why the image takes a
+debian base + apt layer (next section).
 
-## Image (`oci_image`, modeled on `haku/console` + `finance/beancount_export`)
+## Image (`oci_image`, modeled on `finance/beancount_export` + `haku/console`)
 
-- Base `@debian_*_slim`; bake `haku/base/` + `haku/run.md` at `/opt/haku` (pkg_files /
-  pkg_tar, like the console's `web_tar`); entrypoint runs `:serve`.
-- MCP-toolset route → **no apt layer**: clone `haku-state` with pygit2 in the supervisor
-  lifespan (exactly what the console does).
-- Shell route → apt layer + a kubectl binary, which **cannot build in this sandbox**
-  (debian repos 403) — CI / full-network only.
+Apt manifest is written: <trixie_haku_agent.yaml> (ca-certificates, git, curl,
+postgresql-client; kubectl + the fastmcp CLI are not in trixie main — kubectl from an
+upstream static binary if needed, fastmcp from the `agent-haku` Python devshell). The
+lock + image **build on CI / a full-network machine** — debian repos are 403 in this
+sandbox, and an `apt.install` whose `.lock.json` is missing breaks MODULE.bazel eval, so
+none of the wiring below is committed yet. Turnkey steps where apt resolves:
+
+1. Add to MODULE.bazel's `apt` extension (then add the name to `use_repo(apt, …)`):
+
+   ```
+   apt.install(
+       name = "trixie_haku_agent",
+       lock = "//haku/agent:trixie_haku_agent.lock.json",
+       manifest = "//haku/agent:trixie_haku_agent.yaml",
+   )
+   ```
+
+2. Generate the lock: `bazel run @trixie_haku_agent//:lock`.
+3. Add `oci_image` (+ `oci_load`) to `haku/agent/BUILD.bazel`: base
+   `@debian_trixie_slim_linux_amd64`; `tars` = the `:serve` `py_image_layer`, a
+   `pkg_tar` baking `haku/base/` + `haku/run.md` at `/opt/haku` (the console's `web_tar`
+   pattern), and `"@trixie_haku_agent//:flat"` (the apt layer, the
+   `finance/beancount_export` pattern); entrypoint runs `:serve`.
+4. `bbr build //haku/agent:image`, then GHCR push + Flux as for the console.
+
+`haku-state` checkout: the supervisor clones/pulls it at startup via subprocess git (git
+is in the image) — the next buildable-here increment.
 
 ## Bootstrap / entrypoint contract
 

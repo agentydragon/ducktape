@@ -1,0 +1,30 @@
+# Deb packages for the Haku agent (haku/agent) image, on debian:trixie-slim.
+#
+# Haku's `run_command` shell tool uses these to reach sources and write haku-state:
+#   - git (+ ca-certificates) to clone/commit/push haku-state and hit HTTPS endpoints
+#   - curl for REST APIs (Gmail/Calendar/Drive/PostScanMail)
+#   - postgresql-client (psql) for the Plaid ledger
+# Python + the app come from the rules_py image layers (not apt). The fastmcp MCP-client
+# CLI comes from the `agent-haku` Python devshell output, not apt. kubectl is NOT in
+# trixie main — if the shell route needs `kubectl`, add it from an upstream static
+# binary (cf. loom/gym's docker CLI), not here.
+#
+# Regenerate the lock after any change. NOTE: this needs the apt index over the network,
+# which is 403 in the Claude-web sandbox — run it on CI / a full-network machine:
+#   bazel run @trixie_haku_agent//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "ca-certificates"
+  - "git"
+  - "curl"
+  - "postgresql-client"
