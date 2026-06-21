@@ -347,6 +347,9 @@ Move semantics (CLI surface, not a separate feature):
 - `bindings assign` auto-deletes a drained source module only when its
   module-level `comment:` is empty/absent.
 - `modules merge` concatenates source-module comments into the target.
+- `modules merge` records `merged from: <sources>` provenance in the
+  target's module-level `note:` (composing with any existing note),
+  not a `#` YAML comment.
 
 CLI editing is live for module and member comments; anonymous
 statement comments are authored directly in YAML. Module, member, and

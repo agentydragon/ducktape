@@ -380,16 +380,32 @@ pub fn merge_modules(
         );
     }
 
-    let mut body = String::new();
+    // Provenance lands in the module-level `note:` field, not a `#`
+    // YAML comment: the rewriters (`bindings assign`, `synthesize
+    // --apply`, `modules merge`) re-emit the YAML and drop every `#`
+    // comment, so a `#` provenance line would be silently lost on the
+    // next automated edit (README.md § "Comments"). `note:` is
+    // non-emitting (never reaches generated JS) and round-trips.
     if !merged_source_labels.is_empty() {
-        body.push_str("# merged from: ");
-        body.push_str(&merged_source_labels.join(", "));
-        body.push('\n');
+        let provenance = format!("merged from: {}", merged_source_labels.join(", "));
+        let mapping = target_doc
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow!("target YAML is not a mapping; cannot merge provenance note"))?;
+        let combined: Vec<String> = mapping
+            .get(Value::String("note".into()))
+            .and_then(Value::as_str)
+            .map(|existing| existing.trim_end().to_string())
+            .into_iter()
+            .chain(std::iter::once(provenance))
+            .collect();
+        mapping.insert(
+            Value::String("note".into()),
+            Value::String(combined.join("\n")),
+        );
     }
-    body.push_str(
-        &serde_yaml::to_string(&target_doc)
-            .with_context(|| format!("serializing merged {}", target_abs.display()))?,
-    );
+
+    let body = serde_yaml::to_string(&target_doc)
+        .with_context(|| format!("serializing merged {}", target_abs.display()))?;
     if let Some(parent) = target_abs.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
@@ -706,8 +722,13 @@ mod tests {
         assert!(!root.join("src2.yaml").exists());
 
         let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-        assert!(merged.contains("# merged from: src1.yaml, src2.yaml"));
+        assert!(!merged.contains("# merged from"), "merged={merged}");
         let doc: Value = serde_yaml::from_str(&merged).unwrap();
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: src1.yaml, src2.yaml"),
+            "merged={merged}",
+        );
         let names: Vec<String> = doc["members"]
             .as_sequence()
             .unwrap()
@@ -718,11 +739,18 @@ mod tests {
     }
 
     #[test]
-    fn merge_with_semantically_empty_source_preserves_target_formatting() {
+    fn merge_records_provenance_note_and_preserves_members() {
+        // Even a member-empty source records `merged from:` provenance
+        // in the target's module-level `note:` (durable, non-emitting).
+        // The merge necessarily reserializes the target since `note:`
+        // is now real structure; the member content must round-trip.
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let target = "# hand formatted\nmembers: [ { selector: { binding: { name: a } } } ]\n";
-        write(root, "target.yaml", target);
+        write(
+            root,
+            "target.yaml",
+            "members: [ { selector: { binding: { name: a } } } ]\n",
+        );
         write(root, "empty.yaml", "members: []\n");
 
         let summary =
@@ -730,10 +758,22 @@ mod tests {
 
         assert_eq!(summary.merged_sources, vec![root.join("empty.yaml")]);
         assert!(!root.join("empty.yaml").exists());
+        let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+        let doc: Value = serde_yaml::from_str(&merged).unwrap();
         assert_eq!(
-            fs::read_to_string(root.join("target.yaml")).unwrap(),
-            target
+            doc["note"].as_str(),
+            Some("merged from: empty.yaml"),
+            "merged={merged}",
         );
+        let names: Vec<String> = doc["members"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|m| member_name(m).unwrap())
+            .collect();
+        assert_eq!(names, vec!["a"]);
+        // No `#` provenance comment is emitted anymore.
+        assert!(!merged.contains("# merged from"), "merged={merged}");
     }
 
     #[test]
@@ -765,7 +805,12 @@ mod tests {
         );
         assert!(!root.join("ai/models/pricing/lookup.yaml").exists());
         let merged = fs::read_to_string(root.join("ai/models/pricing.yaml")).unwrap();
-        assert!(merged.contains("# merged from: ai/models/pricing/lookup.yaml"));
+        let doc: Value = serde_yaml::from_str(&merged).unwrap();
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: ai/models/pricing/lookup.yaml"),
+            "merged={merged}",
+        );
     }
 
     #[test]
@@ -795,8 +840,12 @@ mod tests {
         assert!(!root.join("src/one.yaml").exists());
         assert!(!root.join("src/two.yaml").exists());
         let merged = fs::read_to_string(root.join("new/nested/target.yaml")).unwrap();
-        assert!(merged.contains("# merged from: src/one.yaml, src/two.yaml"));
         let doc: Value = serde_yaml::from_str(&merged).unwrap();
+        assert_eq!(
+            doc["note"].as_str(),
+            Some("merged from: src/one.yaml, src/two.yaml"),
+            "merged={merged}",
+        );
         let names: Vec<String> = doc["members"]
             .as_sequence()
             .unwrap()

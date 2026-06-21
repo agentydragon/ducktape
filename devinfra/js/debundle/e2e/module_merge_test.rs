@@ -63,11 +63,18 @@ fn merges_two_sources_into_target_and_deletes_sources() {
     assert!(root.join("ui/target.yaml").exists());
 
     let merged_text = fs::read_to_string(root.join("ui/target.yaml")).unwrap();
+    // Provenance lives in a durable, non-emitting `note:` field, not a
+    // `#` YAML comment the rewriters would drop on the next edit.
     assert!(
-        merged_text.contains("# merged from: ui/src1.yaml, ui/src2.yaml"),
-        "missing provenance comment in:\n{merged_text}"
+        !merged_text.contains("# merged from"),
+        "provenance must not be a `#` comment:\n{merged_text}"
     );
     let merged: Value = serde_yaml::from_str(&merged_text).unwrap();
+    assert_eq!(
+        merged["note"].as_str(),
+        Some("merged from: ui/src1.yaml, ui/src2.yaml"),
+        "missing provenance note in:\n{merged_text}"
+    );
     assert_eq!(member_names(&merged), vec!["alpha", "bravo", "charlie"]);
 }
 
@@ -383,4 +390,33 @@ fn merge_into_uncommented_target_adopts_source_comment_with_divider() {
     let comment = doc["comment"].as_str().expect("merged comment present");
     assert!(comment.contains("--- from src.yaml:"), "comment={comment}");
     assert!(comment.contains("src notes"), "comment={comment}");
+}
+
+#[test]
+fn merge_appends_provenance_to_existing_note() {
+    // `modules merge` composes its `merged from:` provenance with any
+    // existing module-level `note:` rather than clobbering it. The note
+    // is non-emitting scratch metadata that survives rewriter edits.
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write_file(
+        root,
+        "target.yaml",
+        "note: hand-authored debt rationale\nmembers:\n  - selector: { binding: { name: a } }\n",
+    );
+    write_file(
+        root,
+        "src.yaml",
+        "members:\n  - selector: { binding: { name: b } }\n",
+    );
+
+    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
+
+    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    let note = doc["note"].as_str().expect("merged note present");
+    assert_eq!(
+        note, "hand-authored debt rationale\nmerged from: src.yaml",
+        "merged={merged}"
+    );
 }

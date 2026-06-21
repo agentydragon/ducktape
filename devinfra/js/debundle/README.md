@@ -166,10 +166,13 @@ available.
 Module YAMLs, `members:` entries, and `anonymous_statements:` entries
 may carry an optional `comment:` field for reverse-engineering
 annotations; these emit into generated JS on every rebuild, so RE
-notes survive `debundle run` invocations. `note:` is YAML-only
-scratch metadata that never emits (debt rationale, provenance). Edit
-module and member comments via `debundle bindings comment` /
-`debundle modules comment`. See `docs/guide.md` → "Workflow: authoring
+notes survive `debundle run` invocations. The same four levels —
+module top, `members:`, `binding_groups:`, and `anonymous_statements:`
+— also accept a `note:` field: YAML-only scratch metadata that never
+emits (debt rationale, provenance; `modules merge` writes its
+`merged from:` provenance into the module-level `note:`). Edit module
+and member comments via `debundle bindings comment` / `debundle
+modules comment`. See `docs/guide.md` → "Workflow: authoring
 `comment:` fields" for the YAML schema and worked CLI examples.
 
 **Do not use `#` YAML comments in spec files.** The rewriters (`bindings

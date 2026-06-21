@@ -704,6 +704,15 @@ pub struct LogicalModule {
     /// `CLI.md` § "per-member and module-level `comment:` fields".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    /// Optional YAML-only note: module-level provenance / honest-debt
+    /// rationale (e.g. `merged from: …` provenance written by
+    /// `modules merge`) that survives spec edits without appearing in
+    /// generated JS. Ignored by the lowering pass — unlike `comment:`,
+    /// which emits a `//` block. The module-level counterpart of
+    /// `Member.note` / `BindingGroup.note`; same non-emitting contract
+    /// and STYLE.md local exemption (see AGENTS.md "Spec `note:` field").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Co-mover spec for a top-level anonymous side-effect statement.
@@ -1873,6 +1882,37 @@ mod tests {
         assert!(
             round_tripped.contains(r#""note":"no stable anchor yet""#),
             "note must survive round-trip: {round_tripped}",
+        );
+    }
+
+    #[test]
+    fn logical_module_accepts_and_round_trips_note() {
+        // Module-level `note:` is the same non-emitting annotation as
+        // `Member.note` / `BindingGroup.note` (`modules merge` writes its
+        // `merged from:` provenance here): it must survive
+        // `deny_unknown_fields`, round-trip intact, and — being absent from
+        // every lowering plan struct — never reach generated JS.
+        let module: LogicalModule =
+            serde_json::from_str(r#"{ "members": [], "note": "merged from: src.yaml" }"#).unwrap();
+        assert_eq!(module.note.as_deref(), Some("merged from: src.yaml"));
+        assert!(module.comment.is_none());
+        let round_tripped = serde_json::to_string(&module).unwrap();
+        assert!(
+            round_tripped.contains(r#""note":"merged from: src.yaml""#),
+            "note must survive round-trip: {round_tripped}",
+        );
+    }
+
+    #[test]
+    fn logical_module_note_is_absent_from_serialization_when_unset() {
+        // `skip_serializing_if = "Option::is_none"` keeps the field off the
+        // wire (and out of generated YAML/JSON) when no note is present.
+        let module: LogicalModule = serde_json::from_str(r#"{ "members": [] }"#).unwrap();
+        assert!(module.note.is_none());
+        let round_tripped = serde_json::to_string(&module).unwrap();
+        assert!(
+            !round_tripped.contains("note"),
+            "unset note must not serialize: {round_tripped}",
         );
     }
 

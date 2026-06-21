@@ -465,6 +465,10 @@ not separate features):
 - `modules merge` concatenates source-module comments into the
   target's module-level `comment:` (with a `--- from <source>:`
   divider) when sources have non-empty comments.
+- `modules merge` records `merged from: <sources>` provenance in the
+  target's module-level `note:` (composing with any existing note),
+  never a `#` YAML comment — the rewriters drop `#` comments, but
+  `note:` is durable and non-emitting.
 
 See `guide.md` → "Workflow: authoring `comment:` fields" for the
 YAML schema and worked CLI examples.

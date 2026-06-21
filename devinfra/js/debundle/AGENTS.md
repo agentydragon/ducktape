@@ -508,13 +508,14 @@ only for older in-repo fixtures.
 
 **Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
 belongs in inert `#` comments, not `note:` schema fields): the spec's optional
-`note:` field on `Member` / `BindingGroup` / `AnonymousStatementSelector`
-(<spec.rs>) is a ratified exemption. The spec rewriters (`bindings assign`,
-`synthesize --apply`) re-emit the YAML and **drop `#` comments**, so a
-round-tripped `note:` is the only debt-rationale annotation that survives a
-rewrite. Unlike `comment:` (which emits a `//` line into the debundled JS and is
-gated by byte-identity), `note:` is non-emitting; its reader is the human spec
-author.
+`note:` field on `LogicalModule` (module top) / `Member` / `BindingGroup` /
+`AnonymousStatement` (<spec.rs>) is a ratified exemption. The spec rewriters
+(`bindings assign`, `synthesize --apply`, `modules merge`) re-emit the YAML and
+**drop `#` comments**, so a round-tripped `note:` is the only debt-rationale
+annotation that survives a rewrite (`modules merge` itself writes its
+`merged from:` provenance into the module-level `note:` for exactly this reason).
+Unlike `comment:` (which emits a `//` line into the debundled JS and is gated by
+byte-identity), `note:` is non-emitting; its reader is the human spec author.
 
 ## Module-specifier path math
 

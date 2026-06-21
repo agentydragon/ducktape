@@ -35,6 +35,11 @@ pub struct ModuleFile {
     /// [`spec::LogicalModule::comment`].
     #[serde(default)]
     pub comment: Option<String>,
+    /// Optional module-level YAML-only note. Carried into
+    /// [`spec::LogicalModule::note`]; never emitted into generated JS.
+    /// `modules merge` writes its `merged from: …` provenance here.
+    #[serde(default)]
+    pub note: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
     #[serde(default)]
@@ -425,6 +430,31 @@ members:
             module.members[0].comment.as_deref(),
             Some("Per-member comment\nacross two lines.\n"),
         );
+    }
+
+    #[test]
+    fn read_module_file_round_trips_module_level_note() {
+        // Module-top `note:` is YAML-only scratch metadata (`modules
+        // merge` writes its `merged from:` provenance here). It must
+        // deserialize via the optional field, survive
+        // `deny_unknown_fields`, and stay distinct from `comment:`.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("x.yaml");
+        fs::write(
+            &path,
+            r#"note: |
+  merged from: a.yaml, b.yaml
+members:
+  - selector: { binding: { name: a } }
+"#,
+        )
+        .unwrap();
+        let module = read_module_file(&path).unwrap();
+        assert_eq!(
+            module.note.as_deref(),
+            Some("merged from: a.yaml, b.yaml\n"),
+        );
+        assert!(module.comment.is_none());
     }
 
     #[test]
