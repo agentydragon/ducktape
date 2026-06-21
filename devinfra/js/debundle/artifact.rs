@@ -1523,7 +1523,7 @@ struct DirectionalDirectoryFact<'a> {
 
 impl DirectionalDirectoryAccumulator {
     fn add_fact(&mut self, fact: DirectionalDirectoryFact<'_>) {
-        let kind = dep_kind_key(fact.edge_kind);
+        let kind: &'static str = fact.edge_kind.into();
         self.edge_count += 1;
         *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
         if let Some(symbol) = fact.symbol {
@@ -1642,7 +1642,7 @@ struct DirectionalFileAccumulator {
 
 impl DirectionalFileAccumulator {
     fn add_fact(&mut self, external_file: &str, edge_kind: DepKind, symbol: Option<&str>) {
-        let kind = dep_kind_key(edge_kind);
+        let kind: &'static str = edge_kind.into();
         self.edge_count += 1;
         *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
         if let Some(symbol) = symbol {
@@ -1697,18 +1697,6 @@ fn direct_child_path(directory: &str, file: &str) -> Option<(String, bool)> {
     let mut parts = rest.split('/');
     let first = parts.next()?;
     Some((first.to_string(), parts.next().is_some()))
-}
-
-fn dep_kind_key(kind: DepKind) -> &'static str {
-    match kind {
-        DepKind::EagerUse => "eager_use",
-        DepKind::LazyUse => "lazy_use",
-        DepKind::EagerRebind => "eager_rebind",
-        DepKind::LazyRebind => "lazy_rebind",
-        DepKind::DeferredRebind => "deferred_rebind",
-        DepKind::Sequenced => "sequenced",
-        DepKind::LocalEffect => "local_effect",
-    }
 }
 
 fn materialize_chunk_scripts(

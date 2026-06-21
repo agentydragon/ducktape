@@ -252,6 +252,218 @@ export { actual };
     );
 }
 
+// A concise arrow whose body is a parenthesized object literal
+// (`(props) => ({ … })`) is the idiomatic component/factory shape; the returned
+// object is the stable, re-minify-proof anchor. The selector pins the factory by
+// its returned object's distinctive `kind` key (with `OBJECT_PROPS` absorbing the
+// noisy generated members), end to end through the lowering pipeline. Closes the
+// SELECTOR_BUGS.md "arrow whose body is a parenthesized object literal" gap.
+#[test]
+fn member_source_match_arrow_returning_object_literal_selects_factory() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const makeWidget = (props) => ({
+  kind: "widget",
+  render: () => props.label.toUpperCase(),
+  dispose() {},
+});
+console.log(makeWidget({ label: "ok" }).render());
+export { makeWidget };
+"#,
+        vec![logical_module(
+            "factory",
+            &[Member::source_alpha_target(
+                "widget_factory",
+                "readable",
+                r#"const readable = (props) => ({
+  kind: "widget",
+  OBJECT_PROPS,
+});"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "OK\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/factory.js",
+        &["widget_factory"],
+        &["makeWidget"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/factory.js",
+        &[
+            "const widget_factory",
+            // the concise arrow object body survives lowering (the `({` shows the
+            // object-expression body paren was kept, not turned into a block).
+            "({",
+            r#"kind: "widget""#,
+            "render",
+        ],
+        &["OBJECT_PROPS", "readable"],
+    );
+}
+
+// A function whose body is a parenthesized sequence/assignment expression — the
+// esbuild/TypeScript `__decorate` shape `(applyDecorators(t, d), t)` — is pinned
+// by that distinctive sequence body, end to end. The `Seq` and its inner call
+// survive parsing/lowering (parens are transparent grouping), so the selector
+// asserts the structure rather than the minified name. Closes the
+// SELECTOR_BUGS.md "parenthesized sequence or assignment expression body" gap.
+#[test]
+fn member_source_match_parenthesized_sequence_body_selects_helper() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function applyDecorators(target, decorators) {
+  for (const decorate of decorators) decorate(target);
+}
+function decorate(target, decorators) {
+  return (applyDecorators(target, decorators), target);
+}
+const tagged = decorate({ tags: [] }, [(t) => t.tags.push("a")]);
+console.log(tagged.tags.join(","));
+export { decorate };
+"#,
+        vec![logical_module(
+            "helpers",
+            &[Member::source_alpha(
+                "decorate_helper",
+                r#"function readable(target, decorators) {
+  return (applyDecorators(target, decorators), target);
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "a\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/helpers.js",
+        &[
+            "function decorate_helper",
+            // the sequence body survives lowering, inner call + trailing return
+            // value intact.
+            "applyDecorators(target, decorators)",
+        ],
+        &["readable"],
+    );
+}
+
+// A long array-literal initializer is pinned by `ARRAY_ELEMENTS` anchoring on its
+// few stable elements (the leading and trailing entries) while the run hole
+// absorbs the noisy middle, end to end — instead of over-pinning every element.
+// Closes the SELECTOR_BUGS.md "no array-element-run hole" gap.
+#[test]
+fn member_source_match_array_elements_hole_anchors_stable_endpoints() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const palette = [
+  "black",
+  "slate",
+  "gray",
+  "silver",
+  "white",
+];
+console.log(palette[0], palette[palette.length - 1]);
+export { palette };
+"#,
+        vec![logical_module(
+            "theme",
+            &[Member::source_alpha_target(
+                "color_palette",
+                "readable",
+                r#"const readable = ["black", ARRAY_ELEMENTS, "white"];"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "black white\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/theme.js",
+        &["color_palette"],
+        &["palette"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/theme.js",
+        &[
+            "const color_palette",
+            // the full array (every original element) is emitted; the selector
+            // anchored only the endpoints, the run hole absorbed the middle.
+            r#""black""#,
+            r#""gray""#,
+            r#""white""#,
+        ],
+        &["ARRAY_ELEMENTS", "readable"],
+    );
+}
+
+// Two same-arity declarators in one `const a = …, b = …` comma-list that differ
+// only in a deeply-nested value are each pinned, uniquely, by a single-declarator
+// `source_match` asserting that nested anchor — the resolver matches the
+// single-declarator needle against each declarator of the owner, so the nested
+// `"GET"` / `"POST"` distinguishes the otherwise-identical siblings. Each resolves
+// to its own module. Closes the SELECTOR_BUGS.md "comma-list sibling
+// disambiguation by nested body" gap.
+#[test]
+fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const handlerA = makeHandler({ route: { method: "GET" } }),
+  handlerB = makeHandler({ route: { method: "POST" } });
+function makeHandler(config) {
+  return () => config.route.method;
+}
+console.log(handlerA(), handlerB());
+export { handlerA, handlerB };
+"#,
+        vec![
+            logical_module(
+                "get_route",
+                &[Member::source_alpha_target(
+                    "get_handler",
+                    "readable",
+                    r#"const readable = makeHandler({ route: { method: "GET" } });"#,
+                )],
+            ),
+            logical_module(
+                "post_route",
+                &[Member::source_alpha_target(
+                    "post_handler",
+                    "readable",
+                    r#"const readable = makeHandler({ route: { method: "POST" } });"#,
+                )],
+            ),
+        ],
+    ));
+
+    assert_entry_output(&fixture, "GET POST\n");
+    // each sibling resolved to its own module, distinguished only by the nested
+    // method value.
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/get_route.js",
+        &["get_handler"],
+        &["handlerA"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/get_route.js",
+        &["const get_handler", r#"method: "GET""#],
+        &[r#"method: "POST""#, "readable"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/post_route.js",
+        &["post_handler"],
+        &["handlerB"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/post_route.js",
+        &["const post_handler", r#"method: "POST""#],
+        &[r#"method: "GET""#, "readable"],
+    );
+}
+
 #[test]
 fn source_match_anything_object_key_reports_unsupported_position() {
     expect_rejection_containing_all(

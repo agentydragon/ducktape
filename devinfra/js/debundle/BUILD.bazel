@@ -44,13 +44,12 @@ rust_library(
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":chunk_facts",
         ":js_ast",
+        ":selector_match",
         ":source_match_holes",
         ":spec",
         "@crates//:anyhow",
-        "@crates//:regex",
-        "@crates//:swc_atoms",
-        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -453,6 +452,7 @@ rust_library(
         "@crates//:petgraph",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:strum",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -814,8 +814,16 @@ rust_library(
         "lowering/io.rs",
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
+        "lowering/materialize/cross_ref.rs",
+        "lowering/materialize/intrinsic_alias.rs",
+        "lowering/materialize/kind_labels.rs",
+        "lowering/materialize/makes_decorate_call.rs",
+        "lowering/materialize/member_of_module.rs",
         "lowering/materialize/mod.rs",
+        "lowering/materialize/owner_graph_projection.rs",
+        "lowering/materialize/passed_to_call.rs",
         "lowering/materialize/plan_builder.rs",
+        "lowering/materialize/reads_member.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
         "lowering/ordinal.rs",
@@ -836,11 +844,13 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
+        ":chunk_facts",
         ":gate",
         ":js_ast",
         ":output_layout",
         ":program_analysis",
         ":selector_diagnostics",
+        ":selector_solve",
         ":source_match",
         ":spec",
         ":stage_one",
@@ -985,6 +995,7 @@ rust_library(
         ":selector_codemod",
         ":selector_debt",
         ":selector_diagnostics",
+        ":selector_solve",
         ":source_match",
         ":spec",
         ":spec_modules",
@@ -1028,5 +1039,91 @@ rust_binary(
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",
+    ],
+)
+
+# Phase-1 shadow of the selector resolution layer: in-process Datalog (Ascent)
+# over the owner-graph EDB. See plans/selector_constraint_model.md. Additive and
+# standalone for now (the production resolver still uses source_match/); this is
+# the seed that the shadow equivalence check and, later, the resolution layer
+# itself grow from.
+rust_library(
+    name = "selector_solve",
+    srcs = ["selector_solve.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:ascent",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "selector_solve_test",
+    crate = ":selector_solve",
+    edition = "2024",
+)
+
+# P1 of the Datalog selector resolver: a faithful, fail-closed projection of a
+# parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
+# owner-ordinal join). The extractor errors loudly on any construct it has not
+# modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
+# construct-by-construct. See plans/selector_constraint_model.md.
+rust_library(
+    name = "chunk_facts",
+    srcs = ["chunk_facts.rs"],
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "chunk_facts_test",
+    crate = ":chunk_facts",
+    edition = "2024",
+)
+
+# P2 matching core: a structural homomorphism from a selector needle's
+# chunk_facts onto a candidate's, fail-closed outside the faithful subset.
+# Operates over the AST-facts EDB, not by re-walking ASTs.
+rust_library(
+    name = "selector_match",
+    srcs = ["selector_match.rs"],
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":source_match_holes",
+        "@crates//:regex",
+    ],
+)
+
+# Golden semantics of the fact-based matcher (`selector_match::matches`): match
+# verdicts across identifier modes, holes, and declarator alignment, plus
+# fail-closed `Unsupported` outside the faithful subset.
+rust_test(
+    name = "selector_match_differential_test",
+    srcs = ["selector_match_differential_test.rs"],
+    crate_root = "selector_match_differential_test.rs",
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":js_ast",
+        ":selector_match",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+# Coverage instrument: run over a real chunk to see how many top-level
+# statements fully extract vs. hit a fail-closed Unsupported, with the
+# first-blocker histogram — drives P1 growth by real-corpus frequency.
+rust_binary(
+    name = "chunk_facts_coverage",
+    srcs = ["chunk_facts_coverage.rs"],
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        ":js_ast",
     ],
 )

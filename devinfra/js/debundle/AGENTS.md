@@ -504,6 +504,18 @@ The public spec format consumed by `--spec` is a reviewed contract, but it is
 still debundler-owned. Prefer clean typed shape over compatibility fields kept
 only for older in-repo fixtures.
 
+## Spec `note:` field — STYLE.md exemption
+
+**Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
+belongs in inert `#` comments, not `note:` schema fields): the spec's optional
+`note:` field on `Member` / `BindingGroup` / `AnonymousStatementSelector`
+(<spec.rs>) is a ratified exemption. The spec rewriters (`bindings assign`,
+`synthesize --apply`) re-emit the YAML and **drop `#` comments**, so a
+round-tripped `note:` is the only debt-rationale annotation that survives a
+rewrite. Unlike `comment:` (which emits a `//` line into the debundled JS and is
+gated by byte-identity), `note:` is non-emitting; its reader is the human spec
+author.
+
 ## Module-specifier path math
 
 The CLI accepts relative or absolute paths for `--spec`, `--package-root

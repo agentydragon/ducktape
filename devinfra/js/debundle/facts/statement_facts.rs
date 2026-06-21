@@ -205,8 +205,9 @@ pub struct ChunkFactAnalysis {
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum StatementKind {
     /// `var X = ...`, `let X = ...`, `const X = ...`. RHS reads at-init.
     VarDecl,

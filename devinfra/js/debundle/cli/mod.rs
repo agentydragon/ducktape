@@ -101,10 +101,26 @@ enum DebundleCommand {
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's owner.
     Cluster(ClusterArgs),
+    /// Resolve an owner-graph EDB with the in-process Datalog solver and report
+    /// name-pin categoricity + the derived alias count. With `--check`, exit
+    /// non-zero unless name-pin resolution is total + categorical (the
+    /// bootstrap-precondition shadow gate).
+    #[command(name = "selector-solve")]
+    SelectorSolve(SelectorSolveArgs),
     /// Spec-wide queries (e.g. `spec stats`).
     Spec(SpecNs),
     /// Query the realizability gate's rejected SCCs (list / describe / cut).
     Gate(GateArgs),
+}
+
+/// Args for `debundle selector-solve`.
+#[derive(Debug, ClapArgs)]
+pub struct SelectorSolveArgs {
+    /// Owner-graph JSON (the `selector_solve` EDB).
+    owner_graph: PathBuf,
+    /// Exit non-zero unless name-pin resolution is total + categorical.
+    #[arg(long)]
+    check: bool,
 }
 
 /// Args for `debundle spec ...`.
@@ -691,6 +707,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::ShowSource(args) => run_show_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
+        DebundleCommand::SelectorSolve(args) => run_selector_solve(args),
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
@@ -964,6 +981,41 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
         render_source_slice_text,
         "writing show-source output",
     )
+}
+
+/// Shadow runner: resolve an owner-graph EDB with the in-process Datalog solver
+/// and print name-pin categoricity + the derived `aliases` count. With `--check`
+/// it is the bootstrap-precondition gate (errors out if name-pin resolution is
+/// not total + categorical). See `plans/selector_constraint_model.md`.
+fn run_selector_solve(args: SelectorSolveArgs) -> Result<()> {
+    let json = std::fs::read_to_string(&args.owner_graph)
+        .with_context(|| format!("reading {}", args.owner_graph.display()))?;
+    let r = selector_solve::solve_str(&json)
+        .with_context(|| format!("parsing owner graph {}", args.owner_graph.display()))?;
+    println!("EDB: declares={} uses={}", r.edb_declares, r.edb_uses);
+    println!(
+        "name-pin: bindings={} unique={} ambiguous={}",
+        r.total(),
+        r.unique(),
+        r.ambiguous()
+    );
+    println!("aliases (var-decl eager_use): {}", r.aliases.len());
+
+    if args.check {
+        let rep = r.shadow_check();
+        if !rep.ok() {
+            let shown = &rep.ambiguous[..rep.ambiguous.len().min(10)];
+            bail!(
+                "shadow: FAIL — {} ambiguous binding name(s) block the bootstrap: {shown:?}",
+                rep.ambiguous.len(),
+            );
+        }
+        println!(
+            "shadow: OK — name-pin resolution total + categorical ({} bindings)",
+            rep.total
+        );
+    }
+    Ok(())
 }
 
 fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {

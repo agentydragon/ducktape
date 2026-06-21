@@ -346,12 +346,7 @@ impl SkeletonBuilder<'_> {
                     })
                     .collect();
                 let spine = self.cons_spine(decls, depth + 1);
-                let kind = match var.kind {
-                    VarDeclKind::Var => "var",
-                    VarDeclKind::Let => "let",
-                    VarDeclKind::Const => "const",
-                };
-                self.node_with_tag(kind, vec![spine])
+                self.node_with_tag(js_ast::var_decl_kind_str(var.kind), vec![spine])
             }
             _ => self.node("decl_other", Vec::new()),
         }

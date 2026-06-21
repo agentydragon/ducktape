@@ -158,6 +158,16 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             MemberSelectorSpec::SourceMatch(selector) => {
                 claims.member_selectors.insert(selector);
             }
+            MemberSelectorSpec::CrossRef(_)
+            | MemberSelectorSpec::ReadsMember(_)
+            | MemberSelectorSpec::MemberOfModule(_)
+            | MemberSelectorSpec::PassedToCall(_)
+            | MemberSelectorSpec::MakesDecorateCall(_)
+            | MemberSelectorSpec::IntrinsicAlias(_) => {
+                // Relational claims resolve through the owner-graph resolution /
+                // @Name global-solve pass (the unique declaring owner matching the
+                // relation), not as a static binding or source-match claim here.
+            }
         }
     }
     for group in &module.binding_groups {

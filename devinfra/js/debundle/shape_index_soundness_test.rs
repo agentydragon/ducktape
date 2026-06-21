@@ -1,11 +1,10 @@
 //! Soundness validation for the Layer-1 read-off API (W1).
 //!
-//! The shape index is only a candidate ranker; the production `source_match`
-//! matcher stays the correctness gate. This test renders every read-off result
-//! to a `source_match` selector and runs it through the matcher
-//! (`find_anonymous_statement_body_indices` for statement targets,
-//! `resolve_member_binding` for binding targets), asserting it resolves
-//! **uniquely** to the intended item.
+//! The shape index is only a candidate ranker; the fact-based `source_match`
+//! resolver stays the correctness gate. This test renders every read-off result
+//! to a `source_match` selector and runs it through the resolver
+//! (`ChunkResolver::resolve_anonymous_groups`), asserting it resolves **uniquely**
+//! to the intended item.
 //!
 //! It covers var / object / function / class items, the `OPT=1`
 //! single-feature case, and tail cases needing a 2-3 feature combination. The
@@ -14,7 +13,7 @@
 
 use selector_candidate_index::SelectorFeature;
 use shape_index::{AnchorSet, ShapeFeature, ShapeIndex, Stability};
-use source_match::find_anonymous_statement_body_indices;
+use source_match::{ChunkResolver, SelectorResolver};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use std::collections::BTreeSet;
 use swc_ecma_ast::*;
@@ -230,16 +229,18 @@ fn assert_read_off_resolves_uniquely(module: &Module, body_idx: usize) -> Anchor
         .minimal_anchor_set(body_idx)
         .unwrap_or_else(|| panic!("no read-off for body_idx={body_idx}"));
     let selector = render_selector(module, &anchor);
-    let matches = js_ast::with_swc_globals(|| {
-        find_anonymous_statement_body_indices(module, "<soundness>", &selector).unwrap_or_else(
-            |err| {
+    let groups = js_ast::with_swc_globals(|| {
+        ChunkResolver::new(module)
+            .resolve_anonymous_groups("<soundness>", &selector)
+            .unwrap_or_else(|err| {
                 panic!(
-                    "matcher failed on rendered selector\n{}\n{err}",
+                    "resolver failed on rendered selector\n{}\n{err}",
                     selector.match_source
                 )
-            },
-        )
+            })
     });
+    // A single-statement read-off resolves to exactly one one-element group.
+    let matches: Vec<usize> = groups.into_iter().flatten().collect();
     assert_eq!(
         matches,
         vec![body_idx],

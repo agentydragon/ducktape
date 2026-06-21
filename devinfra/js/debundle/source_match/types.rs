@@ -44,26 +44,3 @@ pub struct BindingGroupMemberSelector {
     pub selector: AnonymousStatementSelector,
     pub comment: Option<String>,
 }
-
-/// Restricts which top-level body indices the matcher inspects as match anchors.
-///
-/// This is a pure performance prefilter, never a correctness gate: a caller may
-/// supply a candidate body-index set (e.g. from `SelectorCandidateIndex`) that
-/// must be a *sound superset* of every index the full scan would match. The
-/// matcher still proves every reported match structurally, so over-inclusion is
-/// harmless and under-inclusion would silently drop real matches — the caller is
-/// responsible for the superset invariant.
-#[derive(Clone, Copy)]
-pub enum BodyIndexFilter<'a> {
-    All,
-    Restricted(&'a BTreeSet<usize>),
-}
-
-impl BodyIndexFilter<'_> {
-    pub(crate) fn allows(&self, body_idx: usize) -> bool {
-        match self {
-            BodyIndexFilter::All => true,
-            BodyIndexFilter::Restricted(indices) => indices.contains(&body_idx),
-        }
-    }
-}

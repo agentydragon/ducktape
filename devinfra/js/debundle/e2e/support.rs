@@ -38,6 +38,12 @@ pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
     source_match: Option<FixtureSourceMatch>,
+    cross_ref: Option<FixtureCrossRefSelector>,
+    reads_member: Option<FixtureReadsMemberSelector>,
+    member_of_module: Option<FixtureMemberOfModuleSelector>,
+    passed_to_call: Option<FixturePassedToCallSelector>,
+    makes_decorate_call: Option<FixtureMakesDecorateCallSelector>,
+    intrinsic_alias: Option<FixtureIntrinsicAliasSelector>,
     pub comment: Option<String>,
 }
 
@@ -143,12 +149,30 @@ impl BindingGroup {
 }
 
 impl Member {
+    /// Whether any selector (source-match or a relational form) is set, so the
+    /// fixture binding should not default to `name`.
+    fn has_selector(&self) -> bool {
+        self.source_match.is_some()
+            || self.cross_ref.is_some()
+            || self.reads_member.is_some()
+            || self.member_of_module.is_some()
+            || self.passed_to_call.is_some()
+            || self.makes_decorate_call.is_some()
+            || self.intrinsic_alias.is_some()
+    }
+
     /// Extract a binding under its original name.
     pub fn new(name: &'static str) -> Self {
         Self {
             name,
             binding: None,
             source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
             comment: None,
         }
     }
@@ -159,6 +183,12 @@ impl Member {
             name,
             binding: Some(binding),
             source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
             comment: None,
         }
     }
@@ -177,6 +207,12 @@ impl Member {
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
             comment: None,
         }
     }
@@ -199,6 +235,12 @@ impl Member {
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
             comment: None,
         }
     }
@@ -220,6 +262,214 @@ impl Member {
                 target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
+            }),
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity that **references** the anchor member `@anchor`
+    /// (a delegator / consumer body), re-exported under `name`. `kind` optionally
+    /// narrows to one source-declaration kind (`function_declaration`, …) when
+    /// several owners reference the anchor.
+    pub fn cross_ref_references(
+        name: &'static str,
+        anchor: &'static str,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: Some(FixtureCrossRefSelector {
+                references: Some(anchor),
+                aliases: None,
+                kind,
+            }),
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the var-decl that **aliases** the anchor member
+    /// (`const T = @anchor`), re-exported under `name`.
+    pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: Some(FixtureCrossRefSelector {
+                references: None,
+                aliases: Some(anchor),
+                kind: None,
+            }),
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity that **reads member `.member`** off an object,
+    /// re-exported under `name`. `object` optionally constrains the object the
+    /// member is read off (the readable `name:` of another member, the codegen
+    /// context being the canonical object); `kind` optionally narrows to one
+    /// source-declaration kind (`function_declaration`, …) when several owners
+    /// read the member.
+    pub fn reads_member(
+        name: &'static str,
+        member: &'static str,
+        object: Option<&'static str>,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: Some(FixtureReadsMemberSelector {
+                member,
+                object,
+                kind,
+            }),
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity **consumed as `module.member`** at a use site
+    /// (`module` an import specifier, `member` an export name), re-exported under
+    /// `name`. The first use-site selector — pins by how the entity is consumed,
+    /// not its own body or minified name. `kind` optionally narrows to one
+    /// source-declaration kind (`class_declaration`, …) when several owners
+    /// consume the module member.
+    pub fn member_of_module(
+        name: &'static str,
+        module: &'static str,
+        member: &'static str,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: Some(FixtureMemberOfModuleSelector {
+                module,
+                member,
+                kind,
+            }),
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the entity **passed as an argument** to a call of a known
+    /// callee — "the class passed to `@object.callee_member(...)`" — re-exported
+    /// under `name`. The `resolves_to`-of-argument primitive: pins a registry-style
+    /// target by the call that names it, not its own body or minified name.
+    /// `object` optionally constrains the callee's receiver (the readable `name:`
+    /// of another member, the registry singleton); `arg_index` optionally pins the
+    /// argument position; `kind` optionally narrows the target's own declaration
+    /// kind (`class_declaration`, …) when several owners are passed to the callee.
+    pub fn passed_to_call(
+        name: &'static str,
+        callee_member: &'static str,
+        object: Option<&'static str>,
+        arg_index: Option<usize>,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: Some(FixturePassedToCallSelector {
+                callee_member,
+                object,
+                arg_index,
+                kind,
+            }),
+            makes_decorate_call: None,
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as the **callee** of an esbuild `__decorate`-style decorator
+    /// application on a pinned class — "the helper that decorates `@class`" —
+    /// re-exported under `name`. The inverse-direction sibling of `passed_to_call`:
+    /// pins the byte-identical decorate-helper copies by the class each decorates,
+    /// not by their own body or minified name. `member` optionally narrows to a
+    /// specific decorated member literal; `kind` optionally narrows the helper's own
+    /// declaration kind (`variable_declarator`).
+    pub fn makes_decorate_call(
+        name: &'static str,
+        class: &'static str,
+        member: Option<&'static str>,
+        kind: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: Some(FixtureMakesDecorateCallSelector {
+                class,
+                member,
+                kind,
+            }),
+            intrinsic_alias: None,
+            comment: None,
+        }
+    }
+
+    /// Pin a member as an **intrinsic-method alias off the unshadowed global
+    /// `Object`** (`var X = Object.<property>`) referenced by a known helper —
+    /// "the `Object.<property>` alias the `@referenced_by` helper reads" —
+    /// re-exported under `name`. The follow-on companion of `makes_decorate_call`:
+    /// pins the byte-identical esbuild decorate-companion copies (which make no
+    /// decorator call of their own) by the helper that reads them, not by their own
+    /// minified name.
+    pub fn intrinsic_alias(
+        name: &'static str,
+        property: &'static str,
+        referenced_by: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: None,
+            cross_ref: None,
+            reads_member: None,
+            member_of_module: None,
+            passed_to_call: None,
+            makes_decorate_call: None,
+            intrinsic_alias: Some(FixtureIntrinsicAliasSelector {
+                property,
+                referenced_by,
             }),
             comment: None,
         }
@@ -247,11 +497,76 @@ struct FixtureMemberSelector {
     binding: Option<FixtureBindingSelector>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_match: Option<FixtureSourceMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cross_ref: Option<FixtureCrossRefSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reads_member: Option<FixtureReadsMemberSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member_of_module: Option<FixtureMemberOfModuleSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    passed_to_call: Option<FixturePassedToCallSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    makes_decorate_call: Option<FixtureMakesDecorateCallSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intrinsic_alias: Option<FixtureIntrinsicAliasSelector>,
 }
 
 #[derive(Serialize)]
 struct FixtureBindingSelector {
     name: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureCrossRefSelector {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    references: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aliases: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureReadsMemberSelector {
+    member: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureMemberOfModuleSelector {
+    module: &'static str,
+    member: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixturePassedToCallSelector {
+    callee_member: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arg_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureMakesDecorateCallSelector {
+    class: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureIntrinsicAliasSelector {
+    property: &'static str,
+    referenced_by: &'static str,
 }
 
 #[derive(Serialize)]
@@ -467,9 +782,15 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
             selector: FixtureMemberSelector {
                 binding: m
                     .binding
-                    .or_else(|| m.source_match.is_none().then_some(m.name))
+                    .or_else(|| (!m.has_selector()).then_some(m.name))
                     .map(|name| FixtureBindingSelector { name }),
                 source_match: m.source_match.clone(),
+                cross_ref: m.cross_ref.clone(),
+                reads_member: m.reads_member.clone(),
+                member_of_module: m.member_of_module.clone(),
+                passed_to_call: m.passed_to_call.clone(),
+                makes_decorate_call: m.makes_decorate_call.clone(),
+                intrinsic_alias: m.intrinsic_alias.clone(),
             },
             comment: m.comment.clone(),
         })

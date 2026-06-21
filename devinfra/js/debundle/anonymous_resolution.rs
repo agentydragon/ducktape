@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
+use source_match::SelectorResolver;
 use spec::AnonymousStatementSelector;
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 
@@ -70,74 +71,66 @@ fn resolve_member_selector_claims_in_globals(
     source_root: Option<&Path>,
     claims_by_module: &[MemberSelectorClaimSet<'_>],
 ) -> Result<Vec<BTreeSet<String>>> {
-    let mut out = vec![BTreeSet::<String>::new(); claims_by_module.len()];
     if claims_by_module
         .iter()
         .all(|claims| claims.selectors.is_empty())
     {
-        return Ok(out);
+        return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
     }
 
-    let source_paths: BTreeSet<String> = graph
-        .nodes
-        .iter()
-        .filter_map(|node| node.source_location.as_ref())
-        .map(|location| location.source_path.clone())
-        .collect();
-    if source_paths.is_empty() {
-        bail!(
-            "spec contains members[].selector.source_match claims, but owner_graph.json has no \
-             source_location data; cannot resolve source_match selectors"
-        );
-    }
-
-    let mut parsed_by_source = BTreeMap::new();
-    for source_path in &source_paths {
-        let parsed =
-            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
-        parsed_by_source.insert(source_path.clone(), parsed);
-    }
-
-    for (module_idx, claims) in claims_by_module.iter().enumerate() {
-        let request_id = claims.module_path.to_string_lossy();
-        for selector in claims.selectors {
-            let mut matches = Vec::new();
-            for parsed in parsed_by_source.values() {
-                matches.extend(source_match::member_binding_candidates(
-                    &parsed.module,
-                    &request_id,
-                    selector,
-                )?);
-            }
-            match matches.as_slice() {
-                [single] => {
-                    if !matches!(single.kind, Some(spec::BindingSourceKind::ImportSpecifier)) {
-                        out[module_idx].insert(single.binding_name.clone());
+    with_source_resolvers(
+        graph,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        "spec contains members[].selector.source_match claims, but owner_graph.json has no \
+         source_location data; cannot resolve source_match selectors",
+        |parsed_by_source, resolvers_by_source| {
+            let mut out = vec![BTreeSet::<String>::new(); claims_by_module.len()];
+            for (module_idx, claims) in claims_by_module.iter().enumerate() {
+                let request_id = claims.module_path.to_string_lossy();
+                for selector in claims.selectors {
+                    let mut matches = Vec::new();
+                    for source_path in parsed_by_source.keys() {
+                        matches.extend(
+                            resolvers_by_source[source_path]
+                                .member_candidates(&request_id, selector)?,
+                        );
+                    }
+                    match matches.as_slice() {
+                        [single] => {
+                            if !matches!(
+                                single.binding.kind,
+                                Some(spec::BindingSourceKind::ImportSpecifier)
+                            ) {
+                                out[module_idx].insert(single.binding.binding_name.clone());
+                            }
+                        }
+                        [] => bail!(
+                            "module {} members[].selector.source_match did not match any top-level \
+                     declaration in the chunk sources:\n{}",
+                            claims.module_path.display(),
+                            selector.match_source,
+                        ),
+                        multiple => bail!(
+                            "module {} members[].selector.source_match is ambiguous — matched {} \
+                     declarations ({}); refine the selector:\n{}",
+                            claims.module_path.display(),
+                            multiple.len(),
+                            multiple
+                                .iter()
+                                .map(|matched| matched.binding.binding_name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            selector.match_source,
+                        ),
                     }
                 }
-                [] => bail!(
-                    "module {} members[].selector.source_match did not match any top-level \
-                     declaration in the chunk sources:\n{}",
-                    claims.module_path.display(),
-                    selector.match_source,
-                ),
-                multiple => bail!(
-                    "module {} members[].selector.source_match is ambiguous — matched {} \
-                     declarations ({}); refine the selector:\n{}",
-                    claims.module_path.display(),
-                    multiple.len(),
-                    multiple
-                        .iter()
-                        .map(|binding| binding.binding_name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    selector.match_source,
-                ),
             }
-        }
-    }
 
-    Ok(out)
+            Ok(out)
+        },
+    )
 }
 
 pub fn resolve_anonymous_statement_claims(
@@ -242,14 +235,113 @@ fn resolve_anonymous_statement_claims_in_globals(
     source_root: Option<&Path>,
     claims_by_module: &[AnonymousStatementClaimSet<'_>],
 ) -> Result<Vec<BTreeSet<OwnerId>>> {
-    let mut out = vec![BTreeSet::<OwnerId>::new(); claims_by_module.len()];
     if claims_by_module
         .iter()
         .all(|claims| claims.selectors.is_empty())
     {
-        return Ok(out);
+        return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
     }
 
+    with_source_resolvers(
+        graph,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        "spec contains anonymous_statements, but owner_graph.json has no source_location \
+         data; cannot resolve anonymous selectors",
+        |parsed_by_source, resolvers_by_source| {
+            let mut out = vec![BTreeSet::<OwnerId>::new(); claims_by_module.len()];
+            let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
+            for (idx, node) in graph.nodes.iter().enumerate() {
+                if !node.declared_bindings.is_empty() {
+                    continue;
+                }
+                if let Some(location) = &node.source_location {
+                    anonymous_owner_by_source_ordinal.insert(
+                        (location.source_path.clone(), node.statement_ordinal.0),
+                        OwnerId(idx),
+                    );
+                }
+            }
+
+            for (module_idx, claims) in claims_by_module.iter().enumerate() {
+                for selector in claims.selectors {
+                    let mut match_groups = Vec::<Vec<(String, OwnerId)>>::new();
+                    for (source_path, parsed) in parsed_by_source {
+                        let body_index_groups = resolvers_by_source[source_path]
+                            .resolve_anonymous_groups(
+                                &claims.module_path.to_string_lossy(),
+                                selector,
+                            )?;
+                        for body_indices in body_index_groups {
+                            let mut owners = Vec::with_capacity(body_indices.len());
+                            for body_idx in body_indices {
+                                let statement_ordinal = js_ast::statement_ordinal_for_body_index(
+                                    &parsed.module.body,
+                                    body_idx,
+                                );
+                                let Some(&owner) = anonymous_owner_by_source_ordinal
+                                    .get(&(source_path.clone(), statement_ordinal))
+                                else {
+                                    bail!(
+                                        "module {} anonymous statement selector matched source {} body \
+                                 index {} / statement ordinal {}, but owner_graph.json has no \
+                                 anonymous owner at that source position",
+                                        claims.module_path.display(),
+                                        source_path,
+                                        body_idx,
+                                        statement_ordinal,
+                                    );
+                                };
+                                owners.push((source_path.clone(), owner));
+                            }
+                            match_groups.push(owners);
+                        }
+                    }
+                    match match_groups.as_slice() {
+                        [owners] => {
+                            out[module_idx].extend(owners.iter().map(|(_, owner)| *owner));
+                        }
+                        [] => bail!(
+                            "module {} anonymous statement selector did not match any source statement:\n{}",
+                            claims.module_path.display(),
+                            selector.match_source,
+                        ),
+                        multiple => bail!(
+                            "module {} anonymous statement selector matched {} source statement groups; \
+                     refine the selector:\n{}",
+                            claims.module_path.display(),
+                            multiple.len(),
+                            selector.match_source,
+                        ),
+                    }
+                }
+            }
+
+            Ok(out)
+        },
+    )
+}
+
+/// Parse every distinct `source_location.source_path` in `graph` and hand
+/// `body` a per-source `ChunkResolver` map alongside the parsed modules.
+/// Resolvers are built once and borrow the parsed modules (the build-once seam
+/// contract; the fact resolver would otherwise rebuild a per-source EDB on every
+/// selector), which is why the parsed map and its resolvers are produced
+/// together and lent through the closure rather than returned. `no_sources` is
+/// the caller-specific error raised when the graph carries no `source_location`
+/// data.
+fn with_source_resolvers<R>(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    no_sources: &str,
+    body: impl for<'m> FnOnce(
+        &'m BTreeMap<String, js_ast::ParsedJsModule>,
+        &BTreeMap<String, source_match::ChunkResolver<'m>>,
+    ) -> Result<R>,
+) -> Result<R> {
     let source_paths: BTreeSet<String> = graph
         .nodes
         .iter()
@@ -257,85 +349,28 @@ fn resolve_anonymous_statement_claims_in_globals(
         .map(|location| location.source_path.clone())
         .collect();
     if source_paths.is_empty() {
-        bail!(
-            "spec contains anonymous_statements, but owner_graph.json has no source_location \
-             data; cannot resolve anonymous selectors"
-        );
+        bail!("{no_sources}");
     }
 
-    let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
-    for (idx, node) in graph.nodes.iter().enumerate() {
-        if !node.declared_bindings.is_empty() {
-            continue;
-        }
-        if let Some(location) = &node.source_location {
-            anonymous_owner_by_source_ordinal.insert(
-                (location.source_path.clone(), node.statement_ordinal.0),
-                OwnerId(idx),
-            );
-        }
-    }
-
-    let mut parsed_by_source = BTreeMap::new();
-    for source_path in &source_paths {
-        let parsed =
-            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
-        parsed_by_source.insert(source_path.clone(), parsed);
-    }
-
-    for (module_idx, claims) in claims_by_module.iter().enumerate() {
-        for selector in claims.selectors {
-            let mut match_groups = Vec::<Vec<(String, OwnerId)>>::new();
-            for (source_path, parsed) in &parsed_by_source {
-                let body_index_groups = source_match::find_anonymous_statement_body_index_groups(
-                    &parsed.module,
-                    &claims.module_path.to_string_lossy(),
-                    selector,
-                )?;
-                for body_indices in body_index_groups {
-                    let mut owners = Vec::with_capacity(body_indices.len());
-                    for body_idx in body_indices {
-                        let statement_ordinal =
-                            js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
-                        let Some(&owner) = anonymous_owner_by_source_ordinal
-                            .get(&(source_path.clone(), statement_ordinal))
-                        else {
-                            bail!(
-                                "module {} anonymous statement selector matched source {} body \
-                                 index {} / statement ordinal {}, but owner_graph.json has no \
-                                 anonymous owner at that source position",
-                                claims.module_path.display(),
-                                source_path,
-                                body_idx,
-                                statement_ordinal,
-                            );
-                        };
-                        owners.push((source_path.clone(), owner));
-                    }
-                    match_groups.push(owners);
-                }
-            }
-            match match_groups.as_slice() {
-                [owners] => {
-                    out[module_idx].extend(owners.iter().map(|(_, owner)| *owner));
-                }
-                [] => bail!(
-                    "module {} anonymous statement selector did not match any source statement:\n{}",
-                    claims.module_path.display(),
-                    selector.match_source,
-                ),
-                multiple => bail!(
-                    "module {} anonymous statement selector matched {} source statement groups; \
-                     refine the selector:\n{}",
-                    claims.module_path.display(),
-                    multiple.len(),
-                    selector.match_source,
-                ),
-            }
-        }
-    }
-
-    Ok(out)
+    let parsed_by_source: BTreeMap<String, js_ast::ParsedJsModule> = source_paths
+        .iter()
+        .map(|source_path| {
+            Ok((
+                source_path.clone(),
+                read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?,
+            ))
+        })
+        .collect::<Result<_>>()?;
+    let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
+        .iter()
+        .map(|(source_path, parsed)| {
+            (
+                source_path.clone(),
+                source_match::ChunkResolver::new(&parsed.module),
+            )
+        })
+        .collect();
+    body(&parsed_by_source, &resolvers_by_source)
 }
 
 /// Resolve `source_path` to a file on disk, read it, and parse it as a JS

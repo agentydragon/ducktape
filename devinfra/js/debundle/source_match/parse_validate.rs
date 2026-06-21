@@ -1,11 +1,5 @@
 use super::*;
 
-pub(crate) fn parse_source_match_module_ast(source_name: &str, source: &str) -> Result<Module> {
-    let parsed = js_ast::parse_js_module_ast(source_name, source)?;
-    validate_anything_holes(&parsed.body)?;
-    Ok(parsed)
-}
-
 pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
     let mut collector = UnsupportedAnythingCollector::default();
     for item in items {
@@ -145,14 +139,6 @@ impl Visit for UnsupportedAnythingCollector {
             self.push("an identifier");
         }
     }
-}
-
-pub(crate) fn first_error_line(error: &anyhow::Error) -> String {
-    let mut line = error.to_string();
-    if let Some((first, _)) = line.split_once('\n') {
-        line = first.to_string();
-    }
-    truncate_for_log(&line, 160)
 }
 
 pub(crate) fn parse_selector_module_with_capability_check(

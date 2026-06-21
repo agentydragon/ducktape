@@ -29,14 +29,51 @@ A `source_match` selector must satisfy two things, and only one is checkable now
    bundle in hand. It is an _educated guess_, and making that guess well is the
    whole job.
 
-The minimizer (`synthesize-selectors`) optimizes a mechanical cost model. It finds
-_a_ unique anchor, not necessarily _the_ anchor that identifies the entity. It will
+The minimizer (`synthesize-selectors`) is a first-class tool in your kit: it makes
+selectors **compact and unique** for you — holing volatile subtrees, collapsing
+declarator runs, and proving uniqueness (see The toolkit below). But it has **no
+semantic intelligence** — it is a mechanical read-off of the AST optimizing a cost
+model, so it finds _a_ unique anchor, not necessarily _the_ anchor that identifies
+the entity, and when both a readable anchor and an accidental token are unique it
+cannot tell which is which. It will
 happily pin a bare `0`, or a generic `{ name: ANYTHING }` key with the value holed,
 because those are cheap and unique _today_. Your job is to override those with an
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
 The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `binding_groups`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+
+## The toolkit
+
+Four debundler subcommands, all reading the chunk + `modules/` tree directly (no
+pipeline build or owner graph needed for this loop). Treat the **minimizer as a
+first-class instrument**, not a last resort:
+
+- **`spec selector-debt`** — the census. Ranks fragile name pins; add
+  `--source-file` to also surface the near-ambiguous structural selectors (see the
+  worklist).
+- **`spec synthesize-selectors` — the selector minimizer.** Your workhorse for
+  _compact_: it holes volatile subtrees (bodies, args, declarator runs,
+  `CLASS_REST`/`CASE_REST`), collapses multi-declarator runs into `binding_groups`,
+  and proves uniqueness — so much of the backlog converts to short, unique-today
+  selectors with no hand-authoring. Run it dry to read its pick, `--candidates N` for
+  a ranked menu, `--apply` to land a whole bucket. Use it two ways: as a **first-pass
+  converter** for the easy majority, and as a **compaction pass** once you have
+  hand-picked an anchor but want the surrounding shape holed down. But it has **no
+  semantic intelligence**: whether the anchor it kept is _meaningful_ — and swapping
+  in the readable one when it kept an accidental but-unique token — is judgment you
+  supply on top of its output (next section); it cannot be read off the AST.
+- **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
+  unique-or-not, the colliding matches, and over-pin slack.
+- **`spec validate`** — the whole-spec keep-going sweep (`no-match` / `ambiguous` /
+  `duplicate-claim`).
+
+Division of labor: the minimizer makes a selector **compact and unique today** by
+mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
+token that happens to be unique) and so **forward-compatible** is intelligence you
+supply — it cannot be read off the AST. Both halves of the backlog flow through
+these tools — the name pins from `selector-debt`'s default census, and the
+near-ambiguous structural selectors from its `--source-file` pass.
 
 ## Shared CLI workflows
 
@@ -112,26 +149,136 @@ prioritizes; it never decides.
 
 ## What makes a good anchor
 
-Prefer anchors that are **behavior-causal** (the code would have to change behavior
-to lose them) and **human-meaningful** (named for what they do):
+A selector is a **claim about what makes the entity recognizable**. The durable
+claims describe the entity's **identity / contract** — what it _is_, in words a
+human would use to name it and a minifier cannot erase. The fragile claims describe
+its **implementation** — what its code currently _looks like_, which is exactly what
+a behavior-preserving refactor or the next re-minification churns. Anchor on the
+identity side of that line.
 
-- descriptive string/number literals — route paths, error codes, event names, i18n
-  keys, MIME types, status strings;
-- stable member/method/property names that name behavior (`fetchAcl`, `dispatch`);
-- API/operation/selector identities (`.then`, GraphQL op names, action types);
+**The read-it-back test.** Say the `match` aloud as a sentence. "The class whose
+`getName` returns `'DocumentAccessorFactory'`" names an identity — durable. "The
+class with a method holding a `for`-loop over `.children` that calls `eN(…)`" can
+only be read as a description of today's code — a photograph; replace it.
+Unreadability is a _symptom_: a selector reads like an AST dump precisely when it
+anchors on tokens that carry no identity, and those are the volatile ones. If you
+can't read it back as "the X that _<declares/does the identifying thing>_," keep
+looking.
+
+**Literals the code emits about itself are the strongest anchor.** A minifier
+renames `getOwner` → `gO` freely but cannot rewrite the string
+`"DocumentAccessorFactory"` — strings are observable behavior. So an identity carried
+by a _literal_ is doubly stable: identity-bearing _and_ minification-immune. The
+ladder:
+
+Prefer (identity / contract — behavior-causal, human-meaningful):
+
+- a literal the entity emits **about itself** — a `getName`/`get type` returning its
+  name, `static displayName`, an error `name`/`message`, an action `type`, an
+  event / route / MIME / i18n / registration key;
+- public member or method names that name behavior _and_ survive minification
+  (`fetchAcl`, `dispatch`) — under `alpha_all` property names are exact anchors, so
+  they only help when the build keeps them (in this app, member names generally
+  survive);
+- API / operation identities (GraphQL op names, action types);
 - a **stable prefix** of an otherwise volatile string, via a regex anchor.
 
-Avoid — incidental or actively unstable, churned by unrelated rebuilds:
+Disprefer (implementation / incidental — churned by refactors and rebuilds):
 
-- bare numbers (`0`, `1`), booleans, and other ubiquitous literals;
-- a generic object key with its value holed (`{ name: ANYTHING }`);
+- **control-flow and body internals** — `for`/`while`/`switch` shape, statement
+  sequences, nested expression trees: the mechanism, never the identity;
 - positional / structural shape with no kept value (arity, declaration order);
-- minified identifiers (the matcher already wildcards them) and their neighbors;
+- uniqueness borrowed from an unrelated **neighbor** declaration;
+- bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
+  its value holed (`{ name: ANYTHING }`); minified identifiers (already wildcarded);
 - **content hashes and generated ids** — hashed CSS-module class names
-  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`), build-id
-  query params, cache-busting suffixes. The hashed segment is the _most_ volatile thing
-  in the bundle. Pin the stable prefix and hole / regex-anchor the volatile tail;
-  **never pin the hash.**
+  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`),
+  build-id query params, cache-busting suffixes: the _most_ volatile thing in the
+  bundle. Pin the stable prefix and hole / regex-anchor the volatile tail; **never
+  pin the hash.**
+
+### Good / okay / bad: one entity, three selectors
+
+The source the chunk happens to ship today (minified top-level names elided):
+
+```js
+class DocumentAccessorFactory extends NodeAccessor {
+  getName() {
+    return "DocumentAccessorFactory";
+  }
+  getOwner(node) {
+    for (const c of node.children) if (c.isOwner) return c;
+    return null;
+  }
+}
+```
+
+All three resolve uniquely _today_; they differ only in what they claim makes this
+the class. The wrapper (`identifiers: alpha_all`, `target_binding:
+DocumentAccessorFactory`) is the same each time — only the `match:` body changes.
+
+**Good** — anchors on the self-naming literal; holes the mechanism:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getName() {
+      STMT_LIST;
+      return "DocumentAccessorFactory";
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class whose `getName` returns `'DocumentAccessorFactory'`." The kept
+anchors are one method name plus the literal it returns — the literal is the
+load-bearing, minifier-immune part. Superclass and every body except the
+identifying `return` are holed, so any identity-preserving refactor still matches.
+
+**Okay** — anchors on a stable member name, no self-identity literal:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getOwner(ANYTHING) {
+      STMT_LIST;
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class with a `getOwner` method." Bodies holed (good), but it leans on
+the method _name_ surviving minification and only describes a _capability_, not an
+identity — another class could grow a `getOwner`. Fine when no self-naming literal
+exists; strictly weaker than Good.
+
+**Bad** — anchors on the implementation of `getOwner`:
+
+```yaml
+match: |
+  class DocumentAccessorFactory extends ANYTHING {
+    CLASS_REST;
+    getOwner(node) {
+      for (const c of node.children) if (c.isOwner) return c;
+      return null;
+    }
+    CLASS_REST;
+  }
+```
+
+Reads: "the class whose `getOwner` loops over `node.children` looking for
+`isOwner`." It pins the _mechanism_: rewrite the loop to
+`node.children.find((c) => c.isOwner)` (behavior-preserving) and it breaks though
+the class is unchanged. A photograph of today's body — and the longer and more
+literal the body it pins, the more fragile, not less.
+
+**No good anchor at all → leave honest debt.** If the entity is just
+`class DocumentAccessorFactory extends NodeAccessor {}` — empty body, no self-name,
+no distinctive surviving member — then every unique selector is either
+neighbor-borrowed or shape-only. Keep the name pin with a comment (step 6). An
+honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 ## Playbook (common cases)
 
@@ -173,9 +320,9 @@ authority.
 
 The design rationale (why anchor choice is an agent judgment rather than a cost
 term) and the verifiability asymmetry live in the `selector_authoring_agent` plan
-under `devinfra/js/debundle/plans/`. `match-selector` (which probes "what does this
-candidate match?" and reports over-pin slack in one shot) has landed; the one planned
-affordance still to come is `synthesize-selectors --candidates N` (a menu of ranked
-candidates rather than the minimizer's single pick). The two-bundle-version dogfood
-pair is the eventual scorecard for whether these instructions actually produce
-durable selectors.
+under `devinfra/js/debundle/plans/`. Both `match-selector` (probes "what does this
+candidate match?" and reports over-pin slack in one shot) and
+`synthesize-selectors --candidates N` (a menu of ranked candidates rather than the
+minimizer's single pick) have landed. The two-bundle-version dogfood pair is the
+eventual scorecard for whether these instructions actually produce durable
+selectors.

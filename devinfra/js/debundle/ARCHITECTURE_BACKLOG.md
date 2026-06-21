@@ -193,3 +193,11 @@ docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 
 Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId. The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` in `validation.rs`. This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
+
+### Two distinct `LogicalModule` types share a name
+
+`spec::LogicalModule` (the authoring-spec module: `members` / `binding_groups` / `anonymous_statements` / `comment`) and the graph/analysis `LogicalModule` (`id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`, used in `graph/tests.rs` and `analysis_tests/factorization_validation.rs`) are unrelated structs with the same name. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition (adding `note:` to the spec-side `Member` / `BindingGroup`). Rename one (e.g. the graph one to `PlannedModule` / `OutputModule`) to disambiguate. Not blocking.
+
+### Module-top `note:` not yet plumbed through the spec-tree loader
+
+`Member.note` and `BindingGroup.note` work (both carried whole, via `members: Vec<Member>` / `binding_groups: Vec<BindingGroup>`), but a module-**top** `note:` on a module YAML needs threading through the per-file deserialize struct → `spec_tree::ModuleSource` → `spec::LogicalModule` (mirroring `comment:` in `spec_tree::load_main_chunk_modules` + `logical_modules_map`). `spec::LogicalModule` deliberately has no `note:` field yet, to avoid a write-only half-measure (a field unsettable from YAML). Add the field plus the three carries together when module-top debt annotation is actually needed.
