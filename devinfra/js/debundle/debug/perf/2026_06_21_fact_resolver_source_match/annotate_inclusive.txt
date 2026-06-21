@@ -1,0 +1,66 @@
+--------------------------------------------------------------------------------
+Profile data file '/tmp/cg/callgrind.B.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache:
+D1 cache:
+LL cache:
+Timerange: Basic block 0 - 7426267859
+Trigger: Program termination
+Profiled target:  /home/user/ducktape/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle run --spec /tmp/synth62/spec_sourcematch.json (PID 23382, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       95
+Include dirs:
+User annotated:
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir
+--------------------------------------------------------------------------------
+34,948,137,981 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                       file:function
+--------------------------------------------------------------------------------
+34,944,856,114 (99.99%)  ???:std::sys::backtrace::__rust_begin_short_backtrace [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,688,389,418 (99.26%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+34,685,685,507 (99.25%)  ???:(below main) [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,685,685,495 (99.25%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+34,685,685,305 (99.25%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+34,685,243,839 (99.25%)  ???:main [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,685,243,827 (99.25%)  ???:std::rt::lang_start_internal [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,685,123,007 (99.25%)  ???:std::rt::lang_start::{{closure}} [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,685,122,997 (99.25%)  ???:debundle::main [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,684,261,010 (99.24%)  ???:debundle_cli::run_debundle_cli [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,684,260,260 (99.24%)  ???:pipeline::run_transform_cli_with_options [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+34,004,235,786 (97.30%)  ???:rayon::iter::plumbing::bridge_producer_consumer::helper [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,926,996,953 (97.08%)  ???:rayon::iter::extend::<impl rayon::iter::ParallelExtend<T> for alloc::vec::Vec<T>>::par_extend [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,876,490,975 (96.93%)  ???:scoped_tls::ScopedKey<T>::set [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,873,756,829 (96.93%)  ???:<alloc::vec::Vec<T,A> as alloc::vec::spec_extend::SpecExtend<T,I>>::spec_extend [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,843,085,022 (96.84%)  ???:artifact::IndexedArtifact::update [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,837,458,811 (96.82%)  ???:lowering::materialize_logical_modules [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,656,971,692 (96.31%)  ???:rayon::result::<impl rayon::iter::FromParallelIterator<core::result::Result<T,E>> for core::result::Result<C,E>>::from_par_iter [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+33,586,493,064 (96.10%)  ???:lowering::materialize::materialize_logical_chunk [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+32,216,848,847 (92.18%)  ???:lowering::materialize::plan_builder::ChunkPlanBuilder::add_explicit_request [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+32,194,074,636 (92.12%)  ???:lowering::plans::MemberRequest::resolve_source_match [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+32,185,238,069 (92.09%)  ???:<source_match::datalog_resolver::ChunkResolver as source_match::resolver::SelectorResolver>::resolve_member [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+32,142,205,240 (91.97%)  ???:source_match::timing::time_source_match [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+31,356,327,025 (89.72%)  ???:selector_match::matches_indexed [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+31,016,690,951 (88.75%)  ???:source_match::datalog_resolver::member_matches_var_declarator [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+14,851,556,139 (42.50%)  ???:selector_match::homo [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+13,396,750,969 (38.33%)  ???:selector_match::unsupported_needle_construct [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+12,264,267,189 (35.09%)  ???:selector_match::homo'2 [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+11,447,155,818 (32.75%)  ???:selector_match::match_children [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+ 5,469,791,396 (15.65%)  ???:selector_match::is_run_hole_carrier [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+ 5,328,208,175 (15.25%)  ???:selector_match::match_children'2 [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+ 5,019,249,708 (14.36%)  ???:source_match_holes::hole_name_for [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+ 3,474,941,631 ( 9.94%)  ./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S:__memcmp_avx2_movbe [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,617,673,914 ( 4.63%)  ???:selector_match::shorthand_property_view [/root/.cache/bazel/_bazel_root/25579ad4278977fbc464887a68f0f8e1/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./csu/../csu/libc-start.c
+  ./csu/../sysdeps/nptl/libc_start_call_main.h
+  ./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S

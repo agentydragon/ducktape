@@ -150,10 +150,21 @@ propose`.
 
 ### P2 — pipeline performance and architecture cleanup
 
-1. Use actual profiles to prioritize selector matching/index work. The expected
-   direction is one parse/index per chunk, prepared selector reuse, inverted
-   indexes for stable anchors, and memoized selector-body resolution; validate
-   each major change in <perf/>.
+1. **Selector matching is the measured hot path** (<perf/fact_resolver.md>,
+   2026-06-21 callgrind): the fact-based `ChunkResolver` → `selector_match`
+   homomorphism is ~92% of a source_match-selector `run`/`validate`, and the path
+   is ≈O(n²) in selector count (4x selectors → ~15x wall; 40k statements already
+   breaches the 60s blocker). `chunk_facts` EDB extraction and `selector_solve`
+   (Ascent) are not hot. Two fixes, highest leverage first: (a) hoist the
+   per-needle `unsupported_needle_construct` / run-hole / `hole_name_for`
+   classification out of the candidate inner loop (it is needle-only work re-run
+   per candidate — ~35–40% of the profile, pure memoization); (b) build the
+   shared per-chunk candidate index (declaration kind + var/declarator shape +
+   literal/ident fingerprint) and intersect postings before recursive matching,
+   to cut the O(N) candidate scan to O(matches) and remove the quadratic. Items
+   #5/#6 below (`JsChunk` scans, `split_entry_body` clone) were checked in that
+   profile and are not hot. Validate each change against a fresh callgrind run on
+   the same workload.
 2. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
    expensive reports they do not need.
 3. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
