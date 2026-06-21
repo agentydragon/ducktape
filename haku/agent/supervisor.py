@@ -25,6 +25,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
 from haku.agent.agent import WAKE, aclose_history, build_agent, build_history_provider, build_mcp_tools
+from haku.agent.bootstrap import bootstrap
 from haku.agent.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class HakuRuntime:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings()
+    await asyncio.to_thread(bootstrap, settings)
     mcp_tools = build_mcp_tools(settings)
     history = build_history_provider(settings)
     async with contextlib.AsyncExitStack() as stack:

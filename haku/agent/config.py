@@ -15,8 +15,17 @@ class Settings(BaseSettings):
     litellm_base_url: str = Field(description="In-cluster LiteLLM OpenAI-compatible base URL (ends in /v1).")
     litellm_api_key: str = Field(description="Haku's scoped LiteLLM virtual key.")
     tana_ro_token: str | None = Field(default=None, description="Bearer for tana-mcp-ro; omit to run without Tana.")
-    base_dir: Path = Field(default=Path("/opt/haku"), description="Baked manual + run procedure root (base/, run.md).")
+    # Repos cloned at startup so the agent has them as context. ducktape holds the
+    # manual/run-procedure/playbooks + the codebase; haku-state is Haku's memory + write
+    # surface. *_repo_url None skips the clone (the dir is assumed already present).
+    ducktape_repo_url: str | None = Field(default=None, description="ducktape git URL to clone for context.")
+    ducktape_dir: Path = Field(default=Path("/workspace/ducktape"), description="ducktape checkout (manual + code).")
+    ducktape_clone_depth: int = Field(default=1, description="Shallow-clone depth for ducktape; 0 = full history.")
+    state_repo_url: str | None = Field(default=None, description="haku-state git URL to clone; None assumes present.")
     state_dir: Path = Field(default=Path("/workspace/haku-state"), description="haku-state checkout (Haku's memory).")
+    git_host: str | None = Field(default=None, description="Host for the ~/.netrc git-creds entry (haku-state push).")
+    git_username: str | None = Field(default=None, description="Git username for git_host.")
+    git_password: str | None = Field(default=None, description="Git password/token for git_host.")
     session_id: str = Field(default="haku-main", description="Stable session id; the same id resumes the thread.")
     summarize_target_count: int = Field(
         default=20, description="Compaction: message groups to keep after LLM summarization."

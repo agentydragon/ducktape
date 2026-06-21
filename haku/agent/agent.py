@@ -5,8 +5,9 @@ and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 (OpenAI-compatible), so the provider (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
 is the trust boundary — see <../PLAN.md>) plus remote MCP toolsets (Tana to start).
-Behavior is the baked `haku/base/` manual + `haku/run.md`, read at runtime, so it
-stays single-sourced in ducktape. Session history persists in Valkey/Redis
+Behavior is `haku/base/` + `haku/run.md` from the ducktape clone (bootstrap.py clones it
+at startup), read at runtime, so it stays single-sourced and live-editable. Session
+history persists in Valkey/Redis
 (`RedisHistoryProvider`) when `HAKU_REDIS_URL` is set, else in-memory;
 `SummarizationStrategy` keeps the instruction prefix and, once history fills,
 LLM-summarizes the oldest turns into a running summary rather than dropping them.
@@ -65,13 +66,14 @@ def _run_command_tool(settings: Settings) -> FunctionTool:
 
 def _instructions(settings: Settings) -> str:
     return (
-        "You are Haku, the operator's tireless background executive assistant. Your operating "
-        f"manual is at {settings.base_dir}/base/instructions.md and your run procedure at "
-        f"{settings.base_dir}/run.md; your haku-state checkout — your only memory and write "
-        f"surface — is at {settings.state_dir}, with kubeconfig and git auth already in place. "
-        "Read the manual and the run procedure with your tools, then execute the run procedure "
-        "end to end: orient, process intake, scan your sources, write and curate items, append "
-        "to the log, then commit and push. Each user message is a wake."
+        "You are Haku, the operator's tireless background executive assistant. The ducktape repo "
+        f"is checked out at {settings.ducktape_dir}: your operating manual is at "
+        f"{settings.ducktape_dir}/haku/base/instructions.md and your run procedure at "
+        f"{settings.ducktape_dir}/haku/run.md. Your haku-state checkout — your only memory and "
+        f"write surface — is at {settings.state_dir}, with git auth already in place. Read the "
+        "manual and the run procedure with your tools, then execute the run procedure end to end: "
+        "orient, process intake, scan your sources, write and curate items, append to the log, "
+        "then commit and push. Each user message is a wake."
     )
 
 

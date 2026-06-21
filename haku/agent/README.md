@@ -11,8 +11,9 @@ identity.
 - **Tools**: a `run_command` shell tool (the Pod is the trust boundary — see
   <../PLAN.md>) plus remote MCP toolsets (Tana to start). Bearer auth rides a
   pre-built `http_client` because `MCPStreamableHTTPTool` ignores `headers=`.
-- **Behavior** is the baked `haku/base/` manual + `haku/run.md`, read at runtime — not
-  inlined — so it stays single-sourced in ducktape and reconciled per run.
+- **Behavior** is `haku/base/` + `haku/run.md` from the **ducktape clone** (the agent
+  clones ducktape + haku-state at startup via pygit2; see `bootstrap.py`), read at
+  runtime — so it stays single-sourced and live-editable, no image rebuild to change it.
 - **Persistent threads + compaction**: history persists across restarts in
   **Valkey/Redis** via `RedisHistoryProvider` (keyed by `HAKU_SESSION_ID`) when
   `HAKU_REDIS_URL` is set — otherwise in-memory. `SummarizationStrategy` keeps the
@@ -37,7 +38,9 @@ bbr build //haku/agent:scan
 ```
 
 Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
-`HAKU_LITELLM_API_KEY`, optional `HAKU_REDIS_URL`, `HAKU_TANA_RO_TOKEN`,
-`HAKU_SESSION_ID`, `HAKU_WAKE_INTERVAL_SECONDS`, `HAKU_STATE_DIR`, `HAKU_BASE_DIR`.
+`HAKU_LITELLM_API_KEY`, the clone config (`HAKU_DUCKTAPE_REPO_URL`,
+`HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST` / `HAKU_GIT_USERNAME` / `HAKU_GIT_PASSWORD`), and
+optional `HAKU_REDIS_URL`, `HAKU_TANA_RO_TOKEN`, `HAKU_SESSION_ID`,
+`HAKU_WAKE_INTERVAL_SECONDS`.
 
 Design + tradeoffs vs. the other runtimes: <../plans/runtime_options.md>.

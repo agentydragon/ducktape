@@ -47,14 +47,15 @@ none of the wiring below is committed yet. Turnkey steps where apt resolves:
 
 2. Generate the lock: `bazel run @trixie_haku_agent//:lock`.
 3. Add `oci_image` (+ `oci_load`) to `haku/agent/BUILD.bazel`: base
-   `@debian_trixie_slim_linux_amd64`; `tars` = the `:serve` `py_image_layer`, a
-   `pkg_tar` baking `haku/base/` + `haku/run.md` at `/opt/haku` (the console's `web_tar`
-   pattern), and `"@trixie_haku_agent//:flat"` (the apt layer, the
-   `finance/beancount_export` pattern); entrypoint runs `:serve`.
+   `@debian_trixie_slim_linux_amd64`; `tars` = the `:serve` `py_image_layer` +
+   `"@trixie_haku_agent//:flat"` (the apt layer, the `finance/beancount_export`
+   pattern); entrypoint runs `:serve`. No baked `haku/base` — the agent clones ducktape
+   at startup (`bootstrap.py`). (Pending the loop-vs-tools container split below, this
+   apt layer may move to a separate tools container instead.)
 4. `bbr build //haku/agent:image`, then GHCR push + Flux as for the console.
 
-`haku-state` checkout: the supervisor clones/pulls it at startup via subprocess git (git
-is in the image) — the next buildable-here increment.
+`ducktape` + `haku-state` checkout: the supervisor clones/pulls both at startup via
+pygit2 (`bootstrap.py`, hermetic — done), so the manual comes from the clone (no bake).
 
 ## Bootstrap / entrypoint contract
 

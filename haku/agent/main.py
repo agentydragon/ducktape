@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from haku.agent.agent import run_scan
+from haku.agent.bootstrap import bootstrap
 from haku.agent.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def _amain() -> None:
     settings = Settings()
+    await asyncio.to_thread(bootstrap, settings)
     text = await run_scan(settings)
     logger.info("scan complete: %s", text[:1000])
 
