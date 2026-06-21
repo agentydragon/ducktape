@@ -504,7 +504,6 @@ overrides. You author no generator and commit no `dashboard/` page, templates, o
 [`calendar_prep`](playbooks/calendar_prep.md),
 [`drive_activity`](playbooks/drive_activity.md),
 [`tasks`](playbooks/tasks.md),
-[`keep_notes`](playbooks/keep_notes.md),
 [`ducktape_git_review`](playbooks/ducktape_git_review.md),
 [`tana_review`](playbooks/tana_review.md)), **not a closed set**. Read them
 for the pattern, run the ones whose sources you have, and develop your own over

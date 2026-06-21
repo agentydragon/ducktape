@@ -10,7 +10,7 @@ read-only base).
 Available now: [`plaid_anomalies`](plaid_anomalies.md),
 [`gmail_triage`](gmail_triage.md), [`inbox_cleanup`](inbox_cleanup.md),
 [`calendar_prep`](calendar_prep.md), [`drive_activity`](drive_activity.md),
-[`tasks`](tasks.md), [`keep_notes`](keep_notes.md), and
+[`tasks`](tasks.md), and
 [`ducktape_git_review`](ducktape_git_review.md) (your ducktape checkout — always
 reachable). The Google ones share the read-only Google token; other Google
 products (Docs, Slides, …) are fair game the same way when the token carries their
