@@ -24,27 +24,26 @@
 
 use debundle_e2e_support::*;
 
-/// **The decorate-helper copy, end to end.** A minified `__decorate` helper (here
+/// **The decorate-helper copy, end to end.** A `__decorate`-style helper (here
 /// `d0`) reads the `Object.getOwnPropertyDescriptor` / `Object.defineProperty`
 /// intrinsic aliases off the global `Object` and is applied to `C.prototype` — the
-/// exact esbuild trio shape. The helper has no anchor of its own;
-/// `makes_decorate_call` pins it by the class it decorates (`@DecoratedClass`),
-/// never by the minified `d0`. Decoration semantics survive lowering (the decorator
-/// mutates the prototype, observable under Node).
+/// esbuild trio shape (synthetic helper body, real decorate-call structure). The
+/// helper has no anchor of its own; `makes_decorate_call` pins it by the class it
+/// decorates (`@DecoratedClass`), never by the minified `d0`. Decoration semantics
+/// survive lowering (the decorator mutates the prototype, observable under Node).
 #[test]
 fn makes_decorate_call_pins_helper_by_decorated_class() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var g0 = Object.getOwnPropertyDescriptor;
 var p0 = Object.defineProperty;
-var d0 = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? g0(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && p0(target, key, desc), desc);
+var d0 = (decorators, target, key) => {
+  const desc = g0(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  p0(target, key, desc);
 };
 const tag = (target, key, desc) => {
   const original = desc.value;
   desc.value = function () { return original.call(this) + "!"; };
-  return desc;
 };
 class C {
   greet() { return "hi"; }
@@ -101,22 +100,21 @@ fn makes_decorate_call_disambiguates_two_helper_copies_by_class() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var ga = Object.getOwnPropertyDescriptor;
 var pa = Object.defineProperty;
-var da = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? ga(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && pa(target, key, desc), desc);
+var da = (decorators, target, key) => {
+  const desc = ga(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  pa(target, key, desc);
 };
 var gb = Object.getOwnPropertyDescriptor;
 var pb = Object.defineProperty;
-var db = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? gb(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && pb(target, key, desc), desc);
+var db = (decorators, target, key) => {
+  const desc = gb(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  pb(target, key, desc);
 };
 const mark = (suffix) => (target, key, desc) => {
   const original = desc.value;
   desc.value = function () { return original.call(this) + suffix; };
-  return desc;
 };
 class Alpha {
   alphaLabel() { return "a"; }
@@ -198,15 +196,14 @@ fn makes_decorate_call_constrains_by_kind_through_full_pipeline() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var gx = Object.getOwnPropertyDescriptor;
 var px = Object.defineProperty;
-var dx = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? gx(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && px(target, key, desc), desc);
+var dx = (decorators, target, key) => {
+  const desc = gx(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  px(target, key, desc);
 };
 const stamp = (target, key, desc) => {
   const original = desc.value;
   desc.value = function () { return original.call(this) + "*"; };
-  return desc;
 };
 class Widget {
   name() { return "w"; }
