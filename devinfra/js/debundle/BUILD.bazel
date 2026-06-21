@@ -1075,6 +1075,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
+        "@crates//:serde",
         "@crates//:swc_ecma_ast",
     ],
 )
@@ -1083,6 +1084,7 @@ rust_test(
     name = "chunk_facts_test",
     crate = ":chunk_facts",
     edition = "2024",
+    deps = ["@crates//:serde_json"],
 )
 
 # P2 matching core: a structural homomorphism from a selector needle's

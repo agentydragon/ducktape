@@ -22,6 +22,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use js_ast::statement_ordinal_for_body_index;
+use serde::{Deserialize, Serialize};
 use swc_ecma_ast::{
     ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
@@ -32,12 +33,224 @@ use swc_ecma_ast::{
 
 pub type NodeId = u32;
 
+/// The syntactic kind tag of a projected node — a closed enum over every
+/// construct the extractor models. The matcher joins needle and subject node
+/// kinds for structural equality (`source_match`), so a node type the extractor
+/// does not model never reaches here: unmodeled constructs raise [`Unsupported`]
+/// up front (see the module docstring), so this enum is exhaustive by
+/// construction rather than carrying a catch-all.
+///
+/// Each variant's PascalCase serde spelling is byte-identical to the kind tag the
+/// extractor previously emitted as a `&'static str`. `as_tag` exposes that
+/// spelling for the string-keyed views (`Index`, root-kind prefilters) the
+/// downstream resolver and near-miss diagnostics still read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum NodeKind {
+    Array,
+    ArrayPat,
+    Arrow,
+    Assign,
+    AssignPat,
+    AssignProp,
+    AsyncArrow,
+    AsyncFunction,
+    AsyncGeneratorFunction,
+    Await,
+    BigIntLit,
+    Bin,
+    BindingIdent,
+    Block,
+    BoolLit,
+    Break,
+    Call,
+    Catch,
+    Class,
+    ClassDecl,
+    ClassExpr,
+    ClassMemberEmpty,
+    ClassProp,
+    ComputedKey,
+    Cond,
+    Constructor,
+    Continue,
+    Debugger,
+    DoWhile,
+    Elision,
+    Empty,
+    ExportAll,
+    ExportDecl,
+    ExportDefault,
+    ExportDefaultDecl,
+    ExportNamed,
+    ExprStmt,
+    FnDecl,
+    FnExpr,
+    For,
+    ForIn,
+    ForOf,
+    Function,
+    GeneratorFunction,
+    Getter,
+    Ident,
+    If,
+    Import,
+    ImportCallee,
+    ImportSpecifier,
+    KeyValue,
+    Labeled,
+    Member,
+    MetaPropImportMeta,
+    MetaPropNewTarget,
+    Method,
+    New,
+    NullLit,
+    NumLit,
+    Object,
+    ObjectMethod,
+    ObjectPat,
+    OptCall,
+    OptChain,
+    PatAssign,
+    PatKeyValue,
+    PropName,
+    RegexLit,
+    RestPat,
+    Return,
+    Seq,
+    Setter,
+    Shorthand,
+    Spread,
+    StaticBlock,
+    StrLit,
+    Super,
+    SuperProp,
+    Switch,
+    SwitchCase,
+    TaggedTpl,
+    This,
+    Throw,
+    Tpl,
+    TplQuasi,
+    Try,
+    Unary,
+    UpdatePostfix,
+    UpdatePrefix,
+    VarDecl,
+    VarDeclarator,
+    While,
+    Yield,
+}
+
+impl NodeKind {
+    /// The kind tag's stable spelling, identical to the variant's PascalCase serde
+    /// form. Feeds the string-keyed [`Index`] kind vector and the root-kind
+    /// prefilters consumed by `source_match` (the resolver and near-miss walk).
+    pub fn as_tag(self) -> &'static str {
+        match self {
+            Self::Array => "Array",
+            Self::ArrayPat => "ArrayPat",
+            Self::Arrow => "Arrow",
+            Self::Assign => "Assign",
+            Self::AssignPat => "AssignPat",
+            Self::AssignProp => "AssignProp",
+            Self::AsyncArrow => "AsyncArrow",
+            Self::AsyncFunction => "AsyncFunction",
+            Self::AsyncGeneratorFunction => "AsyncGeneratorFunction",
+            Self::Await => "Await",
+            Self::BigIntLit => "BigIntLit",
+            Self::Bin => "Bin",
+            Self::BindingIdent => "BindingIdent",
+            Self::Block => "Block",
+            Self::BoolLit => "BoolLit",
+            Self::Break => "Break",
+            Self::Call => "Call",
+            Self::Catch => "Catch",
+            Self::Class => "Class",
+            Self::ClassDecl => "ClassDecl",
+            Self::ClassExpr => "ClassExpr",
+            Self::ClassMemberEmpty => "ClassMemberEmpty",
+            Self::ClassProp => "ClassProp",
+            Self::ComputedKey => "ComputedKey",
+            Self::Cond => "Cond",
+            Self::Constructor => "Constructor",
+            Self::Continue => "Continue",
+            Self::Debugger => "Debugger",
+            Self::DoWhile => "DoWhile",
+            Self::Elision => "Elision",
+            Self::Empty => "Empty",
+            Self::ExportAll => "ExportAll",
+            Self::ExportDecl => "ExportDecl",
+            Self::ExportDefault => "ExportDefault",
+            Self::ExportDefaultDecl => "ExportDefaultDecl",
+            Self::ExportNamed => "ExportNamed",
+            Self::ExprStmt => "ExprStmt",
+            Self::FnDecl => "FnDecl",
+            Self::FnExpr => "FnExpr",
+            Self::For => "For",
+            Self::ForIn => "ForIn",
+            Self::ForOf => "ForOf",
+            Self::Function => "Function",
+            Self::GeneratorFunction => "GeneratorFunction",
+            Self::Getter => "Getter",
+            Self::Ident => "Ident",
+            Self::If => "If",
+            Self::Import => "Import",
+            Self::ImportCallee => "ImportCallee",
+            Self::ImportSpecifier => "ImportSpecifier",
+            Self::KeyValue => "KeyValue",
+            Self::Labeled => "Labeled",
+            Self::Member => "Member",
+            Self::MetaPropImportMeta => "MetaPropImportMeta",
+            Self::MetaPropNewTarget => "MetaPropNewTarget",
+            Self::Method => "Method",
+            Self::New => "New",
+            Self::NullLit => "NullLit",
+            Self::NumLit => "NumLit",
+            Self::Object => "Object",
+            Self::ObjectMethod => "ObjectMethod",
+            Self::ObjectPat => "ObjectPat",
+            Self::OptCall => "OptCall",
+            Self::OptChain => "OptChain",
+            Self::PatAssign => "PatAssign",
+            Self::PatKeyValue => "PatKeyValue",
+            Self::PropName => "PropName",
+            Self::RegexLit => "RegexLit",
+            Self::RestPat => "RestPat",
+            Self::Return => "Return",
+            Self::Seq => "Seq",
+            Self::Setter => "Setter",
+            Self::Shorthand => "Shorthand",
+            Self::Spread => "Spread",
+            Self::StaticBlock => "StaticBlock",
+            Self::StrLit => "StrLit",
+            Self::Super => "Super",
+            Self::SuperProp => "SuperProp",
+            Self::Switch => "Switch",
+            Self::SwitchCase => "SwitchCase",
+            Self::TaggedTpl => "TaggedTpl",
+            Self::This => "This",
+            Self::Throw => "Throw",
+            Self::Tpl => "Tpl",
+            Self::TplQuasi => "TplQuasi",
+            Self::Try => "Try",
+            Self::Unary => "Unary",
+            Self::UpdatePostfix => "UpdatePostfix",
+            Self::UpdatePrefix => "UpdatePrefix",
+            Self::VarDecl => "VarDecl",
+            Self::VarDeclarator => "VarDeclarator",
+            Self::While => "While",
+            Self::Yield => "Yield",
+        }
+    }
+}
+
 /// A faithful relational projection of one chunk's top-level statements. Each
 /// vector is an EDB relation the lowered selector queries join over.
 #[derive(Debug, Default)]
 pub struct ChunkFacts {
     /// node -> syntactic kind tag.
-    pub node_kind: Vec<(NodeId, &'static str)>,
+    pub node_kind: Vec<(NodeId, NodeKind)>,
     /// parent -> (source-order ordinal, child). The ordinal is what the
     /// run-hole / adjacency encoding compares (`i < j`).
     pub child: Vec<(NodeId, u32, NodeId)>,
@@ -114,7 +327,7 @@ struct Extractor {
 }
 
 impl Extractor {
-    fn node(&mut self, kind: &'static str) -> NodeId {
+    fn node(&mut self, kind: NodeKind) -> NodeId {
         let id = self.next;
         self.next += 1;
         self.facts.node_kind.push((id, kind));
@@ -133,14 +346,14 @@ impl Extractor {
     fn module_decl(&mut self, decl: &ModuleDecl) -> Result<NodeId, Unsupported> {
         match decl {
             ModuleDecl::ExportDecl(export) => {
-                let id = self.node("ExportDecl");
+                let id = self.node(NodeKind::ExportDecl);
                 let inner = self.decl(&export.decl)?;
                 self.facts.child.push((id, 0, inner));
                 Ok(id)
             }
             ModuleDecl::Import(import) => {
-                let id = self.node("Import");
-                let src = self.node("StrLit");
+                let id = self.node(NodeKind::Import);
+                let src = self.node(NodeKind::StrLit);
                 self.facts
                     .str_lit
                     .push((src, js_ast::str_value(&import.src)));
@@ -151,20 +364,20 @@ impl Extractor {
                         ImportSpecifier::Default(default) => &default.local,
                         ImportSpecifier::Namespace(namespace) => &namespace.local,
                     };
-                    let spec_id = self.node("ImportSpecifier");
+                    let spec_id = self.node(NodeKind::ImportSpecifier);
                     self.facts.ident_name.push((spec_id, local.sym.to_string()));
                     self.facts.child.push((id, (index + 1) as u32, spec_id));
                 }
                 Ok(id)
             }
             ModuleDecl::ExportDefaultExpr(export) => {
-                let id = self.node("ExportDefault");
+                let id = self.node(NodeKind::ExportDefault);
                 let expr = self.expr(&export.expr)?;
                 self.facts.child.push((id, 0, expr));
                 Ok(id)
             }
             ModuleDecl::ExportDefaultDecl(export) => {
-                let id = self.node("ExportDefaultDecl");
+                let id = self.node(NodeKind::ExportDefaultDecl);
                 match &export.decl {
                     DefaultDecl::Class(class_expr) => {
                         let class = self.class_node(&class_expr.class)?;
@@ -181,17 +394,17 @@ impl Extractor {
                 Ok(id)
             }
             ModuleDecl::ExportNamed(export) => {
-                let id = self.node("ExportNamed");
+                let id = self.node(NodeKind::ExportNamed);
                 if let Some(src) = &export.src {
-                    let src_id = self.node("StrLit");
+                    let src_id = self.node(NodeKind::StrLit);
                     self.facts.str_lit.push((src_id, js_ast::str_value(src)));
                     self.facts.child.push((id, 0, src_id));
                 }
                 Ok(id)
             }
             ModuleDecl::ExportAll(export) => {
-                let id = self.node("ExportAll");
-                let src = self.node("StrLit");
+                let id = self.node(NodeKind::ExportAll);
+                let src = self.node(NodeKind::StrLit);
                 self.facts
                     .str_lit
                     .push((src, js_ast::str_value(&export.src)));
@@ -206,13 +419,13 @@ impl Extractor {
         match stmt {
             Stmt::Decl(decl) => self.decl(decl),
             Stmt::Expr(expr_stmt) => {
-                let id = self.node("ExprStmt");
+                let id = self.node(NodeKind::ExprStmt);
                 let inner = self.expr(&expr_stmt.expr)?;
                 self.facts.child.push((id, 0, inner));
                 Ok(id)
             }
             Stmt::Return(ret) => {
-                let id = self.node("Return");
+                let id = self.node(NodeKind::Return);
                 if let Some(arg) = &ret.arg {
                     let arg = self.expr(arg)?;
                     self.facts.child.push((id, 0, arg));
@@ -220,7 +433,7 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::If(if_stmt) => {
-                let id = self.node("If");
+                let id = self.node(NodeKind::If);
                 let test = self.expr(&if_stmt.test)?;
                 self.facts.child.push((id, 0, test));
                 let cons = self.stmt(&if_stmt.cons)?;
@@ -232,7 +445,7 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::While(while_stmt) => {
-                let id = self.node("While");
+                let id = self.node(NodeKind::While);
                 let test = self.expr(&while_stmt.test)?;
                 self.facts.child.push((id, 0, test));
                 let body = self.stmt(&while_stmt.body)?;
@@ -240,7 +453,7 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::DoWhile(do_while) => {
-                let id = self.node("DoWhile");
+                let id = self.node(NodeKind::DoWhile);
                 let body = self.stmt(&do_while.body)?;
                 self.facts.child.push((id, 0, body));
                 let test = self.expr(&do_while.test)?;
@@ -248,18 +461,18 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::Throw(throw) => {
-                let id = self.node("Throw");
+                let id = self.node(NodeKind::Throw);
                 let arg = self.expr(&throw.arg)?;
                 self.facts.child.push((id, 0, arg));
                 Ok(id)
             }
             Stmt::Block(block) => self.block(block),
             Stmt::Try(try_stmt) => {
-                let id = self.node("Try");
+                let id = self.node(NodeKind::Try);
                 let block = self.block(&try_stmt.block)?;
                 self.facts.child.push((id, 0, block));
                 if let Some(handler) = &try_stmt.handler {
-                    let catch = self.node("Catch");
+                    let catch = self.node(NodeKind::Catch);
                     let mut next = 0u32;
                     if let Some(param) = &handler.param {
                         let param = self.pat(param)?;
@@ -277,11 +490,11 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::Switch(switch) => {
-                let id = self.node("Switch");
+                let id = self.node(NodeKind::Switch);
                 let discriminant = self.expr(&switch.discriminant)?;
                 self.facts.child.push((id, 0, discriminant));
                 for (index, case) in switch.cases.iter().enumerate() {
-                    let case_id = self.node("SwitchCase");
+                    let case_id = self.node(NodeKind::SwitchCase);
                     let mut next = 0u32;
                     if let Some(test) = &case.test {
                         let test = self.expr(test)?;
@@ -298,19 +511,19 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::Labeled(labeled) => {
-                let id = self.node("Labeled");
+                let id = self.node(NodeKind::Labeled);
                 let body = self.stmt(&labeled.body)?;
                 self.facts.child.push((id, 0, body));
                 Ok(id)
             }
             // Loop/branch jumps carry only a T-variant label; the node identity
             // is what selectors anchor on.
-            Stmt::Break(_) => Ok(self.node("Break")),
-            Stmt::Continue(_) => Ok(self.node("Continue")),
-            Stmt::Empty(_) => Ok(self.node("Empty")),
-            Stmt::Debugger(_) => Ok(self.node("Debugger")),
+            Stmt::Break(_) => Ok(self.node(NodeKind::Break)),
+            Stmt::Continue(_) => Ok(self.node(NodeKind::Continue)),
+            Stmt::Empty(_) => Ok(self.node(NodeKind::Empty)),
+            Stmt::Debugger(_) => Ok(self.node(NodeKind::Debugger)),
             Stmt::For(for_stmt) => {
-                let id = self.node("For");
+                let id = self.node(NodeKind::For);
                 if let Some(init) = &for_stmt.init {
                     let init = self.var_decl_or_expr(init)?;
                     self.facts.child.push((id, 0, init));
@@ -328,7 +541,7 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::ForIn(for_in) => {
-                let id = self.node("ForIn");
+                let id = self.node(NodeKind::ForIn);
                 let left = self.for_head(&for_in.left)?;
                 self.facts.child.push((id, 0, left));
                 let right = self.expr(&for_in.right)?;
@@ -338,7 +551,7 @@ impl Extractor {
                 Ok(id)
             }
             Stmt::ForOf(for_of) => {
-                let id = self.node("ForOf");
+                let id = self.node(NodeKind::ForOf);
                 let left = self.for_head(&for_of.left)?;
                 self.facts.child.push((id, 0, left));
                 let right = self.expr(&for_of.right)?;
@@ -355,8 +568,8 @@ impl Extractor {
         match decl {
             Decl::Var(var) => self.var_decl(var),
             Decl::Fn(fn_decl) => {
-                let id = self.node("FnDecl");
-                let name = self.node("Ident");
+                let id = self.node(NodeKind::FnDecl);
+                let name = self.node(NodeKind::Ident);
                 self.facts
                     .ident_name
                     .push((name, fn_decl.ident.sym.to_string()));
@@ -366,8 +579,8 @@ impl Extractor {
                 Ok(id)
             }
             Decl::Class(class_decl) => {
-                let id = self.node("ClassDecl");
-                let name = self.node("Ident");
+                let id = self.node(NodeKind::ClassDecl);
+                let name = self.node(NodeKind::Ident);
                 self.facts
                     .ident_name
                     .push((name, class_decl.ident.sym.to_string()));
@@ -381,7 +594,7 @@ impl Extractor {
     }
 
     fn var_decl(&mut self, var: &VarDecl) -> Result<NodeId, Unsupported> {
-        let id = self.node("VarDecl");
+        let id = self.node(NodeKind::VarDecl);
         // The declaration keyword distinguishes `let`/`const`/`var` — a label
         // the matcher compares, so a `let` selector cannot match a `const`.
         self.facts
@@ -410,7 +623,7 @@ impl Extractor {
     }
 
     fn var_declarator(&mut self, declarator: &VarDeclarator) -> Result<NodeId, Unsupported> {
-        let id = self.node("VarDeclarator");
+        let id = self.node(NodeKind::VarDeclarator);
         let name = self.pat(&declarator.name)?;
         self.facts.child.push((id, 0, name));
         if let Some(init) = &declarator.init {
@@ -425,10 +638,10 @@ impl Extractor {
         // them via `eq_ignore_span`), so they must distinguish the node — fold them
         // into the kind tag the matcher compares exactly, not drop them.
         let kind = match (function.is_async, function.is_generator) {
-            (false, false) => "Function",
-            (true, false) => "AsyncFunction",
-            (false, true) => "GeneratorFunction",
-            (true, true) => "AsyncGeneratorFunction",
+            (false, false) => NodeKind::Function,
+            (true, false) => NodeKind::AsyncFunction,
+            (false, true) => NodeKind::GeneratorFunction,
+            (true, true) => NodeKind::AsyncGeneratorFunction,
         };
         let id = self.node(kind);
         for (index, param) in function.params.iter().enumerate() {
@@ -445,7 +658,7 @@ impl Extractor {
     }
 
     fn block(&mut self, block: &BlockStmt) -> Result<NodeId, Unsupported> {
-        let id = self.node("Block");
+        let id = self.node(NodeKind::Block);
         for (index, stmt) in block.stmts.iter().enumerate() {
             let stmt = self.stmt(stmt)?;
             self.facts.child.push((id, index as u32, stmt));
@@ -454,7 +667,7 @@ impl Extractor {
     }
 
     fn class_node(&mut self, class: &Class) -> Result<NodeId, Unsupported> {
-        let id = self.node("Class");
+        let id = self.node(NodeKind::Class);
         if let Some(super_class) = &class.super_class {
             let super_node = self.expr(super_class)?;
             self.facts.super_class.push((id, super_node));
@@ -469,7 +682,7 @@ impl Extractor {
     fn class_member(&mut self, member: &ClassMember) -> Result<NodeId, Unsupported> {
         match member {
             ClassMember::Method(method) => {
-                let id = self.node("Method");
+                let id = self.node(NodeKind::Method);
                 let key = self.prop_key(&method.key)?;
                 self.facts.child.push((id, 0, key));
                 let function = self.function(&method.function)?;
@@ -477,7 +690,7 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::Constructor(constructor) => {
-                let id = self.node("Constructor");
+                let id = self.node(NodeKind::Constructor);
                 let key = self.prop_key(&constructor.key)?;
                 self.facts.child.push((id, 0, key));
                 let mut next = 1u32;
@@ -500,7 +713,7 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::ClassProp(prop) => {
-                let id = self.node("ClassProp");
+                let id = self.node(NodeKind::ClassProp);
                 let key = self.prop_key(&prop.key)?;
                 self.facts.child.push((id, 0, key));
                 if let Some(value) = &prop.value {
@@ -510,12 +723,12 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::StaticBlock(static_block) => {
-                let id = self.node("StaticBlock");
+                let id = self.node(NodeKind::StaticBlock);
                 let body = self.block(&static_block.body)?;
                 self.facts.child.push((id, 0, body));
                 Ok(id)
             }
-            ClassMember::Empty(_) => Ok(self.node("ClassMemberEmpty")),
+            ClassMember::Empty(_) => Ok(self.node(NodeKind::ClassMemberEmpty)),
             _ => unsupported("class_member"),
         }
     }
@@ -523,22 +736,22 @@ impl Extractor {
     fn prop_key(&mut self, key: &PropName) -> Result<NodeId, Unsupported> {
         match key {
             PropName::Ident(name) => {
-                let id = self.node("PropName");
+                let id = self.node(NodeKind::PropName);
                 self.facts.prop_name.push((id, name.sym.to_string()));
                 Ok(id)
             }
             PropName::Str(value) => {
-                let id = self.node("PropName");
+                let id = self.node(NodeKind::PropName);
                 self.facts.prop_name.push((id, js_ast::str_value(value)));
                 Ok(id)
             }
             PropName::Num(number) => {
-                let id = self.node("PropName");
+                let id = self.node(NodeKind::PropName);
                 self.facts.prop_name.push((id, number.value.to_string()));
                 Ok(id)
             }
             PropName::Computed(computed) => {
-                let id = self.node("ComputedKey");
+                let id = self.node(NodeKind::ComputedKey);
                 let expr = self.expr(&computed.expr)?;
                 self.facts.child.push((id, 0, expr));
                 Ok(id)
@@ -550,20 +763,20 @@ impl Extractor {
     fn pat(&mut self, pat: &Pat) -> Result<NodeId, Unsupported> {
         match pat {
             Pat::Ident(binding) => {
-                let id = self.node("BindingIdent");
+                let id = self.node(NodeKind::BindingIdent);
                 self.facts.ident_name.push((id, binding.id.sym.to_string()));
                 Ok(id)
             }
             Pat::Array(array) => self.array_pat(array),
             Pat::Object(object) => self.object_pat(object),
             Pat::Rest(rest) => {
-                let id = self.node("RestPat");
+                let id = self.node(NodeKind::RestPat);
                 let arg = self.pat(&rest.arg)?;
                 self.facts.child.push((id, 0, arg));
                 Ok(id)
             }
             Pat::Assign(assign) => {
-                let id = self.node("AssignPat");
+                let id = self.node(NodeKind::AssignPat);
                 let left = self.pat(&assign.left)?;
                 self.facts.child.push((id, 0, left));
                 let right = self.expr(&assign.right)?;
@@ -576,7 +789,7 @@ impl Extractor {
     }
 
     fn array_pat(&mut self, array: &ArrayPat) -> Result<NodeId, Unsupported> {
-        let id = self.node("ArrayPat");
+        let id = self.node(NodeKind::ArrayPat);
         for (index, elem) in array.elems.iter().enumerate() {
             match elem {
                 Some(elem) => {
@@ -584,7 +797,7 @@ impl Extractor {
                     self.facts.child.push((id, index as u32, elem));
                 }
                 None => {
-                    let elision = self.node("Elision");
+                    let elision = self.node(NodeKind::Elision);
                     self.facts.child.push((id, index as u32, elision));
                 }
             }
@@ -593,7 +806,7 @@ impl Extractor {
     }
 
     fn object_pat(&mut self, object: &ObjectPat) -> Result<NodeId, Unsupported> {
-        let id = self.node("ObjectPat");
+        let id = self.node(NodeKind::ObjectPat);
         for (index, prop) in object.props.iter().enumerate() {
             let prop = self.object_pat_prop(prop)?;
             self.facts.child.push((id, index as u32, prop));
@@ -604,7 +817,7 @@ impl Extractor {
     fn object_pat_prop(&mut self, prop: &ObjectPatProp) -> Result<NodeId, Unsupported> {
         match prop {
             ObjectPatProp::KeyValue(key_value) => {
-                let id = self.node("PatKeyValue");
+                let id = self.node(NodeKind::PatKeyValue);
                 let key = self.prop_key(&key_value.key)?;
                 self.facts.child.push((id, 0, key));
                 let value = self.pat(&key_value.value)?;
@@ -612,7 +825,7 @@ impl Extractor {
                 Ok(id)
             }
             ObjectPatProp::Assign(assign) => {
-                let id = self.node("PatAssign");
+                let id = self.node(NodeKind::PatAssign);
                 self.facts
                     .ident_name
                     .push((id, assign.key.id.sym.to_string()));
@@ -623,7 +836,7 @@ impl Extractor {
                 Ok(id)
             }
             ObjectPatProp::Rest(rest) => {
-                let id = self.node("RestPat");
+                let id = self.node(NodeKind::RestPat);
                 let arg = self.pat(&rest.arg)?;
                 self.facts.child.push((id, 0, arg));
                 Ok(id)
@@ -634,25 +847,25 @@ impl Extractor {
     fn expr(&mut self, expr: &Expr) -> Result<NodeId, Unsupported> {
         match expr {
             Expr::Ident(ident) => {
-                let id = self.node("Ident");
+                let id = self.node(NodeKind::Ident);
                 self.facts.ident_name.push((id, ident.sym.to_string()));
                 Ok(id)
             }
             Expr::Lit(lit) => self.lit(lit),
             Expr::Member(member) => self.member(member),
             Expr::Call(call) => {
-                let id = self.node("Call");
+                let id = self.node(NodeKind::Call);
                 let callee = match &call.callee {
                     Callee::Expr(callee) => self.expr(callee)?,
-                    Callee::Super(_) => self.node("Super"),
-                    Callee::Import(_) => self.node("ImportCallee"),
+                    Callee::Super(_) => self.node(NodeKind::Super),
+                    Callee::Import(_) => self.node(NodeKind::ImportCallee),
                 };
                 self.facts.child.push((id, 0, callee));
                 self.push_args(id, 1, &call.args)?;
                 Ok(id)
             }
             Expr::New(new) => {
-                let id = self.node("New");
+                let id = self.node(NodeKind::New);
                 let callee = self.expr(&new.callee)?;
                 self.facts.child.push((id, 0, callee));
                 if let Some(args) = &new.args {
@@ -661,7 +874,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Bin(bin) => {
-                let id = self.node("Bin");
+                let id = self.node(NodeKind::Bin);
                 self.facts.operator.push((id, bin.op.as_str().to_string()));
                 let left = self.expr(&bin.left)?;
                 self.facts.child.push((id, 0, left));
@@ -670,7 +883,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Unary(unary) => {
-                let id = self.node("Unary");
+                let id = self.node(NodeKind::Unary);
                 self.facts
                     .operator
                     .push((id, unary.op.as_str().to_string()));
@@ -679,7 +892,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Cond(cond) => {
-                let id = self.node("Cond");
+                let id = self.node(NodeKind::Cond);
                 let test = self.expr(&cond.test)?;
                 self.facts.child.push((id, 0, test));
                 let cons = self.expr(&cond.cons)?;
@@ -689,7 +902,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Seq(seq) => {
-                let id = self.node("Seq");
+                let id = self.node(NodeKind::Seq);
                 for (index, item) in seq.exprs.iter().enumerate() {
                     let item = self.expr(item)?;
                     self.facts.child.push((id, index as u32, item));
@@ -697,7 +910,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Array(array) => {
-                let id = self.node("Array");
+                let id = self.node(NodeKind::Array);
                 for (index, elem) in array.elems.iter().enumerate() {
                     match elem {
                         Some(elem) => {
@@ -706,7 +919,7 @@ impl Extractor {
                         }
                         // Elision keeps positions faithful (`[a, , b]`).
                         None => {
-                            let elision = self.node("Elision");
+                            let elision = self.node(NodeKind::Elision);
                             self.facts.child.push((id, index as u32, elision));
                         }
                     }
@@ -714,9 +927,9 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Fn(fn_expr) => {
-                let id = self.node("FnExpr");
+                let id = self.node(NodeKind::FnExpr);
                 if let Some(ident) = &fn_expr.ident {
-                    let name = self.node("Ident");
+                    let name = self.node(NodeKind::Ident);
                     self.facts.ident_name.push((name, ident.sym.to_string()));
                     self.facts.child.push((id, 0, name));
                 }
@@ -725,7 +938,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Object(object) => {
-                let id = self.node("Object");
+                let id = self.node(NodeKind::Object);
                 for (index, prop) in object.props.iter().enumerate() {
                     let prop = self.object_prop(prop)?;
                     self.facts.child.push((id, index as u32, prop));
@@ -733,7 +946,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Assign(assign) => {
-                let id = self.node("Assign");
+                let id = self.node(NodeKind::Assign);
                 self.facts
                     .operator
                     .push((id, assign.op.as_str().to_string()));
@@ -745,7 +958,7 @@ impl Extractor {
             }
             Expr::Tpl(tpl) => self.tpl(tpl),
             Expr::TaggedTpl(tagged) => {
-                let id = self.node("TaggedTpl");
+                let id = self.node(NodeKind::TaggedTpl);
                 let tag = self.expr(&tagged.tag)?;
                 self.facts.child.push((id, 0, tag));
                 let tpl = self.tpl(&tagged.tpl)?;
@@ -755,9 +968,9 @@ impl Extractor {
             Expr::Update(update) => {
                 // Kind encodes prefix vs postfix (`++i` vs `i++`) faithfully.
                 let id = self.node(if update.prefix {
-                    "UpdatePrefix"
+                    NodeKind::UpdatePrefix
                 } else {
-                    "UpdatePostfix"
+                    NodeKind::UpdatePostfix
                 });
                 self.facts
                     .operator
@@ -770,9 +983,9 @@ impl Extractor {
                 // async is part of the arrow's identity (see `function`); fold it
                 // into the kind tag rather than dropping it.
                 let id = self.node(if arrow.is_async {
-                    "AsyncArrow"
+                    NodeKind::AsyncArrow
                 } else {
-                    "Arrow"
+                    NodeKind::Arrow
                 });
                 for (index, param) in arrow.params.iter().enumerate() {
                     let param = self.pat(param)?;
@@ -786,10 +999,10 @@ impl Extractor {
                 Ok(id)
             }
             Expr::SuperProp(super_prop) => {
-                let id = self.node("SuperProp");
+                let id = self.node(NodeKind::SuperProp);
                 match &super_prop.prop {
                     SuperProp::Ident(name) => {
-                        let prop = self.node("PropName");
+                        let prop = self.node(NodeKind::PropName);
                         self.facts.prop_name.push((prop, name.sym.to_string()));
                         self.facts.child.push((id, 0, prop));
                     }
@@ -801,13 +1014,13 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Await(await_expr) => {
-                let id = self.node("Await");
+                let id = self.node(NodeKind::Await);
                 let arg = self.expr(&await_expr.arg)?;
                 self.facts.child.push((id, 0, arg));
                 Ok(id)
             }
             Expr::Yield(yield_expr) => {
-                let id = self.node("Yield");
+                let id = self.node(NodeKind::Yield);
                 if let Some(arg) = &yield_expr.arg {
                     let arg = self.expr(arg)?;
                     self.facts.child.push((id, 0, arg));
@@ -815,11 +1028,11 @@ impl Extractor {
                 Ok(id)
             }
             Expr::OptChain(opt_chain) => {
-                let id = self.node("OptChain");
+                let id = self.node(NodeKind::OptChain);
                 let base = match &*opt_chain.base {
                     OptChainBase::Member(member) => self.member(member)?,
                     OptChainBase::Call(call) => {
-                        let call_id = self.node("OptCall");
+                        let call_id = self.node(NodeKind::OptCall);
                         let callee = self.expr(&call.callee)?;
                         self.facts.child.push((call_id, 0, callee));
                         self.push_args(call_id, 1, &call.args)?;
@@ -830,9 +1043,9 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Class(class_expr) => {
-                let id = self.node("ClassExpr");
+                let id = self.node(NodeKind::ClassExpr);
                 if let Some(ident) = &class_expr.ident {
-                    let name = self.node("Ident");
+                    let name = self.node(NodeKind::Ident);
                     self.facts.ident_name.push((name, ident.sym.to_string()));
                     self.facts.child.push((id, 0, name));
                 }
@@ -842,13 +1055,13 @@ impl Extractor {
             }
             // Parentheses are transparent: the matcher matches modulo grouping.
             Expr::Paren(paren) => self.expr(&paren.expr),
-            Expr::This(_) => Ok(self.node("This")),
+            Expr::This(_) => Ok(self.node(NodeKind::This)),
             // `import.meta` / `new.target`: fixed meta-properties with no
             // renamable parts. The kind fully determines them (production compares
             // the whole node), so fold it into the node tag.
             Expr::MetaProp(meta) => Ok(self.node(match meta.kind {
-                MetaPropKind::ImportMeta => "MetaPropImportMeta",
-                MetaPropKind::NewTarget => "MetaPropNewTarget",
+                MetaPropKind::ImportMeta => NodeKind::MetaPropImportMeta,
+                MetaPropKind::NewTarget => NodeKind::MetaPropNewTarget,
             })),
             other => unsupported(expr_variant_name(other)),
         }
@@ -857,10 +1070,10 @@ impl Extractor {
     /// Template literal: interleave quasis and exprs in source order
     /// (`q0 e0 q1 e1 … qn`). Shared by `Tpl` and the `tpl` of a `TaggedTpl`.
     fn tpl(&mut self, tpl: &Tpl) -> Result<NodeId, Unsupported> {
-        let id = self.node("Tpl");
+        let id = self.node(NodeKind::Tpl);
         let mut ordinal = 0u32;
         for (index, quasi) in tpl.quasis.iter().enumerate() {
-            let q = self.node("TplQuasi");
+            let q = self.node(NodeKind::TplQuasi);
             let value = quasi
                 .cooked
                 .as_ref()
@@ -881,19 +1094,19 @@ impl Extractor {
     fn object_prop(&mut self, prop: &PropOrSpread) -> Result<NodeId, Unsupported> {
         match prop {
             PropOrSpread::Spread(spread) => {
-                let id = self.node("Spread");
+                let id = self.node(NodeKind::Spread);
                 let expr = self.expr(&spread.expr)?;
                 self.facts.child.push((id, 0, expr));
                 Ok(id)
             }
             PropOrSpread::Prop(prop) => match &**prop {
                 Prop::Shorthand(ident) => {
-                    let id = self.node("Shorthand");
+                    let id = self.node(NodeKind::Shorthand);
                     self.facts.ident_name.push((id, ident.sym.to_string()));
                     Ok(id)
                 }
                 Prop::KeyValue(key_value) => {
-                    let id = self.node("KeyValue");
+                    let id = self.node(NodeKind::KeyValue);
                     let key = self.prop_key(&key_value.key)?;
                     self.facts.child.push((id, 0, key));
                     let value = self.expr(&key_value.value)?;
@@ -901,7 +1114,7 @@ impl Extractor {
                     Ok(id)
                 }
                 Prop::Method(method) => {
-                    let id = self.node("ObjectMethod");
+                    let id = self.node(NodeKind::ObjectMethod);
                     let key = self.prop_key(&method.key)?;
                     self.facts.child.push((id, 0, key));
                     let function = self.function(&method.function)?;
@@ -909,7 +1122,7 @@ impl Extractor {
                     Ok(id)
                 }
                 Prop::Getter(getter) => {
-                    let id = self.node("Getter");
+                    let id = self.node(NodeKind::Getter);
                     let key = self.prop_key(&getter.key)?;
                     self.facts.child.push((id, 0, key));
                     if let Some(body) = &getter.body {
@@ -919,7 +1132,7 @@ impl Extractor {
                     Ok(id)
                 }
                 Prop::Setter(setter) => {
-                    let id = self.node("Setter");
+                    let id = self.node(NodeKind::Setter);
                     let key = self.prop_key(&setter.key)?;
                     self.facts.child.push((id, 0, key));
                     let param = self.pat(&setter.param)?;
@@ -931,7 +1144,7 @@ impl Extractor {
                     Ok(id)
                 }
                 Prop::Assign(assign) => {
-                    let id = self.node("AssignProp");
+                    let id = self.node(NodeKind::AssignProp);
                     self.facts.ident_name.push((id, assign.key.sym.to_string()));
                     let value = self.expr(&assign.value)?;
                     self.facts.child.push((id, 0, value));
@@ -944,7 +1157,7 @@ impl Extractor {
     fn assign_target(&mut self, target: &AssignTarget) -> Result<NodeId, Unsupported> {
         match target {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                let id = self.node("Ident");
+                let id = self.node(NodeKind::Ident);
                 self.facts.ident_name.push((id, binding.id.sym.to_string()));
                 Ok(id)
             }
@@ -971,7 +1184,7 @@ impl Extractor {
     fn expr_or_spread(&mut self, arg: &ExprOrSpread) -> Result<NodeId, Unsupported> {
         let value = self.expr(&arg.expr)?;
         if arg.spread.is_some() {
-            let spread = self.node("Spread");
+            let spread = self.node(NodeKind::Spread);
             self.facts.child.push((spread, 0, value));
             Ok(spread)
         } else {
@@ -980,12 +1193,12 @@ impl Extractor {
     }
 
     fn member(&mut self, member: &MemberExpr) -> Result<NodeId, Unsupported> {
-        let id = self.node("Member");
+        let id = self.node(NodeKind::Member);
         let obj = self.expr(&member.obj)?;
         self.facts.child.push((id, 0, obj));
         match &member.prop {
             MemberProp::Ident(name) => {
-                let prop = self.node("PropName");
+                let prop = self.node(NodeKind::PropName);
                 self.facts.prop_name.push((prop, name.sym.to_string()));
                 self.facts.child.push((id, 1, prop));
             }
@@ -1001,7 +1214,7 @@ impl Extractor {
     fn lit(&mut self, lit: &Lit) -> Result<NodeId, Unsupported> {
         match lit {
             Lit::Str(value) => {
-                let id = self.node("StrLit");
+                let id = self.node(NodeKind::StrLit);
                 let text = js_ast::str_value(value);
                 if self.wildcard_string_literals.contains(&text) {
                     self.facts.str_wildcard.push((id, text.clone()));
@@ -1010,7 +1223,7 @@ impl Extractor {
                 Ok(id)
             }
             Lit::Num(number) => {
-                let id = self.node("NumLit");
+                let id = self.node(NodeKind::NumLit);
                 let token = number
                     .raw
                     .as_ref()
@@ -1020,13 +1233,13 @@ impl Extractor {
                 Ok(id)
             }
             Lit::Bool(boolean) => {
-                let id = self.node("BoolLit");
+                let id = self.node(NodeKind::BoolLit);
                 self.facts.bool_lit.push((id, boolean.value));
                 Ok(id)
             }
-            Lit::Null(_) => Ok(self.node("NullLit")),
+            Lit::Null(_) => Ok(self.node(NodeKind::NullLit)),
             Lit::BigInt(big_int) => {
-                let id = self.node("BigIntLit");
+                let id = self.node(NodeKind::BigIntLit);
                 let token = big_int
                     .raw
                     .as_ref()
@@ -1036,7 +1249,7 @@ impl Extractor {
                 Ok(id)
             }
             Lit::Regex(regex) => {
-                let id = self.node("RegexLit");
+                let id = self.node(NodeKind::RegexLit);
                 self.facts
                     .regex
                     .push((id, regex.exp.to_string(), regex.flags.to_string()));
@@ -1150,7 +1363,7 @@ fn build_children_map(facts: &ChunkFacts) -> HashMap<NodeId, HashMap<u32, NodeId
 /// static `prop_name` — are member reads; the object identifier is recorded when
 /// child 0 is a bare `Ident`.
 fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
-    let node_kind: HashMap<NodeId, &'static str> = facts.node_kind.iter().copied().collect();
+    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let prop_name: HashMap<NodeId, &str> = facts
         .prop_name
         .iter()
@@ -1165,7 +1378,7 @@ fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
     facts
         .node_kind
         .iter()
-        .filter(|(_, kind)| *kind == "Member")
+        .filter(|(_, kind)| *kind == NodeKind::Member)
         .filter_map(|(member_node, _)| {
             let positional = children.get(member_node)?;
             let prop_node = positional.get(&1)?;
@@ -1173,7 +1386,7 @@ fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
             let member = prop_name.get(prop_node)?;
             let object = positional
                 .get(&0)
-                .filter(|obj| node_kind.get(obj) == Some(&"Ident"))
+                .filter(|obj| node_kind.get(obj) == Some(&NodeKind::Ident))
                 .and_then(|obj| ident_name.get(obj))
                 .map(|name| name.to_string());
             Some(MemberReadFact {
@@ -1303,7 +1516,7 @@ pub fn call_argument_uses(module: &Module) -> Vec<CallArgumentFact> {
 /// `PropName`); only non-computed callees with a static member name contribute,
 /// and only arguments that are bare `Ident` nodes (the static target binding).
 fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
-    let node_kind: HashMap<NodeId, &'static str> = facts.node_kind.iter().copied().collect();
+    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let prop_name: HashMap<NodeId, &str> = facts
         .prop_name
         .iter()
@@ -1317,7 +1530,7 @@ fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
     let children = build_children_map(facts);
     let mut rows = Vec::new();
     for (call_node, kind) in &facts.node_kind {
-        if !matches!(*kind, "Call" | "New" | "OptCall") {
+        if !matches!(*kind, NodeKind::Call | NodeKind::New | NodeKind::OptCall) {
             continue;
         }
         let Some(positional) = children.get(call_node) else {
@@ -1327,7 +1540,7 @@ fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
         let Some(callee) = positional.get(&0) else {
             continue;
         };
-        if node_kind.get(callee) != Some(&"Member") {
+        if node_kind.get(callee) != Some(&NodeKind::Member) {
             continue;
         }
         let Some(callee_children) = children.get(callee) else {
@@ -1338,7 +1551,7 @@ fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
         };
         let callee_object = callee_children
             .get(&0)
-            .filter(|obj| node_kind.get(obj) == Some(&"Ident"))
+            .filter(|obj| node_kind.get(obj) == Some(&NodeKind::Ident))
             .and_then(|obj| ident_name.get(obj))
             .map(|name| name.to_string());
         // Arguments are children at ordinals 1.., contiguous from the call node.
@@ -1347,7 +1560,7 @@ fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
                 break;
             };
             // Only a bare-identifier argument names a static target binding.
-            if node_kind.get(arg_node) == Some(&"Ident")
+            if node_kind.get(arg_node) == Some(&NodeKind::Ident)
                 && let Some(argument) = ident_name.get(arg_node)
             {
                 rows.push(CallArgumentFact {
@@ -1435,7 +1648,7 @@ pub fn decorate_call_uses(module: &Module) -> Vec<DecorateCallFact> {
 /// list); arg 1 (child 2) is the class anchor (`C.prototype` member or bare `C`);
 /// arg 2 (child 3), when present, is the member-name `StrLit`.
 fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
-    let node_kind: HashMap<NodeId, &'static str> = facts.node_kind.iter().copied().collect();
+    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let prop_name: HashMap<NodeId, &str> = facts
         .prop_name
         .iter()
@@ -1460,7 +1673,7 @@ fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
     let mut rows = Vec::new();
     for (call_node, kind) in &facts.node_kind {
         // A plain `Call`; `New`/`OptCall` are never an esbuild decorate application.
-        if *kind != "Call" {
+        if *kind != NodeKind::Call {
             continue;
         }
         let Some(positional) = children.get(call_node) else {
@@ -1469,7 +1682,7 @@ fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
         // Callee (child 0) must be a bare identifier — the helper, our target.
         let Some(callee) = positional
             .get(&0)
-            .filter(|c| node_kind.get(c) == Some(&"Ident"))
+            .filter(|c| node_kind.get(c) == Some(&NodeKind::Ident))
             .and_then(|c| ident_name.get(c))
         else {
             continue;
@@ -1479,7 +1692,7 @@ fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
         let Some(arg0) = positional.get(&1) else {
             continue;
         };
-        if node_kind.get(arg0) != Some(&"Array") {
+        if node_kind.get(arg0) != Some(&NodeKind::Array) {
             continue;
         }
         // Arg 1 (child 2) is the class anchor: `C.prototype` or bare `C`.
@@ -1539,17 +1752,17 @@ fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
 /// decorate-call row (fail-closed).
 fn decorate_class_anchor(
     arg: &NodeId,
-    node_kind: &HashMap<NodeId, &'static str>,
+    node_kind: &HashMap<NodeId, NodeKind>,
     prop_name: &HashMap<NodeId, &str>,
     ident_name: &HashMap<NodeId, &str>,
     children: &HashMap<NodeId, HashMap<u32, NodeId>>,
 ) -> Option<String> {
     match node_kind.get(arg) {
         // Class-decorator form: bare `C`.
-        Some(&"Ident") => ident_name.get(arg).map(|name| name.to_string()),
+        Some(&NodeKind::Ident) => ident_name.get(arg).map(|name| name.to_string()),
         // Property/method form: `C.prototype` — child 0 a bare ident `C`, child 1
         // the `PropName` `prototype`.
-        Some(&"Member") => {
+        Some(&NodeKind::Member) => {
             let member_children = children.get(arg)?;
             let prop = member_children.get(&1)?;
             if prop_name.get(prop).copied() != Some("prototype") {
@@ -1557,7 +1770,7 @@ fn decorate_class_anchor(
             }
             member_children
                 .get(&0)
-                .filter(|base| node_kind.get(base) == Some(&"Ident"))
+                .filter(|base| node_kind.get(base) == Some(&NodeKind::Ident))
                 .and_then(|base| ident_name.get(base))
                 .map(|name| name.to_string())
         }
@@ -1711,7 +1924,7 @@ fn pat_binds_object(pat: &Pat) -> bool {
 /// contribute. The unshadowed-`Object` guard is applied by the caller, so a base
 /// spelled `Object` here is the genuine global intrinsic.
 fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
-    let node_kind: HashMap<NodeId, &'static str> = facts.node_kind.iter().copied().collect();
+    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let prop_name: HashMap<NodeId, &str> = facts
         .prop_name
         .iter()
@@ -1725,7 +1938,7 @@ fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
     let children = build_children_map(facts);
     let mut rows = Vec::new();
     for (declarator_node, kind) in &facts.node_kind {
-        if *kind != "VarDeclarator" {
+        if *kind != NodeKind::VarDeclarator {
             continue;
         }
         let Some(declarator_children) = children.get(declarator_node) else {
@@ -1734,7 +1947,7 @@ fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
         // The name (child 0) must be a bare binding identifier — the alias target.
         let Some(binding) = declarator_children
             .get(&0)
-            .filter(|name| node_kind.get(name) == Some(&"BindingIdent"))
+            .filter(|name| node_kind.get(name) == Some(&NodeKind::BindingIdent))
             .and_then(|name| ident_name.get(name))
         else {
             continue;
@@ -1743,7 +1956,7 @@ fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
         // member access off a bare-identifier base spelled exactly `Object`.
         let Some(init) = declarator_children
             .get(&1)
-            .filter(|init| node_kind.get(init) == Some(&"Member"))
+            .filter(|init| node_kind.get(init) == Some(&NodeKind::Member))
         else {
             continue;
         };
@@ -1752,7 +1965,7 @@ fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
         };
         let base_is_object = member_children
             .get(&0)
-            .filter(|base| node_kind.get(base) == Some(&"Ident"))
+            .filter(|base| node_kind.get(base) == Some(&NodeKind::Ident))
             .and_then(|base| ident_name.get(base))
             == Some(&"Object");
         if !base_is_object {
@@ -1803,7 +2016,7 @@ pub fn coverage_report(module: &Module) -> CoverageReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet, HashSet};
 
     fn extract(src: &str) -> Result<ChunkFacts, Unsupported> {
         js_ast::with_swc_globals(|| {
@@ -1824,20 +2037,20 @@ mod tests {
         let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(strings, vec!["hello"], "string-literal argument value");
 
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in [
-            "VarDecl",
-            "VarDeclarator",
-            "BindingIdent",
-            "Call",
-            "Member",
-            "PropName",
-            "Ident",
-            "StrLit",
+            NodeKind::VarDecl,
+            NodeKind::VarDeclarator,
+            NodeKind::BindingIdent,
+            NodeKind::Call,
+            NodeKind::Member,
+            NodeKind::PropName,
+            NodeKind::Ident,
+            NodeKind::StrLit,
         ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
 
@@ -1865,19 +2078,19 @@ mod tests {
         for name in ["f", "x", "g"] {
             assert!(idents.contains(name), "ident {name} present: {idents:?}");
         }
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in [
-            "FnDecl",
-            "Function",
-            "Block",
-            "Return",
-            "Call",
-            "Ident",
-            "BindingIdent",
+            NodeKind::FnDecl,
+            NodeKind::Function,
+            NodeKind::Block,
+            NodeKind::Return,
+            NodeKind::Call,
+            NodeKind::Ident,
+            NodeKind::BindingIdent,
         ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
         assert_eq!(facts.top_level.len(), 1);
@@ -1904,20 +2117,20 @@ mod tests {
         assert_eq!(strings, vec!["DocumentAccessorFactory"], "returned literal");
         assert_eq!(facts.super_class.len(), 1, "one extends edge");
 
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in [
-            "ClassDecl",
-            "Class",
-            "Method",
-            "PropName",
-            "Function",
-            "Block",
-            "Return",
-            "StrLit",
+            NodeKind::ClassDecl,
+            NodeKind::Class,
+            NodeKind::Method,
+            NodeKind::PropName,
+            NodeKind::Function,
+            NodeKind::Block,
+            NodeKind::Return,
+            NodeKind::StrLit,
         ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -1927,11 +2140,16 @@ mod tests {
         // (b + c) ? new D(e) : [f] — binary, conditional, new, array.
         let facts = extract("const a = b + c ? new D(e) : [f];").expect("covered shape extracts");
 
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["Cond", "Bin", "New", "Array"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::Cond,
+            NodeKind::Bin,
+            NodeKind::New,
+            NodeKind::Array,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
         // The `const` declaration keyword is recorded as an operator-class label
@@ -1952,11 +2170,17 @@ mod tests {
     fn extracts_function_expression_and_object_literal() {
         let facts = extract("const a = { handler: function (x) { return x; }, ...rest };")
             .expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["Object", "KeyValue", "FnExpr", "Function", "Spread"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::Object,
+            NodeKind::KeyValue,
+            NodeKind::FnExpr,
+            NodeKind::Function,
+            NodeKind::Spread,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
         let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
@@ -1968,11 +2192,11 @@ mod tests {
         // `a.b = c;` — the module-export assignment shape that dominates the
         // corpus after fn/object.
         let facts = extract("a.b = c;").expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["ExprStmt", "Assign", "Member"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [NodeKind::ExprStmt, NodeKind::Assign, NodeKind::Member] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
         assert!(
@@ -1988,11 +2212,17 @@ mod tests {
     fn extracts_control_flow_statements() {
         // if/else with a block consequent and a throw alternative.
         let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["If", "Block", "ExprStmt", "Call", "Throw"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::If,
+            NodeKind::Block,
+            NodeKind::ExprStmt,
+            NodeKind::Call,
+            NodeKind::Throw,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -2001,11 +2231,17 @@ mod tests {
     fn extracts_class_constructor_and_property() {
         let facts = extract("class C { x = 1; constructor(a) { this.a = a; } }")
             .expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["ClassDecl", "ClassProp", "Constructor", "This", "Assign"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::ClassDecl,
+            NodeKind::ClassProp,
+            NodeKind::Constructor,
+            NodeKind::This,
+            NodeKind::Assign,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -2014,11 +2250,17 @@ mod tests {
     fn extracts_for_of_destructuring_and_template() {
         let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
             .expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["ForOf", "ObjectPat", "PatAssign", "Tpl", "TplQuasi"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::ForOf,
+            NodeKind::ObjectPat,
+            NodeKind::PatAssign,
+            NodeKind::Tpl,
+            NodeKind::TplQuasi,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -2027,11 +2269,11 @@ mod tests {
     fn extracts_super_await_optional_chain() {
         let facts = extract("class C extends B { async m() { return await super.n()?.p; } }")
             .expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["SuperProp", "Await", "OptChain"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [NodeKind::SuperProp, NodeKind::Await, NodeKind::OptChain] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -2040,11 +2282,16 @@ mod tests {
     fn extracts_module_imports_and_default_export() {
         let facts = extract("import { a, b } from \"m\"; export default function () {}")
             .expect("covered shape extracts");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["Import", "ImportSpecifier", "ExportDefaultDecl", "Function"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::Import,
+            NodeKind::ImportSpecifier,
+            NodeKind::ExportDefaultDecl,
+            NodeKind::Function,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
         let imported_module = facts.str_lit.iter().any(|(_, s)| s == "m");
@@ -2084,13 +2331,16 @@ mod tests {
         // `import.meta` / `new.target` are fixed meta-properties: a subject
         // statement using one must still project to facts (otherwise a needle
         // whose `STMT_LIST` would absorb it could never match the owner).
-        let kinds: BTreeSet<&str> = extract("const a = import.meta;")
+        let kinds: HashSet<NodeKind> = extract("const a = import.meta;")
             .expect("import.meta extracts")
             .node_kind
             .iter()
             .map(|(_, k)| *k)
             .collect();
-        assert!(kinds.contains("MetaPropImportMeta"), "kinds: {kinds:?}");
+        assert!(
+            kinds.contains(&NodeKind::MetaPropImportMeta),
+            "kinds: {kinds:?}"
+        );
     }
 
     #[test]
@@ -2099,11 +2349,16 @@ mod tests {
         // its tag plus the template (quasis interleaved with exprs).
         let facts = extract("function f() { debugger; }\nconst a = tag`x${y}z`;")
             .expect("debugger + tagged template extract");
-        let kinds: BTreeSet<&str> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in ["Debugger", "TaggedTpl", "Tpl", "TplQuasi"] {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [
+            NodeKind::Debugger,
+            NodeKind::TaggedTpl,
+            NodeKind::Tpl,
+            NodeKind::TplQuasi,
+        ] {
             assert!(
-                kinds.contains(expected),
-                "kind {expected} present: {kinds:?}"
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
             );
         }
     }
@@ -2508,5 +2763,29 @@ mod tests {
                 property: "defineProperty".to_string(),
             }],
         );
+    }
+
+    #[test]
+    fn node_kind_serde_spelling_matches_tag() {
+        // The migration's load-bearing invariant: a `NodeKind`'s serde form is
+        // byte-identical to the `as_tag` spelling (the old `&'static str` tag), so
+        // `rename_all = "PascalCase"` is a faithful no-op for these already-PascalCase
+        // multi-word/multi-capital variants and any serialized form stays stable.
+        for kind in [
+            NodeKind::VarDecl,
+            NodeKind::ExportDefaultDecl,
+            NodeKind::MetaPropImportMeta,
+            NodeKind::MetaPropNewTarget,
+            NodeKind::AsyncGeneratorFunction,
+            NodeKind::UpdatePostfix,
+            NodeKind::ClassMemberEmpty,
+            NodeKind::BindingIdent,
+            NodeKind::OptCall,
+            NodeKind::TplQuasi,
+        ] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{}\"", kind.as_tag()));
+            assert_eq!(serde_json::from_str::<NodeKind>(&json).unwrap(), kind);
+        }
     }
 }

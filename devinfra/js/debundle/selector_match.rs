@@ -30,7 +30,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chunk_facts::{ChunkFacts, NodeId};
+use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
@@ -212,31 +212,31 @@ impl Bindings {
 
 /// Node kinds that introduce a lexical scope for their params + body:
 /// function/arrow bodies, catch clauses, setter and constructor params.
-fn introduces_alpha_scope(kind: &str) -> bool {
+fn introduces_alpha_scope(kind: NodeKind) -> bool {
     matches!(
         kind,
-        "Function"
-            | "AsyncFunction"
-            | "GeneratorFunction"
-            | "AsyncGeneratorFunction"
-            | "Arrow"
-            | "AsyncArrow"
-            | "Constructor"
-            | "Setter"
-            | "Catch"
+        NodeKind::Function
+            | NodeKind::AsyncFunction
+            | NodeKind::GeneratorFunction
+            | NodeKind::AsyncGeneratorFunction
+            | NodeKind::Arrow
+            | NodeKind::AsyncArrow
+            | NodeKind::Constructor
+            | NodeKind::Setter
+            | NodeKind::Catch
     )
 }
 
 /// A node-indexed view of one statement's `ChunkFacts`, owning its string labels
 /// (`Box<str>`) so it can be **built once and cached** — e.g. one per chunk body
 /// item in `ChunkResolver` — and reused across many needle matches, instead of
-/// rebuilt per `(needle, subject)` pair. `kind` keeps the `&'static` node-kind
-/// tags (already static in the facts); the value labels are copied out so the
-/// index outlives the borrowed facts.
+/// rebuilt per `(needle, subject)` pair. `kind` holds each node's [`NodeKind`]
+/// (copied from the facts, themselves `Copy`); the value labels are copied out so
+/// the index outlives the borrowed facts.
 pub struct Index {
     // Node ids are dense (`0..node_count`), so every relation is a `Vec` indexed
     // by node id — array access instead of hashing on the per-node-match hot path.
-    kind: Vec<&'static str>,
+    kind: Vec<NodeKind>,
     children: Vec<Vec<NodeId>>,
     ident: Vec<Option<Box<str>>>,
     str_lit: Vec<Option<Box<str>>>,
@@ -266,7 +266,7 @@ impl Index {
     pub fn build(facts: &ChunkFacts) -> Self {
         let n = facts.node_kind.len();
         // node_kind is pushed in node-id order, so it already indexes by id.
-        let kind = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        let kind: Vec<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         let mut children: Vec<Vec<NodeId>> = vec![Vec::new(); n];
         let mut child_ordinals: Vec<Vec<(u32, NodeId)>> = vec![Vec::new(); n];
         for (parent, ordinal, child) in &facts.child {
@@ -328,8 +328,8 @@ impl Index {
         self.children.get(id as usize).map_or(&[], Vec::as_slice)
     }
 
-    fn kind_of(&self, id: NodeId) -> &'static str {
-        self.kind.get(id as usize).copied().unwrap_or_default()
+    fn kind_of(&self, id: NodeId) -> NodeKind {
+        self.kind[id as usize]
     }
 
     fn ident_of(&self, id: NodeId) -> Option<&str> {
@@ -396,7 +396,7 @@ impl Index {
     }
 
     pub fn kind(&self, id: NodeId) -> &'static str {
-        self.kind_of(id)
+        self.kind_of(id).as_tag()
     }
 
     pub fn children(&self, id: NodeId) -> &[NodeId] {
@@ -440,7 +440,7 @@ pub fn nodes_match(
 /// `Class` parent (a class field whose key is the exact keyword and which has no
 /// initializer). The class-member near-miss scan skips these.
 pub fn is_class_rest_member(index: &Index, node: NodeId) -> bool {
-    is_run_hole_carrier(index, "Class", node)
+    is_run_hole_carrier(index, NodeKind::Class, node)
 }
 
 /// Greedy-leftmost in-order match of a needle var-decl's **pinned** (non-hole)
@@ -462,7 +462,7 @@ pub fn pinned_declarator_matches_in_order(
     let mut subject_start = 0;
     let mut matches = Vec::new();
     for (needle_idx, &ndecl) in ndecls.iter().enumerate() {
-        if is_run_hole_carrier(needle, "VarDecl", ndecl) {
+        if is_run_hole_carrier(needle, NodeKind::VarDecl, ndecl) {
             continue;
         }
         let mut found = None;
@@ -487,7 +487,7 @@ pub fn pinned_declarator_matches_in_order(
 /// under a `VarDecl` parent (a declarator whose name binding is the keyword). The
 /// pinned-declarator near-miss alignment skips these.
 pub fn is_declarator_run_hole(index: &Index, node: NodeId) -> bool {
-    is_run_hole_carrier(index, "VarDecl", node)
+    is_run_hole_carrier(index, NodeKind::VarDecl, node)
 }
 
 /// `EXPR` (bare or named) or bare `ANYTHING`: a single-node hole in **expression**
@@ -513,14 +513,14 @@ fn is_stmt_single_hole(name: &str) -> bool {
 /// is deferred (the equality-hole rung) and differential-gated.
 fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
     match index.kind_of(node) {
-        "Ident" => index.ident_of(node).is_some_and(is_expr_single_hole),
-        "BindingIdent" => index
+        NodeKind::Ident => index.ident_of(node).is_some_and(is_expr_single_hole),
+        NodeKind::BindingIdent => index
             .ident_of(node)
             .is_some_and(|n| n == ANYTHING_HOLE_KEYWORD),
-        "ExprStmt" => {
+        NodeKind::ExprStmt => {
             let kids = index.children_of(node);
             kids.len() == 1
-                && index.kind_of(kids[0]) == "Ident"
+                && index.kind_of(kids[0]) == NodeKind::Ident
                 && index.ident_of(kids[0]).is_some_and(is_stmt_single_hole)
         }
         _ => false,
@@ -578,34 +578,34 @@ fn node_ident_hole(index: &Index, node: NodeId, keyword: &str) -> bool {
 /// True iff `child` is a variable-length run-hole carrier in a list under a
 /// parent of `parent_kind` — the per-list-type hole-carrier rules over facts. A
 /// carrier is consumed by list placement and never visited by [`homo`].
-fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool {
+fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> bool {
     let ck = index.kind_of(child);
     match parent_kind {
         // `STMT_LIST;` — an expression statement whose sole child is the keyword.
         // A `SwitchCase`'s body is a statement list too; its leading `case` test
         // (when present) is a non-carrier, so it falls out as an anchored-left
         // fixed segment under the same placement.
-        "Block" | "SwitchCase" => {
-            ck == "ExprStmt" && {
+        NodeKind::Block | NodeKind::SwitchCase => {
+            ck == NodeKind::ExprStmt && {
                 let kids = index.children_of(child);
                 kids.len() == 1 && node_ident_hole(index, kids[0], STMT_LIST_HOLE_KEYWORD)
             }
         }
         // `ARGS` — a bare identifier argument (the callee is split off before
         // this list, so any `ARGS` here is in argument position).
-        "Call" | "New" | "OptCall" => {
-            ck == "Ident" && node_ident_hole(index, child, ARGS_HOLE_KEYWORD)
+        NodeKind::Call | NodeKind::New | NodeKind::OptCall => {
+            ck == NodeKind::Ident && node_ident_hole(index, child, ARGS_HOLE_KEYWORD)
         }
         // `OBJECT_PROPS` / `ANYTHING` — a shorthand object-literal property.
-        "Object" => {
-            ck == "Shorthand"
+        NodeKind::Object => {
+            ck == NodeKind::Shorthand
                 && (node_ident_hole(index, child, OBJECT_PROPS_HOLE_KEYWORD)
                     || node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD))
         }
         // `OBJECT_PROPS` / `ANYTHING` in a destructuring pattern — a shorthand
         // (no default) destructure property.
-        "ObjectPat" => {
-            ck == "PatAssign"
+        NodeKind::ObjectPat => {
+            ck == NodeKind::PatAssign
                 && index.children_of(child).is_empty()
                 && (node_ident_hole(index, child, OBJECT_PROPS_HOLE_KEYWORD)
                     || node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD))
@@ -615,11 +615,13 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
         // (`Spread` / `Elision`), so a carrier is unambiguously the keyword
         // identifier. No `ANYTHING` form: `ANYTHING` in element position is a
         // single-element `EXPR`, not a run.
-        "Array" => ck == "Ident" && node_ident_hole(index, child, ARRAY_ELEMENTS_HOLE_KEYWORD),
+        NodeKind::Array => {
+            ck == NodeKind::Ident && node_ident_hole(index, child, ARRAY_ELEMENTS_HOLE_KEYWORD)
+        }
         // `CLASS_REST;` / `ANYTHING;` — a class field, no initializer, whose key
         // is the (exact) keyword.
-        "Class" => {
-            ck == "ClassProp" && {
+        NodeKind::Class => {
+            ck == NodeKind::ClassProp && {
                 let kids = index.children_of(child);
                 kids.len() == 1
                     && index.prop_name_of(kids[0]).is_some_and(|name| {
@@ -629,8 +631,8 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
         }
         // `case CASE_REST:` — a switch clause, no body, whose sole child is the
         // (exact) keyword test.
-        "Switch" => {
-            ck == "SwitchCase" && {
+        NodeKind::Switch => {
+            ck == NodeKind::SwitchCase && {
                 let kids = index.children_of(child);
                 kids.len() == 1
                     && index
@@ -640,11 +642,11 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
         // the keyword.
-        "VarDecl" => {
-            ck == "VarDeclarator" && {
+        NodeKind::VarDecl => {
+            ck == NodeKind::VarDeclarator && {
                 let kids = index.children_of(child);
                 !kids.is_empty()
-                    && index.kind_of(kids[0]) == "BindingIdent"
+                    && index.kind_of(kids[0]) == NodeKind::BindingIdent
                     && (node_ident_hole(index, kids[0], DECLARATORS_HOLE_KEYWORD)
                         || node_ident_hole(index, kids[0], ANYTHING_HOLE_KEYWORD))
             }
@@ -656,8 +658,11 @@ fn is_run_hole_carrier(index: &Index, parent_kind: &str, child: NodeId) -> bool 
 /// Number of leading children that are *not* part of a run-hole-bearing list and
 /// so are matched positionally: the callee of a call/new, the discriminant of a
 /// switch. Every other node's children form one matchable list.
-fn list_prefix_len(parent_kind: &str) -> usize {
-    matches!(parent_kind, "Call" | "New" | "OptCall" | "Switch") as usize
+fn list_prefix_len(parent_kind: NodeKind) -> usize {
+    matches!(
+        parent_kind,
+        NodeKind::Call | NodeKind::New | NodeKind::OptCall | NodeKind::Switch
+    ) as usize
 }
 
 /// The regex pattern of a well-formed `STR_LITERAL_MATCHING_RE("re")` predicate
@@ -665,7 +670,7 @@ fn list_prefix_len(parent_kind: &str) -> usize {
 /// argument. Mirrors `holes.rs::string_literal_regex_pattern`. The predicate
 /// matches a string-literal subject whose value matches `re`, not by structure.
 fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
-    if index.kind_of(node) != "Call" {
+    if index.kind_of(node) != NodeKind::Call {
         return None;
     }
     let kids = index.children_of(node);
@@ -675,7 +680,7 @@ fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
     let is_predicate = index
         .ident_of(*callee)
         .is_some_and(|name| name == STRING_LITERAL_REGEX_PREDICATE);
-    (is_predicate && index.kind_of(*arg) == "StrLit")
+    (is_predicate && index.kind_of(*arg) == NodeKind::StrLit)
         .then(|| index.str_lit_of(*arg))
         .flatten()
 }
@@ -729,7 +734,7 @@ fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandPrope
         })
     };
     match index.kind_of(node) {
-        "Shorthand" => {
+        NodeKind::Shorthand => {
             let name = index.ident_of(node).filter(|name| !is_hole_keyword(name))?;
             Some(ShorthandProperty {
                 key: name,
@@ -738,7 +743,7 @@ fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandPrope
             })
         }
         // A shorthand destructure property (`PatAssign`) with no default child.
-        "PatAssign" if index.children_of(node).is_empty() => {
+        NodeKind::PatAssign if index.children_of(node).is_empty() => {
             let name = index.ident_of(node).filter(|name| !is_hole_keyword(name))?;
             Some(ShorthandProperty {
                 key: name,
@@ -746,8 +751,8 @@ fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandPrope
                 is_binding: true,
             })
         }
-        "KeyValue" => same_name_key_value(false),
-        "PatKeyValue" => same_name_key_value(true),
+        NodeKind::KeyValue => same_name_key_value(false),
+        NodeKind::PatKeyValue => same_name_key_value(true),
         _ => None,
     }
 }
@@ -776,7 +781,7 @@ fn homo(
     // structure. Checked before the kind comparison (the needle is a `Call`, the
     // subject a `StrLit`).
     if regex_predicate_pattern(needle, nid).is_some() {
-        return Ok(subject.kind_of(sid) == "StrLit"
+        return Ok(subject.kind_of(sid) == NodeKind::StrLit
             && match (needle.predicate_regex.get(&nid), subject.str_lit_of(sid)) {
                 (Some(re), Some(value)) => re.is_match(value),
                 _ => false,
@@ -789,7 +794,7 @@ fn homo(
     // `str_wildcard` fact; the subject must be a real `StrLit`.
     if let Some(wildcard) = needle.str_wildcard_of(nid) {
         return Ok(match (subject.kind_of(sid), subject.str_lit_of(sid)) {
-            ("StrLit", Some(value)) => bindings.match_string_wildcard(wildcard, value),
+            (NodeKind::StrLit, Some(value)) => bindings.match_string_wildcard(wildcard, value),
             _ => false,
         });
     }
@@ -836,7 +841,7 @@ fn homo(
             // reference resolves against the visible scope stack. Both honor a
             // prebound `target_binding` mapping first (in either mode), then fall
             // back to alpha-binding or exact spelling per `mode`.
-            let consistent = if nkind == "BindingIdent" {
+            let consistent = if nkind == NodeKind::BindingIdent {
                 bindings.match_binding(n, s, mode)
             } else {
                 bindings.match_ref(n, s, mode)
@@ -853,7 +858,7 @@ fn homo(
     // member, so compare it explicitly before the body — both present (and
     // matched) or both absent. `Class` introduces no alpha frame, so the
     // superclass reference resolves against the enclosing scope.
-    if nkind == "Class" {
+    if nkind == NodeKind::Class {
         match (needle.super_class_of(nid), subject.super_class_of(sid)) {
             (Some(n_super), Some(s_super)) => {
                 if !homo(needle, n_super, subject, s_super, mode, bindings)? {
@@ -882,7 +887,7 @@ fn homo(
 fn match_children(
     needle: &Index,
     nid: NodeId,
-    nkind: &str,
+    nkind: NodeKind,
     subject: &Index,
     sid: NodeId,
     mode: Mode,
@@ -952,7 +957,7 @@ fn match_list_with_holes(
     nlist: &[NodeId],
     subject: &Index,
     slist: &[NodeId],
-    parent_kind: &str,
+    parent_kind: NodeKind,
     mode: Mode,
     bindings: &mut Bindings,
 ) -> Result<bool, Unsupported> {
@@ -1016,13 +1021,13 @@ fn place_segments(
 /// root wrapper kind so the caller can enforce wrapper symmetry (a plain `const`
 /// statement must not match an `export const`). `None` if the statement is not a
 /// (possibly exported) variable declaration.
-fn var_decl_node(index: &Index) -> Option<(&'static str, NodeId)> {
+fn var_decl_node(index: &Index) -> Option<(NodeKind, NodeId)> {
     let &root = index.roots.first()?;
     match index.kind_of(root) {
-        "VarDecl" => Some(("VarDecl", root)),
-        "ExportDecl" => {
+        NodeKind::VarDecl => Some((NodeKind::VarDecl, root)),
+        NodeKind::ExportDecl => {
             let &kid = index.children_of(root).first()?;
-            (index.kind_of(kid) == "VarDecl").then_some(("ExportDecl", kid))
+            (index.kind_of(kid) == NodeKind::VarDecl).then_some((NodeKind::ExportDecl, kid))
         }
         _ => None,
     }
@@ -1043,7 +1048,7 @@ fn align_var_declarators(
     bindings: &mut Bindings,
 ) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
     let mut alignment = vec![None; ndecls.len()];
-    let is_hole = |d: NodeId| is_run_hole_carrier(needle, "VarDecl", d);
+    let is_hole = |d: NodeId| is_run_hole_carrier(needle, NodeKind::VarDecl, d);
     if !ndecls.iter().any(|&d| is_hole(d)) {
         if ndecls.len() != sdecls.len() {
             return Ok(None);
@@ -1352,7 +1357,7 @@ pub fn subject_root_kind(facts: &ChunkFacts) -> Option<&'static str> {
     facts
         .node_kind
         .get(*root_id as usize)
-        .map(|(_, kind)| *kind)
+        .map(|(_, kind)| kind.as_tag())
 }
 
 /// The init-expression node kind of a single-declarator var-decl statement's
@@ -1363,7 +1368,7 @@ pub fn subject_root_kind(facts: &ChunkFacts) -> Option<&'static str> {
 /// shares kind `VarDecl`). `None` returns fall through to the full match.
 pub fn var_declarator_init_kind(facts: &ChunkFacts) -> Option<&'static str> {
     let index = Index::build(facts);
-    init_node_of(&index).map(|init| index.kind_of(init))
+    init_node_of(&index).map(|init| index.kind_of(init).as_tag())
 }
 
 /// The subject init kind a needle declarator requires, or `None` when it
@@ -1383,7 +1388,7 @@ pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<
     if regex_predicate_pattern(&index, init).is_some() {
         return Some("StrLit");
     }
-    Some(index.kind_of(init))
+    Some(index.kind_of(init).as_tag())
 }
 
 /// The deduplicated invariant tokens (see [`Token`]) a statement's index carries.
@@ -1421,8 +1426,10 @@ pub fn invariant_tokens(index: &Index) -> Vec<Token> {
         // shorthand⟷explicit equivalence in [`homo`] is not pre-filtered away (a
         // needle pinning `Prop(k)` must still reach a shorthand candidate, and
         // vice versa). The value identifier stays renamable (not a token).
-        if matches!(index.kind_of(node), "Shorthand" | "PatAssign")
-            && index.children_of(node).is_empty()
+        if matches!(
+            index.kind_of(node),
+            NodeKind::Shorthand | NodeKind::PatAssign
+        ) && index.children_of(node).is_empty()
             && let Some(name) = index.ident_of(node)
             && !is_hole_keyword(name)
         {
@@ -1510,7 +1517,7 @@ fn is_module_stmt_list_hole(index: &Index) -> bool {
     let Some(&root) = index.roots.first() else {
         return false;
     };
-    index.kind_of(root) == "ExprStmt" && {
+    index.kind_of(root) == NodeKind::ExprStmt && {
         let kids = index.children_of(root);
         kids.len() == 1 && node_ident_hole(index, kids[0], STMT_LIST_HOLE_KEYWORD)
     }
