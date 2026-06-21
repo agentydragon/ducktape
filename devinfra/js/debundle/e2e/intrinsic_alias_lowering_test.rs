@@ -32,24 +32,28 @@
 
 use debundle_e2e_support::*;
 
-/// The full esbuild decorate-trio source: a `getOwnPropertyDescriptor` companion, a
-/// `defineProperty` companion, and the `__decorate` helper that reads both, applied
-/// to one class. Parameterized by a suffix so two independent trios can coexist in
-/// one chunk with distinct minified names. The method returns `base`; the decorator
-/// appends `mark` (observable under Node as `base + mark`).
+/// A minimal synthetic stand-in for the esbuild decorate-trio: a
+/// `getOwnPropertyDescriptor` companion `g`, a `defineProperty` companion `p`, and
+/// the decorate helper `d` that **reads both** and is applied to one class via the
+/// decorate-call shape `d([tag], C.prototype, "m", 1)`. The realistic minified
+/// `__decorate` loop body is not reproduced — the selectors ride only its structure:
+/// the helper references `g`/`p` (the `referenced_by` edge each companion is pinned
+/// by) and makes the decorate call (the `makes_decorate_call` anchor). Parameterized
+/// by a suffix so two independent trios can coexist in one chunk with distinct
+/// minified names. The method returns `base`; the decorator appends `mark`
+/// (observable under Node as `base + mark`).
 fn trio(suffix: &str, class: &str, method: &str, base: &str, mark: &str) -> String {
     format!(
         r#"var g{suffix} = Object.getOwnPropertyDescriptor;
 var p{suffix} = Object.defineProperty;
-var d{suffix} = (decorators, target, key, kind) => {{
-  for (var desc = kind > 1 ? void 0 : kind ? g{suffix}(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && p{suffix}(target, key, desc), desc);
+var d{suffix} = (decorators, target, key) => {{
+  const desc = g{suffix}(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  p{suffix}(target, key, desc);
 }};
 const tag{suffix} = (target, key, desc) => {{
   const original = desc.value;
   desc.value = function () {{ return original.call(this) + "{mark}"; }};
-  return desc;
 }};
 class {class} {{
   {method}() {{ return "{base}"; }}
@@ -304,15 +308,15 @@ fn intrinsic_alias_fails_closed_when_two_aliases_share_property_and_referencer()
     let source = r#"var g0 = Object.getOwnPropertyDescriptor;
 var p0 = Object.defineProperty;
 var q0 = Object.defineProperty;
-var d0 = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? g0(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && (p0(target, key, desc), q0(target, key, desc)), desc);
+var d0 = (decorators, target, key) => {
+  const desc = g0(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  p0(target, key, desc);
+  q0(target, key, desc);
 };
 const tag0 = (target, key, desc) => {
   const original = desc.value;
   desc.value = function () { return original.call(this) + "!"; };
-  return desc;
 };
 class C {
   greet() { return "hi"; }
@@ -373,15 +377,14 @@ fn intrinsic_alias_fails_closed_when_object_is_shadowed() {
     let source = r#"var Object = globalThis.Object;
 var g0 = Object.getOwnPropertyDescriptor;
 var p0 = Object.defineProperty;
-var d0 = (decorators, target, key, kind) => {
-  for (var desc = kind > 1 ? void 0 : kind ? g0(target, key) : target, i = decorators.length - 1, decorator; i >= 0; i--)
-    (decorator = decorators[i]) && (desc = (kind ? decorator(target, key, desc) : decorator(desc)) || desc);
-  return (kind && desc && p0(target, key, desc), desc);
+var d0 = (decorators, target, key) => {
+  const desc = g0(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  p0(target, key, desc);
 };
 const tag0 = (target, key, desc) => {
   const original = desc.value;
   desc.value = function () { return original.call(this) + "!"; };
-  return desc;
 };
 class C {
   greet() { return "hi"; }
