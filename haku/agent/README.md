@@ -15,11 +15,13 @@ identity.
   inlined — so it stays single-sourced in ducktape and reconciled per run.
 - **Persistent threads + compaction**: history persists across restarts in
   **Valkey/Redis** via `RedisHistoryProvider` (keyed by `HAKU_SESSION_ID`) when
-  `HAKU_REDIS_URL` is set — otherwise in-memory. `SlidingWindowStrategy` preserves the
-  instruction prefix and bounds the context window; `HAKU_REDIS_MAX_MESSAGES` bounds the
-  stored list. git (`haku-state`) remains the durable memory, so a lost cache just
-  re-orients. (`agent-framework-redis` is pinned to `1.0.0b260402`, the newest beta whose
-  core floor keeps `agent-framework-core` at 1.0.0.)
+  `HAKU_REDIS_URL` is set — otherwise in-memory. `SummarizationStrategy` keeps the
+  instruction prefix and, once history fills (`HAKU_SUMMARIZE_TARGET_COUNT` +
+  `HAKU_SUMMARIZE_THRESHOLD` groups), LLM-summarizes the oldest turns into a running
+  summary rather than dropping them; `HAKU_REDIS_MAX_MESSAGES` bounds the stored list.
+  git (`haku-state`) remains the durable memory, so a lost cache just re-orients.
+  (`agent-framework-redis` is pinned to `1.0.0b260402`, the newest beta whose core floor
+  keeps `agent-framework-core` at 1.0.0.)
 
 `main.py` (`:scan`) runs one scan — manual or scheduled. `supervisor.py` (`:serve`) is
 the long-lived service: it holds one warm `AgentSession` (so the manual + run procedure

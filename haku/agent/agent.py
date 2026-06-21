@@ -8,7 +8,8 @@ is the trust boundary — see <../PLAN.md>) plus remote MCP toolsets (Tana to st
 Behavior is the baked `haku/base/` manual + `haku/run.md`, read at runtime, so it
 stays single-sourced in ducktape. Session history persists in Valkey/Redis
 (`RedisHistoryProvider`) when `HAKU_REDIS_URL` is set, else in-memory;
-`SlidingWindowStrategy` keeps the instruction prefix and bounds the context window.
+`SummarizationStrategy` keeps the instruction prefix and, once history fills,
+LLM-summarizes the oldest turns into a running summary rather than dropping them.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from agent_framework import (
     FunctionTool,
     InMemoryHistoryProvider,
     MCPStreamableHTTPTool,
-    SlidingWindowStrategy,
+    SummarizationStrategy,
 )
 from agent_framework.openai import OpenAIChatCompletionClient
 from agent_framework_redis import RedisHistoryProvider
@@ -124,14 +125,20 @@ async def aclose_history(history: InMemoryHistoryProvider | RedisHistoryProvider
 def build_agent(
     settings: Settings, mcp_tools: list[MCPStreamableHTTPTool], history: InMemoryHistoryProvider | RedisHistoryProvider
 ) -> Agent:
+    client = build_client(settings)
     tools: list[FunctionTool | MCPStreamableHTTPTool] = [_run_command_tool(settings), *mcp_tools]
     return Agent(
-        client=build_client(settings),
+        client=client,
         name="haku",
         instructions=_instructions(settings),
         tools=tools,
         context_providers=[history],
-        compaction_strategy=SlidingWindowStrategy(keep_last_groups=settings.keep_last_groups),
+        # Keep the (cached) instruction prefix, append turns, and once history grows past
+        # target+threshold groups, LLM-summarize the oldest into a running summary and
+        # continue — rather than hard-dropping old turns.
+        compaction_strategy=SummarizationStrategy(
+            client=client, target_count=settings.summarize_target_count, threshold=settings.summarize_threshold
+        ),
     )
 
 
