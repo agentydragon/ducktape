@@ -233,9 +233,9 @@ fn matching_body_indices(
         {
             continue;
         }
-        if selector_match::matches_indexed(&needle_index, &chunk.body_indices[body_idx], mode)
-            .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
-        {
+        // The needle was probed-supported above, so this per-candidate match skips
+        // the redundant needle-only faithful-subset re-check (the dominant self-cost).
+        if selector_match::matches_prepared(&needle_index, &chunk.body_indices[body_idx], mode) {
             indices.push(body_idx);
         }
     }
@@ -322,9 +322,8 @@ fn member_matches_var_declarator(
         {
             continue;
         }
-        if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
-            .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?
-        {
+        // Needle probed-supported above; skip the per-candidate needle re-check.
+        if !selector_match::matches_prepared(&needle_index, &subject.index, mode) {
             continue;
         }
         let item = &chunk.module.body[subject.body_idx];
@@ -396,13 +395,12 @@ fn member_matches_declarator_hole(
         let alignment = target_binding_candidate_names(candidate_var, target_binding_idx)
             .into_iter()
             .find_map(|candidate_binding| {
-                selector_match::var_declarator_alignment_indexed(
+                selector_match::var_declarator_alignment_prepared(
                     &needle_index,
                     subject_index,
                     mode,
                     Some((target_binding, &candidate_binding)),
                 )
-                .expect("needle construct already probed as supported")
             });
         let Some(alignment) = alignment else {
             continue;
@@ -651,13 +649,12 @@ fn resolve_group_declarator_holes(
         let Some(candidate_var) = item_var_decl(item) else {
             continue;
         };
-        let Some(alignment) = selector_match::var_declarator_alignment_indexed(
+        let Some(alignment) = selector_match::var_declarator_alignment_prepared(
             &needle_index,
             &chunk.body_indices[body_idx],
             mode,
             None,
-        )
-        .expect("needle construct already probed as supported") else {
+        ) else {
             continue;
         };
         let mut resolved = BTreeMap::new();
@@ -734,9 +731,8 @@ fn resolve_group_single_declarator(
         {
             continue;
         }
-        if !selector_match::matches_indexed(&needle_index, &subject.index, mode)
-            .expect("needle construct already probed as supported")
-        {
+        // Needle probed-supported above; skip the per-candidate needle re-check.
+        if !selector_match::matches_prepared(&needle_index, &subject.index, mode) {
             continue;
         }
         let item = &chunk.module.body[subject.body_idx];

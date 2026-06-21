@@ -1175,21 +1175,42 @@ pub fn var_declarator_alignment_indexed(
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
+    Ok(var_declarator_alignment_prepared(
+        needle, subject, mode, prebind,
+    ))
+}
+
+/// Like [`var_declarator_alignment_indexed`], but **without** re-running the
+/// needle-only [`unsupported_needle_construct`] faithful-subset check — the caller
+/// must have already probed this exact needle (once, before the candidate loop) so
+/// the only `Unsupported` source is provably absent. This is the per-candidate hot
+/// path: `unsupported_needle_construct` is three full passes over the needle index
+/// plus `collect_subtree` recursion, all a function of the needle alone, so re-running
+/// it for every subject is `O(selectors × candidates)` wasted work the up-front probe
+/// already did. The return is therefore infallible (`Option`, not `Result`).
+pub fn var_declarator_alignment_prepared(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    prebind: Option<(&str, &str)>,
+) -> Option<Vec<Option<usize>>> {
     let (Some((nwrap, nvd)), Some((swrap, svd))) = (var_decl_node(needle), var_decl_node(subject))
     else {
-        return Ok(None);
+        return None;
     };
     // Wrapper symmetry (plain vs exported) and `var`/`let`/`const` kind: the
     // node-level structure the declarator alignment does not itself compare.
     if nwrap != swrap || needle.operator_of(nvd) != subject.operator_of(svd) {
-        return Ok(None);
+        return None;
     }
     let mut bindings = Bindings::default();
     if let Some((n, s)) = prebind
         && !bindings.prebind(n, s)
     {
-        return Ok(None);
+        return None;
     }
+    // The needle is probed-supported, so no sub-node descent can error (see
+    // [`nodes_match`]); unwrap the infallible alignment.
     align_var_declarators(
         needle,
         needle.children_of(nvd),
@@ -1198,6 +1219,7 @@ pub fn var_declarator_alignment_indexed(
         mode,
         &mut bindings,
     )
+    .expect("needle construct already probed as supported")
 }
 
 fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
@@ -1262,11 +1284,27 @@ pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bo
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
+    Ok(matches_prepared(needle, subject, mode))
+}
+
+/// Like [`matches_indexed`], but **without** re-running the needle-only
+/// [`unsupported_needle_construct`] faithful-subset check — the caller must have
+/// already probed this exact needle (once, before the candidate loop). On the
+/// corpus-wide resolve hot path the same needle is matched against every candidate
+/// statement, so re-validating it per candidate is `O(selectors × candidates)`
+/// redundant work (the dominant self-cost in the fact-resolver profile). Skipping
+/// it once the needle is known-supported is behavior-preserving — the check is a
+/// pure function of the needle, identical across subjects — and makes the result
+/// infallible.
+pub fn matches_prepared(needle: &Index, subject: &Index, mode: Mode) -> bool {
     let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
-        return Ok(false);
+        return false;
     };
     let mut bindings = Bindings::default();
+    // Probed-supported needle: a sub-node descent of an already-probed needle never
+    // newly errors (see [`nodes_match`]), so the match is infallible here.
     homo(needle, n_root, subject, s_root, mode, &mut bindings)
+        .expect("needle construct already probed as supported")
 }
 
 /// A **sound** per-candidate prefilter for the single-statement `matches` scan:
