@@ -76,6 +76,12 @@ since there's no first-class Forgejo provider in OpenHands.
       `10.96.0.0/12`). Only allow egress to external internet + DNS (port 53 to
       kube-dns). Agent pods shouldn't reach internal cluster services by default.
 
+## Event-driven autoscaling
+
+- [ ] Consider deploying [KEDA](https://keda.sh/) for event-driven autoscaling and
+      scale-to-zero workloads, especially queue-backed workers, scheduled jobs,
+      and services whose load signals are not well represented by CPU/memory HPA.
+
 ## Missing CiliumNetworkPolicy
 
 71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.
