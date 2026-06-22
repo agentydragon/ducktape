@@ -1,0 +1,76 @@
+# haku/runtime/managed_agent — Haku on Anthropic Managed Agents (self-hosted)
+
+Runtime B from <../../plans/runtime_options.md>: Anthropic runs the agent loop;
+tool execution runs in a worker **you** run in `haku-sandbox` (self-hosted
+sandbox, `config.type: self_hosted`). Full design + tradeoffs:
+<../../plans/managed_agents.md> (+ <../../plans/managed_agents_artifacts.md>).
+
+## "ant-all-the-way" — no `anthropic` Python SDK
+
+This component uses **only the `ant` CLI**, no `anthropic` Python SDK. Why: the
+SDK's self-hosted worker (`EnvironmentWorker`) and session APIs need
+`anthropic>=0.103`, but `agent-framework-anthropic` (used by Runtime C and the
+skill/grocy evals) hard-pins `anthropic==0.80.0` in the shared lockfile. The
+`ant` binary carries its own deps, so leaning on it sidesteps the conflict
+entirely — no lockfile bump, no second pip version, Runtime C untouched.
+
+The cost: the **warm-session supervisor is deferred**. The wake trigger is a
+scheduled deployment that fires a fresh session each tick; `haku-state` (git) is
+the durable memory, so a cold session just re-orients. Adding a warm supervisor
+later is the one thing that would reintroduce the SDK-version question.
+
+## Pieces
+
+| File                    | Role                                                             | Runs on       |
+| ----------------------- | ---------------------------------------------------------------- | ------------- |
+| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)         | control plane |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + tana `mcp_toolset` | control plane |
+| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                | control plane |
+| `provision.sh`          | one-shot: create environment/agent/vault/deployment via `ant`    | operator / CI |
+| `entrypoint.sh`         | clone ducktape + haku-state, then `ant beta:worker poll`         | `haku-worker` |
+
+## Trust split — keep the org key off the worker
+
+- **Worker pod** (`haku-sandbox`): only `ANTHROPIC_ENVIRONMENT_KEY`
+  (`sk-ant-oat01-…`, one environment's work queue). A prompt-injected tool call
+  can't reach the control plane.
+- **Provisioning** (`provision.sh`, deployment management, `…:work stats`): the
+  org-scoped `ANTHROPIC_API_KEY`, run from CI / the operator laptop — **never**
+  on the worker host.
+
+## Worker image (CI-only build)
+
+A debian image with `bash`, `git`, `kubectl`, `postgresql-client`, `curl`,
+`ca-certificates`, `fastmcp`, and the **`ant` CLI** (Go binary from
+`github.com/anthropics/anthropic-cli/releases`), entrypoint `entrypoint.sh`.
+Built on CI (apt mirrors 403 in the Claude-web sandbox), pushed to GHCR, pinned
+by Flux — the standard <../../../cluster/docs/container-images.md> path. The
+fixed `ant` toolset is `bash/read/write/edit/glob/grep`; Haku reaches Plaid
+(`psql`), Google (`curl`), and the cluster (`kubectl`, in-cluster `haku` SA)
+through `bash`. Tana is a native `mcp_toolset` (Anthropic-side, vault auth).
+
+## k8s wiring — operator-owned (follow-up)
+
+The `haku-worker` Deployment, the `ANTHROPIC_ENVIRONMENT_KEY` secret, and the
+clone/git env live under `cluster/k8s/…/haku/` — see
+<../../plans/managed_agents.md> § "k8s wiring". The worker reuses Haku's existing
+`haku-sandbox` perimeter (`haku` SA + RBAC, `haku-mitmproxy` egress,
+ResourceQuota); none of it relies on agent restraint.
+
+## Bring-up
+
+```sh
+./provision.sh                                   # org ANTHROPIC_API_KEY, outside the worker
+# generate the environment key in the Console -> ANTHROPIC_ENVIRONMENT_KEY secret
+# deploy haku-worker (env key + the HAKU_* clone/git env) in haku-sandbox
+ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
+```
+
+## Worker env
+
+`ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
+`HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST`, `HAKU_GIT_USERNAME`, `HAKU_GIT_PASSWORD`.
+
+Beta-surface field/flag names (`agent_toolset_20260401`, `vault_ids`, the
+deployment schema) follow the `ant` docs as of 2026-06 — verify with
+`ant <cmd> --help`.
