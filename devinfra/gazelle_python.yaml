@@ -19,6 +19,7 @@ manifest:
     agent_framework_anthropic: agent_framework_anthropic
     agent_framework_claude: agent_framework_claude
     agent_framework_openai: agent_framework_openai
+    agent_framework_redis: agent_framework_redis
     agents: openai_agents
     aioboto3: aioboto3
     aiobotocore: aiobotocore
@@ -500,6 +501,8 @@ manifest:
     qrcode: qrcode
     qtpy: QtPy
     reaktiv: reaktiv
+    redis: redis
+    redisvl: redisvl
     referencing: referencing
     regex: regex
     requests: requests
@@ -546,7 +549,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -619,6 +622,7 @@ manifest:
     tzdata: tzdata
     tzlocal: tzlocal
     uc_micro: uc_micro_py
+    ulid: python_ulid
     uncalled_for: uncalled_for
     unidiff: unidiff
     unpaddedbase64: unpaddedbase64
@@ -654,4 +658,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: ac3939c106bacca4bbb962ff3b327225cb158fe4cf0fb35f5fe92cd3886c2d7e
+integrity: 1674c0c8dd3285c56ac4acb34721dca759f6c1ec70b2d81b9cffd0d67d94f0ca
