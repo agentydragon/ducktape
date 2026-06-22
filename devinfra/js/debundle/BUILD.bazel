@@ -1021,6 +1021,30 @@ rust_test(
     ],
 )
 
+# Shared selector-program contract for the global resolver endpoint. This is the
+# data boundary between selector lowering, fact extraction, the fixed Ascent rule
+# library, and materialization; it is intentionally additive until the compare
+# path is wired.
+rust_library(
+    name = "selector_ir",
+    srcs = ["selector_ir.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":chunk_facts",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "selector_ir_test",
+    crate = ":selector_ir",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
 label_flag(
     name = "debundler",
     build_setting_default = ":debundle",
