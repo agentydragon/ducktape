@@ -2,9 +2,10 @@
 # Additive with the operator's default-deny NetworkPolicy.
 #
 # The registry FQDNs (ghcr.io, *.githubusercontent.com, Docker Hub) cover
-# image-related pod egress; Gmail/Calendar reach Google's APIs. Plaid Postgres
-# is reached cluster-internally (not via this proxy) — see the `toEntities:
-# cluster` rule in ccnp-haku-proxy-egress.yaml.
+# image-related pod egress; Gmail/Calendar reach Google's APIs; the Managed
+# Agents self-hosted worker (haku/runtime/managed_agent) reaches Anthropic's work
+# queue at api.anthropic.com. Plaid Postgres is reached cluster-internally (not
+# via this proxy) — see the `toEntities: cluster` rule in ccnp-haku-proxy-egress.yaml.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -48,6 +49,14 @@ spec:
         - matchName: pypi.org
         - matchName: files.pythonhosted.org
         - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Managed Agents self-hosted worker (haku/runtime/managed_agent) long-polls
+    # Anthropic's work queue via `ant beta:worker poll`.
+    - toFQDNs:
+        - matchName: api.anthropic.com
       toPorts:
         - ports:
             - port: "443"
