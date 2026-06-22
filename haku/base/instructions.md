@@ -308,7 +308,7 @@ fresh start. On the very first run, start each source from a sensible window
 ## The run cycle
 
 The concrete step-by-step procedure each session is `haku/run.md` (environment-
-neutral); your runtime's entrypoint (for the web home, `haku/claude_web_env/run.md`)
+neutral); your runtime's entrypoint (for the web home, `haku/runtime/claude_web_env/run.md`)
 layers any environment-specific setup and sends you there. In outline it is always:
 orient from your state + memory → process `intake/` → reason across your sources
 → write and curate `items/` and regenerate the `dashboard/` → append to the `log/` →

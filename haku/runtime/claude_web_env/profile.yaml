@@ -1,6 +1,6 @@
 # Claude Code web profile for Haku, the personal background agent.
 #
-# Selected via DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/claude_web_env/profile.yaml
+# Selected via DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/runtime/claude_web_env/profile.yaml
 # (with SOPS_AGE_KEY=<haku age key>).
 #
 # Models devinfra/claude/claude_hook/profiles/web/profile.yaml. Deviations:
@@ -29,7 +29,7 @@ background_commands:
   # with cluster access and its memory ready, and git needs no inline creds.
   # after_env so the K8S_* exports above are in scope.
   - name: bootstrap
-    command: bash "$CLAUDE_PROJECT_DIR/haku/claude_web_env/bootstrap.sh"
+    command: bash "$CLAUDE_PROJECT_DIR/haku/runtime/claude_web_env/bootstrap.sh"
     timeout: 90
     after_env: true
   - name: creds banner

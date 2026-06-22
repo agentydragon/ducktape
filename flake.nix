@@ -384,7 +384,7 @@
           # hand-rolled JSON-RPC handshake. This is NOT a devtools fork — it
           # composes the one `.#devtools` and adds fastmcp on top. Installed by
           # web_setup.sh when DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku (set in
-          # haku/claude_web_env/setup.sh).
+          # haku/runtime/claude_web_env/setup.sh).
           agent-haku = pkgs.symlinkJoin {
             name = "ducktape-agent-haku";
             paths = [

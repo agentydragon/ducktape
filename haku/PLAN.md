@@ -3,7 +3,7 @@
 Status: building. The infrastructure is largely landed (scoped k8s identity + JWT
 rotation, the `haku-sandbox` compute sandbox, Plaid read-only reflection, the
 read-only Google token mirror, the `haku-state` repo, the read-only base manual),
-and the v0 runtime is the **Claude Code web home** in `haku/claude_web_env/`
+and the v0 runtime is the **Claude Code web home** in `haku/runtime/claude_web_env/`
 (`setup.sh` + `profile.yaml` + `bootstrap.sh` + `run.md`). Design rationale below;
 the **actionable checklist is `TODO.md`**.
 
@@ -177,7 +177,7 @@ credential can write only the state repo**:
   Authoritative, versioned and CI'd in the monorepo, read-only at run time —
   Haku never writes it. The step-by-step run procedure lives in `haku/run.md`
   (environment-neutral; per-environment entrypoints like
-  `haku/claude_web_env/run.md` just layer setup and defer to it), not in base.
+  `haku/runtime/claude_web_env/run.md` just layer setup and defer to it), not in base.
   There is **no
   `.mcp.json`** (v0 has no MCP servers — Plaid is `psql`, Google is REST).
 - **state** — the `haku-state` repo: Haku's _accumulated information_. `items/`,
@@ -436,7 +436,7 @@ Optimize for a working loop in days, iterate from there.
 
 ### Phase 0 / v0 — the Claude Code web home (decided 2026-06-18)
 
-v0 is the **Claude Code web home** (`haku/claude_web_env/`): Haku runs in an
+v0 is the **Claude Code web home** (`haku/runtime/claude_web_env/`): Haku runs in an
 ephemeral Claude Code web environment on Anthropic infra and drives the cluster
 over `kubectl`, using `haku-sandbox` as its compute surface. This replaces the
 earlier "v0 is the in-cluster CronJob" plan — building a `haku-scanner` image is
@@ -456,13 +456,13 @@ order, each step a discrete deliverable:
    `playbooks/`. No `.mcp.json` (Plaid is `psql`, Google is REST). State is not
    seeded. Remaining: ongoing passes on the manual + playbooks as sources come
    online.
-3. **Web home runtime** (DONE, #2361) — `haku/claude_web_env/`: `setup.sh`
+3. **Web home runtime** (DONE, #2361) — `haku/runtime/claude_web_env/`: `setup.sh`
    (delegates to the shared `web_setup.sh`), `profile.yaml` (claude-hook profile
    with the `K8S_*` overrides → group `haku` / `haku-sandbox`), `bootstrap.sh`
    (materializes `~/.kube/config` from the haku JWT, writes `~/.netrc`, clones
    `haku-state` to `~/haku-state`), and `run.md` (the web entrypoint → the
    neutral `haku/run.md`). Configured
-   in the Claude Code web UI per `haku/claude_web_env/README.md`.
+   in the Claude Code web UI per `haku/runtime/claude_web_env/README.md`.
 4. **`haku-sandbox` namespace + ServiceAccount + sandbox RBAC + quota** — the
    namespace + scoped JWT identity (group `haku`) landed via the identity PR
    (#2354), and the haku-sandbox PR (#2357) renamed `haku`→`haku-sandbox` and

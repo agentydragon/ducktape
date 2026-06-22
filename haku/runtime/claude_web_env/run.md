@@ -15,7 +15,7 @@ environment-neutral `haku/run.md`.
 - Your **state repo is already cloned at `~/haku-state`**, and `~/.netrc` is set
   for `git.allegedly.works`, so you can `git -C ~/haku-state pull/commit/push`
   with no credentials to manage. (If `~/haku-state` is somehow missing, re-run
-  `haku/claude_web_env/bootstrap.sh`.)
+  `haku/runtime/claude_web_env/bootstrap.sh`.)
 - Discover your other credentials from `haku-sandbox` secrets and your full
   cluster perimeter from the ducktape repo you have checked out — grep
   `oidc-ksbx-groups:haku` under `cluster/k8s` for every binding (write CRUD in
