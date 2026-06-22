@@ -171,21 +171,21 @@ propose`.
    context to export bindings into different logical modules without duplicating
    the selector body.
 10. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
-   readable names that are free references rather than local binders, explain
-   that they do not refer to previously exported symbols. Suggest grouping or
-   holes.
+    readable names that are free references rather than local binders, explain
+    that they do not refer to previously exported symbols. Suggest grouping or
+    holes.
 11. **Duplicate-claim identity.** Track claims by declaration identity instead
-   of only emitted/minified spelling; include declaration kind and source
-   location in duplicate-claim diagnostics.
+    of only emitted/minified spelling; include declaration kind and source
+    location in duplicate-claim diagnostics.
 12. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
-   private-corpus debundler issues can be reproduced and protected in public CI.
+    private-corpus debundler issues can be reproduced and protected in public CI.
 13. **Ground selector-stabilization skill fixtures.** The `debundle_stabilize`
-   loop and playbook landed; add tested, anonymized fixtures for the common
-   anchor-choice cases so the skill's guidance is executable rather than only
-   prose.
+    loop and playbook landed; add tested, anonymized fixtures for the common
+    anchor-choice cases so the skill's guidance is executable rather than only
+    prose.
 14. **Port-based selector-stability evaluation.** Run a two-version bundle pair
-   as a held-out evaluation of `debundle_stabilize`: report survived/broke
-   verdicts by anchor kind and feed the scorecard back into the playbook.
+    as a held-out evaluation of `debundle_stabilize`: report survived/broke
+    verdicts by anchor kind and feed the scorecard back into the playbook.
 
 ### P2 — pipeline performance and architecture cleanup
 
