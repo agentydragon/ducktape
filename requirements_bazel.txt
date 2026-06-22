@@ -20,9 +20,14 @@ agent-framework-core==1.0.0 \
     #   agent-framework-anthropic
     #   agent-framework-claude
     #   agent-framework-openai
+    #   agent-framework-redis
 agent-framework-openai==1.0.0 \
     --hash=sha256:229179103f43125b30715bda98bc4b3316af3b303d8cd8034a54e3c3f94c28d5 \
     --hash=sha256:57303177a876528442b23825a97f05a20c49440c0ff65e0c2fb447d058babc42
+    # via ducktape (pyproject.toml)
+agent-framework-redis==1.0.0b260402 \
+    --hash=sha256:1e0744fb6c11ba98e57e33c8f33c3e752bf8f4e3dc790b999f1ebc79645835b9 \
+    --hash=sha256:9b842225bceb50186c655a54534e9c68f253bad790792296cd6efd573a42c949
     # via ducktape (pyproject.toml)
 aioboto3==15.5.0 \
     --hash=sha256:cc880c4d6a8481dd7e05da89f41c384dbd841454fc1998ae25ca9c39201437a6 \
@@ -2603,7 +2608,9 @@ jsonpatch==1.33 \
 jsonpath-ng==1.8.0 \
     --hash=sha256:54252968134b5e549ea5b872f1df1168bd7defe1a52fed5a358c194e1943ddc3 \
     --hash=sha256:b8dde192f8af58d646fc031fac9c99fe4d00326afc4148f1f043c601a8cfe138
-    # via inspect-ai
+    # via
+    #   inspect-ai
+    #   redisvl
 jsonpointer==3.0.0 \
     --hash=sha256:13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942 \
     --hash=sha256:2b2d729f2091522d61c3b31f82e11870f60b68f43fbc705cb76bf4b832af59ef
@@ -3413,6 +3420,7 @@ ml-dtypes==0.5.4 \
     # via
     #   jax
     #   jaxlib
+    #   redisvl
 mmh3==5.2.1 \
     --hash=sha256:022aa1a528604e6c83d0a7705fdef0b5355d897a9e0fa3a8d26709ceaa06965d \
     --hash=sha256:0634581290e6714c068f4aa24020acf7880927d1f0084fa753d9799ae9610082 \
@@ -3912,6 +3920,7 @@ numpy==2.4.2 \
     --hash=sha256:fd49860271d52127d61197bb50b64f58454e9f578cb4b2c001a6de8b1f50b0b1
     # via
     #   ducktape (pyproject.toml)
+    #   agent-framework-redis
     #   arch
     #   asyncvnc
     #   chromadb
@@ -3930,6 +3939,7 @@ numpy==2.4.2 \
     #   pandas-stubs
     #   patsy
     #   plotnine
+    #   redisvl
     #   scipy
     #   statsmodels
     #   types-networkx
@@ -5285,6 +5295,7 @@ pydantic[email]==2.12.5 \
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
+    #   redisvl
 pydantic-ai-slim[anthropic, fastmcp, openai]==1.70.0 \
     --hash=sha256:162907092a562b3160d9ef0418d317ec941c5c0e6dd6e0aa0dbb53b5a5cd3450 \
     --hash=sha256:3df0c0e92f72c35e546d24795bce1f4d38f81da2d10addd2e9f255b2d2c83c91
@@ -5732,6 +5743,10 @@ python-socks[asyncio]==2.8.1 \
     --hash=sha256:28232739c4988064e725cdbcd15be194743dd23f1c910f784163365b9d7be035 \
     --hash=sha256:698daa9616d46dddaffe65b87db222f2902177a2d2b2c0b9a9361df607ab3687
     # via aiohttp-socks
+python-ulid==3.1.0 \
+    --hash=sha256:e2cdc979c8c877029b4b7a38a6fba3bc4578e4f109a308419ff4d3ccf0a46619 \
+    --hash=sha256:ff0410a598bc5f6b01b602851a3296ede6f91389f913a5d5f8c496003836f636
+    # via redisvl
 pytimeparse==1.1.8 \
     --hash=sha256:04b7be6cc8bd9f5647a6325444926c3ac34ee6bc7e69da4367ba282f076036bd \
     --hash=sha256:e86136477be924d7e670646a98561957e8ca7308d44841e21f5ddea757556a0a
@@ -5826,6 +5841,7 @@ pyyaml==6.0.3 \
     #   kubernetes-asyncio
     #   langchain-core
     #   pre-commit
+    #   redisvl
     #   uvicorn
 pyzmq==27.1.0 \
     --hash=sha256:01c0e07d558b06a60773744ea6251f769cd79a41a97d11b8bf4ab8f034b0424d \
@@ -5936,6 +5952,16 @@ reaktiv==0.21.3 \
     --hash=sha256:1fd3ec8c8f0ebeaa84b3bd7db7ede84201b0f4c2c882dadca75642d0f158f04f \
     --hash=sha256:c9e12ca28e969ac34909e40f7a60107e3379ba97bb60950883577890b85b1283
     # via ducktape (pyproject.toml)
+redis==7.1.1 \
+    --hash=sha256:a2814b2bda15b39dad11391cc48edac4697214a8a5a4bd10abe936ab4892eb43 \
+    --hash=sha256:f77817f16071c2950492c67d40b771fa493eb3fccc630a424a10976dbb794b7a
+    # via
+    #   agent-framework-redis
+    #   redisvl
+redisvl==0.15.0 \
+    --hash=sha256:0e382e9b6cd8378dfe1515b18f92d125cfba905f6f3c5fe9b8904b3ca840d1ca \
+    --hash=sha256:aff716b9a9c4aef9c81de9a12d9939a0170ff3b3a1fe9d4164e94b131a754290
+    # via agent-framework-redis
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
@@ -6708,6 +6734,7 @@ tenacity==9.1.4 \
     #   inspect-ai
     #   instructor
     #   langchain-core
+    #   redisvl
 terminado==0.18.1 \
     --hash=sha256:a4468e1b37bb318f8a86514f65814e1afc977cf29b3992a4500d9dd305dcceb0 \
     --hash=sha256:de09f2c4b85de4765f7714688fff57d3e75bad1f909b589fde880460c753fd2e
