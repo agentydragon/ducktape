@@ -1045,6 +1045,27 @@ rust_test(
     ],
 )
 
+rust_library(
+    name = "selector_ir_lowering",
+    srcs = ["selector_ir_lowering.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_ir",
+        ":spec",
+    ],
+)
+
+rust_test(
+    name = "selector_ir_lowering_test",
+    crate = ":selector_ir_lowering",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        ":spec",
+    ],
+)
+
 label_flag(
     name = "debundler",
     build_setting_default = ":debundle",
