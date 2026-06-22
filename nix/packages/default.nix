@@ -315,6 +315,9 @@ rec {
   litert-lm = pkgs.callPackage ./litert-lm.nix { };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
+  # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
+  # nixpkgs; vendored static release binary. Used by haku/runtime/managed_agent.
+  anthropic-cli = pkgs.callPackage ./anthropic-cli.nix { };
   # fastmcp's client CLI (`fastmcp call|list <url> --auth <bearer>`) exposed as a
   # standalone app for agent closures (flake.nix `.#agent-haku`). The library
   # is consumed by the `ducktape` wheel above via `python3Packages.fastmcp`; this

@@ -272,6 +272,9 @@
       # Packages NOT needed on RBE workers (large, only for local/infra use).
       # Excluded from rbeToolPackages to keep the RBE image small.
       localOnlyPackages = [
+        # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
+        # running `ant beta:*` (haku/runtime/managed_agent). Not needed on RBE.
+        ducktapePkgs.anthropic-cli
         pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
         pkgs.ansible # 650MB
         # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
