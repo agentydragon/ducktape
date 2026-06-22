@@ -202,6 +202,83 @@ fn intrinsic_alias_disambiguates_two_companions_by_referencing_helper() {
     assert_entry_output(&fixture, "aA bB\n");
 }
 
+/// **Generic helper `name:` shared across modules resolves per module.** Two
+/// byte-identical decorate trios (`a` and `b`) in two modules, each helper pinned by
+/// `makes_decorate_call` and given the **same** readable `name:` `applyDecorators` —
+/// the realistic case, since esbuild's `__decorate` helpers carry no distinguishing
+/// source and ~11 modules' helpers share one readable name. Each companion's
+/// `referenced_by: @applyDecorators` must resolve against **its own module's** helper
+/// (esbuild co-locates each helper with its companions), so `pa` lands in the `a`
+/// module and `pb` in the `b` module.
+///
+/// Regression gate for the chunk-global `referenced_by` collapse: building the anchor
+/// map over every module mapped the shared export name `applyDecorators` to two
+/// distinct bindings (`da`, `db`), collapsed it to ambiguous, and bailed before
+/// `intrinsic_alias` resolution ran — even though each helper is unambiguous in its
+/// own module. The map must be scoped to the companion's module.
+#[test]
+fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
+    let source = format!(
+        "{}{}console.log(new Alpha().alphaLabel(), new Beta().betaLabel());\nexport {{ Alpha, Beta }};\n",
+        trio("a", "Alpha", "alphaLabel", "a", "A"),
+        trio("b", "Beta", "betaLabel", "b", "B"),
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module(
+                "alpha",
+                &[
+                    Member::source_alpha(
+                        "Alpha",
+                        r#"class Alpha {
+  alphaLabel() {
+    STMT_LIST;
+  }
+}"#,
+                    ),
+                    // Both helpers carry the SAME readable name `applyDecorators` —
+                    // a chunk-global anchor map would collapse it to ambiguous.
+                    Member::makes_decorate_call("applyDecorators", "Alpha", None, None),
+                    Member::intrinsic_alias("alphaDefineProp", "defineProperty", "applyDecorators"),
+                ],
+            ),
+            logical_module(
+                "beta",
+                &[
+                    Member::source_alpha(
+                        "Beta",
+                        r#"class Beta {
+  betaLabel() {
+    STMT_LIST;
+  }
+}"#,
+                    ),
+                    Member::makes_decorate_call("applyDecorators", "Beta", None, None),
+                    Member::intrinsic_alias("betaDefineProp", "defineProperty", "applyDecorators"),
+                ],
+            ),
+        ],
+    ));
+
+    // Each companion resolved against its own module's `applyDecorators` helper: `pa`
+    // to the Alpha module, `pb` to the Beta module — distinct bindings, never crossing
+    // despite the shared helper name and identical `property: defineProperty`.
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/alpha.js",
+        &["var alphaDefineProp = ", "alphaDefineProp"],
+        &["betaDefineProp"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/beta.js",
+        &["var betaDefineProp = ", "betaDefineProp"],
+        &["alphaDefineProp"],
+    );
+    assert_entry_output(&fixture, "aA bB\n");
+}
+
 /// **Property narrowing.** One helper reads *both* companions of its trio; the
 /// `property` label narrows to the matching one — `defineProperty` to `p0`,
 /// `getOwnPropertyDescriptor` to `g0` — even though both are referenced by the same

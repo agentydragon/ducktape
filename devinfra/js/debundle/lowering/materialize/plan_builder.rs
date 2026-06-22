@@ -1437,7 +1437,11 @@ impl ChunkPlanBuilder {
     /// the AST `references` edge's source. The owner graph's `export_name` is not
     /// populated at this point, so the helper binding comes from the already-resolved
     /// members (`export_name → binding`) and is resolved to its owner inside the
-    /// bridge.
+    /// bridge. The anchor map is built **per companion module**
+    /// (`claimed_member_bindings_in_module`): esbuild co-locates each `__decorate`
+    /// helper with its companions, so the helper is unambiguous within that module
+    /// even when its readable `name:` (e.g. a generic `applyDecorators`) repeats
+    /// across modules.
     ///
     /// Resolution is categorical / fail-closed: an intrinsic-alias whose helper
     /// anchor is unknown, or whose `Object.<property>` relation does not pick out
@@ -1468,13 +1472,15 @@ impl ChunkPlanBuilder {
         // owner). Built once per chunk, only when such a member exists.
         let resolution = intrinsic_alias::build_resolution(owner_graph, module);
 
-        // The `referenced_by` helper is pinned by `makes_decorate_call` (run earlier),
-        // so its binding lives in `module_plans`, not in `resolved_anchor_bindings`
-        // (which sees only `add_explicit_request`-resolved members). Read the claimed
-        // bindings back so the anchor resolves.
-        let anchor_binding = self.claimed_member_bindings();
-
         for (index, request) in explicit_requests.iter().enumerate() {
+            // The `referenced_by` helper is pinned by `makes_decorate_call` (run
+            // earlier), which co-locates it in the companion's own module, so its
+            // binding lives in `module_plans[index]` rather than in
+            // `resolved_anchor_bindings` (which sees only
+            // `add_explicit_request`-resolved members). Resolve the anchor within
+            // that module so a generic helper `name:` shared across modules stays
+            // unambiguous per module.
+            let anchor_binding = self.claimed_member_bindings_in_module(index);
             for member in &request.members {
                 let Some(target) = member.intrinsic_alias() else {
                     continue;
@@ -1616,34 +1622,36 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// `export_name → resolved minified binding` over **every already-claimed
-    /// member**, including those resolved by earlier *post-Stage-A* passes
-    /// (`reads_member` / `member_of_module` / `passed_to_call` /
-    /// `makes_decorate_call`). Unlike [`resolved_anchor_bindings`] — which sees only
-    /// `add_explicit_request`-resolved `binding`/`source_match` members — this reads
-    /// the claimed bindings back out of `module_plans`, so an anchor pinned by a
-    /// prior post-Stage-A pass is resolvable. An export name claimed by several
-    /// bindings maps to `None` (ambiguous → fail-closed), matching
-    /// `resolved_anchor_bindings`' semantics.
+    /// `export_name → resolved minified binding` over the already-claimed members
+    /// of **one logical module** (`module_plans[index]`), including those resolved
+    /// by earlier *post-Stage-A* passes (`reads_member` / `member_of_module` /
+    /// `passed_to_call` / `makes_decorate_call`). Unlike [`resolved_anchor_bindings`]
+    /// — which sees only `add_explicit_request`-resolved `binding`/`source_match`
+    /// members — this reads the claimed bindings back out of the module plan, so an
+    /// anchor pinned by a prior post-Stage-A pass is resolvable. An export name
+    /// claimed by two distinct bindings *within this module* maps to `None`
+    /// (ambiguous → fail-closed), matching `resolved_anchor_bindings`' semantics.
     ///
-    /// This is what lets `intrinsic_alias`'s `referenced_by` ride the trio's
-    /// `__decorate` helper — itself pinned by `makes_decorate_call`, which runs
-    /// before the intrinsic-alias pass and claims the helper into `module_plans`.
-    fn claimed_member_bindings(&self) -> HashMap<String, Option<String>> {
+    /// Module-scoped because `intrinsic_alias`'s `referenced_by` rides the trio's
+    /// `__decorate` helper, which esbuild co-locates in the companion's own module:
+    /// `makes_decorate_call` (run earlier) claims the helper into `module_plans[index]`,
+    /// the same module the companion resolves into. Scoping to that module is the
+    /// correct resolution — a generic helper `name:` repeated across modules (e.g.
+    /// `applyDecorators`) would collapse to ambiguous under a chunk-global view, even
+    /// though each companion's helper is unambiguous in its own module.
+    fn claimed_member_bindings_in_module(&self, index: usize) -> HashMap<String, Option<String>> {
         let mut by_export: HashMap<String, Option<String>> = HashMap::new();
-        for plan in &self.module_plans {
-            for (binding, export_name) in &plan.bindings {
-                by_export
-                    .entry(export_name.clone())
-                    .and_modify(|slot| {
-                        // A second distinct binding under one export name is
-                        // ambiguous; identical re-claims keep the single binding.
-                        if slot.as_deref() != Some(binding.as_str()) {
-                            *slot = None;
-                        }
-                    })
-                    .or_insert_with(|| Some(binding.clone()));
-            }
+        for (binding, export_name) in &self.module_plans[index].bindings {
+            by_export
+                .entry(export_name.clone())
+                .and_modify(|slot| {
+                    // A second distinct binding under one export name is
+                    // ambiguous; identical re-claims keep the single binding.
+                    if slot.as_deref() != Some(binding.as_str()) {
+                        *slot = None;
+                    }
+                })
+                .or_insert_with(|| Some(binding.clone()));
         }
         by_export
     }

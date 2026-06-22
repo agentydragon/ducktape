@@ -37,7 +37,12 @@ gaffer application pass: the `__decorate` helper rides its decorated `@Class` (r
 through `resolves_to`, plus the optional member literal); the two companions ride
 `referenced_by @<decorateHelper>` narrowed by the intrinsic property name. The
 primitives are landed and fail-closed / re-minify-proof — only the spec conversion
-remains.
+remains. The `intrinsic_alias` `referenced_by` anchor now resolves **per logical
+module** (esbuild co-locates each helper with its companions), so a generic helper
+`name:` repeated across modules — e.g. `applyDecorators`, shared by ~11 modules'
+`__decorate` helpers — no longer collapses to ambiguous; the 35 companion pins
+(`__defineProperty` + `__getOwnPropertyDescriptor`) are convertible regardless of helper
+naming (see <2026_06_21_intrinsic_alias_module_scoped_referenced_by.md>).
 
 ### Round-3 lane sweeps (recommended)
 
