@@ -21,7 +21,7 @@ echo "agent: $AGENT_ID"
 # Vault for MCP credentials. tana-mcp-ro is gated by the static bearer Haku
 # already has reflected into haku-sandbox (haku-tana-ro-token); pipe it via
 # stdin, never argv. Anthropic injects it at egress; the pod never sees it.
-VAULT_ID=$(ant beta:vaults create --name haku-mcp --transform id -r)
+VAULT_ID=$(ant beta:vaults create --display-name haku-mcp --transform id -r)
 echo "vault: $VAULT_ID"
 TANA_TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token -o jsonpath='{.data.token}' | base64 -d)
 ant beta:vaults:credentials create --vault-id "$VAULT_ID" >/dev/null <<YAML
@@ -35,7 +35,7 @@ echo "  -> tana-mcp-ro credential stored in vault $VAULT_ID"
 
 # Scheduled deployment = the wake trigger (one fresh session per fire).
 DEPL_ID=$(ant beta:deployments create \
-  --agent "$AGENT_ID" --environment-id "$ENV_ID" --vault-ids "[$VAULT_ID]" \
+  --agent "$AGENT_ID" --environment-id "$ENV_ID" --vault-id "$VAULT_ID" \
   --transform id -r <"$here/haku.deployment.yaml")
 echo "deployment: $DEPL_ID"
 
