@@ -283,104 +283,24 @@ pub(super) fn materialize_logical_chunk(
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
-    // `@Name` cross-reference resolution: `add_explicit_request` left `cross_ref`
-    // members unclaimed because their target binding isn't known until the owner
-    // graph (its reference/alias edges) exists — i.e. now, post-Stage-A. Resolve +
-    // claim them here, before A5/mini-factors so cross-ref-claimed bindings are
-    // visible to them, exactly like named members. The builder builds the
-    // owner-graph solve once *only if* a member uses `cross_ref`, so this is a true
-    // no-op (no extra solve) for chunks without cross-refs.
-    time_phase!(timings, "resolve_cross_ref_members", {
-        builder.resolve_and_claim_cross_refs(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            chunk_top_level_mark,
-            chunk_id,
-            &declaration_by_name,
-        )
-    })?;
-    // `reads_member` resolution: `add_explicit_request` left `reads_member`
-    // members unclaimed because their target binding isn't known until the owner
-    // graph + the chunk's AST member-read facts exist — i.e. now, post-Stage-A.
-    // Resolve + claim them here, before A5/mini-factors so reads-member-claimed
-    // bindings are visible to them, exactly like named members. The builder runs
-    // the owner-graph solve once *only if* a member uses `reads_member`, so this
-    // is a true no-op (no extra solve) for chunks without reads-member members.
-    time_phase!(timings, "resolve_reads_member_members", {
-        builder.resolve_and_claim_reads_members(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            &runtime_ast.module,
-            chunk_top_level_mark,
-            chunk_id,
-            &declaration_by_name,
-        )
-    })?;
-    // `member_of_module` use-site resolution: the same post-Stage-A timing and
-    // no-op-when-absent contract as `reads_member`. Joins the chunk's member
-    // accesses to its import table (local import binding -> source module) so the
-    // selector resolves against the re-minify-invariant (module, member) pair.
+    // Global selector resolution: `add_explicit_request` left relational members
+    // unclaimed because their target bindings are only knowable once Stage A has
+    // produced the owner graph. Compile all resolved binding anchors plus all
+    // relational selectors into one IR program and run one Ascent solver pass over
+    // the owner graph + chunk AST relation facts.
     let import_sources: HashMap<String, String> = runtime_import_facts
         .iter_local_sources()
         .map(|(local, src)| (local.to_string(), src.to_string()))
         .collect();
-    time_phase!(timings, "resolve_member_of_module_members", {
-        builder.resolve_and_claim_member_of_modules(
+    time_phase!(timings, "resolve_global_selector_members", {
+        builder.resolve_and_claim_global_selectors(
             &explicit_requests,
             &precomputed.owner_graph,
             &runtime_ast.module,
             &import_sources,
             chunk_top_level_mark,
             chunk_id,
-            &declaration_by_name,
-        )
-    })?;
-    // `passed_to_call` resolution (the `resolves_to`-of-argument primitive): the
-    // same post-Stage-A timing and no-op-when-absent contract as the use-site
-    // passes. Resolves a target by it being passed as an argument to a call of a
-    // known callee (`registry.register(Target)`) — the inverse of
-    // `member_of_module`, reaching the registry-style target that primitive's
-    // `declares` conjunct correctly excludes (the call site declares nothing).
-    time_phase!(timings, "resolve_passed_to_call_members", {
-        builder.resolve_and_claim_passed_to_calls(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            &runtime_ast.module,
-            chunk_top_level_mark,
-            chunk_id,
-            &declaration_by_name,
-        )
-    })?;
-    // `makes_decorate_call` resolution (the inverse-direction sibling of
-    // `passed_to_call`): the same post-Stage-A timing and no-op-when-absent
-    // contract. Resolves a target by it being the callee of an esbuild
-    // `__decorate`-style decorator application on a pinned class
-    // (`H([d], @Class.prototype, "m")`) — retiring the byte-identical helper
-    // copies' fragile name-pins via their decorated-class anchor.
-    time_phase!(timings, "resolve_makes_decorate_call_members", {
-        builder.resolve_and_claim_makes_decorate_calls(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            &runtime_ast.module,
-            chunk_top_level_mark,
-            chunk_id,
-            &declaration_by_name,
-        )
-    })?;
-    // `intrinsic_alias` resolution (the follow-on companion of
-    // `makes_decorate_call`): the same post-Stage-A timing and no-op-when-absent
-    // contract. Resolves a target that is an `Object.<property>` intrinsic alias
-    // (`var X = Object.defineProperty`) by the helper that references it
-    // (`referenced_by: @<decorateHelper>`) — retiring the esbuild decorate-trio's
-    // two companions, which `makes_decorate_call` cannot reach (they make no
-    // decorator call; their only invariant edge is being read inside the helper).
-    time_phase!(timings, "resolve_intrinsic_alias_members", {
-        builder.resolve_and_claim_intrinsic_aliases(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            &runtime_ast.module,
-            chunk_top_level_mark,
-            chunk_id,
+            chunk_id_interned,
             &declaration_by_name,
         )
     })?;

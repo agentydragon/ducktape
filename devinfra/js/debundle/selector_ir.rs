@@ -139,11 +139,23 @@ pub enum SelectorAtom {
         owner: OwnerTerm,
         binding: StringTerm,
     },
+    OwnerExportName {
+        owner: OwnerTerm,
+        export_name: StringTerm,
+    },
     OwnerReferencesBinding {
         owner: OwnerTerm,
         binding: StringTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         edge_kind: Option<StringTerm>,
+    },
+    OwnerReferencesOwner {
+        owner: OwnerTerm,
+        referenced: OwnerTerm,
+    },
+    OwnerAliasesOwner {
+        owner: OwnerTerm,
+        aliased: OwnerTerm,
     },
     AstKind {
         node: NodeTerm,
@@ -193,6 +205,11 @@ pub enum SelectorAtom {
         object: Option<StringTerm>,
         member: StringTerm,
     },
+    ReadsMemberOfOwner {
+        owner: OwnerTerm,
+        object: OwnerTerm,
+        member: StringTerm,
+    },
     ConsumesModuleMember {
         owner: OwnerTerm,
         module: StringTerm,
@@ -206,9 +223,22 @@ pub enum SelectorAtom {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         arg_index: Option<u32>,
     },
+    PassedToCallOfOwner {
+        owner: OwnerTerm,
+        callee_object: OwnerTerm,
+        callee_member: StringTerm,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        arg_index: Option<u32>,
+    },
     MakesDecorateCall {
         owner: OwnerTerm,
         class_anchor: StringTerm,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        member: Option<StringTerm>,
+    },
+    MakesDecorateCallForOwner {
+        owner: OwnerTerm,
+        class_anchor: OwnerTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         member: Option<StringTerm>,
     },
@@ -330,6 +360,10 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "owner_declares_binding.owner")?;
                 self.validate_string_term(binding, "owner_declares_binding.binding")
             }
+            SelectorAtom::OwnerExportName { owner, export_name } => {
+                self.validate_owner_term(owner, "owner_export_name.owner")?;
+                self.validate_string_term(export_name, "owner_export_name.export_name")
+            }
             SelectorAtom::OwnerReferencesBinding {
                 owner,
                 binding,
@@ -341,6 +375,14 @@ impl SelectorProgram {
                     self.validate_string_term(edge_kind, "owner_references_binding.edge_kind")?;
                 }
                 Ok(())
+            }
+            SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
+                self.validate_owner_term(owner, "owner_references_owner.owner")?;
+                self.validate_owner_term(referenced, "owner_references_owner.referenced")
+            }
+            SelectorAtom::OwnerAliasesOwner { owner, aliased } => {
+                self.validate_owner_term(owner, "owner_aliases_owner.owner")?;
+                self.validate_owner_term(aliased, "owner_aliases_owner.aliased")
             }
             SelectorAtom::AstKind { node, .. } => self.validate_node_term(node, "ast_kind.node"),
             SelectorAtom::AstChild { parent, child, .. } => {
@@ -382,6 +424,15 @@ impl SelectorProgram {
                 }
                 self.validate_string_term(member, "reads_member.member")
             }
+            SelectorAtom::ReadsMemberOfOwner {
+                owner,
+                object,
+                member,
+            } => {
+                self.validate_owner_term(owner, "reads_member_of_owner.owner")?;
+                self.validate_owner_term(object, "reads_member_of_owner.object")?;
+                self.validate_string_term(member, "reads_member_of_owner.member")
+            }
             SelectorAtom::ConsumesModuleMember {
                 owner,
                 module,
@@ -403,6 +454,16 @@ impl SelectorProgram {
                 }
                 self.validate_string_term(callee_member, "passed_to_call.callee_member")
             }
+            SelectorAtom::PassedToCallOfOwner {
+                owner,
+                callee_object,
+                callee_member,
+                ..
+            } => {
+                self.validate_owner_term(owner, "passed_to_call_of_owner.owner")?;
+                self.validate_owner_term(callee_object, "passed_to_call_of_owner.callee_object")?;
+                self.validate_string_term(callee_member, "passed_to_call_of_owner.callee_member")
+            }
             SelectorAtom::MakesDecorateCall {
                 owner,
                 class_anchor,
@@ -412,6 +473,21 @@ impl SelectorProgram {
                 self.validate_string_term(class_anchor, "makes_decorate_call.class_anchor")?;
                 if let Some(member) = member {
                     self.validate_string_term(member, "makes_decorate_call.member")?;
+                }
+                Ok(())
+            }
+            SelectorAtom::MakesDecorateCallForOwner {
+                owner,
+                class_anchor,
+                member,
+            } => {
+                self.validate_owner_term(owner, "makes_decorate_call_for_owner.owner")?;
+                self.validate_owner_term(
+                    class_anchor,
+                    "makes_decorate_call_for_owner.class_anchor",
+                )?;
+                if let Some(member) = member {
+                    self.validate_string_term(member, "makes_decorate_call_for_owner.member")?;
                 }
                 Ok(())
             }

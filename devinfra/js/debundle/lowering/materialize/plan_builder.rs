@@ -6,6 +6,8 @@
 
 use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
+use crate::plans::RelationalSelector;
+use analysis::StatementOrdinal;
 
 #[derive(Debug, Clone)]
 struct DuplicateClaimSite {
@@ -41,6 +43,8 @@ use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
     SelectorDiagnosticsReport, SelectorNearestCandidate,
 };
+use selector_ir::{ClaimOutcome, SelectorFact, SelectorFactStore, SelectorTargetId};
+use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {
@@ -192,6 +196,121 @@ fn resolve_anchor<'a>(
             labels.role,
         ),
     }
+}
+
+fn member_selector_spec_for_global_solver(
+    member: &MemberRequest,
+) -> Option<spec::MemberSelectorSpec> {
+    if let Some(relational) = &member.relational {
+        return Some(match relational {
+            RelationalSelector::CrossRef(target) => {
+                spec::MemberSelectorSpec::CrossRef(target.clone())
+            }
+            RelationalSelector::ReadsMember(target) => {
+                spec::MemberSelectorSpec::ReadsMember(target.clone())
+            }
+            RelationalSelector::MemberOfModule(target) => {
+                spec::MemberSelectorSpec::MemberOfModule(target.clone())
+            }
+            RelationalSelector::PassedToCall(target) => {
+                spec::MemberSelectorSpec::PassedToCall(target.clone())
+            }
+            RelationalSelector::MakesDecorateCall(target) => {
+                spec::MemberSelectorSpec::MakesDecorateCall(target.clone())
+            }
+            RelationalSelector::IntrinsicAlias(target) => {
+                spec::MemberSelectorSpec::IntrinsicAlias(target.clone())
+            }
+        });
+    }
+
+    if member.binding.is_empty() || member.is_import_specifier {
+        return None;
+    }
+    Some(spec::MemberSelectorSpec::Binding(spec::BindingSelector {
+        name: member.binding.clone(),
+        kind: None,
+    }))
+}
+
+fn selector_fact_store_for_chunk(
+    chunk_id: ChunkId,
+    owner_graph: &analysis::OwnerGraph,
+    module: &swc_ecma_ast::Module,
+    import_sources: &HashMap<String, String>,
+) -> SelectorFactStore {
+    let mut store = SelectorFactStore::default();
+    for node in owner_graph.iter_nodes() {
+        store.push(SelectorFact::Owner {
+            chunk_id,
+            owner: node.id,
+            statement_ordinal: node.statement_ordinal,
+            statement_kind: node.kind.to_string(),
+        });
+        for binding in &node.declared {
+            store.push(SelectorFact::DeclaredBinding {
+                chunk_id,
+                owner: node.id,
+                binding: binding.0.as_str().to_string(),
+                export_name: None,
+            });
+        }
+    }
+    for edge in owner_graph.iter_edges() {
+        if let Some(binding) = edge.reason.binding() {
+            store.push(SelectorFact::OwnerReferencesBinding {
+                chunk_id,
+                owner: edge.from,
+                binding: binding.0.as_str().to_string(),
+                edge_kind: edge.reason.kind().to_string(),
+            });
+        }
+    }
+    for (ordinal, reads) in chunk_facts::member_reads_by_ordinal(module) {
+        for read in reads {
+            store.push(SelectorFact::MemberRead {
+                chunk_id,
+                statement_ordinal: StatementOrdinal(ordinal),
+                object: read.object,
+                member: read.member,
+            });
+        }
+    }
+    for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, import_sources) {
+        for use_site in uses {
+            store.push(SelectorFact::ModuleMemberUse {
+                chunk_id,
+                statement_ordinal: StatementOrdinal(ordinal),
+                module: use_site.module,
+                member: use_site.member,
+            });
+        }
+    }
+    for call in chunk_facts::call_argument_uses(module) {
+        store.push(SelectorFact::CallArgumentUse {
+            chunk_id,
+            argument: call.argument,
+            callee_object: call.callee_object,
+            callee_member: call.callee_member,
+            arg_index: call.arg_index,
+        });
+    }
+    for call in chunk_facts::decorate_call_uses(module) {
+        store.push(SelectorFact::DecorateCallUse {
+            chunk_id,
+            callee: call.callee,
+            class_anchor: call.class_anchor,
+            member: call.member,
+        });
+    }
+    for alias in chunk_facts::intrinsic_alias_uses(module) {
+        store.push(SelectorFact::IntrinsicAliasUse {
+            chunk_id,
+            binding: alias.binding,
+            property: alias.property,
+        });
+    }
+    store
 }
 
 #[derive(Debug, Clone)]
@@ -655,6 +774,7 @@ pub(super) struct ChunkPlanBuilder {
     keep_going: bool,
 }
 
+#[allow(dead_code)]
 impl ChunkPlanBuilder {
     pub(super) fn new(keep_going: bool) -> Self {
         Self {
@@ -745,14 +865,9 @@ impl ChunkPlanBuilder {
         let module_id = ModuleId(LogicalModuleIndex(index));
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
-            // Cross-ref, reads-member, member-of-module, passed-to-call,
-            // makes-decorate-call, and intrinsic-alias members resolve against the
-            // chunk's owner graph (and the AST facts), all built after the plan
-            // (Stage A). They're claimed in dedicated post-Stage-A passes
-            // (`resolve_and_claim_cross_refs` / `resolve_and_claim_reads_members` /
-            // `resolve_and_claim_member_of_modules` / `resolve_and_claim_passed_to_calls`
-            // / `resolve_and_claim_makes_decorate_calls` /
-            // `resolve_and_claim_intrinsic_aliases`); until then their `binding` is
+            // Relational members resolve against the chunk's owner graph and AST
+            // relation facts, which are only available after Stage A. The global
+            // selector pass claims them later; until then their `binding` is
             // empty, so they contribute nothing here.
             if member.is_relational() {
                 continue;
@@ -897,6 +1012,139 @@ impl ChunkPlanBuilder {
             binding_comments,
             binding_claim_origins,
         });
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn resolve_and_claim_global_selectors(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        owner_graph: &analysis::OwnerGraph,
+        module: &swc_ecma_ast::Module,
+        import_sources: &HashMap<String, String>,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        chunk_id_interned: ChunkId,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
+        if explicit_requests
+            .iter()
+            .flat_map(|request| &request.members)
+            .all(|member| !member.is_relational())
+        {
+            return Ok(());
+        }
+
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            chunk_id_interned,
+            chunk_id,
+        ));
+        let mut relational_targets = BTreeMap::<SelectorTargetId, (usize, MemberRequest)>::new();
+        let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
+        for (index, request) in explicit_requests.iter().enumerate() {
+            for member in &request.members {
+                let Some(selector) = member_selector_spec_for_global_solver(member) else {
+                    continue;
+                };
+                let target = builder.declare_member_target_in_module(
+                    &request.id,
+                    &member.export_name,
+                    &selector,
+                )?;
+                pending_constraints.push((
+                    request.id.clone(),
+                    member.export_name.clone(),
+                    selector,
+                ));
+                if member.is_relational() {
+                    relational_targets.insert(target, (index, member.clone()));
+                }
+            }
+        }
+        for (logical_module, export_name, selector) in pending_constraints {
+            builder.lower_member_constraints_in_module(&logical_module, &export_name, &selector)?;
+        }
+        let program = builder.into_program()?;
+        let facts =
+            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources);
+        let result = selector_ir_solver::solve(&program, &facts)?;
+
+        for (target, (index, member)) in relational_targets {
+            let request = &explicit_requests[index];
+            match result.outcome_for(target) {
+                Some(ClaimOutcome::Unique { claim }) => {
+                    let binding = claim.binding.as_deref().with_context(|| {
+                        format!(
+                            "logical_module {}: global selector solver resolved member `{}` to \
+                             owner {:?} without a single declared binding",
+                            request.id, member.export_name, claim.owner,
+                        )
+                    })?;
+                    self.claim_post_stage_a_binding(
+                        request,
+                        &member,
+                        binding,
+                        index,
+                        chunk_top_level_mark,
+                        chunk_id,
+                        declaration_by_name,
+                    )?;
+                }
+                Some(ClaimOutcome::NoMatch) => {
+                    bail!(
+                        "logical_module {}: global selector solver found no match for relational \
+                         member `{}` ({}): {:?}",
+                        request.id,
+                        member.export_name,
+                        member.claim_origin,
+                        member.relational,
+                    );
+                }
+                Some(ClaimOutcome::Ambiguous { candidates }) => {
+                    bail!(
+                        "logical_module {}: global selector solver found {} candidates for \
+                         relational member `{}` ({}): {:?}",
+                        request.id,
+                        candidates.len(),
+                        member.export_name,
+                        member.claim_origin,
+                        member.relational,
+                    );
+                }
+                Some(ClaimOutcome::Duplicate {
+                    owner,
+                    conflicting_targets,
+                }) => {
+                    bail!(
+                        "logical_module {}: global selector solver assigned relational member `{}` \
+                         to duplicate owner {:?} shared by targets {:?}",
+                        request.id,
+                        member.export_name,
+                        owner,
+                        conflicting_targets,
+                    );
+                }
+                Some(ClaimOutcome::Unsupported { message }) => {
+                    bail!(
+                        "logical_module {}: global selector solver does not support relational \
+                         member `{}` ({}): {}",
+                        request.id,
+                        member.export_name,
+                        member.claim_origin,
+                        message,
+                    );
+                }
+                None => {
+                    bail!(
+                        "logical_module {}: global selector solver returned no outcome for \
+                         relational member `{}` ({})",
+                        request.id,
+                        member.export_name,
+                        member.claim_origin,
+                    );
+                }
+            }
+        }
         Ok(())
     }
 
