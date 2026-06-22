@@ -1,11 +1,15 @@
 # Artifact drafts: Haku on Managed Agents (self-hosted)
 
 First-cut, copy-pasteable drafts of the artifacts in the
-[migration plan](managed_agents.md) (its "Artifacts to build" section). **Status: sketches**, not landed
-code — they graduate into a real `haku/managed_agents/` component (with Bazel
-`oci_image` + `py_binary` targets) once the runtime is chosen. Field names marked
-_(verify)_ are not fully pinned in the skill docs — confirm against the
-`anthropic` SDK / `ant` before relying on them.
+[migration plan](managed_agents.md) (its "Artifacts to build" section).
+**Status: partially superseded.** The component landed in
+[`haku/runtime/managed_agent/`](../runtime/managed_agent/README.md) using an
+**ant-all-the-way** approach (no `anthropic` Python SDK — see that README for
+why). The control-plane YAML (§§1–3) and the vault wiring (§3) carry over; the
+SDK worker (§4) is replaced by `ant beta:worker poll`, and the Python supervisor
+(§5) is **deferred** in favor of a scheduled deployment (`haku.deployment.yaml`).
+Field names flagged for verification are not fully pinned in the skill docs —
+confirm against `ant <cmd> --help` before relying on them.
 
 Naming below assumes: base manual baked into the worker image at `/opt/haku`
 (the PLAN's image model — base ships by image rebuild, reconciliation is against
