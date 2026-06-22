@@ -1,9 +1,7 @@
 //! Lower existing debundle selector specs into the global selector IR.
 //!
-//! Binding selectors and the current relational selector primitives lower into
-//! one joint program. Raw `source_match` AST patterns still fail closed here;
-//! the materializer cutover feeds already resolved source matches into the
-//! joint solver as binding constraints until AST-pattern lowering lands.
+//! Binding selectors, `source_match` selectors, and the current relational
+//! selector primitives lower into one joint program.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -95,13 +93,6 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: &MemberSelectorSpec,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        if matches!(selector, MemberSelectorSpec::SourceMatch(_)) {
-            return Err(SelectorIrLoweringError::unsupported(
-                selector.selector_kind_label(),
-                "source_match requires AST-pattern lowering and differential parity",
-            ));
-        }
-
         let logical_module = logical_module.into();
         let owner = self.owner_for_local_export(&logical_module, export_name);
         self.targeted_owners
@@ -131,12 +122,6 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: &MemberSelectorSpec,
     ) -> Result<(), SelectorIrLoweringError> {
-        if matches!(selector, MemberSelectorSpec::SourceMatch(_)) {
-            return Err(SelectorIrLoweringError::unsupported(
-                selector.selector_kind_label(),
-                "source_match requires AST-pattern lowering and differential parity",
-            ));
-        }
         let owner = self.owner_for_local_export(logical_module, export_name);
         self.lower_selector_atoms(logical_module, owner, selector)
     }
@@ -206,7 +191,13 @@ impl MemberSelectorProgramBuilder {
     ) -> Result<(), SelectorIrLoweringError> {
         match selector {
             MemberSelectorSpec::Binding(binding) => self.lower_binding_selector(owner, binding),
-            MemberSelectorSpec::SourceMatch(_) => unreachable!("source_match rejected earlier"),
+            MemberSelectorSpec::SourceMatch(selector) => {
+                self.program.add_atom(SelectorAtom::SourceMatchCandidate {
+                    owner: owner_term(owner),
+                    selector_key: const_str(&source_match::selector_key(selector)),
+                });
+                Ok(())
+            }
             MemberSelectorSpec::CrossRef(target) => {
                 let anchor = self.owner_for_global_export(&target.anchor)?;
                 match target.relation {
@@ -524,21 +515,24 @@ mod tests {
     }
 
     #[test]
-    fn source_match_fails_closed_until_ast_lowering_lands() {
-        let error = lower_member_selector(
+    fn lowers_source_match_candidate_constraint() {
+        let selector = AnonymousStatementSelector::exact("const a = 1;");
+        let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(AnonymousStatementSelector::exact("const a = 1;")),
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert_eq!(
-            error,
-            SelectorIrLoweringError::Unsupported {
-                selector_kind: "source_match",
-                reason: "source_match requires AST-pattern lowering and differential parity",
-            }
-        );
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert_eq!(lowered.program.atoms.len(), 1);
+        assert!(matches!(
+            &lowered.program.atoms[0],
+            SelectorAtom::SourceMatchCandidate {
+                owner: OwnerTerm::Var { id },
+                selector_key: StringTerm::Const { value },
+            } if *id == target_owner && value == &source_match::selector_key(&selector)
+        ));
     }
 
     #[test]

@@ -27,7 +27,47 @@ pub trait SelectorResolver {
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
+    ) -> Result<ResolvedMemberBinding> {
+        self.resolve_member_with_label(
+            request_id,
+            export_name,
+            selector,
+            "members[].selector.source_match",
+        )
+    }
+
+    /// Resolve a member-shaped selector while rendering diagnostics under a
+    /// caller-provided spec path. Binding-group diagnostics use this to preserve
+    /// the same near-miss detail as member selectors without lying about origin.
+    fn resolve_member_with_label(
+        &self,
+        request_id: &str,
+        export_name: &str,
+        selector: &AnonymousStatementSelector,
+        selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding>;
+
+    /// Enumerate every candidate a single-member `source_match` selector matches
+    /// without collapsing to unique/no-match/ambiguous. The global selector solver
+    /// consumes these rows as EDB facts, then performs final claim classification
+    /// together with the rest of the selector program.
+    fn member_candidates(
+        &self,
+        request_id: &str,
+        export_name: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<MemberBindingMatch>>;
+
+    /// Enumerate every candidate alignment for a binding-group `source_match`
+    /// selector without collapsing to unique/no-match/ambiguous. Each candidate
+    /// carries per-target body indices so the global selector solver can claim
+    /// the actual owner of every exported binding.
+    fn member_group_candidates(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<Vec<MemberBindingGroupMatch>>;
 
     /// Resolve a binding-group `source_match` selector to its per-target
     /// bindings (selector-local target binding → matched binding).

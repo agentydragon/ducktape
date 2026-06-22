@@ -1055,6 +1055,7 @@ rust_library(
     deps = [
         ":analysis",
         ":selector_ir",
+        ":source_match",
         ":spec",
     ],
 )
@@ -1065,6 +1066,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":selector_ir",
+        ":source_match",
         ":spec",
     ],
 )

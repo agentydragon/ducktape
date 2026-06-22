@@ -3,8 +3,9 @@
 //! The solver runs one Ascent derivation over the lowered selector constraints
 //! plus chunk-level owner/fact-store relations, then projects target claims from
 //! the derived candidate sets. It supports binding/name/kind constraints and
-//! the current relational selector primitives. Unsupported atoms remain explicit
-//! `ClaimOutcome::Unsupported` rows instead of being ignored or approximated.
+//! `source_match` candidate constraints, and the current relational selector
+//! primitives. Unsupported atoms remain explicit `ClaimOutcome::Unsupported` rows
+//! instead of being ignored or approximated.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -47,6 +48,7 @@ ascent! {
     relation call_arg_from(String, String, String, u32); // argument, callee object, member, index
     relation decorate_call(String, String, Option<String>); // callee, class binding, member
     relation intrinsic_alias(String, String); // binding, Object property
+    relation source_match_candidate(String, usize, String); // selector key, owner, matched binding
 
     relation name_owner(String, usize);
     name_owner(binding.clone(), *owner) <-- declares(owner, binding);
@@ -119,6 +121,7 @@ ascent! {
     relation required_passed_to_call(usize, usize, String, Option<u32>);
     relation required_passed_to_call_from_binding(usize, usize, String, String, Option<u32>);
     relation required_makes_decorate_call_for_binding(usize, usize, String, Option<String>);
+    relation required_source_match_candidate(usize, usize, String);
 
     relation constraint_support(usize, usize, usize); // constraint id, variable id, owner
     constraint_support(*constraint, *var, *owner) <--
@@ -173,6 +176,10 @@ ascent! {
         declares(owner, _declared),
         if actual_class_anchor == class_anchor,
         if optional_string_matches(member, actual_member);
+    constraint_support(*constraint, *var, *owner) <--
+        required_source_match_candidate(constraint, var, selector_key),
+        source_match_candidate(selector_key, owner, _binding),
+        owner_fact(owner, _ordinal, _kind);
 
     relation required_references_owner(usize, usize, usize);
     relation required_aliases_owner(usize, usize, usize);
@@ -278,6 +285,11 @@ pub fn solve(
             .intrinsic_alias
             .push((binding.clone(), property.clone()));
     }
+    for (selector_key, owner, binding) in &fact_index.source_match_candidates {
+        ascent
+            .source_match_candidate
+            .push((selector_key.clone(), owner.0, binding.clone()));
+    }
     for constraint in &support.unary_constraints {
         match &constraint.kind {
             UnaryConstraintKind::Binding { binding } => ascent.required_binding.push((
@@ -353,6 +365,13 @@ pub fn solve(
                 class_anchor.clone(),
                 member.clone(),
             )),
+            UnaryConstraintKind::SourceMatchCandidate { selector_key } => {
+                ascent.required_source_match_candidate.push((
+                    constraint.id,
+                    constraint.variable.0,
+                    selector_key.clone(),
+                ));
+            }
         }
     }
     for constraint in &support.binary_constraints {
@@ -554,10 +573,18 @@ fn classify_candidates(
     facts: &FactIndex,
     support: &ProgramSupport,
 ) -> ClaimOutcome {
-    let claims: Vec<ResolvedClaim> = candidates
-        .into_iter()
-        .filter_map(|owner| resolved_claim(target, owner, facts, support))
-        .collect();
+    let claims: Vec<ResolvedClaim> =
+        if let Some(selector_key) = support.source_match_selector_for(target.owner) {
+            candidates
+                .into_iter()
+                .flat_map(|owner| resolved_source_match_claims(target, owner, facts, &selector_key))
+                .collect()
+        } else {
+            candidates
+                .into_iter()
+                .filter_map(|owner| resolved_claim(target, owner, facts, support))
+                .collect()
+        };
     match claims.as_slice() {
         [] => ClaimOutcome::NoMatch,
         [claim] => ClaimOutcome::Unique {
@@ -565,6 +592,28 @@ fn classify_candidates(
         },
         _ => ClaimOutcome::Ambiguous { candidates: claims },
     }
+}
+
+fn resolved_source_match_claims(
+    target: &SelectorTarget,
+    owner: OwnerId,
+    facts: &FactIndex,
+    selector_key: &str,
+) -> Vec<ResolvedClaim> {
+    let Some(statement_ordinal) = facts.statement_ordinal_by_owner.get(&owner).copied() else {
+        return Vec::new();
+    };
+    facts
+        .source_match_bindings_for_owner(selector_key, owner)
+        .into_iter()
+        .map(|binding| ResolvedClaim {
+            chunk_id: target.chunk_id,
+            owner,
+            statement_ordinal,
+            binding: Some(binding),
+            provenance: Vec::new(),
+        })
+        .collect()
 }
 
 fn resolved_claim(
@@ -579,9 +628,14 @@ fn resolved_claim(
         owner,
         statement_ordinal,
         binding: support.binding_constraint_for(target.owner).or_else(|| {
-            facts
-                .single_binding_for_owner(owner)
-                .map(ToString::to_string)
+            support
+                .source_match_selector_for(target.owner)
+                .and_then(|selector_key| facts.source_match_binding_for_owner(&selector_key, owner))
+                .or_else(|| {
+                    facts
+                        .single_binding_for_owner(owner)
+                        .map(ToString::to_string)
+                })
         }),
         provenance: Vec::new(),
     })
@@ -812,6 +866,15 @@ impl ProgramSupport {
                         property: value.clone(),
                     },
                 ),
+                SelectorAtom::SourceMatchCandidate {
+                    owner: OwnerTerm::Var { id },
+                    selector_key: StringTerm::Const { value },
+                } => support.add_unary(
+                    *id,
+                    UnaryConstraintKind::SourceMatchCandidate {
+                        selector_key: value.clone(),
+                    },
+                ),
                 unsupported => support.unsupported_atoms.push(format!(
                     "unsupported selector atom `{}`",
                     atom_kind(unsupported)
@@ -877,6 +940,25 @@ impl ProgramSupport {
             })
             .next()
     }
+
+    fn source_match_selector_for(&self, variable: SelectorVariableId) -> Option<String> {
+        self.unary_constraints_by_var
+            .get(&variable)?
+            .iter()
+            .filter_map(|constraint_id| {
+                let constraint = self
+                    .unary_constraints
+                    .iter()
+                    .find(|constraint| constraint.id == *constraint_id)?;
+                match &constraint.kind {
+                    UnaryConstraintKind::SourceMatchCandidate { selector_key } => {
+                        Some(selector_key.clone())
+                    }
+                    _ => None,
+                }
+            })
+            .next()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -924,6 +1006,9 @@ enum UnaryConstraintKind {
     MakesDecorateCallForBinding {
         class_anchor: String,
         member: Option<String>,
+    },
+    SourceMatchCandidate {
+        selector_key: String,
     },
 }
 
@@ -989,6 +1074,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::MakesDecorateCall { .. } => "makes_decorate_call",
         SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
         SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
+        SelectorAtom::SourceMatchCandidate { .. } => "source_match_candidate",
         SelectorAtom::Equal { .. } => "equal",
         SelectorAtom::NotEqual { .. } => "not_equal",
     }
@@ -1011,6 +1097,7 @@ struct FactIndex {
     call_arguments_from: Vec<(String, String, String, usize)>,
     decorate_calls: Vec<(String, String, Option<String>)>,
     intrinsic_aliases: Vec<(String, String)>,
+    source_match_candidates: Vec<(String, OwnerId, String)>,
 }
 
 impl FactIndex {
@@ -1135,6 +1222,20 @@ impl FactIndex {
                         .intrinsic_aliases
                         .push((binding.clone(), property.clone()));
                 }
+                SelectorFact::SourceMatchCandidate {
+                    selector_key,
+                    statement_ordinal,
+                    binding,
+                    ..
+                } => {
+                    if let Some(owner) = index.owner_by_statement_ordinal.get(statement_ordinal) {
+                        index.source_match_candidates.push((
+                            selector_key.clone(),
+                            *owner,
+                            binding.clone(),
+                        ));
+                    }
+                }
                 _ => {}
             }
         }
@@ -1148,6 +1249,33 @@ impl FactIndex {
             return None;
         }
         Some(binding)
+    }
+
+    fn source_match_binding_for_owner(&self, selector_key: &str, owner: OwnerId) -> Option<String> {
+        let mut matches = self
+            .source_match_candidates
+            .iter()
+            .filter(|(candidate_key, candidate_owner, _binding)| {
+                candidate_key == selector_key && *candidate_owner == owner
+            })
+            .map(|(_key, _owner, binding)| binding.clone());
+        let binding = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some(binding)
+    }
+
+    fn source_match_bindings_for_owner(&self, selector_key: &str, owner: OwnerId) -> Vec<String> {
+        self.source_match_candidates
+            .iter()
+            .filter(|(candidate_key, candidate_owner, _binding)| {
+                candidate_key == selector_key && *candidate_owner == owner
+            })
+            .map(|(_key, _owner, binding)| binding.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 }
 

@@ -27,6 +27,11 @@ pub struct MemberBindingMatch {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MemberBindingGroupMatch {
+    pub bindings: BTreeMap<String, MemberBindingMatch>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBindingGroup {
     pub body_idx: usize,
     pub bindings: BTreeMap<String, ResolvedMemberBinding>,

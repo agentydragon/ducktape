@@ -82,6 +82,6 @@ pub(crate) use fact_near_miss::fact_source_match_no_match_hint;
 pub use resolver::SelectorResolver;
 pub use timing::{selector_body_key, selector_key, source_match_preview};
 pub use types::{
-    BindingGroupMemberSelector, MemberBindingMatch, ResolvedMemberBinding,
+    BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch, ResolvedMemberBinding,
     ResolvedMemberBindingGroup, SourceMatchBodyDebt, SourceMatchNearMiss,
 };

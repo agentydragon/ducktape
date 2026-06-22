@@ -641,13 +641,13 @@ fn resolve_anonymous_multi(
 /// DECLARATORS_GAP = null, b = …, DECLARATORS_AFTER = null;`): one plain
 /// (un-prebound) declarator alignment per candidate owner yields every target's
 /// declarator at once.
-fn resolve_group_declarator_holes(
+fn group_matches_declarator_holes(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
-) -> Result<ResolvedMemberBindingGroup> {
+) -> Result<Vec<MemberBindingGroupMatch>> {
     let needle_var = item_var_decl(needle).ok_or_else(|| {
         anyhow::anyhow!(
             "datalog resolver: declarator-hole group needle is not a variable declaration"
@@ -666,7 +666,7 @@ fn resolve_group_declarator_holes(
     let mode = selector_mode(selector);
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
+    let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
     // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
     // declarator idents are absorbed and excluded by `needle_required_tokens`.
@@ -702,24 +702,24 @@ fn resolve_group_declarator_holes(
             else {
                 bail!("datalog resolver: target `{target}` binding index out of range");
             };
-            resolved.insert(target.clone(), binding);
+            resolved.insert(target.clone(), MemberBindingMatch { body_idx, binding });
         }
-        matches.push((body_idx, resolved));
+        matches.push(MemberBindingGroupMatch { bindings: resolved });
     }
-    one_group_match(matches, request_id)
+    Ok(matches)
 }
 
 /// Binding-group branch 1 — a single-statement single-declarator needle: match
 /// the declarator across every owner's declarators (a target inside a
 /// multi-declarator owner is found), reading each target's binding from the one
 /// matched declarator.
-fn resolve_group_single_declarator(
+fn group_matches_single_declarator(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
-) -> Result<ResolvedMemberBindingGroup> {
+) -> Result<Vec<MemberBindingGroupMatch>> {
     let declared = declared_bindings(needle);
     let target_binding_indices: BTreeMap<String, usize> = exports_by_target
         .keys()
@@ -749,7 +749,7 @@ fn resolve_group_single_declarator(
     let mode = selector_mode(selector);
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
         .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)> = Vec::new();
+    let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
     // require its identifier spellings.
     for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
@@ -773,23 +773,29 @@ fn resolve_group_single_declarator(
             let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
                 bail!("datalog resolver: target `{target}` binding index out of range");
             };
-            resolved.insert(target.clone(), binding.clone());
+            resolved.insert(
+                target.clone(),
+                MemberBindingMatch {
+                    body_idx: subject.body_idx,
+                    binding: binding.clone(),
+                },
+            );
         }
-        matches.push((subject.body_idx, resolved));
+        matches.push(MemberBindingGroupMatch { bindings: resolved });
     }
-    one_group_match(matches, request_id)
+    Ok(matches)
 }
 
 /// Binding-group branch 3 — a general (multi-statement or non-var) needle: a
 /// single top-level sequence alignment supplies every target's owner statement,
 /// read by declared-binding index.
-fn resolve_group_general(
+fn group_matches_general(
     chunk: &ChunkResolver,
     needles: &[ModuleItem],
     request_id: &str,
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
-) -> Result<ResolvedMemberBindingGroup> {
+) -> Result<Vec<MemberBindingGroupMatch>> {
     let target_locations: BTreeMap<String, (usize, usize)> = exports_by_target
         .keys()
         .map(|target| {
@@ -812,48 +818,55 @@ fn resolve_group_general(
         selector_mode(selector),
     )
     .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let alignment = match alignments.as_slice() {
-        [single] => single,
-        [] => bail!(
-            "logical_module {request_id}: binding_groups[].source_match did not match any \
-             top-level declaration range"
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: binding_groups[].source_match is ambiguous — {} ranges",
-            multiple.len(),
-        ),
-    };
-    let mut resolved = BTreeMap::new();
-    for (target, (target_item_idx, target_binding_idx)) in &target_locations {
-        let Some(Some(body_idx)) = alignment.get(*target_item_idx) else {
-            bail!(
-                "logical_module {request_id}: binding_groups[].source_match target_binding \
-                 `{target}` was matched by a STMT_LIST hole, not a pinned statement"
+    let mut matches = Vec::new();
+    for alignment in alignments {
+        let mut resolved = BTreeMap::new();
+        for (target, (target_item_idx, target_binding_idx)) in &target_locations {
+            let Some(Some(body_idx)) = alignment.get(*target_item_idx) else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match target_binding \
+                     `{target}` was matched by a STMT_LIST hole, not a pinned statement"
+                );
+            };
+            let Some(binding) = declared_bindings(&chunk.module.body[*body_idx])
+                .into_iter()
+                .nth(*target_binding_idx)
+            else {
+                bail!("datalog resolver: target `{target}` binding index out of range");
+            };
+            resolved.insert(
+                target.clone(),
+                MemberBindingMatch {
+                    body_idx: *body_idx,
+                    binding,
+                },
             );
-        };
-        let Some(binding) = declared_bindings(&chunk.module.body[*body_idx])
-            .into_iter()
-            .nth(*target_binding_idx)
-        else {
-            bail!("datalog resolver: target `{target}` binding index out of range");
-        };
-        resolved.insert(target.clone(), binding);
+        }
+        matches.push(MemberBindingGroupMatch { bindings: resolved });
     }
-    Ok(ResolvedMemberBindingGroup {
-        body_idx: alignment.iter().flatten().copied().next().unwrap_or(0),
-        bindings: resolved,
-    })
+    Ok(matches)
 }
 
 /// Owner-level categoricity for the per-owner group branches: exactly one owner
 /// must match (production rejects zero or several).
 fn one_group_match(
-    mut matches: Vec<(usize, BTreeMap<String, ResolvedMemberBinding>)>,
+    mut matches: Vec<MemberBindingGroupMatch>,
     request_id: &str,
 ) -> Result<ResolvedMemberBindingGroup> {
     match matches.len() {
         1 => {
-            let (body_idx, bindings) = matches.remove(0);
+            let match_ = matches.remove(0);
+            let body_idx = match_
+                .bindings
+                .values()
+                .map(|binding| binding.body_idx)
+                .min()
+                .unwrap_or(0);
+            let bindings = match_
+                .bindings
+                .into_iter()
+                .map(|(target, matched)| (target, matched.binding))
+                .collect();
             Ok(ResolvedMemberBindingGroup { body_idx, bindings })
         }
         0 => bail!(
@@ -931,12 +944,7 @@ fn member_matches_single_statement(
 }
 
 impl ChunkResolver<'_> {
-    /// The non-categorical member match list. Shares the per-path match collection
-    /// with [`SelectorResolver::resolve_member`]; the only difference is this
-    /// returns the whole list (each carrying `body_idx` + binding) instead of
-    /// collapsing to the unique winner. Used by cross-source consumers that
-    /// aggregate matches before deciding uniqueness (the CLI edit gate).
-    pub fn member_candidates(
+    fn collect_member_candidates(
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
@@ -956,21 +964,94 @@ impl ChunkResolver<'_> {
         member_matches_single_statement(self, needle, request_id, selector)
     }
 
-    /// Member-level categoricity: exactly one candidate must match (production
-    /// rejects zero or several). The single place the `[single]/[]/multiple`
-    /// collapse lives, mirroring [`one_group_match`]. On zero/several it produces
-    /// the diagnostic the keep-going report and the failing-run stderr surface:
-    /// the `target_binding` hint, the selector source echo, the matched body
-    /// indices + bindings (ambiguous), and the scored near-miss candidate framing
-    /// (no-match) — the fact-path equivalent of the deleted matcher's
-    /// `resolve_member_binding` bail. `body_idx` is otherwise discarded; only the
-    /// claimed binding is the categorical answer.
+    /// The non-categorical member match list. Shares the per-path match collection
+    /// with [`SelectorResolver::resolve_member`]; the only difference is this
+    /// returns the whole list (each carrying `body_idx` + binding) instead of
+    /// collapsing to the unique winner. Used by cross-source consumers that
+    /// aggregate matches before deciding uniqueness (the CLI edit gate).
+    pub fn member_candidates(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<MemberBindingMatch>> {
+        self.collect_member_candidates(request_id, selector)
+    }
+
+    fn member_candidates_with_timing(
+        &self,
+        request_id: &str,
+        export_name: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<MemberBindingMatch>> {
+        let (matches, elapsed) =
+            time_source_match(|| self.collect_member_candidates(request_id, selector));
+        let matches = matches?;
+        if source_match_timings_enabled() {
+            let body_indices: Vec<usize> = matches.iter().map(|m| m.body_idx).collect();
+            let binding = match matches.as_slice() {
+                [single] => single.binding.binding_name.as_str(),
+                _ => "<unresolved>",
+            };
+            emit_source_match_timing(
+                &format!("members[].selector.source_match export=`{export_name}`"),
+                request_id,
+                selector,
+                elapsed,
+                &format!("body_indices={body_indices:?} binding={binding}"),
+            );
+        }
+        Ok(matches)
+    }
+
+    fn member_group_candidates_impl(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<Vec<MemberBindingGroupMatch>> {
+        if selector.target_binding.is_some() {
+            bail!(
+                "datalog resolver: binding-group selector for {request_id} unexpectedly has \
+                 target_binding set"
+            );
+        }
+        let needles = parse_needles(request_id, selector)?;
+        let [first, ..] = needles.as_slice() else {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match parsed to zero \
+                 statements"
+            );
+        };
+        // Branch order mirrors `resolve_member_group`: single-declarator before
+        // declarator-holes, then the general sequence path.
+        if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
+            return group_matches_single_declarator(
+                self,
+                first,
+                request_id,
+                selector,
+                exports_by_target,
+            );
+        }
+        if needles.len() == 1 && selector_var_decl_has_declarator_holes(first) {
+            return group_matches_declarator_holes(
+                self,
+                first,
+                request_id,
+                selector,
+                exports_by_target,
+            );
+        }
+        group_matches_general(self, &needles, request_id, selector, exports_by_target)
+    }
+
     fn collapse_member_match(
         &self,
         matches: Vec<MemberBindingMatch>,
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
+        selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding> {
         let target_binding_hint = selector
             .target_binding
@@ -984,16 +1065,15 @@ impl ChunkResolver<'_> {
                 let hint =
                     fact_source_match_no_match_hint(self.module, selector).unwrap_or_default();
                 bail!(
-                    "logical_module {request_id}: members[].selector.source_match for export \
-                     `{export_name}`{target_binding_hint} did not match any top-level declaration \
-                     in the chunk. Selector:\n{match_source}{hint}"
+                    "logical_module {request_id}: {selector_label} for export `{export_name}`\
+                     {target_binding_hint} did not match any top-level declaration in the chunk. \
+                     Selector:\n{match_source}{hint}"
                 )
             }
             multiple => bail!(
-                "logical_module {request_id}: members[].selector.source_match for export \
-                 `{export_name}`{target_binding_hint} is ambiguous — matched {} top-level \
-                 statements at body indices {:?} (bindings: {}). Refine the selector. \
-                 Source:\n{match_source}",
+                "logical_module {request_id}: {selector_label} for export `{export_name}`\
+                 {target_binding_hint} is ambiguous — matched {} top-level statements at body \
+                 indices {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
                 multiple.len(),
                 multiple.iter().map(|m| m.body_idx).collect::<Vec<_>>(),
                 multiple
@@ -1007,11 +1087,12 @@ impl ChunkResolver<'_> {
 }
 
 impl SelectorResolver for ChunkResolver<'_> {
-    fn resolve_member(
+    fn resolve_member_with_label(
         &self,
         request_id: &str,
         export_name: &str,
         selector: &AnonymousStatementSelector,
+        selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding> {
         let needles = parse_needles(request_id, selector)?;
         let (matches, elapsed) = time_source_match(|| match needles.as_slice() {
@@ -1038,14 +1119,32 @@ impl SelectorResolver for ChunkResolver<'_> {
                 _ => "<unresolved>",
             };
             emit_source_match_timing(
-                &format!("members[].selector.source_match export=`{export_name}`"),
+                &format!("{selector_label} export=`{export_name}`"),
                 request_id,
                 selector,
                 elapsed,
                 &format!("body_indices={body_indices:?} binding={binding}"),
             );
         }
-        self.collapse_member_match(matches, request_id, export_name, selector)
+        self.collapse_member_match(matches, request_id, export_name, selector, selector_label)
+    }
+
+    fn member_candidates(
+        &self,
+        request_id: &str,
+        export_name: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<MemberBindingMatch>> {
+        self.member_candidates_with_timing(request_id, export_name, selector)
+    }
+
+    fn member_group_candidates(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<Vec<MemberBindingGroupMatch>> {
+        self.member_group_candidates_impl(request_id, selector, exports_by_target)
     }
 
     fn resolve_member_group(
@@ -1070,24 +1169,33 @@ impl SelectorResolver for ChunkResolver<'_> {
         // Branch order: single-declarator before declarator-holes (a lone hole
         // declarator is single-declarator too), then the general sequence path.
         if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
-            return resolve_group_single_declarator(
-                self,
-                first,
+            return one_group_match(
+                group_matches_single_declarator(
+                    self,
+                    first,
+                    request_id,
+                    selector,
+                    exports_by_target,
+                )?,
                 request_id,
-                selector,
-                exports_by_target,
             );
         }
         if needles.len() == 1 && selector_var_decl_has_declarator_holes(first) {
-            return resolve_group_declarator_holes(
-                self,
-                first,
+            return one_group_match(
+                group_matches_declarator_holes(
+                    self,
+                    first,
+                    request_id,
+                    selector,
+                    exports_by_target,
+                )?,
                 request_id,
-                selector,
-                exports_by_target,
             );
         }
-        resolve_group_general(self, &needles, request_id, selector, exports_by_target)
+        one_group_match(
+            group_matches_general(self, &needles, request_id, selector, exports_by_target)?,
+            request_id,
+        )
     }
 
     fn resolve_anonymous_groups(

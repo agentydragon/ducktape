@@ -162,30 +162,6 @@ impl MemberRequest {
         }
     }
 
-    pub(super) fn resolve_source_match(
-        &mut self,
-        resolver: &dyn source_match::SelectorResolver,
-        request_id: &str,
-        cache: &mut BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
-    ) -> Result<()> {
-        let Some(selector) = self.source_match.clone() else {
-            return Ok(());
-        };
-        let resolved = match cache.get(&selector) {
-            Some(resolved) => resolved.clone(),
-            None => {
-                let resolved = resolver.resolve_member(request_id, &self.export_name, &selector)?;
-                cache.insert(selector, resolved.clone());
-                resolved
-            }
-        };
-        self.binding = resolved.binding_name;
-        self.is_import_specifier =
-            matches!(resolved.kind, Some(BindingSourceKind::ImportSpecifier));
-        self.source_match = None;
-        Ok(())
-    }
-
     /// Extend `hints` with this member's spec-level trust assertions
     /// (purity, pure_members, effect). Spec annotations carried on any
     /// member form (logical-module member, chunk_renames member)

@@ -1,9 +1,8 @@
 //! Engine-facing selector IR and fact-store contract for the global selector
 //! solver.
 //!
-//! This module is intentionally additive. It gives `source_match` lowering,
-//! relational selector lowering, the Ascent solver, and materialization one
-//! shared vocabulary without changing the current resolver path.
+//! This module gives `source_match` lowering, relational selector lowering, the
+//! Ascent solver, and materialization one shared vocabulary.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -246,6 +245,10 @@ pub enum SelectorAtom {
         owner: OwnerTerm,
         property: StringTerm,
         referenced_by: OwnerTerm,
+    },
+    SourceMatchCandidate {
+        owner: OwnerTerm,
+        selector_key: StringTerm,
     },
     Equal {
         left: SelectorVariableId,
@@ -499,6 +502,13 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "intrinsic_alias.owner")?;
                 self.validate_string_term(property, "intrinsic_alias.property")?;
                 self.validate_owner_term(referenced_by, "intrinsic_alias.referenced_by")
+            }
+            SelectorAtom::SourceMatchCandidate {
+                owner,
+                selector_key,
+            } => {
+                self.validate_owner_term(owner, "source_match_candidate.owner")?;
+                self.validate_string_term(selector_key, "source_match_candidate.selector_key")
             }
             SelectorAtom::Equal { left, right } | SelectorAtom::NotEqual { left, right } => {
                 let left_domain = self.require_variable(*left, "equality.left")?;
@@ -779,6 +789,12 @@ pub enum SelectorFact {
         binding: String,
         property: String,
     },
+    SourceMatchCandidate {
+        chunk_id: ChunkId,
+        selector_key: String,
+        statement_ordinal: StatementOrdinal,
+        binding: String,
+    },
 }
 
 impl SelectorFact {
@@ -804,6 +820,7 @@ impl SelectorFact {
             Self::CallArgumentUse { .. } => "call_argument_use",
             Self::DecorateCallUse { .. } => "decorate_call_use",
             Self::IntrinsicAliasUse { .. } => "intrinsic_alias_use",
+            Self::SourceMatchCandidate { .. } => "source_match_candidate",
         }
     }
 }

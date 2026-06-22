@@ -201,6 +201,10 @@ fn resolve_anchor<'a>(
 fn member_selector_spec_for_global_solver(
     member: &MemberRequest,
 ) -> Option<spec::MemberSelectorSpec> {
+    if let Some(selector) = &member.source_match {
+        return Some(spec::MemberSelectorSpec::SourceMatch(selector.clone()));
+    }
+
     if let Some(relational) = &member.relational {
         return Some(match relational {
             RelationalSelector::CrossRef(target) => {
@@ -393,6 +397,86 @@ fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> Str
     report
 }
 
+fn source_match_no_match_message(
+    request: &LogicalRequest,
+    member: &MemberRequest,
+) -> Option<String> {
+    let selector = member.source_match.as_ref()?;
+    let target_binding_hint = selector
+        .target_binding
+        .as_deref()
+        .map(|target| format!(" target_binding `{target}`"))
+        .unwrap_or_default();
+    Some(format!(
+        "logical_module {}: members[].selector.source_match for export `{}`{} did not match any \
+         top-level declaration in the chunk. Selector:\n{}",
+        request.id, member.export_name, target_binding_hint, selector.match_source,
+    ))
+}
+
+fn source_match_ambiguous_message(
+    request: &LogicalRequest,
+    member: &MemberRequest,
+    candidates: Option<&[source_match::MemberBindingMatch]>,
+) -> Option<String> {
+    let selector = member.source_match.as_ref()?;
+    let candidates = candidates?;
+    let target_binding_hint = selector
+        .target_binding
+        .as_deref()
+        .map(|target| format!(" target_binding `{target}`"))
+        .unwrap_or_default();
+    Some(format!(
+        "logical_module {}: members[].selector.source_match for export `{}`{} is ambiguous -- \
+         matched {} top-level statements at body indices {:?} (bindings: {}). Refine the \
+         selector. Source:\n{}",
+        request.id,
+        member.export_name,
+        target_binding_hint,
+        candidates.len(),
+        candidates
+            .iter()
+            .map(|candidate| candidate.body_idx)
+            .collect::<Vec<_>>(),
+        candidates
+            .iter()
+            .map(|candidate| candidate.binding.binding_name.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        selector.match_source,
+    ))
+}
+
+fn source_match_resolution_error_message(
+    selector_resolver: &dyn source_match::SelectorResolver,
+    request: &LogicalRequest,
+    member: &MemberRequest,
+    group_assignment: Option<&SourceMatchGroupAssignment>,
+) -> Option<String> {
+    let selector = member.source_match.as_ref()?;
+    if let Some(group) = group_assignment {
+        let member_error = selector_resolver
+            .resolve_member_with_label(
+                &request.id,
+                &member.export_name,
+                selector,
+                "binding_groups[].source_match",
+            )
+            .err()
+            .map(|error| format!("{error:#}"));
+        return member_error.or_else(|| {
+            selector_resolver
+                .resolve_member_group(&request.id, &group.selector, &group.exports_by_target)
+                .err()
+                .map(|error| format!("{error:#}"))
+        });
+    }
+    selector_resolver
+        .resolve_member(&request.id, &member.export_name, selector)
+        .err()
+        .map(|error| format!("{error:#}"))
+}
+
 struct SourceMatchReportDetails {
     body_indices: Vec<usize>,
     first_mismatch: Option<String>,
@@ -479,26 +563,6 @@ fn source_match_selector_kind(claim_origin: &str) -> &'static str {
     }
 }
 
-fn module_path_from_id(module_id: &str) -> Option<String> {
-    module_id.split_once("::").map(|(_, path)| path.to_string())
-}
-
-fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagnostic]) -> String {
-    let mut diagnostics = diagnostics.iter().collect::<Vec<_>>();
-    diagnostics.sort_by(|a, b| a.module_id.cmp(&b.module_id));
-    let mut report = format!(
-        "Anonymous statement selector diagnostic report: {} unresolved selector(s) found. \
-         Under --keep-going, anonymous statements with unresolved selectors are skipped from \
-         canonical ownership so the rest of the chunk can still be checked.",
-        diagnostics.len()
-    );
-    for diagnostic in &diagnostics {
-        report.push_str("\n- ");
-        report.push_str(&diagnostic.render());
-    }
-    report
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct SourceMatchGroupCacheKey {
     selector: spec::AnonymousStatementSelector,
@@ -518,49 +582,15 @@ impl SourceMatchGroupCacheKey {
     }
 }
 
-/// Output of `ChunkPlanBuilder::finalize`: everything downstream
-/// `lower_chunk` + the chunk-report builder need from the plan
-/// construction phase.
-pub(super) struct ChunkPlan {
-    pub(super) module_plans: Vec<ModulePlan>,
-    pub(super) binding_assignment: HashMap<Id, usize>,
-    pub(super) bindings_catalogue: HashMap<Id, BindingKind>,
-    pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
-    pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+#[derive(Debug, Clone)]
+struct SourceMatchGroupAssignment {
+    selector: spec::AnonymousStatementSelector,
+    exports_by_target: BTreeMap<String, String>,
 }
 
-/// Per-explicit-request inputs the builder reads but does not own.
-pub(super) struct ExplicitRequestContext<'a> {
-    pub(super) runtime_module: &'a Module,
-    /// The selector resolver, built once for this chunk (see
-    /// `materialize_chunk`) and shared across every request's member and
-    /// binding-group `source_match` resolution. Carrying the resolver rather
-    /// than rebuilding it per request is what keeps a fact-based resolver's
-    /// per-chunk EDB construction off the hot path.
-    pub(super) selector_resolver: &'a dyn source_match::SelectorResolver,
-    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
-    pub(super) chunk_top_level_mark: swc_common::Mark,
-    pub(super) target_dir: &'a str,
-    pub(super) chunk_id: &'a str,
-    pub(super) target_file: &'a str,
-    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
-}
-
-fn resolve_request_source_matches(
-    request: &mut LogicalRequest,
-    resolver: &dyn source_match::SelectorResolver,
-    runtime_module: &Module,
-    keep_going: bool,
-    diagnostics: &mut Vec<SourceMatchDiagnostic>,
-    source_match_cache: &mut BTreeMap<
-        spec::AnonymousStatementSelector,
-        source_match::ResolvedMemberBinding,
-    >,
-    source_match_group_cache: &mut BTreeMap<
-        SourceMatchGroupCacheKey,
-        BTreeMap<String, source_match::ResolvedMemberBinding>,
-    >,
-) -> Result<()> {
+fn source_match_group_assignments(
+    request: &LogicalRequest,
+) -> BTreeMap<usize, SourceMatchGroupAssignment> {
     let mut grouped_by_selector: BTreeMap<spec::AnonymousStatementSelector, Vec<usize>> =
         BTreeMap::new();
     for (idx, member) in request.members.iter().enumerate() {
@@ -578,7 +608,7 @@ fn resolve_request_source_matches(
             .push(idx);
     }
 
-    let mut resolved_member_indices = BTreeSet::new();
+    let mut assignments = BTreeMap::new();
     for (selector, member_indices) in grouped_by_selector {
         if member_indices.len() < 2 {
             continue;
@@ -602,86 +632,62 @@ fn resolve_request_source_matches(
         if has_duplicate_target {
             continue;
         }
-        let cache_key = SourceMatchGroupCacheKey::new(selector.clone(), &exports_by_target);
-        let resolved = match source_match_group_cache.get(&cache_key) {
-            Some(resolved) => resolved.clone(),
-            None => {
-                let resolved = match resolver
-                    .resolve_member_group(&request.id, &selector, &exports_by_target)
-                    .map(|group| group.bindings)
-                {
-                    Ok(resolved) => resolved,
-                    Err(error) if keep_going => {
-                        let message = format!("{error:#}");
-                        let module_id = request.id.clone();
-                        let module_path = request.target_path.clone();
-                        for idx in member_indices {
-                            let member = &request.members[idx];
-                            diagnostics.push(SourceMatchDiagnostic::new(
-                                runtime_module,
-                                &module_id,
-                                &module_path,
-                                member,
-                                message.clone(),
-                            ));
-                        }
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
-                source_match_group_cache.insert(cache_key, resolved.clone());
-                resolved
-            }
+        let assignment = SourceMatchGroupAssignment {
+            selector,
+            exports_by_target,
         };
         for idx in member_indices {
-            let member = &mut request.members[idx];
-            let target_binding = member
-                .source_match
-                .as_ref()
-                .and_then(|selector| selector.target_binding.as_ref())
-                .expect("grouped selectors always have target_binding");
-            let resolved = resolved.get(target_binding).with_context(|| {
-                format!("binding group resolver did not return target_binding `{target_binding}`")
-            })?;
-            apply_resolved_member_binding(member, resolved.clone());
-            resolved_member_indices.insert(idx);
+            assignments.insert(idx, assignment.clone());
         }
     }
-
-    let module_id = request.id.clone();
-    let module_path = request.target_path.clone();
-    for (idx, member) in request.members.iter_mut().enumerate() {
-        if resolved_member_indices.contains(&idx) {
-            continue;
-        }
-        if let Err(error) = member.resolve_source_match(resolver, &request.id, source_match_cache) {
-            if !keep_going {
-                return Err(error);
-            }
-            diagnostics.push(SourceMatchDiagnostic::new(
-                runtime_module,
-                &module_id,
-                &module_path,
-                member,
-                format!("{error:#}"),
-            ));
-        }
-    }
-    if keep_going {
-        request
-            .members
-            .retain(|member| member.source_match.is_none());
-    }
-    Ok(())
+    assignments
 }
 
-fn apply_resolved_member_binding(
-    member: &mut MemberRequest,
-    resolved: source_match::ResolvedMemberBinding,
-) {
-    member.binding = resolved.binding_name;
-    member.is_import_specifier = matches!(resolved.kind, Some(BindingSourceKind::ImportSpecifier));
-    member.source_match = None;
+fn module_path_from_id(module_id: &str) -> Option<String> {
+    module_id.split_once("::").map(|(_, path)| path.to_string())
+}
+
+fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagnostic]) -> String {
+    let mut diagnostics = diagnostics.iter().collect::<Vec<_>>();
+    diagnostics.sort_by(|a, b| a.module_id.cmp(&b.module_id));
+    let mut report = format!(
+        "Anonymous statement selector diagnostic report: {} unresolved selector(s) found. \
+         Under --keep-going, anonymous statements with unresolved selectors are skipped from \
+         canonical ownership so the rest of the chunk can still be checked.",
+        diagnostics.len()
+    );
+    for diagnostic in &diagnostics {
+        report.push_str("\n- ");
+        report.push_str(&diagnostic.render());
+    }
+    report
+}
+
+/// Output of `ChunkPlanBuilder::finalize`: everything downstream
+/// `lower_chunk` + the chunk-report builder need from the plan
+/// construction phase.
+pub(super) struct ChunkPlan {
+    pub(super) module_plans: Vec<ModulePlan>,
+    pub(super) binding_assignment: HashMap<Id, usize>,
+    pub(super) bindings_catalogue: HashMap<Id, BindingKind>,
+    pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
+    pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+}
+
+/// Per-explicit-request inputs the builder reads but does not own.
+pub(super) struct ExplicitRequestContext<'a> {
+    /// The selector resolver, built once for this chunk (see
+    /// `materialize_chunk`) and shared across anonymous statement resolution and
+    /// the global selector pass. Carrying the resolver rather than rebuilding it
+    /// per request is what keeps a fact-based resolver's per-chunk EDB
+    /// construction off the hot path.
+    pub(super) selector_resolver: &'a dyn source_match::SelectorResolver,
+    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
+    pub(super) target_dir: &'a str,
+    pub(super) chunk_id: &'a str,
+    pub(super) target_file: &'a str,
+    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
 }
 
 /// Builds a `ChunkPlan` from spec requests and chunk AST analysis.
@@ -745,22 +751,6 @@ pub(super) struct ChunkPlanBuilder {
     /// canonical plan so later modules in the chunk can still be
     /// checked for independent selector and duplicate-claim failures.
     source_match_diagnostics: Vec<SourceMatchDiagnostic>,
-    /// Successful member-form `source_match` resolutions within this
-    /// chunk. Selector matching scans the same runtime chunk AST, and
-    /// many large migrations repeat exact selectors across logical
-    /// modules while converging duplicate ownership. Keeping successes
-    /// at chunk scope avoids re-running the structural matcher for
-    /// repeated selectors; failures still resolve live so diagnostics
-    /// stay anchored to the current module/export.
-    source_match_cache:
-        BTreeMap<spec::AnonymousStatementSelector, source_match::ResolvedMemberBinding>,
-    /// Successful grouped member-form source matches keyed by the
-    /// selector body and requested selector-local target bindings.
-    /// Export names are intentionally excluded: they only label
-    /// diagnostics/timings, while the resolved source bindings are a
-    /// function of the selector and target bindings.
-    source_match_group_cache:
-        BTreeMap<SourceMatchGroupCacheKey, BTreeMap<String, source_match::ResolvedMemberBinding>>,
     /// Anonymous statement selectors that did not resolve. In
     /// keep-going mode, unresolved anonymous statements are omitted
     /// from canonical ownership so later modules in the chunk can
@@ -787,8 +777,6 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
-            source_match_cache: BTreeMap::new(),
-            source_match_group_cache: BTreeMap::new(),
             anonymous_statement_diagnostics: Vec::new(),
             keep_going,
         }
@@ -807,15 +795,6 @@ impl ChunkPlanBuilder {
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
-        resolve_request_source_matches(
-            request,
-            ctx.selector_resolver,
-            ctx.runtime_module,
-            self.keep_going,
-            &mut self.source_match_diagnostics,
-            &mut self.source_match_cache,
-            &mut self.source_match_group_cache,
-        )?;
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims = resolve_anonymous_statement_ordinals(
@@ -865,11 +844,10 @@ impl ChunkPlanBuilder {
         let module_id = ModuleId(LogicalModuleIndex(index));
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
-            // Relational members resolve against the chunk's owner graph and AST
-            // relation facts, which are only available after Stage A. The global
-            // selector pass claims them later; until then their `binding` is
-            // empty, so they contribute nothing here.
-            if member.is_relational() {
+            // Deferred selector members resolve in the global selector pass after
+            // Stage A has produced the owner graph and selector fact store. Until
+            // then their `binding` is empty, so they contribute nothing here.
+            if member.is_relational() || member.source_match.is_some() {
                 continue;
             }
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
@@ -921,9 +899,6 @@ impl ChunkPlanBuilder {
                         claim_origin: Some(member.claim_origin.clone()),
                     },
                 };
-                if !self.keep_going {
-                    bail!("{}", render_duplicate_binding_claims(&[duplicate]));
-                }
                 self.duplicate_binding_claims.push(duplicate);
                 duplicate_bindings.insert(member.binding.clone());
                 continue;
@@ -984,7 +959,7 @@ impl ChunkPlanBuilder {
         let binding_comments: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.is_relational())
+            .filter(|member| !member.is_relational() && member.source_match.is_none())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
@@ -996,7 +971,7 @@ impl ChunkPlanBuilder {
         let binding_claim_origins: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.is_relational())
+            .filter(|member| !member.is_relational() && member.source_match.is_none())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .map(|member| (member.binding.clone(), member.claim_origin.clone()))
             .collect();
@@ -1022,15 +997,20 @@ impl ChunkPlanBuilder {
         owner_graph: &analysis::OwnerGraph,
         module: &swc_ecma_ast::Module,
         import_sources: &HashMap<String, String>,
+        selector_resolver: &dyn source_match::SelectorResolver,
+        runtime_import_facts: &RuntimeImportFacts,
+        imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
+        imported_from_by_src: &mut BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
+        target_file: &str,
         chunk_id_interned: ChunkId,
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
         if explicit_requests
             .iter()
             .flat_map(|request| &request.members)
-            .all(|member| !member.is_relational())
+            .all(|member| !member.is_relational() && member.source_match.is_none())
         {
             return Ok(());
         }
@@ -1039,10 +1019,27 @@ impl ChunkPlanBuilder {
             chunk_id_interned,
             chunk_id,
         ));
-        let mut relational_targets = BTreeMap::<SelectorTargetId, (usize, MemberRequest)>::new();
+        let mut deferred_targets = BTreeMap::<
+            SelectorTargetId,
+            (usize, MemberRequest, Option<SourceMatchGroupAssignment>),
+        >::new();
+        let mut source_match_candidates =
+            BTreeMap::<SelectorTargetId, Vec<source_match::MemberBindingMatch>>::new();
+        let mut source_match_errors = BTreeMap::<SelectorTargetId, String>::new();
+        let mut source_match_candidate_cache = BTreeMap::<
+            spec::AnonymousStatementSelector,
+            Result<Vec<source_match::MemberBindingMatch>, String>,
+        >::new();
+        let mut source_match_group_candidate_cache = BTreeMap::<
+            SourceMatchGroupCacheKey,
+            Result<Vec<source_match::MemberBindingGroupMatch>, String>,
+        >::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
+        let mut facts =
+            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources);
         for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
+            let group_assignments = source_match_group_assignments(request);
+            for (member_index, member) in request.members.iter().enumerate() {
                 let Some(selector) = member_selector_spec_for_global_solver(member) else {
                     continue;
                 };
@@ -1056,8 +1053,91 @@ impl ChunkPlanBuilder {
                     member.export_name.clone(),
                     selector,
                 ));
-                if member.is_relational() {
-                    relational_targets.insert(target, (index, member.clone()));
+                if member.is_relational() || member.source_match.is_some() {
+                    deferred_targets.insert(
+                        target,
+                        (
+                            index,
+                            member.clone(),
+                            group_assignments.get(&member_index).cloned(),
+                        ),
+                    );
+                }
+                if let Some(source_selector) = &member.source_match {
+                    let selector_key = source_match::selector_key(source_selector);
+                    let candidates = if let Some(group) = group_assignments.get(&member_index) {
+                        let target_binding = source_selector.target_binding.as_deref().with_context(|| {
+                            format!(
+                                "logical_module {}: binding-group member `{}` unexpectedly has no \
+                                 target_binding",
+                                request.id, member.export_name,
+                            )
+                        })?;
+                        let cache_key = SourceMatchGroupCacheKey::new(
+                            group.selector.clone(),
+                            &group.exports_by_target,
+                        );
+                        let group_candidates =
+                            match source_match_group_candidate_cache.get(&cache_key) {
+                                Some(cached) => cached.clone(),
+                                None => {
+                                    let resolved = selector_resolver
+                                        .member_group_candidates(
+                                            &request.id,
+                                            &group.selector,
+                                            &group.exports_by_target,
+                                        )
+                                        .map_err(|error| format!("{error:#}"));
+                                    source_match_group_candidate_cache
+                                        .insert(cache_key, resolved.clone());
+                                    resolved
+                                }
+                            };
+                        group_candidates.map(|groups| {
+                            groups
+                                .into_iter()
+                                .filter_map(|group| group.bindings.get(target_binding).cloned())
+                                .collect::<Vec<_>>()
+                        })
+                    } else {
+                        match source_match_candidate_cache.get(source_selector) {
+                            Some(cached) => cached.clone(),
+                            None => {
+                                let resolved = selector_resolver
+                                    .member_candidates(
+                                        &request.id,
+                                        &member.export_name,
+                                        source_selector,
+                                    )
+                                    .map_err(|error| format!("{error:#}"));
+                                source_match_candidate_cache
+                                    .insert(source_selector.clone(), resolved.clone());
+                                resolved
+                            }
+                        }
+                    };
+                    match candidates {
+                        Ok(candidates) => {
+                            for candidate in &candidates {
+                                facts.push(SelectorFact::SourceMatchCandidate {
+                                    chunk_id: chunk_id_interned,
+                                    selector_key: selector_key.clone(),
+                                    statement_ordinal: StatementOrdinal(
+                                        js_ast::statement_ordinal_for_body_index(
+                                            &module.body,
+                                            candidate.body_idx,
+                                        ),
+                                    ),
+                                    binding: candidate.binding.binding_name.clone(),
+                                });
+                            }
+                            source_match_candidates.insert(target, candidates);
+                        }
+                        Err(error) if self.keep_going => {
+                            source_match_errors.insert(target, error);
+                        }
+                        Err(error) => bail!("{error}"),
+                    }
                 }
             }
         }
@@ -1065,11 +1145,9 @@ impl ChunkPlanBuilder {
             builder.lower_member_constraints_in_module(&logical_module, &export_name, &selector)?;
         }
         let program = builder.into_program()?;
-        let facts =
-            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources);
         let result = selector_ir_solver::solve(&program, &facts)?;
 
-        for (target, (index, member)) in relational_targets {
+        for (target, (index, member, group_assignment)) in deferred_targets {
             let request = &explicit_requests[index];
             match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => {
@@ -1080,6 +1158,38 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name, claim.owner,
                         )
                     })?;
+                    if source_match_candidates
+                        .get(&target)
+                        .and_then(|candidates| {
+                            candidates.iter().find(|candidate| {
+                                candidate.binding.binding_name == binding
+                                    && StatementOrdinal(js_ast::statement_ordinal_for_body_index(
+                                        &module.body,
+                                        candidate.body_idx,
+                                    )) == claim.statement_ordinal
+                            })
+                        })
+                        .is_some_and(|candidate| {
+                            matches!(
+                                candidate.binding.kind,
+                                Some(BindingSourceKind::ImportSpecifier)
+                            )
+                        })
+                    {
+                        self.claim_post_stage_a_imported_binding(
+                            request,
+                            &member,
+                            binding,
+                            index,
+                            chunk_top_level_mark,
+                            chunk_id,
+                            target_file,
+                            runtime_import_facts,
+                            imported_binding_resolver,
+                            imported_from_by_src,
+                        )?;
+                        continue;
+                    }
                     self.claim_post_stage_a_binding(
                         request,
                         &member,
@@ -1091,6 +1201,32 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 Some(ClaimOutcome::NoMatch) => {
+                    if let Some(message) = source_match_errors
+                        .get(&target)
+                        .cloned()
+                        .or_else(|| {
+                            source_match_resolution_error_message(
+                                selector_resolver,
+                                request,
+                                &member,
+                                group_assignment.as_ref(),
+                            )
+                        })
+                        .or_else(|| source_match_no_match_message(request, &member))
+                    {
+                        if self.keep_going {
+                            self.source_match_diagnostics
+                                .push(SourceMatchDiagnostic::new(
+                                    module,
+                                    &request.id,
+                                    &request.target_path,
+                                    &member,
+                                    message,
+                                ));
+                            continue;
+                        }
+                        bail!("{message}");
+                    }
                     bail!(
                         "logical_module {}: global selector solver found no match for relational \
                          member `{}` ({}): {:?}",
@@ -1101,6 +1237,32 @@ impl ChunkPlanBuilder {
                     );
                 }
                 Some(ClaimOutcome::Ambiguous { candidates }) => {
+                    if let Some(message) = source_match_resolution_error_message(
+                        selector_resolver,
+                        request,
+                        &member,
+                        group_assignment.as_ref(),
+                    )
+                    .or_else(|| {
+                        source_match_ambiguous_message(
+                            request,
+                            &member,
+                            source_match_candidates.get(&target).map(Vec::as_slice),
+                        )
+                    }) {
+                        if self.keep_going {
+                            self.source_match_diagnostics
+                                .push(SourceMatchDiagnostic::new(
+                                    module,
+                                    &request.id,
+                                    &request.target_path,
+                                    &member,
+                                    message,
+                                ));
+                            continue;
+                        }
+                        bail!("{message}");
+                    }
                     bail!(
                         "logical_module {}: global selector solver found {} candidates for \
                          relational member `{}` ({}): {:?}",
@@ -1906,6 +2068,87 @@ impl ChunkPlanBuilder {
     /// residual plan when the pre-Stage-A sweep ran, before this pass knew its
     /// identity.
     #[allow(clippy::too_many_arguments)]
+    fn claim_post_stage_a_imported_binding(
+        &mut self,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+        binding: &str,
+        index: usize,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        target_file: &str,
+        runtime_import_facts: &RuntimeImportFacts,
+        imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
+        imported_from_by_src: &mut BTreeMap<String, String>,
+    ) -> Result<()> {
+        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
+            let duplicate =
+                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
+            if !self.keep_going {
+                bail!("{}", render_duplicate_binding_claims(&[duplicate]));
+            }
+            self.duplicate_binding_claims.push(duplicate);
+            return Ok(());
+        }
+        let (imported_name, imported_from) = resolve_imported_binding(
+            imported_binding_resolver,
+            runtime_import_facts,
+            chunk_id,
+            target_file,
+            binding,
+            imported_from_by_src,
+        )?;
+        let kind = BindingKind::Imported {
+            imported_name: imported_name.into(),
+            imported_from,
+            re_exporter: ModuleId(LogicalModuleIndex(index)),
+            public_name: member.export_name.as_str().into(),
+        };
+        self.catalogue_index_by_name
+            .insert(binding.to_string(), kind.clone());
+        self.bindings_catalogue
+            .insert(top_level_id(binding, chunk_top_level_mark), kind);
+        Ok(())
+    }
+
+    fn same_module_duplicate_source_binding_report(
+        &self,
+        existing_kind: &BindingKind,
+        binding: &str,
+        index: usize,
+        request: &LogicalRequest,
+        member: &MemberRequest,
+    ) -> Option<String> {
+        member.source_match.as_ref()?;
+        let BindingKind::Owned {
+            module: ModuleId(LogicalModuleIndex(owner_index)),
+        } = existing_kind
+        else {
+            return None;
+        };
+        if *owner_index != index {
+            return None;
+        }
+        let plan = self.module_plans.get(index)?;
+        let existing_export = plan.bindings.get(binding)?;
+        let existing_origin = plan
+            .binding_claim_origins
+            .get(binding)
+            .map(String::as_str)
+            .unwrap_or("<unknown origin>");
+        Some(format!(
+            "logical_module {} has duplicate source binding claims:\n- source binding `{}` \
+             claimed 2 times:\n  - export `{}` ({})\n  - export `{}` ({})",
+            request.id,
+            binding,
+            existing_export,
+            existing_origin,
+            member.export_name,
+            member.claim_origin,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn claim_post_stage_a_binding(
         &mut self,
         request: &LogicalRequest,
@@ -1932,6 +2175,15 @@ impl ChunkPlanBuilder {
         }
         let module_id = ModuleId(LogicalModuleIndex(index));
         if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
+            if let Some(report) = self.same_module_duplicate_source_binding_report(
+                existing_kind,
+                binding,
+                index,
+                request,
+                member,
+            ) {
+                bail!("{report}");
+            }
             let duplicate =
                 self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
             if !self.keep_going {

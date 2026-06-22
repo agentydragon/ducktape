@@ -181,7 +181,6 @@ pub(super) fn materialize_logical_chunk(
     // by the corpus differential, <debug/2026_06_18_per_chunk_gate_real_source.md>).
     let selector_resolver = source_match::ChunkResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
-        runtime_module: &runtime_ast.module,
         selector_resolver: &selector_resolver,
         declaration_by_name: &declaration_by_name,
         chunk_top_level_mark,
@@ -199,7 +198,6 @@ pub(super) fn materialize_logical_chunk(
             &mut imported_from_by_src,
         )?;
     }
-    drop(imported_binding_resolver);
     builder.drop_explicit_request_scratch();
     builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
     builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
@@ -283,9 +281,8 @@ pub(super) fn materialize_logical_chunk(
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
-    // Global selector resolution: `add_explicit_request` left relational members
-    // unclaimed because their target bindings are only knowable once Stage A has
-    // produced the owner graph. Compile all resolved binding anchors plus all
+    // Global selector resolution: `add_explicit_request` left deferred selector
+    // members unclaimed. Compile binding anchors, source_match candidates, and
     // relational selectors into one IR program and run one Ascent solver pass over
     // the owner graph + chunk AST relation facts.
     let import_sources: HashMap<String, String> = runtime_import_facts
@@ -298,12 +295,18 @@ pub(super) fn materialize_logical_chunk(
             &precomputed.owner_graph,
             &runtime_ast.module,
             &import_sources,
+            &selector_resolver,
+            &runtime_import_facts,
+            &mut imported_binding_resolver,
+            &mut imported_from_by_src,
             chunk_top_level_mark,
             chunk_id,
+            &target_file,
             chunk_id_interned,
             &declaration_by_name,
         )
     })?;
+    drop(imported_binding_resolver);
     time_phase!(timings, "fold_rebind_atomic_units", {
         apply_stage_one_a5(&mut builder, &precomputed);
     });
